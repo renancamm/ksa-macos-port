@@ -7,8 +7,9 @@
 # opening the app - no Terminal and no system-wide .NET install required.
 #
 # Usage:
-#   ./make_app.sh [--icon icon.png] /path/to/ported_game_dir [/path/to/App.app]
+#   ./make_app.sh [--icon icon.icns|icon.png] /path/to/ported_game_dir [/path/to/App.app]
 #
+# Default icon:   app/AppIcon.icns
 # Default output: ~/Applications/Kitten Space Agency.app
 # Undo:           mv "<App>.app/Contents/Resources" /path/to/ported_game_dir
 # ==============================================================================
@@ -17,7 +18,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="Kitten Space Agency"
 
-ICON=""
+ICON="${SCRIPT_DIR}/app/AppIcon.icns"
 if [ "$1" = "--icon" ]; then
     ICON="$2"
     shift 2
@@ -31,7 +32,7 @@ GAME_DIR="${1%/}"
 APP="${2:-${HOME}/Applications/${APP_NAME}.app}"
 
 if [ -z "${GAME_DIR}" ] || [ ! -f "${GAME_DIR}/KSA.dll" ]; then
-    echo "Usage: ./make_app.sh [--icon icon.png] /path/to/ported_game_dir [/path/to/App.app]"
+    echo "Usage: ./make_app.sh [--icon icon.icns|icon.png] /path/to/ported_game_dir [/path/to/App.app]"
     echo "Error: Target folder must contain KSA.dll."
     exit 1
 fi
@@ -94,7 +95,9 @@ cp "${SCRIPT_DIR}/start_mac.command" "${RES}/start_mac.command"
 chmod +x "${MACOS}/KSA" "${RES}/start_mac.command"
 
 ICON_ENTRY=""
-if [ -n "${ICON}" ]; then
+if [[ "${ICON}" == *.icns ]]; then
+    cp "${ICON}" "${RES}/AppIcon.icns"
+elif [ -f "${ICON}" ]; then
     ICONSET="$(mktemp -d)/AppIcon.iconset"
     mkdir -p "${ICONSET}"
     for size in 16 32 128 256 512; do
@@ -103,6 +106,8 @@ if [ -n "${ICON}" ]; then
     done
     iconutil -c icns "${ICONSET}" -o "${RES}/AppIcon.icns"
     rm -rf "$(dirname "${ICONSET}")"
+fi
+if [ -f "${RES}/AppIcon.icns" ]; then
     ICON_ENTRY="<key>CFBundleIconFile</key>
     <string>AppIcon</string>"
 fi
