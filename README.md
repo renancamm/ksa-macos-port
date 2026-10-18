@@ -108,6 +108,23 @@ cd ~/Games/KSA_Mac
 ./start_mac.command
 ```
 
+### Step 6 (Optional): Build a Double-Clickable `.app`
+Turn the ported folder into `Kitten Space Agency.app`, which you can open from Finder, Launchpad, or the Dock without a Terminal window or a system-wide .NET install:
+```bash
+./make_app.sh ~/Games/KSA_Mac                       # → ~/Applications/Kitten Space Agency.app
+./make_app.sh --icon icon.png ~/Games/KSA_Mac       # optional: custom app icon from a PNG
+./make_app.sh ~/Games/KSA_Mac /Applications/KSA.app # optional: custom output path
+```
+What it does:
+- **Moves** the game folder into `Contents/Resources`. It does not copy it.
+- Bundles a private copy of the installed .NET 10 runtime (`dotnet`, `host/fxr`, `shared/Microsoft.NETCore.App`, about 85 MB) into `Contents/MacOS`.
+- Installs [`app/launcher.sh`](app/launcher.sh) as the bundle executable. The launcher puts the bundled `dotnet` first on `PATH` and hands off to `start_mac.command`, so all MoltenVK settings live in one place.
+
+Notes:
+- The launcher's output goes to `~/Library/Logs/Kitten Space Agency.log`. Game saves, settings and logs stay in `~/Documents/My Games/Kitten Space Agency`.
+- The bundle is deliberately **not** re-signed. Re-signing would replace Microsoft's hardened-runtime signature on `dotnet`. A locally built app carries no quarantine attribute, so it doesn't need a bundle signature.
+- To undo, move the folder back out: `mv ~/Applications/"Kitten Space Agency.app"/Contents/Resources ~/Games/KSA_Mac`
+
 ---
 
 ## 3. Complete Manual Step-by-Step Tutorial (Deep Dive)
@@ -382,6 +399,9 @@ ksa-macos-port/
 ├── patch_anycpu.py            # Cleans Linux x64 runtime DLLs, updates configs, patches KSA.dll to ARM64
 ├── pecheck.py                 # Diagnostic utility to inspect PE/CLR headers of .dll files
 ├── start_mac.command          # Double-clickable macOS game launcher script
+├── make_app.sh                # Moves a ported game folder into a self-contained .app (bundles .NET 10)
+├── app/
+│   └── launcher.sh            # .app bundle executable (Contents/MacOS/KSA) → start_mac.command
 ├── MoltenVK_icd.json          # Vulkan ICD manifest pointing to ./libMoltenVK.dylib
 ├── patches/
 │   ├── spirv-cross-kMaxArgumentBuffers.patch   # Increases Metal Argument Buffer limit from 8 to 16

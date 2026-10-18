@@ -84,3 +84,6 @@ echo ""
 echo "==> Conversion complete! Launch the game with:"
 echo "    cd \"${GAME_DIR}\" && ./start_mac.command"
 
+echo ""
+echo "    To create a double-clickable app (moves this folder into the bundle):"
+echo "    ./make_app.sh \"${GAME_DIR}\""

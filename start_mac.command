@@ -32,4 +32,4 @@ if ! command -v dotnet &> /dev/null; then
 fi
 
 echo "Starte Kitten Space Agency (macOS Native)..."
-dotnet KSA.dll "$@"
+exec dotnet KSA.dll "$@"
