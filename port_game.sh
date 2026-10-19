@@ -21,11 +21,15 @@ GAME_DIR="$(cd "${GAME_DIR}" && pwd)"
 echo "==> Converting KSA Linux folder to macOS Apple Silicon (ARM64): ${GAME_DIR}"
 
 # 1. Patch .NET assemblies, runtimeconfig.json, deps.json, and clean Linux x64 runtime DLLs
-echo "==> [1/5] Patching .NET 10.0 assemblies & runtime configuration..."
+echo "==> [1/6] Patching .NET 10.0 assemblies & runtime configuration..."
 python3 "${SCRIPT_DIR}/patch_anycpu.py" "${GAME_DIR}"
 
-# 2. Copy native macOS dylibs from dist/
-echo "==> [2/5] Installing native ARM64 dylibs from ${DIST_DIR}..."
+# 2. Fix the ground clutter shaders for Metal (KSA compiles its GLSL shaders at startup)
+echo "==> [2/6] Fixing ground clutter shaders for Metal..."
+python3 "${SCRIPT_DIR}/patch_shaders.py" "${GAME_DIR}"
+
+# 3. Copy native macOS dylibs from dist/
+echo "==> [3/6] Installing native ARM64 dylibs from ${DIST_DIR}..."
 if [ ! -f "${DIST_DIR}/libstb.dylib" ] || [ ! -f "${DIST_DIR}/libKtx.dylib" ]; then
     echo "    dist/ libraries not found; running ./build_all.sh first..."
     bash "${SCRIPT_DIR}/build_all.sh" "${DIST_DIR}"
@@ -35,11 +39,11 @@ cp -P "${DIST_DIR}"/*.dylib "${GAME_DIR}/"
 
 if [ ! -f "${GAME_DIR}/libMoltenVK.dylib" ]; then
     echo "    WARNING: libMoltenVK.dylib not found in ${DIST_DIR}."
-    echo "             Run ./build_moltenvk.sh \"${DIST_DIR}\" to build the patched MoltenVK."
+    echo "             Run ./build_moltenvk.sh \"${DIST_DIR}\" to build MoltenVK (ray-query branch)."
 fi
 
-# 3. Locate & install FMOD Engine for macOS dylibs if not already in GAME_DIR
-echo "==> [3/5] Checking FMOD Engine audio libraries..."
+# 4. Locate & install FMOD Engine for macOS dylibs if not already in GAME_DIR
+echo "==> [4/6] Checking FMOD Engine audio libraries..."
 if [ ! -f "${GAME_DIR}/libfmod.dylib" ] || [ ! -f "${GAME_DIR}/libfmodstudio.dylib" ]; then
     for FMOD_API in \
         "/Volumes/FMOD Programmers API Mac/FMOD Programmers API/api" \
@@ -65,14 +69,14 @@ else
     echo "             mount the .dmg, and re-run this script (or copy libfmod*.dylib into the game folder)."
 fi
 
-# 4. Install MoltenVK ICD manifest and launcher script
-echo "==> [4/5] Installing MoltenVK_icd.json and start_mac.command..."
+# 5. Install MoltenVK ICD manifest and launcher script
+echo "==> [5/6] Installing MoltenVK_icd.json and start_mac.command..."
 cp "${SCRIPT_DIR}/MoltenVK_icd.json" "${GAME_DIR}/MoltenVK_icd.json"
 cp "${SCRIPT_DIR}/start_mac.command" "${GAME_DIR}/start_mac.command"
 chmod +x "${GAME_DIR}/start_mac.command"
 
-# 5. Clear macOS quarantine & ad-hoc sign all dylibs
-echo "==> [5/5] Removing macOS quarantine attributes & ad-hoc signing dylibs..."
+# 6. Clear macOS quarantine & ad-hoc sign all dylibs
+echo "==> [6/6] Removing macOS quarantine attributes & ad-hoc signing dylibs..."
 xattr -cr "${GAME_DIR}/start_mac.command" "${GAME_DIR}/MoltenVK_icd.json" "${GAME_DIR}"/*.dylib "${GAME_DIR}"/*.dll 2>/dev/null || true
 for f in "${GAME_DIR}"/*.dylib; do
     if [ -f "$f" ] && [ ! -L "$f" ]; then

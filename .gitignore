@@ -29,3 +29,6 @@ Content/
 app/AppIcon.icns
 src/imgui/imgui/
 src/imgui/implot/
+
+# Python
+__pycache__/

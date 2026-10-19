@@ -21,7 +21,7 @@ done
 
 if [ ! -d "/opt/homebrew/include" ] || [ ! -d "/opt/homebrew/lib" ]; then
     echo "Error: Homebrew (/opt/homebrew) not found. Please install Apple Silicon Homebrew and run:"
-    echo "  brew install cmake glfw molten-vk vulkan-headers vulkan-loader shaderc spirv-tools glm"
+    echo "  brew install cmake glfw vulkan-headers vulkan-loader shaderc spirv-tools glm"
     exit 1
 fi
 
@@ -119,5 +119,5 @@ codesign -f -s - "${OUTPUT_DIR}/libGlfwShim.dylib"
 echo ""
 echo "==> All helper & runtime dylibs built successfully in: ${OUTPUT_DIR}"
 echo "    Next steps:"
-echo "      1. Build patched MoltenVK (once): ./build_moltenvk.sh \"${OUTPUT_DIR}\""
+echo "      1. Build MoltenVK (ray-query branch, once): ./build_moltenvk.sh \"${OUTPUT_DIR}\""
 echo "      2. Apply port to a Linux KSA folder: ./port_game.sh /path/to/ksa_linux_folder"

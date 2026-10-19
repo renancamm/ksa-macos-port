@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 
-Complete toolkit, native C/C++ wrappers, compiler patches, and step-by-step documentation to convert and run the Linux build of **Kitten Space Agency (KSA)** (`v2026.10.13.5602+`) **100% natively on macOS Apple Silicon (M1 / M2 / M3 / M4)** — with **all graphics features enabled** (Atmosphere, Volumetric Clouds, Cloud Shadows, Terrain Shadows, Godrays, Ground Clutter, Vessel Cascade Shadows, and FMOD Audio) and zero x86 emulation (no Rosetta 2, no Wine/CrossOver).
+Complete toolkit, native C/C++ wrappers, shader fixes, and step-by-step documentation to convert and run the Linux build of **Kitten Space Agency (KSA)** (`v2026.10.13.5602+`) **100% natively on macOS Apple Silicon (M1 / M2 / M3 / M4)** — with **all graphics features enabled** (Atmosphere, Volumetric Clouds, Cloud Shadows, Terrain Shadows, Godrays, Ground Clutter, Vessel Cascade Shadows, and FMOD Audio) and zero x86 emulation (no Rosetta 2, no Wine/CrossOver).
 
 ---
 
@@ -19,7 +19,7 @@ Complete toolkit, native C/C++ wrappers, compiler patches, and step-by-step docu
    - [Step 3: Building Dear ImGui (`v1.92.2-docking`) & ImPlot (`v0.17`)](#step-3-building-dear-imgui-v1922-docking--implot-v017)
    - [Step 4: Building KTX-Software (`v4.4.2`) & Solving the APFS Case-Insensitivity Trap](#step-4-building-ktx-software-v442--solving-the-apfs-case-insensitivity-trap)
    - [Step 5: Adding Native FMOD Engine Audio Libraries (`2.03.xx`)](#step-5-adding-native-fmod-engine-audio-libraries-203xx)
-   - [Step 6: Patching SPIRV-Cross & MoltenVK (`kMaxArgumentBuffers = 16`)](#step-6-patching-spirv-cross--moltenvk-kmaxargumentbuffers--16)
+   - [Step 6: MoltenVK with Ray Queries & Ground Clutter Shader Fixes](#step-6-moltenvk-with-ray-queries--ground-clutter-shader-fixes)
    - [Step 7: Making the Game Folder Self-Contained (`@loader_path` & `codesign`)](#step-7-making-the-game-folder-self-contained-loader_path--codesign)
 4. [Repository Structure](#4-repository-structure)
 5. [Porting Future Game Updates](#5-porting-future-game-updates)
@@ -70,7 +70,7 @@ If you have the original, unmodified Linux archive of KSA (e.g., `ksa_linux_v202
 Ensure Xcode Command Line Tools (`xcode-select --install`), **Xcode.app** (needed once to compile MoltenVK's `ExternalDependencies.xcodeproj`), and [Homebrew](https://brew.sh) are installed, then run:
 ```bash
 brew install --cask dotnet-sdk
-brew install cmake glfw molten-vk vulkan-headers vulkan-loader shaderc spirv-tools glm
+brew install cmake glfw vulkan-headers vulkan-loader shaderc spirv-tools glm
 ```
 
 ### Step 2: Download FMOD Engine for macOS (`v2.03.xx`)
@@ -88,7 +88,7 @@ cd ksa-macos-port
 #    and bundle Homebrew runtime dylibs into ./dist
 ./build_all.sh
 
-# 2. Clone, patch (kMaxArgumentBuffers = 16 + null-pipeline guard), and compile libMoltenVK.dylib into ./dist
+# 2. Fetch MoltenVK's ray-query branch (pinned commit, no patches) and compile libMoltenVK.dylib into ./dist
 ./build_moltenvk.sh
 ```
 
@@ -149,9 +149,9 @@ This section explains **every single technical barrier** between the Linux x64 r
                 │ (Vulkan 1.4 API via libvulkan.1.dylib + MoltenVK_icd.json)
                 ▼
 ┌────────────────────────────────────────────────────────────────────┐
-│     Patched libMoltenVK.dylib + SPIRV-Cross                        │
-│     • kMaxArgumentBuffers = 16 (supports Descriptor Sets 0..9)     │
-│     • Null-pipeline guards in MVKCmdPipeline.mm                    │
+│     libMoltenVK.dylib (ray-query branch, unmodified, pinned)       │
+│     • VK_KHR_ray_query + acceleration structures                   │
+│     • SPIRV-Cross with 16 argument buffers (Descriptor Sets 0..9)  │
 └───────────────┬────────────────────────────────────────────────────┘
                 │ (Metal Shading Language / Argument Buffers)
                 ▼
@@ -317,64 +317,51 @@ The Linux release ships `libfmod.so.14.8` and `libfmodstudio.so.14.8` (FMOD Stud
 
 ---
 
-### Step 6: Patching SPIRV-Cross & MoltenVK (`kMaxArgumentBuffers = 16`)
+### Step 6: MoltenVK with Ray Queries & Ground Clutter Shader Fixes
 
-This is the most important fix required to run KSA with **all shaders and graphics settings enabled**.
+This is the most important part for running KSA with **all graphics settings enabled**, including ground clutter and clutter shadows. It has two halves: the right MoltenVK build, and three one-line fixes to KSA's own ground clutter shaders.
 
-#### Root Cause 1: Descriptor Set Overflow (`kMaxArgumentBuffers = 8`)
-KSA's planet, cloud, and atmosphere shaders bind up to **10 Vulkan Descriptor Sets simultaneously** (`set = 0` through `set = 9`; for example, `ATMOSPHERE_DATA_SET = 8` in `RaymarchCloud.comp` and `PLANET_TEXTURE_SET = 9` in `StaticObject.frag`, `GaugeCanvas.frag`, `Display.frag`, and `Vessel.frag`).
+#### 6.1 Why MoltenVK's ray-query branch
+KSA places some ground clutter (on Earth: the grass, the one non-collideable ecotype) by snapping it to the planet mesh with **Vulkan ray queries** (`InteriorRayQuery` in `Shaders/Planet/GroundClutter/Common/RayQueries.glsl`). KSA only uses them when the driver offers all of `VK_KHR_ray_query`, `VK_KHR_acceleration_structure`, `VK_KHR_buffer_device_address` and `VK_KHR_deferred_host_operations`. Upstream MoltenVK has no ray queries, so KSA falls back to a software BVH walk in the same shader (`LookupBVHDirection`). On Apple Silicon that fallback drops the frame rate to 0 as soon as grass is in view, and can keep the GPU busy long enough for macOS to reset it.
 
-Upstream `SPIRV-Cross` (bundled inside `MoltenVK`) hardcodes:
-```cpp
-// External/SPIRV-Cross/spirv_msl.hpp
-static const uint32_t kMaxArgumentBuffers = 8;
-```
-Because `kMaxArgumentBuffers` is `8` (covering only sets `0..7`), whenever a shader uses Descriptor Set `8` or `9`, `SPIRV-Cross` fails to assign it a Metal Argument Buffer and falls back to discrete `[[buffer(N)]]` bindings starting at `[[buffer(1)]]`. That immediately collides with Descriptor Set 1's Argument Buffer (`spvDescriptorSet1 [[buffer(1)]]`) or Descriptor Set 4's Argument Buffer (`[[buffer(4)]]`), causing Metal shader compilation to fail:
+[`build_moltenvk.sh`](build_moltenvk.sh) therefore builds **dttdrv's `macgaming/ray-query-pr` branch** of MoltenVK ([MoltenVK PR #2771](https://github.com/KhronosGroup/MoltenVK/pull/2771), with the compiler side from [SPIRV-Cross PR #2663](https://github.com/KhronosGroup/SPIRV-Cross/pull/2663)), pinned to commit `176926b` and **unmodified**. Its ray tracing is experimental and off by default; `start_mac.command` turns it on with `MVK_CONFIG_ENABLE_EXPERIMENTAL_RAY_TRACING=1`. Both PRs are still open upstream, so the pin keeps the build reproducible.
+
+The same branch also covers KSA's descriptor sets. KSA's planet, cloud and atmosphere shaders bind up to **10 descriptor sets** (`set = 0..9`, for example `ATMOSPHERE_DATA_SET = 8` and `PLANET_TEXTURE_SET = 9`). Older SPIRV-Cross versions allowed only 8 Metal argument buffers (`kMaxArgumentBuffers = 8`), so sets 8 and 9 fell back to discrete `[[buffer(N)]]` bindings, collided with other sets, and failed to compile:
 ```text
 program_source:2636:632: error: cannot reserve 'buffer' resource location at index 1
-kernel void main0(
-    constant spvDescriptorSetBuffer0& spvDescriptorSet0 [[buffer(0)]],
-    constant spvDescriptorSetBuffer1& spvDescriptorSet1 [[buffer(1)]],
-    ...
-    constant AtmosphereDataUbo& atmosphereDataUbo [[buffer(1)]], // <-- BUFFER INDEX COLLISION!
 ```
+SPIRV-Cross raised the limit to 16 in September 2026, and the branch's SPIRV-Cross includes that, so no patch is needed.
 
-#### Root Cause 2: Null-Pipeline Dereference Crash in `MVKCmdPipeline.mm`
-If any compute or graphics pipeline fails to compile, MoltenVK returns `VK_NULL_HANDLE` (`0x0`). When KSA subsequently calls `vkCmdBindPipeline(cmdBuf, bindPoint, VK_NULL_HANDLE)`, MoltenVK dereferences the null `_pipeline` pointer in `MVKCmdBindGraphicsPipeline::isTessellationPipeline()`, crashing the entire game with `SIGSEGV` (`KERN_INVALID_ADDRESS at 0x5d7`).
+**No MoltenVK patches and no other `MVK_CONFIG_*` settings.** Earlier versions of this port patched MoltenVK (disabling `MTLResidencySet`, guarding null pipelines) and forced several `MVK_CONFIG_*` settings (single-queue semaphores, live resource checks, resume after device loss, fast math). With this branch and the shader fixes below, testing (Apple M5, macOS 27) needed none of them, and MoltenVK's defaults gave the best performance.
 
-#### Root Cause 3: Mid-Gameplay GPU Page Fault (`kIOGPUCommandBufferCallbackErrorPageFault` / `VK_ERROR_DEVICE_LOST`)
-During extended gameplay, two macOS/Metal interactions caused a GPU page fault (`0000000b:kIOGPUCommandBufferCallbackErrorPageFault` on `Queue 0-0` and `00000005:kIOGPUCommandBufferCallbackErrorInnocentVictim` on `Queue 1-0`):
-1. **macOS 15+ `MTLResidencySet` vs. VMA Suballocated `MTLHeap`s:** On macOS 15+, MoltenVK enables `MTLResidencySet` (`_metalFeatures.residencySets = true`), adding both the parent `MTLHeap` and individual suballocated `MTLBuffer`/`MTLTexture` objects to the queue's residency set and immediately committing removals on background threads when KSA streams out planetary/clutter buffers. This triggers `IOGPUCommandDescriptor::prepare: preparedBytes != requiredBytes` in the macOS AGX kernel driver and unmaps GPU pages while in-flight command buffers are still reading them. Disabling `_metalFeatures.residencySets` in `MVKDevice.mm` and enabling `MVK_CONFIG_LIVE_CHECK_ALL_RESOURCES=1` forces MoltenVK to use per-encoder `[MTLCommandEncoder useResource:usage:]` with live resource tracking and `MTLCommandBuffer` resource retention (`needsRetain = true`).
-2. **Unsynchronized Dual-Queue Ocean Readbacks (`Queue 0-0` vs. `Queue 1-0`):** KSA's `OceanRenderer.PerformReadBack` submits compute readbacks on `Queue 1-0` (`_renderer.Compute`) without cross-queue wait semaphores while `Queue 0-0` (`_renderer.Graphics`) is writing the wave buffers. Setting `MVK_CONFIG_VK_SEMAPHORE_SUPPORT_STYLE=0` (`MVK_CONFIG_VK_SEMAPHORE_SUPPORT_STYLE_SINGLE_QUEUE`) and `MVK_CONFIG_RESUME_LOST_DEVICE=1` ensures all Graphics, Compute, and Transfer submissions serialize cleanly on `Queue 0-0`.
+> **Note:** In October 2026 Khronos deprecated MoltenVK on Apple Silicon in favor of [KosmicKrisp](https://gitlab.freedesktop.org/mesa/mesa) (Mesa's Vulkan-on-Metal driver). MoltenVK remains community-maintained.
 
-#### How to Build the Patched `libMoltenVK.dylib`
-Run [`./build_moltenvk.sh`](build_moltenvk.sh), or execute these steps manually:
+#### 6.2 Game shader bugs fixed by `patch_shaders.py`
+KSA compiles its GLSL shaders from `Content/` at startup, so [`patch_shaders.py`](patch_shaders.py) (run by `port_game.sh`) edits the shader sources in `Content/Core/Shaders/Planet/GroundClutter/`. It is idempotent, keeps the files' CRLF line endings, and prints a warning instead of failing if a game update has changed the code around a fix.
+
+1. **`PrefixSum.comp` reads the wrong uniform layout.** It declares the ecotype uniform block by hand and leaves out the 16-byte `TextureHandles textureHandles` member that the real `EcotypeData` layout (`Common/GroundClutterCommon.glsl`, filled from `ClutterCubeCellGrid.EcotypeData` on the CPU) has before `numObjects`. The shader therefore reads a bindless texture index as the object count, then reads past its LOD count buffer and **writes past its LOD offset buffer**. The game doesn't enable `robustBufferAccess`, so this is undefined behavior everywhere; on Windows the overflow apparently stays inside larger memory blocks, but on Metal it corrupts clutter data (popping, wrong shapes) and can hang the GPU, especially with clutter shadows on, where the shadow variant adds a per-cascade offset. **Fix:** add the missing member so the layouts match.
+2. **The clutter depth pre-pass and colour pass disagree on depth.** Clutter is drawn twice: `SolidDepth.vert` writes depth, then `Solid.vert` shades with depth compare `EQUAL`. That only works if both vertex shaders produce bit-identical positions, which Vulkan only guarantees for `invariant` outputs. Under Metal's fast math the two shaders compute slightly different depths, which shows up as **black hatched stripes** (per triangle, flickering even with the camera still) or **see-through patches** on trees and rocks. **Fix:** declare `invariant gl_Position;` in both shaders; MoltenVK then compiles them with `preserveInvariance`.
+
+Both bugs were found with Metal's shader validation, which reports out-of-bounds buffer accesses with the line in the generated Metal source (`MTL_SHADER_VALIDATION=1`, plus `MVK_CONFIG_SHADER_DUMP_DIR=/some/dir` to dump that source; move the game's `PipelineCache.bin` aside first so every shader is converted again).
+
+#### 6.3 How to Build `libMoltenVK.dylib`
+Run [`./build_moltenvk.sh`](build_moltenvk.sh) (it refuses to build a checkout that is at another commit or modified), or execute these steps manually:
 ```bash
-git clone --depth 1 https://github.com/KhronosGroup/MoltenVK.git deps/MoltenVK
-cd deps/MoltenVK
+git init deps/MoltenVK && cd deps/MoltenVK
+git remote add origin https://github.com/dttdrv/MoltenVK.git
+git fetch --depth 1 origin 176926b4eb7b6bd70f46a59f277b4417dd235f67
+git checkout FETCH_HEAD
+
+# Fetch and build the dependencies (SPIRV-Cross comes from dttdrv's fork, pinned by the branch)
 ./fetchDependencies --macos
 
-# 1. Increase kMaxArgumentBuffers from 8 to 16 in SPIRV-Cross (Metal supports 31 buffers per stage)
-sed -i '' 's/kMaxArgumentBuffers = 8;/kMaxArgumentBuffers = 16;/g' External/SPIRV-Cross/spirv_msl.hpp
-
-# 2. Apply null-pipeline guards, disable broken MTLResidencySet, and set safe default configs
-git apply ../../patches/moltenvk-pipeline-null-guard.patch
-
-# 3. Rebuild SPIRV-Cross static archives & package SPIRVCross.xcframework
-xcodebuild build \
-  -project "ExternalDependencies.xcodeproj" \
-  -scheme "ExternalDependencies-macOS" \
-  -destination "generic/platform=macOS" \
-  -configuration "Release" \
-  -derivedDataPath "./External/build/Intermediates/macOS" \
-  -quiet
-./Scripts/create_ext_lib_xcframeworks.sh
-
-# 4. Build MoltenVK for macOS
+# Build MoltenVK for macOS
 make macos
 
-# 5. Copy the resulting dylib into your game folder
-cp Package/Release/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib /path/to/game/
+# Copy the dylib into dist/ (or your game folder) and re-sign it
+cp Package/Release/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib ../../dist/
+install_name_tool -id @loader_path/libMoltenVK.dylib ../../dist/libMoltenVK.dylib
+codesign -f -s - ../../dist/libMoltenVK.dylib
 ```
 
 ---
@@ -382,15 +369,12 @@ cp Package/Release/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib /path/to/game/
 ### Step 7: Making the Game Folder Self-Contained (`@loader_path` & `codesign`)
 
 To ensure the game runs on any Apple Silicon Mac without requiring Homebrew or global environment variables:
-1. **`MoltenVK_icd.json`** uses a relative path (`"./libMoltenVK.dylib"`) so the Vulkan Loader (`libvulkan.1.dylib`) always loads the patched `libMoltenVK.dylib` from the game directory rather than an unpatched Homebrew MoltenVK.
+1. **`MoltenVK_icd.json`** uses a relative path (`"./libMoltenVK.dylib"`) so the Vulkan Loader (`libvulkan.1.dylib`) always loads the ray-query `libMoltenVK.dylib` from the game directory rather than another MoltenVK installed on the system (for example Homebrew's).
 2. **`start_mac.command`** sets:
-   - `DYLD_LIBRARY_PATH` to the game folder (`$DIR`)
+   - `DYLD_LIBRARY_PATH` to the game folder (`$DIR`). Note that dyld then picks `libMoltenVK.dylib` by file name from this folder even if an ICD manifest names a different absolute path, so swap the dylib in the game folder when comparing MoltenVK builds.
    - `VK_ICD_FILENAMES="$DIR/MoltenVK_icd.json"` and `VK_DRIVER_FILES="$DIR/MoltenVK_icd.json"`
-   - `MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS=1` (enables Metal Argument Buffers for all descriptor sets)
-   - `MVK_CONFIG_LIVE_CHECK_ALL_RESOURCES=1` (prevents GPU page faults when streaming/destroying resources)
-   - `MVK_CONFIG_VK_SEMAPHORE_SUPPORT_STYLE=0` (single-queue mode on `Queue 0-0` to avoid cross-queue races)
-   - `MVK_CONFIG_RESUME_LOST_DEVICE=1` (recovers gracefully from transient GPU timeouts)
-   - `MVK_CONFIG_FAST_MATH_ENABLED=1`
+   - `DYLD_INSERT_LIBRARIES` to `libGlfwShim.dylib` (see Step 2.5)
+   - `MVK_CONFIG_ENABLE_EXPERIMENTAL_RAY_TRACING=1`, which turns on the branch's ray queries (see Step 6). No other `MVK_CONFIG_*` settings are needed.
 3. **Ad-hoc Code Signing (`codesign`):**  
    Whenever `install_name_tool` modifies a Mach-O `.dylib` on Apple Silicon, its code signature is invalidated, causing macOS `amfid` to kill the process with `SIGKILL (Killed: 9)`. Always re-sign modified `.dylib` files:
    ```bash
@@ -408,9 +392,10 @@ ksa-macos-port/
 ├── README.md                  # Complete English documentation & step-by-step tutorial
 ├── LICENSE                    # MIT License
 ├── build_all.sh               # Builds all native C/C++ dylibs & bundles Homebrew runtime libs
-├── build_moltenvk.sh          # Clones, patches (kMaxArgumentBuffers=16), and builds libMoltenVK.dylib
+├── build_moltenvk.sh          # Builds libMoltenVK.dylib from the pinned ray-query branch (no patches)
 ├── port_game.sh               # All-in-one converter for a fresh Linux KSA game directory
 ├── patch_anycpu.py            # Cleans Linux x64 runtime DLLs, updates configs, patches KSA.dll to ARM64
+├── patch_shaders.py           # Fixes two bugs in KSA's ground clutter shaders (see Step 6.2)
 ├── pecheck.py                 # Diagnostic utility to inspect PE/CLR headers of .dll files
 ├── start_mac.command          # Double-clickable macOS game launcher script
 ├── make_app.sh                # Moves a ported game folder into a self-contained .app (bundles .NET 10)
@@ -418,9 +403,6 @@ ksa-macos-port/
 │   ├── launcher.sh            # .app bundle executable (Contents/MacOS/KSA) → start_mac.command
 │   └── AppIcon.icns           # Optional local app icon override (git-ignored, not shipped)
 ├── MoltenVK_icd.json          # Vulkan ICD manifest pointing to ./libMoltenVK.dylib
-├── patches/
-│   ├── spirv-cross-kMaxArgumentBuffers.patch   # Increases Metal Argument Buffer limit from 8 to 16
-│   └── moltenvk-pipeline-null-guard.patch      # Prevents SIGSEGV if a pipeline handle is null
 └── src/
     ├── stb.c                  # STB Image / Image Write compilation unit
     ├── stb_image.h            # stb_image v2.30 header
@@ -428,7 +410,6 @@ ksa-macos-port/
     ├── vulkanex.c             # RocketWerkz Vulkan batch creation/destruction extensions
     ├── vma.cpp                # Vulkan Memory Allocator (Vulkan 1.4) + custom dedicated helpers
     ├── gli_wrap.cpp           # C ABI wrapper around OpenGL Image (GLI)
-    ├── vk_guard.c             # Optional Vulkan API interception layer for debugging
     ├── glfw_shim.c            # libGlfwShim.dylib: low-res display modes + raw mouse motion fix
     ├── ktx/
     │   ├── build_ktx.sh       # Builds libktx_real.dylib (v4.4.2) and wrapper libKtx.dylib
@@ -450,7 +431,8 @@ When RocketWerkz releases a newer Linux version of KSA:
    ```bash
    ./port_game.sh /path/to/new_ksa_linux_folder
    ```
-   That's it! `port_game.sh` will automatically strip the bundled Linux x64 `.NET` runtime DLLs, update `KSA.runtimeconfig.json`, patch the new `KSA.dll` binary to `ARM64` (`0xAA64`), copy all native `.dylib` libraries, and sign the bundle.
+   That's it! `port_game.sh` will automatically strip the bundled Linux x64 `.NET` runtime DLLs, update `KSA.runtimeconfig.json`, patch the new `KSA.dll` binary to `ARM64` (`0xAA64`), apply the ground clutter shader fixes, copy all native `.dylib` libraries, and sign the bundle.
+3. Check the `[2/6]` shader step in its output. `[SHADER]` or `[OK]` lines mean the fixes are in place. A `[WARN]` line means the update changed that shader: either RocketWerkz fixed the bug (then the fix is no longer needed), or `patch_shaders.py` needs updating for the new code.
 
 ---
 
@@ -472,7 +454,13 @@ Run `python3 patch_anycpu.py /path/to/game` to fix both automatically.
 **A:** You manually deleted all `System.*.dll` and `Microsoft.*.dll` files, which accidentally removed the 15 NuGet assemblies required by KSA. Run `python3 patch_anycpu.py /path/to/game` — it automatically restores those 15 NuGet DLLs from `backup_dlls/`.
 
 ### Q: Shader error `cannot reserve 'buffer' resource location at index 1` (or `index 4`)
-**A:** The Vulkan Loader is loading an unpatched `libMoltenVK.dylib` (e.g., from `/opt/homebrew/lib/libMoltenVK.dylib`) instead of the patched one with `kMaxArgumentBuffers = 16`. Always launch the game via `./start_mac.command` so `VK_DRIVER_FILES` and `VK_ICD_FILENAMES` point to `./MoltenVK_icd.json`.
+**A:** The Vulkan Loader is loading an older `libMoltenVK.dylib` (e.g., from `/opt/homebrew/lib/libMoltenVK.dylib`) whose SPIRV-Cross only allows 8 descriptor sets, instead of the one built by `build_moltenvk.sh`. Always launch the game via `./start_mac.command` so `VK_DRIVER_FILES` and `VK_ICD_FILENAMES` point to `./MoltenVK_icd.json`.
+
+### Q: The frame rate drops to 0 when grass is in view, or the screen freezes and the game reports `VK_ERROR_DEVICE_LOST`
+**A:** KSA is not getting ray queries and fell back to its software BVH for ground clutter (see Step 6.1). Check that the game folder's `libMoltenVK.dylib` was built by `build_moltenvk.sh` and that you launched via `./start_mac.command`, which sets `MVK_CONFIG_ENABLE_EXPERIMENTAL_RAY_TRACING=1`. The game log's device creation should list `VK_KHR_ray_query`.
+
+### Q: Black hatched stripes or see-through patches on trees and rocks, or clutter that pops and changes shape
+**A:** The ground clutter shader fixes are missing (see Step 6.2). Run `python3 patch_shaders.py /path/to/game` (or `./port_game.sh` again) and restart the game.
 
 ### Q: `GLFW Error: PlatformError Raw mouse motion is not supported on this system`
 **A:** Harmless log message from GLFW on macOS: KSA turns raw mouse motion off after a right-drag without checking whether it is supported, and mouse look works normally. `libGlfwShim.dylib` suppresses it; if you still see it, check that `libGlfwShim.dylib` is in the game folder and that you launched the game via `./start_mac.command` (or the `.app`).
