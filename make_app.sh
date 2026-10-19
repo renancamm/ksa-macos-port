@@ -9,7 +9,8 @@
 # Usage:
 #   ./make_app.sh [--icon icon.icns|icon.png] /path/to/ported_game_dir [/path/to/App.app]
 #
-# Default icon:   app/AppIcon.icns, if present (not in the repo: it is game artwork)
+# Default icon:   app/AppIcon.icns if present, otherwise built from KSA's title card,
+#                 downloaded at build time (game artwork is never stored in this repo)
 # Default output: ~/Applications/Kitten Space Agency.app
 # Undo:           mv "<App>.app/Contents/Resources" /path/to/ported_game_dir
 # ==============================================================================
@@ -17,8 +18,9 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="Kitten Space Agency"
+TITLE_CARD_URL="https://ahwoo.com/ksa/title-card.jpg"
 
-ICON="${SCRIPT_DIR}/app/AppIcon.icns"
+ICON=""
 if [ "$1" = "--icon" ]; then
     ICON="$2"
     shift 2
@@ -26,6 +28,8 @@ if [ "$1" = "--icon" ]; then
         echo "Error: icon file not found: ${ICON}"
         exit 1
     fi
+elif [ -f "${SCRIPT_DIR}/app/AppIcon.icns" ]; then
+    ICON="${SCRIPT_DIR}/app/AppIcon.icns"
 fi
 
 GAME_DIR="${1%/}"
@@ -94,19 +98,32 @@ cp "${SCRIPT_DIR}/app/launcher.sh" "${MACOS}/KSA"
 cp "${SCRIPT_DIR}/start_mac.command" "${RES}/start_mac.command"
 chmod +x "${MACOS}/KSA" "${RES}/start_mac.command"
 
+# No icon given: use the bottom square of the title card (the kitten astronaut). The card
+# is 900x1350; keep the bottom 898x898 (sips skips the crop if an offset is 0).
+ICON_TMP="$(mktemp -d)"
+if [ -z "${ICON}" ]; then
+    echo "    Downloading the KSA title card for the app icon..."
+    if curl -fsSLo "${ICON_TMP}/card.jpg" "${TITLE_CARD_URL}" \
+        && sips -s format png -c 898 898 --cropOffset 452 1 "${ICON_TMP}/card.jpg" --out "${ICON_TMP}/card.png" > /dev/null; then
+        ICON="${ICON_TMP}/card.png"
+    else
+        echo "    Warning: could not get ${TITLE_CARD_URL} - building the app without an icon."
+    fi
+fi
+
 ICON_ENTRY=""
-if [[ "${ICON}" == *.icns && -f "${ICON}" ]]; then
+if [[ "${ICON}" == *.icns ]]; then
     cp "${ICON}" "${RES}/AppIcon.icns"
 elif [ -f "${ICON}" ]; then
-    ICONSET="$(mktemp -d)/AppIcon.iconset"
+    ICONSET="${ICON_TMP}/AppIcon.iconset"
     mkdir -p "${ICONSET}"
     for size in 16 32 128 256 512; do
         sips -z ${size} ${size} "${ICON}" --setProperty format png --out "${ICONSET}/icon_${size}x${size}.png" > /dev/null
         sips -z $((size * 2)) $((size * 2)) "${ICON}" --setProperty format png --out "${ICONSET}/icon_${size}x${size}@2x.png" > /dev/null
     done
     iconutil -c icns "${ICONSET}" -o "${RES}/AppIcon.icns"
-    rm -rf "$(dirname "${ICONSET}")"
 fi
+rm -rf "${ICON_TMP}"
 if [ -f "${RES}/AppIcon.icns" ]; then
     ICON_ENTRY="<key>CFBundleIconFile</key>
     <string>AppIcon</string>"
