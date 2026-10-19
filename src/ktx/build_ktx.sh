@@ -29,7 +29,7 @@ if [ ! -f "${KTX_DIR}/build/libktx.dylib" ] && [ ! -f "${KTX_DIR}/build/Release/
         -DKTX_FEATURE_LOADTEST_APPS=OFF \
         -DKTX_FEATURE_STATIC_LIBRARY=OFF \
         -DKTX_FEATURE_GL_UPLOAD=OFF \
-        -DKTX_FEATURE_VK_UPLOAD=OFF \
+        -DKTX_FEATURE_VK_UPLOAD=ON \
         -DKTX_FEATURE_DOC=OFF \
         -DKTX_FEATURE_JNI=OFF \
         -DKTX_FEATURE_PY=OFF
