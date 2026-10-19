@@ -12,6 +12,8 @@
 # App icon:       app/AppIcon.icns if present, otherwise built from KSA's title card,
 #                 downloaded at build time (game artwork is never stored in this repo)
 # Default output: ~/Applications/Kitten Space Agency.app
+# Game updates:   if the app already exists (built by this script), the new app replaces
+#                 it and the old one goes to the Trash
 # Undo:           mv "<App>.app/Contents/Resources" /path/to/ported_game_dir
 # ==============================================================================
 set -e
@@ -37,9 +39,23 @@ for f in libMoltenVK.dylib MoltenVK_icd.json KSA.deps.json.bak; do
     fi
 done
 
+BUNDLE_ID="io.github.ksa-macos-port.ksa"
+OLD_APP=""
 if [ -e "${APP}" ]; then
-    echo "Error: ${APP} already exists. Remove it or pass a different output path."
-    exit 1
+    if [ "$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "${APP}/Contents/Info.plist" 2>/dev/null)" != "${BUNDLE_ID}" ]; then
+        echo "Error: ${APP} already exists and was not built by make_app.sh."
+        echo "       Remove it or pass a different output path."
+        exit 1
+    fi
+    OLD_APP="${APP}"
+    OLD_VERSION="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "${APP}/Contents/Info.plist" 2>/dev/null || echo old)"
+    # Build next to the old app and swap at the end, so a failed build leaves it untouched
+    APP="$(dirname "${OLD_APP}")/.$(basename "${OLD_APP}").new"
+    if [ -e "${APP}" ]; then
+        echo "Error: ${APP} is left over from a failed update."
+        echo "       Move its Contents/Resources folder back out if you need it, delete it, and run this script again."
+        exit 1
+    fi
 fi
 
 # 1. Locate a .NET 10 runtime to bundle
@@ -61,7 +77,9 @@ fi
 echo "    Using $(basename "${NETCORE_DIR}") from ${DOTNET_HOME}"
 
 GAME_DIR="$(cd "${GAME_DIR}" && pwd)"
-VERSION="$(basename "${GAME_DIR}" | grep -oE 'v[0-9]+(\.[0-9]+)+' | head -1 | tr -d v)"
+# Game version: from KSA.dll (e.g. 2026.10.13.5602), else from the folder name, else 1.0
+VERSION="$(LC_ALL=C grep -aoE '20[0-9]{2}\.[0-9]{1,2}\.[0-9]{1,2}\.[0-9]+' "${GAME_DIR}/KSA.dll" | head -1)"
+VERSION="${VERSION:-$(basename "${GAME_DIR}" | grep -oE 'v[0-9]+(\.[0-9]+)+' | head -1 | tr -d v)}"
 VERSION="${VERSION:-1.0}"
 
 # 2. Move the game folder into the bundle
@@ -128,7 +146,7 @@ cat > "${APP}/Contents/Info.plist" << EOF
     <key>CFBundleDisplayName</key>
     <string>${APP_NAME}</string>
     <key>CFBundleIdentifier</key>
-    <string>io.github.ksa-macos-port.ksa</string>
+    <string>${BUNDLE_ID}</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -155,10 +173,22 @@ plutil -lint "${APP}/Contents/Info.plist" > /dev/null
 #    not re-signed: that would replace Microsoft's hardened-runtime signature on dotnet.
 echo "==> [5/5] Clearing quarantine attributes..."
 xattr -cr "${APP}" 2>/dev/null || true
+
+# Game update: move the old app to the Trash and put the new one in its place
+if [ -n "${OLD_APP}" ]; then
+    TRASHED="${HOME}/.Trash/${APP_NAME} ${OLD_VERSION} $(date +%Y%m%d-%H%M%S).app"
+    echo "    Moving the previous app (${OLD_VERSION}) to the Trash..."
+    mkdir -p "${HOME}/.Trash"
+    mv "${OLD_APP}" "${TRASHED}"
+    mv "${APP}" "${OLD_APP}"
+    APP="${OLD_APP}"
+    RES="${APP}/Contents/Resources"
+fi
 touch "${APP}"
 
 echo ""
-echo "==> App created: ${APP}"
+echo "==> App created: ${APP} (KSA ${VERSION})"
+[ -n "${OLD_APP}" ] && echo "    Previous app:  ${TRASHED}"
 echo "    Launch it from Finder/Launchpad, or: open \"${APP}\""
 echo "    Launcher log: ~/Library/Logs/${APP_NAME}.log"
 echo "    To undo:      mv \"${RES}\" \"${GAME_DIR}\""
