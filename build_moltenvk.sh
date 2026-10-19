@@ -46,10 +46,10 @@ xcodebuild build \
     -scheme "ExternalDependencies-macOS" \
     -destination "generic/platform=macOS" \
     -configuration "Release" \
-    -derivedDataPath "./External/build/Intermediates/macOS" \
+    -derivedDataPath "./External/build/DerivedData/macOS" \
     -quiet
 
-./Scripts/create_ext_lib_xcframeworks.sh
+PROJECT_DIR="." CONFIGURATION="Release" ./Scripts/create_ext_lib_xcframeworks.sh
 
 echo "==> Building patched libMoltenVK.dylib..."
 make macos
