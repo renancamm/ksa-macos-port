@@ -112,7 +112,7 @@ cd ~/Games/KSA_Mac
 Turn the ported folder into `Kitten Space Agency.app`, which you can open from Finder, Launchpad, or the Dock without a Terminal window or a system-wide .NET install:
 ```bash
 ./make_app.sh ~/Games/KSA_Mac                       # → ~/Applications/Kitten Space Agency.app
-./make_app.sh --icon icon.png ~/Games/KSA_Mac       # optional: override app/AppIcon.icns (.icns or .png)
+./make_app.sh --icon icon.png ~/Games/KSA_Mac       # optional: app icon (.icns or .png); defaults to app/AppIcon.icns if you put one there
 ./make_app.sh ~/Games/KSA_Mac /Applications/KSA.app # optional: custom output path
 ```
 What it does:
@@ -402,7 +402,7 @@ ksa-macos-port/
 ├── make_app.sh                # Moves a ported game folder into a self-contained .app (bundles .NET 10)
 ├── app/
 │   ├── launcher.sh            # .app bundle executable (Contents/MacOS/KSA) → start_mac.command
-│   └── AppIcon.icns           # Default app icon used by make_app.sh
+│   └── AppIcon.icns           # Optional local app icon for make_app.sh (git-ignored, not shipped)
 ├── MoltenVK_icd.json          # Vulkan ICD manifest pointing to ./libMoltenVK.dylib
 ├── patches/
 │   ├── spirv-cross-kMaxArgumentBuffers.patch   # Increases Metal Argument Buffer limit from 8 to 16

@@ -9,7 +9,7 @@
 # Usage:
 #   ./make_app.sh [--icon icon.icns|icon.png] /path/to/ported_game_dir [/path/to/App.app]
 #
-# Default icon:   app/AppIcon.icns
+# Default icon:   app/AppIcon.icns, if present (not in the repo: it is game artwork)
 # Default output: ~/Applications/Kitten Space Agency.app
 # Undo:           mv "<App>.app/Contents/Resources" /path/to/ported_game_dir
 # ==============================================================================
@@ -95,7 +95,7 @@ cp "${SCRIPT_DIR}/start_mac.command" "${RES}/start_mac.command"
 chmod +x "${MACOS}/KSA" "${RES}/start_mac.command"
 
 ICON_ENTRY=""
-if [[ "${ICON}" == *.icns ]]; then
+if [[ "${ICON}" == *.icns && -f "${ICON}" ]]; then
     cp "${ICON}" "${RES}/AppIcon.icns"
 elif [ -f "${ICON}" ]; then
     ICONSET="$(mktemp -d)/AppIcon.iconset"

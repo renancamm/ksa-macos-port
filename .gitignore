@@ -26,5 +26,6 @@ Content/
 *.toml
 *.iss
 *.bat
+app/AppIcon.icns
 src/imgui/imgui/
 src/imgui/implot/
