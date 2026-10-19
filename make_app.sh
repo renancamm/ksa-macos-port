@@ -112,6 +112,8 @@ if [ -f "${RES}/AppIcon.icns" ]; then
     <string>AppIcon</string>"
 fi
 
+# NSHighResolutionCapable=false: render 1 pixel per point (like Wine) instead of a 2x
+# Retina framebuffer, so the game's resolution setting maps to real rendered pixels.
 cat > "${APP}/Contents/Info.plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -140,7 +142,7 @@ cat > "${APP}/Contents/Info.plist" << EOF
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.simulation-games</string>
     <key>NSHighResolutionCapable</key>
-    <true/>
+    <false/>
     ${ICON_ENTRY}
 </dict>
 </plist>
