@@ -84,10 +84,13 @@ for f in "${GAME_DIR}"/*.dylib; do
     fi
 done
 
-echo ""
-echo "==> Conversion complete! Launch the game with:"
-echo "    cd \"${GAME_DIR}\" && ./start_mac.command"
+# install.sh moves this folder into the app next, so these hints would point nowhere
+if [ -z "${KSA_INSTALLER}" ]; then
+    echo ""
+    echo "==> Conversion complete! Launch the game with:"
+    echo "    cd \"${GAME_DIR}\" && ./start_mac.command"
 
-echo ""
-echo "    To create a double-clickable app (moves this folder into the bundle):"
-echo "    ./make_app.sh \"${GAME_DIR}\""
+    echo ""
+    echo "    To create a double-clickable app (moves this folder into the bundle):"
+    echo "    ./make_app.sh \"${GAME_DIR}\""
+fi

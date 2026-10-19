@@ -37,6 +37,8 @@ Then open **Kitten Space Agency** from Finder, Launchpad or Spotlight (or run `o
 4. Converts the game to macOS (`port_game.sh`).
 5. Builds `~/Applications/Kitten Space Agency.app` (`make_app.sh`).
 
+If the game has no settings file yet, `install.sh` creates one with anti-aliasing turned off (the game's default is MSAA x2). You can turn it back on in the game's display settings.
+
 To put the app somewhere else, pass its path as a second argument: `./install.sh <archive> /Applications/KSA.app`. You can also pass an already extracted Linux folder instead of the archive; it is converted in place and moved into the app.
 
 Saves, settings and game logs are in `~/Documents/My Games/Kitten Space Agency`. The app's own log is `~/Library/Logs/Kitten Space Agency.log`.

@@ -10,6 +10,7 @@
 #   4. ports it to macOS (port_game.sh)
 #   5. builds the app (make_app.sh); an app from an earlier run is replaced and
 #      the old one goes to the Trash, so the same command installs game updates
+#   On a first install it also writes a settings.toml with anti-aliasing disabled.
 #
 # Usage:
 #   ./install.sh [--rebuild] /path/to/ksa_linux_vX.tar.gz [/path/to/App.app]
@@ -160,17 +161,28 @@ fi
 # 4. Port to macOS
 # ------------------------------------------------------------------------------
 echo "==> [4/5] Porting the game folder..."
-bash "${SCRIPT_DIR}/port_game.sh" "${GAME_DIR}" "${DIST_DIR}"
+KSA_INSTALLER=1 bash "${SCRIPT_DIR}/port_game.sh" "${GAME_DIR}" "${DIST_DIR}"
 
 # ------------------------------------------------------------------------------
 # 5. Build (or update) the app
 # ------------------------------------------------------------------------------
 echo "==> [5/5] Building the app..."
-bash "${SCRIPT_DIR}/make_app.sh" "${GAME_DIR}" "${APP}"
+KSA_INSTALLER=1 bash "${SCRIPT_DIR}/make_app.sh" "${GAME_DIR}" "${APP}"
 
 if [ -n "${STAGE}" ]; then
     trap - ERR
     rm -rf "${STAGE}"
+fi
+
+# First install only: start with anti-aliasing off (the game defaults to MSAA x2).
+# The game fills every key missing from settings.toml with its default and then
+# rewrites the full file, so this one key is enough. An existing file is left alone,
+# so updates keep the player's settings.
+SETTINGS="${HOME}/Documents/My Games/Kitten Space Agency/settings.toml"
+if [ ! -f "${SETTINGS}" ]; then
+    mkdir -p "$(dirname "${SETTINGS}")"
+    printf '[display]\nantialiasing = "Disabled"\n' > "${SETTINGS}"
+    echo "    Created ${SETTINGS} with anti-aliasing disabled."
 fi
 
 echo ""

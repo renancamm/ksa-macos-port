@@ -191,4 +191,7 @@ echo "==> App created: ${APP} (KSA ${VERSION})"
 [ -n "${OLD_APP}" ] && echo "    Previous app:  ${TRASHED}"
 echo "    Launch it from Finder/Launchpad, or: open \"${APP}\""
 echo "    Launcher log: ~/Library/Logs/${APP_NAME}.log"
-echo "    To undo:      mv \"${RES}\" \"${GAME_DIR}\""
+# install.sh deletes the folder GAME_DIR was extracted into, so there is nothing to undo to
+if [ -z "${KSA_INSTALLER}" ]; then
+    echo "    To undo:      mv \"${RES}\" \"${GAME_DIR}\""
+fi
