@@ -26,14 +26,14 @@ if [ ! -d "/opt/homebrew/include" ] || [ ! -d "/opt/homebrew/lib" ]; then
 fi
 
 # 2. Build libstb.dylib
-echo "==> [1/7] Compiling libstb.dylib..."
+echo "==> [1/8] Compiling libstb.dylib..."
 clang -O2 -DNDEBUG -shared -fPIC -arch arm64 \
     -Wl,-install_name,@loader_path/libstb.dylib \
     -o "${OUTPUT_DIR}/libstb.dylib" "${SCRIPT_DIR}/src/stb.c"
 codesign -f -s - "${OUTPUT_DIR}/libstb.dylib"
 
 # 3. Build libVulkanEx.dylib
-echo "==> [2/7] Compiling libVulkanEx.dylib..."
+echo "==> [2/8] Compiling libVulkanEx.dylib..."
 clang -O2 -DNDEBUG -shared -fPIC -arch arm64 \
     -I/opt/homebrew/include -L/opt/homebrew/lib -lvulkan \
     -Wl,-install_name,@loader_path/libVulkanEx.dylib \
@@ -43,7 +43,7 @@ install_name_tool -change /opt/homebrew/lib/libvulkan.1.dylib @loader_path/libvu
 codesign -f -s - "${OUTPUT_DIR}/libVulkanEx.dylib"
 
 # 4. Build libvma.dylib
-echo "==> [3/7] Compiling libvma.dylib..."
+echo "==> [3/8] Compiling libvma.dylib..."
 if [ ! -d "${SCRIPT_DIR}/deps/vma" ]; then
     git clone --depth 1 https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git "${SCRIPT_DIR}/deps/vma"
 fi
@@ -57,7 +57,7 @@ install_name_tool -change /opt/homebrew/lib/libvulkan.1.dylib @loader_path/libvu
 codesign -f -s - "${OUTPUT_DIR}/libvma.dylib"
 
 # 5. Build libgli.dylib
-echo "==> [4/7] Compiling libgli.dylib..."
+echo "==> [4/8] Compiling libgli.dylib..."
 if [ ! -d "${SCRIPT_DIR}/deps/gli" ]; then
     git clone --depth 1 https://github.com/g-truc/gli.git "${SCRIPT_DIR}/deps/gli"
 fi
@@ -68,7 +68,7 @@ clang++ -O2 -DNDEBUG -std=c++17 -shared -fPIC -arch arm64 -DGLM_ENABLE_EXPERIMEN
 codesign -f -s - "${OUTPUT_DIR}/libgli.dylib"
 
 # 6. Build libimgui.dylib & libimplot.dylib
-echo "==> [5/7] Compiling libimgui.dylib & libimplot.dylib..."
+echo "==> [5/8] Compiling libimgui.dylib & libimplot.dylib..."
 (
     cd "${SCRIPT_DIR}/src/imgui"
     bash build_mac.sh
@@ -77,11 +77,11 @@ echo "==> [5/7] Compiling libimgui.dylib & libimplot.dylib..."
 )
 
 # 7. Build libktx_real.dylib & libKtx.dylib
-echo "==> [6/7] Compiling libktx_real.dylib & libKtx.dylib..."
+echo "==> [6/8] Compiling libktx_real.dylib & libKtx.dylib..."
 bash "${SCRIPT_DIR}/src/ktx/build_ktx.sh" "${OUTPUT_DIR}" "${SCRIPT_DIR}/deps/ktx"
 
 # 8. Bundle Homebrew runtime dylibs & rewrite install names to @loader_path
-echo "==> [7/7] Bundling Homebrew runtime dylibs (GLFW, Vulkan Loader, Shaderc, SPIRV-Tools)..."
+echo "==> [7/8] Bundling Homebrew runtime dylibs (GLFW, Vulkan Loader, Shaderc, SPIRV-Tools)..."
 cp -L /opt/homebrew/lib/libglfw.3.dylib "${OUTPUT_DIR}/libglfw.3.dylib"
 cp -L /opt/homebrew/lib/libvulkan.1.dylib "${OUTPUT_DIR}/libvulkan.1.dylib"
 cp -L /opt/homebrew/lib/libshaderc_shared.1.dylib "${OUTPUT_DIR}/libshaderc_shared.1.dylib"
@@ -106,6 +106,15 @@ codesign -f -s - \
     "${OUTPUT_DIR}/libvulkan.1.dylib" \
     "${OUTPUT_DIR}/libshaderc_shared.1.dylib" \
     "${OUTPUT_DIR}/libSPIRV-Tools-shared.dylib"
+
+# 9. Build libGlfwShim.dylib (loaded by start_mac.command via DYLD_INSERT_LIBRARIES)
+echo "==> [8/8] Compiling libGlfwShim.dylib..."
+clang -O2 -DNDEBUG -shared -fPIC -arch arm64 \
+    -I/opt/homebrew/include -L"${OUTPUT_DIR}" -lglfw \
+    -framework CoreGraphics -framework CoreFoundation \
+    -Wl,-install_name,@loader_path/libGlfwShim.dylib \
+    -o "${OUTPUT_DIR}/libGlfwShim.dylib" "${SCRIPT_DIR}/src/glfw_shim.c"
+codesign -f -s - "${OUTPUT_DIR}/libGlfwShim.dylib"
 
 echo ""
 echo "==> All helper & runtime dylibs built successfully in: ${OUTPUT_DIR}"

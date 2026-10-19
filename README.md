@@ -84,7 +84,7 @@ FMOD is proprietary redistributable middleware and cannot be compiled from sourc
 git clone https://github.com/Luc8020/ksa-macos-port.git
 cd ksa-macos-port
 
-# 1. Compile all native helper libraries (libstb, libVulkanEx, libvma, libgli, libimgui, libimplot, libKtx)
+# 1. Compile all native helper libraries (libstb, libVulkanEx, libvma, libgli, libimgui, libimplot, libKtx, libGlfwShim)
 #    and bundle Homebrew runtime dylibs into ./dist
 ./build_all.sh
 
@@ -252,6 +252,20 @@ clang++ -O2 -DNDEBUG -std=c++17 -shared -fPIC -arch arm64 -DGLM_ENABLE_EXPERIMEN
   -o dist/libgli.dylib src/gli_wrap.cpp
 ```
 
+#### 2.5 `libGlfwShim.dylib` (`src/glfw_shim.c`)
+Fixes two differences from the Windows build under Wine without modifying the bundled Homebrew GLFW. `start_mac.command` loads it with `DYLD_INSERT_LIBRARIES`, which the bundled `dotnet` allows (`com.apple.security.cs.allow-dyld-environment-variables`), and it replaces two calls through dyld interposing:
+- **Lower resolutions:** GLFW asks macOS for the display modes without `kCGDisplayShowDuplicateLowResolutionModes`, so the scaled HiDPI modes are missing and the in-game resolution list on a MacBook display starts at 1920x1200. The shim adds that option to GLFW's calls, as Wine's mac driver does, so the list also offers 960x600, 1280x800, 1512x982 and so on.
+- **Raw mouse motion error:** KSA turns raw mouse motion off without checking `glfwRawMouseMotionSupported()`, so GLFW's Cocoa backend logs a `PlatformError` after every right-drag. The shim skips raw motion calls when it is unsupported.
+
+It must be built after GLFW is bundled into `dist/`, since it links `@loader_path/libglfw.3.dylib`:
+```bash
+clang -O2 -DNDEBUG -shared -fPIC -arch arm64 \
+  -I/opt/homebrew/include -Ldist -lglfw \
+  -framework CoreGraphics -framework CoreFoundation \
+  -Wl,-install_name,@loader_path/libGlfwShim.dylib \
+  -o dist/libGlfwShim.dylib src/glfw_shim.c
+```
+
 ---
 
 ### Step 3: Building Dear ImGui (`v1.92.2-docking`) & ImPlot (`v0.17`)
@@ -415,6 +429,7 @@ ksa-macos-port/
     ├── vma.cpp                # Vulkan Memory Allocator (Vulkan 1.4) + custom dedicated helpers
     ├── gli_wrap.cpp           # C ABI wrapper around OpenGL Image (GLI)
     ├── vk_guard.c             # Optional Vulkan API interception layer for debugging
+    ├── glfw_shim.c            # libGlfwShim.dylib: low-res display modes + raw mouse motion fix
     ├── ktx/
     │   ├── build_ktx.sh       # Builds libktx_real.dylib (v4.4.2) and wrapper libKtx.dylib
     │   └── ktx_wrap.c         # RocketWerkz "1"-suffixed KTX wrapper + path sanitizer
@@ -460,7 +475,7 @@ Run `python3 patch_anycpu.py /path/to/game` to fix both automatically.
 **A:** The Vulkan Loader is loading an unpatched `libMoltenVK.dylib` (e.g., from `/opt/homebrew/lib/libMoltenVK.dylib`) instead of the patched one with `kMaxArgumentBuffers = 16`. Always launch the game via `./start_mac.command` so `VK_DRIVER_FILES` and `VK_ICD_FILENAMES` point to `./MoltenVK_icd.json`.
 
 ### Q: `GLFW Error: PlatformError Raw mouse motion is not supported on this system`
-**A:** Harmless log message from GLFW on macOS. Cocoa does not use X11 raw mouse motion; GLFW automatically uses standard macOS cursor deltas and mouse look works normally.
+**A:** Harmless log message from GLFW on macOS: KSA turns raw mouse motion off after a right-drag without checking whether it is supported, and mouse look works normally. `libGlfwShim.dylib` suppresses it; if you still see it, check that `libGlfwShim.dylib` is in the game folder and that you launched the game via `./start_mac.command` (or the `.app`).
 
 ### Q: macOS terminates the process immediately with `Killed: 9` (`SIGKILL`)
 **A:** Apple Silicon enforces mandatory code signing on all native ARM64 Mach-O binaries. Clear quarantine attributes and re-sign all `.dylib` files:

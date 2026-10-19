@@ -6,6 +6,12 @@ export VK_DRIVER_FILES="$(pwd)/MoltenVK_icd.json"
 export VK_ICD_FILENAMES="$(pwd)/MoltenVK_icd.json"
 export DYLD_LIBRARY_PATH="$(pwd):$DYLD_LIBRARY_PATH"
 
+# GLFW-Shim laden (src/glfw_shim.c): niedrigere Auflösungen wie im Windows-Build unter Wine,
+# keine "Raw mouse motion is not supported"-Fehler nach jedem Rechtsklick-Ziehen
+if [ -f "$(pwd)/libGlfwShim.dylib" ]; then
+    export DYLD_INSERT_LIBRARIES="$(pwd)/libGlfwShim.dylib"
+fi
+
 # MoltenVK-Konfiguration für Stabilität auf Apple Silicon:
 # - Argument Buffers aktivieren (verhindert das 31-Buffer-Limit in komplexen Wolken-/Atmosphären-Shadern)
 # - Live-Check aller Ressourcen aktivieren (verhindert GPU Page Faults bei gestreamten Texturen/Buffern)
