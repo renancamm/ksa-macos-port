@@ -112,14 +112,13 @@ cd ~/Games/KSA_Mac
 Turn the ported folder into `Kitten Space Agency.app`, which you can open from Finder, Launchpad, or the Dock without a Terminal window or a system-wide .NET install:
 ```bash
 ./make_app.sh ~/Games/KSA_Mac                       # → ~/Applications/Kitten Space Agency.app
-./make_app.sh --icon icon.png ~/Games/KSA_Mac       # optional: custom app icon (.icns or .png)
 ./make_app.sh ~/Games/KSA_Mac /Applications/KSA.app # optional: custom output path
 ```
 What it does:
 - **Moves** the game folder into `Contents/Resources`. It does not copy it.
 - Bundles a private copy of the installed .NET 10 runtime (`dotnet`, `host/fxr`, `shared/Microsoft.NETCore.App`, about 85 MB) into `Contents/MacOS`.
 - Installs [`app/launcher.sh`](app/launcher.sh) as the bundle executable. The launcher puts the bundled `dotnet` first on `PATH` and hands off to `start_mac.command`, so all MoltenVK settings live in one place.
-- Sets the app icon: `--icon` if given, else a local `app/AppIcon.icns` if you put one there, else the kitten astronaut from KSA's [title card](https://ahwoo.com/ksa/title-card.jpg), downloaded and cropped at build time. The title card is © RocketWerkz and is not part of this repository or its MIT license. Without a network connection the app is built without an icon.
+- Sets the app icon: a local `app/AppIcon.icns` if you put one there, else the kitten astronaut from KSA's [title card](https://ahwoo.com/ksa/title-card.jpg), downloaded and cropped at build time. The title card is © RocketWerkz and is not part of this repository or its MIT license. Without a network connection the app is built without an icon.
 
 Notes:
 - The launcher's output goes to `~/Library/Logs/Kitten Space Agency.log`. Game saves, settings and logs stay in `~/Documents/My Games/Kitten Space Agency`.
