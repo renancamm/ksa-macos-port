@@ -33,3 +33,6 @@ src/imgui/implot/
 
 # Python
 __pycache__/
+
+# Private working notes and source trees for the native Metal effort: proprietary material, never committed
+.claude-docs/
