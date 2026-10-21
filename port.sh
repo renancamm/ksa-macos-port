@@ -81,4 +81,4 @@ run make-app create "${GAME}" "${APP}"
 
 echo ""
 step "Done: ${APP} (KSA $(app_version "${APP}"))"
-info "Open \"${APP_NAME}\" from Launchpad, Spotlight or Finder."
+info "Open \"${APP_NAME}\" from $(dirname "${APP}")."
