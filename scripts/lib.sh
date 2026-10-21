@@ -18,8 +18,8 @@ MACOS_MIN="26.0"
 export MACOSX_DEPLOYMENT_TARGET="${MACOS_MIN}"
 
 # The libraries this repository builds itself, in build order (scripts/build-*.sh), and what they put in dist/.
-BUILD_STEPS=(build-glfw build-glfw-shim build-spirv-cross build-spirv-tools build-driver)
-BUILT_FILES=(libglfw.3.dylib libglfw.dylib libGlfwShim.dylib libvulkan.1.dylib libvulkan.dylib
+BUILD_STEPS=(build-glfw build-glfw-shim build-spirv-cross build-spirv-tools build-driver build-vma)
+BUILT_FILES=(libglfw.3.dylib libglfw.dylib libGlfwShim.dylib libvulkan.1.dylib libvulkan.dylib libvma.dylib licenses/vma
              licenses/glfw licenses/spirv-cross licenses/spirv-tools licenses/spirv-headers licenses/vulkan-headers)
 
 source "${SCRIPTS}/pins.sh"
@@ -97,7 +97,7 @@ natives_stamp() {
     (
         cd "${REPO}"
         ls scripts/lib.sh scripts/pins.sh scripts/fetch-brutal-natives.sh scripts/build-*.sh scripts/check-natives.sh \
-            src/glfw_shim.c driver/*.mm driver/*.cpp driver/*.h | LC_ALL=C sort | while read -r f; do shasum -a 256 "${f}"; done
+            src/*.c src/*.cpp driver/*.mm driver/*.cpp driver/*.h | LC_ALL=C sort | while read -r f; do shasum -a 256 "${f}"; done
     ) | shasum -a 256 | cut -d' ' -f1
 }
 

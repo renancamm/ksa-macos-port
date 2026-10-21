@@ -82,8 +82,9 @@ and puts it all in an app. [docs/how-it-works.md](docs/how-it-works.md) explains
 - [Luc8020/ksa-macos-port](https://github.com/Luc8020/ksa-macos-port), the project this one started from.
 - RocketWerkz, for Kitten Space Agency and for publishing [BRUTAL](https://github.com/ahwootech/BRUTAL), its
   framework, with macOS builds of its libraries.
-- [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross), [SPIRV-Tools](https://github.com/KhronosGroup/SPIRV-Tools)
-  and [GLFW](https://www.glfw.org), built into the app, and the many projects inside BRUTAL's libraries.
+- [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross), [SPIRV-Tools](https://github.com/KhronosGroup/SPIRV-Tools),
+  [GLFW](https://www.glfw.org) and [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator),
+  built into the app, and the many projects inside BRUTAL's libraries.
 - Audio: FMOD Engine by Firelight Technologies Pty Ltd.
 
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) lists every component in the app with its licence.

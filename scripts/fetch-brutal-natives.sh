@@ -6,8 +6,9 @@
 # Linux release of KSA only has the Linux builds of them. This takes the macOS builds, unmodified, from the
 # packages pinned in scripts/pins.sh, with BRUTAL's licence, notice and the packages' third-party notices.
 #
-# GLFW is not taken from here: RocketWerkz's GLFW keeps the desktop video mode in fullscreen, which would undo
-# the GLFW shim's Fullscreen resolution switch. scripts/build-glfw.sh builds upstream GLFW instead.
+# GLFW and VMA are not taken from here. RocketWerkz's GLFW keeps the desktop video mode in fullscreen, which would
+# undo the GLFW shim's Fullscreen resolution switch (scripts/build-glfw.sh builds upstream GLFW instead), and their
+# VMA doesn't work with the BRUTAL version KSA ships (src/vma.cpp, scripts/build-vma.sh).
 set -eo pipefail
 source "$(dirname "$0")/lib.sh"
 

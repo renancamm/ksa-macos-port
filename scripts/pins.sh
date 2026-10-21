@@ -2,12 +2,11 @@
 # Sourced by scripts/lib.sh. Updating a dependency means changing its lines here and nowhere else.
 
 # RocketWerkz's official BRUTAL packages on nuget.org. Their runtimes/osx-arm64/native/ folders hold the native
-# libraries KSA's BRUTAL assemblies load (all but GLFW, see below). Format: "<package id> <version> <SHA-512 of
-# the .nupkg>".
+# libraries KSA's BRUTAL assemblies load, except GLFW and VMA (see scripts/fetch-brutal-natives.sh).
+# Format: "<package id> <version> <SHA-512 of the .nupkg>".
 BRUTAL_PACKAGES=(
     "Ahwoo.BRUTAL.Stb         2026.10.2 d8f1c0f544e7a00f75163defbcb6cb26e0dcb7fc6e1b42c0bd665b30f5f69b1bb914a683e0cc9de3b3f50018d993677da3cfb423cb2507f5b307099b2695f60f"
     "Ahwoo.BRUTAL.Vulkan      2026.10.2 728905f6e529cba8eb76c27d96a50e9fa9ad73589a4d9bfbffb7114a8d957a6d4aefb4284c954e6d9cdcab6573b923f0baf067f7488be5978f487ae8fea621eb"
-    "Ahwoo.BRUTAL.Vulkan.Vma  2026.10.2 164713a8eedadbdf83a192cea9ccb598a87ab750b5b6b293e83a6cabef9b1547d77b6f303395fac2aba482cd0401d0adfdcc067420539f71be7db61898748888"
     "Ahwoo.BRUTAL.Gli         2026.10.1 7e0e8c8d60e20d00d64b03dac61b27104018df2c9a226f844a83a0eb6254facecb01b86a86223af9bcbd010d7e6b02f45afd41af2e9d47e488a2623815ef7a88"
     "Ahwoo.BRUTAL.ImGui       2026.10.2 d97bd63979bc15236038710357b100303eafaad078506c5985eb359a993814a8eddfa9d78a3f2652d4dfe17062b1f7a797a65424400b4d31b2ae9a49caf33ad0"
     "Ahwoo.BRUTAL.ImPlot      2026.10.2 751ec7ec8d3aa2044bb472860803d6a7606032faec1b50d1bc5796d86ae2852ddd002d9b53e37690cbe2c7ebd32c441ad1c95c871f7744a2d5efb8a43ec5c9cc"
@@ -22,6 +21,7 @@ VULKAN_HEADERS_SOURCE="https://github.com/KhronosGroup/Vulkan-Headers.git 6802bb
 SPIRV_CROSS_SOURCE="https://github.com/KhronosGroup/SPIRV-Cross.git 300681bbcb8365a8d1eacdacdbdd0249bbf1d6b1"     # vulkan-sdk-1.4.363.0 + 25
 SPIRV_HEADERS_SOURCE="https://github.com/KhronosGroup/SPIRV-Headers.git 496543121ce6419f23d6fa5d7194ba66c36212d2" # vulkan-sdk-1.4.363.0
 SPIRV_TOOLS_SOURCE="https://github.com/KhronosGroup/SPIRV-Tools.git ef96ed763b43b59b33b31b362f09a02b729fa1c9"     # vulkan-sdk-1.4.363.0
+VMA_SOURCE="https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git bfb2ca99e1e7e9684dc06546b552ee3eff4b10aa" # master, 2026-10-12
 
 # The .NET runtime bundled into the app: Microsoft's osx-arm64 build, SHA-512 from Microsoft's release metadata
 # (https://builds.dotnet.microsoft.com/dotnet/release-metadata/10.0/releases.json).

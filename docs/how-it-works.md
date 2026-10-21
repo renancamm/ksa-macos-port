@@ -7,7 +7,8 @@ libraries, GLFW, FMOD. The port keeps the game's own files and replaces everythi
 ```
 KSA.dll and the other game assemblies (.NET IL)        unchanged, except KSA.dll's machine type
   |-- .NET runtime                                     Microsoft's macOS arm64 runtime
-  |-- BRUTAL native libraries (ImGui, KTX, VMA, ...)   RocketWerkz's macOS builds, from nuget.org
+  |-- BRUTAL native libraries (ImGui, KTX, ...)        RocketWerkz's macOS builds, from nuget.org
+  |-- Vulkan Memory Allocator                         upstream VMA, built here
   |-- GLFW (window, input)                             upstream GLFW, built here, plus the GLFW shim
   |-- FMOD (audio)                                     FMOD's macOS library, in third_party/fmod
   `-- Vulkan                                           the KSA Metal driver, built here (driver/)
@@ -27,6 +28,7 @@ KSA.dll and the other game assemblies (.NET IL)        unchanged, except KSA.dll
 | | `build-glfw-shim.sh` | `src/glfw_shim.c` -> `dist/libGlfwShim.dylib` |
 | | `build-spirv-cross.sh`, `build-spirv-tools.sh` | static libraries for the driver |
 | | `build-driver.sh` | `driver/` -> `dist/libvulkan.1.dylib` |
+| | `build-vma.sh` | upstream Vulkan Memory Allocator -> `dist/libvma.dylib` |
 | | `check-natives.sh` | audits `dist/`: arm64, macOS 26, signatures, dependencies, licences |
 | .NET | `fetch-dotnet.sh` | Microsoft's .NET runtime, SHA-512 checked |
 | Convert | `convert-cleanup.sh` | removes the Linux binaries and Windows installer files |
@@ -43,13 +45,12 @@ installed app: every conversion step can run again on a converted game.
 
 RocketWerkz publishes BRUTAL as NuGet packages (`Ahwoo.BRUTAL.*`), and the packages that wrap native libraries
 carry RocketWerkz's builds for Windows, Linux and macOS on Apple Silicon (`runtimes/osx-arm64/native/`). The port
-takes the macOS builds of the eight it needs, unmodified:
+takes the macOS builds of the seven it needs, unmodified:
 
 | Package | Library | Used by |
 |---|---|---|
 | Ahwoo.BRUTAL.Stb | `libstb.dylib` | image loading and writing |
 | Ahwoo.BRUTAL.Vulkan | `libVulkanEx.dylib` | batch Vulkan helpers |
-| Ahwoo.BRUTAL.Vulkan.Vma | `libvma.dylib` | Vulkan Memory Allocator |
 | Ahwoo.BRUTAL.Gli | `libgli.dylib` | texture formats |
 | Ahwoo.BRUTAL.ImGui | `libimgui.dylib` | the user interface |
 | Ahwoo.BRUTAL.ImPlot | `libimplot.dylib` | the profiler's plots |
@@ -57,17 +58,23 @@ takes the macOS builds of the eight it needs, unmodified:
 | Ahwoo.BRUTAL.ShaderC | `libshaderc_shared.dylib`, `libSPIRV-Tools-shared.dylib` | compiling the game's GLSL shaders at startup |
 
 The packages are BRUTAL 2026.10, the first versions RocketWerkz published; KSA 2026.10.13 ships BRUTAL 2026.9.
-They export every function KSA calls. The game's ImPlot binding also declares about 200 internal ImPlot functions
+They export every function KSA calls, but only running the game shows whether they behave as its BRUTAL version
+expects (VMA didn't, see below). The game's ImPlot binding also declares about 200 internal ImPlot functions
 the library doesn't export, but RocketWerkz's own 2026.10 binding declares them too, and KSA calls only ImPlot's
 public functions. `convert-dotnet.sh` warns when a KSA version ships a BRUTAL newer than the pinned packages.
 
-GLFW is the exception. RocketWerkz's GLFW is a fork that keeps the desktop video mode in Fullscreen, which would
-undo the shim's Fullscreen resolution switch (below), and KSA uses none of the fork's additions. `build-glfw.sh`
-builds upstream GLFW 3.5.1 instead.
+Two libraries are exceptions:
+
+- **GLFW.** RocketWerkz's GLFW is a fork that keeps the desktop video mode in Fullscreen, which would undo the
+  shim's Fullscreen resolution switch (below), and KSA uses none of the fork's additions. `build-glfw.sh` builds
+  upstream GLFW 3.5.1 instead.
+- **VMA.** RocketWerkz's 2026.10 Vulkan Memory Allocator loads Vulkan functions only through pointers the caller
+  passes, which the BRUTAL 2026.9 binding in KSA doesn't pass, so the game crashes in `vmaCreateAllocator`.
+  `build-vma.sh` builds upstream VMA ([`src/vma.cpp`](../src/vma.cpp)) linked against the driver instead.
 
 ### Built here
 
-The GLFW shim, GLFW and the Metal driver are built from pinned sources with the Command Line Tools and cmake.
+The GLFW shim, GLFW, VMA and the Metal driver are built from pinned sources with the Command Line Tools and cmake.
 Everything is compiled for macOS 26 explicitly (`MACOS_MIN` in `lib.sh`): without that, a library requires the
 macOS version of the Mac that built it. The driver needs macOS 26 itself. Each step ad-hoc signs what it links,
 because macOS kills a process that loads a library with an invalid signature.
@@ -173,7 +180,7 @@ The scripts contact only these, and only when the file isn't downloaded already:
 
 | Host | What | When |
 |---|---|---|
-| github.com | pinned sources (GLFW, SPIRV-Cross, SPIRV-Tools, SPIRV-Headers, Vulkan-Headers); this project's prebuilt libraries; `git pull` | building from source; prebuilt lookup; `update.sh` |
+| github.com | pinned sources (GLFW, VMA, SPIRV-Cross, SPIRV-Tools, SPIRV-Headers, Vulkan-Headers); this project's prebuilt libraries; `git pull` | building from source; prebuilt lookup; `update.sh` |
 | api.nuget.org | RocketWerkz's BRUTAL packages | first run, and when their pins change |
 | builds.dotnet.microsoft.com | the .NET runtime | first run, and when its pin changes |
 | ahwoo.com | KSA's title card, for the app icon | the first app you make |
@@ -193,6 +200,7 @@ port.sh, update.sh        the two commands
 scripts/                  the steps above, lib.sh and pins.sh
 app/launcher.sh           the app's executable
 src/glfw_shim.c           the GLFW shim
+src/vma.cpp               the VMA build's single source file
 driver/                   the KSA Metal driver
 third_party/fmod/         FMOD's macOS library, with its licence and notice (not MIT)
 .github/workflows/        the prebuilt libraries workflow

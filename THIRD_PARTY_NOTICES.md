@@ -12,8 +12,9 @@ binaries or assets, and none of the licences here apply to the game.
 | Component | In the app | Source | Licence | `Licenses/` |
 |---|---|---|---|---|
 | This port: launcher, GLFW shim, KSA Metal driver | `Contents/MacOS/KSA`, `libGlfwShim.dylib`, `libvulkan.1.dylib` | this repository | MIT | `ksa-macos-port/` |
-| BRUTAL native libraries, built by RocketWerkz | `libstb`, `libVulkanEx`, `libvma`, `libgli`, `libimgui`, `libimplot`, `libKtx`, `libshaderc_shared`, `libSPIRV-Tools-shared` (`.dylib`) | the `Ahwoo.BRUTAL.*` packages on [nuget.org](https://www.nuget.org/profiles/Ahwoo), unmodified | BRUTAL License v1.0 (© Ahwoo Limited), and the licences of the components compiled into them (below) | `brutal/` |
+| BRUTAL native libraries, built by RocketWerkz | `libstb`, `libVulkanEx`, `libgli`, `libimgui`, `libimplot`, `libKtx`, `libshaderc_shared`, `libSPIRV-Tools-shared` (`.dylib`) | the `Ahwoo.BRUTAL.*` packages on [nuget.org](https://www.nuget.org/profiles/Ahwoo), unmodified | BRUTAL License v1.0 (© Ahwoo Limited), and the licences of the components compiled into them (below) | `brutal/` |
 | GLFW | `libglfw.3.dylib` | [glfw/glfw](https://github.com/glfw/glfw), unmodified | Zlib | `glfw/` |
+| Vulkan Memory Allocator | `libvma.dylib` | [GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator), unmodified, with `src/vma.cpp` | MIT | `vma/` |
 | SPIRV-Cross | compiled into `libvulkan.1.dylib` | [KhronosGroup/SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) | Apache-2.0 (some files MIT or CC-BY-4.0, see its `LICENSES/`) | `spirv-cross/` |
 | SPIRV-Tools | compiled into `libvulkan.1.dylib` | [KhronosGroup/SPIRV-Tools](https://github.com/KhronosGroup/SPIRV-Tools) | Apache-2.0 | `spirv-tools/` |
 | SPIRV-Headers | compiled into `libvulkan.1.dylib` | [KhronosGroup/SPIRV-Headers](https://github.com/KhronosGroup/SPIRV-Headers) | MIT (Khronos), CC-BY-4.0 | `spirv-headers/` |
@@ -29,7 +30,6 @@ The BRUTAL libraries contain these components, each listed with its licence text
 |---|---|
 | `libstb` | stb_image, stb_image_write (MIT or Unlicense) |
 | `libVulkanEx` | BRUTAL code only |
-| `libvma` | Vulkan Memory Allocator (MIT) |
 | `libgli` | GLI and GLM (MIT) |
 | `libimgui` | Dear ImGui, with stb_rect_pack, stb_textedit and stb_truetype (MIT; stb: MIT or Unlicense) |
 | `libimplot` | ImPlot (MIT) |
