@@ -37,6 +37,18 @@ for arg in "$@"; do
     [[ "${arg}" == -psn_* ]] || ARGS+=("${arg}")
 done
 
+# With the StarMap mod loader in the app (extras/starmap), the game starts through it. StarMap reads its config
+# and DLLs from the current folder and needs the game's full path, which changes when the app moves: the config
+# is written at every start.
+if [ -f "${RES}/StarMap/StarMap.dll" ]; then
+    echo "==> $(date): starting ${RES}/KSA.dll through StarMap"
+    cd "${RES}/StarMap" || exit 1
+    game="${RES//\\/\\\\}/KSA.dll"
+    printf '{ "GameLocation": "%s", "RepositoryLocation": "", "GameArguments": [] }\n' "${game//\"/\\\"}" \
+        > StarMapConfig.json
+    exec "${CONTENTS}/MacOS/dotnet" StarMap.dll ${ARGS[@]+"${ARGS[@]}"}
+fi
+
 echo "==> $(date): starting ${RES}/KSA.dll"
 cd "${RES}" || exit 1
 exec "${CONTENTS}/MacOS/dotnet" KSA.dll ${ARGS[@]+"${ARGS[@]}"}

@@ -124,7 +124,7 @@ share [`scripts/lib.sh`](scripts/lib.sh), and every external source is pinned to
 | | `check-natives.sh` | checks `dist/`: arm64, macOS 26, signatures, dependencies, licences |
 | .NET | `fetch-dotnet.sh` | Microsoft's .NET runtime for macOS, SHA-512 checked |
 | Convert | `convert-cleanup.sh` | removes the Linux binaries and the Windows installer files |
-| | `convert-dotnet.sh` | makes the .NET files run on the macOS runtime |
+| | `convert-dotnet.sh` | makes the .NET files run on the macOS runtime (with `mark-arm64.sh`) |
 | | `convert-shaders.sh` | fixes two bugs in the ground clutter shaders |
 | App | `make-app.sh` | builds the app around the converted game, or refreshes one |
 

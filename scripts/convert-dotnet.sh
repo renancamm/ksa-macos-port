@@ -9,9 +9,8 @@
 #   2. KSA.deps.json points the .NET host at the linux-x64 runtime pack: removed.
 #   3. KSA.runtimeconfig.json describes a self-contained program: replaced by one that uses the shared
 #      .NET 10 runtime (the one in the app).
-#   4. KSA.dll is a 64-bit (PE32+) assembly marked AMD64 (machine 0x8664). .NET on Apple Silicon only loads
-#      64-bit assemblies marked ARM64 (0xAA64). KSA.dll contains only IL code, so changing the mark is enough.
-#      The other game DLLs are platform-neutral (PE32) and load as they are.
+#   4. KSA.dll is a 64-bit assembly marked AMD64, which .NET on Apple Silicon does not load: marked ARM64
+#      (scripts/mark-arm64.sh). The other game DLLs are platform-neutral and load as they are.
 #
 # Usage: scripts/convert-dotnet.sh <game folder> <.NET runtime folder>
 set -eo pipefail
@@ -72,18 +71,5 @@ cat > "${GAME}/KSA.runtimeconfig.json" << 'EOF'
 }
 EOF
 
-# 4. Machine type of 64-bit assemblies. PE layout: offset 0x3C holds the PE header offset; the header starts
-#    with "PE\0\0", the 2-byte machine type follows, and the optional header magic (0x20B for PE32+) is 24 bytes in.
-read_hex() { od -An -tx1 -j "$2" -N "$3" "$1" | tr -d ' \n'; }
-for dll in "${GAME}"/*.dll; do
-    pe=$(od -An -tu4 -j 60 -N 4 "${dll}" | tr -d ' ')
-    [ "$(read_hex "${dll}" "${pe}" 4)" = "50450000" ] || continue
-    [ "$(read_hex "${dll}" $((pe + 24)) 2)" = "0b02" ] || continue
-    case "$(read_hex "${dll}" $((pe + 4)) 2)" in
-        6486)
-            printf '\x64\xaa' | dd of="${dll}" bs=1 seek=$((pe + 4)) count=2 conv=notrunc 2> /dev/null
-            info "$(basename "${dll}"): AMD64 -> ARM64" ;;
-        64aa) ;;
-        *) die "$(basename "${dll}") has an unexpected machine type. The port needs an update for this KSA version." ;;
-    esac
-done
+# 4. Machine type of 64-bit assemblies
+run mark-arm64 "${GAME}"/*.dll
