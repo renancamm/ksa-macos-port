@@ -7,6 +7,13 @@
 #include <chrono>
 #include <algorithm>
 
+// The window was resized since the swapchain was made: report VK_SUBOPTIMAL_KHR like other drivers, which makes the
+// game check the surface extent and rebuild (a resize it did not schedule itself, e.g. a display mode change)
+static bool outdated(KSwapchain* sc) {
+    VkExtent2D e = kmtlLayerExtent(sc->surface->layer);
+    return e.width && e.height && (e.width != sc->extent.width || e.height != sc->extent.height);
+}
+
 VKFN(VkResult) vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR* ci, const VkAllocationCallbacks*, VkSwapchainKHR* out) {
     KTRACE_FIRST();
     auto* dev = (KDevice*)device;
@@ -74,7 +81,7 @@ VKFN(VkResult) vkAcquireNextImageKHR(VkDevice, VkSwapchainKHR swapchain, uint64_
         f->signaled = true;
         f->cv.notify_all();
     }
-    return VK_SUCCESS;
+    return outdated(sc) ? VK_SUBOPTIMAL_KHR : VK_SUCCESS;
 }
 
 VKFN(VkResult) vkWaitForPresentKHR(VkDevice, VkSwapchainKHR swapchain, uint64_t presentId, uint64_t timeout) {
@@ -95,9 +102,11 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
     auto* q = (KQueue*)queue;
     std::lock_guard<std::mutex> lock(q->submitMutex);
     auto* ids = (const VkPresentIdKHR*)findNext(pi->pNext, VK_STRUCTURE_TYPE_PRESENT_ID_KHR);
+    VkResult result = VK_SUCCESS;
     for (uint32_t i = 0; i < pi->swapchainCount; i++) {
         @autoreleasepool {
             auto* sc = (KSwapchain*)pi->pSwapchains[i];
+            VkResult r = outdated(sc) ? VK_SUBOPTIMAL_KHR : VK_SUCCESS;
             KImage* img = sc->images[pi->pImageIndices[i]];
             id<CAMetalDrawable> drawable = [sc->surface->layer nextDrawable];
             id<MTLCommandBuffer> cb = [q->mtl commandBuffer];
@@ -123,10 +132,11 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
             }
             if (drawable) [cb presentDrawable:drawable];
             [cb commit];
+            if (pi->pResults) pi->pResults[i] = r;
+            if (r != VK_SUCCESS) result = r;
         }
-        if (pi->pResults) pi->pResults[i] = VK_SUCCESS;
     }
-    return VK_SUCCESS;
+    return result;
 }
 
 // ---------------------------------------------------------------------------------------------------------------

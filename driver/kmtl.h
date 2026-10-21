@@ -483,6 +483,9 @@ struct KPresentState {
     }
 };
 
+// Pixel size of a surface's layer (bounds x contentsScale): the surface's current extent
+VkExtent2D kmtlLayerExtent(CAMetalLayer* layer);
+
 struct KSwapchain {
     std::shared_ptr<KPresentState> presentState = std::make_shared<KPresentState>();
     KDevice* device = nullptr;

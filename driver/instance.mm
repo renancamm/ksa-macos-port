@@ -733,18 +733,16 @@ VKFN(VkResult) vkGetPhysicalDeviceSurfaceSupportKHR(VkPhysicalDevice, uint32_t f
     return VK_SUCCESS;
 }
 
-static VkExtent2D layerExtent(CAMetalLayer* layer) {
-    __block CGSize size;
-    __block CGFloat scale;
-    auto read = ^{ size = layer.bounds.size; scale = layer.contentsScale; };
-    if ([NSThread isMainThread]) read(); else read();  // property reads are safe off the main thread
+VkExtent2D kmtlLayerExtent(CAMetalLayer* layer) {
+    CGSize size = layer.bounds.size;  // property reads are safe off the main thread
+    CGFloat scale = layer.contentsScale;
     return {(uint32_t)(size.width * scale + 0.5), (uint32_t)(size.height * scale + 0.5)};
 }
 
 VKFN(VkResult) vkGetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysicalDevice, VkSurfaceKHR surface, VkSurfaceCapabilitiesKHR* c) {
     KTRACE_FIRST();
     auto* s = (KSurface*)surface;
-    VkExtent2D e = layerExtent(s->layer);
+    VkExtent2D e = kmtlLayerExtent(s->layer);
     if (e.width == 0) e.width = 1;
     if (e.height == 0) e.height = 1;
     c->minImageCount = 2;
