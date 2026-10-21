@@ -17,7 +17,15 @@
  *    display to that mode. The game applies new settings before it saves them, so
  *    glfwPollEvents rereads the file whenever it changes and switches again.
  *    When the window leaves fullscreen, the game sizes it from the switched mode, so a
- *    size that matches that mode or its work area is redone for the restored mode.
+ *    size that matches that mode or its work area, or that the game cut to the work area
+ *    of the switched mode (Windowed), is redone for the restored mode.
+ * 4. Window positions: GLFW's Cocoa backend reports no move when glfwSetWindowMonitor
+ *    moves and resizes a window at once, and reports a position from the middle of the
+ *    switch when a window enters or leaves fullscreen. The game keeps the last reported
+ *    position and its ImGui backend places the main viewport and the mouse with it, so
+ *    after a mode change popups were placed for the wrong spot, often on another monitor.
+ *    After glfwSetWindowMonitor and every glfwPollEvents, report the real position of a
+ *    window that went through glfwSetWindowMonitor when it differs from the last one.
  */
 #include <CoreGraphics/CoreGraphics.h>
 #include <GLFW/glfw3.h>
@@ -63,13 +71,87 @@ static void shim_glfwSetInputMode(GLFWwindow *window, int mode, int value)
     glfwSetInputMode(window, mode, value);
 }
 
+#define MAX_TRACKED_WINDOWS 64
+
+struct tracked_window {
+    GLFWwindow *window;
+    GLFWwindowposfun callback;  /* the game's */
+    int x, y;                   /* the last position the game was told */
+    int set_monitor;            /* went through glfwSetWindowMonitor */
+};
+
+static struct tracked_window tracked_windows[MAX_TRACKED_WINDOWS];
+
+static struct tracked_window *find_tracked(GLFWwindow *window)
+{
+    for (int i = 0; i < MAX_TRACKED_WINDOWS; i++)
+        if (tracked_windows[i].window == window)
+            return &tracked_windows[i];
+    return NULL;
+}
+
+static void report_position(GLFWwindow *window, int x, int y)
+{
+    struct tracked_window *tracked = find_tracked(window);
+
+    if (!tracked)
+        return;
+    tracked->x = x;
+    tracked->y = y;
+    if (tracked->callback)
+        tracked->callback(window, x, y);
+}
+
+static GLFWwindowposfun shim_glfwSetWindowPosCallback(GLFWwindow *window, GLFWwindowposfun callback)
+{
+    struct tracked_window *tracked = find_tracked(window);
+    GLFWwindowposfun previous;
+
+    if (!tracked) {
+        if (!callback || !(tracked = find_tracked(NULL)))
+            return glfwSetWindowPosCallback(window, callback);
+        memset(tracked, 0, sizeof(*tracked));
+        tracked->window = window;
+        glfwGetWindowPos(window, &tracked->x, &tracked->y);
+    }
+    previous = tracked->callback;
+    tracked->callback = callback;
+    glfwSetWindowPosCallback(window, callback ? report_position : NULL);
+    return previous;
+}
+
+/* Tells the game where a window really is when GLFW did not (see 4.) */
+static void update_position(struct tracked_window *tracked)
+{
+    int x, y;
+
+    if (!tracked->callback)
+        return;
+    glfwGetWindowPos(tracked->window, &x, &y);
+    if (x != tracked->x || y != tracked->y)
+        report_position(tracked->window, x, y);
+}
+
+static void update_positions(void)
+{
+    for (int i = 0; i < MAX_TRACKED_WINDOWS; i++)
+        if (tracked_windows[i].window && tracked_windows[i].set_monitor)
+            update_position(&tracked_windows[i]);
+}
+
+enum display_mode { MODE_WINDOWED, MODE_BORDERLESS, MODE_FULLSCREEN };
+
 struct display_settings {
-    int fullscreen, width, height, refresh;
+    enum display_mode mode;
+    int width, height, refresh;
 };
 
 static GLFWwindow *fullscreen_window;
 static GLFWmonitor *fullscreen_monitor;
 static int fullscreen_width, fullscreen_height, fullscreen_refresh;
+/* A window that left fullscreen with a size cut to the switched mode's work area */
+static GLFWwindow *windowed_window;
+static int windowed_x, windowed_y;
 static struct timespec settings_mtime;
 
 /* GameSettings.SettingsFilePath: <SpecialFolder.Personal>/My Games/Kitten Space Agency */
@@ -86,7 +168,8 @@ static const char *settings_path(void)
     return path[0] ? path : NULL;
 }
 
-/* Reads the [display] table, which Tomlet writes as plain "key = value" lines. */
+/* Reads the [display] table, which Tomlet writes as plain "key = value" lines. Returns
+ * whether it has a resolution. */
 static int read_display_settings(struct display_settings *settings)
 {
     const char *path = settings_path();
@@ -113,22 +196,45 @@ static int read_display_settings(struct display_settings *settings)
             sscanf(p, "refresh = %d", &settings->refresh) == 1)
             continue;
         if (sscanf(p, "mode = \"%63[^\"]\"", mode) == 1)
-            settings->fullscreen = strcmp(mode, "Fullscreen") == 0;
+            settings->mode = strcmp(mode, "Fullscreen") == 0 ? MODE_FULLSCREEN :
+                             strcmp(mode, "Borderless") == 0 ? MODE_BORDERLESS : MODE_WINDOWED;
     }
     fclose(file);
-    return settings->fullscreen && settings->width > 0 && settings->height > 0;
+    return settings->width > 0 && settings->height > 0;
 }
 
-static void shim_glfwSetWindowMonitor(GLFWwindow *window, GLFWmonitor *monitor,
-                                      int xpos, int ypos, int width, int height, int refreshRate)
+static int min_int(int a, int b)
+{
+    return a < b ? a : b;
+}
+
+/* Redoes GameSettings.ApplyTo's Windowed size (the Resolution, cut to the primary monitor's
+ * work area from the window position) with the restored mode's work area */
+static void resize_windowed(GLFWwindow *window, int xpos, int ypos, const struct display_settings *settings)
+{
+    int work_width, work_height, width, height, new_width, new_height;
+
+    glfwGetMonitorWorkarea(glfwGetPrimaryMonitor(), NULL, NULL, &work_width, &work_height);
+    glfwGetWindowSize(window, &width, &height);
+    new_width = min_int(work_width - xpos, settings->width);
+    new_height = min_int(work_height - ypos, settings->height);
+    if (new_width > 0 && new_height > 0 && (new_width != width || new_height != height))
+        glfwSetWindowMonitor(window, NULL, xpos, ypos, new_width, new_height, 0);
+}
+
+static void set_window_monitor(GLFWwindow *window, GLFWmonitor *monitor,
+                               int xpos, int ypos, int width, int height, int refreshRate)
 {
     struct display_settings settings;
     int mode_x, mode_y, mode_width, mode_height;
     int work_x, work_y, work_width, work_height;
+    int primary_width, primary_height;
     const GLFWvidmode *mode;
 
+    if (window == windowed_window)
+        windowed_window = NULL;
     if (monitor) {
-        if (read_display_settings(&settings)) {
+        if (read_display_settings(&settings) && settings.mode == MODE_FULLSCREEN) {
             width = settings.width;
             height = settings.height;
         }
@@ -150,6 +256,7 @@ static void shim_glfwSetWindowMonitor(GLFWwindow *window, GLFWmonitor *monitor,
     mode_width = mode->width;
     mode_height = mode->height;
     glfwGetMonitorWorkarea(fullscreen_monitor, &work_x, &work_y, &work_width, &work_height);
+    glfwGetMonitorWorkarea(glfwGetPrimaryMonitor(), NULL, NULL, &primary_width, &primary_height);
     glfwSetWindowMonitor(window, NULL, xpos, ypos, width, height, refreshRate);
 
     if (xpos == work_x && ypos == work_y && width == work_width && height == work_height) {
@@ -160,39 +267,78 @@ static void shim_glfwSetWindowMonitor(GLFWwindow *window, GLFWmonitor *monitor,
                (mode = glfwGetVideoMode(fullscreen_monitor)) &&
                (mode->width != width || mode->height != height)) {
         glfwSetWindowMonitor(window, NULL, xpos, ypos, mode->width, mode->height, refreshRate);
+    } else if (width == primary_width - xpos || height == primary_height - ypos) {
+        /* Windowed, cut to the switched mode's work area. The game saves its settings after
+         * applying them, so use the Resolution saved now and again once the file changes. */
+        if (read_display_settings(&settings))
+            resize_windowed(window, xpos, ypos, &settings);
+        windowed_window = window;
+        windowed_x = xpos;
+        windowed_y = ypos;
     }
     fullscreen_window = NULL;
 }
 
-static void shim_glfwPollEvents(void)
+static void shim_glfwSetWindowMonitor(GLFWwindow *window, GLFWmonitor *monitor,
+                                      int xpos, int ypos, int width, int height, int refreshRate)
+{
+    struct tracked_window *tracked = find_tracked(window);
+
+    set_window_monitor(window, monitor, xpos, ypos, width, height, refreshRate);
+    if (tracked) {
+        tracked->set_monitor = 1;
+        update_position(tracked);
+    }
+}
+
+/* The game applies new settings before it saves them: redo what depends on them once the
+ * file changes */
+static void reapply_saved_settings(void)
 {
     struct display_settings settings;
     const char *path;
     struct stat st;
 
-    glfwPollEvents();
-
-    if (!fullscreen_window || !(path = settings_path()) || stat(path, &st) != 0 ||
+    if ((!fullscreen_window && !windowed_window) || !(path = settings_path()) || stat(path, &st) != 0 ||
         (st.st_mtimespec.tv_sec == settings_mtime.tv_sec &&
-         st.st_mtimespec.tv_nsec == settings_mtime.tv_nsec))
-        return;
-    if (!read_display_settings(&settings) ||
-        glfwGetWindowMonitor(fullscreen_window) != fullscreen_monitor ||
-        (settings.width == fullscreen_width && settings.height == fullscreen_height))
+         st.st_mtimespec.tv_nsec == settings_mtime.tv_nsec) ||
+        !read_display_settings(&settings))
         return;
 
-    fullscreen_width = settings.width;
-    fullscreen_height = settings.height;
-    if (settings.refresh > 0)
-        fullscreen_refresh = settings.refresh;
-    glfwSetWindowMonitor(fullscreen_window, fullscreen_monitor, 0, 0,
-                         fullscreen_width, fullscreen_height, fullscreen_refresh);
+    if (windowed_window) {
+        if (settings.mode == MODE_WINDOWED && !glfwGetWindowMonitor(windowed_window))
+            resize_windowed(windowed_window, windowed_x, windowed_y, &settings);
+        windowed_window = NULL;
+    }
+    if (fullscreen_window && settings.mode == MODE_FULLSCREEN &&
+        glfwGetWindowMonitor(fullscreen_window) == fullscreen_monitor &&
+        (settings.width != fullscreen_width || settings.height != fullscreen_height)) {
+        fullscreen_width = settings.width;
+        fullscreen_height = settings.height;
+        if (settings.refresh > 0)
+            fullscreen_refresh = settings.refresh;
+        glfwSetWindowMonitor(fullscreen_window, fullscreen_monitor, 0, 0,
+                             fullscreen_width, fullscreen_height, fullscreen_refresh);
+    }
+}
+
+static void shim_glfwPollEvents(void)
+{
+    glfwPollEvents();
+    reapply_saved_settings();
+    update_positions();
 }
 
 static void shim_glfwDestroyWindow(GLFWwindow *window)
 {
+    struct tracked_window *tracked = find_tracked(window);
+
     if (window == fullscreen_window)
         fullscreen_window = NULL;
+    if (window == windowed_window)
+        windowed_window = NULL;
+    if (tracked)
+        tracked->window = NULL;
     glfwDestroyWindow(window);
 }
 
@@ -201,3 +347,4 @@ DYLD_INTERPOSE(shim_glfwSetInputMode, glfwSetInputMode)
 DYLD_INTERPOSE(shim_glfwSetWindowMonitor, glfwSetWindowMonitor)
 DYLD_INTERPOSE(shim_glfwPollEvents, glfwPollEvents)
 DYLD_INTERPOSE(shim_glfwDestroyWindow, glfwDestroyWindow)
+DYLD_INTERPOSE(shim_glfwSetWindowPosCallback, glfwSetWindowPosCallback)
