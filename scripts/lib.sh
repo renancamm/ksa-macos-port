@@ -103,10 +103,11 @@ natives_stamp() {
 
 # prepare_natives [--from-source]: makes dist/ match the current sources. RocketWerkz's libraries always come
 # from nuget.org; ours come from the matching GitHub release when there is one, otherwise they are built here.
+# With --from-source they are always built, even when dist/ already matches.
 prepare_natives() {
     local stamp
     stamp="$(natives_stamp)"
-    if [ -f "${DIST}/.stamp" ] && [ "$(cat "${DIST}/.stamp")" = "${stamp}" ]; then
+    if [ "$1" != "--from-source" ] && [ -f "${DIST}/.stamp" ] && [ "$(cat "${DIST}/.stamp")" = "${stamp}" ]; then
         info "Native libraries are up to date (dist/)."
         return 0
     fi
