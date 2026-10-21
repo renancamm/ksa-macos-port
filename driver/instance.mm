@@ -601,7 +601,6 @@ VKFN(void) vkGetPhysicalDeviceFeatures2(VkPhysicalDevice, VkPhysicalDeviceFeatur
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR:
             ((VkPhysicalDevicePresentWaitFeaturesKHR*)s)->presentWait = VK_TRUE;
             break;
-        // Ray tracing pipelines: not supported (left VK_FALSE)
         default:
             KLOG(2, "features2: unhandled sType %d (left zero)", s->sType);
             break;
