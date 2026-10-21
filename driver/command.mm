@@ -1,69 +1,161 @@
 // Command pools, command buffers and every vkCmd* the game records.
 //
 // Commands are encoded straight into an MTLCommandBuffer while recording (KSA re-records its command buffers every
-// frame). Each Metal encoder waits on the queue's chain fence when it starts and updates it when it ends, so
-// encoders execute strictly in order and pipeline barriers reduce to memory barriers inside compute and render
-// encoders.
+// frame). Encoders are ordered by fences that follow the Vulkan barriers (see "Encoder ordering").
 #include "kmtl.h"
 
 static const MTLRenderStages kAllRenderStages = MTLRenderStageVertex | MTLRenderStageFragment;
 
-static bool overlapMode() {
-    static const bool v = kmtlEnvInt("KSA_MTL_OVERLAP", 0) != 0;
+// KSA_MTL_NOSYNC (measurement only, renders wrong): bounds of what finer synchronization could overlap.
+// 1 no fence waits and no barriers, 2 no fence waits between encoders, 3 no barriers inside compute encoders
+// (dispatches overlap), 4 render encoders wait only before their fragment stage
+static int noSyncMode() {
+    static const int v = kmtlEnvInt("KSA_MTL_NOSYNC", 0);
+    return v;
+}
+static bool noSync() { return noSyncMode() == 1 || noSyncMode() == 2; }
+
+// KSA_MTL_SYNC=strict: every encoder waits on and updates the queue's chain fence (strict submission order)
+static bool strictSync() {
+    static const bool v = [] { const char* s = kmtlEnv("KSA_MTL_SYNC"); return s && !strcmp(s, "strict"); }();
     return v;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
 // Encoder ordering
+//
+// Stage classes: compute, transfer, acceleration-structure build, vertex, fragment. An encoder's roles are the
+// classes of the Vulkan work it carries (a clear done as a render pass is transfer work, the vertex and control
+// kernels of a tessellated draw are vertex work). Each class keeps the fence updated by its last encoder (after the
+// vertex stage, or after the fragment stage, for render encoders), and encoders of one class run in order. A Vulkan
+// barrier adds its source classes to the pending mask of each destination class; the next encoder of that class
+// waits on their last fences. So a render pass's vertex work can start under the previous pass's fragment work,
+// and compute that no barrier ties to a render pass runs beside it.
 
-void KCommandBuffer::beginCommands() {
-    waitSet.assign(1, device->queue->chain);
-    curSet.clear();
-    fenceNext = 0;
-    encoderSpansBarrier = false;
+static uint32_t classIndex(uint32_t bit) { return (uint32_t)__builtin_ctz(bit); }
+
+// Vulkan stage masks (synchronization2 bits are a superset of the legacy ones) -> stage classes
+static uint32_t stageClasses(VkPipelineStageFlags2 m, bool src) {
+    using K = KCommandBuffer;
+    uint32_t c = 0;
+    if (m & (VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT)) c |= K::kClassAll;
+    if (m & VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT && !src) c |= K::kClassAll;
+    if (m & VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT && src) c |= K::kClassAll;
+    if (m & VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT) c |= K::kClassVertex | K::kClassFragment;
+    if (m & (VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT)) c |= K::kClassVertex | K::kClassCompute;
+    if (m & (VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT |
+             VK_PIPELINE_STAGE_2_TESSELLATION_CONTROL_SHADER_BIT | VK_PIPELINE_STAGE_2_TESSELLATION_EVALUATION_SHADER_BIT |
+             VK_PIPELINE_STAGE_2_GEOMETRY_SHADER_BIT | VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT |
+             VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT | VK_PIPELINE_STAGE_2_PRE_RASTERIZATION_SHADERS_BIT))
+        c |= K::kClassVertex;
+    if (m & (VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+             VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT))
+        c |= K::kClassFragment;
+    if (m & (VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR)) c |= K::kClassCompute;
+    if (m & (VK_PIPELINE_STAGE_2_TRANSFER_BIT | VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_BLIT_BIT |
+             VK_PIPELINE_STAGE_2_RESOLVE_BIT | VK_PIPELINE_STAGE_2_CLEAR_BIT))
+        c |= K::kClassTransfer;
+    if (m & (VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR | VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR))
+        c |= K::kClassAccel;
+    return c;
 }
 
-id<MTLFence> KCommandBuffer::encoderDoneFence() {
-    if (!overlapMode()) return device->queue->chain;
+void KCommandBuffer::beginCommands() {
+    for (auto& f : lastFence) f = queue->chain;
+    for (auto& m : needMask) m = 0;
+    encRoles = 0;
+    encWaited.clear();
+    fenceNext = 0;
+}
+
+id<MTLFence> KCommandBuffer::newFence() {
+    if (strictSync()) return queue->chain;
     if (fenceNext == fencePool.size()) fencePool.push_back([device->mtl newFence]);
-    id<MTLFence> f = fencePool[fenceNext++];
-    curSet.push_back(f);
-    if (encoderSpansBarrier) waitSet.push_back(f);
-    encoderSpansBarrier = false;
+    return fencePool[fenceNext++];
+}
+
+id<MTLFence> KCommandBuffer::finishFence(uint32_t roles) {
+    id<MTLFence> f = newFence();
+    for (uint32_t r = roles; r; r &= r - 1) lastFence[classIndex(r & -r)] = f;
     return f;
 }
 
-template <typename E> void KCommandBuffer::waitForPrior(E enc) {
-    if (!overlapMode()) { [enc waitForFence:device->queue->chain]; return; }
-    for (id<MTLFence> f : waitSet) [enc waitForFence:f];
-}
-template <> void KCommandBuffer::waitForPrior(id<MTLRenderCommandEncoder> enc) {
-    if (!overlapMode()) { [enc waitForFence:device->queue->chain beforeStages:kAllRenderStages]; return; }
-    for (id<MTLFence> f : waitSet) [enc waitForFence:f beforeStages:kAllRenderStages];
-}
-template void KCommandBuffer::waitForPrior(id<MTLAccelerationStructureCommandEncoder>);
-
-// A Vulkan barrier: what follows waits on everything recorded since the previous barrier
-void KCommandBuffer::epochBarrier() {
-    if (!overlapMode()) return;
-    if (render || compute || blit) encoderSpansBarrier = true;
-    if (!curSet.empty()) {
-        waitSet.swap(curSet);
-        curSet.clear();
+// The fences an encoder with these roles waits on; clears the pending masks it satisfies
+static void collectWaits(KCommandBuffer* cb, uint32_t roles, std::vector<id<MTLFence>>& out) {
+    for (uint32_t r = roles; r; r &= r - 1) {
+        uint32_t i = classIndex(r & -r);
+        uint32_t need = cb->needMask[i] | (1u << i);
+        cb->needMask[i] = 0;
+        for (uint32_t s = need; s; s &= s - 1) {
+            id<MTLFence> f = cb->lastFence[classIndex(s & -s)];
+            if (f && std::find(out.begin(), out.end(), f) == out.end()) out.push_back(f);
+        }
     }
 }
 
-// End of recording: one encoder that waits on the last epoch and updates the chain fence
+template <typename E> void KCommandBuffer::waitForRoles(E enc, uint32_t roles) {
+    encRoles = roles;
+    encWaited.clear();
+    if (noSync()) return;
+    if (strictSync()) { [enc waitForFence:queue->chain]; return; }
+    collectWaits(this, roles, encWaited);
+    for (id<MTLFence> f : encWaited) [enc waitForFence:f];
+}
+template <> void KCommandBuffer::waitForRoles(id<MTLRenderCommandEncoder> enc, uint32_t roles) {
+    encRoles = roles;
+    encWaited.clear();
+    if (noSync()) return;
+    if (strictSync()) {
+        [enc waitForFence:queue->chain beforeStages:noSyncMode() == 4 ? MTLRenderStageFragment : kAllRenderStages];
+        return;
+    }
+    // Waiting before the vertex stage covers the fragment stage too
+    collectWaits(this, roles & ~kClassFragment, encWaited);
+    for (id<MTLFence> f : encWaited) [enc waitForFence:f beforeStages:MTLRenderStageVertex];
+    if (roles & kClassFragment) {
+        std::vector<id<MTLFence>> frag;
+        collectWaits(this, kClassFragment, frag);
+        for (id<MTLFence> f : frag) {
+            if (std::find(encWaited.begin(), encWaited.end(), f) != encWaited.end()) continue;
+            [enc waitForFence:f beforeStages:MTLRenderStageFragment];
+            encWaited.push_back(f);
+        }
+    }
+}
+template void KCommandBuffer::waitForRoles(id<MTLAccelerationStructureCommandEncoder>, uint32_t);
+
+// A Vulkan barrier outside a render pass (inside one, barriers are memory barriers in the render encoder)
+void KCommandBuffer::barrierClasses(uint32_t src, uint32_t dst) {
+    if (!src || !dst) return;
+    for (uint32_t d = dst; d; d &= d - 1) needMask[classIndex(d & -d)] |= src;
+    if (blit && (dst & kClassTransfer)) { endEncoder(); return; }  // blit commands of one encoder may overlap
+    if (!compute) return;
+    if (!(dst & encRoles)) return;
+    // Later work in the open compute encoder needs the sources: fine if they are this encoder's own earlier work
+    // (a memory barrier orders it) or encoders it already waited on
+    bool reopen = false;
+    for (uint32_t s = src & ~encRoles; s; s &= s - 1) {
+        id<MTLFence> f = lastFence[classIndex(s & -s)];
+        if (f && std::find(encWaited.begin(), encWaited.end(), f) == encWaited.end()) reopen = true;
+    }
+    if (reopen) endEncoder();
+    else if (noSyncMode() != 3) [compute memoryBarrierWithScope:MTLBarrierScopeBuffers | MTLBarrierScopeTextures];
+}
+
+// End of recording: one encoder that waits on the last fence of every class and updates the chain fence
 void KCommandBuffer::joinCommands() {
-    if (!overlapMode() || !mtl) return;
+    if (strictSync() || !mtl) return;
     endEncoder();
     id<MTLBlitCommandEncoder> b = [mtl blitCommandEncoder];
-    for (id<MTLFence> f : waitSet) [b waitForFence:f];
-    for (id<MTLFence> f : curSet) [b waitForFence:f];
-    [b updateFence:device->queue->chain];
+    std::vector<id<MTLFence>> seen;
+    for (id<MTLFence> f : lastFence) {
+        if (!f || std::find(seen.begin(), seen.end(), f) != seen.end()) continue;
+        seen.push_back(f);
+        [b waitForFence:f];
+    }
+    [b updateFence:queue->chain];
     [b endEncoding];
-    waitSet.assign(1, device->queue->chain);
-    curSet.clear();
+    for (auto& f : lastFence) f = queue->chain;
 }
 
 // KSA_MTL_SERIAL=1: end compute and blit encoders at every barrier and after every dispatch (sync debugging)
@@ -106,36 +198,47 @@ void* KUploadRing::alloc(KDevice* dev, size_t size, id<MTLBuffer>* outBuf, NSUIn
 
 void KCommandBuffer::endEncoder() {
     if (render && deferredStores) {
-        for (int i = 0; i < 8; i++)
-            if (passDesc.colorAttachments[i].texture)
-                [render setColorStoreAction:suspending ? MTLStoreActionStore : colorStores[i] atIndex:i];
+        for (int i = 0; i < 8; i++) {
+            id<MTLTexture> t = passDesc.colorAttachments[i].texture;
+            if (!t) continue;
+            bool tileOnly = t.storageMode == MTLStorageModeMemoryless;
+            if (suspending && tileOnly) {
+                static std::atomic<bool> warned{false};
+                if (!warned.exchange(true)) KERR("tessellated draw in a pass with a memoryless attachment: its contents are lost");
+            }
+            [render setColorStoreAction:suspending && !tileOnly ? MTLStoreActionStore : colorStores[i] atIndex:i];
+        }
         if (passDesc.depthAttachment.texture) [render setDepthStoreAction:suspending ? MTLStoreActionStore : depthStore];
         if (passDesc.stencilAttachment.texture) [render setStencilStoreAction:suspending ? MTLStoreActionStore : stencilStore];
         if (!suspending) passDesc = nil;
     }
     if (render) {
-        [render updateFence:encoderDoneFence() afterStages:kAllRenderStages];
+        if (encRoles & kClassVertex) [render updateFence:finishFence(kClassVertex) afterStages:MTLRenderStageVertex];
+        uint32_t late = encRoles & ~kClassVertex;
+        if (late) [render updateFence:finishFence(late) afterStages:kAllRenderStages];
         [render endEncoding];
         render = nil;
         inRenderPass = false;
     }
     if (compute) {
-        [compute updateFence:encoderDoneFence()];
+        [compute updateFence:finishFence(encRoles)];
         [compute endEncoding];
         compute = nil;
     }
     if (blit) {
-        [blit updateFence:encoderDoneFence()];
+        [blit updateFence:finishFence(encRoles)];
         [blit endEncoding];
         blit = nil;
     }
+    encRoles = 0;
+    kmtlProfEncoderEnded(this);
 }
 
-id<MTLComputeCommandEncoder> KCommandBuffer::computeEncoder() {
-    if (compute) return compute;
+id<MTLComputeCommandEncoder> KCommandBuffer::computeEncoder(uint32_t roles) {
+    if (compute && (encRoles & roles) == roles) return compute;
     endEncoder();
-    compute = [mtl computeCommandEncoderWithDispatchType:MTLDispatchTypeSerial];
-    waitForPrior(compute);
+    compute = kmtlProfComputeEncoder(this);
+    waitForRoles(compute, roles);
     computeSetsDirty = ~0u;
     computePushDirty = true;
     return compute;
@@ -144,12 +247,12 @@ id<MTLComputeCommandEncoder> KCommandBuffer::computeEncoder() {
 id<MTLBlitCommandEncoder> KCommandBuffer::blitEncoder() {
     if (blit) return blit;
     endEncoder();
-    blit = [mtl blitCommandEncoder];
-    waitForPrior(blit);
+    blit = kmtlProfBlitEncoder(this);
+    waitForRoles(blit, kClassTransfer);
     return blit;
 }
 
-void KCommandBuffer::beginRender(MTLRenderPassDescriptor* rp, uint32_t w, uint32_t h, bool resuming) {
+void KCommandBuffer::beginRender(MTLRenderPassDescriptor* rp, uint32_t w, uint32_t h, bool resuming, uint32_t roles) {
     endEncoder();
     deferredStores = kmtlTessellationEnabled();
     if (deferredStores) {
@@ -164,12 +267,13 @@ void KCommandBuffer::beginRender(MTLRenderPassDescriptor* rp, uint32_t w, uint32
         if (rp.stencilAttachment.texture) rp.stencilAttachment.storeAction = MTLStoreActionUnknown;
         passDesc = rp;
     }
+    kmtlProfRenderPass(this, rp);
     render = [mtl renderCommandEncoderWithDescriptor:rp];
     if (!render) {
         KERR("render encoder creation failed (%ux%u)", w, h);
         return;
     }
-    waitForPrior(render);
+    waitForRoles(render, roles);
     rtWidth = w;
     rtHeight = h;
     inRenderPass = true;
@@ -190,7 +294,9 @@ void KCommandBuffer::suspendRender() {
 void KCommandBuffer::resumeRender() {
     MTLRenderPassDescriptor* d = [passDesc copy];
     for (int i = 0; i < 8; i++)
-        if (d.colorAttachments[i].texture) d.colorAttachments[i].loadAction = MTLLoadActionLoad;
+        if (d.colorAttachments[i].texture)
+            d.colorAttachments[i].loadAction = d.colorAttachments[i].texture.storageMode == MTLStorageModeMemoryless
+                ? MTLLoadActionDontCare : MTLLoadActionLoad;
     if (d.depthAttachment.texture) d.depthAttachment.loadAction = MTLLoadActionLoad;
     if (d.stencilAttachment.texture) d.stencilAttachment.loadAction = MTLLoadActionLoad;
     beginRender(d, rtWidth, rtHeight, true);
@@ -201,6 +307,8 @@ void KCommandBuffer::endRender() {
     endEncoder();
     renderPass = nullptr;
     framebuffer = nullptr;
+    for (auto& d : tsDeferred) writeTimestamp(d.first, d.second);
+    tsDeferred.clear();
 }
 
 void KCommandBuffer::resetState() {
@@ -219,10 +327,11 @@ void KCommandBuffer::resetState() {
 // ---------------------------------------------------------------------------------------------------------------
 // Pools and buffers
 
-VKFN(VkResult) vkCreateCommandPool(VkDevice device, const VkCommandPoolCreateInfo*, const VkAllocationCallbacks*, VkCommandPool* out) {
+VKFN(VkResult) vkCreateCommandPool(VkDevice device, const VkCommandPoolCreateInfo* ci, const VkAllocationCallbacks*, VkCommandPool* out) {
     KTRACE_FIRST();
     auto* p = new KCommandPool();
     p->device = (KDevice*)device;
+    p->queue = p->device->queueOf(ci->queueFamilyIndex);
     *out = (VkCommandPool)p;
     return VK_SUCCESS;
 }
@@ -232,6 +341,7 @@ static void dropRecording(KCommandBuffer* cb) {
         cb->endEncoder();
         cb->mtl = nil;
     }
+    cb->releaseTimestamps();
 }
 
 VKFN(void) vkDestroyCommandPool(VkDevice, VkCommandPool pool, const VkAllocationCallbacks*) {
@@ -261,6 +371,7 @@ VKFN(VkResult) vkAllocateCommandBuffers(VkDevice device, const VkCommandBufferAl
         auto* cb = new KCommandBuffer();
         cb->device = (KDevice*)device;
         cb->pool = p;
+        cb->queue = p->queue;
         p->buffers.push_back(cb);
         out[i] = (VkCommandBuffer)cb;
     }
@@ -289,7 +400,8 @@ VKFN(VkResult) vkBeginCommandBuffer(VkCommandBuffer commandBuffer, const VkComma
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
     dropRecording(cb);
-    cb->mtl = [cb->device->queue->mtl commandBuffer];
+    cb->mtl = [cb->queue->mtl commandBuffer];
+    kmtlProfBegin(cb);
     cb->beginCommands();
     cb->resetState();
     cb->ring.reset();
@@ -312,7 +424,8 @@ VKFN(void) vkCmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint 
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
     auto* p = (KPipeline*)pipeline;
-    if (bp == VK_PIPELINE_BIND_POINT_COMPUTE) {
+    p->wait();  // asynchronous creation
+    if (bp != VK_PIPELINE_BIND_POINT_GRAPHICS) {  // compute, and ray tracing pipelines run as compute kernels
         cb->computePipeline = p;
     } else {
         cb->graphicsPipeline = p;
@@ -326,8 +439,9 @@ VKFN(void) vkCmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBind
                                    const uint32_t* dynOffsets) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    KBoundSet* bound = bp == VK_PIPELINE_BIND_POINT_COMPUTE ? cb->computeSets : cb->graphicsSets;
-    uint32_t& dirty = bp == VK_PIPELINE_BIND_POINT_COMPUTE ? cb->computeSetsDirty : cb->graphicsSetsDirty;
+    bool compute = bp != VK_PIPELINE_BIND_POINT_GRAPHICS;
+    KBoundSet* bound = compute ? cb->computeSets : cb->graphicsSets;
+    uint32_t& dirty = compute ? cb->computeSetsDirty : cb->graphicsSetsDirty;
     uint32_t dynUsed = 0;
     for (uint32_t i = 0; i < count; i++) {
         uint32_t idx = firstSet + i;
@@ -376,6 +490,7 @@ VKFN(void) vkCmdBindVertexBuffers(VkCommandBuffer commandBuffer, uint32_t first,
         auto* buf = (KBuffer*)buffers[i];
         cb->vertexBuffers[b].buf = buf ? buf->mtl : nil;
         cb->vertexBuffers[b].off = buf ? buf->offset + offsets[i] : 0;
+        cb->vertexBuffers[b].size = buf && buf->size > offsets[i] ? buf->size - offsets[i] : 0;
         cb->vertexBuffersDirty |= 1u << b;
     }
 }
@@ -615,7 +730,8 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
     NSUInteger levelSize = p->tessQuads ? sizeof(MTLQuadTessellationFactorsHalf) : sizeof(MTLTriangleTessellationFactorsHalf);
     NSUInteger vtxOff = 0;
     NSUInteger tcOff = vtxOff + align(std::max<uint64_t>(maxVerts * p->tessVertexStride, 16));
-    NSUInteger patchOff = tcOff + align(std::max<uint64_t>(maxPatches * p->tessOutCP * p->tessControlStride, 16));
+    uint64_t tcBytes = p->tessPassthrough ? 16 : maxPatches * p->tessOutCP * p->tessControlStride;
+    NSUInteger patchOff = tcOff + align(std::max<uint64_t>(tcBytes, 16));
     NSUInteger levelsOff = patchOff + align(maxPatches * p->tessPatchStride);
     uint64_t scratchSize = levelsOff + align(maxPatches * levelSize);
     id<MTLBuffer> scratch = tessScratch(dev, scratchSize);
@@ -632,9 +748,9 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
     while (wg > p->tessControl.maxTotalThreadsPerThreadgroup && wg > p->tessOutCP) wg /= 2;
     uint32_t patches = t.indirect ? 0 : (t.count / p->tessInCP) * t.instances;
 
+    // The vertex and control kernels are the draw's vertex work: they wait on what the draw's vertex stage would
     cb->suspendRender();
-    cb->epochBarrier();  // the kernels read what earlier passes wrote
-    id<MTLComputeCommandEncoder> enc = cb->computeEncoder();
+    id<MTLComputeCommandEncoder> enc = cb->computeEncoder(KCommandBuffer::kClassVertex);
     id<MTLBuffer> args = nil;
     NSUInteger argsOff = 0;
     if (t.indirect) {
@@ -681,6 +797,22 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
         [enc dispatchThreads:MTLSizeMake(t.count, t.instances, 1) threadsPerThreadgroup:MTLSizeMake(vw, 1, 1)];
     }
     [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+    static const bool profSplit = kmtlEnvInt("KSA_MTL_GPUPROF_SPLIT", 0) != 0;
+    if (profSplit) {
+        // Profiling: the control stage in its own encoder (state rebound below)
+        kmtlProfNote(cb, p, true, 1);
+        cb->endEncoder();
+        enc = cb->computeEncoder(KCommandBuffer::kClassVertex);
+        for (uint32_t s = 0; s < kMaxSets; s++)
+            if (cb->graphicsSets[s].buffer) [enc setBuffer:cb->graphicsSets[s].buffer offset:cb->graphicsSets[s].offset atIndex:s];
+        if (cb->pushSize) [enc setBytes:cb->push length:(cb->pushSize + 15) & ~15u atIndex:kPushConstantBufferIndex];
+        static std::atomic<int> logged{0};
+        if (logged++ < 4) {
+            NSUInteger vb = (NSUInteger)cb->vertexBuffers[0].size;
+            KLOG(0, "tess profile: vertex binding 0 has %lu bytes, binding 1 %llu, index bytes %llu, vertex stride %lu",
+                 (unsigned long)vb, (unsigned long long)cb->vertexBuffers[1].size, (unsigned long long)cb->indexBytes, (unsigned long)p->tessVertexStride);
+        }
+    }
 
     // Control stage
     [enc setComputePipelineState:p->tessControl];
@@ -696,14 +828,15 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
         [enc setBytes:prm length:sizeof(prm) atIndex:kTessParamsBufferIndex];
         [enc dispatchThreads:MTLSizeMake((NSUInteger)patches * p->tessOutCP, 1, 1) threadsPerThreadgroup:MTLSizeMake(wg, 1, 1)];
     }
-    cb->endEncoder();
-    cb->epochBarrier();  // the resumed pass reads the kernels' output and the suspended pass's attachments
+    kmtlProfNote(cb, p, true, 2);
+    cb->endEncoder();  // the resumed pass waits on the kernels (vertex class) and the suspended pass (fragment class)
 
     // Evaluation and rasterization
     cb->resumeRender();
     if (!flushGraphics(cb)) return;
     id<MTLRenderCommandEncoder> r = cb->render;
-    [r setVertexBuffer:tcOut offset:tcOff atIndex:kTessInputBufferIndex];
+    // A passthrough control stage left the control points where the vertex kernel wrote them
+    [r setVertexBuffer:p->tessPassthrough ? vtxOut : tcOut offset:p->tessPassthrough ? vtxOff : tcOff atIndex:kTessInputBufferIndex];
     if (patchOut) [r setVertexBuffer:patchOut offset:patchOff atIndex:kTessPatchBufferIndex];
     [r setVertexBuffer:levels offset:levelsOff atIndex:kTessFactorBufferIndex];
     [r setTessellationFactorBuffer:levels offset:levelsOff instanceStride:0];
@@ -711,6 +844,7 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
         [r drawPatches:p->tessOutCP patchIndexBuffer:nil patchIndexBufferOffset:0 indirectBuffer:args indirectBufferOffset:argsOff + 14 * 4];
     else
         [r drawPatches:p->tessOutCP patchStart:0 patchCount:patches patchIndexBuffer:nil patchIndexBufferOffset:0 instanceCount:1 baseInstance:0];
+    kmtlProfNote(cb, p, false, 1);
     cb->draws++;
 }
 
@@ -756,6 +890,7 @@ VKFN(void) vkCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32
                                   indexBuffer:fan indexBufferOffset:0
                                 instanceCount:instanceCount baseVertex:firstVertex baseInstance:firstInstance];
         });
+        kmtlProfNote(cb, cb->graphicsPipeline, false, 1);
         cb->draws++;
         return;
     }
@@ -763,6 +898,7 @@ VKFN(void) vkCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32
         [cb->render drawPrimitives:cb->graphicsPipeline->primitive vertexStart:firstVertex vertexCount:vertexCount
                      instanceCount:instanceCount baseInstance:firstInstance];
     });
+    kmtlProfNote(cb, cb->graphicsPipeline, false, 1);
     cb->draws++;
 }
 
@@ -791,6 +927,7 @@ VKFN(void) vkCmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indexCount, 
                               indexBuffer:cb->indexBuffer indexBufferOffset:cb->indexOffset + firstIndex * indexSize(cb)
                             instanceCount:instanceCount baseVertex:vertexOffset baseInstance:firstInstance];
     });
+    kmtlProfNote(cb, cb->graphicsPipeline, false, 1);
     cb->draws++;
 }
 
@@ -807,6 +944,7 @@ VKFN(void) vkCmdDrawIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkD
                   indirectBufferOffset:buf->offset + offset + (VkDeviceSize)i * stride];
         });
     }
+    kmtlProfNote(cb, cb->graphicsPipeline, false, drawCount);
     cb->draws += drawCount;
 }
 
@@ -837,6 +975,7 @@ VKFN(void) vkCmdDrawIndexedIndirect(VkCommandBuffer commandBuffer, VkBuffer buff
                          indirectBufferOffset:buf->offset + offset + (VkDeviceSize)i * stride];
         });
     }
+    kmtlProfNote(cb, cb->graphicsPipeline, false, drawCount);
     cb->draws += drawCount;
 }
 
@@ -845,6 +984,7 @@ VKFN(void) vkCmdDispatch(VkCommandBuffer commandBuffer, uint32_t x, uint32_t y, 
     auto* cb = (KCommandBuffer*)commandBuffer;
     if (!x || !y || !z || !flushCompute(cb)) return;
     [cb->compute dispatchThreadgroups:MTLSizeMake(x, y, z) threadsPerThreadgroup:cb->computePipeline->workgroup];
+    kmtlProfNote(cb, cb->computePipeline, true, 1);
     cb->dispatches++;
     if (serialMode()) cb->endEncoder();
 }
@@ -856,8 +996,25 @@ VKFN(void) vkCmdDispatchIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer,
     auto* buf = (KBuffer*)buffer;
     [cb->compute dispatchThreadgroupsWithIndirectBuffer:buf->mtl indirectBufferOffset:buf->offset + offset
                                   threadsPerThreadgroup:cb->computePipeline->workgroup];
+    kmtlProfNote(cb, cb->computePipeline, true, 1);
     cb->dispatches++;
     if (serialMode()) cb->endEncoder();
+}
+
+// Ray tracing pipelines are compute kernels of 8x8 threads; the launch size goes to kRtLaunchBufferIndex and the
+// shader binding table is not read (see rtpipeline.mm)
+VKFN(void) vkCmdTraceRaysKHR(VkCommandBuffer commandBuffer, const VkStridedDeviceAddressRegionKHR*, const VkStridedDeviceAddressRegionKHR*,
+                             const VkStridedDeviceAddressRegionKHR*, const VkStridedDeviceAddressRegionKHR*, uint32_t w, uint32_t h, uint32_t d) {
+    KTRACE_FIRST();
+    auto* cb = (KCommandBuffer*)commandBuffer;
+    if (!w || !h || !d || !flushCompute(cb)) return;
+    uint32_t size[4] = {w, h, d, 0};
+    [cb->compute setBytes:size length:sizeof(size) atIndex:kRtLaunchBufferIndex];
+    MTLSize wg = cb->computePipeline->workgroup;
+    [cb->compute dispatchThreadgroups:MTLSizeMake((w + wg.width - 1) / wg.width, (h + wg.height - 1) / wg.height, d)
+                threadsPerThreadgroup:wg];
+    kmtlProfNote(cb, cb->computePipeline, true, 1);
+    cb->dispatches++;
 }
 
 VKFN(void) vkCmdDispatchBase(VkCommandBuffer commandBuffer, uint32_t bx, uint32_t by, uint32_t bz, uint32_t x, uint32_t y, uint32_t z) {
@@ -868,33 +1025,38 @@ VKFN(void) vkCmdDispatchBase(VkCommandBuffer commandBuffer, uint32_t bx, uint32_
 // ---------------------------------------------------------------------------------------------------------------
 // Barriers
 
-static void barrier(KCommandBuffer* cb) {
+static void barrier(KCommandBuffer* cb, VkPipelineStageFlags2 srcStages, VkPipelineStageFlags2 dstStages) {
+    if (noSyncMode() == 1) return;
     if (cb->render) {
         // Inside a pass only framebuffer-local dependencies are legal: a memory barrier covers them
         [cb->render memoryBarrierWithScope:MTLBarrierScopeBuffers | MTLBarrierScopeTextures
                                afterStages:MTLRenderStageFragment beforeStages:MTLRenderStageVertex];
         return;
     }
-    if (serialMode()) {
-        cb->endEncoder();
-    } else if (cb->compute) {
-        [cb->compute memoryBarrierWithScope:MTLBarrierScopeBuffers | MTLBarrierScopeTextures];
-    } else if (cb->blit) {
-        cb->endEncoder();
+    if (serialMode()) cb->endEncoder();
+    if (strictSync()) {
+        if (cb->compute && noSyncMode() != 3) [cb->compute memoryBarrierWithScope:MTLBarrierScopeBuffers | MTLBarrierScopeTextures];
+        else if (cb->blit) cb->endEncoder();
+        return;
     }
-    cb->epochBarrier();
+    cb->barrierClasses(stageClasses(srcStages, true), stageClasses(dstStages, false));
 }
 
-VKFN(void) vkCmdPipelineBarrier(VkCommandBuffer commandBuffer, VkPipelineStageFlags, VkPipelineStageFlags, VkDependencyFlags,
+VKFN(void) vkCmdPipelineBarrier(VkCommandBuffer commandBuffer, VkPipelineStageFlags src, VkPipelineStageFlags dst, VkDependencyFlags,
                                 uint32_t, const VkMemoryBarrier*, uint32_t, const VkBufferMemoryBarrier*, uint32_t,
                                 const VkImageMemoryBarrier*) {
     KTRACE_FIRST();
-    barrier((KCommandBuffer*)commandBuffer);
+    barrier((KCommandBuffer*)commandBuffer, src, dst);
 }
 
-VKFN(void) vkCmdPipelineBarrier2(VkCommandBuffer commandBuffer, const VkDependencyInfo*) {
+VKFN(void) vkCmdPipelineBarrier2(VkCommandBuffer commandBuffer, const VkDependencyInfo* di) {
     KTRACE_FIRST();
-    barrier((KCommandBuffer*)commandBuffer);
+    // The union of the barriers' scopes (conservative when one call mixes unrelated barriers)
+    VkPipelineStageFlags2 src = 0, dst = 0;
+    for (uint32_t i = 0; i < di->memoryBarrierCount; i++) { src |= di->pMemoryBarriers[i].srcStageMask; dst |= di->pMemoryBarriers[i].dstStageMask; }
+    for (uint32_t i = 0; i < di->bufferMemoryBarrierCount; i++) { src |= di->pBufferMemoryBarriers[i].srcStageMask; dst |= di->pBufferMemoryBarriers[i].dstStageMask; }
+    for (uint32_t i = 0; i < di->imageMemoryBarrierCount; i++) { src |= di->pImageMemoryBarriers[i].srcStageMask; dst |= di->pImageMemoryBarriers[i].dstStageMask; }
+    barrier((KCommandBuffer*)commandBuffer, src, dst);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -977,6 +1139,7 @@ VKFN(void) vkCmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPas
     if (sp.viewMask) d.renderTargetArrayLength = 32 - __builtin_clz(sp.viewMask);
     cb->renderPass = rp;
     cb->framebuffer = fb;
+    if (!strictSync()) cb->barrierClasses(KCommandBuffer::kClassAll, KCommandBuffer::kClassVertex | KCommandBuffer::kClassFragment);
     cb->beginRender(d, w, h);
 }
 
@@ -1287,7 +1450,7 @@ static void clearImage(KCommandBuffer* cb, KImage* img, const VkClearColorValue*
                     d.stencilAttachment.clearStencil = ds->stencil;
                 }
             }
-            cb->beginRender(d, w, h);
+            cb->beginRender(d, w, h, false, KCommandBuffer::kClassTransfer);
             cb->passes--;  // not a real pass in the frame log
             cb->endEncoder();
         }
@@ -1315,9 +1478,117 @@ VKFN(void) vkCmdResolveImage(VkCommandBuffer, VkImage, VkImageLayout, VkImage, V
 // ---------------------------------------------------------------------------------------------------------------
 // Queries and debug labels (KSA never records them in the census run)
 
-VKFN(void) vkCmdResetQueryPool(VkCommandBuffer, VkQueryPool, uint32_t, uint32_t) {}
-VKFN(void) vkCmdWriteTimestamp(VkCommandBuffer, VkPipelineStageFlagBits, VkQueryPool, uint32_t) {}
-VKFN(void) vkCmdWriteTimestamp2(VkCommandBuffer, VkPipelineStageFlags2, VkQueryPool, uint32_t) {}
+// Timestamps. Apple GPUs sample counters only at encoder stage boundaries, so a timestamp is the end of a tiny blit
+// encoder ordered after everything before it. Used only while the game's profiler is open.
+
+static std::mutex g_tsPoolMutex;
+static std::vector<id<MTLCounterSampleBuffer>> g_tsPool;  // Metal caps live sample buffers: recycle them
+static const uint32_t kTimestampSamples = 4096;
+
+void KCommandBuffer::writeTimestamp(KQueryPool* pool, uint32_t query) {
+    if (render) {
+        tsDeferred.push_back({pool, query});
+        return;
+    }
+    if (!tsSamples) {
+        {
+            std::lock_guard<std::mutex> lock(g_tsPoolMutex);
+            if (!g_tsPool.empty()) { tsSamples = g_tsPool.back(); g_tsPool.pop_back(); }
+        }
+        if (!tsSamples) {
+            id<MTLCounterSet> set = nil;
+            for (id<MTLCounterSet> cs in device->mtl.counterSets)
+                if ([cs.name isEqualToString:MTLCommonCounterSetTimestamp]) set = cs;
+            MTLCounterSampleBufferDescriptor* d = [MTLCounterSampleBufferDescriptor new];
+            d.counterSet = set;
+            d.storageMode = MTLStorageModeShared;
+            d.sampleCount = kTimestampSamples;
+            NSError* e = nil;
+            tsSamples = set ? [device->mtl newCounterSampleBufferWithDescriptor:d error:&e] : nil;
+            if (!tsSamples) {
+                static std::atomic<int> warned{0};
+                if (warned++ < 3) KERR("timestamp sample buffer: %s", e ? e.description.UTF8String : "no timestamp counters");
+                tsWrites.push_back({pool, query, UINT32_MAX});
+                return;
+            }
+        }
+        tsUsed = 0;
+    }
+    if (tsUsed + 2 > kTimestampSamples) {
+        tsWrites.push_back({pool, query, UINT32_MAX});
+        return;
+    }
+    endEncoder();
+    if (!device->timestampScratch) {
+        std::lock_guard<std::mutex> lock(device->tessScratchMutex);
+        if (!device->timestampScratch) device->timestampScratch = [device->mtl newBufferWithLength:256 options:MTLResourceStorageModePrivate];
+    }
+    MTLBlitPassDescriptor* d = [MTLBlitPassDescriptor blitPassDescriptor];
+    d.sampleBufferAttachments[0].sampleBuffer = tsSamples;
+    d.sampleBufferAttachments[0].startOfEncoderSampleIndex = tsUsed;
+    d.sampleBufferAttachments[0].endOfEncoderSampleIndex = tsUsed + 1;
+    id<MTLBlitCommandEncoder> b = [mtl blitCommandEncoderWithDescriptor:d];
+    waitForRoles(b, kClassAll);  // after everything recorded so far
+    [b fillBuffer:device->timestampScratch range:NSMakeRange(0, 4) value:0];
+    [b updateFence:finishFence(kClassAll)];
+    [b endEncoding];
+    encRoles = 0;
+    tsWrites.push_back({pool, query, tsUsed + 1});
+    tsUsed += 2;
+}
+
+// At submit: resolve the samples into the pools when the command buffer completes
+void KCommandBuffer::submitTimestamps(id<MTLCommandBuffer> c) {
+    if (tsWrites.empty()) { releaseTimestamps(); return; }
+    id<MTLCounterSampleBuffer> samples = tsSamples;
+    uint32_t used = tsUsed;
+    auto writes = std::make_shared<std::vector<TimestampWrite>>(std::move(tsWrites));
+    tsSamples = nil;
+    tsWrites.clear();
+    [c addCompletedHandler:^(id<MTLCommandBuffer>) {
+        NSData* data = samples && used ? [samples resolveCounterRange:NSMakeRange(0, used)] : nil;
+        const uint64_t* ts = data ? (const uint64_t*)data.bytes : nullptr;
+        for (auto& w : *writes) {
+            uint64_t v = ts && w.sample < used ? ts[w.sample] : 0;
+            if (v == MTLCounterErrorValue) v = 0;
+            std::lock_guard<std::mutex> lock(w.pool->m);
+            if (w.query < w.pool->count) {
+                w.pool->values[w.query] = v;
+                w.pool->available[w.query] = 1;
+            }
+            w.pool->cv.notify_all();
+        }
+        if (samples) {
+            std::lock_guard<std::mutex> lock(g_tsPoolMutex);
+            g_tsPool.push_back(samples);
+        }
+    }];
+}
+
+void KCommandBuffer::releaseTimestamps() {
+    if (tsSamples) {
+        std::lock_guard<std::mutex> lock(g_tsPoolMutex);
+        g_tsPool.push_back(tsSamples);
+    }
+    tsSamples = nil;
+    tsWrites.clear();
+    tsDeferred.clear();
+}
+
+VKFN(void) vkCmdResetQueryPool(VkCommandBuffer, VkQueryPool pool, uint32_t first, uint32_t n) {
+    KTRACE_FIRST();
+    ((KQueryPool*)pool)->reset(first, n);
+}
+
+VKFN(void) vkCmdWriteTimestamp(VkCommandBuffer commandBuffer, VkPipelineStageFlagBits, VkQueryPool pool, uint32_t query) {
+    KTRACE_FIRST();
+    ((KCommandBuffer*)commandBuffer)->writeTimestamp((KQueryPool*)pool, query);
+}
+
+VKFN(void) vkCmdWriteTimestamp2(VkCommandBuffer commandBuffer, VkPipelineStageFlags2, VkQueryPool pool, uint32_t query) {
+    KTRACE_FIRST();
+    ((KCommandBuffer*)commandBuffer)->writeTimestamp((KQueryPool*)pool, query);
+}
 VKFN(void) vkCmdBeginDebugUtilsLabelEXT(VkCommandBuffer, const VkDebugUtilsLabelEXT*) {}
 VKFN(void) vkCmdEndDebugUtilsLabelEXT(VkCommandBuffer) {}
 VKFN(void) vkCmdInsertDebugUtilsLabelEXT(VkCommandBuffer, const VkDebugUtilsLabelEXT*) {}
@@ -1330,6 +1601,7 @@ void kmtlZeroImage(KImage* img) {
     KCommandBuffer cb;
     cb.device = dev;
     KQueue* q = dev->queue;
+    cb.queue = q;
     std::lock_guard<std::mutex> lock(q->submitMutex);
     cb.mtl = [q->mtl commandBuffer];
     cb.mtl.label = @"zero image";

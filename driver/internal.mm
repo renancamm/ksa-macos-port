@@ -108,7 +108,7 @@ void kmtlInitInternal(KDevice* dev) {
 void kmtlInternalFillBuffer(KCommandBuffer* cb, id<MTLBuffer> buf, NSUInteger offset, NSUInteger size, uint32_t data) {
     KInternalPipelines* ip = cb->device->internal;
     if (!ip->fill32) return;
-    id<MTLComputeCommandEncoder> enc = cb->computeEncoder();
+    id<MTLComputeCommandEncoder> enc = cb->computeEncoder(KCommandBuffer::kClassTransfer);
     uint32_t count = (uint32_t)(size / 4);
     uint32_t p[2] = {data, count};
     [enc setComputePipelineState:ip->fill32];
@@ -178,7 +178,7 @@ void kmtlInternalBlit(KCommandBuffer* cb, KImage* src, KImage* dst, const VkImag
         else d.colorAttachments[0].slice = r.dstSubresource.baseArrayLayer + i;
         d.colorAttachments[0].loadAction = MTLLoadActionLoad;
         d.colorAttachments[0].storeAction = MTLStoreActionStore;
-        cb->beginRender(d, dw, dh);
+        cb->beginRender(d, dw, dh, false, KCommandBuffer::kClassTransfer);
         cb->passes--;
         id<MTLRenderCommandEncoder> enc = cb->render;
         if (!enc) return;

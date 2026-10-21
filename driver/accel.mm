@@ -164,7 +164,10 @@ VKFN(VkResult) vkCreateAccelerationStructureKHR(VkDevice device, const VkAcceler
         return VK_ERROR_OUT_OF_DEVICE_MEMORY;
     }
     dev->addResident(a->mtl);
-    a->address = a->mtl.gpuResourceID._impl;
+    // The structure's address is its buffer's device address at the offset, as on other drivers: KSA's IVA ray
+    // tracing writes that buffer address (not vkGetAccelerationStructureDeviceAddressKHR's) into TLAS instances
+    auto* buf = (KBuffer*)ci->buffer;
+    a->address = buf && buf->mtl ? buf->gpuAddress() + ci->offset : a->mtl.gpuResourceID._impl;
     {
         std::lock_guard<std::mutex> lock(g_addrMutex);
         g_accels[a->address] = a;
@@ -178,7 +181,9 @@ VKFN(void) vkDestroyAccelerationStructureKHR(VkDevice device, VkAccelerationStru
     if (!a) return;
     {
         std::lock_guard<std::mutex> lock(g_addrMutex);
-        g_accels.erase(a->address);
+        // A newer structure may already sit at the same buffer address
+        auto it = g_accels.find(a->address);
+        if (it != g_accels.end() && it->second == a) g_accels.erase(it);
     }
     ((KDevice*)device)->removeResident(a->mtl);
     delete a;
@@ -202,10 +207,14 @@ VKFN(void) vkCmdBuildAccelerationStructuresKHR(VkCommandBuffer commandBuffer, ui
     KDevice* dev = cb->device;
     cb->endEncoder();
     id<MTLAccelerationStructureCommandEncoder> enc = [cb->mtl accelerationStructureCommandEncoder];
-    cb->waitForPrior(enc);
+    cb->waitForRoles(enc, KCommandBuffer::kClassAccel);
     for (uint32_t i = 0; i < n; i++) {
         auto* dst = (KAccel*)infos[i].dstAccelerationStructure;
-        if (infos[i].mode != VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR) KERR("acceleration structure update not supported");
+        // An update (refit in place, src == dst) is done as a full build: KSA's per-frame TLAS has few instances
+        if (infos[i].mode != VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR) {
+            static std::atomic<bool> logged{false};
+            if (!logged.exchange(true)) KLOG(1, "acceleration structure update: rebuilt");
+        }
         id<MTLBuffer> instances = nil;
         MTLAccelerationStructureDescriptor* d = describe(&infos[i], nullptr, true, ranges[i], dev->mtl, &instances);
         if (!d || !dst) continue;
@@ -217,6 +226,7 @@ VKFN(void) vkCmdBuildAccelerationStructuresKHR(VkCommandBuffer commandBuffer, ui
         [enc buildAccelerationStructure:dst->mtl descriptor:d scratchBuffer:scratch scratchBufferOffset:0];
         if (instances) [enc useResource:instances usage:MTLResourceUsageRead];
     }
-    [enc updateFence:cb->encoderDoneFence()];
+    [enc updateFence:cb->finishFence(KCommandBuffer::kClassAccel)];
     [enc endEncoding];
+    cb->encRoles = 0;
 }

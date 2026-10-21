@@ -77,6 +77,15 @@ VKFN(VkResult) vkAcquireNextImageKHR(VkDevice, VkSwapchainKHR swapchain, uint64_
     return VK_SUCCESS;
 }
 
+VKFN(VkResult) vkWaitForPresentKHR(VkDevice, VkSwapchainKHR swapchain, uint64_t presentId, uint64_t timeout) {
+    KTRACE_FIRST();
+    std::shared_ptr<KPresentState> state = ((KSwapchain*)swapchain)->presentState;
+    std::unique_lock<std::mutex> lock(state->m);
+    auto deadline = std::chrono::steady_clock::now() +
+        std::chrono::nanoseconds(timeout > (uint64_t)INT64_MAX / 2 ? (uint64_t)INT64_MAX / 2 : timeout);
+    return state->cv.wait_until(lock, deadline, [&] { return state->presented >= presentId; }) ? VK_SUCCESS : VK_TIMEOUT;
+}
+
 VKFN(VkResult) vkAcquireNextImage2KHR(VkDevice device, const VkAcquireNextImageInfoKHR* info, uint32_t* index) {
     return vkAcquireNextImageKHR(device, info->swapchain, info->timeout, info->semaphore, info->fence, index);
 }
@@ -85,6 +94,7 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
     KTRACE_FIRST();
     auto* q = (KQueue*)queue;
     std::lock_guard<std::mutex> lock(q->submitMutex);
+    auto* ids = (const VkPresentIdKHR*)findNext(pi->pNext, VK_STRUCTURE_TYPE_PRESENT_ID_KHR);
     for (uint32_t i = 0; i < pi->swapchainCount; i++) {
         @autoreleasepool {
             auto* sc = (KSwapchain*)pi->pSwapchains[i];
@@ -103,7 +113,14 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
             }
             [b updateFence:q->chain];
             [b endEncoding];
+            [cb addCompletedHandler:^(id<MTLCommandBuffer> c) { kmtlNoteGpuTime(c); }];
             kmtlOnPresent(q->device, img, cb);
+            uint64_t presentId = ids && ids->pPresentIds && i < ids->swapchainCount ? ids->pPresentIds[i] : 0;
+            if (presentId) {
+                std::shared_ptr<KPresentState> state = sc->presentState;
+                if (drawable) [drawable addPresentedHandler:^(id<MTLDrawable>) { state->mark(presentId); }];
+                else [cb addCompletedHandler:^(id<MTLCommandBuffer>) { state->mark(presentId); }];
+            }
             if (drawable) [cb presentDrawable:drawable];
             [cb commit];
         }
@@ -137,6 +154,18 @@ static bool g_exitAfterShots = false;
 static double g_exitSeconds = 0;
 static int g_exitAfter = 0;
 static std::atomic<int> g_shotsPending{0};
+// GPU busy time: union of command buffer GPU intervals, in completion order, summed until the next present (so the
+// column lags the CPU interval by the frames in flight)
+static std::mutex g_gpuMutex;
+static double g_gpuBusy = 0, g_gpuLastEnd = 0;
+
+void kmtlNoteGpuTime(id<MTLCommandBuffer> cb) {
+    double s = cb.GPUStartTime, e = cb.GPUEndTime;
+    if (e <= s) return;
+    std::lock_guard<std::mutex> lock(g_gpuMutex);
+    g_gpuBusy += e - std::max(s, std::min(e, g_gpuLastEnd));
+    g_gpuLastEnd = std::max(g_gpuLastEnd, e);
+}
 
 static std::vector<double> parseList(const char* s) {
     std::vector<double> v;
@@ -155,7 +184,7 @@ static void initInstruments() {
     g_start = g_lastPresent = std::chrono::steady_clock::now();
     if (const char* f = kmtlEnv("KSA_MTL_FRAMES")) {
         g_frameCsv = fopen(f, "w");
-        if (g_frameCsv) fprintf(g_frameCsv, "present,ms,draws,dispatches,passes,submits,allocated_mb\n");
+        if (g_frameCsv) fprintf(g_frameCsv, "present,ms,draws,dispatches,passes,submits,allocated_mb,gpu_ms\n");
     }
     if (const char* s = kmtlEnv("KSA_MTL_SHOTS")) {
         const char* dir = kmtlEnv("KSA_MTL_SHOT_DIR");
@@ -244,6 +273,7 @@ void kmtlOnPresent(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb) {
     ensureInstruments();
     std::lock_guard<std::mutex> lock(g_frameMutex);
     g_presents++;
+    kmtlProfPresent();
     auto now = std::chrono::steady_clock::now();
     double ms = std::chrono::duration<double, std::milli>(now - g_lastPresent).count();
     g_lastPresent = now;
@@ -255,8 +285,14 @@ void kmtlOnPresent(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb) {
         kmtlReportPipelineTimes();
     }
     if (g_frameCsv) {
-        fprintf(g_frameCsv, "%llu,%.3f,%u,%u,%u,%u,%lld\n", (unsigned long long)g_presents, ms, g_frameDraws, g_frameDispatches,
-                g_framePasses, g_frameSubmits, (long long)(g_allocatedBytes.load() >> 20));
+        double gpu;
+        {
+            std::lock_guard<std::mutex> lock(g_gpuMutex);
+            gpu = g_gpuBusy * 1e3;
+            g_gpuBusy = 0;
+        }
+        fprintf(g_frameCsv, "%llu,%.3f,%u,%u,%u,%u,%lld,%.3f\n", (unsigned long long)g_presents, ms, g_frameDraws, g_frameDispatches,
+                g_framePasses, g_frameSubmits, (long long)(g_allocatedBytes.load() >> 20), gpu);
         if (g_presents % 60 == 0) fflush(g_frameCsv);
     }
     if (g_logLevel >= 1 && (g_presents <= 5 || g_presents % 500 == 0)) {

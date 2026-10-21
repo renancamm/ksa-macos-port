@@ -209,6 +209,12 @@ static const KEntry kEntries[] = {
     D(vkAcquireNextImageKHR),
     D(vkAcquireNextImage2KHR),
     D(vkQueuePresentKHR),
+    D(vkWaitForPresentKHR),
+    D(vkCreateRayTracingPipelinesKHR),
+    D(vkGetRayTracingShaderGroupHandlesKHR),
+    D(vkGetRayTracingShaderGroupStackSizeKHR),
+    D(vkCmdSetRayTracingPipelineStackSizeKHR),
+    D(vkCmdTraceRaysKHR),
 };
 
 static const KEntry* findEntry(const char* name) {

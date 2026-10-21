@@ -4,9 +4,13 @@
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
-OUT="$REPO/deps/ksamtl"
+OUT="${KSA_MTL_OUT:-$REPO/deps/ksamtl}"
 SPVC="$REPO/deps/SPIRV-Cross"
 SPVC_PIN=300681bb
+# SPIRV-Tools links ray tracing pipelines into compute kernels (rtspirv.cpp)
+SPVT="$REPO/deps/SPIRV-Tools"
+SPVH="$REPO/deps/SPIRV-Headers"
+SPVT_TAG=vulkan-sdk-1.4.363.0
 VULKAN_INCLUDE="${VULKAN_INCLUDE:-/opt/homebrew/include}"
 GIT=/Library/Developer/CommandLineTools/usr/bin/git
 
@@ -21,11 +25,20 @@ if [ ! -f "$SPVC/build/libspirv-cross-msl.a" ]; then
   ninja -C "$SPVC/build" > /dev/null
 fi
 
+if [ ! -f "$SPVT/build/source/link/libSPIRV-Tools-link.a" ]; then
+  [ -d "$SPVH" ] || "$GIT" clone -q --depth 1 --branch "$SPVT_TAG" https://github.com/KhronosGroup/SPIRV-Headers.git "$SPVH"
+  [ -d "$SPVT" ] || "$GIT" clone -q --depth 1 --branch "$SPVT_TAG" https://github.com/KhronosGroup/SPIRV-Tools.git "$SPVT"
+  cmake -S "$SPVT" -B "$SPVT/build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPIRV-Headers_SOURCE_DIR="$SPVH" \
+    -DSPIRV_SKIP_TESTS=ON -DSPIRV_WERROR=OFF > /dev/null
+  ninja -C "$SPVT/build" SPIRV-Tools-static SPIRV-Tools-opt SPIRV-Tools-link > /dev/null
+fi
+
 mkdir -p "$OUT/obj"
 OPT="${KSA_MTL_OPT:--O2}"
 CXXFLAGS=(-std=c++17 -fobjc-arc $OPT -g -fvisibility=hidden -Wall -Wno-unused-parameter -Wno-unused-variable
-  -Wno-unused-function -Wno-missing-braces -I"$VULKAN_INCLUDE" -I"$SPVC" -I"$HERE")
-SRCS=(entry instance device format descriptor pipeline command swapchain internal accel)
+  -Wno-unused-function -Wno-missing-braces -I"$VULKAN_INCLUDE" -I"$SPVC" -I"$SPVT/include" -I"$HERE")
+SRCS=(entry instance device format descriptor pipeline command swapchain internal accel profile shadercache rtpipeline)
+CPPSRCS=(rtspirv)
 PIDS=()
 for s in "${SRCS[@]}"; do
   if [ ! -f "$OUT/obj/$s.o" ] || [ "$HERE/$s.mm" -nt "$OUT/obj/$s.o" ] || [ "$HERE/kmtl.h" -nt "$OUT/obj/$s.o" ]; then
@@ -33,10 +46,17 @@ for s in "${SRCS[@]}"; do
     PIDS+=($!)
   fi
 done
+for s in "${CPPSRCS[@]}"; do
+  if [ ! -f "$OUT/obj/$s.o" ] || [ "$HERE/$s.cpp" -nt "$OUT/obj/$s.o" ] || [ "$HERE/$s.h" -nt "$OUT/obj/$s.o" ]; then
+    clang++ -std=c++17 $OPT -g -fvisibility=hidden -Wall -I"$SPVC" -I"$SPVT/include" -I"$HERE" -c "$HERE/$s.cpp" -o "$OUT/obj/$s.o" &
+    PIDS+=($!)
+  fi
+done
 for p in ${PIDS[@]+"${PIDS[@]}"}; do wait "$p"; done
-OBJS=(); for s in "${SRCS[@]}"; do OBJS+=("$OUT/obj/$s.o"); done
+OBJS=(); for s in "${SRCS[@]}" "${CPPSRCS[@]}"; do OBJS+=("$OUT/obj/$s.o"); done
 clang++ -shared -fobjc-arc -o "$OUT/libvulkan.1.dylib" "${OBJS[@]}" \
   "$SPVC/build/libspirv-cross-msl.a" "$SPVC/build/libspirv-cross-glsl.a" "$SPVC/build/libspirv-cross-core.a" \
+  "$SPVT/build/source/link/libSPIRV-Tools-link.a" "$SPVT/build/source/opt/libSPIRV-Tools-opt.a" "$SPVT/build/source/libSPIRV-Tools.a" \
   -Wl,-install_name,@loader_path/libvulkan.1.dylib -Wl,-exported_symbols_list,/dev/stdin \
   -framework Metal -framework QuartzCore -framework Foundation -framework CoreGraphics -framework ImageIO \
   -framework UniformTypeIdentifiers <<< "_vk*"

@@ -63,7 +63,25 @@ VKFN(VkResult) vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCre
     [b endEncoding];
     [cb commit];
     dev->queue = q;
+    // A transfer-only queue family: KSA's texture streamer then uploads on its own queue
+    if (kmtlTransferQueueEnabled()) {
+        auto* t = new KQueue();
+        t->device = dev;
+        t->family = 1;
+        t->mtl = [dev->mtl newCommandQueueWithMaxCommandBufferCount:64];
+        t->mtl.label = @"ksamtl transfer queue";
+        [t->mtl addResidencySet:dev->residency];
+        t->chain = [dev->mtl newFence];
+        t->chain.label = @"ksamtl transfer chain";
+        id<MTLCommandBuffer> tc = [t->mtl commandBuffer];
+        id<MTLBlitCommandEncoder> tb = [tc blitCommandEncoder];
+        [tb updateFence:t->chain];
+        [tb endEncoding];
+        [tc commit];
+        dev->transferQueue = t;
+    }
     kmtlInitInternal(dev);
+    kmtlShaderPrewarm(dev);
     KLOG(1, "device created");
     *out = (VkDevice)dev;
     return VK_SUCCESS;
@@ -73,16 +91,17 @@ VKFN(void) vkDestroyDevice(VkDevice device, const VkAllocationCallbacks*) {
     auto* dev = (KDevice*)device;
     if (!dev) return;
     delete dev->queue;
+    delete dev->transferQueue;
     delete dev;
 }
 
 VKFN(void) vkGetDeviceQueue(VkDevice device, uint32_t family, uint32_t index, VkQueue* out) {
     KTRACE_FIRST();
-    *out = (VkQueue)((KDevice*)device)->queue;
+    *out = (VkQueue)((KDevice*)device)->queueOf(family);
 }
 
-VKFN(void) vkGetDeviceQueue2(VkDevice device, const VkDeviceQueueInfo2*, VkQueue* out) {
-    *out = (VkQueue)((KDevice*)device)->queue;
+VKFN(void) vkGetDeviceQueue2(VkDevice device, const VkDeviceQueueInfo2* info, VkQueue* out) {
+    *out = (VkQueue)((KDevice*)device)->queueOf(info->queueFamilyIndex);
 }
 
 static void waitIdle(KQueue* q) {
@@ -94,6 +113,7 @@ static void waitIdle(KQueue* q) {
 
 VKFN(VkResult) vkDeviceWaitIdle(VkDevice device) {
     KTRACE_FIRST();
+    if (((KDevice*)device)->transferQueue) waitIdle(((KDevice*)device)->transferQueue);
     waitIdle(((KDevice*)device)->queue);
     return VK_SUCCESS;
 }
@@ -117,6 +137,37 @@ static void checkCommandBufferError(id<MTLCommandBuffer> cb) {
     }
 }
 
+// Waits on semaphores another queue signals: a command buffer that waits for the events, then advances this queue's
+// chain fence, which the following command buffers' first encoders wait on
+static void waitSemaphores(KQueue* q, uint32_t n, const VkSemaphore* sems, std::vector<id<MTLCommandBuffer>>& toCommit) {
+    id<MTLCommandBuffer> w = nil;
+    for (uint32_t i = 0; i < n; i++) {
+        auto* s = (KSemaphore*)sems[i];
+        if (!s || !s->signaledBy || s->signaledBy == q) continue;
+        if (!w) { w = [q->mtl commandBuffer]; w.label = @"semaphore wait"; }
+        [w encodeWaitForEvent:s->event value:s->value];
+    }
+    if (!w) return;
+    id<MTLBlitCommandEncoder> b = [w blitCommandEncoder];
+    [b waitForFence:q->chain];
+    [b updateFence:q->chain];
+    [b endEncoding];
+    toCommit.push_back(w);
+}
+
+// Signals after the submission's work: the event is raised at the end of its last command buffer
+static void signalSemaphores(KQueue* q, uint32_t n, const VkSemaphore* sems, std::vector<id<MTLCommandBuffer>>& toCommit) {
+    if (!n) return;
+    for (uint32_t i = 0; i < n; i++) {
+        auto* s = (KSemaphore*)sems[i];
+        if (!s) continue;
+        if (!s->event) s->event = [q->device->mtl newSharedEvent];
+        if (toCommit.empty()) toCommit.push_back([q->mtl commandBuffer]);
+        [toCommit.back() encodeSignalEvent:s->event value:++s->value];
+        s->signaledBy = q;
+    }
+}
+
 VKFN(VkResult) vkQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo* submits, VkFence fence) {
     KTRACE_FIRST();
     auto* q = (KQueue*)queue;
@@ -124,6 +175,7 @@ VKFN(VkResult) vkQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmit
     std::lock_guard<std::mutex> lock(q->submitMutex);
     std::vector<id<MTLCommandBuffer>> toCommit;
     for (uint32_t s = 0; s < submitCount; s++) {
+        waitSemaphores(q, submits[s].waitSemaphoreCount, submits[s].pWaitSemaphores, toCommit);
         for (uint32_t i = 0; i < submits[s].commandBufferCount; i++) {
             auto* cb = (KCommandBuffer*)submits[s].pCommandBuffers[i];
             if (!cb->mtl) {
@@ -131,12 +183,15 @@ VKFN(VkResult) vkQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmit
                 continue;
             }
             cb->endEncoder();
-            [cb->mtl addCompletedHandler:^(id<MTLCommandBuffer> c) { checkCommandBufferError(c); }];
+            [cb->mtl addCompletedHandler:^(id<MTLCommandBuffer> c) { checkCommandBufferError(c); kmtlNoteGpuTime(c); }];
+            kmtlProfSubmit(cb, cb->mtl);
+            cb->submitTimestamps(cb->mtl);
             toCommit.push_back(cb->mtl);
             kmtlCountWork(cb->draws, cb->dispatches, cb->passes);
             cb->mtl = nil;
             cb->submittedOnce = true;
         }
+        signalSemaphores(q, submits[s].signalSemaphoreCount, submits[s].pSignalSemaphores, toCommit);
     }
     if (fence) {
         // Encoders are chained by the queue fence, so the last command buffer completing means all did
@@ -152,12 +207,19 @@ VKFN(VkResult) vkQueueSubmit2(VkQueue queue, uint32_t submitCount, const VkSubmi
     KTRACE_FIRST();
     std::vector<VkSubmitInfo> s1(submitCount);
     std::vector<std::vector<VkCommandBuffer>> cbs(submitCount);
+    std::vector<std::vector<VkSemaphore>> waits(submitCount), signals(submitCount);
     for (uint32_t s = 0; s < submitCount; s++) {
         for (uint32_t i = 0; i < submits[s].commandBufferInfoCount; i++)
             cbs[s].push_back(submits[s].pCommandBufferInfos[i].commandBuffer);
+        for (uint32_t i = 0; i < submits[s].waitSemaphoreInfoCount; i++) waits[s].push_back(submits[s].pWaitSemaphoreInfos[i].semaphore);
+        for (uint32_t i = 0; i < submits[s].signalSemaphoreInfoCount; i++) signals[s].push_back(submits[s].pSignalSemaphoreInfos[i].semaphore);
         s1[s] = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
         s1[s].commandBufferCount = (uint32_t)cbs[s].size();
         s1[s].pCommandBuffers = cbs[s].data();
+        s1[s].waitSemaphoreCount = (uint32_t)waits[s].size();
+        s1[s].pWaitSemaphores = waits[s].data();
+        s1[s].signalSemaphoreCount = (uint32_t)signals[s].size();
+        s1[s].pSignalSemaphores = signals[s].data();
     }
     return vkQueueSubmit(queue, submitCount, s1.data(), fence);
 }
@@ -471,7 +533,22 @@ VKFN(void) vkDestroyImage(VkDevice, VkImage image, const VkAllocationCallbacks*)
     kmtlDestroyImage((KImage*)image);
 }
 
+// Transient attachments live only in tile memory (KSA_MTL_MEMORYLESS=0 turns it off): Metal memoryless textures,
+// outside the heaps; the memory the game binds them to is a token allocation
+static bool memoryless(const VkImageCreateInfo& ci) {
+    static const bool on = kmtlEnvInt("KSA_MTL_MEMORYLESS", 1) != 0;
+    const VkImageUsageFlags attachmentOnly = VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                             VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
+    return on && (ci.usage & VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT) && !(ci.usage & ~attachmentOnly) && ci.tiling == VK_IMAGE_TILING_OPTIMAL;
+}
+
 static void imageRequirements(KImage* img, VkMemoryRequirements* r) {
+    if (memoryless(img->info)) {
+        r->size = 4096;
+        r->alignment = 4096;
+        r->memoryTypeBits = 0x1;
+        return;
+    }
     r->size = img->sizeAlign.size;
     r->alignment = std::max<VkDeviceSize>(img->sizeAlign.align, 256);
     r->memoryTypeBits = img->info.tiling == VK_IMAGE_TILING_LINEAR ? 0x6 : 0x1;
@@ -503,6 +580,19 @@ static VkResult bindImage(VkImage image, VkDeviceMemory memory, VkDeviceSize off
     auto* img = (KImage*)image;
     auto* m = (KDeviceMemory*)memory;
     img->memory = m;
+    if (memoryless(img->info)) {
+        img->desc.storageMode = MTLStorageModeMemoryless;
+        img->desc.usage = MTLTextureUsageRenderTarget;
+        img->mtl = [img->device->mtl newTextureWithDescriptor:img->desc];
+        if (img->mtl) {
+            KLOG(1, "memoryless attachment %ux%u format %d samples %u", img->info.extent.width, img->info.extent.height,
+                 img->format, img->info.samples);
+            return VK_SUCCESS;
+        }
+        KERR("memoryless texture failed; placing it in memory");
+        img->desc = nil;
+        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+    }
     img->desc.storageMode = m->heap.storageMode;
     img->desc.cpuCacheMode = m->heap.cpuCacheMode;
     img->mtl = [m->heap newTextureWithDescriptor:img->desc offset:offset];
@@ -697,10 +787,8 @@ VKFN(VkResult) vkCreateSampler(VkDevice device, const VkSamplerCreateInfo* ci, c
         d.borderColor = MTLSamplerBorderColorOpaqueWhite; break;
     default: d.borderColor = MTLSamplerBorderColorTransparentBlack; break;
     }
-    if (ci->mipLodBias != 0.0f) {
-        static std::atomic<bool> warned{false};
-        if (!warned.exchange(true)) KLOG(1, "sampler mipLodBias %f ignored (Metal has no sampler LOD bias)", ci->mipLodBias);
-    }
+    // S4.6 precision, [-16, 15.999] (macOS 26+)
+    if (ci->mipLodBias != 0.0f) d.lodBias = std::max(-16.0f, std::min(15.99f, ci->mipLodBias));
     if (findNext(ci->pNext, VK_STRUCTURE_TYPE_SAMPLER_REDUCTION_MODE_CREATE_INFO))
         KLOG(1, "sampler reduction mode ignored");
     d.supportArgumentBuffers = YES;
@@ -723,19 +811,45 @@ VKFN(void) vkDestroySampler(VkDevice, VkSampler sampler, const VkAllocationCallb
 
 VKFN(VkResult) vkCreateQueryPool(VkDevice, const VkQueryPoolCreateInfo* ci, const VkAllocationCallbacks*, VkQueryPool* out) {
     KTRACE_FIRST();
-    *out = (VkQueryPool) new KQueryPool{ci->queryType, ci->queryCount};
+    auto* p = new KQueryPool();
+    p->type = ci->queryType;
+    p->count = ci->queryCount;
+    p->values.assign(ci->queryCount, 0);
+    p->available.assign(ci->queryCount, 0);
+    if (ci->queryType != VK_QUERY_TYPE_TIMESTAMP) KLOG(1, "query pool type %d: only timestamps are implemented", ci->queryType);
+    *out = (VkQueryPool)p;
     return VK_SUCCESS;
 }
 
 VKFN(void) vkDestroyQueryPool(VkDevice, VkQueryPool p, const VkAllocationCallbacks*) { delete (KQueryPool*)p; }
 
-VKFN(void) vkResetQueryPool(VkDevice, VkQueryPool, uint32_t, uint32_t) {}
+VKFN(void) vkResetQueryPool(VkDevice, VkQueryPool pool, uint32_t first, uint32_t n) { ((KQueryPool*)pool)->reset(first, n); }
 
-VKFN(VkResult) vkGetQueryPoolResults(VkDevice, VkQueryPool, uint32_t first, uint32_t count, size_t dataSize, void* data,
-                                     VkDeviceSize, VkQueryResultFlags) {
-    KUNIMPL();
-    memset(data, 0, dataSize);
-    return VK_SUCCESS;
+VKFN(VkResult) vkGetQueryPoolResults(VkDevice, VkQueryPool pool, uint32_t first, uint32_t count, size_t dataSize, void* data,
+                                     VkDeviceSize stride, VkQueryResultFlags flags) {
+    KTRACE_FIRST();
+    auto* p = (KQueryPool*)pool;
+    bool is64 = flags & VK_QUERY_RESULT_64_BIT, withAvail = flags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT;
+    VkResult res = VK_SUCCESS;
+    std::unique_lock<std::mutex> lock(p->m);
+    for (uint32_t i = 0; i < count && first + i < p->count; i++) {
+        uint32_t q = first + i;
+        if ((flags & VK_QUERY_RESULT_WAIT_BIT) && !p->available[q])
+            p->cv.wait_for(lock, std::chrono::seconds(2), [&] { return p->available[q] != 0; });
+        uint8_t* dst = (uint8_t*)data + (size_t)i * stride;
+        if ((size_t)i * stride + (is64 ? 8 : 4) * (withAvail ? 2 : 1) > dataSize) break;
+        bool avail = p->available[q];
+        if (!avail) res = VK_NOT_READY;
+        if (avail || (flags & VK_QUERY_RESULT_PARTIAL_BIT)) {
+            uint64_t v = avail ? p->values[q] : 0;
+            if (is64) memcpy(dst, &v, 8); else { uint32_t v32 = (uint32_t)v; memcpy(dst, &v32, 4); }
+        }
+        if (withAvail) {
+            uint64_t a = avail;
+            if (is64) memcpy(dst + 8, &a, 8); else { uint32_t a32 = avail; memcpy(dst + 4, &a32, 4); }
+        }
+    }
+    return res;
 }
 
 VKFN(VkResult) vkCreatePipelineCache(VkDevice, const VkPipelineCacheCreateInfo*, const VkAllocationCallbacks*, VkPipelineCache* out) {

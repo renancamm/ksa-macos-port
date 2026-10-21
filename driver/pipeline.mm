@@ -3,6 +3,9 @@
 #include "spirv_msl.hpp"
 #include <sys/stat.h>
 #include <memory>
+#include <regex>
+#include <functional>
+#include <thread>
 
 using namespace SPIRV_CROSS_NAMESPACE;
 
@@ -13,6 +16,7 @@ static int64_t usSince(std::chrono::steady_clock::time_point t) {
     return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t).count();
 }
 void kmtlReportPipelineTimes() {
+    kmtlCacheFlushRecent();
     KLOG(0, "pipeline cost so far: SPIRV-Cross %d modules %.2f s, MSL compile %d (+%d cached) %.2f s, pipeline states %d %.2f s",
          g_nTranslate.load(), g_usTranslate / 1e6, g_nCompile.load(), g_nCompileCached.load(), g_usCompile / 1e6,
          g_nPipeline.load(), g_usPipeline / 1e6);
@@ -36,6 +40,7 @@ VKFN(VkResult) vkCreateShaderModule(VkDevice, const VkShaderModuleCreateInfo* ci
     auto* m = new KShaderModule();
     m->spirv.assign(ci->pCode, ci->pCode + ci->codeSize / 4);
     m->hash = kmtlHash(ci->pCode, ci->codeSize);
+    kmtlProfDumpSpirv(ci->pCode, ci->codeSize, m->hash);
     *out = (VkShaderModule)m;
     return VK_SUCCESS;
 }
@@ -60,45 +65,48 @@ static void dumpMSL(const std::string& name, const std::string& msl, const std::
     }
 }
 
+// One compile per MSL text: a second caller (the game and the prewarm thread) waits for the first.
+// KSA_MTL_MSL_SALT=<text> prepends a comment so every compile misses the system shader cache (cold-start tests)
 id<MTLLibrary> kmtlCompileMSL(KDevice* dev, const std::string& msl, std::string* err) {
     uint64_t h = kmtlHash(msl.data(), msl.size());
+    std::shared_ptr<KDevice::LibraryEntry> entry;
+    bool owner = false;
     {
         std::lock_guard<std::mutex> lock(dev->libraryMutex);
-        auto it = dev->libraryCache.find(h);
-        if (it != dev->libraryCache.end()) { g_nCompileCached++; return it->second; }
+        auto& slot = dev->libraryCache[h];
+        if (!slot) { slot = std::make_shared<KDevice::LibraryEntry>(); owner = true; }
+        entry = slot;
+    }
+    if (!owner) {
+        std::unique_lock<std::mutex> lock(entry->m);
+        entry->cv.wait(lock, [&] { return entry->done; });
+        g_nCompileCached++;
+        if (!entry->lib && err) *err = entry->err;
+        return entry->lib;
     }
     auto t0 = std::chrono::steady_clock::now();
     MTLCompileOptions* o = [MTLCompileOptions new];
     o.languageVersion = MTLLanguageVersion3_2;
     o.mathMode = kmtlEnvInt("KSA_MTL_SAFE_MATH", 0) ? MTLMathModeSafe : MTLMathModeFast;
     o.preserveInvariance = YES;
+    static const char* salt = kmtlEnv("KSA_MTL_MSL_SALT");
+    std::string src = salt ? std::string("// ") + salt + "\n" + msl : msl;
     NSError* e = nil;
-    id<MTLLibrary> lib = [dev->mtl newLibraryWithSource:[NSString stringWithUTF8String:msl.c_str()] options:o error:&e];
-    if (!lib) {
-        if (err) *err = e ? e.description.UTF8String : "unknown error";
-        return nil;
-    }
+    id<MTLLibrary> lib = [dev->mtl newLibraryWithSource:[NSString stringWithUTF8String:src.c_str()] options:o error:&e];
     g_usCompile += usSince(t0);
     g_nCompile++;
-    std::lock_guard<std::mutex> lock(dev->libraryMutex);
-    dev->libraryCache[h] = lib;
+    std::lock_guard<std::mutex> lock(entry->m);
+    entry->lib = lib;
+    if (!lib) entry->err = e ? e.description.UTF8String : "unknown error";
+    if (!lib && err) *err = entry->err;
+    entry->done = true;
+    entry->cv.notify_all();
     return lib;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
 // SPIR-V -> MSL
 
-struct KTranslated {
-    std::string msl;
-    std::string entry;
-    bool usesDrawId = false;
-    MTLSize workgroup = MTLSizeMake(1, 1, 1);
-    // Tessellation execution modes (from whichever of the two stages declares them)
-    uint32_t outputVertices = 0;
-    bool quads = false, cw = false;
-    MTLTessellationPartitionMode partition = MTLTessellationPartitionModeInteger;
-    bool hasPartition = false, hasWinding = false, hasDomain = false;
-};
 
 // Per-stage translation options
 enum class KTessRole { None, VertexKernel, ControlKernel, Evaluation };
@@ -111,6 +119,7 @@ struct KStageOptions {
     // Tessellation modes merged from both stages (each declares only part of them)
     uint32_t tessControlPoints = 0;
     bool tessQuads = false;
+    bool rtLaunch = false;  // ray tracing kernel: launch size uniform at set 15 -> kRtLaunchBufferIndex
 };
 
 // Reads the tessellation execution modes of one stage module
@@ -253,6 +262,17 @@ static bool translate(KShaderModule* mod, const char* entryName, spv::ExecutionM
                 c.add_msl_resource_binding(sz);
             }
         }
+        if (so.rtLaunch) {
+            c.add_discrete_descriptor_set(15);
+            MSLResourceBinding ls;
+            ls.stage = model;
+            ls.desc_set = 15;
+            ls.binding = 0;
+            ls.count = 1;
+            ls.basetype = SPIRType::Void;
+            ls.msl_buffer = kRtLaunchBufferIndex;
+            c.add_msl_resource_binding(ls);
+        }
         MSLResourceBinding pc;
         pc.stage = model;
         pc.desc_set = kPushConstDescSet;
@@ -277,12 +297,35 @@ static bool translate(KShaderModule* mod, const char* entryName, spv::ExecutionM
             }
         }
 
+        // Quality presets (KSA_MTL_SPEC=<module hash>:<constant id>=<value>[,...]): replace a specialization constant
+        // of one module whatever the game passes, e.g. fewer iterations of an expensive loop
+        if (const char* presets = kmtlEnv("KSA_MTL_SPEC")) {
+            char want[24];
+            snprintf(want, sizeof(want), "%016llx:", (unsigned long long)mod->hash);
+            for (const char* q = strstr(presets, want); q; q = strstr(q + 1, want)) {
+                unsigned id = 0, value = 0;
+                if (sscanf(q + strlen(want), "%u=%u", &id, &value) != 2) continue;
+                for (auto& sc : c.get_specialization_constants())
+                    if (sc.constant_id == id) {
+                        c.get_constant(sc.id).m.c[0].r[0].u32 = value;
+                    }
+            }
+        }
+
         out->msl = c.compile();
         if (viewMask) {
             // "layer = gl_ViewIndex - spvViewMask[0];" -> "layer = gl_ViewIndex;" and drop the fragment re-offset
             std::string& m = out->msl;
             for (size_t pos; (pos = m.find(" - spvViewMask[0];")) != std::string::npos;) m.replace(pos, 18, ";");
             for (size_t pos; (pos = m.find(" += spvViewMask[0];")) != std::string::npos;) m.replace(pos, 19, " += 0;");
+        }
+        // SPIRV-Cross declares an array of acceleration structures in an argument buffer as a C array but passes it to
+        // helper functions as spvUnsafeArray&: take it as a device pointer instead (the array decays to one)
+        {
+            static const std::regex asArray(
+                R"((?:thread )?const (?:device )?spvUnsafeArray<(raytracing::acceleration_structure<[^>]*>), \d+>(?: const device)?& (\w+))");
+            if (out->msl.find("spvUnsafeArray<raytracing::acceleration_structure") != std::string::npos)
+                out->msl = std::regex_replace(out->msl, asArray, "const device $1* $2");
         }
         out->entry = c.get_cleansed_entry_point_name(entryName, model);
         if (so.tess == KTessRole::ControlKernel || so.tess == KTessRole::Evaluation) {
@@ -335,22 +378,103 @@ static char stageChar(spv::ExecutionModel m, KTessRole role) {
     }
 }
 
+static bool stripPassthroughControl(std::string& msl);
+
+// Hand-written replacements for translated shaders (KSA_MTL_OVERRIDES=<dir>): <dir>/<translation key>.metal for one
+// exact translation, or <dir>/<module hash>_<stage><index type>.metal (the KSA_MTL_DUMP_MSL file name) for every
+// translation of a module stage. The replacement keeps the translated interface: same entry point name, same
+// argument buffer bindings (the set layouts fix them)
+static void applyOverride(const char* name, uint64_t key, KTranslated* tr) {
+    static const char* dir = kmtlEnv("KSA_MTL_OVERRIDES");
+    if (!dir) return;
+    char path[1200];
+    snprintf(path, sizeof(path), "%s/%016llx.metal", dir, (unsigned long long)key);
+    FILE* f = fopen(path, "rb");
+    if (!f) {
+        snprintf(path, sizeof(path), "%s/%s.metal", dir, name);
+        f = fopen(path, "rb");
+    }
+    if (!f) return;
+    std::string msl;
+    char buf[65536];
+    for (size_t n; (n = fread(buf, 1, sizeof(buf), f)) > 0;) msl.append(buf, n);
+    fclose(f);
+    tr->msl = msl;
+    KLOG(0, "shader override: %s", path);
+}
+
+static bool passthroughEnabled() {
+    static const bool v = kmtlEnvInt("KSA_MTL_TESS_PASSTHROUGH", 1) != 0;
+    return v;
+}
+
+// Everything that shapes a stage's translation: the module, entry, stage options, the slot map of every set,
+// specialization data, and the translator version. Bump kTranslatorVersion when translate() or its MSL patches change
+static uint64_t translationKey(KShaderModule* mod, const char* entry, spv::ExecutionModel model, KPipelineLayout* layout,
+                               const VkSpecializationInfo* spec, const KStageOptions& so) {
+    static const uint32_t kTranslatorVersion = 2;
+    std::vector<uint32_t> k = {kTranslatorVersion, 0x300681bbu /* SPIRV-Cross pin */, (uint32_t)model, so.fragMask,
+        so.sampleRate, so.viewMask, (uint32_t)so.tess, (uint32_t)so.indexType, so.tessControlPoints, so.tessQuads,
+        passthroughEnabled(), (uint32_t)mod->hash, (uint32_t)(mod->hash >> 32), so.rtLaunch};
+    if (const char* presets = kmtlEnv("KSA_MTL_SPEC")) k.push_back((uint32_t)kmtlHash(presets, strlen(presets)));
+    for (const char* c = entry; *c; c++) k.push_back((uint8_t)*c);
+    if (layout) {
+        for (KSetLayout* sl : layout->sets) {
+            k.push_back(0xFFFFFFFFu);
+            if (!sl) continue;
+            k.push_back(sl->sizeSlot);
+            for (auto& b : sl->bindings) { k.push_back(b.binding); k.push_back(b.type); k.push_back(b.count); k.push_back(b.id); k.push_back(b.samplerId); }
+        }
+    }
+    if (spec) {
+        for (uint32_t i = 0; i < spec->mapEntryCount; i++) {
+            const auto& me = spec->pMapEntries[i];
+            k.push_back(me.constantID);
+            k.push_back((uint32_t)me.size);
+            uint64_t v = 0;
+            memcpy(&v, (const uint8_t*)spec->pData + me.offset, std::min<size_t>(me.size, 8));
+            k.push_back((uint32_t)v);
+            k.push_back((uint32_t)(v >> 32));
+        }
+    }
+    return kmtlHash(k.data(), k.size() * 4);
+}
+
 // Translates and compiles one stage; returns the MTLFunction or nil (errors logged, MSL dumped)
-static id<MTLFunction> makeFunction(KDevice* dev, const VkPipelineShaderStageCreateInfo* st, spv::ExecutionModel model,
-                                    KPipelineLayout* layout, const KStageOptions& so, KTranslated* tr) {
+// Translation of one stage (SPIRV-Cross or the disk cache, then overrides): needs the create info, so it runs on the
+// calling thread. *name is the stage's dump/override name
+static bool prepareStage(const VkPipelineShaderStageCreateInfo* st, spv::ExecutionModel model, KPipelineLayout* layout,
+                         const KStageOptions& so, KTranslated* tr, std::string* outName) {
     auto* mod = (KShaderModule*)st->module;
     if (!mod) {
         KERR("pipeline stage without a module (inline SPIR-V not supported)");
-        return nil;
+        return false;
     }
     std::string err;
     char name[64];
     snprintf(name, sizeof(name), "%016llx_%c%d", (unsigned long long)mod->hash, stageChar(model, so.tess), (int)so.indexType);
-    if (!translate(mod, st->pName, model, layout, st->pSpecializationInfo, so, tr, &err)) {
-        KERR("shader %s: %s", name, err.c_str());
-        dumpMSL(name, "", err);
-        return nil;
+    *outName = name;
+    uint64_t key = translationKey(mod, st->pName, model, layout, st->pSpecializationInfo, so);
+    if (!kmtlCacheLoad(key, tr)) {
+        if (!translate(mod, st->pName, model, layout, st->pSpecializationInfo, so, tr, &err)) {
+            KERR("shader %s: %s", name, err.c_str());
+            dumpMSL(name, "", err);
+            return false;
+        }
+        if (so.tess == KTessRole::ControlKernel && passthroughEnabled() && stripPassthroughControl(tr->msl))
+            tr->passthrough = true;
+        kmtlCacheStore(key, *tr);
     }
+    kmtlCacheNoteUsed(key);
+    applyOverride(name, key, tr);
+    return true;
+}
+
+// MSL compile and function of a prepared stage: thread-safe, so asynchronous pipeline creation runs it on workers
+static id<MTLFunction> compileStage(KDevice* dev, const KTranslated& t, const std::string& nameStr) {
+    const KTranslated* tr = &t;
+    const char* name = nameStr.c_str();
+    std::string err;
     id<MTLLibrary> lib = kmtlCompileMSL(dev, tr->msl, &err);
     dumpMSL(name, tr->msl, err);
     if (!lib) {
@@ -371,6 +495,32 @@ static id<MTLFunction> makeFunction(KDevice* dev, const VkPipelineShaderStageCre
         if (!fn) KERR("shader %s: specialization failed: %s", name, e.description.UTF8String);
     }
     return fn;
+}
+
+// Asynchronous pipeline creation (KSA_MTL_ASYNC_PIPELINES=0 turns it off): KSA creates its pipelines one at a time,
+// so on a cold shader cache the MSL compiles run serially; workers compile them in parallel instead, and the first
+// bind of a pipeline waits for its compile
+static bool asyncPipelines() {
+    static const bool v = kmtlEnvInt("KSA_MTL_ASYNC_PIPELINES", 1) != 0;
+    return v;
+}
+
+static void runPipelineJob(std::function<void()> job) {
+    static dispatch_queue_t queue = dispatch_queue_create("ksamtl.pipelines", DISPATCH_QUEUE_CONCURRENT);
+    // Leave two cores to the game
+    static dispatch_semaphore_t slots = dispatch_semaphore_create(std::max(1, (int)std::thread::hardware_concurrency() - 2));
+    dispatch_async(queue, ^{
+        dispatch_semaphore_wait(slots, DISPATCH_TIME_FOREVER);
+        @autoreleasepool { job(); }
+        dispatch_semaphore_signal(slots);
+    });
+}
+
+static id<MTLFunction> makeFunction(KDevice* dev, const VkPipelineShaderStageCreateInfo* st, spv::ExecutionModel model,
+                                    KPipelineLayout* layout, const KStageOptions& so, KTranslated* tr) {
+    std::string name;
+    if (!prepareStage(st, model, layout, so, tr, &name)) return nil;
+    return compileStage(dev, *tr, name);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -578,6 +728,55 @@ static NSUInteger outputStride(MTLComputePipelineReflection* refl, NSUInteger in
     return 0;
 }
 
+// Passthrough control stage (on by default, KSA_MTL_TESS_PASSTHROUGH=0 turns it off): when every control-point output is copied from the same
+// input of the same type in the same order, the copies are removed from the control kernel and the evaluation stage
+// reads the vertex kernel's output directly (control point k of the draw is vertex-kernel output k)
+static std::vector<std::string> structFieldTypes(const std::string& msl, const std::string& name, std::vector<std::string>* names) {
+    std::vector<std::string> types;
+    size_t p = msl.find("struct " + name + "\n{");
+    if (p == std::string::npos) return types;
+    size_t e = msl.find("};", p);
+    std::regex field(R"(^\s+([^;]+?)\s+(\w+)(\s*\[\[[^\]]*\]\])?;\s*$)");
+    std::string body = msl.substr(p, e - p);
+    size_t pos = 0;
+    while (pos < body.size()) {
+        size_t nl = body.find('\n', pos);
+        std::string line = body.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
+        std::smatch m;
+        if (std::regex_match(line, m, field)) { types.push_back(m[1]); names->push_back(m[2]); }
+        if (nl == std::string::npos) break;
+        pos = nl + 1;
+    }
+    return types;
+}
+
+static bool stripPassthroughControl(std::string& msl) {
+    std::vector<std::string> outNames, inNames;
+    auto outTypes = structFieldTypes(msl, "main0_out", &outNames);
+    auto inTypes = structFieldTypes(msl, "main0_in", &inNames);
+    if (outTypes.empty() || outTypes != inTypes) return false;
+    std::regex copy(R"(\n\s*gl_out\[gl_InvocationID\]\.(\w+) = gl_in\[gl_InvocationID\]\.(\w+);)");
+    std::vector<bool> seen(outNames.size(), false);
+    std::string stripped;
+    size_t last = 0;
+    for (auto it = std::sregex_iterator(msl.begin(), msl.end(), copy); it != std::sregex_iterator(); ++it) {
+        auto o = std::find(outNames.begin(), outNames.end(), (*it)[1].str()) - outNames.begin();
+        auto i = std::find(inNames.begin(), inNames.end(), (*it)[2].str()) - inNames.begin();
+        if (o != i || o >= (long)outNames.size()) return false;
+        seen[o] = true;
+        stripped += msl.substr(last, it->position() - last);
+        last = it->position() + it->length();
+    }
+    stripped += msl.substr(last);
+    for (bool s : seen) if (!s) return false;
+    // Any other use of gl_out means the stage computes outputs
+    size_t uses = 0;
+    for (size_t q = stripped.find("gl_out"); q != std::string::npos; q = stripped.find("gl_out", q + 1)) uses++;
+    if (uses != 1) return false;  // only its declaration is left
+    msl = stripped;
+    return true;
+}
+
 // Builds the compute stages of a tessellation pipeline: the vertex shader as three kernels (by index type) with a
 // stage-in descriptor for its vertex attributes, and the control shader as a multi-patch kernel
 static bool buildTessKernels(KDevice* dev, const VkGraphicsPipelineCreateInfo* ci, const VkPipelineShaderStageCreateInfo* vs,
@@ -645,10 +844,12 @@ static bool buildTessKernels(KDevice* dev, const VkGraphicsPipelineCreateInfo* c
     }
     p->tessControlStride = outputStride(refl, kTessOutputBufferIndex);
     p->tessPatchStride = outputStride(refl, kTessPatchBufferIndex);
+    p->tessPassthrough = htr->passthrough && p->tessControlStride == p->tessVertexStride && !p->tessPatchStride;
     p->tessInCP = ci->pTessellationState ? ci->pTessellationState->patchControlPoints : 3;
     p->tessOutCP = modes.outputVertices ? modes.outputVertices : p->tessInCP;
-    KLOG(1, "tessellation pipeline: %u -> %u control points, strides vertex %lu control %lu patch %lu", p->tessInCP,
-         p->tessOutCP, (unsigned long)p->tessVertexStride, (unsigned long)p->tessControlStride, (unsigned long)p->tessPatchStride);
+    KLOG(1, "tessellation pipeline: %u -> %u control points, strides vertex %lu control %lu patch %lu%s", p->tessInCP,
+         p->tessOutCP, (unsigned long)p->tessVertexStride, (unsigned long)p->tessControlStride, (unsigned long)p->tessPatchStride,
+         p->tessPassthrough ? ", passthrough control stage" : "");
     return true;
 }
 
@@ -707,17 +908,25 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
         vso.tessQuads = tmodes.quads;
     }
     // With tessellation the evaluation stage is Metal's (post-tessellation) vertex function
-    id<MTLFunction> vfn = tess ? makeFunction(dev, tes, spv::ExecutionModelTessellationEvaluation, layout, vso, &dtr)
-                               : makeFunction(dev, vs, spv::ExecutionModelVertex, layout, vso, &vtr);
-    if (!vfn) return nullptr;
-    id<MTLFunction> ffn = nil;
+    // Translation here; MSL compile and pipeline state on a worker unless the pipeline is tessellated (its kernels
+    // are built above) or asynchronous creation is off
+    bool async = !tess && asyncPipelines();
+    std::string vname, fname;
+    id<MTLFunction> vfn = nil, ffn = nil;
+    if (tess) {
+        vfn = makeFunction(dev, tes, spv::ExecutionModelTessellationEvaluation, layout, vso, &dtr);
+        if (!vfn) return nullptr;
+    } else {
+        if (!prepareStage(vs, spv::ExecutionModelVertex, layout, vso, &vtr, &vname)) return nullptr;
+        if (!async && !(vfn = compileStage(dev, vtr, vname))) return nullptr;
+    }
     if (fs) {
         KStageOptions fso;
         fso.fragMask = fragMask;
         fso.sampleRate = sampleRate;
         fso.viewMask = af.viewMask;
-        ffn = makeFunction(dev, fs, spv::ExecutionModelFragment, layout, fso, &ftr);
-        if (!ffn) return nullptr;
+        if (!prepareStage(fs, spv::ExecutionModelFragment, layout, fso, &ftr, &fname)) return nullptr;
+        if (!async && !(ffn = compileStage(dev, ftr, fname))) return nullptr;
     }
 
     MTLRenderPipelineDescriptor* d = [MTLRenderPipelineDescriptor new];
@@ -802,21 +1011,46 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
     const auto* rs = ci->pRasterizationState;
     if (rs && rs->rasterizerDiscardEnable) d.rasterizationEnabled = NO;
 
-    NSError* err = nil;
-    auto tp = std::chrono::steady_clock::now();
-    id<MTLRenderPipelineState> ps = [dev->mtl newRenderPipelineStateWithDescriptor:d error:&err];
-    g_usPipeline += usSince(tp);
-    g_nPipeline++;
-    if (!ps) {
-        KERR("render pipeline state failed: %s (vs %016llx fs %016llx)", err.description.UTF8String,
-             (unsigned long long)((KShaderModule*)vs->module)->hash, fs ? (unsigned long long)((KShaderModule*)fs->module)->hash : 0ull);
-        return nullptr;
-    }
+    uint64_t vsHash = ((KShaderModule*)vs->module)->hash, fsHash = fs ? ((KShaderModule*)fs->module)->hash : 0;
+    auto makeState = [dev, vsHash, fsHash](MTLRenderPipelineDescriptor* desc) -> id<MTLRenderPipelineState> {
+        NSError* err = nil;
+        auto tp = std::chrono::steady_clock::now();
+        id<MTLRenderPipelineState> ps = [dev->mtl newRenderPipelineStateWithDescriptor:desc error:&err];
+        g_usPipeline += usSince(tp);
+        g_nPipeline++;
+        if (!ps) KERR("render pipeline state failed: %s (vs %016llx fs %016llx)", err.description.UTF8String,
+                      (unsigned long long)vsHash, (unsigned long long)fsHash);
+        return ps;
+    };
+    id<MTLRenderPipelineState> ps = nil;
+    if (!async && !(ps = makeState(d))) return nullptr;
 
     auto* p = new KPipeline();
     p->bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     p->layout = layout;
     p->render = ps;
+    if (async) {
+        // A failure leaves render nil: draws with the pipeline are skipped, as for a failed synchronous creation
+        p->pending = std::make_shared<KPipeline::Pending>();
+        auto pending = p->pending;
+        std::string vn = vname, fn = fname;
+        KTranslated vt = vtr, ft = ftr;
+        bool hasFs = fs != nullptr;
+        runPipelineJob([=] {
+            id<MTLFunction> v = compileStage(dev, vt, vn);
+            id<MTLFunction> f = hasFs ? compileStage(dev, ft, fn) : nil;
+            id<MTLRenderPipelineState> state = nil;
+            if (v && (f || !hasFs)) {
+                d.vertexFunction = v;
+                d.fragmentFunction = f;
+                state = makeState(d);
+            }
+            std::lock_guard<std::mutex> lock(pending->m);
+            p->render = state;
+            pending->done = true;
+            pending->cv.notify_all();
+        });
+    }
     p->primitive = primitiveType(topo);
     if (tess) {
         p->tess = true;
@@ -828,12 +1062,24 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
         p->tessControlStride = tessParts->tessControlStride;
         p->tessPatchStride = tessParts->tessPatchStride;
         p->tessQuads = tessParts->tessQuads;
+        p->tessPassthrough = tessParts->tessPassthrough;
     }
     p->triangleFan = topo == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
     p->vertexUsesDrawId = vtr.usesDrawId;
     p->fragmentUsesDrawId = ftr.usesDrawId;
     p->viewMask = af.viewMask;
     p->hasFragment = fs != nullptr;
+    {
+        char nm[80];
+        auto* vm = (KShaderModule*)(tess ? tes->module : vs->module);
+        snprintf(nm, sizeof(nm), "%c%016llx", tess ? 't' : 'v', (unsigned long long)vm->hash);
+        p->profName = nm;
+        if (fs) {
+            snprintf(nm, sizeof(nm), "+f%016llx", (unsigned long long)((KShaderModule*)fs->module)->hash);
+            p->profName += nm;
+        }
+        p->profId = kmtlHash(p->profName.data(), p->profName.size());
+    }
     if (rs) {
         p->cull = rs->cullMode == VK_CULL_MODE_FRONT_BIT ? MTLCullModeFront
                 : rs->cullMode == VK_CULL_MODE_BACK_BIT ? MTLCullModeBack : MTLCullModeNone;
@@ -906,33 +1152,60 @@ VKFN(VkResult) vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache, uint3
 // ---------------------------------------------------------------------------------------------------------------
 // Compute pipelines
 
-static KPipeline* createComputePipeline(KDevice* dev, const VkComputePipelineCreateInfo* ci) {
-    auto* layout = (KPipelineLayout*)ci->layout;
+KPipeline* kmtlCreateComputeFromStage(KDevice* dev, KPipelineLayout* layout, const VkPipelineShaderStageCreateInfo* stage, bool rtLaunch) {
     KTranslated tr;
     KStageOptions cso;
     cso.fragMask = 0;
-    id<MTLFunction> fn = makeFunction(dev, &ci->stage, spv::ExecutionModelGLCompute, layout, cso, &tr);
-    if (!fn) return nullptr;
-    MTLComputePipelineDescriptor* d = [MTLComputePipelineDescriptor new];
-    d.computeFunction = fn;
-    d.maxTotalThreadsPerThreadgroup = tr.workgroup.width * tr.workgroup.height * tr.workgroup.depth;
-    NSError* err = nil;
-    auto tp = std::chrono::steady_clock::now();
-    id<MTLComputePipelineState> ps = [dev->mtl newComputePipelineStateWithDescriptor:d options:MTLPipelineOptionNone reflection:nil error:&err];
-    g_usPipeline += usSince(tp);
-    g_nPipeline++;
-    if (!ps) {
-        KERR("compute pipeline state failed: %s (cs %016llx)", err.description.UTF8String,
-             (unsigned long long)((KShaderModule*)ci->stage.module)->hash);
-        return nullptr;
-    }
+    cso.rtLaunch = rtLaunch;
+    std::string name;
+    if (!prepareStage(stage, spv::ExecutionModelGLCompute, layout, cso, &tr, &name)) return nullptr;
+    uint64_t csHash = ((KShaderModule*)stage->module)->hash;
+    auto build = [dev, csHash](const KTranslated& t, const std::string& n) -> id<MTLComputePipelineState> {
+        id<MTLFunction> fn = compileStage(dev, t, n);
+        if (!fn) return nil;
+        MTLComputePipelineDescriptor* d = [MTLComputePipelineDescriptor new];
+        d.computeFunction = fn;
+        d.maxTotalThreadsPerThreadgroup = t.workgroup.width * t.workgroup.height * t.workgroup.depth;
+        NSError* err = nil;
+        auto tp = std::chrono::steady_clock::now();
+        id<MTLComputePipelineState> ps = [dev->mtl newComputePipelineStateWithDescriptor:d options:MTLPipelineOptionNone reflection:nil error:&err];
+        g_usPipeline += usSince(tp);
+        g_nPipeline++;
+        if (!ps) KERR("compute pipeline state failed: %s (cs %016llx)", err.description.UTF8String, (unsigned long long)csHash);
+        return ps;
+    };
+    // Ray tracing kernels translate a module that lives only for this call: they compile here
+    bool async = asyncPipelines() && !rtLaunch;
+    id<MTLComputePipelineState> ps = nil;
+    if (!async && !(ps = build(tr, name))) return nullptr;
     auto* p = new KPipeline();
     p->bindPoint = VK_PIPELINE_BIND_POINT_COMPUTE;
     p->layout = layout;
     p->compute = ps;
+    if (async) {
+        p->pending = std::make_shared<KPipeline::Pending>();
+        auto pending = p->pending;
+        runPipelineJob([=] {
+            id<MTLComputePipelineState> state = build(tr, name);
+            std::lock_guard<std::mutex> lock(pending->m);
+            p->compute = state;
+            pending->done = true;
+            pending->cv.notify_all();
+        });
+    }
     p->workgroup = tr.workgroup;
     p->computeUsesDrawId = tr.usesDrawId;
+    {
+        char nm[40];
+        snprintf(nm, sizeof(nm), "c%016llx", (unsigned long long)((KShaderModule*)stage->module)->hash);
+        p->profName = nm;
+        p->profId = kmtlHash(nm, strlen(nm));
+    }
     return p;
+}
+
+static KPipeline* createComputePipeline(KDevice* dev, const VkComputePipelineCreateInfo* ci) {
+    return kmtlCreateComputeFromStage(dev, (KPipelineLayout*)ci->layout, &ci->stage, false);
 }
 
 VKFN(VkResult) vkCreateComputePipelines(VkDevice device, VkPipelineCache, uint32_t n, const VkComputePipelineCreateInfo* cis,
@@ -961,5 +1234,6 @@ VKFN(VkResult) vkCreateComputePipelines(VkDevice device, VkPipelineCache, uint32
 
 VKFN(void) vkDestroyPipeline(VkDevice, VkPipeline p, const VkAllocationCallbacks*) {
     KTRACE_FIRST();
+    if (p) ((KPipeline*)p)->wait();  // a worker may still write it
     delete (KPipeline*)p;
 }

@@ -59,6 +59,8 @@ static const VkExtensionProperties kDeviceExtensions[] = {
     {VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME, VK_KHR_DEDICATED_ALLOCATION_SPEC_VERSION},
     {VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME, VK_KHR_GET_MEMORY_REQUIREMENTS_2_SPEC_VERSION},
     {VK_KHR_BIND_MEMORY_2_EXTENSION_NAME, VK_KHR_BIND_MEMORY_2_SPEC_VERSION},
+    {VK_KHR_PRESENT_ID_EXTENSION_NAME, VK_KHR_PRESENT_ID_SPEC_VERSION},
+    {VK_KHR_PRESENT_WAIT_EXTENSION_NAME, VK_KHR_PRESENT_WAIT_SPEC_VERSION},
 };
 
 // Ray query: acceleration structures and ray queries (KSA_MTL_RAYQUERY=0 hides them, the game then uses its
@@ -69,6 +71,13 @@ bool kmtlRayQueryEnabled() {
 }
 
 // Tessellation (KSA_MTL_TESSELLATION=0 hides the feature; the game then skips terrain/ocean tessellation)
+bool kmtlRayTracingPipelinesEnabled();
+
+bool kmtlTransferQueueEnabled() {
+    static const bool v = kmtlEnvInt("KSA_MTL_TRANSFER_QUEUE", 1) != 0;
+    return v;
+}
+
 bool kmtlTessellationEnabled() {
     static const bool v = kmtlEnvInt("KSA_MTL_TESSELLATION", 1) != 0;
     return v;
@@ -144,6 +153,7 @@ VKFN(VkResult) vkEnumerateDeviceExtensionProperties(VkPhysicalDevice, const char
     if (layer) { *count = 0; return VK_ERROR_LAYER_NOT_PRESENT; }
     std::vector<VkExtensionProperties> all(kDeviceExtensions, kDeviceExtensions + sizeof(kDeviceExtensions) / sizeof(kDeviceExtensions[0]));
     if (kmtlRayQueryEnabled()) all.insert(all.end(), kRayQueryExtensions, kRayQueryExtensions + 3);
+    if (kmtlRayTracingPipelinesEnabled()) all.push_back({VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME, VK_KHR_RAY_TRACING_PIPELINE_SPEC_VERSION});
     return fillExtensions(all.data(), (uint32_t)all.size(), count, props);
 }
 
@@ -308,6 +318,18 @@ VKFN(void) vkGetPhysicalDeviceProperties2(VkPhysicalDevice pd, VkPhysicalDeviceP
             o->supportedStages = v.subgroupSupportedStages;
             o->supportedOperations = v.subgroupSupportedOperations;
             o->quadOperationsInAllStages = VK_FALSE;
+            break;
+        }
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR: {
+            auto* o = (VkPhysicalDeviceRayTracingPipelinePropertiesKHR*)s;
+            o->shaderGroupHandleSize = 32;
+            o->maxRayRecursionDepth = 31;  // only ray generation may trace; deeper recursion fails at pipeline creation
+            o->maxShaderGroupStride = 4096;
+            o->shaderGroupBaseAlignment = 64;
+            o->shaderGroupHandleCaptureReplaySize = 32;
+            o->maxRayDispatchInvocationCount = 1u << 30;
+            o->shaderGroupHandleAlignment = 32;
+            o->maxRayHitAttributeSize = 32;
             break;
         }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_PROPERTIES: {
@@ -569,7 +591,17 @@ VKFN(void) vkGetPhysicalDeviceFeatures2(VkPhysicalDevice, VkPhysicalDeviceFeatur
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR:
             ((VkPhysicalDeviceRayQueryFeaturesKHR*)s)->rayQuery = kmtlRayQueryEnabled();
             break;
-        // Ray tracing pipelines, present id/wait: not supported (left VK_FALSE)
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR:
+            // Pipelines run as compute kernels with ray queries (rtpipeline.mm): no indirect traces, no primitive culling
+            ((VkPhysicalDeviceRayTracingPipelineFeaturesKHR*)s)->rayTracingPipeline = kmtlRayTracingPipelinesEnabled();
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR:
+            ((VkPhysicalDevicePresentIdFeaturesKHR*)s)->presentId = VK_TRUE;
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR:
+            ((VkPhysicalDevicePresentWaitFeaturesKHR*)s)->presentWait = VK_TRUE;
+            break;
+        // Ray tracing pipelines: not supported (left VK_FALSE)
         default:
             KLOG(2, "features2: unhandled sType %d (left zero)", s->sType);
             break;
@@ -583,22 +615,29 @@ VKFN(void) vkGetPhysicalDeviceFeatures2(VkPhysicalDevice, VkPhysicalDeviceFeatur
 
 VKFN(void) vkGetPhysicalDeviceQueueFamilyProperties(VkPhysicalDevice, uint32_t* count, VkQueueFamilyProperties* out) {
     KTRACE_FIRST();
-    if (!out) { *count = 1; return; }
-    if (*count < 1) return;
-    out[0] = {};
-    out[0].queueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
-    out[0].queueCount = 1;
-    out[0].timestampValidBits = 64;
-    out[0].minImageTransferGranularity = {1, 1, 1};
-    *count = 1;
+    // Family 0 does everything; family 1 (KSA_MTL_TRANSFER_QUEUE, on by default) only transfers. No compute-only
+    // family: KSA would put only its ocean readbacks there and make every frame wait for that queue
+    uint32_t n = kmtlTransferQueueEnabled() ? 2 : 1;
+    if (!out) { *count = n; return; }
+    n = std::min(n, *count);
+    for (uint32_t f = 0; f < n; f++) {
+        out[f] = {};
+        out[f].queueFlags = f == 0 ? VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT : VK_QUEUE_TRANSFER_BIT;
+        out[f].queueCount = 1;
+        out[f].timestampValidBits = 64;
+        out[f].minImageTransferGranularity = {1, 1, 1};
+    }
+    *count = n;
 }
 
 VKFN(void) vkGetPhysicalDeviceQueueFamilyProperties2(VkPhysicalDevice pd, uint32_t* count, VkQueueFamilyProperties2* out) {
-    if (!out) { *count = 1; return; }
-    if (*count < 1) return;
-    uint32_t one = 1;
-    vkGetPhysicalDeviceQueueFamilyProperties(pd, &one, &out[0].queueFamilyProperties);
-    *count = 1;
+    VkQueueFamilyProperties props[2];
+    uint32_t n = 2;
+    vkGetPhysicalDeviceQueueFamilyProperties(pd, &n, props);
+    if (!out) { *count = n; return; }
+    n = std::min(n, *count);
+    for (uint32_t f = 0; f < n; f++) out[f].queueFamilyProperties = props[f];
+    *count = n;
 }
 
 // Memory types: 0 device-local (private heap), 1 host-visible coherent, 2 host-visible coherent cached (shared heaps)
@@ -690,8 +729,8 @@ VKFN(void) vkDestroySurfaceKHR(VkInstance, VkSurfaceKHR surface, const VkAllocat
     delete (KSurface*)surface;
 }
 
-VKFN(VkResult) vkGetPhysicalDeviceSurfaceSupportKHR(VkPhysicalDevice, uint32_t, VkSurfaceKHR, VkBool32* supported) {
-    *supported = VK_TRUE;
+VKFN(VkResult) vkGetPhysicalDeviceSurfaceSupportKHR(VkPhysicalDevice, uint32_t family, VkSurfaceKHR, VkBool32* supported) {
+    *supported = family == 0;  // presentation is on the graphics queue
     return VK_SUCCESS;
 }
 
