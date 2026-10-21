@@ -2,14 +2,13 @@
 
 KSA is a .NET 10 program built on RocketWerkz's BRUTAL framework, rendering with Vulkan. Its Linux release is the
 game's .NET assemblies and content plus Linux builds of everything native: the .NET runtime, BRUTAL's native
-libraries, GLFW, FMOD. The port keeps the game's own files and replaces everything native with macOS builds:
+libraries (GLFW among them), FMOD. The port keeps the game's own files and replaces everything native with macOS builds:
 
 ```
 KSA.dll and the other game assemblies (.NET IL)        unchanged, except KSA.dll's machine type
   |-- .NET runtime                                     Microsoft's macOS arm64 runtime
-  |-- BRUTAL native libraries (ImGui, KTX, ...)        RocketWerkz's macOS builds, from nuget.org
-  |-- Vulkan Memory Allocator                         upstream VMA, built here
-  |-- GLFW (window, input)                             upstream GLFW, built here, plus the GLFW shim
+  |-- BRUTAL native libraries (ImGui, KTX, VMA, ...)   RocketWerkz's macOS builds, from nuget.org
+  |-- GLFW (window, input)                             RocketWerkz's macOS build, from nuget.org, plus the GLFW shim
   |-- FMOD (audio)                                     FMOD's macOS library, in third_party/fmod
   `-- Vulkan                                           the KSA Metal driver, built here (driver/)
         `-- Metal
@@ -24,11 +23,9 @@ KSA.dll and the other game assemblies (.NET IL)        unchanged, except KSA.dll
 |---|---|---|
 | Native libraries | `fetch-brutal-natives.sh` | RocketWerkz's macOS builds of BRUTAL's libraries from nuget.org -> `dist/` |
 | | `fetch-prebuilt.sh` | this project's own libraries from a GitHub release, if one matches the sources; otherwise: |
-| | `build-glfw.sh` | upstream GLFW 3.5.1 -> `dist/libglfw.3.dylib` |
 | | `build-glfw-shim.sh` | `src/glfw_shim.c` -> `dist/libGlfwShim.dylib` |
 | | `build-spirv-cross.sh`, `build-spirv-tools.sh` | static libraries for the driver |
 | | `build-driver.sh` | `driver/` -> `dist/libvulkan.1.dylib` |
-| | `build-vma.sh` | upstream Vulkan Memory Allocator -> `dist/libvma.dylib` |
 | | `check-natives.sh` | audits `dist/`: arm64, macOS 26, signatures, dependencies, licences |
 | .NET | `fetch-dotnet.sh` | Microsoft's .NET runtime, SHA-512 checked |
 | Convert | `convert-cleanup.sh` | removes the Linux binaries and Windows installer files |
@@ -45,39 +42,41 @@ installed app: every conversion step can run again on a converted game.
 
 RocketWerkz publishes BRUTAL as NuGet packages (`Ahwoo.BRUTAL.*`), and the packages that wrap native libraries
 carry RocketWerkz's builds for Windows, Linux and macOS on Apple Silicon (`runtimes/osx-arm64/native/`). The port
-takes the macOS builds of the seven it needs, unmodified:
+takes the macOS builds of the nine it needs, unmodified:
 
 | Package | Library | Used by |
 |---|---|---|
 | Ahwoo.BRUTAL.Stb | `libstb.dylib` | image loading and writing |
 | Ahwoo.BRUTAL.Vulkan | `libVulkanEx.dylib` | batch Vulkan helpers |
+| Ahwoo.BRUTAL.Vulkan.Vma | `libvma.dylib` | GPU memory (Vulkan Memory Allocator) |
+| Ahwoo.BRUTAL.Glfw | `libglfw.3.dylib` | the window and input (RocketWerkz's fork of GLFW 3.5.1) |
 | Ahwoo.BRUTAL.Gli | `libgli.dylib` | texture formats |
 | Ahwoo.BRUTAL.ImGui | `libimgui.dylib` | the user interface |
 | Ahwoo.BRUTAL.ImPlot | `libimplot.dylib` | the profiler's plots |
 | Ahwoo.BRUTAL.Ktx | `libKtx.dylib` | KTX2 textures |
 | Ahwoo.BRUTAL.ShaderC | `libshaderc_shared.dylib`, `libSPIRV-Tools-shared.dylib` | compiling the game's GLSL shaders at startup |
 
-The packages are BRUTAL 2026.10, the first versions RocketWerkz published; KSA 2026.10.13 ships BRUTAL 2026.9.
-They export every function KSA calls, but only running the game shows whether they behave as its BRUTAL version
-expects (VMA didn't, see below). The game's ImPlot binding also declares about 200 internal ImPlot functions
-the library doesn't export, but RocketWerkz's own 2026.10 binding declares them too, and KSA calls only ImPlot's
-public functions. `convert-dotnet.sh` warns when a KSA version ships a BRUTAL newer than the pinned packages.
+These are the versions KSA itself ships: since KSA 2026.10.19, every Linux library in the game's archive is
+byte-identical to the Linux build in the matching package, so the macOS builds come from the same release as the
+game's BRUTAL assemblies. `convert-dotnet.sh` compares each package with its assembly (`Ahwoo.BRUTAL.Glfw` with
+`Brutal.Glfw.dll`): it stops when the game is older than the packages (KSA 2026.10.13 ships BRUTAL 2026.9, whose
+VMA binding passes no Vulkan functions to the 2026.10 library, and the game crashes in `vmaCreateAllocator`), and
+warns when the game is newer.
 
-Two libraries are exceptions:
-
-- **GLFW.** RocketWerkz's GLFW is a fork that keeps the desktop video mode in Fullscreen, which would undo the
-  shim's Fullscreen resolution switch (below), and KSA uses none of the fork's additions. `build-glfw.sh` builds
-  upstream GLFW 3.5.1 instead.
-- **VMA.** RocketWerkz's 2026.10 Vulkan Memory Allocator loads Vulkan functions only through pointers the caller
-  passes, which the BRUTAL 2026.9 binding in KSA doesn't pass, so the game crashes in `vmaCreateAllocator`.
-  `build-vma.sh` builds upstream VMA ([`src/vma.cpp`](../src/vma.cpp)) linked against the driver instead.
+GLFW must be RocketWerkz's: their fork adds trackpad zoom, rotate and scroll detail callbacks, and KSA's
+`Brutal.Glfw` sets them on every window, so upstream GLFW stops the game at startup (`EntryPointNotFoundException:
+glfwSetScrollDetailCallback`). The package ships the library three times under its alias names, as identical
+copies; `fetch-brutal-natives.sh` keeps `libglfw.3.dylib`, its install name, and links the other two to it, so that
+the game and the GLFW shim load the same GLFW.
 
 ### Built here
 
-The GLFW shim, GLFW, VMA and the Metal driver are built from pinned sources with the Command Line Tools and cmake.
-Everything is compiled for macOS 26 explicitly (`MACOS_MIN` in `lib.sh`): without that, a library requires the
-macOS version of the Mac that built it. The driver needs macOS 26 itself. Each step ad-hoc signs what it links,
-because macOS kills a process that loads a library with an invalid signature.
+The GLFW shim and the Metal driver are built from pinned sources with the Command Line Tools and cmake. The shim
+links RocketWerkz's GLFW, with the headers of the fork commit the package is built from
+([RocketWerkz/glfw](https://github.com/RocketWerkz/glfw), tag `rw/3.5.1.2`). Everything is compiled for macOS 26
+explicitly (`MACOS_MIN` in `lib.sh`): without that, a library requires the macOS version of the Mac that built it.
+The driver needs macOS 26 itself. Each step ad-hoc signs what it links, because macOS kills a process that loads a
+library with an invalid signature.
 
 ### Prebuilt
 
@@ -93,7 +92,8 @@ attestation (`gh attestation verify <file> --repo renancamm/ksa-macos-port`).
 
 ## .NET
 
-The Linux release is a self-contained `linux-x64` program. `convert-dotnet.sh`:
+The Linux release is a self-contained `linux-x64` program. `convert-dotnet.sh` first compares the game's BRUTAL
+version with the port's libraries (above), then:
 
 1. Removes the 172 Linux .NET runtime libraries (`System.*.dll`, `mscorlib.dll`, ...): exactly the DLLs whose names
    are also in Microsoft's macOS runtime. Left in place, .NET loads them and fails with `BadImageFormatException`.
@@ -132,15 +132,22 @@ generated Metal source).
 ## GLFW shim
 
 The launcher loads `libGlfwShim.dylib` with `DYLD_INSERT_LIBRARIES` (Microsoft's `dotnet` allows it). Through dyld
-interposing it changes a few calls without modifying GLFW ([`src/glfw_shim.c`](../src/glfw_shim.c)):
+interposing it changes a few calls without modifying GLFW ([`src/glfw_shim.c`](../src/glfw_shim.c)). RocketWerkz's
+fork already lists the desktop's own mode and keeps it when Fullscreen asks for the desktop's size; the shim adds
+what the fork and the game leave out:
 
 - It asks macOS for the scaled HiDPI display modes, as Wine does, so the Resolution list offers modes like 1280x800
-  and 1512x982 instead of starting at 1920x1200.
+  and 1512x982, instead of only the desktop's mode and the modes from 1920x1200 up.
 - In Fullscreen it switches the display to the Resolution from `settings.toml`, which the game itself ignores there
   (it always uses the desktop's size, on Windows too), and sizes the window again when it leaves that mode.
 - It reports the window's real position after display mode changes, which GLFW's macOS backend leaves out. Without
   it, dropdowns opened in the wrong spot, often on another monitor.
-- It skips raw mouse motion calls when they are unsupported, which stops a `PlatformError` after every right-drag.
+- It skips raw mouse motion calls when they are unsupported. KSA checks for support before it turns raw motion on,
+  but not before it turns it off, and GLFW reports a `PlatformError` after every right-drag.
+
+Each of these was checked against the fork, with and without the shim: without it, the Resolution list starts at
+1512x982 on a MacBook display, Fullscreen stays at the desktop's size whatever the Resolution, the game keeps the
+window position it got at startup through every mode change, and the log shows the raw motion error.
 
 ## Metal driver
 
@@ -180,7 +187,7 @@ The scripts contact only these, and only when the file isn't downloaded already:
 
 | Host | What | When |
 |---|---|---|
-| github.com | pinned sources (GLFW, VMA, SPIRV-Cross, SPIRV-Tools, SPIRV-Headers, Vulkan-Headers); this project's prebuilt libraries; `git pull` | building from source; prebuilt lookup; `update.sh` |
+| github.com | pinned sources (GLFW headers from RocketWerkz's fork, SPIRV-Cross, SPIRV-Tools, SPIRV-Headers, Vulkan-Headers); this project's prebuilt libraries; `git pull` | building from source; prebuilt lookup; `update.sh` |
 | api.nuget.org | RocketWerkz's BRUTAL packages | first run, and when their pins change |
 | builds.dotnet.microsoft.com | the .NET runtime | first run, and when its pin changes |
 | ahwoo.com | KSA's title card, for the app icon | the first app you make |
@@ -190,7 +197,7 @@ checked against a checksum or commit in `scripts/pins.sh`; the prebuilt librarie
 published with them and must carry the stamp of the local sources.
 
 The player's path (prebuilt libraries) uses only tools that come with macOS: bash, curl, unzip, tar, shasum, perl,
-od, dd, plutil, sips, iconutil, ditto, codesign and xattr. `git`, `clang` and `python3` need the Command Line Tools
+cmp, od, dd, plutil, sips, iconutil, ditto, codesign and xattr. `git`, `clang` and `python3` need the Command Line Tools
 and are only used to build from source and for `git pull`.
 
 ## Repository layout
@@ -200,7 +207,6 @@ port.sh, update.sh        the two commands
 scripts/                  the steps above, lib.sh and pins.sh
 app/launcher.sh           the app's executable
 src/glfw_shim.c           the GLFW shim
-src/vma.cpp               the VMA build's single source file
 driver/                   the KSA Metal driver
 third_party/fmod/         FMOD's macOS library, with its licence and notice (not MIT)
 .github/workflows/        the prebuilt libraries workflow

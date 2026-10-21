@@ -1,4 +1,4 @@
-# Builds the libraries this repository compiles itself (GLFW, the GLFW shim, the Metal driver) and publishes them
+# Builds the libraries this repository compiles itself (the GLFW shim and the Metal driver) and publishes them
 # as a release named after their sources' stamp, which scripts/fetch-prebuilt.sh downloads. Players then need
 # neither the Command Line Tools nor Homebrew. The release carries a build provenance attestation:
 #   gh attestation verify ksa-macos-natives-<stamp>.tar.gz --repo <owner>/ksa-macos-port
@@ -50,4 +50,4 @@ jobs:
         run: |
           gh release create "${{ steps.package.outputs.tag }}" out/* \
             --title "Prebuilt natives ${{ steps.package.outputs.tag }}" \
-            --notes "GLFW, the GLFW shim and the Metal driver built from ${GITHUB_SHA}. Downloaded by port.sh and update.sh when they match the sources."
+            --notes "The GLFW shim and the Metal driver built from ${GITHUB_SHA}. Downloaded by port.sh and update.sh when they match the sources."

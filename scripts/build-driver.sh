@@ -2,7 +2,8 @@
 # driver/ -> dist/libvulkan.1.dylib (+ libvulkan.dylib)
 #
 # The KSA Metal driver (driver/README.md) implements the Vulkan calls KSA makes on top of Metal. It takes the
-# place of the Vulkan loader: Brutal, VulkanEx, VMA and GLFW all find their Vulkan functions in it.
+# place of the Vulkan loader: Brutal, VulkanEx and GLFW find their Vulkan functions in it, and VMA gets them from
+# Brutal.
 # Needs the static libraries from scripts/build-spirv-cross.sh and scripts/build-spirv-tools.sh.
 # KSA_MTL_OPT overrides the optimization flag (default -O2).
 set -eo pipefail

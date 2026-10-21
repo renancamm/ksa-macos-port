@@ -23,6 +23,23 @@ RUNTIME="$2"
 FRAMEWORK="$(ls -d "${RUNTIME}"/shared/Microsoft.NETCore.App/*/ 2> /dev/null | head -1)"
 [ -n "${FRAMEWORK}" ] || die "no .NET runtime in ${RUNTIME}."
 
+# The port's BRUTAL libraries come from the packages pinned in scripts/pins.sh, each matching one of the game's
+# BRUTAL assemblies (Ahwoo.BRUTAL.Glfw: Brutal.Glfw.dll). An older game doesn't work with them (KSA 2026.10.13
+# passes the 2026.10 VMA library no Vulkan functions and crashes); a newer one may expect functions they lack.
+for entry in "${BRUTAL_PACKAGES[@]}"; do
+    read -r id version _ <<< "${entry}"
+    assembly="Brutal.${id#Ahwoo.BRUTAL.}.dll"
+    brutal="$(LC_ALL=C grep -m 1 -aoE '20[0-9]{2}\.[0-9]+\.[0-9]+\+[0-9a-f]{40}' "${GAME}/${assembly}" 2> /dev/null | head -1 || true)"
+    brutal="${brutal%%+*}"
+    if [ -n "${brutal}" ] && version_newer "${version}" "${brutal}"; then
+        die "this KSA is older than the port supports (${assembly} ${brutal}, the port's library is ${version})." \
+            "Download the current Linux version of KSA from https://ksa.ahwoo.com."
+    elif [ -n "${brutal}" ] && version_newer "${brutal}" "${version}"; then
+        warn "this KSA uses ${assembly} ${brutal}, newer than the port's library (${version})." \
+            "If the game fails to start, the port needs an update."
+    fi
+done
+
 # 1. Linux runtime libraries
 removed=0
 for f in "${FRAMEWORK}"*.dll; do
@@ -69,16 +86,4 @@ for dll in "${GAME}"/*.dll; do
         64aa) ;;
         *) die "$(basename "${dll}") has an unexpected machine type. The port needs an update for this KSA version." ;;
     esac
-done
-
-# The port's BRUTAL libraries come from the packages pinned in scripts/pins.sh. Say so when the game uses a
-# newer BRUTAL: its libraries may then expect functions the pinned ones lack.
-game_brutal="$(LC_ALL=C grep -aoE '20[0-9]{2}\.[0-9]+\.[0-9]+\+[0-9a-f]{40}' "${GAME}/Brutal.ImGui.dll" 2> /dev/null | head -1)"
-game_brutal="${game_brutal%%+*}"
-for entry in "${BRUTAL_PACKAGES[@]}"; do
-    read -r id version _ <<< "${entry}"
-    if [ "${id}" = "Ahwoo.BRUTAL.ImGui" ] && [ -n "${game_brutal}" ] && version_newer "${game_brutal}" "${version}"; then
-        warn "this KSA uses BRUTAL ${game_brutal}, newer than the port's BRUTAL libraries (${version})." \
-            "If the game fails to start, the port needs an update."
-    fi
 done

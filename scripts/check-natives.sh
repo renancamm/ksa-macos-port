@@ -30,7 +30,7 @@ for lib in "${DIST}"/*.dylib; do
     done
 done
 
-for component in brutal glfw vma spirv-cross spirv-tools spirv-headers vulkan-headers; do
+for component in brutal spirv-cross spirv-tools spirv-headers vulkan-headers; do
     [ -n "$(ls "${DIST}/licenses/${component}" 2> /dev/null)" ] || problem "no licence for ${component}"
 done
 

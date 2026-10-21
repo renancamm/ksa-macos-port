@@ -6,9 +6,9 @@
 # Linux release of KSA only has the Linux builds of them. This takes the macOS builds, unmodified, from the
 # packages pinned in scripts/pins.sh, with BRUTAL's licence, notice and the packages' third-party notices.
 #
-# GLFW and VMA are not taken from here. RocketWerkz's GLFW keeps the desktop video mode in fullscreen, which would
-# undo the GLFW shim's Fullscreen resolution switch (scripts/build-glfw.sh builds upstream GLFW instead), and their
-# VMA doesn't work with the BRUTAL version KSA ships (src/vma.cpp, scripts/build-vma.sh).
+# Some packages ship one library under several names (GLFW as libglfw.dylib, libglfw.3.dylib and
+# libglfw.3.5.dylib), as identical copies. The copies become links to the one named by the library's install name,
+# so that the game and the GLFW shim, which links that name, load the same GLFW.
 set -eo pipefail
 source "$(dirname "$0")/lib.sh"
 
@@ -25,6 +25,14 @@ for entry in "${BRUTAL_PACKAGES[@]}"; do
     natives=("${unpacked}"/runtimes/osx-arm64/native/*.dylib)
     [ -f "${natives[0]}" ] || die "${id} ${version} has no macOS libraries."
     cp "${natives[@]}" "${DIST}/"
+    for f in "${natives[@]}"; do
+        name="$(basename "${f}")"
+        install_name="$(LC_ALL=C grep -m 1 -aoE '@rpath/[A-Za-z0-9._+-]+\.dylib' "${f}" | head -1 || true)"
+        install_name="${install_name#@rpath/}"
+        if [ -n "${install_name}" ] && [ "${install_name}" != "${name}" ] && cmp -s "${f}" "${DIST}/${install_name}"; then
+            ln -sf "${install_name}" "${DIST}/${name}"
+        fi
+    done
     cp "${unpacked}/LICENSE.txt" "${unpacked}/NOTICE.txt" "${unpacked}"/LICENSES/* "${DIST}/licenses/brutal/"
     rm -rf "${unpacked}"
     info "${id} ${version}: $(cd "${DIST}" && for f in "${natives[@]}"; do printf '%s ' "$(basename "${f}")"; done)"

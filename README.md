@@ -8,8 +8,8 @@ This is an unofficial community project. It contains no game files: you need you
 ## What you need
 
 - A Mac with Apple Silicon (M1 or later) and **macOS 26** or later.
-- The **Linux version of KSA** from [ksa.ahwoo.com](https://ksa.ahwoo.com), a file like `ksa_linux_v2026.10.13.5602.tar.gz`.
-  Leave it in your Downloads folder.
+- The **Linux version of KSA** from [ksa.ahwoo.com](https://ksa.ahwoo.com), version 2026.10.19 or later: a file like
+  `ksa_linux_v2026.10.19.5638.tar.gz`. Leave it in your Downloads folder.
 
 ## Make the app
 
@@ -23,7 +23,7 @@ This is an unofficial community project. It contains no game files: you need you
 3. Open **Kitten Space Agency** from Launchpad, Spotlight or `~/Applications`.
 
 `port.sh` takes the newest `ksa_linux_v*.tar.gz` from your Downloads folder. To use another file, pass its path:
-`./port.sh ~/Desktop/ksa_linux_v2026.10.13.5602.tar.gz`. It takes a minute and needs an internet connection the
+`./port.sh ~/Desktop/ksa_linux_v2026.10.19.5638.tar.gz`. It takes a minute and needs an internet connection the
 first time (see [what it downloads](docs/how-it-works.md#network-access)).
 
 The first start of the game takes longer than later ones, while macOS compiles the game's shaders.
@@ -66,15 +66,18 @@ don't want to keep your saves.
 - **`[WARN]` next to a shader fix** while converting a new KSA version: the game changed the code that fix
   applies to. RocketWerkz may have fixed the bug, or this project needs an update. The game still runs; please open
   an issue.
-- **"this KSA uses BRUTAL ..., newer than the port's"**: the game moved to a newer version of its framework. If it
-  fails to start, this project needs an update; please open an issue.
+- **"this KSA is older than the port supports"**: the port uses the libraries of the framework version the current
+  KSA ships, and they don't work with older versions. Download the current Linux version of KSA.
+- **"this KSA uses Brutal.... newer than the port's library"**: the game moved to a newer version of its framework.
+  If it fails to start, this project needs an update; please open an issue.
 
 ## How it works
 
 The Linux version of KSA is a .NET program with Linux libraries next to it. `port.sh` swaps in macOS versions of
-those libraries: RocketWerkz's own macOS builds of its framework's libraries, Microsoft's .NET runtime for macOS,
-FMOD for macOS, and a graphics driver written for KSA on Apple's Metal. Then it fixes two bugs in the game's shaders
-and puts it all in an app. [docs/how-it-works.md](docs/how-it-works.md) explains each step;
+those libraries: RocketWerkz's own macOS builds of its framework's libraries (the same versions the game ships for
+Linux), Microsoft's .NET runtime for macOS, FMOD for macOS, and a graphics driver written for KSA on Apple's Metal.
+A small shim makes the window behave as on Windows (resolutions, Fullscreen, popup positions). Then it fixes two bugs
+in the game's shaders and puts it all in an app. [docs/how-it-works.md](docs/how-it-works.md) explains each step;
 [driver/README.md](driver/README.md) explains the driver.
 
 ## Credits
@@ -82,9 +85,9 @@ and puts it all in an app. [docs/how-it-works.md](docs/how-it-works.md) explains
 - [Luc8020/ksa-macos-port](https://github.com/Luc8020/ksa-macos-port), the project this one started from.
 - RocketWerkz, for Kitten Space Agency and for publishing [BRUTAL](https://github.com/ahwootech/BRUTAL), its
   framework, with macOS builds of its libraries.
-- [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross), [SPIRV-Tools](https://github.com/KhronosGroup/SPIRV-Tools),
-  [GLFW](https://www.glfw.org) and [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator),
-  built into the app, and the many projects inside BRUTAL's libraries.
+- [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) and [SPIRV-Tools](https://github.com/KhronosGroup/SPIRV-Tools),
+  built into the Metal driver, and the many projects inside BRUTAL's libraries, among them
+  [GLFW](https://www.glfw.org) and [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator).
 - Audio: FMOD Engine by Firelight Technologies Pty Ltd.
 
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) lists every component in the app with its licence.

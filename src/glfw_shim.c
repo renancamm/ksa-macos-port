@@ -1,16 +1,20 @@
 /*
- * libGlfwShim.dylib - makes the bundled GLFW (upstream 3.5.1) behave like the Windows build
- * under Wine. The app's launcher loads it with DYLD_INSERT_LIBRARIES, and it replaces
- * a few calls through dyld interposing, so GLFW itself stays unmodified.
+ * libGlfwShim.dylib - makes the GLFW that KSA ships (RocketWerkz's fork of GLFW 3.5.1, from the
+ * Ahwoo.BRUTAL.Glfw package) behave like the Windows build under Wine. The app's launcher loads
+ * it with DYLD_INSERT_LIBRARIES, and it replaces a few calls through dyld interposing, so GLFW
+ * itself stays unmodified.
+ *
+ * The fork already adds the desktop's (HiDPI) mode to the video mode list and keeps it when a
+ * full screen window asks for its size. These are the fixes it does not have:
  *
  * 1. CGDisplayCopyAllDisplayModes: GLFW passes no options, so macOS leaves out the
- *    scaled HiDPI modes and the game's resolution list on a MacBook display starts at
- *    1920x1200. Wine's mac driver asks for them with
+ *    scaled HiDPI modes and the game's resolution list on a MacBook display holds only the
+ *    desktop mode and the modes from 1920x1200 up. Wine's mac driver asks for them with
  *    kCGDisplayShowDuplicateLowResolutionModes; do the same for GLFW's calls.
- * 2. glfwSetInputMode: KSA turns raw mouse motion off without checking
- *    glfwRawMouseMotionSupported(), and GLFW's Cocoa backend reports a PlatformError
- *    ("Raw mouse motion is not supported on this system") after every right-drag.
- *    Skip raw motion calls when it is unsupported.
+ * 2. glfwSetInputMode: KSA checks glfwRawMouseMotionSupported() before it turns raw mouse
+ *    motion on, but not before it turns it off, and GLFW's Cocoa backend reports a
+ *    PlatformError ("Raw mouse motion is not supported on this system") after every
+ *    right-drag. Skip raw motion calls when it is unsupported.
  * 3. glfwSetWindowMonitor: in Fullscreen mode KSA always passes the desktop's current
  *    size (the Windows build does too), so the Resolution setting does nothing there.
  *    Use display.width/height from settings.toml instead, which makes GLFW switch the

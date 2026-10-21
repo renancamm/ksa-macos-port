@@ -1,7 +1,7 @@
 #!/bin/bash
 # Prebuilt natives from this repository's GitHub releases -> dist/
 #
-# The libraries this repository builds itself (GLFW, the GLFW shim, the Metal driver) are published by the
+# The libraries this repository builds itself (the GLFW shim and the Metal driver) are published by the
 # "Prebuilt natives" workflow (.github/workflows/prebuilt.yml) for each version of their sources. The release is
 # named after the sources' stamp (lib.sh natives_stamp), so it only matches identical sources. Building from
 # source gives the same libraries.

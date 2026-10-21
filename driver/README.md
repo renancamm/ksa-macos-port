@@ -1,8 +1,8 @@
 # KSA Metal driver
 
 A Vulkan-shaped Metal driver that implements just the Vulkan surface Kitten Space Agency uses. The app ships it as
-`libvulkan.1.dylib`, in the place of the Vulkan loader and a Vulkan driver: Brutal (through `libVulkanEx`), VMA and
-GLFW all resolve their Vulkan symbols from it. Nothing in the game changes.
+`libvulkan.1.dylib`, in the place of the Vulkan loader and a Vulkan driver: Brutal, `libVulkanEx` and GLFW resolve
+their Vulkan symbols from it, and VMA gets them from Brutal. Nothing in the game changes.
 
 Status: the game runs on it with every graphics setting: terrain tessellation, ground clutter with shadows,
 ray-query grass placement, IVA ray tracing (ray tracing pipelines run as compute kernels), clouds, MSAA and Cmaa2.

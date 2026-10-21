@@ -18,9 +18,9 @@ MACOS_MIN="26.0"
 export MACOSX_DEPLOYMENT_TARGET="${MACOS_MIN}"
 
 # The libraries this repository builds itself, in build order (scripts/build-*.sh), and what they put in dist/.
-BUILD_STEPS=(build-glfw build-glfw-shim build-spirv-cross build-spirv-tools build-driver build-vma)
-BUILT_FILES=(libglfw.3.dylib libglfw.dylib libGlfwShim.dylib libvulkan.1.dylib libvulkan.dylib libvma.dylib licenses/vma
-             licenses/glfw licenses/spirv-cross licenses/spirv-tools licenses/spirv-headers licenses/vulkan-headers)
+BUILD_STEPS=(build-glfw-shim build-spirv-cross build-spirv-tools build-driver)
+BUILT_FILES=(libGlfwShim.dylib libvulkan.1.dylib libvulkan.dylib
+             licenses/spirv-cross licenses/spirv-tools licenses/spirv-headers licenses/vulkan-headers)
 
 source "${SCRIPTS}/pins.sh"
 
@@ -97,7 +97,7 @@ natives_stamp() {
     (
         cd "${REPO}"
         ls scripts/lib.sh scripts/pins.sh scripts/fetch-brutal-natives.sh scripts/build-*.sh scripts/check-natives.sh \
-            src/*.c src/*.cpp driver/*.mm driver/*.cpp driver/*.h | LC_ALL=C sort | while read -r f; do shasum -a 256 "${f}"; done
+            src/*.c driver/*.mm driver/*.cpp driver/*.h | LC_ALL=C sort | while read -r f; do shasum -a 256 "${f}"; done
     ) | shasum -a 256 | cut -d' ' -f1
 }
 
@@ -153,7 +153,7 @@ dotnet_runtime_dir() {
     echo "${DEPS}/dotnet/${DOTNET_VERSION}"
 }
 
-# game_version <game dir>: KSA's version from KSA.dll (for example 2026.10.13.5602)
+# game_version <game dir>: KSA's version from KSA.dll (for example 2026.10.19.5638)
 game_version() {
     LC_ALL=C grep -aoE '20[0-9]{2}\.[0-9]{1,2}\.[0-9]{1,2}\.[0-9]+' "$1/KSA.dll" | head -1
 }
