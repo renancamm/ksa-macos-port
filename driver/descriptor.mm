@@ -55,7 +55,7 @@ VKFN(VkResult) vkCreateDescriptorSetLayout(VkDevice, const VkDescriptorSetLayout
 
 VKFN(void) vkDestroyDescriptorSetLayout(VkDevice, VkDescriptorSetLayout l, const VkAllocationCallbacks*) {
     KTRACE_FIRST();
-    delete (KSetLayout*)l;
+    if (auto* layout = (KSetLayout*)l) layout->release();
 }
 
 VKFN(void) vkGetDescriptorSetLayoutSupport(VkDevice, const VkDescriptorSetLayoutCreateInfo*, VkDescriptorSetLayoutSupport* s) {
@@ -151,6 +151,7 @@ VKFN(VkResult) vkAllocateDescriptorSets(VkDevice, const VkDescriptorSetAllocateI
         auto* s = new KDescriptorSet();
         s->pool = p;
         s->layout = l;
+        l->retain();
         s->chunk = chunk;
         s->buffer = p->chunks[chunk].buffer;
         s->base = p->chunks[chunk].base + off;
@@ -285,11 +286,11 @@ VKFN(void) vkUpdateDescriptorSets(VkDevice, uint32_t writeCount, const VkWriteDe
 VKFN(VkResult) vkCreatePipelineLayout(VkDevice, const VkPipelineLayoutCreateInfo* ci, const VkAllocationCallbacks*, VkPipelineLayout* out) {
     KTRACE_FIRST();
     auto* pl = new KPipelineLayout();
-    pl->setCopies.resize(ci->setLayoutCount);
     for (uint32_t i = 0; i < ci->setLayoutCount; i++) {
-        if (ci->pSetLayouts[i]) pl->setCopies[i] = *(KSetLayout*)ci->pSetLayouts[i];
+        auto* l = (KSetLayout*)ci->pSetLayouts[i];
+        if (l) l->retain();
+        pl->sets.push_back(l);
     }
-    for (uint32_t i = 0; i < ci->setLayoutCount; i++) pl->sets.push_back(ci->pSetLayouts[i] ? &pl->setCopies[i] : nullptr);
     for (uint32_t i = 0; i < ci->pushConstantRangeCount; i++)
         pl->pushConstantSize = std::max(pl->pushConstantSize, ci->pPushConstantRanges[i].offset + ci->pPushConstantRanges[i].size);
     *out = (VkPipelineLayout)pl;

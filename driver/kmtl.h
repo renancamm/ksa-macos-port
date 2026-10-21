@@ -236,6 +236,10 @@ struct KSetLayout {
         for (auto& x : bindings) if (x.binding == b) return &x;
         return nullptr;
     }
+    // The app may destroy a set layout while sets and pipeline layouts made from it still use it, so they hold a reference
+    std::atomic<uint32_t> refs{1};
+    void retain() { refs++; }
+    void release() { if (--refs == 0) delete this; }
 };
 
 struct KDescriptorPool {
@@ -263,13 +267,13 @@ struct KDescriptorSet {
     VkDeviceSize size = 0;
     uint64_t* slots() const { return (uint64_t*)base; }
     uint32_t* sizes() const { return (uint32_t*)(base + layout->slotCount * 8); }
+    ~KDescriptorSet() { if (layout) layout->release(); }
 };
 
 struct KPipelineLayout {
     std::vector<KSetLayout*> sets;
-    // Owned copies: Vulkan lets the app destroy set layouts after creating the pipeline layout
-    std::vector<KSetLayout> setCopies;
     uint32_t pushConstantSize = 0;
+    ~KPipelineLayout() { for (auto* l : sets) if (l) l->release(); }
 };
 
 struct KShaderModule {
