@@ -66,6 +66,8 @@ void KCommandBuffer::beginCommands() {
     encRoles = 0;
     encWaited.clear();
     fenceNext = 0;
+    resolveWaited = resolveSignaled;
+    passResolves = false;
 }
 
 id<MTLFence> KCommandBuffer::newFence() {
@@ -144,8 +146,15 @@ void KCommandBuffer::barrierClasses(uint32_t src, uint32_t dst) {
 
 // End of recording: one encoder that waits on the last fence of every class and updates the chain fence
 void KCommandBuffer::joinCommands() {
-    if (strictSync() || !mtl) return;
+    if (!mtl) return;
     endEncoder();
+    // Later command buffers start after the chain fence, which the join updates after resolves still in flight
+    bool resolving = resolveWaited != resolveSignaled && !noSync();
+    if (resolving) {
+        [mtl encodeWaitForEvent:resolveEvent value:resolveSignaled];
+        resolveWaited = resolveSignaled;
+    }
+    if (strictSync() && !resolving) return;
     id<MTLBlitCommandEncoder> b = [mtl blitCommandEncoder];
     std::vector<id<MTLFence>> seen;
     for (id<MTLFence> f : lastFence) {
@@ -219,6 +228,11 @@ void KCommandBuffer::endEncoder() {
         [render endEncoding];
         render = nil;
         inRenderPass = false;
+        if (passResolves && !suspending) {
+            passResolves = false;
+            if (!resolveEvent) resolveEvent = [device->mtl newEvent];
+            [mtl encodeSignalEvent:resolveEvent value:++resolveSignaled];
+        }
     }
     if (compute) {
         [compute updateFence:finishFence(encRoles)];
@@ -234,9 +248,26 @@ void KCommandBuffer::endEncoder() {
     kmtlProfEncoderEnded(this);
 }
 
+// Before a compute or blit encoder: MSAA resolves of earlier render passes are not covered by their fences (on Apple
+// GPUs, work ordered after a pass's fragment fence could read the resolve texture's previous contents: KSA's ocean
+// copies the resolved scene with a compute kernel), so an encoder that depends on fragment work waits for the
+// resolves through the event. One wait covers every earlier resolve of the command buffer. Render passes do not wait:
+// KSA's passes after a resolve load the multisample attachments, and those that sample resolved images come after
+// compute work that has waited; waiting there would cost the overlap of every pass with the previous one.
+void KCommandBuffer::waitForResolves(uint32_t roles) {
+    if (resolveWaited == resolveSignaled || noSync()) return;
+    bool dependent = false;
+    for (uint32_t r = roles; r; r &= r - 1)
+        if (needMask[classIndex(r & -r)] & kClassFragment) dependent = true;
+    if (!dependent) return;
+    [mtl encodeWaitForEvent:resolveEvent value:resolveSignaled];
+    resolveWaited = resolveSignaled;
+}
+
 id<MTLComputeCommandEncoder> KCommandBuffer::computeEncoder(uint32_t roles) {
     if (compute && (encRoles & roles) == roles) return compute;
     endEncoder();
+    waitForResolves(roles);
     compute = kmtlProfComputeEncoder(this);
     waitForRoles(compute, roles);
     computeSetsDirty = ~0u;
@@ -247,6 +278,7 @@ id<MTLComputeCommandEncoder> KCommandBuffer::computeEncoder(uint32_t roles) {
 id<MTLBlitCommandEncoder> KCommandBuffer::blitEncoder() {
     if (blit) return blit;
     endEncoder();
+    waitForResolves(kClassTransfer);
     blit = kmtlProfBlitEncoder(this);
     waitForRoles(blit, kClassTransfer);
     return blit;
@@ -254,6 +286,10 @@ id<MTLBlitCommandEncoder> KCommandBuffer::blitEncoder() {
 
 void KCommandBuffer::beginRender(MTLRenderPassDescriptor* rp, uint32_t w, uint32_t h, bool resuming, uint32_t roles) {
     endEncoder();
+    if (!resuming) {
+        passResolves = rp.depthAttachment.resolveTexture || rp.stencilAttachment.resolveTexture;
+        for (int i = 0; i < 8; i++) passResolves |= rp.colorAttachments[i].resolveTexture != nil;
+    }
     deferredStores = kmtlTessellationEnabled();
     if (deferredStores) {
         if (!resuming) {

@@ -401,6 +401,13 @@ struct KCommandBuffer : KDispatchable {
     std::vector<id<MTLFence>> encWaited;  // fences the open encoder waited on
     std::vector<id<MTLFence>> fencePool;
     size_t fenceNext = 0;
+    // MSAA resolves: a render pass's fences can signal before its resolve store actions have written the resolve
+    // textures, so a pass that resolves also signals this event, and the next compute or blit encoder that depends on
+    // fragment work (and the end of the command buffer) waits for it
+    id<MTLEvent> resolveEvent = nil;
+    uint64_t resolveSignaled = 0, resolveWaited = 0;
+    bool passResolves = false;
+    void waitForResolves(uint32_t roles);
     void beginCommands();
     void joinCommands();
     id<MTLFence> newFence();
