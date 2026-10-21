@@ -1,6 +1,7 @@
 // Shader modules, SPIR-V -> MSL translation, render passes, framebuffers, graphics and compute pipelines.
 #include "kmtl.h"
 #include "spirv_msl.hpp"
+#include "spirv_parser.hpp"
 #include <sys/stat.h>
 #include <memory>
 #include <regex>
@@ -158,6 +159,41 @@ static uint32_t constantValue(CompilerMSL& c, uint32_t id) {
     return c.get_constant(id).scalar();
 }
 
+// A runtime-sized array of descriptors (images, samplers, acceleration structures) gets the descriptor count of its
+// layout binding, as Vulkan sizes it. SPIRV-Cross declares a runtime array in an argument buffer as [1] but pads the
+// buffer for the layout's count, so every later binding of the set is read one slot off per missing element (KSA's
+// IVA TLAS array has one structure per frame in flight: its uniform, with the frame's TLAS index, was read from the
+// second structure's slot, and every other frame traced the previous frame's TLAS)
+static ParsedIR sizeRuntimeArrays(const std::vector<uint32_t>& spirv, KPipelineLayout* layout) {
+    Parser parser(spirv);
+    parser.parse();
+    ParsedIR ir = std::move(parser.get_parsed_ir());
+    if (!layout) return ir;
+    std::unordered_map<uint32_t, uint32_t> sized;  // type id -> count given
+    ir.for_each_typed_id<SPIRVariable>([&](uint32_t id, SPIRVariable& var) {
+        if (var.storage != spv::StorageClassUniformConstant) return;
+        // The pointer type carries a copy of the pointee's array sizes: both are sized
+        auto& ptr = ir.ids[var.basetype].get<SPIRType>();
+        if (!ptr.pointer || ptr.array.empty() || !ptr.array_size_literal.back()) return;
+        auto& arr = ir.ids[ptr.parent_type].get<SPIRType>();
+        if (arr.op != spv::OpTypeRuntimeArray && !sized.count(ptr.parent_type)) return;
+        uint32_t set = ir.get_decoration(id, spv::DecorationDescriptorSet);
+        uint32_t binding = ir.get_decoration(id, spv::DecorationBinding);
+        const KBinding* b = set < layout->sets.size() && layout->sets[set] ? layout->sets[set]->find(binding) : nullptr;
+        if (!b) return;
+        for (uint32_t t : {(uint32_t)var.basetype, (uint32_t)ptr.parent_type}) {
+            auto it = sized.find(t);
+            if (it != sized.end() && it->second != b->count)
+                KERR("runtime array type %u bound with %u and %u descriptors: sized %u", t, it->second, b->count, it->second);
+            sized.emplace(t, b->count);
+        }
+        ptr.array.back() = sized[var.basetype];
+        arr.array.back() = sized[ptr.parent_type];
+        arr.op = spv::OpTypeArray;
+    });
+    return ir;
+}
+
 static bool translate(KShaderModule* mod, const char* entryName, spv::ExecutionModel model, KPipelineLayout* layout,
                       const VkSpecializationInfo* spec, const KStageOptions& so, KTranslated* out, std::string* err) {
     uint32_t fragOutputMask = so.fragMask, viewMask = so.viewMask;
@@ -165,7 +201,7 @@ static bool translate(KShaderModule* mod, const char* entryName, spv::ExecutionM
     auto t0 = std::chrono::steady_clock::now();
     struct Timer { std::chrono::steady_clock::time_point t; ~Timer() { g_usTranslate += usSince(t); g_nTranslate++; } } timer{t0};
     try {
-        CompilerMSL c(mod->spirv);
+        CompilerMSL c(sizeRuntimeArrays(mod->spirv, layout));
         c.set_entry_point(entryName, model);
         if (so.tess == KTessRole::ControlKernel || so.tess == KTessRole::Evaluation) {
             c.set_execution_mode(so.tessQuads ? spv::ExecutionModeQuads : spv::ExecutionModeTriangles);
@@ -412,7 +448,7 @@ static bool passthroughEnabled() {
 // specialization data, and the translator version. Bump kTranslatorVersion when translate() or its MSL patches change
 static uint64_t translationKey(KShaderModule* mod, const char* entry, spv::ExecutionModel model, KPipelineLayout* layout,
                                const VkSpecializationInfo* spec, const KStageOptions& so) {
-    static const uint32_t kTranslatorVersion = 2;
+    static const uint32_t kTranslatorVersion = 3;
     std::vector<uint32_t> k = {kTranslatorVersion, 0x300681bbu /* SPIRV-Cross pin */, (uint32_t)model, so.fragMask,
         so.sampleRate, so.viewMask, (uint32_t)so.tess, (uint32_t)so.indexType, so.tessControlPoints, so.tessQuads,
         passthroughEnabled(), (uint32_t)mod->hash, (uint32_t)(mod->hash >> 32), so.rtLaunch};
