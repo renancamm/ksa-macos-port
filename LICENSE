@@ -19,3 +19,9 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+This license does not cover third_party/fmod/, which contains FMOD Engine
+software by Firelight Technologies Pty Ltd under the FMOD End User Licence
+Agreement. See third_party/fmod/NOTICE.txt and third_party/fmod/LICENSE.TXT.

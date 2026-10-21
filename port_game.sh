@@ -42,31 +42,34 @@ if [ ! -f "${GAME_DIR}/libMoltenVK.dylib" ]; then
     echo "             Run ./build_moltenvk.sh \"${DIST_DIR}\" to build MoltenVK (ray-query branch)."
 fi
 
-# 4. Locate & install FMOD Engine for macOS dylibs if not already in GAME_DIR
-echo "==> [4/6] Checking FMOD Engine audio libraries..."
-if [ ! -f "${GAME_DIR}/libfmod.dylib" ] || [ ! -f "${GAME_DIR}/libfmodstudio.dylib" ]; then
+# 4. Install the FMOD Engine core library (KSA uses only the core API, not FMOD Studio)
+#    from third_party/fmod, or from a mounted FMOD Engine for Mac .dmg if that copy is missing
+echo "==> [4/6] Installing FMOD Engine audio library..."
+FMOD_DIR="${SCRIPT_DIR}/third_party/fmod"
+if [ -f "${FMOD_DIR}/libfmod.dylib" ]; then
+    cp "${FMOD_DIR}/libfmod.dylib" "${GAME_DIR}/"
+    cp "${FMOD_DIR}/LICENSE.TXT" "${GAME_DIR}/FMOD_LICENSE.TXT"
+    cp "${FMOD_DIR}/NOTICE.txt" "${GAME_DIR}/FMOD_NOTICE.txt"
+else
     for FMOD_API in \
         "/Volumes/FMOD Programmers API Mac/FMOD Programmers API/api" \
         "/Applications/FMOD Programmers API/api" \
         "/Applications/FMOD SoundSystem/FMOD Studio API Mac/api"; do
         if [ -f "${FMOD_API}/core/lib/libfmod.dylib" ]; then
             echo "    Found FMOD API at: ${FMOD_API}"
-            cp "${FMOD_API}/core/lib/libfmod.dylib" "${FMOD_API}/core/lib/libfmodL.dylib" "${GAME_DIR}/"
-            cp "${FMOD_API}/studio/lib/libfmodstudio.dylib" "${FMOD_API}/studio/lib/libfmodstudioL.dylib" "${GAME_DIR}/"
+            cp "${FMOD_API}/core/lib/libfmod.dylib" "${GAME_DIR}/"
             break
         fi
     done
 fi
 
-if [ -f "${GAME_DIR}/libfmodstudio.dylib" ]; then
-    chmod +w "${GAME_DIR}"/libfmod*.dylib
-    install_name_tool -add_rpath "@loader_path" "${GAME_DIR}/libfmodstudio.dylib" 2>/dev/null || true
-    [ -f "${GAME_DIR}/libfmodstudioL.dylib" ] && \
-        install_name_tool -add_rpath "@loader_path" "${GAME_DIR}/libfmodstudioL.dylib" 2>/dev/null || true
+if [ -f "${GAME_DIR}/libfmod.dylib" ]; then
+    chmod +w "${GAME_DIR}/libfmod.dylib"
 else
-    echo "    WARNING: libfmod.dylib / libfmodstudio.dylib not found!"
-    echo "             Download 'FMOD Engine 2.03.xx for macOS' from https://www.fmod.com/download,"
-    echo "             mount the .dmg, and re-run this script (or copy libfmod*.dylib into the game folder)."
+    echo "    WARNING: libfmod.dylib not found!"
+    echo "             Restore third_party/fmod/libfmod.dylib (git checkout third_party/fmod), or download"
+    echo "             'FMOD Engine 2.03.xx for macOS' from https://www.fmod.com/download, mount the .dmg,"
+    echo "             and re-run this script."
 fi
 
 # 5. Install MoltenVK ICD manifest and launcher script

@@ -1,0 +1,28 @@
+FMOD Engine 2.03.15 (build 168126) by Firelight Technologies Pty Ltd.
+
+FMOD is a trademark of Firelight Technologies Pty Ltd. The FMOD Engine is
+Copyright (c) Firelight Technologies Pty Ltd. This project is not affiliated
+with or endorsed by Firelight Technologies.
+
+Use of FMOD is subject to the FMOD End User Licence Agreement in LICENSE.TXT
+next to this file, copied unchanged from the FMOD Engine 2.03.15 for Mac
+package. Current terms: https://www.fmod.com/legal
+
+This folder is not covered by the MIT License of this repository.
+
+Only the FMOD Engine runtime library that Kitten Space Agency loads on macOS is
+redistributed here: libfmod.dylib, the core library, as shipped in
+api/core/lib/ of the FMOD Engine 2.03.15 for Mac package (universal binary,
+x86_64 and arm64), unmodified. FMOD Studio, the FMOD Studio API library, the
+logging libraries, SDK headers, documentation, examples and example media are
+not included. Kitten Space Agency uses FMOD under its developer's own license;
+its Linux release ships FMOD 2.03 for Linux.
+
+port_game.sh copies libfmod.dylib into the game folder and ad-hoc signs that
+copy so macOS loads it. The file in this folder stays as shipped.
+
+SHA-256:
+5ea5822d39d4ce464dd5e5d2cc781621d16d821ca1aa7496167da51b58b357b7  libfmod.dylib
+de329f25b7e261db25c358b9261bc0803c114a07957961691c5ecbd174015a5c  LICENSE.TXT
+
+Audio engine: FMOD by Firelight Technologies Pty Ltd.

@@ -13,6 +13,7 @@ deps/
 *.o
 *.a
 *.dylib
+!third_party/fmod/libfmod.dylib
 *.log
 
 # C# / .NET

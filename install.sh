@@ -93,13 +93,14 @@ fi
 
 FMOD_FOUND=0
 for FMOD_API in \
-    "/Volumes/FMOD Programmers API Mac/FMOD Programmers API/api" \
-    "/Applications/FMOD Programmers API/api" \
-    "/Applications/FMOD SoundSystem/FMOD Studio API Mac/api"; do
-    [ -f "${FMOD_API}/core/lib/libfmod.dylib" ] && FMOD_FOUND=1
+    "${SCRIPT_DIR}/third_party/fmod" \
+    "/Volumes/FMOD Programmers API Mac/FMOD Programmers API/api/core/lib" \
+    "/Applications/FMOD Programmers API/api/core/lib" \
+    "/Applications/FMOD SoundSystem/FMOD Studio API Mac/api/core/lib"; do
+    [ -f "${FMOD_API}/libfmod.dylib" ] && FMOD_FOUND=1
 done
-if [ "${FMOD_FOUND}" = 0 ] && { [ ! -d "${SOURCE}" ] || [ ! -f "${SOURCE}/libfmodstudio.dylib" ]; }; then
-    MISSING+=("FMOD Engine 2.03.xx for macOS: download it from https://www.fmod.com/download and open the .dmg so it mounts at '/Volumes/FMOD Programmers API Mac'")
+if [ "${FMOD_FOUND}" = 0 ] && { [ ! -d "${SOURCE}" ] || [ ! -f "${SOURCE}/libfmod.dylib" ]; }; then
+    MISSING+=("third_party/fmod/libfmod.dylib (restore it with: git checkout third_party/fmod)")
 fi
 
 if [ ${#MISSING[@]} -gt 0 ]; then

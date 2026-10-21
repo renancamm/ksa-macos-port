@@ -17,7 +17,6 @@ This repository contains no game files. You need your own copy of the Linux rele
   brew install --cask dotnet-sdk
   brew install cmake glfw vulkan-headers vulkan-loader shaderc spirv-tools glm
   ```
-- **FMOD Engine 2.03 for macOS.** FMOD can't be redistributed, so download it yourself: sign in at [fmod.com/download](https://www.fmod.com/download) (free account), download **FMOD Engine → 2.03.xx → Mac**, and open the `.dmg` so it mounts at `/Volumes/FMOD Programmers API Mac`.
 - **The Linux release of KSA**, for example `ksa_linux_v2026.10.13.5602.tar.gz`.
 
 ## Install
@@ -85,7 +84,7 @@ To play a plain folder without making an app, run `./start_mac.command` in it. T
 │ • libVulkanEx.dylib / libvma.dylib│  │  DLLs removed from folder)  │
 │ • libimgui.dylib / libimplot.dylib│  └─────────────────────────────┘
 │ • libKtx.dylib → libktx_real.dylib│
-│ • libfmod.dylib / libfmodstudio   │
+│ • libfmod.dylib (FMOD Engine core)│
 └───────────────┬───────────────────┘
                 │ (Vulkan 1.4 API via libvulkan.1.dylib + MoltenVK_icd.json)
                 ▼
@@ -139,7 +138,7 @@ Every library gets an `@loader_path/…` install name, so the game folder needs 
 
 ### FMOD
 
-The Linux release ships FMOD 2.03 `.so` files. `port_game.sh` copies the macOS `libfmod`, `libfmodL`, `libfmodstudio` and `libfmodstudioL` dylibs (universal binaries) from the mounted FMOD `.dmg`, and adds `@loader_path` to the studio libraries' rpath so they find `libfmod.dylib` next to them.
+The Linux release ships FMOD 2.03 `.so` files. KSA uses only FMOD's core API (it has no FMOD Studio banks), so on macOS it needs just `libfmod.dylib`. That library is included in [`third_party/fmod/`](third_party/fmod/): the universal binary from FMOD Engine 2.03.15 for Mac, unmodified, with FMOD's licence agreement and a notice. `port_game.sh` copies it into the game folder with `FMOD_LICENSE.TXT` and `FMOD_NOTICE.txt`. If `third_party/fmod/libfmod.dylib` is missing, it copies the library from a mounted FMOD Engine for Mac `.dmg` instead ([fmod.com/download](https://www.fmod.com/download), free account).
 
 ### MoltenVK with ray queries
 
@@ -196,6 +195,7 @@ start_mac.command     Game launcher (Vulkan driver, GLFW shim, ray tracing setti
 MoltenVK_icd.json     Vulkan driver manifest pointing to ./libMoltenVK.dylib
 pecheck.py            Diagnostic: prints the PE machine type and CLR flags of a .dll
 app/launcher.sh       The .app's executable; hands off to start_mac.command
+third_party/fmod/     FMOD Engine core library for macOS, with its licence agreement and notice (not MIT)
 src/                  Sources of the native helper libraries (stb, VulkanEx, VMA, GLI, GLFW shim, KTX, ImGui/ImPlot)
 ```
 
@@ -203,10 +203,13 @@ src/                  Sources of the native helper libraries (stb, VulkanEx, VMA
 
 - [Luc8020/ksa-macos-port](https://github.com/Luc8020/ksa-macos-port), the project this fork is based on.
 - [dttdrv's MoltenVK ray-query branch](https://github.com/dttdrv/MoltenVK/tree/macgaming/ray-query-pr), and the authors of MoltenVK and SPIRV-Cross.
+- Audio: FMOD Engine by Firelight Technologies Pty Ltd. See [`third_party/fmod/NOTICE.txt`](third_party/fmod/NOTICE.txt).
 - [Dear ImGui](https://github.com/ocornut/imgui), [ImPlot](https://github.com/epezent/implot), [KTX-Software](https://github.com/KhronosGroup/KTX-Software), [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator), [GLI](https://github.com/g-truc/gli), [stb](https://github.com/nothings/stb) and [GLFW](https://www.glfw.org).
 
 ## License and disclaimer
 
-The scripts and sources in this repository are under the [MIT License](LICENSE).
+The scripts and sources in this repository are under the [MIT License](LICENSE), except [`third_party/fmod/`](third_party/fmod/).
 
-**Kitten Space Agency** is developed and owned by **RocketWerkz**. This is an unofficial community project. It contains no game code, no game binaries, no FMOD binaries and no game assets. You need your own copy of KSA to use it.
+`third_party/fmod/` contains `libfmod.dylib` from the FMOD Engine by Firelight Technologies Pty Ltd. FMOD is proprietary software, not covered by the MIT License. Its use is subject to the [FMOD End User Licence Agreement](third_party/fmod/LICENSE.TXT) (current terms at [fmod.com/legal](https://www.fmod.com/legal)). FMOD is a trademark of Firelight Technologies Pty Ltd, and this project is not affiliated with or endorsed by Firelight Technologies.
+
+**Kitten Space Agency** is developed and owned by **RocketWerkz**. This is an unofficial community project. It contains no game code, no game binaries and no game assets. You need your own copy of KSA to use it.
