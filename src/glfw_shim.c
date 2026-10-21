@@ -1,6 +1,6 @@
 /*
- * libGlfwShim.dylib - makes the bundled Homebrew GLFW behave like the Windows build
- * under Wine. start_mac.command loads it with DYLD_INSERT_LIBRARIES, and it replaces
+ * libGlfwShim.dylib - makes the bundled GLFW (upstream 3.5.1) behave like the Windows build
+ * under Wine. The app's launcher loads it with DYLD_INSERT_LIBRARIES, and it replaces
  * a few calls through dyld interposing, so GLFW itself stays unmodified.
  *
  * 1. CGDisplayCopyAllDisplayModes: GLFW passes no options, so macOS leaves out the

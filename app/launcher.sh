@@ -1,38 +1,42 @@
 #!/bin/bash
-# ==============================================================================
-# Kitten Space Agency (KSA) - macOS .app bundle launcher
+# The app's executable (Kitten Space Agency.app/Contents/MacOS/KSA), installed by scripts/make-app.sh.
 #
-# Installed by make_app.sh as "Kitten Space Agency.app/Contents/MacOS/KSA".
-# Puts the bundled .NET runtime (Contents/MacOS/dotnet) first on PATH and hands
-# off to start_mac.command in Contents/Resources, which sets up MoltenVK and
-# exec's the game, so the game process keeps this bundle's identity (Dock icon,
-# menu bar name).
-# ==============================================================================
+# Starts KSA (Contents/Resources/KSA.dll) with the .NET runtime in Contents/MacOS:
+#   DYLD_LIBRARY_PATH      the game folder first, so every library, including the Metal driver as
+#                          libvulkan.1.dylib, comes from the app and never from elsewhere on the Mac
+#   DYLD_INSERT_LIBRARIES  the GLFW shim (src/glfw_shim.c)
+# Output goes to ~/Library/Logs/Kitten Space Agency.log, or to the terminal when started from one.
+# The game's own logs, settings and saves are in ~/Documents/My Games/Kitten Space Agency.
 
 CONTENTS="$(cd "$(dirname "$0")/.." && pwd)"
-LOG_FILE="$HOME/Library/Logs/Kitten Space Agency.log"
+RES="${CONTENTS}/Resources"
+LOG="${HOME}/Library/Logs/Kitten Space Agency.log"
 
-# No terminal when launched from Finder: keep stdout/stderr in a log instead
-mkdir -p "$(dirname "$LOG_FILE")"
-exec >"$LOG_FILE" 2>&1
+if [ ! -t 1 ]; then
+    mkdir -p "$(dirname "${LOG}")"
+    exec > "${LOG}" 2>&1
+fi
 
 fail() {
     echo "ERROR: $1"
-    osascript -e 'on run argv' -e 'display alert "Kitten Space Agency" message (item 1 of argv) as critical' -e 'end run' "$1" >/dev/null 2>&1
+    osascript -e 'on run argv' -e 'display alert "Kitten Space Agency" message (item 1 of argv) as critical' \
+        -e 'end run' "$1" > /dev/null 2>&1
     exit 1
 }
+[ -x "${CONTENTS}/MacOS/dotnet" ] || fail "The .NET runtime is missing from the app. Run ./update.sh in the ksa-macos-port folder."
+[ -f "${RES}/KSA.dll" ] || fail "The game files are missing from the app. Convert the game again with ./port.sh."
 
-[ -x "$CONTENTS/MacOS/dotnet" ] || fail "The bundled .NET runtime is missing (Contents/MacOS/dotnet). Rebuild the app with make_app.sh."
-[ -f "$CONTENTS/Resources/KSA.dll" ] || fail "The game files are missing (Contents/Resources/KSA.dll). Rebuild the app with make_app.sh."
+export DOTNET_ROOT="${CONTENTS}/MacOS"
+export PATH="${CONTENTS}/MacOS:${PATH}"
+export DYLD_LIBRARY_PATH="${RES}"
+export DYLD_INSERT_LIBRARIES="${RES}/libGlfwShim.dylib"
 
-export PATH="$CONTENTS/MacOS:$PATH"
-export DOTNET_ROOT="$CONTENTS/MacOS"
-
-# Drop the legacy Process Serial Number argument older macOS versions pass in
+# Drop the process serial number argument that older macOS versions pass to apps
 ARGS=()
 for arg in "$@"; do
-    [[ "$arg" == -psn_* ]] || ARGS+=("$arg")
+    [[ "${arg}" == -psn_* ]] || ARGS+=("${arg}")
 done
 
-echo "==> $(date): launching from $CONTENTS"
-exec "$CONTENTS/Resources/start_mac.command" "${ARGS[@]}"
+echo "==> $(date): starting ${RES}/KSA.dll"
+cd "${RES}" || exit 1
+exec "${CONTENTS}/MacOS/dotnet" KSA.dll ${ARGS[@]+"${ARGS[@]}"}

@@ -18,8 +18,8 @@ logging libraries, SDK headers, documentation, examples and example media are
 not included. Kitten Space Agency uses FMOD under its developer's own license;
 its Linux release ships FMOD 2.03 for Linux.
 
-port_game.sh copies libfmod.dylib into the game folder and ad-hoc signs that
-copy so macOS loads it. The file in this folder stays as shipped.
+scripts/make-app.sh copies libfmod.dylib into the app unchanged, with its
+original signature.
 
 SHA-256:
 5ea5822d39d4ce464dd5e5d2cc781621d16d821ca1aa7496167da51b58b357b7  libfmod.dylib

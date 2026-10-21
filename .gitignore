@@ -4,35 +4,23 @@
 .LSOverride
 ._*
 
-# Build artifacts & dependencies
-build/
-bin/
-obj/
-dist/
+# Downloads, source checkouts and build output (scripts/lib.sh: DEPS, DIST)
 deps/
+dist/
+out/
 *.o
 *.a
 *.dylib
 !third_party/fmod/libfmod.dylib
 *.log
 
-# C# / .NET
-backup_dlls/
-*.user
-*.suo
-
-# Game data (never commit game assets)
+# Game files: never commit anything from KSA
 Content/
 *.bin
 *.toml
 *.iss
 *.bat
 app/AppIcon.icns
-src/imgui/imgui/
-src/imgui/implot/
-
-# Python
-__pycache__/
 
 # Private working notes and source trees for the native Metal effort: proprietary material, never committed
 .claude-docs/

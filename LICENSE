@@ -25,3 +25,6 @@ SOFTWARE.
 This license does not cover third_party/fmod/, which contains FMOD Engine
 software by Firelight Technologies Pty Ltd under the FMOD End User Licence
 Agreement. See third_party/fmod/NOTICE.txt and third_party/fmod/LICENSE.TXT.
+
+The app that port.sh makes also contains third-party software that the scripts
+download at build time, each under its own license. See THIRD_PARTY_NOTICES.md.

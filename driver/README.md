@@ -1,28 +1,34 @@
-# KSA Metal driver (proof of concept)
+# KSA Metal driver
 
-A Vulkan-shaped Metal driver that implements just the Vulkan surface Kitten Space Agency uses. It is built as
-`libvulkan.1.dylib` and replaces both the Khronos loader and MoltenVK: Brutal (through `libVulkanEx`), VMA and
+A Vulkan-shaped Metal driver that implements just the Vulkan surface Kitten Space Agency uses. The app ships it as
+`libvulkan.1.dylib`, in the place of the Vulkan loader and a Vulkan driver: Brutal (through `libVulkanEx`), VMA and
 GLFW all resolve their Vulkan symbols from it. Nothing in the game changes.
 
 Status: the game runs on it with every graphics setting: terrain tessellation, ground clutter with shadows,
 ray-query grass placement, IVA ray tracing (ray tracing pipelines run as compute kernels), clouds, MSAA and Cmaa2.
-The reference scenes match MoltenVK's within its own run-to-run noise except for small cloud-edge differences; it
-is faster than MoltenVK, most at ground level. Also: timestamps (the in-game GPU profiler), present wait (the
-"Frames Queued Ahead" latency limiter), a transfer queue for texture streaming, memoryless transient attachments, a
-disk cache of shader translations, and asynchronous pipeline creation. Not implemented: indexed triangle fans,
-non-indexed indirect tessellated draws, secondary command buffers, writable multisample storage images (not
-reported, so KSA uses its fallback).
+It replaced MoltenVK, whose output it matches on reference scenes within MoltenVK's own run-to-run noise (except
+for small cloud-edge differences), and it is faster, most at ground level. Also: timestamps (the in-game GPU
+profiler), present wait (the "Frames Queued Ahead" latency limiter), a transfer queue for texture streaming,
+memoryless transient attachments, a disk cache of shader translations, and asynchronous pipeline creation. Not
+implemented: indexed triangle fans, non-indexed indirect tessellated draws, secondary command buffers, writable
+multisample storage images (not reported, so KSA uses its fallback).
 
 ## Build and run
 
+Needs the Command Line Tools (`xcode-select --install`) and cmake (`brew install cmake`).
+
 ```sh
-driver/build.sh                      # -> deps/ksamtl/libvulkan.1.dylib (fetches and builds pinned SPIRV-Cross, SPIRV-Tools)
-driver/launch.sh                     # play: the installed app on this driver, with your own settings
-driver/run.sh smoke 3000 300,3000    # test run: exit after 3000 presents, PNGs at 300 and 3000
+./update.sh --no-pull --from-source    # rebuild what changed and put it into the installed app
 ```
 
-To use it by hand, put `deps/ksamtl` first in `DYLD_LIBRARY_PATH` when starting the game. Needs Vulkan headers
-(`brew install vulkan-headers`), cmake and ninja.
+That runs `scripts/build-spirv-cross.sh` and `scripts/build-spirv-tools.sh` (pinned, static, built once) and
+`scripts/build-driver.sh` (`driver/` -> `dist/libvulkan.1.dylib`), among the other native steps. To test a change,
+start the app's executable from a terminal, where its output stays, with the driver's instruments (below):
+
+```sh
+KSA_MTL_EXIT_AFTER=3000 KSA_MTL_SHOTS=300,3000 KSA_MTL_SHOT_DIR=/tmp/ksa-shots \
+  ~/Applications/"Kitten Space Agency.app"/Contents/MacOS/KSA
+```
 
 ## Design
 
