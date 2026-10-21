@@ -542,7 +542,7 @@ static bool asyncPipelines() {
 }
 
 static void runPipelineJob(std::function<void()> job) {
-    static dispatch_queue_t queue = dispatch_queue_create("ksamtl.pipelines", DISPATCH_QUEUE_CONCURRENT);
+    static dispatch_queue_t queue = dispatch_queue_create("ksa-metal.pipelines", DISPATCH_QUEUE_CONCURRENT);
     // Leave two cores to the game
     static dispatch_semaphore_t slots = dispatch_semaphore_create(std::max(1, (int)std::thread::hardware_concurrency() - 2));
     dispatch_async(queue, ^{

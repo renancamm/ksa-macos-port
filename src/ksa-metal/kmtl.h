@@ -1,5 +1,5 @@
-// KSA Metal driver: a Vulkan-shaped Metal implementation of the Vulkan surface Kitten Space Agency uses.
-// Shared declarations. See driver/README.md for the design.
+// KSA Metal: a Vulkan driver on Metal that implements the part of Vulkan Kitten Space Agency uses.
+// Shared declarations. README.md ("KSA Metal") describes the design.
 #pragma once
 
 #define VK_USE_PLATFORM_METAL_EXT 1
@@ -22,6 +22,12 @@
 
 #define KMTL_EXPORT extern "C" __attribute__((visibility("default")))
 #define VKFN(ret) KMTL_EXPORT VKAPI_ATTR ret VKAPI_CALL
+
+// Reported as driverVersion and driverInfo
+#define KMTL_VERSION_MAJOR 0
+#define KMTL_VERSION_MINOR 1
+#define KMTL_VERSION_PATCH 0
+#define KMTL_VERSION "0.1.0"
 
 // ---------------------------------------------------------------------------------------------------------------
 // Logging. KSA_MTL_LOG: 0 errors only, 1 + first call of each entry point and warnings, 2 + object creation,
@@ -50,7 +56,7 @@ const char* kmtlEnv(const char* name);
 int kmtlEnvInt(const char* name, int def);
 
 // ---------------------------------------------------------------------------------------------------------------
-// Buffer indices per stage (vertex buffers count down from 30 like MoltenVK, so the low indices stay ours)
+// Buffer indices per stage (vertex buffers count down from 30, so the low indices stay free for sets and push constants)
 enum : uint32_t {
     kMaxSets = 16,
     kPushConstantBufferIndex = 10,

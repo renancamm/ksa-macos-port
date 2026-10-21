@@ -30,7 +30,7 @@ void kmtlLog(int level, const char* fmt, ...) {
     va_end(ap);
     static std::mutex m;
     std::lock_guard<std::mutex> lock(m);
-    fprintf(g_logFile, "[ksamtl%s] %s\n", level < 0 ? " ERROR" : "", buf);
+    fprintf(g_logFile, "[ksa-metal%s] %s\n", level < 0 ? " ERROR" : "", buf);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -172,7 +172,7 @@ VKFN(void) vkGetPhysicalDeviceProperties(VkPhysicalDevice pd, VkPhysicalDevicePr
     id<MTLDevice> d = ((KPhysicalDevice*)pd)->mtl;
     memset(p, 0, sizeof(*p));
     p->apiVersion = VK_MAKE_API_VERSION(0, 1, 3, 290);
-    p->driverVersion = VK_MAKE_VERSION(0, 1, 0);
+    p->driverVersion = VK_MAKE_VERSION(KMTL_VERSION_MAJOR, KMTL_VERSION_MINOR, KMTL_VERSION_PATCH);
     p->vendorID = 0x106B;
     p->deviceID = 0x4D35;  // "M5"
     p->deviceType = VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
@@ -349,9 +349,9 @@ VKFN(void) vkGetPhysicalDeviceProperties2(VkPhysicalDevice pd, VkPhysicalDeviceP
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES: {
             auto* o = (VkPhysicalDeviceVulkan12Properties*)s;
-            o->driverID = VK_DRIVER_ID_MOLTENVK;
+            o->driverID = (VkDriverId)0;  // Khronos registers no ID for this driver
             snprintf(o->driverName, sizeof(o->driverName), "KSA Metal");
-            snprintf(o->driverInfo, sizeof(o->driverInfo), "proof of concept");
+            snprintf(o->driverInfo, sizeof(o->driverInfo), "%s", KMTL_VERSION);
             o->conformanceVersion = {1, 3, 0, 0};
             o->maxUpdateAfterBindDescriptorsInAllPools = 1u << 20;
             o->shaderSampledImageArrayNonUniformIndexingNative = VK_TRUE;
@@ -416,9 +416,9 @@ VKFN(void) vkGetPhysicalDeviceProperties2(VkPhysicalDevice pd, VkPhysicalDeviceP
         }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES: {
             auto* o = (VkPhysicalDeviceDriverProperties*)s;
-            o->driverID = VK_DRIVER_ID_MOLTENVK;
+            o->driverID = (VkDriverId)0;
             snprintf(o->driverName, sizeof(o->driverName), "KSA Metal");
-            snprintf(o->driverInfo, sizeof(o->driverInfo), "proof of concept");
+            snprintf(o->driverInfo, sizeof(o->driverInfo), "%s", KMTL_VERSION);
             o->conformanceVersion = {1, 3, 0, 0};
             break;
         }

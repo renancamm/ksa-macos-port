@@ -1,28 +1,27 @@
 #!/bin/bash
-# driver/ -> dist/libvulkan.1.dylib (+ libvulkan.dylib)
+# src/ksa-metal/ -> dist/libvulkan.1.dylib (+ libvulkan.dylib)
 #
-# The KSA Metal driver (driver/README.md) implements the Vulkan calls KSA makes on top of Metal. It takes the
-# place of the Vulkan loader: Brutal, VulkanEx and GLFW find their Vulkan functions in it, and VMA gets them from
-# Brutal.
+# KSA Metal (README.md, "KSA Metal") implements the Vulkan calls KSA makes on top of Metal. It takes the place of
+# the Vulkan loader: Brutal, VulkanEx and GLFW find their Vulkan functions in it, and VMA gets them from Brutal.
 # Needs the static libraries from scripts/build-spirv-cross.sh and scripts/build-spirv-tools.sh.
 # KSA_MTL_OPT overrides the optimization flag (default -O2).
 set -eo pipefail
 source "$(dirname "$0")/lib.sh"
 
-step "Building the Metal driver"
+step "Building KSA Metal"
 VULKAN_HEADERS="${DEPS}/src/vulkan-headers"
 SPVC="${DEPS}/src/spirv-cross"
 SPVC_LIB="${DEPS}/build/spirv-cross"
 SPVT="${DEPS}/src/spirv-tools"
 SPVT_LIB="${DEPS}/build/spirv-tools/source"
-OBJ="${DEPS}/build/driver"
+OBJ="${DEPS}/build/ksa-metal"
 fetch_git "${VULKAN_HEADERS}" "${VULKAN_HEADERS_SOURCE}"
 [ -f "${SPVC_LIB}/libspirv-cross-msl.a" ] || die "run scripts/build-spirv-cross.sh first."
 [ -f "${SPVT_LIB}/link/libSPIRV-Tools-link.a" ] || die "run scripts/build-spirv-tools.sh first."
 
 OPT="${KSA_MTL_OPT:--O2}"
 COMMON=(-arch arm64 -mmacosx-version-min="${MACOS_MIN}" -std=c++17 "${OPT}" -g -fvisibility=hidden -Wall
-    -I"${VULKAN_HEADERS}/include" -I"${SPVC}" -I"${SPVT}/include" -I"${REPO}/driver")
+    -I"${VULKAN_HEADERS}/include" -I"${SPVC}" -I"${SPVT}/include" -I"${REPO}/src/ksa-metal")
 OBJCXX=(-fobjc-arc -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function -Wno-missing-braces)
 SOURCES=(entry instance device format descriptor pipeline command swapchain internal accel profile shadercache
     rtpipeline rtspirv)
@@ -37,17 +36,17 @@ fi
 PIDS=()
 OBJECTS=()
 for s in "${SOURCES[@]}"; do
-    if [ -f "${REPO}/driver/${s}.mm" ]; then
-        src="${REPO}/driver/${s}.mm"
+    if [ -f "${REPO}/src/ksa-metal/${s}.mm" ]; then
+        src="${REPO}/src/ksa-metal/${s}.mm"
         extra=("${OBJCXX[@]}")
     else
-        src="${REPO}/driver/${s}.cpp"
+        src="${REPO}/src/ksa-metal/${s}.cpp"
         extra=()
     fi
     o="${OBJ}/${s}.o"
     OBJECTS+=("${o}")
-    if [ ! -f "${o}" ] || [ "${src}" -nt "${o}" ] || [ "${REPO}/driver/kmtl.h" -nt "${o}" ] ||
-        [ "${REPO}/driver/rtspirv.h" -nt "${o}" ]; then
+    if [ ! -f "${o}" ] || [ "${src}" -nt "${o}" ] || [ "${REPO}/src/ksa-metal/kmtl.h" -nt "${o}" ] ||
+        [ "${REPO}/src/ksa-metal/rtspirv.h" -nt "${o}" ]; then
         clang++ "${COMMON[@]}" ${extra[@]+"${extra[@]}"} -c "${src}" -o "${o}" &
         PIDS+=($!)
     fi

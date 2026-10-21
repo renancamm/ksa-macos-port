@@ -1,7 +1,7 @@
 #!/bin/bash
-# SPIRV-Tools (with SPIRV-Headers) -> static libraries in deps/build/spirv-tools (linked into the Metal driver)
+# SPIRV-Tools (with SPIRV-Headers) -> static libraries in deps/build/spirv-tools (linked into KSA Metal)
 #
-# The driver links KSA's ray tracing shaders into one compute kernel with SPIRV-Tools (driver/rtspirv.cpp).
+# The driver links KSA's ray tracing shaders into one compute kernel with SPIRV-Tools (src/ksa-metal/rtspirv.cpp).
 set -eo pipefail
 source "$(dirname "$0")/lib.sh"
 

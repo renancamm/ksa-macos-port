@@ -2,9 +2,9 @@
 # The app's executable (Kitten Space Agency.app/Contents/MacOS/KSA), installed by scripts/make-app.sh.
 #
 # Starts KSA (Contents/Resources/KSA.dll) with the .NET runtime in Contents/MacOS:
-#   DYLD_LIBRARY_PATH      the game folder first, so every library, including the Metal driver as
+#   DYLD_LIBRARY_PATH      the game folder first, so every library, including KSA Metal as
 #                          libvulkan.1.dylib, comes from the app and never from elsewhere on the Mac
-#   DYLD_INSERT_LIBRARIES  the GLFW shim (src/glfw_shim.c)
+#   DYLD_INSERT_LIBRARIES  the GLFW shim (src/glfw-shim/glfw_shim.c)
 # Output goes to ~/Library/Logs/Kitten Space Agency.log, or to the terminal when started from one.
 # The game's own logs, settings and saves are in ~/Documents/My Games/Kitten Space Agency.
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# SPIRV-Cross -> static libraries in deps/build/spirv-cross (linked into the Metal driver)
+# SPIRV-Cross -> static libraries in deps/build/spirv-cross (linked into KSA Metal)
 #
 # The driver translates KSA's SPIR-V shaders to Metal Shading Language with SPIRV-Cross.
 set -eo pipefail

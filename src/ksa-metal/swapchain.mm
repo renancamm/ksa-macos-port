@@ -1,5 +1,5 @@
-// Swapchain over the GLFW window's CAMetalLayer, presentation, and the frame instruments that replace the
-// frame-clock layer (layers cannot run on this driver: it is the loader).
+// Swapchain over the GLFW window's CAMetalLayer, presentation, and the frame instruments (Vulkan layers cannot run
+// on this driver: it is the loader).
 #include "kmtl.h"
 #import <CoreGraphics/CoreGraphics.h>
 #import <ImageIO/ImageIO.h>
@@ -142,12 +142,12 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
 // ---------------------------------------------------------------------------------------------------------------
 // Frame instruments (layers cannot run on this driver, so it carries its own)
 //
-//   KSA_MTL_FRAMES=<csv>         per-present CPU interval and work counts
-//   KSA_MTL_SHOTS=<n,...>        PNG of the presented image at these present indices, into KSA_MTL_SHOT_DIR
-//   KSA_MTL_EXIT_AFTER=<n>       exit after n presents
-// Shots timed in the game's terms, and timed exits:
-//   KSA_FRAMECLOCK_SHOTS (+ KSA_FRAMECLOCK_SHOT_UNIT=frames|presents, default seconds after the first in-game frame),
-//   written as <KSA_FRAMECLOCK_FILE>.shot_<s>.png; KSA_FRAMECLOCK_EXIT_AFTER_SHOTS; KSA_FRAMECLOCK_EXIT_S.
+//   KSA_MTL_FRAMES=<csv>             per-present CPU interval and work counts
+//   KSA_MTL_SHOTS=<n,...>            PNG of the presented image at these points, as KSA_MTL_SHOT_DIR/shot_<n>.png
+//   KSA_MTL_SHOT_UNIT=<unit>         presents (default), or frames or seconds since the first in-game frame
+//   KSA_MTL_EXIT_AFTER=<n>           exit after n presents
+//   KSA_MTL_EXIT_AFTER_SHOTS=1       exit once the last shot is written
+//   KSA_MTL_EXIT_AFTER_S=<s>         exit s seconds after start
 
 enum class ShotUnit { Presents, InGameFrames, InGameSeconds };
 struct Shot { double at; std::string path; };
@@ -198,23 +198,18 @@ static void initInstruments() {
     }
     if (const char* s = kmtlEnv("KSA_MTL_SHOTS")) {
         const char* dir = kmtlEnv("KSA_MTL_SHOT_DIR");
-        for (double v : parseList(s))
-            g_shots.push_back({v, std::string(dir ? dir : ".") + "/shot_" + std::to_string((long long)v) + ".png"});
-        g_shotUnit = ShotUnit::Presents;
-    } else if (const char* fs = kmtlEnv("KSA_FRAMECLOCK_SHOTS")) {
-        const char* base = kmtlEnv("KSA_FRAMECLOCK_FILE");
-        const char* unit = kmtlEnv("KSA_FRAMECLOCK_SHOT_UNIT");
+        const char* unit = kmtlEnv("KSA_MTL_SHOT_UNIT");
         g_shotUnit = unit && !strcmp(unit, "frames") ? ShotUnit::InGameFrames
-                   : unit && !strcmp(unit, "presents") ? ShotUnit::Presents : ShotUnit::InGameSeconds;
-        for (double v : parseList(fs)) {
-            char path[1200];
-            snprintf(path, sizeof(path), "%s.shot_%g.png", base ? base : "ksamtl", v);
-            g_shots.push_back({v, path});
+                   : unit && !strcmp(unit, "seconds") ? ShotUnit::InGameSeconds : ShotUnit::Presents;
+        for (double v : parseList(s)) {
+            char name[64];
+            snprintf(name, sizeof(name), "/shot_%.10g.png", v);
+            g_shots.push_back({v, std::string(dir ? dir : ".") + name});
         }
-        g_exitAfterShots = kmtlEnv("KSA_FRAMECLOCK_EXIT_AFTER_SHOTS") != nullptr;
+        g_exitAfterShots = kmtlEnvInt("KSA_MTL_EXIT_AFTER_SHOTS", 0) != 0;
     }
     std::sort(g_shots.begin(), g_shots.end(), [](const Shot& a, const Shot& b) { return a.at < b.at; });
-    if (const char* e = kmtlEnv("KSA_FRAMECLOCK_EXIT_S")) g_exitSeconds = atof(e);
+    if (const char* e = kmtlEnv("KSA_MTL_EXIT_AFTER_S")) g_exitSeconds = atof(e);
     g_exitAfter = kmtlEnvInt("KSA_MTL_EXIT_AFTER", 0);
 }
 
@@ -275,7 +270,7 @@ static void takeShot(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb, const
     bool exitAfter = last && g_exitAfterShots;
     [cb addCompletedHandler:^(id<MTLCommandBuffer>) {
         writePNG(buf, w, h, bgra, path);
-        if (--g_shotsPending == 0 && exitAfter) exitSoon("KSA_FRAMECLOCK_EXIT_AFTER_SHOTS");
+        if (--g_shotsPending == 0 && exitAfter) exitSoon("KSA_MTL_EXIT_AFTER_SHOTS");
     }];
 }
 
@@ -329,6 +324,6 @@ void kmtlOnPresent(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb) {
     if (g_exitAfter && g_presents == (uint64_t)g_exitAfter) exitSoon("KSA_MTL_EXIT_AFTER reached");
     if (g_exitSeconds > 0 && std::chrono::duration<double>(now - g_start).count() >= g_exitSeconds) {
         g_exitSeconds = 0;
-        exitSoon("KSA_FRAMECLOCK_EXIT_S reached");
+        exitSoon("KSA_MTL_EXIT_AFTER_S reached");
     }
 }

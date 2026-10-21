@@ -41,7 +41,7 @@ VKFN(VkResult) vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCre
     dev->mtl = pd->mtl;
     NSError* err = nil;
     MTLResidencySetDescriptor* rd = [MTLResidencySetDescriptor new];
-    rd.label = @"ksamtl";
+    rd.label = @"KSA Metal";
     rd.initialCapacity = 1024;
     dev->residency = [dev->mtl newResidencySetWithDescriptor:rd error:&err];
     if (!dev->residency) {
@@ -52,10 +52,10 @@ VKFN(VkResult) vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCre
     auto* q = new KQueue();
     q->device = dev;
     q->mtl = [dev->mtl newCommandQueueWithMaxCommandBufferCount:256];
-    q->mtl.label = @"ksamtl queue";
+    q->mtl.label = @"KSA Metal queue";
     [q->mtl addResidencySet:dev->residency];
     q->chain = [dev->mtl newFence];
-    q->chain.label = @"ksamtl encoder chain";
+    q->chain.label = @"KSA Metal encoder chain";
     // Update the chain fence once so the first real encoder has something to wait on
     id<MTLCommandBuffer> cb = [q->mtl commandBuffer];
     id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
@@ -69,10 +69,10 @@ VKFN(VkResult) vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCre
         t->device = dev;
         t->family = 1;
         t->mtl = [dev->mtl newCommandQueueWithMaxCommandBufferCount:64];
-        t->mtl.label = @"ksamtl transfer queue";
+        t->mtl.label = @"KSA Metal transfer queue";
         [t->mtl addResidencySet:dev->residency];
         t->chain = [dev->mtl newFence];
-        t->chain.label = @"ksamtl transfer chain";
+        t->chain.label = @"KSA Metal transfer chain";
         id<MTLCommandBuffer> tc = [t->mtl commandBuffer];
         id<MTLBlitCommandEncoder> tb = [tc blitCommandEncoder];
         [tb updateFence:t->chain];

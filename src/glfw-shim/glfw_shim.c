@@ -1,7 +1,7 @@
 /*
- * libGlfwShim.dylib - makes the GLFW that KSA ships (RocketWerkz's fork of GLFW 3.5.1, from the
- * Ahwoo.BRUTAL.Glfw package) behave like the Windows build under Wine. The app's launcher loads
- * it with DYLD_INSERT_LIBRARIES, and it replaces a few calls through dyld interposing, so GLFW
+ * libGlfwShim.dylib - fixes a few things in how the GLFW that KSA ships (RocketWerkz's fork of GLFW
+ * 3.5.1, from the Ahwoo.BRUTAL.Glfw package) and the game work together on macOS. The app's launcher
+ * loads it with DYLD_INSERT_LIBRARIES, and it replaces a few calls through dyld interposing, so GLFW
  * itself stays unmodified.
  *
  * The fork already adds the desktop's (HiDPI) mode to the video mode list and keeps it when a
@@ -9,14 +9,14 @@
  *
  * 1. CGDisplayCopyAllDisplayModes: GLFW passes no options, so macOS leaves out the
  *    scaled HiDPI modes and the game's resolution list on a MacBook display holds only the
- *    desktop mode and the modes from 1920x1200 up. Wine's mac driver asks for them with
- *    kCGDisplayShowDuplicateLowResolutionModes; do the same for GLFW's calls.
+ *    desktop mode and the modes from 1920x1200 up. Ask for them with
+ *    kCGDisplayShowDuplicateLowResolutionModes in GLFW's calls.
  * 2. glfwSetInputMode: KSA checks glfwRawMouseMotionSupported() before it turns raw mouse
  *    motion on, but not before it turns it off, and GLFW's Cocoa backend reports a
  *    PlatformError ("Raw mouse motion is not supported on this system") after every
  *    right-drag. Skip raw motion calls when it is unsupported.
  * 3. glfwSetWindowMonitor: in Fullscreen mode KSA always passes the desktop's current
- *    size (the Windows build does too), so the Resolution setting does nothing there.
+ *    size, so the Resolution setting does nothing there.
  *    Use display.width/height from settings.toml instead, which makes GLFW switch the
  *    display to that mode. The game applies new settings before it saves them, so
  *    glfwPollEvents rereads the file whenever it changes and switches again.
@@ -27,7 +27,7 @@
  *    moves and resizes a window at once, and reports a position from the middle of the
  *    switch when a window enters or leaves fullscreen. The game keeps the last reported
  *    position and its ImGui backend places the main viewport and the mouse with it, so
- *    after a mode change popups were placed for the wrong spot, often on another monitor.
+ *    after a mode change popups would open in the wrong spot, often on another monitor.
  *    After glfwSetWindowMonitor and every glfwPollEvents, report the real position of a
  *    window that went through glfwSetWindowMonitor when it differs from the last one.
  */

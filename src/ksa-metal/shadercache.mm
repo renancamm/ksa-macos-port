@@ -6,7 +6,7 @@
 // creation finds them compiled instead of compiling them one by one.
 //
 //   KSA_MTL_CACHE=0          no disk cache, no prewarm
-//   KSA_MTL_CACHE_DIR=<dir>  cache location (default ~/Library/Caches/ksamtl)
+//   KSA_MTL_CACHE_DIR=<dir>  cache location (default ~/Library/Caches/ksa-metal)
 //   KSA_MTL_PREWARM=0        no prewarm
 #include "kmtl.h"
 #include <dirent.h>
@@ -21,7 +21,7 @@ static const std::string& cacheDir() {
         if (!kmtlEnvInt("KSA_MTL_CACHE", 1)) return std::string();
         std::string d;
         if (const char* e = kmtlEnv("KSA_MTL_CACHE_DIR")) d = e;
-        else if (const char* home = getenv("HOME")) d = std::string(home) + "/Library/Caches/ksamtl";
+        else if (const char* home = getenv("HOME")) d = std::string(home) + "/Library/Caches/ksa-metal";
         else return std::string();
         mkdir(d.c_str(), 0755);
         mkdir((d + "/tr").c_str(), 0755);

@@ -12,13 +12,13 @@ APP_NAME="Kitten Space Agency"
 BUNDLE_ID="io.github.ksa-macos-port.ksa"
 DEFAULT_APP="${HOME}/Applications/${APP_NAME}.app"
 
-# Oldest macOS the app supports: the Metal driver uses macOS 26 API (MTLSamplerDescriptor.lodBias).
+# Oldest macOS the app supports: KSA Metal uses macOS 26 API (MTLSamplerDescriptor.lodBias).
 # Everything we compile targets it explicitly, otherwise a binary inherits the build Mac's version.
 MACOS_MIN="26.0"
 export MACOSX_DEPLOYMENT_TARGET="${MACOS_MIN}"
 
 # The libraries this repository builds itself, in build order (scripts/build-*.sh), and what they put in dist/.
-BUILD_STEPS=(build-glfw-shim build-spirv-cross build-spirv-tools build-driver)
+BUILD_STEPS=(build-glfw-shim build-spirv-cross build-spirv-tools build-ksa-metal)
 BUILT_FILES=(libGlfwShim.dylib libvulkan.1.dylib libvulkan.dylib
              licenses/spirv-cross licenses/spirv-tools licenses/spirv-headers licenses/vulkan-headers)
 
@@ -97,7 +97,7 @@ natives_stamp() {
     (
         cd "${REPO}"
         ls scripts/lib.sh scripts/pins.sh scripts/fetch-brutal-natives.sh scripts/build-*.sh scripts/check-natives.sh \
-            src/*.c driver/*.mm driver/*.cpp driver/*.h | LC_ALL=C sort | while read -r f; do shasum -a 256 "${f}"; done
+            src/*/*.c src/*/*.mm src/*/*.cpp src/*/*.h | LC_ALL=C sort | while read -r f; do shasum -a 256 "${f}"; done
     ) | shasum -a 256 | cut -d' ' -f1
 }
 

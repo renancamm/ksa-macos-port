@@ -1629,9 +1629,9 @@ VKFN(void) vkCmdBeginDebugUtilsLabelEXT(VkCommandBuffer, const VkDebugUtilsLabel
 VKFN(void) vkCmdEndDebugUtilsLabelEXT(VkCommandBuffer) {}
 VKFN(void) vkCmdInsertDebugUtilsLabelEXT(VkCommandBuffer, const VkDebugUtilsLabelEXT*) {}
 
-// Fresh images start from recycled heap memory (VMA reuses blocks), while MoltenVK gives every image its own zeroed
-// allocation; KSA's cloud shadow volumes accumulate with imageLoad before ever clearing, so new color images that
-// can be rendered to are cleared to zero once, on a command buffer committed at bind time.
+// Fresh images start from recycled heap memory (VMA reuses blocks), and KSA's cloud shadow volumes accumulate with
+// imageLoad before they are ever cleared, so they would start from old data. New color images that can be rendered
+// to are cleared to zero once, on a command buffer committed at bind time.
 void kmtlZeroImage(KImage* img) {
     KDevice* dev = img->device;
     KCommandBuffer cb;

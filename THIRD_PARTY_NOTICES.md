@@ -11,7 +11,7 @@ binaries or assets, and none of the licences here apply to the game.
 
 | Component | In the app | Source | Licence | `Licenses/` |
 |---|---|---|---|---|
-| This port: launcher, GLFW shim, KSA Metal driver | `Contents/MacOS/KSA`, `libGlfwShim.dylib`, `libvulkan.1.dylib` | this repository | MIT | `ksa-macos-port/` |
+| This port: launcher, GLFW shim, KSA Metal | `Contents/MacOS/KSA`, `libGlfwShim.dylib`, `libvulkan.1.dylib` | this repository | MIT | `ksa-macos-port/` |
 | BRUTAL native libraries, built by RocketWerkz | `libstb`, `libVulkanEx`, `libvma`, `libglfw.3`, `libgli`, `libimgui`, `libimplot`, `libKtx`, `libshaderc_shared`, `libSPIRV-Tools-shared` (`.dylib`) | the `Ahwoo.BRUTAL.*` packages on [nuget.org](https://www.nuget.org/profiles/Ahwoo), unmodified | BRUTAL License v1.0 (© Ahwoo Limited), and the licences of the components compiled into them (below) | `brutal/` |
 | SPIRV-Cross | compiled into `libvulkan.1.dylib` | [KhronosGroup/SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) | Apache-2.0 (some files MIT or CC-BY-4.0, see its `LICENSES/`) | `spirv-cross/` |
 | SPIRV-Tools | compiled into `libvulkan.1.dylib` | [KhronosGroup/SPIRV-Tools](https://github.com/KhronosGroup/SPIRV-Tools) | Apache-2.0 | `spirv-tools/` |
