@@ -38,7 +38,7 @@ if ($fix eq 'texture-handles') {
     if ($text =~ /^\s*TextureHandles\s+textureHandles\s*;/m) { status("OK", "already has textureHandles") }
     my $old = "    PlacementParams placementParams;$nl    uint numObjects;$nl";
     my $count = () = $text =~ /\Q$old\E/g;
-    if ($count != 1) { status("WARN", "uniform block not as expected (fixed upstream?), check by hand") }
+    if ($count != 1) { status("WARN", "uniform block changed in this KSA version, fix skipped. Please open an issue.") }
     my $new = "    PlacementParams placementParams;$nl"
         . "    TextureHandles textureHandles;  ${note}was missing; must match EcotypeData (GroundClutterCommon.glsl)$nl"
         . "    uint numObjects;$nl";
@@ -47,7 +47,7 @@ if ($fix eq 'texture-handles') {
 } else {
     if ($text =~ /^\s*invariant\s+gl_Position\s*;/m) { status("OK", "already declares gl_Position invariant") }
     my $count = () = $text =~ /^void main\(\)/mg;
-    if ($count != 1) { status("WARN", "main() not as expected, check by hand") }
+    if ($count != 1) { status("WARN", "main() changed in this KSA version, fix skipped. Please open an issue.") }
     my $insert = "${note}depth pre-pass and colour pass (depth EQUAL) need bit-identical positions on Metal$nl"
         . "invariant gl_Position;$nl$nl";
     $text =~ s/^(void main\(\))/$insert$1/m;

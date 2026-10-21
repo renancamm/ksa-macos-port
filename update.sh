@@ -1,35 +1,36 @@
 #!/bin/bash
-# Updates Kitten Space Agency.app: brings in the port's latest fixes and, when you have downloaded a newer KSA,
-# the new game version. Your saves and settings are not touched.
+# Updates Kitten Space Agency.app: puts in the new game version when you have downloaded one, otherwise applies
+# this folder's version of the port to the app. Your saves and settings are not touched.
 #
 # Usage: ./update.sh [options] [ksa_linux_vX.tar.gz]
-#   1. Updates this folder with git pull (when it is a git clone).
-#   2. With an archive, or when ~/Downloads has a ksa_linux_v*.tar.gz newer than the installed game: converts
-#      that version and replaces the app (./port.sh). Otherwise applies the port's changes to the installed app.
+#   With an archive, or when ~/Downloads has a ksa_linux_v*.tar.gz newer than the installed game: converts that
+#   version and replaces the app (./port.sh). Otherwise applies the port's files to the installed app.
 #   It never checks online for new KSA versions: download them from https://ksa.ahwoo.com yourself.
 #
 # Options:
+#   --pull            first update this folder with git pull (needs git, from the Command Line Tools)
 #   --app <path>      the app to update (default: ~/Applications/Kitten Space Agency.app)
 #   --from-source     build the port's own libraries on this Mac instead of downloading them
-#   --no-pull         skip the git pull
 set -eo pipefail
 source "$(dirname "$0")/scripts/lib.sh"
 
 usage() {
-    sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
 }
 
-ARGS=("$@")
+ARGS=()
 APP="${DEFAULT_APP}"
 FROM_SOURCE=""
-PULL=1
+PULL=0
 ARCHIVE=""
 while [ $# -gt 0 ]; do
+    # Everything but --pull, for the restart after a pull
+    [ "$1" = --pull ] || ARGS+=("$1")
     case "$1" in
-        --app) APP="${2%/}"; shift ;;
+        --app) APP="${2%/}"; ARGS+=("$2"); shift ;;
         --from-source) FROM_SOURCE="--from-source" ;;
-        --no-pull) PULL=0 ;;
+        --pull) PULL=1 ;;
         -h | --help) usage ;;
         -*) echo "Unknown option: $1"; usage 1 ;;
         *) ARCHIVE="$1" ;;
@@ -39,18 +40,16 @@ done
 
 check_mac
 
-# 1. The port itself. The new version of this script may differ, so it starts again after a pull.
-if [ "${PULL}" = 1 ] && [ -d "${REPO}/.git" ]; then
-    if have_dev_tools; then
-        step "Updating the port (git pull)"
-        before="$(git -C "${REPO}" rev-parse HEAD)"
-        git -C "${REPO}" pull --ff-only || die "git pull failed. Fix it, or run ./update.sh --no-pull."
-        if [ "$(git -C "${REPO}" rev-parse HEAD)" != "${before}" ]; then
-            git -C "${REPO}" log --oneline "${before}..HEAD" | sed 's/^/    /'
-            exec "${REPO}/update.sh" --no-pull ${ARGS[@]+"${ARGS[@]}"}
-        fi
-    else
-        info "Skipping git pull: git needs the Command Line Tools (xcode-select --install)."
+# 1. With --pull, the port itself. The new version of this script may differ, so it starts again after a pull.
+if [ "${PULL}" = 1 ]; then
+    [ -d "${REPO}/.git" ] || die "--pull needs a git clone of the port. For a ZIP download, download it again."
+    have_dev_tools || die "git needs the Command Line Tools: xcode-select --install"
+    step "Updating the port (git pull)"
+    before="$(git -C "${REPO}" rev-parse HEAD)"
+    git -C "${REPO}" pull --ff-only || die "git pull failed."
+    if [ "$(git -C "${REPO}" rev-parse HEAD)" != "${before}" ]; then
+        git -C "${REPO}" log --oneline "${before}..HEAD" | sed 's/^/    /'
+        exec "${REPO}/update.sh" ${ARGS[@]+"${ARGS[@]}"}
     fi
 fi
 

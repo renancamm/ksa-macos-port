@@ -1,6 +1,6 @@
 #!/bin/bash
 # Removes what macOS cannot use from a KSA game folder: the Linux executables and libraries, and the Windows
-# installer files. Also removes what older versions of this port left behind. Safe to run again.
+# installer files. Safe to run again.
 #
 # Usage: scripts/convert-cleanup.sh <game folder>
 set -eo pipefail
@@ -17,8 +17,6 @@ for f in "${GAME}"/*; do
 done
 # Windows installer script and signing batch file
 other=("${GAME}/ksa.iss" "${GAME}/ksa_sign.bat")
-# Older versions of this port: moved runtime DLLs, backups of the .NET configs
-old=("${GAME}/backup_dlls" "${GAME}/KSA.deps.json.bak" "${GAME}/KSA.runtimeconfig.json.bak")
 
-rm -rf ${elf[@]+"${elf[@]}"} "${other[@]}" "${old[@]}"
+rm -rf ${elf[@]+"${elf[@]}"} "${other[@]}"
 info "Removed ${#elf[@]} Linux binaries."

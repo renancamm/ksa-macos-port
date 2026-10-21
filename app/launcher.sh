@@ -5,12 +5,12 @@
 #   DYLD_LIBRARY_PATH      the game folder first, so every library, including KSA Metal as
 #                          libvulkan.1.dylib, comes from the app and never from elsewhere on the Mac
 #   DYLD_INSERT_LIBRARIES  the GLFW shim (src/glfw-shim/glfw_shim.c)
-# Output goes to ~/Library/Logs/Kitten Space Agency.log, or to the terminal when started from one.
-# The game's own logs, settings and saves are in ~/Documents/My Games/Kitten Space Agency.
+# Output goes to console.log in the game's logs folder (~/Documents/My Games/Kitten Space Agency/logs, next
+# to the game's own logs), or to the terminal when started from one.
 
 CONTENTS="$(cd "$(dirname "$0")/.." && pwd)"
 RES="${CONTENTS}/Resources"
-LOG="${HOME}/Library/Logs/Kitten Space Agency.log"
+LOG="${HOME}/Documents/My Games/Kitten Space Agency/logs/console.log"
 
 if [ ! -t 1 ]; then
     mkdir -p "$(dirname "${LOG}")"

@@ -18,10 +18,6 @@
 set -eo pipefail
 source "$(dirname "$0")/lib.sh"
 
-# Files earlier versions of this port put into the game folder that the current one no longer uses
-OBSOLETE=(MoltenVK_icd.json libMoltenVK.dylib start_mac.command libktx_real.dylib FMOD_LICENSE.TXT FMOD_NOTICE.txt
-    libfmodL.dylib libfmodstudio.dylib libfmodstudioL.dylib)
-
 # install_port_files <app Contents folder>
 install_port_files() {
     local contents="$1" res="$1/Resources" macos="$1/MacOS" f
@@ -29,10 +25,6 @@ install_port_files() {
     runtime="$(dotnet_runtime_dir)"
     [ -f "${DIST}/.stamp" ] || die "dist/ is not ready."
     [ -x "${runtime}/dotnet" ] || die "the .NET runtime is not downloaded."
-
-    for f in "${OBSOLETE[@]}"; do
-        rm -f "${res}/${f}"
-    done
 
     # Native libraries: dist/ as a whole, plus FMOD
     for f in "${DIST}"/*.dylib; do
@@ -104,7 +96,7 @@ write_info_plist() {
     fi
     [ -f "${contents}/Resources/AppIcon.icns" ] && icon="<key>CFBundleIconFile</key><string>AppIcon</string>"
     # NSHighResolutionCapable false: one rendered pixel per point, so the game's Resolution setting is the
-    # number of pixels it renders (as on Windows), instead of a 2x Retina framebuffer
+    # number of pixels it renders, instead of a 2x Retina framebuffer
     cat > "${contents}/Info.plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
