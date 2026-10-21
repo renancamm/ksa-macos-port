@@ -300,7 +300,6 @@ struct KFramebuffer {
 
 struct KPipeline {
     VkPipelineBindPoint bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    KPipelineLayout* layout = nullptr;
     // Graphics
     id<MTLRenderPipelineState> render = nil;
     id<MTLDepthStencilState> depthStencil = nil;

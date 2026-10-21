@@ -1063,7 +1063,6 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
 
     auto* p = new KPipeline();
     p->bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    p->layout = layout;
     p->render = ps;
     if (async) {
         // A failure leaves render nil: draws with the pipeline are skipped, as for a failed synchronous creation
@@ -1216,7 +1215,6 @@ KPipeline* kmtlCreateComputeFromStage(KDevice* dev, KPipelineLayout* layout, con
     if (!async && !(ps = build(tr, name))) return nullptr;
     auto* p = new KPipeline();
     p->bindPoint = VK_PIPELINE_BIND_POINT_COMPUTE;
-    p->layout = layout;
     p->compute = ps;
     if (async) {
         p->pending = std::make_shared<KPipeline::Pending>();
