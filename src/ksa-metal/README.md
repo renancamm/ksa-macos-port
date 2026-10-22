@@ -107,6 +107,13 @@ with the evaluation shader as Metal's post-tessellation vertex function. When th
 points through unchanged, as KSA's terrain shader does, KSA Metal drops those copies and the evaluation shader reads
 the vertex kernel's output directly.
 
+With `KSA_MTL_TESS_FUSE=1` (experimental) the vertex outputs don't go through memory at all. KSA Metal links the
+vertex shader into the evaluation shader at the SPIR-V level, so the evaluation stage runs it for each of its
+control points on attributes Metal fetches through the draw's index buffer, and the vertex and control kernels shrink
+to what the tessellation factors need (for the terrain, 32 bytes per vertex instead of 128). Draws with 16-bit
+indices or instances keep the path above. In the benchmark this takes 5-15% off the GPU time of every scene with
+terrain.
+
 **Ray tracing.** KSA uses ray queries for ground clutter placement, and ray tracing pipelines for lighting inside
 the cockpit (IVA). Ray queries and acceleration structures map onto Metal's. Metal has no ray tracing pipelines, so
 KSA Metal rewrites each one into a single compute kernel: every "trace ray" in the ray generation shader becomes a
@@ -165,6 +172,8 @@ tessellation stage buffers, 22 ray tracing launch size, 30 - n vertex buffer n.
 | `internal.mm` | KSA Metal's own shaders: buffer fills, scaled blits, tessellation helpers |
 | `accel.mm` | acceleration structures for ray queries |
 | `rtpipeline.mm`, `rtspirv.cpp` | ray tracing pipelines rewritten as compute kernels |
+| `tessspirv.cpp` | the SPIR-V rewrites behind fused tessellation |
+| `spvmodule.h` | a SPIR-V module as a list of instructions, for those rewrites |
 | `swapchain.mm` | swapchain, presentation, screenshots and frame log |
 | `profile.mm` | the GPU profiler |
 

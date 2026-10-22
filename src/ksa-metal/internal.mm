@@ -20,6 +20,7 @@ kernel void kmtl_tess_prep(const device VkDII& a [[buffer(0)]], device uint* o [
     atomic_fetch_max_explicit(&stats[1], a.firstIndex, memory_order_relaxed);
     atomic_fetch_max_explicit(&stats[2], a.instanceCount, memory_order_relaxed);
     if (a.indexCount > maxIndices) atomic_fetch_add_explicit(&stats[3], 1u, memory_order_relaxed);
+    if (a.vertexOffset != 0) atomic_fetch_max_explicit(&stats[4], uint(abs(a.vertexOffset)), memory_order_relaxed);
     // The scratch buffers hold maxIndices vertices: larger draws are clamped (and reported by the driver)
     uint indexCount = min(a.indexCount, maxIndices / inCP * inCP);
     uint patches = (indexCount / inCP) * a.instanceCount;
@@ -74,10 +75,10 @@ struct KInternalPipelines {
     id<MTLComputePipelineState> fill32 = nil;
     id<MTLComputePipelineState> tessPrep = nil;
     // Written by kmtl_tess_prep: [0] largest index count requested, [1] largest firstIndex, [2] largest instance
-    // count, [3] number of draws clamped to the cap
+    // count, [3] number of draws clamped to the cap, [4] largest vertexOffset (fused tessellation ignores it)
     id<MTLBuffer> tessStats = nil;
     std::atomic<uint32_t> tessCap{0};
-    uint32_t firstIndexWarned = 0;
+    uint32_t firstIndexWarned = 0, vertexOffsetWarned = 0;
     id<MTLSamplerState> nearest = nil, linear = nil;
     std::mutex m;
     std::unordered_map<uint64_t, id<MTLRenderPipelineState>> blit;  // (pixel format, variant) -> pipeline
@@ -94,8 +95,8 @@ void kmtlInitInternal(KDevice* dev) {
     }
     ip->fill32 = [dev->mtl newComputePipelineStateWithFunction:[ip->lib newFunctionWithName:@"kmtl_fill32"] error:&e];
     ip->tessPrep = [dev->mtl newComputePipelineStateWithFunction:[ip->lib newFunctionWithName:@"kmtl_tess_prep"] error:&e];
-    ip->tessStats = [dev->mtl newBufferWithLength:16 options:MTLResourceStorageModeShared | MTLResourceHazardTrackingModeUntracked];
-    memset(ip->tessStats.contents, 0, 16);
+    ip->tessStats = [dev->mtl newBufferWithLength:32 options:MTLResourceStorageModeShared | MTLResourceHazardTrackingModeUntracked];
+    memset(ip->tessStats.contents, 0, 32);
     ip->tessCap = (uint32_t)std::max(3, kmtlEnvInt("KSA_MTL_TESS_MAX_INDICES", 1 << 19));
     MTLSamplerDescriptor* sd = [MTLSamplerDescriptor new];
     sd.sAddressMode = sd.tAddressMode = sd.rAddressMode = MTLSamplerAddressModeClampToEdge;
@@ -237,6 +238,10 @@ uint32_t kmtlTessCap(KDevice* dev) {
     if (st[1] && !ip->firstIndexWarned) {
         ip->firstIndexWarned = 1;
         KERR("indirect tessellated draws with firstIndex %u are drawn from index 0", st[1]);
+    }
+    if (st[4] && !ip->vertexOffsetWarned) {
+        ip->vertexOffsetWarned = 1;
+        KERR("indirect tessellated draws with vertexOffset %u: fused tessellation (KSA_MTL_TESS_FUSE) draws them from vertex 0", st[4]);
     }
     return cap;
 }

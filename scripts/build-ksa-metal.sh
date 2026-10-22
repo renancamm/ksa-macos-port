@@ -24,7 +24,7 @@ COMMON=(-arch arm64 -mmacosx-version-min="${MACOS_MIN}" -std=c++17 "${OPT}" -g -
     -I"${VULKAN_HEADERS}/include" -I"${SPVC}" -I"${SPVT}/include" -I"${REPO}/src/ksa-metal")
 OBJCXX=(-fobjc-arc -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function -Wno-missing-braces)
 SOURCES=(entry instance device format descriptor pipeline command swapchain internal accel profile shadercache
-    rtpipeline rtspirv)
+    rtpipeline rtspirv tessspirv)
 
 # Objects are reused while their source, the shared headers and the flags stay the same
 mkdir -p "${OBJ}"
@@ -46,7 +46,8 @@ for s in "${SOURCES[@]}"; do
     o="${OBJ}/${s}.o"
     OBJECTS+=("${o}")
     if [ ! -f "${o}" ] || [ "${src}" -nt "${o}" ] || [ "${REPO}/src/ksa-metal/kmtl.h" -nt "${o}" ] ||
-        [ "${REPO}/src/ksa-metal/rtspirv.h" -nt "${o}" ]; then
+        [ "${REPO}/src/ksa-metal/rtspirv.h" -nt "${o}" ] || [ "${REPO}/src/ksa-metal/spvmodule.h" -nt "${o}" ] ||
+        [ "${REPO}/src/ksa-metal/tessspirv.h" -nt "${o}" ]; then
         clang++ "${COMMON[@]}" ${extra[@]+"${extra[@]}"} -c "${src}" -o "${o}" &
         PIDS+=($!)
     fi
