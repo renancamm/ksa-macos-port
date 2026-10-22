@@ -340,6 +340,7 @@ Each of these turns one feature off or changes a default, to work around a probl
 | `KSA_MTL_CACHE=0` | don't use the shader cache on disk |
 | `KSA_MTL_SYNC=strict` | run all GPU work strictly in order; slower, but rules out synchronization bugs |
 | `KSA_MTL_SAFE_MATH=1` | compile shaders without fast math; rules out precision problems |
+| `KSA_MTL_AB_CONSTANT=0` | shaders read their resources from device memory instead of constant memory; a bit slower, try it when a shader fails to compile |
 | `KSA_MTL_BUDGET_MB=<n>` | the GPU memory budget reported to the game, which sizes its texture streaming from it (default: what Metal recommends for this Mac) |
 
 `MTL_HUD_ENABLED=1` shows Apple's performance overlay. The variables for debugging KSA Metal itself (logs,

@@ -86,7 +86,9 @@ when the game creates a pipeline, and Metal compiles the result. Translation and
 **Descriptors.** Vulkan shaders find their resources (buffers, textures, samplers) through *descriptor sets*. Metal's
 equivalent is an *argument buffer*: a block of memory holding GPU addresses and resource IDs. KSA Metal writes each
 descriptor set directly as an argument buffer, where every binding owns consecutive 8-byte slots, and tells
-SPIRV-Cross the same layout, so the translated shader reads the right slot.
+SPIRV-Cross the same layout, so the translated shader reads the right slot. Shaders read argument buffers as
+`constant` memory, which lets the compiler load the resource handles like uniforms; only the ray tracing kernels
+read theirs as `device` memory, because their resources are passed on to functions.
 
 **Commands.** Vulkan programs record commands into command buffers and submit them; Metal works the same way with
 `MTLCommandBuffer`. KSA Metal encodes Metal commands immediately while the game records, so submitting is cheap.

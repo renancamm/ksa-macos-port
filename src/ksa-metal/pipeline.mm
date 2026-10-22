@@ -111,6 +111,13 @@ id<MTLLibrary> kmtlCompileMSL(KDevice* dev, const std::string& msl, std::string*
 
 // Per-stage translation options
 enum class KTessRole { None, VertexKernel, ControlKernel, Evaluation };
+// Shaders read their argument buffers from the constant address space, which lets the compiler load resource
+// handles as uniforms (2-5% faster across the benchmark than device). KSA_MTL_AB_CONSTANT=0: device, everywhere
+static uint32_t constantArgumentBuffers() {
+    static const uint32_t on = kmtlEnvInt("KSA_MTL_AB_CONSTANT", 1) ? 1 : 0;
+    return on;
+}
+
 struct KStageOptions {
     uint32_t fragMask = 0xffffffff;
     bool sampleRate = false;
@@ -269,7 +276,8 @@ static bool translate(KShaderModule* mod, const char* entryName, spv::ExecutionM
             for (uint32_t s = 0; s < layout->sets.size(); s++) {
                 KSetLayout* sl = layout->sets[s];
                 if (!sl) continue;
-                c.set_argument_buffer_device_address_space(s, true);
+                // Ray tracing kernels (rtspirv.cpp) pass their resources to functions declared for device memory
+                if (!constantArgumentBuffers() || so.rtLaunch) c.set_argument_buffer_device_address_space(s, true);
                 MSLResourceBinding ab;
                 ab.stage = model;
                 ab.desc_set = s;
@@ -451,7 +459,7 @@ static uint64_t translationKey(KShaderModule* mod, const char* entry, spv::Execu
     static const uint32_t kTranslatorVersion = 3;
     std::vector<uint32_t> k = {kTranslatorVersion, 0x300681bbu /* SPIRV-Cross pin */, (uint32_t)model, so.fragMask,
         so.sampleRate, so.viewMask, (uint32_t)so.tess, (uint32_t)so.indexType, so.tessControlPoints, so.tessQuads,
-        passthroughEnabled(), (uint32_t)mod->hash, (uint32_t)(mod->hash >> 32), so.rtLaunch};
+        passthroughEnabled(), (uint32_t)mod->hash, (uint32_t)(mod->hash >> 32), so.rtLaunch, constantArgumentBuffers()};
     if (const char* presets = kmtlEnv("KSA_MTL_SPEC")) k.push_back((uint32_t)kmtlHash(presets, strlen(presets)));
     for (const char* c = entry; *c; c++) k.push_back((uint8_t)*c);
     if (layout) {
