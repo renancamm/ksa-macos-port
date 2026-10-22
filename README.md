@@ -357,9 +357,9 @@ Each works on the app `port.sh` made.
   ```bash
   ./extras/starmap/port-starmap.sh
   ```
-- **[Benchmark](extras/benchmark/README.md):** plays a fixed set of scenes (a launch, a 2,000-part rocket, a flight
-  over Earth and other worlds, a dip into Jupiter's clouds, an explosion, the sea, a cockpit with ray tracing, a
-  kitten's fur), measures each one and writes a report to compare with another run or to share as an issue:
+- **[Benchmark](extras/benchmark/README.md):** plays a fixed tour of the game in one session (Earth from orbit,
+  flights over its ground and sea, a rocket launch, a kitten in the grass, other worlds, a 2,000-part rocket breaking
+  up), measures each part and writes a report to compare with another run or to share as an issue:
   ```bash
   ./extras/benchmark/benchmark.sh
   ```

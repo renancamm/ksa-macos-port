@@ -9,7 +9,7 @@ labels: benchmark
 Thanks for measuring! Run ./extras/benchmark/benchmark.sh (or with --preset low or --preset high), then:
 1. paste the contents of report.md from the folder it prints below this comment;
 2. drag report.json and the screenshots (*.png) from the same folder into this issue: the screenshots show
-   whether every scene rendered the way it should.
-Anything you noticed while it ran (stutters, flicker, a scene that looked wrong) is welcome too.
+   whether every part rendered the way it should.
+Anything you noticed while it ran (stutters, flicker, a part that looked wrong) is welcome too.
 -->
 

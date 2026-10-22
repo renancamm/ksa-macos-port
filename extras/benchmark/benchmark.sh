@@ -1,15 +1,18 @@
 #!/bin/bash
-# Measures how KSA runs on this Mac: plays a fixed set of scenes, one game start each, and writes a report to share.
+# Measures how KSA runs on this Mac: plays a fixed tour of the game in one session and writes a report to share.
 #
-# Usage: extras/benchmark/benchmark.sh [options] [scene...]
+# Usage: extras/benchmark/benchmark.sh [options] [section...]
 #        extras/benchmark/benchmark.sh compare <run folder> <run folder>
-#   With no scenes, plays all of them. The game takes over the screen: leave the mouse and keyboard alone until it
+#   With no sections, plays all of them. The game takes over the screen: leave the mouse and keyboard alone until it
 #   is done. The game runs from its own documents folder, with a copy of your settings: your files stay untouched.
-#   compare prints how the second run differs from the first, scene by scene.
+#   compare prints how the second run differs from the first, part by part.
 #
 # Options:
 #   --app <path>      the app to measure (default: ~/Applications/Kitten Space Agency.app)
 #   --preset <name>   low or high: fixed settings in a 1280x800 window, the same on every Mac (default: yours)
+#   --system <name>   sol (the solar system) or earth (Earth and the Moon only; skips the other worlds) (default: sol)
+#   --explore         start the benchmark's game paused, to fly the free camera around and capture places for the
+#                     tour (@key lines, for benchmark.txt) with benchkey [name] in its console; quit it when done
 #
 # Needs StarMap in the app (extras/starmap/port-starmap.sh; it is added when missing). The benchmark mod is built on
 # this Mac against your copy of the game, with Microsoft's .NET SDK (downloaded once into deps/).
@@ -23,7 +26,7 @@ SDK_VERSION="10.0.113"
 SDK_URL="https://builds.dotnet.microsoft.com/dotnet/Sdk/${SDK_VERSION}/dotnet-sdk-${SDK_VERSION}-osx-arm64.tar.gz"
 SDK_SHA512="1fe7e83b47037e175611504f0b238a18d95589e1413a22ea44de43d8a5bffc283b9aadbd5b2c4de3cef243ac5d0167f2c75d22e5e719ecea4b9e08707ca1050a"
 
-ALL_SCENES=(orbit flyby jupiter launch giga explosion sea iva eva)
+SCRIPT="${HERE}/benchmark.txt"
 
 # Presets: fixed settings, the same on every Mac, so reports compare. Without one, your own settings are used.
 # Both run in a 1280x800 window without V-Sync (frame times are then the game's, not the display's).
@@ -45,7 +48,7 @@ SDK="${DEPS}/dotnet-sdk/${SDK_VERSION}"
 REPORT="${DEPS}/benchmark/report/KsaMetalBenchmarkReport.dll"
 
 usage() {
-    sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
 }
 
@@ -84,27 +87,35 @@ if [ "$1" = compare ]; then
 fi
 
 APP="${DEFAULT_APP}"
-SCENES=()
+SECTIONS=()
 PRESET=""
+SYSTEM="sol"
+EXPLORE=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --app) APP="${2%/}"; shift ;;
         --preset) PRESET="$2"; shift ;;
+        --system) SYSTEM="$2"; shift ;;
+        --explore) EXPLORE=1 ;;
         -h | --help) usage ;;
         -*) echo "Unknown option: $1"; usage 1 ;;
-        *) SCENES+=("$1") ;;
+        *) SECTIONS+=("$1") ;;
     esac
     shift
 done
-[ ${#SCENES[@]} -gt 0 ] || SCENES=("${ALL_SCENES[@]}")
 case "${PRESET}" in
     "") PRESET_SETTINGS=() ;;
     low) PRESET_SETTINGS=("${PRESET_COMMON[@]}" "${PRESET_LOW[@]}") ;;
     high) PRESET_SETTINGS=("${PRESET_COMMON[@]}" "${PRESET_HIGH[@]}") ;;
     *) die "unknown preset '${PRESET}' (low or high)." ;;
 esac
-for s in "${SCENES[@]}"; do
-    [ -f "${HERE}/scenes/${s}.txt" ] || die "no scene '${s}' (extras/benchmark/scenes/)."
+case "${SYSTEM}" in
+    sol) SYSTEM_ID="Sol" ;;
+    earth) SYSTEM_ID="SolLite" ;;
+    *) die "unknown system '${SYSTEM}' (sol or earth)." ;;
+esac
+for s in ${SECTIONS[@]+"${SECTIONS[@]}"}; do
+    grep -q "^section ${s}\( \|$\)" "${SCRIPT}" || die "no section '${s}' in extras/benchmark/benchmark.txt."
 done
 
 check_mac
@@ -126,38 +137,52 @@ build "${HERE}/mod/KsaMetalBenchmark.csproj" "${MOD_OUT}" -p:KsaDir="${RES}" ||
 build "${HERE}/report/KsaMetalBenchmarkReport.csproj" "${DEPS}/benchmark/report" || die "the report program did not build."
 
 # 2. The game's documents folder for the run, made fresh: the game itself and the benchmark mod (none of your mods,
-#    so they neither change the numbers nor stop the game from starting), the bundled vehicles, and Gemini 7 from
-#    the game's own vehicles (the EVA scene's capsule)
+#    so they neither change the numbers nor stop the game from starting) and the bundled vehicles
 rm -rf "${INSTANCE}"
 mkdir -p "${INSTANCE}/mods/${MOD_ID}" "${INSTANCE}/Vehicles"
 printf '[[mods]]\nid = "Core"\nenabled = true\n\n[[mods]]\nid = "%s"\nenabled = true\n' "${MOD_ID}" \
     > "${INSTANCE}/manifest.toml"
 cp "${HERE}/mod/mod.toml" "${MOD_OUT}/KsaMetalBenchmark.dll" "${INSTANCE}/mods/${MOD_ID}/"
 cp -R "${HERE}/vehicles/"* "${INSTANCE}/Vehicles/"
-cp -R "${RES}/Content/Core/defaultvehicles/Gemini7" "${INSTANCE}/Vehicles/" 2> /dev/null ||
-    warn "this KSA has no Gemini7 vehicle: the EVA scene will fail."
 
-# The run's settings: yours, with the preset on top. Each scene starts from these and adds its own.
-BASE="${DEPS}/benchmark/settings.toml"
-cp "${DOCS}/settings.toml" "${BASE}"
-# set_setting <file> <key> <value>: one line of a settings.toml (keys are unique across its sections)
+# The run's settings: yours, with the preset on top
+SETTINGS="${INSTANCE}/settings.toml"
+cp "${DOCS}/settings.toml" "${SETTINGS}"
+# set_setting <key> <value>: one line of settings.toml (keys are unique across its sections)
 set_setting() {
-    grep -q "^$2 = " "$1" || die "settings.toml has no '$2' (does this KSA version still match?)."
-    sed -i '' "s|^$2 = .*|$2 = $3|" "$1"
+    grep -q "^$1 = " "${SETTINGS}" || die "settings.toml has no '$1' (does this KSA version still match?)."
+    sed -i '' "s|^$1 = .*|$1 = $2|" "${SETTINGS}"
 }
 setting() {
-    sed -n "s/^$1 = //p" "${BASE}" | tr -d '"'
+    sed -n "s/^$1 = //p" "${SETTINGS}" | tr -d '"'
 }
-# The game starts straight into the scene's start, without its system menu, update popup or name labels
-for kv in selectSystemOnStart=false checkForUpdates=false celestialNames=false locationNames=false \
-    ${PRESET_SETTINGS[@]+"${PRESET_SETTINGS[@]}"}; do
-    set_setting "${BASE}" "${kv%%=*}" "${kv#*=}"
+# The game starts straight into a new game of the chosen system, without its system menu, update popup or name labels,
+# with the camera on the game's test vessel in orbit (a testing start, the one that keeps the system's vehicles)
+for kv in selectSystemOnStart=false "lastSystemId=\"${SYSTEM_ID}\"" 'startGameType="Testing"' 'startVehicle="Rocket"' \
+    'startParent="Earth"' 'startSituation="RocketStartingSituation"' checkForUpdates=false celestialNames=false \
+    locationNames=false ${PRESET_SETTINGS[@]+"${PRESET_SETTINGS[@]}"}; do
+    set_setting "${kv%%=*}" "${kv#*=}"
 done
+
+# Explore: the same game, paused, with the benchkey console command; the keys go to a folder of their own
+if [ -n "${EXPLORE}" ]; then
+    OUT="${DOCS}/benchmarks/$(date +%Y-%m-%d_%H%M)_explore"
+    mkdir -p "${OUT}"
+    caffeinate -u -t 1
+    step "Exploring KSA ${INSTALLED}: fly the free camera, type benchkey [name] in the console (\\) at each place, quit when done"
+    STARMAP_INSTANCE_PATH="${INSTANCE}" KSA_BENCH_EXPLORE=1 KSA_BENCH_OUT="${OUT}" "${APP}/Contents/MacOS/KSA" > /dev/null 2>&1 || true
+    if [ -f "${OUT}/keys.txt" ]; then
+        info "Captured keys: ${OUT}/keys.txt"
+    else
+        info "No keys captured."
+    fi
+    exit
+fi
 
 # 3. The run
 OUT="${DOCS}/benchmarks/$(date +%Y-%m-%d_%H%M)"
 mkdir -p "${OUT}"
-cp "${BASE}" "${OUT}/settings.toml"
+cp "${SETTINGS}" "${OUT}/settings.toml"
 # What the report says about this Mac and the run (values first: bash 3.2 misreads quotes in $() inside "")
 gpu_cores="$(system_profiler SPDisplaysDataType 2> /dev/null | awk -F': ' '/Total Number of Cores/ { print $2; exit }')"
 displays="$(system_profiler SPDisplaysDataType 2> /dev/null | awk -F': ' '/Resolution:/ { print $2 }' | paste -sd ';' - | sed 's/;/; /g')"
@@ -179,50 +204,43 @@ switches="$(env | grep '^KSA_MTL_' | sed "s|${HOME}|~|g" | paste -sd ' ' - || tr
         echo "Port: $(git -C "${REPO}" describe --always --dirty 2> /dev/null)"
     fi
     echo "StarMap: $(cat "${RES}/StarMap/version.txt" 2> /dev/null || echo unknown)"
+    echo "System: ${SYSTEM_ID}"
+    echo "Sections: ${SECTIONS[*]:-all}"
     echo "Preset: ${PRESET:-none, own settings}"
     echo "Window: $(setting width) x $(setting height), $(setting mode), on $(setting screenName)"
     echo "V-Sync: $(setting vsync), FPS limit $(setting fpslimit)"
     echo "Anti-aliasing: $(setting antialiasing)"
     echo "KSA Metal switches: ${switches:-none}"
 } > "${OUT}/system.txt"
-# Keeps the display awake while the script runs (the game needs it)
+# Keeps the display awake while the script runs (the game needs it), and wakes it now: a display that went to sleep
+# makes the game fail at start
 caffeinate -d -i -w $$ &
+caffeinate -u -t 1
 
-step "Benchmarking KSA ${INSTALLED}: ${SCENES[*]}"
+# Loading takes up to a few minutes on a first start (shader compilation), then the script's own length, plus the
+# time slower Macs spend catching up at checkpoints
+length="$(awk '$1 == "section" { total += max; max = 0 } $1 ~ /^[0-9.]+$/ && $1 > max { max = $1 }
+    END { print int(total + max) }' "${SCRIPT}")"
+timeout=$((length * 2 + 300))
+step "Benchmarking KSA ${INSTALLED} (about $(((length + 60) / 60)) minutes)"
 info "The game takes over the screen. Leave the mouse and keyboard alone until it is done."
-for s in "${SCENES[@]}"; do
-    scene="${HERE}/scenes/${s}.txt"
-    cp "${BASE}" "${INSTANCE}/settings.toml"
-    start="$(sed -n 's/^start //p' "${scene}")"
-    set_setting "${INSTANCE}/settings.toml" startGameType "\"${start:-Sandbox}\""
-    while read -r key value; do
-        set_setting "${INSTANCE}/settings.toml" "${key}" "${value}"
-    done < <(sed -n 's/^setting //p' "${scene}")
-    # Loading takes up to a few minutes on a first start (shader compilation), then the scene's own length
-    length="$(awk '$1 ~ /^[0-9.]+$/ && $1 > m { m = $1 } END { print int(m) }' "${scene}")"
-    timeout=$((length + 300))
-
-    info "${s} (about $((length + 20)) s)"
-    # A display that went to sleep makes the game fail at start
-    caffeinate -u -t 1
-    STARMAP_INSTANCE_PATH="${INSTANCE}" KSA_BENCH_SCENE="${scene}" KSA_BENCH_OUT="${OUT}" \
-        "${APP}/Contents/MacOS/KSA" > /dev/null 2>&1 &
-    pid=$!
-    waited=0
-    while kill -0 "${pid}" 2> /dev/null; do
-        if [ "${waited}" -ge "${timeout}" ]; then
-            warn "${s} did not finish in ${timeout} s: stopped."
-            kill -9 "${pid}" 2> /dev/null || true
-            break
-        fi
-        sleep 1
-        waited=$((waited + 1))
-    done
-    wait "${pid}" 2> /dev/null || true
-    # The log, without your home folder's name
-    sed "s|${HOME}|~|g" "${INSTANCE}/logs/console.log" > "${OUT}/${s}.log" 2> /dev/null || true
-    [ -f "${OUT}/${s}.json" ] || warn "${s} wrote no results: see ${OUT}/${s}.log"
+KSA_BENCH_ONLY="${SECTIONS[*]}" STARMAP_INSTANCE_PATH="${INSTANCE}" KSA_BENCH_SCRIPT="${SCRIPT}" KSA_BENCH_OUT="${OUT}" \
+    "${APP}/Contents/MacOS/KSA" > /dev/null 2>&1 &
+pid=$!
+waited=0
+while kill -0 "${pid}" 2> /dev/null; do
+    if [ "${waited}" -ge "${timeout}" ]; then
+        warn "the run did not finish in ${timeout} s: stopped."
+        kill -9 "${pid}" 2> /dev/null || true
+        break
+    fi
+    sleep 1
+    waited=$((waited + 1))
 done
+wait "${pid}" 2> /dev/null || true
+# The game's log, without your home folder's name
+sed "s|${HOME}|~|g" "${INSTANCE}/logs/console.log" > "${OUT}/game.log" 2> /dev/null || true
+[ -f "${OUT}/results.json" ] || die "the run wrote no results: see ${OUT}/game.log"
 
 report report "${OUT}" > /dev/null
 echo ""

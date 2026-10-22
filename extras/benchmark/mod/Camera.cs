@@ -1,0 +1,169 @@
+// The camera directives for vehicles and the cockpit: moves on the script's clock, so a move ends where the script
+// says on every Mac, whatever its frame rate, and holds still while a checkpoint stops the clock. The free camera's
+// flights over and between celestials are in Path.cs.
+using System;
+using System.Globalization;
+using Brutal.Numerics;
+using KSA;
+
+namespace KsaMetalBenchmark;
+
+public partial class Benchmark
+{
+    // Azimuth, elevation (radians) and distance power of the orbit camera, from and to; NaN leaves one alone
+    private record OrbitMove(double3 From, double3 To, double Start, double Seconds);
+
+    // Yaw and pitch (degrees) of the cockpit camera from its seat's forward view
+    private record LookMove(double2 From, double2 To, double Start, double Seconds);
+
+    private double _rotateRadPerSecond;
+    private OrbitMove? _orbitMove;
+    private LookMove? _lookMove;
+    private double2? _look;
+
+    private void UpdateCamera(double dt)
+    {
+        var view = Program.MainViewport.OrbitController.View;
+        if (_orbitMove is { } m && view != null)
+        {
+            double u = Ease(m.Start, m.Seconds);
+            double3 v = m.From + (m.To - m.From) * u;
+            if (!double.IsNaN(v.X))
+                view.Azimuth = v.X;
+            if (!double.IsNaN(v.Y))
+                view.Elevation = v.Y;
+            if (!double.IsNaN(v.Z))
+                view.DistancePower = v.Z;
+            if (u >= 1)
+                _orbitMove = null;
+        }
+        if (_rotateRadPerSecond != 0 && view != null)
+            view.Azimuth += _rotateRadPerSecond * dt;
+        UpdatePath();
+        if (_lookMove is { } l)
+        {
+            double u = Ease(l.Start, l.Seconds);
+            _look = l.From + (l.To - l.From) * u;
+            if (u >= 1)
+                _lookMove = null;
+        }
+        if (_look is { } look)
+            Look(look);
+    }
+
+    // How far along a move is (0 to 1), eased in and out
+    private double Ease(double start, double seconds)
+    {
+        double u = seconds > 0 ? Math.Clamp((_scriptTime - start) / seconds, 0, 1) : 1;
+        return u * u * (3 - 2 * u);
+    }
+
+    // Turns the cockpit camera from its seat's forward view (the game keeps it within the seat's half of the cabin)
+    private static void Look(double2 look)
+    {
+        if (Program.MainViewport is not GameViewport viewport || viewport.Mode != CameraMode.IVA ||
+            Program.GetHoveredCamera() is not { Following: Vehicle vehicle } camera || viewport.IvaController.Seat is not { } seat)
+            return;
+        var seat2Cce = vehicle.Asmb2Cce * seat.Parent.Asmb2VehicleAsmb;
+        var forward = seat.ForwardAxisAsmb.Transform(seat2Cce).Normalized();
+        var up = seat.UpAxisAsmb.Transform(seat2Cce).Normalized();
+        var right = double3.Normalize(double3.Cross(forward, up));
+        double yaw = look.X * Math.PI / 180, pitch = look.Y * Math.PI / 180;
+        var direction = (forward * Math.Cos(yaw) + right * Math.Sin(yaw)) * Math.Cos(pitch) + up * Math.Sin(pitch);
+        camera.LocalRotation = Camera.LookAtRotation(direction, up);
+    }
+
+    private bool SetCameraMode(string mode)
+    {
+        if (Program.MainViewport is not GameViewport viewport)
+            return false;
+        CameraMode? m = mode switch { "orbit" => CameraMode.Orbit, "free" => CameraMode.Free, "iva" => CameraMode.IVA, _ => null };
+        if (m == null)
+            return false;
+        ReleaseCamera();
+        if (m != CameraMode.IVA)
+        {
+            _look = null;
+            _lookMove = null;
+        }
+        if (viewport.Mode != m)
+            viewport.SetCameraMode(m.Value);
+        return true;
+    }
+
+    // A value of a move: "-" keeps the current one, "~<x>" adds to it, anything else replaces it; "km" for kilometres
+    private static bool TryValue(string s, double current, double scale, out double value)
+    {
+        value = current;
+        if (s == "-")
+            return true;
+        bool relative = s.StartsWith('~');
+        if (relative)
+            s = s[1..];
+        double unit = 1;
+        if (s.EndsWith("km", StringComparison.Ordinal))
+        {
+            unit = 1000;
+            s = s[..^2];
+        }
+        if (!double.TryParse(s, NumberStyles.Float, Inv, out var x))
+            return false;
+        value = relative ? current + x * unit * scale : x * unit * scale;
+        return true;
+    }
+
+    private bool Orbit(string[] a)
+    {
+        if (!SetCameraMode("orbit"))
+            return false;
+        var view = Program.MainViewport.OrbitController.View;
+        if (view == null)
+            return false;
+        const double Deg = Math.PI / 180;
+        var from = new double3(view.Azimuth, view.Elevation, view.DistancePower);
+        if (!TryValue(a[1], from.X, Deg, out var az) || !TryValue(a[2], from.Y, Deg, out var el) || !TryValue(a[3], from.Z, 1, out var dist))
+            return false;
+        double seconds = 0;
+        if (a.Length == 5 && !double.TryParse(a[4], NumberStyles.Float, Inv, out seconds))
+            return false;
+        // A kept value stays out of the move, so @rotate goes on turning a kept azimuth
+        var to = new double3(a[1] == "-" ? double.NaN : az, a[2] == "-" ? double.NaN : el, a[3] == "-" ? double.NaN : dist);
+        _orbitMove = new OrbitMove(new double3(a[1] == "-" ? double.NaN : from.X, a[2] == "-" ? double.NaN : from.Y,
+            a[3] == "-" ? double.NaN : from.Z), to, _scriptTime, seconds);
+        UpdateCamera(0);
+        return true;
+    }
+
+    private bool LookIva(string[] a)
+    {
+        if (Program.MainViewport is not GameViewport { Mode: CameraMode.IVA })
+        {
+            Log("@look: needs the cockpit camera (@camera iva)");
+            return false;
+        }
+        var from = _look ?? default;
+        if (!TryValue(a[1], from.X, 1, out var yaw) || !TryValue(a[2], from.Y, 1, out var pitch))
+            return false;
+        double seconds = 0;
+        if (a.Length == 4 && !double.TryParse(a[3], NumberStyles.Float, Inv, out seconds))
+            return false;
+        _lookMove = new LookMove(from, new double2(yaw, pitch), _scriptTime, seconds);
+        UpdateCamera(0);
+        return true;
+    }
+
+    // Logs where the sun stands over a surface point of a celestial (to plan the light of a key)
+    private static bool Sun(string[] a)
+    {
+        var sun = Universe.CurrentSystem?.GetWorldSun();
+        if (Universe.CurrentSystem?.All.TryGet(a[1], out Celestial? body) != true || body == null || sun == null ||
+            !double.TryParse(a[2], NumberStyles.Float, Inv, out var lat) || !double.TryParse(a[3], NumberStyles.Float, Inv, out var lon))
+            return false;
+        var (up, north, east) = Frame(body, lat, lon);
+        var d = double3.Normalize(sun.GetPositionEcl() - body.GetPositionEcl());
+        double elevation = Math.Asin(Math.Clamp(double3.Dot(d, up), -1, 1)) * 180 / Math.PI;
+        double azimuth = Math.Atan2(double3.Dot(d, east), double3.Dot(d, north)) * 180 / Math.PI;
+        Log(FormattableString.Invariant($"@sun {body.Id} {lat} {lon}: elevation {elevation:F1}, azimuth {azimuth:F0}"));
+        return true;
+    }
+}

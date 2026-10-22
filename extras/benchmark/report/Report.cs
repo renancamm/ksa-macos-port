@@ -1,8 +1,8 @@
 // The benchmark's report and comparison, run by extras/benchmark/benchmark.sh.
 //
-//   report <dir>       <dir>/<scene>.json (written by the mod) + <dir>/system.txt (written by the script, "key: value"
+//   report <dir>       <dir>/results.json (written by the mod) + <dir>/system.txt (written by the script, "key: value"
 //                      lines) -> <dir>/report.json and <dir>/report.md (to paste into a GitHub issue)
-//   compare <a> <b>    two report.json files (or their folders): per part of each scene, b against a
+//   compare <a> <b>    two report.json files (or their folders): per part of each section, b against a
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -46,40 +46,44 @@ public static class Program
                     system[line[..colon]] = line[(colon + 2)..];
             }
         }
-        var scenes = new JsonArray();
-        foreach (var file in Directory.GetFiles(dir, "*.json").Where(f => Path.GetFileName(f) != "report.json").OrderBy(SceneOrder))
+        var resultsFile = Path.Combine(dir, "results.json");
+        if (!File.Exists(resultsFile))
         {
-            if (JsonNode.Parse(File.ReadAllText(file)) is JsonObject scene && scene["scene"] != null)
-                scenes.Add(scene);
+            Console.Error.WriteLine($"no results at {resultsFile}");
+            return 1;
         }
-        var report = new JsonObject { ["system"] = system, ["scenes"] = scenes };
+        var results = JsonNode.Parse(File.ReadAllText(resultsFile)) as JsonObject ?? new JsonObject();
+        var report = new JsonObject
+        {
+            ["system"] = system, ["loadSeconds"] = results["loadSeconds"]?.DeepClone(), ["sections"] = results["sections"]?.DeepClone()
+        };
         File.WriteAllText(Path.Combine(dir, "report.json"), report.ToJsonString(Indented));
-        File.WriteAllText(Path.Combine(dir, "report.md"), Markdown(system, scenes, dir));
+        File.WriteAllText(Path.Combine(dir, "report.md"), Markdown(report));
         Console.WriteLine(Path.Combine(dir, "report.md"));
         return 0;
     }
 
-    // The scenes in the order they ran (the order of their files' times)
-    private static DateTime SceneOrder(string file) => File.GetLastWriteTimeUtc(file);
+    private static JsonArray Sections(JsonObject report) => report["sections"] as JsonArray ?? new JsonArray();
 
-    private static string Markdown(JsonObject system, JsonArray scenes, string dir)
+    private static string Markdown(JsonObject report)
     {
         var md = new StringBuilder();
         md.AppendLine("## KSA Metal benchmark");
         md.AppendLine();
         md.AppendLine("| | |");
         md.AppendLine("|---|---|");
-        foreach (var (key, value) in system)
+        foreach (var (key, value) in report["system"] as JsonObject ?? new JsonObject())
             md.AppendLine($"| {key} | {value} |");
+        md.AppendLine($"| Loading | {Num(report["loadSeconds"], "F1")} s |");
         md.AppendLine();
         md.AppendLine("Frame: time between two frames (median, 95th percentile). GPU: time the GPU worked on a frame. Hitches: frames longer than twice the median.");
         md.AppendLine();
-        md.AppendLine("| Scene | Part | FPS | Frame ms | p95 ms | GPU ms | Hitches | Worst ms | Draws | GPU memory MB |");
+        md.AppendLine("| Section | Part | FPS | Frame ms | p95 ms | GPU ms | Hitches | Worst ms | Draws | GPU memory MB |");
         md.AppendLine("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|");
-        foreach (var scene in scenes.OfType<JsonObject>())
+        foreach (var section in Sections(report).OfType<JsonObject>())
         {
-            string name = (string?)scene["scene"] ?? "?";
-            foreach (var w in (scene["windows"] as JsonArray ?? new JsonArray()).OfType<JsonObject>())
+            string name = (string?)section["name"] ?? "?";
+            foreach (var w in (section["windows"] as JsonArray ?? new JsonArray()).OfType<JsonObject>())
             {
                 md.AppendLine($"| {name} | {w["name"]} | {Num(w["averageFps"], "F1")} | {Num(w["frameMsMedian"], "F1")} | " +
                               $"{Num(w["frameMsP95"], "F1")} | {Num(w["gpuMsMedian"], "F1")} | {w["hitches"]} | " +
@@ -87,13 +91,8 @@ public static class Program
                 name = "";
             }
         }
-        var problems = scenes.OfType<JsonObject>()
-            .SelectMany(s => (s["errors"] as JsonArray ?? new JsonArray()).Select(e => $"{s["scene"]}: {e}")).ToList();
-        md.AppendLine();
-        md.AppendLine("| Scene | Load s |");
-        md.AppendLine("|---|---:|");
-        foreach (var scene in scenes.OfType<JsonObject>())
-            md.AppendLine($"| {scene["scene"]} | {Num(scene["loadSeconds"], "F1")} |");
+        var problems = Sections(report).OfType<JsonObject>()
+            .SelectMany(s => (s["errors"] as JsonArray ?? new JsonArray()).Select(e => $"{s["name"]}: {e}")).ToList();
         if (problems.Count > 0)
         {
             md.AppendLine();
@@ -118,13 +117,13 @@ public static class Program
         Console.WriteLine($"a: {a}");
         Console.WriteLine($"b: {b}");
         Console.WriteLine();
-        Console.WriteLine("| Scene | Part | Frame ms a | Frame ms b | Change | GPU ms a | GPU ms b | Change |");
+        Console.WriteLine("| Section | Part | Frame ms a | Frame ms b | Change | GPU ms a | GPU ms b | Change |");
         Console.WriteLine("|---|---|---:|---:|---:|---:|---:|---:|");
         foreach (var (key, wa) in parts)
         {
             if (!after.TryGetValue(key, out var wb))
                 continue;
-            Console.WriteLine($"| {key.scene} | {key.part} | {Num(wa["frameMsMedian"], "F1")} | {Num(wb["frameMsMedian"], "F1")} | " +
+            Console.WriteLine($"| {key.section} | {key.part} | {Num(wa["frameMsMedian"], "F1")} | {Num(wb["frameMsMedian"], "F1")} | " +
                               $"{Change(wa["frameMsMedian"], wb["frameMsMedian"])} | {Num(wa["gpuMsMedian"], "F1")} | " +
                               $"{Num(wb["gpuMsMedian"], "F1")} | {Change(wa["gpuMsMedian"], wb["gpuMsMedian"])} |");
         }
@@ -145,12 +144,12 @@ public static class Program
         return JsonNode.Parse(File.ReadAllText(path)) as JsonObject;
     }
 
-    private static Dictionary<(string scene, string part), JsonObject> Windows(JsonObject report)
+    private static Dictionary<(string section, string part), JsonObject> Windows(JsonObject report)
     {
         var all = new Dictionary<(string, string), JsonObject>();
-        foreach (var scene in (report["scenes"] as JsonArray ?? new JsonArray()).OfType<JsonObject>())
-            foreach (var w in (scene["windows"] as JsonArray ?? new JsonArray()).OfType<JsonObject>())
-                all[((string?)scene["scene"] ?? "?", (string?)w["name"] ?? "?")] = w;
+        foreach (var section in Sections(report).OfType<JsonObject>())
+            foreach (var w in (section["windows"] as JsonArray ?? new JsonArray()).OfType<JsonObject>())
+                all[((string?)section["name"] ?? "?", (string?)w["name"] ?? "?")] = w;
         return all;
     }
 

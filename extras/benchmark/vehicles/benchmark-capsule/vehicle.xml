@@ -1,0 +1,443 @@
+<?xml version='1.0' encoding='utf-8'?>
+<VehicleSaveData Id="benchmark-capsule" ActiveSequence="0">
+  <RootPartRef InstanceOf="CoreCommandA_Prefab_MediumCapsuleVariantA" LocalInstanceId="1" Stage="5">
+    <Transform>
+      <Position X="0" Y="0" Z="0" />
+      <Rotation X="0" Y="0" Z="0" />
+      <Scale X="1" Y="1" Z="1" />
+    </Transform>
+    <PartConnectorRef Index="0" ConnectedLocalInstanceId="395" />
+    <PartRef InstanceOf="CoreIVASpaceA_Prefab_MediumCapsuleA" LocalInstanceId="49" Stage="5">
+      <Transform>
+        <Position X="0" Y="0" Z="0" />
+        <Rotation X="0" Y="0" Z="0" />
+        <Scale X="1" Y="1" Z="1" />
+      </Transform>
+      <SubPartRef InstanceOf="CoreIVASpaceA_Subpart_TempHatchesA" LocalInstanceId="50" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVASpaceA_Subpart_MediumCapsuleAWindowGlass" LocalInstanceId="51" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVASpaceA_Subpart_MediumCapsuleARayBlocker" LocalInstanceId="52" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVASpaceA_Subpart_MediumCapsuleA" LocalInstanceId="53" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ZiptieA" LocalInstanceId="54" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ZiptieA" LocalInstanceId="55" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ZiptieA" LocalInstanceId="56" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ZiptieA" LocalInstanceId="57" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ZiptieA" LocalInstanceId="58" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ZiptieA" LocalInstanceId="59" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ZiptieA" LocalInstanceId="60" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_WrittenNoteE" LocalInstanceId="61" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_WrittenNoteD" LocalInstanceId="62" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_WrittenNoteC" LocalInstanceId="63" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_WrittenNoteB" LocalInstanceId="64" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_WrittenNoteA" LocalInstanceId="65" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_WiringBundleC" LocalInstanceId="66" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_WiringBundleC" LocalInstanceId="67" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_WiringBundleC" LocalInstanceId="68" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_WiringBundleC" LocalInstanceId="69" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_WiringBundleC" LocalInstanceId="70" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_WiringBundleC" LocalInstanceId="71" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_WiringBundleC" LocalInstanceId="72" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_WiringBundleB" LocalInstanceId="73" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_WiringBundleB" LocalInstanceId="74" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_WiringBundleB" LocalInstanceId="75" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_WiringBundleB" LocalInstanceId="76" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_WiringBundleA" LocalInstanceId="77" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_WiringBundleA" LocalInstanceId="78" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_UtilityBagA" LocalInstanceId="79" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ToothbrushA" LocalInstanceId="80" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ThrottleARightStick" LocalInstanceId="81" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ThrottleARightStick" LocalInstanceId="82" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ThrottleALeftStick" LocalInstanceId="83" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ThrottleALeftStick" LocalInstanceId="84" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ThrottleABase" LocalInstanceId="85" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ThrottleABase" LocalInstanceId="86" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_TapeC" LocalInstanceId="87" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_TapeC" LocalInstanceId="88" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_TapeB" LocalInstanceId="89" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_TapeB" LocalInstanceId="90" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_TapeB" LocalInstanceId="91" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_TapeB" LocalInstanceId="92" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_TapeB" LocalInstanceId="93" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_TapeB" LocalInstanceId="94" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_TapeA" LocalInstanceId="95" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_TapeA" LocalInstanceId="96" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_SwitchGuardC" LocalInstanceId="97" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_SwitchGuardC" LocalInstanceId="98" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_SwitchGuardC" LocalInstanceId="99" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_SwitchGuardC" LocalInstanceId="100" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_SwitchGuardC" LocalInstanceId="101" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_SwitchGuardC" LocalInstanceId="102" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_SwitchGuardC" LocalInstanceId="103" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_SwitchGuardC" LocalInstanceId="104" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_SwitchGuardC" LocalInstanceId="105" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_SwitchGuardB" LocalInstanceId="106" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_SwitchGuardB" LocalInstanceId="107" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_SwitchGuardA" LocalInstanceId="108" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_SwitchGuardA" LocalInstanceId="109" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="110" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="111" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="112" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="113" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="114" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="115" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="116" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="117" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="118" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="119" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="120" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="121" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="122" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="123" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="124" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="125" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="126" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="127" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="128" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="129" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="130" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="131" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="132" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="133" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="134" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="135" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="136" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="137" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="138" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="139" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="140" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="141" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="142" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="143" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="144" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="145" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="146" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="147" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="148" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="149" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="150" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="151" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="152" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="153" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="154" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="155" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="156" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="157" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="158" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="159" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="160" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="161" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="162" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="163" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="164" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewB" LocalInstanceId="165" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="166" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="167" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="168" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="169" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="170" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="171" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="172" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="173" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="174" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="175" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="176" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="177" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="178" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="179" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="180" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="181" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="182" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="183" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="184" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="185" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="186" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="187" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="188" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="189" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="190" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="191" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="192" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="193" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="194" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="195" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="196" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="197" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="198" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ScrewA" LocalInstanceId="199" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_PhotoH" LocalInstanceId="200" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_PhotoG" LocalInstanceId="201" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_PhotoF" LocalInstanceId="202" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_PhotoE" LocalInstanceId="203" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_PhotoD" LocalInstanceId="204" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_PhotoC" LocalInstanceId="205" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_PhotoB" LocalInstanceId="206" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_PhotoA" LocalInstanceId="207" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_MergedLightA" LocalInstanceId="208" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_JoystickA" LocalInstanceId="209" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_JoystickA" LocalInstanceId="210" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_InternalLeverABase" LocalInstanceId="211" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_InternalLeverABase" LocalInstanceId="212" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_InternalLeverA" LocalInstanceId="213" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_InternalLeverA" LocalInstanceId="214" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_HingeACap" LocalInstanceId="215" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_HingeACap" LocalInstanceId="216" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_HingeACap" LocalInstanceId="217" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_HingeACap" LocalInstanceId="218" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_HingeAAxle" LocalInstanceId="219" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_HingeA" LocalInstanceId="220" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_HingeA" LocalInstanceId="221" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_HingeA" LocalInstanceId="222" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_HingeA" LocalInstanceId="223" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_HingeA" LocalInstanceId="224" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_HingeA" LocalInstanceId="225" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="226" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="227" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="228" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="229" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="230" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="231" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="232" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="233" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="234" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="235" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="236" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="237" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="238" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="239" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="240" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="241" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="242" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="243" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="244" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="245" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="246" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="247" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="248" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="249" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="250" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="251" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="252" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="253" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="254" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="255" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="256" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="257" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="258" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="259" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="260" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="261" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="262" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="263" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="264" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="265" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="266" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="267" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="268" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAJoinA" LocalInstanceId="269" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAGrateG" LocalInstanceId="270" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAGrateG" LocalInstanceId="271" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAGrateE" LocalInstanceId="272" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAGrateE" LocalInstanceId="273" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAGrateE" LocalInstanceId="274" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAGrateE" LocalInstanceId="275" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAGrateE" LocalInstanceId="276" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAGrateE" LocalInstanceId="277" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAGrateD" LocalInstanceId="278" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAGrateD" LocalInstanceId="279" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAGrateD" LocalInstanceId="280" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAGrateD" LocalInstanceId="281" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAGrateD" LocalInstanceId="282" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAGrateD" LocalInstanceId="283" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAGrateD" LocalInstanceId="284" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAGrateD" LocalInstanceId="285" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAGrateC" LocalInstanceId="286" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAGrateC" LocalInstanceId="287" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAGrateB" LocalInstanceId="288" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAGrateB" LocalInstanceId="289" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAGrateA" LocalInstanceId="290" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAGrateA" LocalInstanceId="291" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAGrateA" LocalInstanceId="292" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAGrateA" LocalInstanceId="293" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorAGrateA" LocalInstanceId="294" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorACubeA" LocalInstanceId="295" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorACubeA" LocalInstanceId="296" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorACubeA" LocalInstanceId="297" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorACubeA" LocalInstanceId="298" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorACubeA" LocalInstanceId="299" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorACubeA" LocalInstanceId="300" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorACubeA" LocalInstanceId="301" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorACubeA" LocalInstanceId="302" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorACubeA" LocalInstanceId="303" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorACubeA" LocalInstanceId="304" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_FloorACubeA" LocalInstanceId="305" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_DialBBase" LocalInstanceId="306" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_DialB" LocalInstanceId="307" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_DialABase" LocalInstanceId="308" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_DialA" LocalInstanceId="309" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_DeanSardineB" LocalInstanceId="310" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_DeanSardineB" LocalInstanceId="311" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_DeanSardineA" LocalInstanceId="312" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_DeanSardineA" LocalInstanceId="313" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ConsoleRunnersA" LocalInstanceId="314" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ConsoleAPanelF" LocalInstanceId="315" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ConsoleAPanelE" LocalInstanceId="316" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ConsoleAPanelD" LocalInstanceId="317" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ConsoleAPanelC" LocalInstanceId="318" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ConsoleAPanelC" LocalInstanceId="319" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ConsoleAPanelB" LocalInstanceId="320" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ConsoleAPanelB" LocalInstanceId="321" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ConsoleAPanelA" LocalInstanceId="322" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ConsoleAPanelA" LocalInstanceId="323" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ChairAHeadrest" LocalInstanceId="324" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ChairAHeadrest" LocalInstanceId="325" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ChairAEjectionRunners" LocalInstanceId="326" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ChairAEjectionRunners" LocalInstanceId="327" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ChairABase" LocalInstanceId="328" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ChairABase" LocalInstanceId="329" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ChairA" LocalInstanceId="330" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_ChairA" LocalInstanceId="331" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_CentralConsoleA" LocalInstanceId="332" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_CableHolderA" LocalInstanceId="333" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_CableHolderA" LocalInstanceId="334" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_CableHolderA" LocalInstanceId="335" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_CableHolderA" LocalInstanceId="336" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_CableHolderA" LocalInstanceId="337" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_CableHolderA" LocalInstanceId="338" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="339" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="340" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="341" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="342" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="343" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="344" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="345" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="346" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="347" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="348" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="349" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="350" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="351" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="352" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="353" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="354" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="355" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="356" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="357" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="358" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="359" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="360" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="361" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="362" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="363" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="364" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="365" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="366" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="367" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="368" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="369" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="370" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="371" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="372" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="373" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltB" LocalInstanceId="374" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltA" LocalInstanceId="375" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltA" LocalInstanceId="376" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltA" LocalInstanceId="377" Stage="5" />
+      <SubPartRef InstanceOf="CoreIVAPropA_Subpart_BoltA" LocalInstanceId="378" Stage="5" />
+    </PartRef>
+    <PartRef InstanceOf="CoreUtilityA_Prefab_RadialParachuteMediumA" LocalInstanceId="379" Stage="5" SequenceGroup="6">
+      <Transform>
+        <Position X="0.4609" Y="0.7238" Z="0" />
+        <Rotation X="1.5708" Y="0" Z="-0.352" />
+        <Scale X="1" Y="1" Z="1" />
+      </Transform>
+      <PartConnectorRef Index="0" ConnectedLocalInstanceId="1" />
+      <SymmetryRef>
+        <Layer BaseLocalInstanceId="1" Order="2">
+          <PartRef>379</PartRef>
+          <PartRef>387</PartRef>
+        </Layer>
+      </SymmetryRef>
+      <SubPartRef InstanceOf="CoreUtilityA_Subpart_ParachuteBayRadialBaseB" LocalInstanceId="382" Stage="5" SequenceGroup="6" />
+      <SubPartRef InstanceOf="CoreUtilityA_Subpart_ParachuteBayRadialCoverBA" LocalInstanceId="383" Stage="5" SequenceGroup="6" />
+      <SubPartRef InstanceOf="CoreUtilityA_Subpart_ParachuteBayRadialFrameBA" LocalInstanceId="384" Stage="5" SequenceGroup="6" />
+      <SubPartRef InstanceOf="CoreUtilityA_Subpart_ParachuteBayRadialInternalB" LocalInstanceId="385" Stage="5" SequenceGroup="6" />
+      <SubPartRef InstanceOf="CoreUtilityA_Subpart_ParachutePackedB" LocalInstanceId="386" Stage="5" SequenceGroup="6" />
+      <ParachuteDeployData InstanceOf="ParachuteDeploy" LocalInstanceId="380" Sequence="5" />
+      <ParachuteCutData InstanceOf="ParachuteCut" LocalInstanceId="381" Enabled="false" Sequence="5" />
+    </PartRef>
+    <PartRef InstanceOf="CoreUtilityA_Prefab_RadialParachuteMediumA" LocalInstanceId="387" Stage="5" SequenceGroup="6">
+      <Transform>
+        <Position X="0.4609" Y="-0.7238" Z="0" />
+        <Rotation X="-1.5708" Y="0" Z="0.352" />
+        <Scale X="1" Y="1" Z="1" />
+      </Transform>
+      <PartConnectorRef Index="0" ConnectedLocalInstanceId="1" />
+      <SubPartRef InstanceOf="CoreUtilityA_Subpart_ParachuteBayRadialBaseB" LocalInstanceId="390" Stage="5" SequenceGroup="6" />
+      <SubPartRef InstanceOf="CoreUtilityA_Subpart_ParachuteBayRadialCoverBA" LocalInstanceId="391" Stage="5" SequenceGroup="6" />
+      <SubPartRef InstanceOf="CoreUtilityA_Subpart_ParachuteBayRadialFrameBA" LocalInstanceId="392" Stage="5" SequenceGroup="6" />
+      <SubPartRef InstanceOf="CoreUtilityA_Subpart_ParachuteBayRadialInternalB" LocalInstanceId="393" Stage="5" SequenceGroup="6" />
+      <SubPartRef InstanceOf="CoreUtilityA_Subpart_ParachutePackedB" LocalInstanceId="394" Stage="5" SequenceGroup="6" />
+      <ParachuteDeployData InstanceOf="ParachuteDeploy" LocalInstanceId="388" Sequence="5" />
+      <ParachuteCutData InstanceOf="ParachuteCut" LocalInstanceId="389" Enabled="false" Sequence="5" />
+    </PartRef>
+    <PartRef InstanceOf="CoreFairingA_Prefab_NoseconeB" LocalInstanceId="395" Stage="5">
+      <Transform>
+        <Position X="1.2315" Y="0" Z="0" />
+        <Rotation X="0" Y="0" Z="0" />
+        <Scale X="1" Y="1" Z="1" />
+      </Transform>
+      <PartConnectorRef Index="0" ConnectedLocalInstanceId="1" />
+      <SubPartRef InstanceOf="CoreFairingA_Subpart_NoseconeBlunt1MSkinA" LocalInstanceId="396" Stage="5" />
+      <SubPartRef InstanceOf="CoreFairingA_Subpart_NoseconeBase1MSkinA" LocalInstanceId="397" Stage="5" />
+    </PartRef>
+    <SubPartRef InstanceOf="CoreCommandA_Subpart_MediumCapsuleSkinA" LocalInstanceId="4" Stage="5" />
+    <SubPartRef InstanceOf="CoreCommandA_Subpart_MediumCapsuleStructure" LocalInstanceId="5" Stage="5" />
+    <SubPartRef InstanceOf="CoreCommandA_Subpart_MediumCapsuleUtilityPanelA" LocalInstanceId="6" Stage="5" />
+    <SubPartRef InstanceOf="CoreCommandA_Subpart_MediumCapsuleUtilityPanelB" LocalInstanceId="7" Stage="5" />
+    <SubPartRef InstanceOf="CoreCommandA_Subpart_MediumCapsuleUtilityPanelC" LocalInstanceId="8" Stage="5" />
+    <SubPartRef InstanceOf="CoreCommandA_Subpart_MediumCapsuleUtilityPanelD" LocalInstanceId="9" Stage="5" />
+    <SubPartRef InstanceOf="CoreCommandA_Subpart_MediumCapsuleUtilityPanelE" LocalInstanceId="10" Stage="5" />
+    <SubPartRef InstanceOf="CoreCommandA_Subpart_MediumCapsuleServiceDoor" LocalInstanceId="11" Stage="5" />
+    <SubPartRef InstanceOf="CoreCommandA_Subpart_MediumCapsuleServiceDoor" LocalInstanceId="12" Stage="5" />
+    <SubPartRef InstanceOf="CoreCommandA_Subpart_MediumCapsuleServiceDoor" LocalInstanceId="13" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchALock" LocalInstanceId="14" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchAHatchway" LocalInstanceId="15" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchAHandrailsA" LocalInstanceId="16" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchAHatchway" LocalInstanceId="17" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchAHandrailsB" LocalInstanceId="18" Stage="5" />
+    <SubPartRef InstanceOf="CoreUtilityA_Subpart_SmallHandle" LocalInstanceId="19" Stage="5" />
+    <SubPartRef InstanceOf="CoreUtilityA_Subpart_SmallHandle" LocalInstanceId="20" Stage="5" />
+    <SubPartRef InstanceOf="CoreUtilityA_Subpart_SmallHandle" LocalInstanceId="21" Stage="5" />
+    <SubPartRef InstanceOf="CoreUtilityA_Subpart_SmallHandle" LocalInstanceId="22" Stage="5" />
+    <SubPartRef InstanceOf="CoreCommandA_Subpart_MediumCapsuleWindowB" LocalInstanceId="23" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchBWindowFrameA" LocalInstanceId="24" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchBPlateFrontA" LocalInstanceId="25" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchBHingeCapA" LocalInstanceId="26" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchBHandleB" LocalInstanceId="27" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchBHandleA" LocalInstanceId="28" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchBGlassA" LocalInstanceId="29" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchBPlateRearA" LocalInstanceId="30" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchBHandleA" LocalInstanceId="31" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchBLockingLugA" LocalInstanceId="32" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchBLockingLugA" LocalInstanceId="33" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchBWindowFrameA" LocalInstanceId="34" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchBPlateFrontA" LocalInstanceId="35" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchBHingeCapA" LocalInstanceId="36" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchBHandleB" LocalInstanceId="37" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchBHandleA" LocalInstanceId="38" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchBGlassA" LocalInstanceId="39" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchBPlateRearA" LocalInstanceId="40" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchBHandleA" LocalInstanceId="41" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchBLockingLugA" LocalInstanceId="42" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchBLockingLugA" LocalInstanceId="43" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchBLockingLugA" LocalInstanceId="44" Stage="5" />
+    <SubPartRef InstanceOf="CorePassageA_Subpart_HatchBLockingLugA" LocalInstanceId="45" Stage="5" />
+    <SubPartRef InstanceOf="CoreCommandA_Subpart_MediumCapsuleWindowA" LocalInstanceId="46" Stage="5" />
+    <SubPartRef InstanceOf="CoreCommandA_Subpart_MediumCapsuleCrewDoorB" LocalInstanceId="47" Stage="5" />
+    <SubPartRef InstanceOf="CoreCommandA_Subpart_MediumCapsuleCrewDoorA" LocalInstanceId="48" Stage="5" />
+    <BatteryData InstanceOf="CoreCommandA_Prefab_MediumCapsuleVariantA" LocalInstanceId="2">
+      <Charge J="20000" />
+    </BatteryData>
+    <PowerConsumerData InstanceOf="CoreCommandA_Prefab_MediumCapsuleVariantA" LocalInstanceId="3" Active="false" />
+  </RootPartRef>
+  <LaunchGameTime />
+</VehicleSaveData>

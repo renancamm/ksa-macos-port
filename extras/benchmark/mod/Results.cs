@@ -1,4 +1,5 @@
-// Measurement windows and the scene's results file.
+// Measurement windows and the run's results file (written again after every section, so a crash keeps the ones
+// before it).
 //
 // Frame time is the time between two game frames, as the player feels it (it includes waiting for V-Sync). GPU time
 // is the time the GPU spent on a presented frame; KSA Metal reports it a few frames late, which does not matter over
@@ -96,23 +97,25 @@ public class WindowResult
     public long? GpuMemoryPeakMb { get; set; }
 }
 
-public class Results
+public class SectionResult
 {
-    public string Scene { get; }
-    public bool GpuTimes { get; }
-    public double LoadSeconds { get; set; }
+    public string Name { get; }
     public List<WindowResult> Windows { get; } = new();
     public List<string> Errors { get; } = new();
 
-    public Results(string scene, bool gpuTimes)
-    {
-        Scene = scene;
-        GpuTimes = gpuTimes;
-    }
+    public SectionResult(string name) => Name = name;
+}
+
+public class Results
+{
+    public bool GpuTimes { get; }
+    public double LoadSeconds { get; set; }
+    public List<SectionResult> Sections { get; } = new();
+
+    public Results(bool gpuTimes) => GpuTimes = gpuTimes;
 
     public void Write(string path)
     {
-        LoadSeconds = Math.Round(LoadSeconds, 1);
         var options = new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
         File.WriteAllText(path, JsonSerializer.Serialize(this, options));
     }
