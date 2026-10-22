@@ -20,7 +20,7 @@ SDK_VERSION="10.0.113"
 SDK_URL="https://builds.dotnet.microsoft.com/dotnet/Sdk/${SDK_VERSION}/dotnet-sdk-${SDK_VERSION}-osx-arm64.tar.gz"
 SDK_SHA512="1fe7e83b47037e175611504f0b238a18d95589e1413a22ea44de43d8a5bffc283b9aadbd5b2c4de3cef243ac5d0167f2c75d22e5e719ecea4b9e08707ca1050a"
 
-ALL_SCENES=(launch)
+ALL_SCENES=(launch giga)
 MOD_ID="ksa-metal-benchmark"
 DOCS="${HOME}/Documents/My Games/Kitten Space Agency"
 # The game's documents folder during the run: StarMap points the game at it (STARMAP_INSTANCE_PATH)

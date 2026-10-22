@@ -1,0 +1,17 @@
+# Many parts: the bundled "giga rocket" (about 2,000 parts: 200 solid boosters, hundreds of batteries and lights) on
+# the pad at Cape Canaveral with the simulation paused (rendering only), then lift-off: physics and part updates on
+# the CPU, 200 plumes, many lights. It is staged and ignited right away: left standing with the simulation running,
+# it comes apart on the pad within seconds, and about 15 s into the flight the g-load breaks it up.
+start Sandbox
+
+0 simspeed 0
+1 @launch 28.608 -80.604 benchmark-giga
+12 @measure paused 5
+16 @shot paused
+18 simspeed 1
+18.5 @stage 1
+19 @input MainEngineStartup press
+19.1 @input MainEngineStartup release
+19.5 @measure liftoff 10
+22 @shot liftoff
+30 @end
