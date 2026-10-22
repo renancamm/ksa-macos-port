@@ -276,8 +276,10 @@ static bool translate(KShaderModule* mod, const char* entryName, spv::ExecutionM
             for (uint32_t s = 0; s < layout->sets.size(); s++) {
                 KSetLayout* sl = layout->sets[s];
                 if (!sl) continue;
-                // Ray tracing kernels (rtspirv.cpp) pass their resources to functions declared for device memory
-                if (!constantArgumentBuffers() || so.rtLaunch) c.set_argument_buffer_device_address_space(s, true);
+                // Ray tracing kernels (rtspirv.cpp) pass their resources to functions declared for device memory, and
+                // the constant address space holds at most 64 KiB
+                if (!constantArgumentBuffers() || so.rtLaunch || sl->bytes() > 65536)
+                    c.set_argument_buffer_device_address_space(s, true);
                 MSLResourceBinding ab;
                 ab.stage = model;
                 ab.desc_set = s;
