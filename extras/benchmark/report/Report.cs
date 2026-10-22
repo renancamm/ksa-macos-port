@@ -16,8 +16,8 @@ namespace KsaMetalBenchmarkReport;
 
 public static class Program
 {
-    // Changes smaller than this are within run-to-run noise
-    private const double Significant = 0.10;
+    // Changes smaller than this are within run-to-run noise (two runs on one Mac differ by 1% in most parts, 4% at most)
+    private const double Significant = 0.05;
 
     private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true };
 

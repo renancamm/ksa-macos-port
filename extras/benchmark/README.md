@@ -3,8 +3,8 @@
 An optional extra that measures how KSA runs on your Mac. It plays a fixed set of scenes, from a rocket launch to a
 dip into Jupiter's clouds, measures each one, and writes a report you can compare with another run or share.
 
-It is meant for spotting big changes: between two settings, two versions of the port, or two Macs. Runs of the same
-scene differ by a few percent from one to the next.
+It is meant for spotting changes: between two settings, two versions of the port, or two Macs. Two runs on the same
+Mac differ by about 1% in most parts of the scenes, and by up to 4% in a few, so `compare` marks changes over 5%.
 
 ## Run it
 
