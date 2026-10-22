@@ -3,8 +3,9 @@
 //   @measure <name> <seconds>    measure the next seconds as one part of the scene
 //   @shot <name>                 save the next presented image as <name>.png
 //   @end                         write the results and quit
-//   @launch <lat> <lon> <save>   put a saved vehicle (Documents/.../Vehicles) on the surface of the nearby celestial,
-//                                as the launch menu does; it becomes the controlled vehicle and the camera follows it
+//   @launch <save> at <site>     put a saved vehicle (Documents/.../Vehicles) on a launch site of the nearby celestial
+//                                (e.g. CCSFS LC-39A), as the launch menu does; it becomes the controlled vehicle and
+//                                the camera follows it. @launch <lat> <lon> <save> puts it anywhere on the surface.
 //   @stage [n]                   activate the controlled vehicle's next stage n times (the staging key)
 //   @input <action> press|release  send a key action to the controlled vehicle, e.g. MainEngineStartup (ignite) or
 //                                MainEngineThrottleUp (held until release)
@@ -12,6 +13,10 @@
 //   @iva                         switch the main view to the cockpit (IVA) camera
 //   @spin <x> <y> <z>            set the controlled vehicle's rotation rates (rad/s), stabilization off
 //   @lookat <lat> <lon>          aim the camera at that surface point of the followed celestial
+//   @orbit [<az> <el> <dist>]    place the orbit camera around what it follows: azimuth and elevation in degrees, the
+//                                game's distance power (larger is farther); "-" keeps a value; without arguments,
+//                                log where it is
+//   @rotate <degrees/s>          turn the orbit camera around what it follows, every frame (0 stops it)
 using System;
 using System.Globalization;
 using System.Reflection;
@@ -85,6 +90,30 @@ public partial class Benchmark
             }
             case "@lookat" when a.Length == 3:
                 return LookAt(a);
+            case "@orbit":
+            {
+                var view = Program.MainViewport.OrbitController.View;
+                if (view == null)
+                    return false;
+                if (a.Length == 1)
+                {
+                    Log(FormattableString.Invariant(
+                        $"@orbit: azimuth {view.Azimuth * 180 / Math.PI:F1}, elevation {view.Elevation * 180 / Math.PI:F1}, distance {view.DistancePower:F2}"));
+                    return true;
+                }
+                if (a.Length != 4)
+                    return false;
+                // "-" keeps a value
+                double Arg(int i, double current, double scale) =>
+                    a[i] == "-" ? current : double.Parse(a[i], NumberStyles.Float, Inv) * scale;
+                view.Azimuth = Arg(1, view.Azimuth, Math.PI / 180);
+                view.Elevation = Arg(2, view.Elevation, Math.PI / 180);
+                view.DistancePower = Arg(3, view.DistancePower, 1);
+                return true;
+            }
+            case "@rotate" when a.Length == 2 && double.TryParse(a[1], NumberStyles.Float, Inv, out var degrees):
+                _rotateRadPerSecond = degrees * Math.PI / 180;
+                return true;
         }
         Log($"unknown directive '{command}'");
         return false;
@@ -120,18 +149,39 @@ public partial class Benchmark
         return true;
     }
 
+    // @launch <save> at <site>: a launch site of the nearby celestial (Astronomicals.xml), as the launch menu does;
+    // @launch <lat> <lon> <save>: anywhere on it
     private static bool Launch(string[] a)
     {
-        if (!double.TryParse(a[1], NumberStyles.Float, Inv, out var lat) || !double.TryParse(a[2], NumberStyles.Float, Inv, out var lon))
-            return false;
-        var name = string.Join(' ', a[3..]);
         var body = Program.GetNearbyCelestial();
+        if (body == null)
+            return false;
+        string name;
+        double lat, lon;
+        int at = Array.IndexOf(a, "at");
+        if (at > 1)
+        {
+            name = string.Join(' ', a[1..at]);
+            var siteId = string.Join(' ', a[(at + 1)..]);
+            var site = body.GetLocation(siteId);
+            if (site == null)
+            {
+                Log($"@launch: '{body.Id}' has no site '{siteId}'");
+                return false;
+            }
+            lat = site.Latitude.ToDegrees();
+            lon = site.Longitude.ToDegrees();
+        }
+        else if (double.TryParse(a[1], NumberStyles.Float, Inv, out lat) && double.TryParse(a[2], NumberStyles.Float, Inv, out lon))
+            name = string.Join(' ', a[3..]);
+        else
+            return false;
         // The game keeps its vehicle saves in a private property
         var saves = typeof(VehicleSaves).GetProperty("Saves", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static)
             ?.GetValue(null) as LookupCollection<VehicleSave>;
-        if (body == null || saves == null || !saves.TryGet(name, out var save) || save == null)
+        if (saves == null || !saves.TryGet(name, out var save) || save == null)
         {
-            Log($"@launch: no nearby celestial or no vehicle save '{name}'");
+            Log($"@launch: no vehicle save '{name}'");
             return false;
         }
         var tree = save.Load(Program.MainViewport);
@@ -143,7 +193,7 @@ public partial class Benchmark
             double3.Unpack(in mass.Offset), new Random(1).RandomColor());
         InputEvents.CreateVehicleBuffer.Add(new InputEvents.CreateVehicleData
         {
-            System = Universe.CurrentSystem, Parent = state.Orbit.Parent!, Id = name, Body2Cce = state.Body2Cce,
+            System = Universe.CurrentSystem!, Parent = state.Orbit.Parent!, Id = name, Body2Cce = state.Body2Cce,
             BodyRates = state.BodyRates, Orbit = state.Orbit, Root = tree.Root
         });
         return true;

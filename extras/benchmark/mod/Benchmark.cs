@@ -30,6 +30,7 @@ public partial class Benchmark
     private bool _active;
     private double _lastFrameAt;
     private double _exitAt = double.MaxValue;
+    private double _rotateRadPerSecond;
     private Results? _results;
     private Window? _window;
 
@@ -78,6 +79,9 @@ public partial class Benchmark
         double now = _clock.Elapsed.TotalSeconds;
         double frameMs = (now - _lastFrameAt) * 1000;
         _lastFrameAt = now;
+
+        if (_rotateRadPerSecond != 0 && Program.MainViewport.OrbitController.View is { } view)
+            view.Azimuth += _rotateRadPerSecond * frameMs / 1000;
 
         if (_window != null)
         {
