@@ -4,7 +4,8 @@
 //   KSA_MTL_GPUPROF=<csv>   one row per encoder of every profiled frame:
 //                           frame,cb,encoder,type,draws,dispatches,start_us,vertex_us,fragment_us,total_us,pipelines
 //                           plus one "cb" row per command buffer (GPUStartTime..GPUEndTime)
-//   KSA_MTL_GPUPROF_FRAMES=<first>,<count>   presents to profile (default 2000,300)
+//   KSA_MTL_GPUPROF_FRAMES=<first>,<count>   presents to profile (default 2000,300; the benchmark's @gpuprof
+//                           directive moves the window with ksaMtlProfileFrames)
 //   KSA_MTL_GPUPROF_SPLIT=1 end the render encoder after every draw call (per-draw attribution; adds a store and
 //                           load of the attachments per draw, so absolute times grow)
 //   KSA_MTL_DUMP_SPV=<dir>  every shader module as <hash>.spv (pipelines are named by these hashes)
@@ -28,7 +29,8 @@ struct KProfState {
 };
 
 static FILE* g_prof = nullptr;
-static uint64_t g_profFirst = 2000, g_profCount = 300;
+// The profiled presents; ksaMtlProfileFrames (the benchmark's @gpuprof) moves them to the next ones
+static std::atomic<uint64_t> g_profFirst{2000}, g_profCount{300};
 static std::atomic<uint64_t> g_profPresent{0};
 static std::mutex g_profMutex;
 static id<MTLCounterSet> g_timestampSet = nil;
@@ -48,7 +50,11 @@ static bool profInit(KDevice* dev) {
         for (id<MTLCounterSet> cs in dev->mtl.counterSets)
             if ([cs.name isEqualToString:MTLCommonCounterSetTimestamp]) g_timestampSet = cs;
         if (!g_timestampSet) return;
-        if (const char* f = kmtlEnv("KSA_MTL_GPUPROF_FRAMES")) sscanf(f, "%llu,%llu", (unsigned long long*)&g_profFirst, (unsigned long long*)&g_profCount);
+        unsigned long long first, count;
+        if (const char* f = kmtlEnv("KSA_MTL_GPUPROF_FRAMES"); f && sscanf(f, "%llu,%llu", &first, &count) == 2) {
+            g_profFirst = first;
+            g_profCount = count;
+        }
         g_prof = fopen(path, "w");
         if (g_prof) fprintf(g_prof, "frame,cb,encoder,type,draws,dispatches,start_us,vertex_us,fragment_us,total_us,pipelines\n");
     });
@@ -62,6 +68,20 @@ static bool profiling(KDevice* dev) {
 }
 
 void kmtlProfPresent() { g_profPresent++; }
+
+// Profiles the next <count> presents (with KSA_MTL_GPUPROF set), marked in the CSV by a row
+// "<first present>,label,<label>"; returns false when the profiler is off
+KMTL_EXPORT bool ksaMtlProfileFrames(const char* label, uint32_t count) {
+    if (!g_prof) return false;
+    uint64_t first = g_profPresent.load() + 1;
+    {
+        std::lock_guard<std::mutex> lock(g_profMutex);
+        fprintf(g_prof, "%llu,label,%s\n", (unsigned long long)first, label);
+    }
+    g_profFirst = first;
+    g_profCount = count;
+    return true;
+}
 
 static KProfState* state(KCommandBuffer* cb) {
     std::lock_guard<std::mutex> lock(g_profMutex);

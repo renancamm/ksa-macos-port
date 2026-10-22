@@ -2,6 +2,7 @@
 //
 //   @measure <name> <seconds>    measure the next seconds as one part of the scene
 //   @shot <name>                 save the next presented image as <name>.png
+//   @gpuprof <name> <frames>     profile the next frames with KSA Metal's GPU profiler (needs KSA_MTL_GPUPROF=<csv>)
 //   @end                         write the results and quit
 //   @launch <save> at <site>     put a saved vehicle (Documents/.../Vehicles) on a launch site of the nearby celestial
 //                                (e.g. CCSFS LC-39A), as the launch menu does; it becomes the controlled vehicle and
@@ -46,6 +47,8 @@ public partial class Benchmark
                     _results!.Windows.Add(_window.Summarize());
                 _window = new Window(a[1], now + seconds);
                 return true;
+            case "@gpuprof" when a.Length == 3 && uint.TryParse(a[2], out var frames):
+                return DriverStats.ProfileFrames($"{_scene}/{a[1]}", frames);
             case "@shot" when a.Length == 2:
                 return DriverStats.Screenshot(System.IO.Path.Combine(_outDir, $"{_scene}_{a[1]}.png"));
             case "@end":

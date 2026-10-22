@@ -25,7 +25,24 @@ public static unsafe class DriverStats
     [DllImport(Driver, EntryPoint = "ksaMtlScreenshot")]
     private static extern void ScreenshotNative([MarshalAs(UnmanagedType.LPUTF8Str)] string path);
 
+    [DllImport(Driver, EntryPoint = "ksaMtlProfileFrames")]
+    [return: MarshalAs(UnmanagedType.U1)]
+    private static extern bool ProfileFramesNative([MarshalAs(UnmanagedType.LPUTF8Str)] string label, uint count);
+
     public static readonly bool Available = Probe();
+
+    // The driver's GPU profiler (KSA_MTL_GPUPROF) for the next frames; false when it is off
+    public static bool ProfileFrames(string label, uint count)
+    {
+        try
+        {
+            return Available && ProfileFramesNative(label, count);
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return false;
+        }
+    }
 
     private static bool Probe()
     {
