@@ -61,7 +61,7 @@ clang++ -shared -fobjc-arc -arch arm64 -mmacosx-version-min="${MACOS_MIN}" -o "$
     "${SPVT_LIB}/link/libSPIRV-Tools-link.a" "${SPVT_LIB}/opt/libSPIRV-Tools-opt.a" "${SPVT_LIB}/libSPIRV-Tools.a" \
     -Wl,-install_name,@loader_path/libvulkan.1.dylib -Wl,-exported_symbols_list,/dev/stdin \
     -framework Metal -framework QuartzCore -framework Foundation -framework CoreGraphics -framework ImageIO \
-    -framework UniformTypeIdentifiers <<< "_vk*"
+    -framework UniformTypeIdentifiers <<< $'_vk*\n_ksaMtl*'
 ln -sf libvulkan.1.dylib "${DIST}/libvulkan.dylib"
 sign "${DIST}/libvulkan.1.dylib"
 info "libvulkan.1.dylib: $(nm -gU "${DIST}/libvulkan.1.dylib" | grep -c ' _vk') Vulkan functions"

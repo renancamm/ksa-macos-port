@@ -169,6 +169,31 @@ static std::atomic<int> g_shotsPending{0};
 static std::mutex g_gpuMutex;
 static double g_gpuBusy = 0, g_gpuLastEnd = 0;
 
+// Interface for the benchmark mod (extras/benchmark), which calls these through P/Invoke:
+//   ksaMtlFrameStats(out, size)  the latest present's numbers (the KSA_MTL_FRAMES columns); returns the bytes written
+//   ksaMtlScreenshot(path)       PNG of the next presented image
+// Fields are only ever appended, so a mod built for an older layout still reads the ones it knows.
+struct KsaMtlFrameStats {
+    uint64_t present;
+    double cpuMs, gpuMs;
+    uint32_t draws, dispatches, passes, submits;
+    int64_t allocatedMb;
+};
+static KsaMtlFrameStats g_lastFrame{};
+static std::vector<std::string> g_shotRequests;
+
+KMTL_EXPORT uint32_t ksaMtlFrameStats(KsaMtlFrameStats* out, uint32_t size) {
+    std::lock_guard<std::mutex> lock(g_frameMutex);
+    uint32_t n = std::min<uint32_t>(size, sizeof(KsaMtlFrameStats));
+    memcpy(out, &g_lastFrame, n);
+    return n;
+}
+
+KMTL_EXPORT void ksaMtlScreenshot(const char* path) {
+    std::lock_guard<std::mutex> lock(g_frameMutex);
+    g_shotRequests.push_back(path);
+}
+
 void kmtlNoteGpuTime(id<MTLCommandBuffer> cb) {
     double s = cb.GPUStartTime, e = cb.GPUEndTime;
     if (e <= s) return;
@@ -246,9 +271,12 @@ static void writePNG(id<MTLBuffer> buf, NSUInteger w, NSUInteger h, bool bgra, c
     CGImageRef image = CGBitmapContextCreateImage(ctx);
     CFURLRef url = CFURLCreateFromFileSystemRepresentation(nullptr, (const UInt8*)path.c_str(), path.size(), false);
     CGImageDestinationRef dest = CGImageDestinationCreateWithURL(url, (__bridge CFStringRef)UTTypePNG.identifier, 1, nullptr);
-    CGImageDestinationAddImage(dest, image, nullptr);
-    bool ok = CGImageDestinationFinalize(dest);
-    CFRelease(dest);
+    bool ok = false;
+    if (dest) {
+        CGImageDestinationAddImage(dest, image, nullptr);
+        ok = CGImageDestinationFinalize(dest);
+        CFRelease(dest);
+    }
     CFRelease(url);
     CGImageRelease(image);
     CGContextRelease(ctx);
@@ -256,7 +284,8 @@ static void writePNG(id<MTLBuffer> buf, NSUInteger w, NSUInteger h, bool bgra, c
     KLOG(0, "screenshot %s: %s", ok ? "written" : "FAILED", path.c_str());
 }
 
-static void takeShot(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb, const std::string& path, bool last) {
+// The path is taken by value: the completion block keeps its own copy (a captured reference would outlive requests)
+static void takeShot(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb, std::string path, bool last) {
     NSUInteger w = image->mtl.width, h = image->mtl.height;
     id<MTLBuffer> buf = [dev->mtl newBufferWithLength:w * h * 4 options:MTLResourceStorageModeShared];
     bool bgra = image->pixelFormat == MTLPixelFormatBGRA8Unorm || image->pixelFormat == MTLPixelFormatBGRA8Unorm_sRGB;
@@ -289,15 +318,17 @@ void kmtlOnPresent(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb) {
              std::chrono::duration<double>(now - g_start).count());
         kmtlReportPipelineTimes();
     }
+    double gpu;
+    {
+        std::lock_guard<std::mutex> lock(g_gpuMutex);
+        gpu = g_gpuBusy * 1e3;
+        g_gpuBusy = 0;
+    }
+    g_lastFrame = {g_presents, ms, gpu, g_frameDraws, g_frameDispatches, g_framePasses, g_frameSubmits,
+                   (int64_t)(g_allocatedBytes.load() >> 20)};
     if (g_frameCsv) {
-        double gpu;
-        {
-            std::lock_guard<std::mutex> lock(g_gpuMutex);
-            gpu = g_gpuBusy * 1e3;
-            g_gpuBusy = 0;
-        }
         fprintf(g_frameCsv, "%llu,%.3f,%u,%u,%u,%u,%lld,%.3f\n", (unsigned long long)g_presents, ms, g_frameDraws, g_frameDispatches,
-                g_framePasses, g_frameSubmits, (long long)(g_allocatedBytes.load() >> 20), gpu);
+                g_framePasses, g_frameSubmits, (long long)g_lastFrame.allocatedMb, gpu);
         if (g_presents % 60 == 0) fflush(g_frameCsv);
     }
     if (g_logLevel >= 1 && (g_presents <= 5 || g_presents % 500 == 0)) {
@@ -321,6 +352,8 @@ void kmtlOnPresent(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb) {
         takeShot(dev, image, cb, g_shots[g_nextShot].path, last);
         g_nextShot++;
     }
+    for (const std::string& path : g_shotRequests) takeShot(dev, image, cb, path, false);
+    g_shotRequests.clear();
     if (g_exitAfter && g_presents == (uint64_t)g_exitAfter) exitSoon("KSA_MTL_EXIT_AFTER reached");
     if (g_exitSeconds > 0 && std::chrono::duration<double>(now - g_start).count() >= g_exitSeconds) {
         g_exitSeconds = 0;

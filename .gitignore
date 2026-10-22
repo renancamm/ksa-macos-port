@@ -24,3 +24,8 @@ app/AppIcon.icns
 
 # Private working notes and source trees for the native Metal effort: proprietary material, never committed
 .claude-docs/
+
+# Extras: the benchmark's mod.toml and vehicle saves are ours, and its build output stays out
+!extras/benchmark/**/*.toml
+extras/benchmark/mod/bin/
+extras/benchmark/mod/obj/

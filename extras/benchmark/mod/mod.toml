@@ -1,0 +1,4 @@
+name = "ksa-metal-benchmark"
+
+[StarMap]
+EntryAssembly = "KsaMetalBenchmark"
