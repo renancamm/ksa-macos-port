@@ -103,16 +103,15 @@ example the vertex work of one render pass with the fragment work of the previou
 **Tessellation.** KSA tessellates terrain and ocean. Vulkan's tessellation pipeline has a vertex shader, a control
 shader, a fixed-function tessellator and an evaluation shader. Metal's tessellator has no vertex or control stages,
 so KSA Metal runs those two as compute kernels that write their output into scratch buffers, then draws the patches
-with the evaluation shader as Metal's post-tessellation vertex function. When the control shader passes its control
-points through unchanged, as KSA's terrain shader does, KSA Metal drops those copies and the evaluation shader reads
-the vertex kernel's output directly.
+with the evaluation shader as Metal's post-tessellation vertex function.
 
-With `KSA_MTL_TESS_FUSE=1` (experimental) the vertex outputs don't go through memory at all. KSA Metal links the
-vertex shader into the evaluation shader at the SPIR-V level, so the evaluation stage runs it for each of its
-control points on attributes Metal fetches through the draw's index buffer, and the vertex and control kernels shrink
-to what the tessellation factors need (for the terrain, 32 bytes per vertex instead of 128). Draws with 16-bit
-indices or instances keep the path above. In the benchmark this takes 5-15% off the GPU time of every scene with
-terrain.
+When the control shader passes its control points through unchanged, as KSA's terrain and ocean shaders do, the
+vertex outputs don't go through memory at all. KSA Metal links the vertex shader into the evaluation shader at the
+SPIR-V level, so the evaluation stage runs it for each of its control points on attributes Metal fetches through the
+draw's index buffer. The control shader loses its copies, and the vertex and control kernels shrink to what the
+tessellation factors need (for the terrain, 32 bytes per vertex instead of 128). Draws with 16-bit indices or
+instances keep the evaluation stage reading the vertex kernel's output. In the benchmark this takes 5-15% off the GPU
+time of every scene with terrain; `KSA_MTL_TESS_FUSE=0` turns it off.
 
 **Ray tracing.** KSA uses ray queries for ground clutter placement, and ray tracing pipelines for lighting inside
 the cockpit (IVA). Ray queries and acceleration structures map onto Metal's. Metal has no ray tracing pipelines, so
@@ -142,7 +141,7 @@ The complete mapping:
 | MSAA resolves | a pass that resolves signals an `MTLEvent`; the next compute or blit encoder that reads fragment output waits on it |
 | Render pass, dynamic rendering | `MTLRenderPassDescriptor` |
 | Multiview | one draw per view |
-| Tessellation | vertex and control stages as compute kernels into scratch buffers, `drawPatches` with the evaluation shader as post-tessellation vertex function |
+| Tessellation | vertex and control stages as compute kernels into scratch buffers, `drawPatches` with the evaluation shader as post-tessellation vertex function; with a passthrough control stage, the vertex shader linked into the evaluation shader and `drawIndexedPatches` with the index buffer as control point index buffer |
 | Acceleration structures, ray query | Metal acceleration structures; instances converted on the CPU to indirect instance descriptors |
 | Ray tracing pipeline | one compute kernel with ray queries (`rtspirv.cpp`) |
 | Triangle fans | a shared (0, i, i+1) index buffer |

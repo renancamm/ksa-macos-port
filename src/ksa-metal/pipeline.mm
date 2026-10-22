@@ -902,7 +902,7 @@ static bool buildTessKernels(KDevice* dev, const VkGraphicsPipelineCreateInfo* c
     return true;
 }
 
-// Fused tessellation (KSA_MTL_TESS_FUSE=1; tessspirv.cpp has the rewrites). With a passthrough control stage the
+// Fused tessellation (KSA_MTL_TESS_FUSE=0 turns it off; tessspirv.cpp has the rewrites). With a passthrough control stage the
 // vertex kernel's outputs only travel to the evaluation stage through memory: here the evaluation stage computes them
 // itself from the vertex attributes Metal fetches per control point (through the draw's 32-bit index buffer), and the
 // kernels shrink to what the tessellation factors need. Fills p's *Fused members; false leaves the pipeline as it was.
@@ -1205,7 +1205,7 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
         p->tessPatchStride = tessParts->tessPatchStride;
         p->tessQuads = tessParts->tessQuads;
         p->tessPassthrough = tessParts->tessPassthrough;
-        static const bool fuse = kmtlEnvInt("KSA_MTL_TESS_FUSE", 0) != 0;
+        static const bool fuse = kmtlEnvInt("KSA_MTL_TESS_FUSE", 1) != 0;
         if (fuse && p->tessPassthrough) buildFusedTess(dev, ci, vs, tcs, tes, layout, tmodes, vso, d, makeState, p);
     }
     p->triangleFan = topo == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;

@@ -319,7 +319,7 @@ struct KPipeline {
     NSUInteger tessVertexStride = 0, tessControlStride = 0, tessPatchStride = 0;
     bool tessQuads = false;
     bool tessPassthrough = false;  // control stage writes only tessellation factors; evaluation reads the vertex outputs
-    // Fused tessellation (KSA_MTL_TESS_FUSE=1, 32-bit indexed draws): the evaluation stage runs the vertex shader on
+    // Fused tessellation (32-bit indexed draws; KSA_MTL_TESS_FUSE=0 turns it off): the evaluation stage runs the vertex shader on
     // attributes Metal fetches per control point, so the kernels only write what the tessellation factors need
     id<MTLRenderPipelineState> renderFused = nil;
     id<MTLComputePipelineState> tessVertexFused[3] = {nil, nil, nil};

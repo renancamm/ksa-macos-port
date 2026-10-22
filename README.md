@@ -316,7 +316,7 @@ possible. In short:
 - **Synchronization:** barriers become Metal fences between groups of commands, sorted by stage, so independent
   work overlaps on the GPU.
 - **Tessellation:** the vertex and control stages run as compute kernels, and Metal's tessellator draws the patches
-  with the evaluation shader.
+  with the evaluation shader, which runs the vertex shader itself where it can.
 - **Ray tracing:** ray queries map onto Metal's. Each ray tracing pipeline is rewritten into one compute kernel.
 - **Presentation:** the swapchain's images are copied into the window's drawable.
 
@@ -334,6 +334,7 @@ Each of these turns one feature off or changes a default, to work around a probl
 | Variable | Effect |
 |---|---|
 | `KSA_MTL_TESSELLATION=0` | hide tessellation from the game; it draws terrain and ocean without it |
+| `KSA_MTL_TESS_FUSE=0` | tessellate as before the fused path: vertex outputs through memory (slower; try it when terrain or ocean look wrong) |
 | `KSA_MTL_RAYQUERY=0` | hide ray queries and ray tracing; the game places clutter without them, and IVA ray tracing is unavailable |
 | `KSA_MTL_RTPIPELINE=0` | hide only ray tracing pipelines (IVA ray tracing) |
 | `KSA_MTL_ASYNC_PIPELINES=0` | compile pipelines on the game's thread, when the game creates them |
