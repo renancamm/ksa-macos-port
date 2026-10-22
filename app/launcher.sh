@@ -6,11 +6,12 @@
 #                          libvulkan.1.dylib, comes from the app and never from elsewhere on the Mac
 #   DYLD_INSERT_LIBRARIES  the GLFW shim (src/glfw-shim/glfw_shim.c)
 # Output goes to console.log in the game's logs folder (~/Documents/My Games/Kitten Space Agency/logs, next
-# to the game's own logs), or to the terminal when started from one.
+# to the game's own logs), or to the terminal when started from one. A StarMap instance
+# (STARMAP_INSTANCE_PATH, the game's documents folder moved elsewhere) gets its own console.log.
 
 CONTENTS="$(cd "$(dirname "$0")/.." && pwd)"
 RES="${CONTENTS}/Resources"
-LOG="${HOME}/Documents/My Games/Kitten Space Agency/logs/console.log"
+LOG="${STARMAP_INSTANCE_PATH:-${HOME}/Documents/My Games/Kitten Space Agency}/logs/console.log"
 
 if [ ! -t 1 ]; then
     mkdir -p "$(dirname "${LOG}")"

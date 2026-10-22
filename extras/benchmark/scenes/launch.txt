@@ -1,7 +1,6 @@
 # Rocket launch: the bundled rocket (a core stage with three solid boosters) on the pad at Cape Canaveral at dusk,
 # then ignition and the first 20 seconds of the climb. Plumes, smoke trails, clouds, terrain.
 start Sandbox
-vehicle benchmark-srb
 
 0 simspeed 0
 1 @launch 28.608 -80.604 benchmark-srb
