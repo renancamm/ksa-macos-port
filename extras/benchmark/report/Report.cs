@@ -97,7 +97,7 @@ public static class Program
         if (problems.Count > 0)
         {
             md.AppendLine();
-            md.AppendLine("Steps that failed:");
+            md.AppendLine("Problems (parts listed here may not compare with other runs):");
             md.AppendLine();
             foreach (var p in problems)
                 md.AppendLine($"- {p}");

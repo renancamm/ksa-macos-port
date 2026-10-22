@@ -90,9 +90,8 @@ public partial class Benchmark
             _window.Add(frameMs, DriverStats.Read());
             if (now >= _window.EndsAt)
             {
-                _results!.Windows.Add(_window.Summarize());
                 Log($"measured {_window.Name}: {_window.Frames} frames");
-                _window = null;
+                CloseWindow();
             }
         }
 
@@ -128,16 +127,27 @@ public partial class Benchmark
     // @end: write the results and quit a second later (screenshots finish on the GPU after their frame)
     private void End(double now)
     {
-        if (_window != null)
-        {
-            _results!.Windows.Add(_window.Summarize());
-            _window = null;
-        }
+        CloseWindow();
         var path = Path.Combine(_outDir, _scene + ".json");
         _results!.Write(path);
         Log($"results written to {path}");
         _exitAt = now + 1;
     }
+
+    // Closes the open measurement window. When the camera followed a vehicle at its start and follows another one
+    // now, the vehicle broke up during it (a breakup changes what is on screen, so the part's numbers don't compare)
+    private void CloseWindow()
+    {
+        if (_window == null)
+            return;
+        _results!.Windows.Add(_window.Summarize());
+        var followed = FollowedVehicle();
+        if (_window.Vehicle != null && followed != _window.Vehicle)
+            _results.Errors.Add($"{_window.Name}: '{_window.Vehicle}' broke up (the camera follows '{followed ?? "nothing"}')");
+        _window = null;
+    }
+
+    private static string? FollowedVehicle() => Program.GetHoveredCamera()?.Following is Vehicle v ? v.Id : null;
 
     private static void Log(string message)
     {

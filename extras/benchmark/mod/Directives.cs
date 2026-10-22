@@ -43,9 +43,8 @@ public partial class Benchmark
         switch (a[0])
         {
             case "@measure" when a.Length == 3 && double.TryParse(a[2], NumberStyles.Float, Inv, out var seconds):
-                if (_window != null)
-                    _results!.Windows.Add(_window.Summarize());
-                _window = new Window(a[1], now + seconds);
+                CloseWindow();
+                _window = new Window(a[1], now + seconds) { Vehicle = FollowedVehicle() };
                 return true;
             case "@gpuprof" when a.Length == 3 && uint.TryParse(a[2], out var frames):
                 return DriverStats.ProfileFrames($"{_scene}/{a[1]}", frames);

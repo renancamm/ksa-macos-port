@@ -21,6 +21,8 @@ public class Window
 
     public string Name { get; }
     public double EndsAt { get; }
+    // The vehicle the camera followed when the window opened, if any
+    public string? Vehicle { get; init; }
     public int Frames => _frameMs.Count;
 
     public Window(string name, double endsAt)

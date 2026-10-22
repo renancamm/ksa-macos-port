@@ -163,7 +163,7 @@ gpu_cores="$(system_profiler SPDisplaysDataType 2> /dev/null | awk -F': ' '/Tota
 displays="$(system_profiler SPDisplaysDataType 2> /dev/null | awk -F': ' '/Resolution:/ { print $2 }' | paste -sd ';' - | sed 's/;/; /g')"
 power="$(pmset -g batt | head -1 | sed -n "s/.*'\(.*\)'.*/\1/p")"
 low_power="$(pmset -g | awk '/lowpowermode/ { print ($2 == 1 ? "on" : "off"); exit }')"
-switches="$(env | grep '^KSA_MTL_' | paste -sd ' ' - || true)"
+switches="$(env | grep '^KSA_MTL_' | sed "s|${HOME}|~|g" | paste -sd ' ' - || true)"
 {
     echo "Mac: $(sysctl -n hw.model)"
     echo "Chip: $(sysctl -n machdep.cpu.brand_string)"
