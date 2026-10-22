@@ -27,5 +27,5 @@ app/AppIcon.icns
 
 # Extras: the benchmark's mod.toml and vehicle saves are ours, and its build output stays out
 !extras/benchmark/**/*.toml
-extras/benchmark/mod/bin/
-extras/benchmark/mod/obj/
+extras/benchmark/*/bin/
+extras/benchmark/*/obj/

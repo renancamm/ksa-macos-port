@@ -58,6 +58,11 @@ The debugging variables, used the same way:
 Metal's own tools work too: `MTL_HUD_ENABLED=1` shows Apple's performance overlay, and `MTL_DEBUG_LAYER=1` and
 `MTL_SHADER_VALIDATION=1` check API use and catch out-of-bounds memory access in shaders (slow).
 
+To see what a change does to performance across the game, run the [benchmark](../../extras/benchmark/README.md)
+before and after it and compare the two runs. Its mod reads the same numbers as `KSA_MTL_FRAMES` through the only
+functions KSA Metal exports besides Vulkan's: `ksaMtlFrameStats` (the latest presented frame) and
+`ksaMtlScreenshot` (a PNG of the next one), both in `swapchain.mm`.
+
 ## From Vulkan to Metal
 
 Vulkan and Metal are both explicit, low-level GPU APIs with similar ideas, which is what makes a thin translation

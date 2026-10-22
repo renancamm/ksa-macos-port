@@ -1,0 +1,21 @@
+# EVA: a kitten climbs out of the game's Gemini 7 capsule on launch pad VSFB LC-4 in the afternoon, lets go and
+# stands on the pad; then, helmet off, the camera circles it and comes close to its face: fur.
+start Sandbox
+
+0 simspeed 0
+0.5 showorbit all false
+1 @launch Gemini7 at VSFB LC-4
+5 simspeed 1
+6 @eva
+8 @input TranslateUp press
+8.2 @input TranslateUp release
+11 @helmet off
+11.5 @orbit 270 -10 2.5
+12 @rotate 20
+14 @measure kitten 6
+19 @shot kitten
+20 @rotate 0
+20.2 @orbit 270 -5 1.2
+22 @measure fur 6
+27 @shot fur
+28 @end

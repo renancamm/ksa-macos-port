@@ -1,0 +1,20 @@
+# Explosion: the bundled rocket blown up on launch pad LC-39A at dusk, seen from 150 m away: the fireball, debris
+# and the smoke volumes that follow.
+start Sandbox
+
+0 simspeed 0
+0.5 showorbit all false
+1 @launch benchmark-srb at CCSFS LC-39A
+3 follow Earth
+3.5 camera Free
+4 goto 28.6072 -80.6056
+4.5 altitude 50 m
+5 @lookat 28.6083 -80.6041
+8 simspeed 1
+10 @measure pad 3
+13 explode benchmark-srb
+13 @measure blast 3
+13.8 @shot blast
+16 @measure smoke 8
+20 @shot smoke
+24 @end

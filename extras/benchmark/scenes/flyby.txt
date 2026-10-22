@@ -1,0 +1,51 @@
+# Flyby: stops over Earth in the afternoon (a desert canyon, snowy mountains, forest close to the ground, a volcano and
+# its coast, clouds from 8 km), then the Moon and Mars in low sunlight and Saturn with its rings. Terrain, ground
+# clutter, atmosphere and clouds; every stop also loads new terrain and textures.
+start Sandbox
+
+0 simspeed 0
+0.5 showorbit all false
+1 camera Free
+# Grand Canyon
+2 goto 36.1 -112.1
+2.5 altitude 2 km
+3 @lookat 36.16 -112.1
+9 @measure canyon 6
+14 @shot canyon
+# Denali
+15.5 goto 62.9 -151.0
+16 altitude 4 km
+16.5 @lookat 63.07 -151.0
+22.5 @measure mountains 6
+27.5 @shot mountains
+# Olympic forest, low
+29 goto 47.8 -123.75
+29.5 altitude 600 m
+30 @lookat 47.85 -123.7
+36 @measure forest 6
+41 @shot forest
+# Kilauea, looking at Mauna Loa
+42.5 goto 19.35 -155.1
+43 altitude 800 m
+43.5 @lookat 19.47 -155.59
+49.5 @measure volcano 6
+54.5 @shot volcano
+# 8 km over the Pacific, looking at the horizon
+56 goto 30 -140
+56.5 altitude 8 km
+57 @lookat 30.5 -140
+63 @measure clouds 6
+68 @shot clouds
+69.5 follow Luna
+74.5 @sunlit 20 2000 30 0
+82 @measure moon 6
+87 @shot moon
+88.5 follow Mars
+93.5 @sunlit 45 4000 150 0
+101 @measure mars 6
+106 @shot mars
+107.5 follow Saturn
+112.5 camera Orbit 0 -0.44 2.5
+118 @measure saturn 6
+123 @shot saturn
+124 @end

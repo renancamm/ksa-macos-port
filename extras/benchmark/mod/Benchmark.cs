@@ -31,6 +31,8 @@ public partial class Benchmark
     private double _lastFrameAt;
     private double _exitAt = double.MaxValue;
     private double _rotateRadPerSecond;
+    // Commands a directive left for the next frames, one per frame (camera moves need a frame to take effect)
+    private readonly Queue<string> _deferred = new();
     private Results? _results;
     private Window? _window;
 
@@ -94,29 +96,33 @@ public partial class Benchmark
             }
         }
 
+        if (_deferred.Count > 0)
+            Run(_deferred.Dequeue(), now);
         while (_next < _steps.Count && _steps[_next].at <= now)
-        {
-            var (_, command) = _steps[_next++];
-            bool ok;
-            try
-            {
-                ok = command.StartsWith('@') ? Directive(command, now) : Program.TerminalInterface.Execute(command);
-            }
-            catch (Exception e)
-            {
-                Log($"'{command}' threw {e.GetType().Name}: {e.Message}");
-                ok = false;
-            }
-            Log(FormattableString.Invariant($"{now:F1} s: '{command}' -> {(ok ? "ok" : "failed")}"));
-            if (!ok)
-                _results!.Errors.Add(FormattableString.Invariant($"{now:F1} s: '{command}' failed"));
-        }
+            Run(_steps[_next++].command, now);
 
         if (now >= _exitAt)
         {
             _active = false;
             Program.TerminalInterface.Execute("exit");
         }
+    }
+
+    private void Run(string command, double now)
+    {
+        bool ok;
+        try
+        {
+            ok = command.StartsWith('@') ? Directive(command, now) : Program.TerminalInterface.Execute(command);
+        }
+        catch (Exception e)
+        {
+            Log($"'{command}' threw {e.GetType().Name}: {e.Message}");
+            ok = false;
+        }
+        Log(FormattableString.Invariant($"{now:F1} s: '{command}' -> {(ok ? "ok" : "failed")}"));
+        if (!ok)
+            _results!.Errors.Add(FormattableString.Invariant($"{now:F1} s: '{command}' failed"));
     }
 
     // @end: write the results and quit a second later (screenshots finish on the GPU after their frame)

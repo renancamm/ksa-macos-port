@@ -13,11 +13,13 @@ and ray tracing. Expect rough edges. Known issues:
 - Anti-aliasing and V-Sync currently cost a lot of performance. Turn them off if the game runs slowly.
 
 Bug reports are welcome as GitHub issues; attach the files in `~/Documents/My Games/Kitten Space Agency/logs`.
+Benchmark reports from your Mac are welcome too ([Extras](#extras)).
 
 1. [Quick start](#quick-start): install and update.
 2. [How it works](#how-it-works): what the port changes, step by step.
 3. [KSA Metal](#ksa-metal): the Vulkan driver and its switches.
-4. [Credits and license](#credits-and-license).
+4. [Extras](#extras): the StarMap mod loader and the benchmark.
+5. [Credits and license](#credits-and-license).
 
 ## Quick start
 
@@ -240,8 +242,8 @@ without modifying GLFW ([`src/glfw-shim/`](src/glfw-shim/) explains each one):
 - `dist/*.dylib` and `libfmod.dylib` next to the game, and the .NET runtime in `Contents/MacOS`.
 - `Contents/MacOS/KSA`, the app's executable: [`app/launcher.sh`](app/launcher.sh). It sets `DYLD_LIBRARY_PATH` to
   the game folder, so every library comes from the app and never from elsewhere on the Mac, loads the GLFW shim,
-  and starts `dotnet KSA.dll`. Its output goes to `console.log` in the game's logs folder, or to the terminal
-  when started from one.
+  and starts `dotnet KSA.dll` (through StarMap when the [StarMap extra](#extras) is in the app). Its output goes to
+  `console.log` in the game's logs folder, or to the terminal when started from one.
 - `Contents/Resources/Licenses/`: every component's licence and notices ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
 - An icon: `app/AppIcon.icns` if you add one, otherwise the kitten astronaut from KSA's title card, downloaded and
   cropped at build time (RocketWerkz's artwork is never part of this repository).
@@ -265,7 +267,9 @@ The scripts contact only these hosts, and only when a file isn't downloaded alre
 | ahwoo.com | KSA's title card, for the app icon | the first app you make |
 
 Every download is checked: against the checksum or commit pinned in `scripts/pins.sh`, or, for the prebuilt
-libraries, against the SHA-256 published with them and the stamp of your sources.
+libraries, against the SHA-256 published with them and the stamp of your sources. The [extras](#extras) also
+download StarMap's release from github.com and Microsoft's .NET SDK from builds.dotnet.microsoft.com, each pinned
+and checked in its own script.
 
 ### Repository layout
 
@@ -275,8 +279,9 @@ scripts/                  the steps, lib.sh and pins.sh; package-prebuilt.sh for
 app/launcher.sh           the app's executable
 src/glfw-shim/            the GLFW shim
 src/ksa-metal/            KSA Metal, with its own README
+extras/                   optional tools, each with its own README: the StarMap mod loader and the benchmark
 third_party/fmod/         FMOD's macOS library, with its licence and notice (not MIT)
-.github/workflows/        the prebuilt libraries workflow
+.github/                  the prebuilt libraries workflow and the issue templates
 dist/, deps/              made by the build: the libraries for the app; downloads, sources and build trees
 ```
 
@@ -339,6 +344,23 @@ Each of these turns one feature off or changes a default, to work around a probl
 
 `MTL_HUD_ENABLED=1` shows Apple's performance overlay. The variables for debugging KSA Metal itself (logs,
 screenshots, shader dumps, profiles) are listed in [`src/ksa-metal/README.md`](src/ksa-metal/README.md#test).
+
+## Extras
+
+Optional tools in [`extras/`](extras/), kept apart from the port itself: `port.sh` and `update.sh` never need them.
+Each works on the app `port.sh` made.
+
+- **[StarMap mod loader](extras/starmap/README.md):** adds [StarMap](https://github.com/StarMapLoader/StarMap), a
+  community mod loader, to the app, so the game loads mods with their own code:
+  ```bash
+  ./extras/starmap/port-starmap.sh
+  ```
+- **[Benchmark](extras/benchmark/README.md):** plays a fixed set of scenes (a launch, a 2,000-part rocket, a flight
+  over Earth and other worlds, a dip into Jupiter's clouds, an explosion, the sea, a cockpit with ray tracing, a
+  kitten's fur), measures each one and writes a report to compare with another run or to share as an issue:
+  ```bash
+  ./extras/benchmark/benchmark.sh
+  ```
 
 ## Credits and license
 

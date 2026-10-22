@@ -66,6 +66,7 @@ ditto -x -k "${ARCHIVE}" "${TARGET}"
 [ -f "${TARGET}/StarMap.dll" ] && [ -f "${TARGET}/StarMap.Core.dll" ] || die "the StarMap archive has an unexpected layout."
 rm -f "${TARGET}/StarMap.exe"
 run mark-arm64 "${TARGET}"/*.dll
+echo "${STARMAP_VERSION}" > "${TARGET}/version.txt"
 touch "${APP}"
 
 step "Done: the game now starts through StarMap."

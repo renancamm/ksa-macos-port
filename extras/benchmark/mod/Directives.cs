@@ -10,9 +10,16 @@
 //   @input <action> press|release  send a key action to the controlled vehicle, e.g. MainEngineStartup (ignite) or
 //                                MainEngineThrottleUp (held until release)
 //   @explode                     destroy the controlled vehicle the way a crash does
+//   @eva                         send the first kitten aboard the controlled vehicle out on EVA (the crew panel's
+//                                EVA button); the kitten becomes the controlled vehicle and the camera follows it
+//   @helmet on|off               the helmet of the kitten on EVA (off shows its fur, as in the cockpit)
 //   @iva                         switch the main view to the cockpit (IVA) camera
 //   @spin <x> <y> <z>            set the controlled vehicle's rotation rates (rad/s), stabilization off
 //   @lookat <lat> <lon>          aim the camera at that surface point of the followed celestial
+//   @height <m>                  put the camera that high above the followed celestial's sea level (the console's
+//                                altitude counts from the terrain, which under the sea is its floor)
+//   @sunlit <sun el> <alt m> <km> <bearing>  fly the camera over the followed celestial where the sun stands that
+//                                high in the west, that many metres up, looking at the point that far away that way
 //   @orbit [<az> <el> <dist>]    place the orbit camera around what it follows: azimuth and elevation in degrees, the
 //                                game's distance power (larger is farther); "-" keeps a value; without arguments,
 //                                log where it is
@@ -73,6 +80,44 @@ public partial class Benchmark
                 InputEvents.VehicleExplodeBuffer.Add(new InputEvents.VehicleExplodeData { Vehicle = v });
                 return true;
             }
+            case "@eva":
+            {
+                // The crew panel's EVA button, for the first seat with a kitten in it
+                var v = Program.ControlledVehicle;
+                if (v == null)
+                    return false;
+                foreach (var seat in v.Parts.Modules.Get<IVASeat>())
+                {
+                    if (seat.AssignedKittenHash == KeyHash.Zero)
+                        continue;
+                    // A fresh game's roster has random kittens and not the save's own: seat Banjo, always the same
+                    if (Universe.KittenRoster.Find(seat.AssignedKittenHash) == null)
+                    {
+                        var banjo = Universe.KittenRoster.Find("Banjo");
+                        if (banjo == null)
+                        {
+                            banjo = new KittenRosterEntryData("Banjo", "BanjoKitten");
+                            Universe.KittenRoster.Kittens.Add(banjo);
+                        }
+                        seat.AssignedKittenHash = KeyHash.Make("Banjo");
+                    }
+                    return EVADoor.PerformEvaForSeat(v, seat);
+                }
+                Log("@eva: no kitten aboard");
+                return false;
+            }
+            case "@helmet" when a.Length == 2:
+            {
+                // Seated kittens wear no helmet (KittenRenderable); this does the same for one on EVA
+                if (Program.ControlledVehicle is not KittenEva kitten)
+                    return false;
+                const BindingFlags Private = BindingFlags.NonPublic | BindingFlags.Instance;
+                var renderable = typeof(KittenEva).GetField("_renderable", Private)?.GetValue(kitten);
+                if (renderable?.GetType().GetField("_characterAvatar", Private)?.GetValue(renderable) is not CharacterAvatar avatar)
+                    return false;
+                avatar.Attachments.Helmet.Enabled = a[1] == "on";
+                return true;
+            }
             case "@iva":
                 if (Program.MainViewport is not GameViewport viewport)
                     return false;
@@ -90,6 +135,18 @@ public partial class Benchmark
             }
             case "@lookat" when a.Length == 3:
                 return LookAt(a);
+            case "@sunlit" when a.Length == 5:
+                return Sunlit(a);
+            case "@height" when a.Length == 2 && double.TryParse(a[1], NumberStyles.Float, Inv, out var height):
+            {
+                // The console's altitude counts from the terrain, which under the sea is its floor
+                var camera = Program.GetHoveredCamera();
+                if (camera?.Following is not Celestial body)
+                    return false;
+                var up = body.GetPositionCce(camera).Normalized();
+                camera.SetPosition(body.GetPositionEcl() + up * (body.MeanRadius + height));
+                return true;
+            }
             case "@orbit":
             {
                 var view = Program.MainViewport.OrbitController.View;
@@ -126,6 +183,37 @@ public partial class Benchmark
             !double.TryParse(a[3], NumberStyles.Float, Inv, out var z))
             return false;
         v = new double3(x, y, z);
+        return true;
+    }
+
+    // Above the point of the followed celestial where the sun stands <elevation> degrees high in the west (its local
+    // afternoon, wherever the system's clock has put it), <altitude> metres up, looking at the surface point
+    // <distance> km away towards <bearing> (degrees from north). Each move waits for the frame after the one before.
+    private bool Sunlit(string[] a)
+    {
+        if (!double.TryParse(a[1], NumberStyles.Float, Inv, out var elevation) || !double.TryParse(a[2], NumberStyles.Float, Inv, out var altitude) ||
+            !double.TryParse(a[3], NumberStyles.Float, Inv, out var distanceKm) || !double.TryParse(a[4], NumberStyles.Float, Inv, out var bearing))
+            return false;
+        var sun = Universe.CurrentSystem?.GetWorldSun();
+        if (Program.GetHoveredCamera()?.Following is not Celestial body || sun == null)
+        {
+            Log("@sunlit: the camera does not follow a celestial");
+            return false;
+        }
+        var sunCcf = (sun.GetPositionEcl() - body.GetPositionEcl()).Normalized().Transform(body.GetCce2Ccf());
+        double lat = Math.Asin(Math.Clamp(sunCcf.Z, -1, 1)) * 180 / Math.PI;
+        double lon = Math.Atan2(sunCcf.Y, sunCcf.X) * 180 / Math.PI + (90 - elevation);
+        double step = distanceKm / body.MeanRadius * 1000 * 180 / Math.PI;
+        double b = bearing * Math.PI / 180;
+        double lookLat = lat + Math.Cos(b) * step;
+        double lookLon = lon + Math.Sin(b) * step / Math.Max(Math.Cos(lat * Math.PI / 180), 0.01);
+        // goto needs the camera near the celestial: come down first (far out, the orbit camera may be millions of km away)
+        _deferred.Enqueue("camera Free");
+        _deferred.Enqueue(FormattableString.Invariant($"altitude {altitude:F0} m"));
+        _deferred.Enqueue(FormattableString.Invariant($"goto {lat:F5} {lon:F5}"));
+        _deferred.Enqueue(FormattableString.Invariant($"altitude {altitude:F0} m"));
+        _deferred.Enqueue(FormattableString.Invariant($"@lookat {lookLat:F5} {lookLon:F5}"));
+        Log(FormattableString.Invariant($"@sunlit: {body.Id} at {lat:F2} {lon:F2}, looking at {lookLat:F2} {lookLon:F2}"));
         return true;
     }
 
