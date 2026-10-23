@@ -433,7 +433,7 @@ static bool stripPassthroughControl(std::string& msl);
 // Hand-written replacements for translated shaders (KSA_MTL_OVERRIDES=<dir>): <dir>/<translation key>.metal for one
 // exact translation, or <dir>/<module hash>_<stage><index type>.metal (the KSA_MTL_DUMP_MSL file name) for every
 // translation of a module stage. The replacement keeps the translated interface: same entry point name, same
-// argument buffer bindings (the set layouts fix them)
+// argument buffer bindings (the set layouts fix them). Specialization values come from the translation it replaces
 static void applyOverride(const char* name, uint64_t key, KTranslated* tr) {
     static const char* dir = kmtlEnv("KSA_MTL_OVERRIDES");
     if (!dir) return;
@@ -449,6 +449,17 @@ static void applyOverride(const char* name, uint64_t key, KTranslated* tr) {
     char buf[65536];
     for (size_t n; (n = fread(buf, 1, sizeof(buf), f)) > 0;) msl.append(buf, n);
     fclose(f);
+    // A translation bakes specialization values in as function constant defaults
+    // ("constant T x = is_function_constant_defined(x_tmp) ? x_tmp : <value>;"): one file for every translation of a
+    // module stage holds the values of the translation it was copied from, so those lines are taken from this one
+    for (size_t at = 0; (at = tr->msl.find("is_function_constant_defined(", at)) != std::string::npos; at++) {
+        size_t ls = tr->msl.rfind('\n', at) + 1, le = tr->msl.find('\n', at);
+        size_t eq = tr->msl.find(" = ", ls);
+        if (eq == std::string::npos || eq > at) continue;
+        std::string head = tr->msl.substr(ls, eq - ls), line = tr->msl.substr(ls, le - ls);
+        size_t os = msl.find(head + " = ");
+        if (os != std::string::npos) msl.replace(os, msl.find('\n', os) - os, line);
+    }
     tr->msl = msl;
     KLOG(0, "shader override: %s", path);
 }

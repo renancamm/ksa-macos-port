@@ -80,7 +80,7 @@ The debugging variables, used the same way:
 | `KSA_MTL_STRICT=1` | return pipeline errors to the game, instead of skipping the pipeline and continuing |
 | `KSA_MTL_DUMP_MSL=<dir>` | write every translated shader, and the errors of those that fail to compile |
 | `KSA_MTL_DUMP_SPV=<dir>` | write every shader module the game creates as `<hash>.spv`, and the modules KSA Metal rewrites for tessellation and ray tracing |
-| `KSA_MTL_OVERRIDES=<dir>` | use hand-written Metal source in place of a translated shader: `<dir>/<name>.metal`, named as in `KSA_MTL_DUMP_MSL` |
+| `KSA_MTL_OVERRIDES=<dir>` | use hand-written Metal source in place of a translated shader: `<dir>/<name>.metal`, named as in `KSA_MTL_DUMP_MSL`; each use keeps its own specialization values |
 | `KSA_MTL_SPEC=<hash>:<id>=<value>,...` | replace a specialization constant of a shader module, whatever the game passes (e.g. fewer iterations of an expensive loop) |
 | `KSA_MTL_CACHE_DIR=<dir>` | where the shader cache goes (default: `~/Library/Caches/ksa-metal`) |
 | `KSA_MTL_SHOTS=<n,...>` | save the presented image as `shot_<n>.png` at these points |
