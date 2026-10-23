@@ -77,7 +77,10 @@ step "Building the port ${VERSION} (${COMMIT}) for KSA ${KSA_VERSION}"
 step "[1/5] Native libraries (CMake)"
 mkdir -p "${CMAKE_TREE}"
 LOG="${CMAKE_TREE}/build.log"
-{ cmake --preset default -B "${CMAKE_TREE}" -DKSA_NATIVES_DIR="${NATIVES}" -DKSA_MTL_OPT="${KSA_MTL_OPT:--O2}" &&
+DEBUG_MAP=ON
+[ "${VERSION}" = dev ] || DEBUG_MAP=OFF
+{ cmake --preset default -B "${CMAKE_TREE}" -DKSA_NATIVES_DIR="${NATIVES}" -DKSA_MTL_OPT="${KSA_MTL_OPT:--O2}" \
+    -DKSA_MTL_DEBUG_MAP="${DEBUG_MAP}" &&
     cmake --build "${CMAKE_TREE}"; } > "${LOG}" 2>&1 || { grep -v xcrun_db "${LOG}" | tail -40; die "the native build failed (${LOG})."; }
 info "Libraries in ${NATIVES#"${REPO}/"}, CMake's output in ${LOG#"${REPO}/"}"
 # For editors: compile_commands.json at the repository's root, where clangd and VS Code look for it

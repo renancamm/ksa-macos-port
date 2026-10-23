@@ -18,6 +18,7 @@ WORK="${BUILD}/benchmark"
 cd "${REPO}"
 
 # dotnet_build <project> <output folder> [msbuild arguments...]
+# No PDB: the port folder doesn't ship them, and a DLL built with one records its path, the build folder's
 dotnet_build() {
     local project="$1" out="$2"
     shift 2
@@ -25,7 +26,7 @@ dotnet_build() {
     DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 \
         DOTNET_CLI_HOME="${WORK}/home" NUGET_PACKAGES="${WORK}/nuget" \
         dotnet build "${project}" -c Release -nologo -v quiet -nodeReuse:false -o "${out}" \
-        -p:BaseIntermediateOutputPath="${WORK}/obj/$(basename "${project}" .csproj)/" "$@" \
+        -p:BaseIntermediateOutputPath="${WORK}/obj/$(basename "${project}" .csproj)/" -p:DebugType=none "$@" \
         > "${WORK}/build.log" 2>&1 || { cat "${WORK}/build.log"; return 1; }
 }
 
