@@ -155,15 +155,13 @@ void KCommandBuffer::joinCommands() {
 // ---------------------------------------------------------------------------------------------------------------
 // Upload ring (dynamic-offset descriptor copies, vkCmdUpdateBuffer data)
 
-void* KUploadRing::alloc(KDevice* dev, size_t size, id<MTLBuffer>* outBuf, NSUInteger* outOff) {
+KUploadRing::Place KUploadRing::alloc(KDevice* dev, size_t size) {
     size = (size + 255) & ~(size_t)255;
     while (true) {
         if (chunk < chunks.size()) {
-            id<MTLBuffer> b = chunks[chunk];
-            if (offset + size <= b.length) {
-                *outBuf = b;
-                *outOff = offset;
-                void* p = (uint8_t*)b.contents + offset;
+            const Chunk& c = chunks[chunk];
+            if (offset + size <= c.length) {
+                Place p{c.buffer, c.gpuAddress, offset, c.contents + offset};
                 offset += size;
                 return p;
             }
@@ -171,12 +169,13 @@ void* KUploadRing::alloc(KDevice* dev, size_t size, id<MTLBuffer>* outBuf, NSUIn
             offset = 0;
             continue;
         }
+        // A new chunk: its properties are read here, under a pool of our own, since a bind runs without one
+        KAutoreleasePool pool;
         size_t len = std::max(size, kChunkSize);
         id<MTLBuffer> b = [dev->mtl newBufferWithLength:len options:MTLResourceStorageModeShared | MTLResourceHazardTrackingModeUntracked];
         b.label = @"upload ring";
-
         g_internalBytes += (int64_t)len;
-        chunks.push_back(b);
+        chunks.push_back({b, (uint8_t*)b.contents, b.gpuAddress, len});
     }
 }
 
@@ -492,18 +491,16 @@ VKFN(void) vkCmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBind
             bound[idx].offset = s->offset;
         } else {
             // Copy the set and add the dynamic offsets to its buffer addresses
-            id<MTLBuffer> buf;
-            NSUInteger off;
-            uint8_t* dst = (uint8_t*)cb->ring.alloc(cb->device, s->size, &buf, &off);
-            memcpy(dst, s->base, s->size);
-            auto* slots = (uint64_t*)dst;
-            slots[l->sizeSlot] = buf.gpuAddress + off + l->slotCount * 8;
+            KUploadRing::Place at = cb->ring.alloc(cb->device, s->size);
+            memcpy(at.ptr, s->base, s->size);
+            auto* slots = (uint64_t*)at.ptr;
+            slots[l->sizeSlot] = at.gpuAddress + at.offset + l->slotCount * 8;
             for (uint32_t d = 0; d < l->dynamicCount && dynUsed < dynCount; d++, dynUsed++) {
                 uint32_t slot = l->dynamicSlots[d];
                 if (slots[slot]) slots[slot] += dynOffsets[dynUsed];
             }
-            bound[idx].buffer = buf;
-            bound[idx].offset = off;
+            bound[idx].buffer = at.buffer;
+            bound[idx].offset = at.offset;
         }
         bound[idx].stages = l->stages;
         dirty |= 1u << idx;
@@ -810,10 +807,14 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
     id<MTLComputeCommandEncoder> enc = cb->computeEncoder(KCommandBuffer::kClassVertex);
     id<MTLBuffer> args = nil;
     NSUInteger argsOff = 0;
+    const uint32_t* argsCpu = nullptr;
     if (t.indirect) {
         // args: [0..5] stage-in region, [6..8] vertex groups, [9..11] control groups, [12..13] control params,
         // [14..17] drawPatches arguments
-        cb->ring.alloc(dev, 19 * 4, &args, &argsOff);
+        KUploadRing::Place at = cb->ring.alloc(dev, 19 * 4);
+        args = at.buffer;
+        argsOff = at.offset;
+        argsCpu = (const uint32_t*)at.ptr;
         uint32_t prm[4] = {p->tessInCP, p->tessOutCP, vw, wg};
         uint32_t maxIdx = (uint32_t)maxVerts;
         [enc setBytes:&maxIdx length:4 atIndex:3];
@@ -826,7 +827,7 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
         [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
         static std::atomic<int> sampled{0};
         if (g_logLevel >= 2 && sampled++ % 200 == 0) {
-            const uint32_t* a = (const uint32_t*)((uint8_t*)args.contents + argsOff);
+            const uint32_t* a = argsCpu;
             [cb->mtl addCompletedHandler:^(id<MTLCommandBuffer>) {
                 KLOG(2, "tessellated draw actual: %u indices (%u requested), %u patches", a[3], a[18], a[13]);
             }];
@@ -1466,11 +1467,9 @@ VKFN(void) vkCmdUpdateBuffer(VkCommandBuffer commandBuffer, VkBuffer dst, VkDevi
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
     auto* d = (KBuffer*)dst;
-    id<MTLBuffer> buf;
-    NSUInteger off;
-    void* p = cb->ring.alloc(cb->device, size, &buf, &off);
-    memcpy(p, data, size);
-    [cb->blitEncoder() copyFromBuffer:buf sourceOffset:off toBuffer:d->mtl destinationOffset:d->offset + offset size:size];
+    KUploadRing::Place at = cb->ring.alloc(cb->device, size);
+    memcpy(at.ptr, data, size);
+    [cb->blitEncoder() copyFromBuffer:at.buffer sourceOffset:at.offset toBuffer:d->mtl destinationOffset:d->offset + offset size:size];
 }
 
 // Image clears are load-clear render passes, one per level and layer

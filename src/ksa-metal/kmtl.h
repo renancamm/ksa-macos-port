@@ -419,12 +419,15 @@ struct KBoundSet {
 };
 
 struct KUploadRing {
-    std::vector<id<MTLBuffer>> chunks;
+    // A chunk's properties are read once when it is made: placing data in it then sends the buffer no message (the
+    // game's threads have no autorelease pool, and a message that autoreleases the buffer would leak it)
+    struct Chunk { id<MTLBuffer> buffer = nil; uint8_t* contents = nullptr; uint64_t gpuAddress = 0; size_t length = 0; };
+    std::vector<Chunk> chunks;
     size_t chunk = 0;
     size_t offset = 0;
     static constexpr size_t kChunkSize = 1 << 20;
-    // Returns CPU pointer, buffer and offset of `size` bytes aligned to 256
-    void* alloc(KDevice* dev, size_t size, id<MTLBuffer>* outBuf, NSUInteger* outOff);
+    struct Place { id<MTLBuffer> buffer; uint64_t gpuAddress; NSUInteger offset; void* ptr; };
+    Place alloc(KDevice* dev, size_t size);  // `size` bytes aligned to 256: their buffer, its GPU address, offset, CPU pointer
     void reset() { chunk = 0; offset = 0; }
 };
 
