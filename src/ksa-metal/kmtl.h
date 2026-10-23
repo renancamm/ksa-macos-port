@@ -81,6 +81,7 @@ inline uint32_t vertexBufferIndex(uint32_t binding) { return kVertexBufferTop - 
 struct KDevice;
 struct KQueue;
 struct KSampler;
+struct KProfState;  // GPU profiler state of a command buffer (profile.mm)
 
 // ---------------------------------------------------------------------------------------------------------------
 // Dispatchable objects. The loader-magic word is kept first so a pointer that any Khronos tool inspects looks sane.
@@ -471,6 +472,9 @@ struct KCommandBuffer : KDispatchable {
     // Counters for the frame log
     uint32_t draws = 0, dispatches = 0, passes = 0;
 
+    // GPU profiler (profile.mm): set while this recording is profiled, null otherwise, so the hooks cost one test
+    KProfState* prof = nullptr;
+
     // KSA_MTL_LABELS=1: the open encoder's name, from the pipelines it ran (the game sets no debug labels in its
     // release builds); Instruments, the Metal HUD and Xcode's frame capture show it
     std::string encLabel;
@@ -594,6 +598,7 @@ PFN_vkVoidFunction kmtlLookup(const char* name, int level);
 
 // GPU profiler (profile.mm, KSA_MTL_GPUPROF)
 void kmtlProfBegin(KCommandBuffer* cb);
+void kmtlProfDrop(KCommandBuffer* cb);  // a recording dropped without a submit: frees its state
 void kmtlProfRenderPass(KCommandBuffer* cb, MTLRenderPassDescriptor* rp);
 id<MTLComputeCommandEncoder> kmtlProfComputeEncoder(KCommandBuffer* cb);
 id<MTLBlitCommandEncoder> kmtlProfBlitEncoder(KCommandBuffer* cb);

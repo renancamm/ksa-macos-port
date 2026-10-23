@@ -34,9 +34,8 @@ static FILE* g_prof = nullptr;
 // The profiled presents; ksaMtlProfileFrames (the benchmark's @gpuprof) moves them to the next ones
 static std::atomic<uint64_t> g_profFirst{2000}, g_profCount{300};
 static std::atomic<uint64_t> g_profPresent{0};
-static std::mutex g_profMutex;
+static std::mutex g_profMutex;  // guards g_samplePool and the CSV
 static id<MTLCounterSet> g_timestampSet = nil;
-static std::unordered_map<KCommandBuffer*, KProfState*> g_states;
 // Metal caps the number of live counter sample buffers: they are recycled after their command buffer completes
 static std::vector<id<MTLCounterSampleBuffer>> g_samplePool;
 
@@ -85,18 +84,19 @@ KMTL_EXPORT bool ksaMtlProfileFrames(const char* label, uint32_t count) {
     return true;
 }
 
-static KProfState* state(KCommandBuffer* cb) {
-    std::lock_guard<std::mutex> lock(g_profMutex);
-    auto it = g_states.find(cb);
-    return it == g_states.end() ? nullptr : it->second;
+void kmtlProfDrop(KCommandBuffer* cb) {
+    KProfState* s = cb->prof;
+    if (!s) return;
+    cb->prof = nullptr;
+    if (s->samples) {
+        std::lock_guard<std::mutex> lock(g_profMutex);
+        g_samplePool.push_back(s->samples);
+    }
+    delete s;
 }
 
 void kmtlProfBegin(KCommandBuffer* cb) {
-    {
-        std::lock_guard<std::mutex> lock(g_profMutex);
-        auto it = g_states.find(cb);
-        if (it != g_states.end()) { delete it->second; g_states.erase(it); }
-    }
+    kmtlProfDrop(cb);
     if (!profiling(cb->device)) return;
     auto* s = new KProfState();
     {
@@ -119,8 +119,7 @@ void kmtlProfBegin(KCommandBuffer* cb) {
     }
     s->capacity = 4096;
     s->frame = g_profPresent.load();
-    std::lock_guard<std::mutex> lock(g_profMutex);
-    g_states[cb] = s;
+    cb->prof = s;
 }
 
 // Reserves samples for a new encoder; returns the first index or -1
@@ -136,7 +135,7 @@ static int newEncoder(KProfState* s, char type, uint32_t n) {
 }
 
 void kmtlProfRenderPass(KCommandBuffer* cb, MTLRenderPassDescriptor* rp) {
-    KProfState* s = state(cb);
+    KProfState* s = cb->prof;
     if (!s) return;
     int i = newEncoder(s, 'r', 4);
     if (i < 0) return;
@@ -149,7 +148,7 @@ void kmtlProfRenderPass(KCommandBuffer* cb, MTLRenderPassDescriptor* rp) {
 }
 
 id<MTLComputeCommandEncoder> kmtlProfComputeEncoder(KCommandBuffer* cb) {
-    KProfState* s = state(cb);
+    KProfState* s = cb->prof;
     int i = s ? newEncoder(s, 'c', 2) : -1;
     if (i < 0) return [cb->mtl computeCommandEncoderWithDispatchType:MTLDispatchTypeSerial];
     MTLComputePassDescriptor* d = [MTLComputePassDescriptor computePassDescriptor];
@@ -161,7 +160,7 @@ id<MTLComputeCommandEncoder> kmtlProfComputeEncoder(KCommandBuffer* cb) {
 }
 
 id<MTLBlitCommandEncoder> kmtlProfBlitEncoder(KCommandBuffer* cb) {
-    KProfState* s = state(cb);
+    KProfState* s = cb->prof;
     int i = s ? newEncoder(s, 'b', 2) : -1;
     if (i < 0) return [cb->mtl blitCommandEncoder];
     MTLBlitPassDescriptor* d = [MTLBlitPassDescriptor blitPassDescriptor];
@@ -173,8 +172,9 @@ id<MTLBlitCommandEncoder> kmtlProfBlitEncoder(KCommandBuffer* cb) {
 
 // A draw or dispatch with this pipeline in the current encoder
 void kmtlProfNote(KCommandBuffer* cb, KPipeline* p, bool dispatch, uint32_t n) {
+    if (!cb->prof && !kmtlLabelsEnabled()) return;  // the common case: two predictable branches per draw
     if (kmtlLabelsEnabled()) cb->notePipelineLabel(p);
-    KProfState* s = state(cb);
+    KProfState* s = cb->prof;
     if (!s || s->current < 0) return;
     KProfEncoder& e = s->encoders[s->current];
     if (dispatch) e.dispatches += n; else e.draws += n;
@@ -195,18 +195,14 @@ bool kmtlProfSplit() {
 }
 
 void kmtlProfEncoderEnded(KCommandBuffer* cb) {
-    if (KProfState* s = state(cb)) s->current = -1;
+    if (KProfState* s = cb->prof) s->current = -1;
 }
 
+// The state goes to the completion handler, which writes the rows and deletes it
 void kmtlProfSubmit(KCommandBuffer* cb, id<MTLCommandBuffer> mtl) {
-    KProfState* s;
-    {
-        std::lock_guard<std::mutex> lock(g_profMutex);
-        auto it = g_states.find(cb);
-        if (it == g_states.end()) return;
-        s = it->second;
-        g_states.erase(it);
-    }
+    KProfState* s = cb->prof;
+    if (!s) return;
+    cb->prof = nullptr;
     static std::atomic<uint32_t> cbCounter{0};
     uint32_t cbIndex = cbCounter++;
     [mtl addCompletedHandler:^(id<MTLCommandBuffer> c) {

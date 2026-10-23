@@ -390,6 +390,7 @@ static void dropRecording(KCommandBuffer* cb) {
         cb->mtl = nil;
     }
     cb->releaseTimestamps();
+    kmtlProfDrop(cb);
 }
 
 VKFN(void) vkDestroyCommandPool(VkDevice, VkCommandPool pool, const VkAllocationCallbacks*) {
