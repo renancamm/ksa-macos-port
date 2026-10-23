@@ -4,10 +4,14 @@
 //   KSA_BENCH_SCRIPT  the script (extras/benchmark/benchmark.txt)
 //   KSA_BENCH_OUT     the folder for the results (results.json) and the screenshots
 //   KSA_BENCH_ONLY    optional: the sections to play (space separated), to work on a few of them
+//   KSA_BENCH_FAST    optional: fast mode (below)
+//   KSA_BENCH_NO_SHOTS optional: no screenshots (the checkpoints still keep the game's clock in step)
+//   KSA_BENCH_HOLD    optional: <section>_<shot>: stop at that checkpoint for good, the game paused, until it is quit
 //   KSA_BENCH_TRACE   optional: write the camera's place every frame to trace.csv, to check its moves are smooth
 //   KSA_BENCH_FILM    optional: a screenshot every that many seconds of the script's clock, into film/, to see moves
 //   KSA_BENCH_EXPLORE optional: no script, the explore mode's console command instead (Explore.cs)
-// Without the first two the mod does nothing.
+// Without the first two the mod does nothing. While it plays, it touches the file "heartbeat" in the results' folder
+// every second, so the script can tell a game that hangs from one that is busy.
 //
 // The script is a series of sections. "section <name> [needs <celestial>...]" starts one; a section whose celestials
 // the loaded system lacks is skipped. Each section is a list of "<seconds> <command>" steps timed from its start. A
@@ -20,6 +24,12 @@
 // stop as the script reaches it, the script's clock stops, the simulation catches up with the game time the script
 // expects and pauses there, the screenshot is taken once the world has settled, and both clocks go on, the simulation
 // easing back to its speed. So every Mac takes its screenshots at the same moments of the game.
+//
+// Fast mode skips the way between: the script's clock jumps from one step to the next, and before each step the
+// simulation catches up with the game time the script expects there and pauses, so vehicles get their inputs at the
+// same game times as in a played run. At each checkpoint the mod waits until the view stops changing (terrain and
+// textures streaming in after the jump), measures a few seconds of the view standing there (the @measure parts belong to
+// the way, which fast mode skips) and takes the screenshot. Its numbers compare only with other fast runs.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -36,15 +46,23 @@ namespace KsaMetalBenchmark;
 [StarMapMod]
 public partial class Benchmark
 {
-    // How close a checkpoint gets to the game time it waits for (game seconds), and how long it lets the world settle
-    // (terrain and textures streaming in) before its screenshot
+    // How close a checkpoint gets to the game time it waits for (game seconds), how far ahead of it the game may be
+    // (the clock only goes forward), and how long it lets the world settle (terrain and textures streaming in) before
+    // its screenshot
     private const double Tolerance = 0.02;
+    private const double AheadLimit = 0.5;
     private const double SettleSeconds = 1.0;
     private const int SettleFrames = 10;
     // How long the simulation takes to ease to a stop at a checkpoint, and back to its speed after it
     private const double ShotEase = 0.75;
     // While the script warps, how many seconds the game takes to make up what it fell behind
     private const double WarpCatchUp = 0.5;
+    // Fast mode: how often it looks whether the view still changes (seconds), how much of it may change between two
+    // looks to count as still (percent of its blocks, see Images.cs), the longest it waits, and how long it measures
+    private const double ProbeEvery = 0.5;
+    private const double StillPercent = 0.5;
+    private const double MaxSettleSeconds = 20;
+    private const double FastMeasureSeconds = 2.0;
 
     private record Step(double At, string Command, int Line);
 
@@ -56,7 +74,11 @@ public partial class Benchmark
         public double Length => Steps.Count > 0 ? Steps.Max(s => s.At) : 0;
     }
 
-    private enum Phase { Play, CatchUp, Settle, Shoot }
+    private enum Phase { Play, CatchUp, Settle, Measure, Shoot, Hold }
+
+    // What a catch-up of the game's clock leads to: a checkpoint's screenshot, the end of a jump of @time, or (in fast
+    // mode) the next step
+    private enum After { Shot, Time, Step }
 
     private readonly List<Section> _sections = new();
     private readonly Stopwatch _wall = new();
@@ -64,6 +86,11 @@ public partial class Benchmark
     private HashSet<string>? _only;
     private bool _active;
     private Results? _results;
+    private bool _fast, _shots = true;
+    private string? _hold;
+    // Fast mode plays the script's clock as it is (no jumps, no stops) until then: @steady
+    private double _steadyUntil;
+    private double _nextBeat;
 
     // The section playing, its steps and where it started on the script's clock
     private int _section = -1;
@@ -83,11 +110,19 @@ public partial class Benchmark
     private readonly List<double> _shotTimes = new();
     private double _stepAt;
     private Phase _phase = Phase.Play;
+    private After _after;
     private string _shotName = "";
     private double _phaseEnds;
     private int _phaseFrames;
+    // Fast mode's wait for a still view: when it started, the last probe screenshot, and the one being taken
+    private double _settleStart;
+    private Image? _lastProbe;
+    private string? _probe;
+    private double _probeTaken;
 
     private Window? _window;
+    // Fast mode's measurement of the view standing at a checkpoint
+    private Window? _still;
     // The vehicle @explode blew up
     private string? _exploded;
     private StreamWriter? _trace;
@@ -112,6 +147,9 @@ public partial class Benchmark
         var only = Environment.GetEnvironmentVariable("KSA_BENCH_ONLY");
         if (!string.IsNullOrWhiteSpace(only))
             _only = only.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
+        _fast = Environment.GetEnvironmentVariable("KSA_BENCH_FAST") is { Length: > 0 };
+        _shots = Environment.GetEnvironmentVariable("KSA_BENCH_NO_SHOTS") is not { Length: > 0 };
+        _hold = Environment.GetEnvironmentVariable("KSA_BENCH_HOLD") is { Length: > 0 } hold ? hold : null;
         var lines = File.ReadAllLines(script);
         for (int i = 0; i < lines.Length; i++)
         {
@@ -144,9 +182,10 @@ public partial class Benchmark
         if (double.TryParse(Environment.GetEnvironmentVariable("KSA_BENCH_FILM"), NumberStyles.Float, CultureInfo.InvariantCulture,
                 out _filmEvery) && _filmEvery > 0)
             Directory.CreateDirectory(Path.Combine(_outDir, "film"));
-        _results = new Results(DriverStats.Available);
+        _results = new Results(DriverStats.Available) { Mode = _fast ? "fast" : "cinematic", Shots = _shots };
         _active = true;
-        Log($"{_sections.Count} sections, GPU times {(DriverStats.Available ? "available" : "not available")}");
+        Log($"{_sections.Count} sections, {_results.Mode}{(_shots ? "" : ", no screenshots")}{(_hold != null ? $", holding at {_hold}" : "")}, " +
+            $"GPU times {(DriverStats.Available ? "available" : "not available")}");
     }
 
     [StarMapAfterOnFrame]
@@ -161,6 +200,14 @@ public partial class Benchmark
         double wall = _wall.Elapsed.TotalSeconds;
         double dt = wall - _lastWall;
         _lastWall = wall;
+        if (wall >= _nextBeat)
+        {
+            File.WriteAllText(Path.Combine(_outDir, "heartbeat"),
+                FormattableString.Invariant($"{_sectionResult?.Name} {_scriptTime - _sectionStart:F1}\n"));
+            _nextBeat = wall + 1;
+        }
+        if (_phase == Phase.Hold)
+            return;
         // The game's messages stay in its log, off the screen
         Program.ConsoleWindow.ClearConsole();
 
@@ -170,15 +217,30 @@ public partial class Benchmark
             Checkpoint(wall, dt);
             return;
         }
-        _scriptTime += dt;
-        double speed = SpeedAt(_scriptTime);
-        _gameTarget += speed * dt;
-        // The game keeps a little under the speed it is asked for (about 12% here), which adds up to hours over a
-        // time-lapse: while the script warps, it asks for a little more as the game falls behind
-        if (speed > 2)
-            speed += Math.Max(_gameTarget - Universe.GetElapsedSeconds(), 0) / WarpCatchUp;
-        SetSpeed(speed);
-        _window?.Add(dt * 1000, DriverStats.Read());
+        if (_fast && _scriptTime >= _steadyUntil)
+        {
+            double next = NextEvent();
+            if (next > _scriptTime)
+            {
+                FastForward(next);
+                return;
+            }
+            dt = 0;
+        }
+        else
+        {
+            _scriptTime += dt;
+            double speed = SpeedAt(_scriptTime);
+            _gameTarget += speed * dt;
+            // The game keeps a little under the speed it is asked for (about 12% here), which adds up to hours over a
+            // time-lapse, and takes a new speed a frame late, so a fast warp easing down overshoots by minutes: while
+            // the script warps, it asks for more as the game falls behind and for less as it gets ahead
+            if (speed > 2)
+                speed = Math.Max(speed + (_gameTarget - Universe.GetElapsedSeconds()) / WarpCatchUp, 0);
+            SetSpeed(speed);
+            if (!_fast)
+                _window?.Add(dt * 1000, DriverStats.Read());
+        }
         if (_window != null && _scriptTime >= _window.EndsAt)
             CloseWindow();
         UpdateCamera(dt);
@@ -246,6 +308,33 @@ public partial class Benchmark
         return warp;
     }
 
+    // Fast mode: when the next thing happens on the script's clock (a step, the end of a section or of a measured part)
+    private double NextEvent()
+    {
+        if (_section < 0)
+            return _scriptTime;
+        var steps = _sections[_section].Steps;
+        double next = _next < steps.Count ? _sectionStart + steps[_next].At : _sectionStart + _sections[_section].Length;
+        return _window != null ? Math.Min(next, _window.EndsAt) : next;
+    }
+
+    // Fast mode: the script's clock jumps there, the camera with it, and the simulation catches up with the game time the
+    // script expects there (its speeds added up over the way, eased around checkpoints as in a played run)
+    private void FastForward(double to)
+    {
+        const double Step = 1.0 / 240;
+        for (double t = _scriptTime; t < to; t += Step)
+        {
+            double h = Math.Min(Step, to - t);
+            _gameTarget += SpeedAt(t + h / 2) * h;
+        }
+        double jump = to - _scriptTime;
+        _scriptTime = to;
+        UpdateCamera(jump);
+        _after = After.Step;
+        _phase = Phase.CatchUp;
+    }
+
     private void Warp(double speed, double seconds)
     {
         _warpFrom = SpeedAt(_scriptTime);
@@ -263,6 +352,9 @@ public partial class Benchmark
         Program.DrawUI = false;
         _gameStart = _gameTarget = Universe.GetElapsedSeconds();
         _warpFrom = _warpTo = Universe.GetSimulationSpeed();
+        // Fast mode: the simulation only runs to catch up with the script
+        if (_fast)
+            SetSpeed(0);
         foreach (var section in _sections)
         {
             var missing = section.Needs.Where(id => Universe.CurrentSystem?.All.TryGet(id, out Astronomical? _) != true).ToList();
@@ -298,13 +390,15 @@ public partial class Benchmark
         {
             _active = false;
             _trace?.Dispose();
-            Log("done");
+            _results!.Completed = true;
+            _results.Write(Path.Combine(_outDir, "results.json"));
+            Log(FormattableString.Invariant($"done after {_wall.Elapsed.TotalSeconds:F1} s"));
             Program.TerminalInterface.Execute("exit");
             return;
         }
         _sectionResult = new SectionResult(_sections[_section].Name);
         _results!.Sections.Add(_sectionResult);
-        Log(FormattableString.Invariant($"section {_sectionResult.Name} (game time {Universe.GetElapsedSeconds():F1} s)"));
+        Log(FormattableString.Invariant($"section {_sectionResult.Name} (game time {Universe.GetElapsedSeconds():F1} s, {_wall.Elapsed.TotalSeconds:F1} s into the run)"));
     }
 
     private void EndSection()
@@ -369,8 +463,12 @@ public partial class Benchmark
         if (_window != null && _scriptTime >= _window.EndsAt)
             CloseWindow();
         _shotName = shot;
+        _after = After.Shot;
         _phase = Phase.CatchUp;
     }
+
+    // Whether the run stops for good at this checkpoint
+    private bool Holding => _hold == $"{_sectionResult?.Name}_{_shotName}";
 
     // @time: moves the game's clock forward to that many seconds since the start, the script's clock stopped meanwhile (a
     // checkpoint without a screenshot), so that a section looks the same (its clouds drift with the game's time) whether
@@ -384,7 +482,7 @@ public partial class Benchmark
             return false;
         }
         _gameTarget = target;
-        _shotName = "";
+        _after = After.Time;
         _phase = Phase.CatchUp;
         return true;
     }
@@ -434,45 +532,157 @@ public partial class Benchmark
                     // Fast while far behind (at least the scripted speed), then just what the next frame needs
                     double frame = Math.Max(dt, 1.0 / 240);
                     double warp = Math.Max(_warpTo, 1);
-                    // A jump of @time covers half of what is left every quarter of a second or so
-                    double pace = _shotName == "" ? 0.25 : 2;
+                    // A jump of @time covers half of what is left every quarter of a second or so, fast mode's catch-ups
+                    // faster still
+                    double pace = _fast ? 0.1 : _after == After.Shot ? 2 : 0.25;
                     SetSpeed(behind > warp * frame * 2 ? Math.Max(warp, behind / pace) : behind / frame);
                     return;
                 }
                 SetSpeed(0);
-                if (_shotName == "")
+                // The game ran past the moment the script expects: what follows plays later than written
+                if (-behind > AheadLimit)
+                    _sectionResult?.Errors.Add(FormattableString.Invariant(
+                        $"{_scriptTime - _sectionStart:F1} s: the game's clock is {-behind:F1} s ahead of the script's"));
+                switch (_after)
                 {
-                    ResetClouds();
+                    case After.Time:
+                        ResetClouds();
+                        Resume();
+                        return;
+                    case After.Step:
+                        Resume();
+                        return;
+                }
+                // Without screenshots the checkpoint ends here, its clocks in step (fast mode still measures the view)
+                if (!_shots && !_fast && !Holding)
+                {
                     Resume();
                     return;
                 }
                 _phase = Phase.Settle;
-                _phaseEnds = wall + SettleSeconds;
+                _settleStart = wall;
+                _phaseEnds = wall + (_fast ? ProbeEvery : SettleSeconds);
                 _phaseFrames = 0;
+                _lastProbe = null;
+                _probe = null;
                 return;
             }
             case Phase.Settle:
-                if (wall < _phaseEnds || ++_phaseFrames < SettleFrames)
+                if (_fast ? !Settled(wall) : wall < _phaseEnds || ++_phaseFrames < SettleFrames)
                     return;
-                var path = Path.Combine(_outDir, $"{_sectionResult?.Name}_{_shotName}.png");
-                if (!DriverStats.Screenshot(path))
-                    Log($"no screenshot {_shotName}: needs KSA Metal");
-                _phase = Phase.Shoot;
-                _phaseFrames = 0;
+                if (_fast && !Holding)
+                {
+                    _phase = Phase.Measure;
+                    _still = new Window(_shotName, double.NaN);
+                    _phaseEnds = wall + FastMeasureSeconds;
+                    return;
+                }
+                Shoot();
+                return;
+            case Phase.Measure:
+                _still!.Add(dt * 1000, DriverStats.Read());
+                if (wall < _phaseEnds)
+                    return;
+                _sectionResult?.Windows.Add(_still.Summarize());
+                Log($"measured {_still.Name}: {_still.Frames} frames");
+                _still = null;
+                Shoot();
                 return;
             case Phase.Shoot:
-                // The image is the next presented one: give it a few frames
-                if (++_phaseFrames >= 3)
-                    Resume();
+            {
+                // The image is the next presented one: give it a few frames, and a moment more to be written
+                var path = ShotPath();
+                if (++_phaseFrames < 3 || !File.Exists(path) && _phaseFrames < 120)
+                    return;
+                if (File.Exists(path))
+                    _sectionResult?.Screenshots.Add(_shotName);
+                else
+                    _sectionResult?.Errors.Add($"{_shotName}: no screenshot");
+                EndCheckpoint();
                 return;
+            }
         }
+    }
+
+    private string ShotPath() => Path.Combine(_outDir, $"{_sectionResult?.Name}_{_shotName}.png");
+
+    private void Shoot()
+    {
+        if (!_shots && !Holding || !DriverStats.Screenshot(ShotPath()))
+        {
+            if (_shots)
+                Log($"no screenshot {_shotName}: needs KSA Metal");
+            EndCheckpoint();
+            return;
+        }
+        _phase = Phase.Shoot;
+        _phaseFrames = 0;
+    }
+
+    // Fast mode: whether the view has stopped changing, from probe screenshots half a second apart (the game is paused, so
+    // what still changes is terrain and textures streaming in). Without KSA Metal's screenshots it waits a few seconds.
+    private bool Settled(double wall)
+    {
+        if (!DriverStats.Available)
+            return wall >= _settleStart + 5;
+        if (wall >= _settleStart + MaxSettleSeconds)
+        {
+            _sectionResult?.Errors.Add(FormattableString.Invariant($"{_shotName}: the view still changed after {MaxSettleSeconds:F0} s"));
+            return true;
+        }
+        if (_probe == null)
+        {
+            if (wall < _phaseEnds)
+                return false;
+            _probe = Path.Combine(Path.GetTempPath(), "ksa-metal-benchmark-probe.png");
+            File.Delete(_probe);
+            DriverStats.Screenshot(_probe);
+            _probeTaken = wall;
+            return false;
+        }
+        // The driver writes it a few frames later
+        var image = Images.Read(_probe);
+        if (image == null)
+        {
+            if (wall < _probeTaken + 2)
+                return false;
+            _sectionResult?.Errors.Add($"{_shotName}: no probe screenshot to see whether the view stopped changing");
+            _probe = null;
+            return true;
+        }
+        File.Delete(_probe);
+        _probe = null;
+        _phaseEnds = wall + ProbeEvery;
+        var last = _lastProbe;
+        _lastProbe = image;
+        if (last == null)
+            return false;
+        double changed = Images.Compare(last, image).ChangedPercent;
+        if (changed > StillPercent)
+            return false;
+        Log(FormattableString.Invariant($"{_shotName}: still after {wall - _settleStart:F1} s ({changed:F2}% changed since the last probe)"));
+        return true;
+    }
+
+    private void EndCheckpoint()
+    {
+        if (!Holding)
+        {
+            Resume();
+            return;
+        }
+        _phase = Phase.Hold;
+        // The game's interface (F2) and console stay usable
+        Log($"holding at {_hold}: quit the game when done");
+        _results!.Write(Path.Combine(_outDir, "results.json"));
     }
 
     private void Resume()
     {
-        Log(FormattableString.Invariant(
-            $"{(_shotName == "" ? "@time" : "checkpoint " + _shotName)}: game time {Universe.GetElapsedSeconds() - _gameStart:F3} s (script {_gameTarget - _gameStart:F3} s)"));
-        SetSpeed(SpeedAt(_scriptTime));
+        if (_after != After.Step)
+            Log(FormattableString.Invariant(
+                $"{(_after == After.Time ? "@time" : "checkpoint " + _shotName)}: game time {Universe.GetElapsedSeconds() - _gameStart:F3} s (script {_gameTarget - _gameStart:F3} s)"));
+        SetSpeed(_fast && _scriptTime >= _steadyUntil ? 0 : SpeedAt(_scriptTime));
         _phase = Phase.Play;
     }
 
@@ -483,8 +693,12 @@ public partial class Benchmark
     {
         if (_window == null)
             return;
-        _sectionResult?.Windows.Add(_window.Summarize());
-        Log($"measured {_window.Name}: {_window.Frames} frames");
+        // Fast mode skips the way, so it only watches its parts for vehicles that broke up
+        if (!_fast)
+        {
+            _sectionResult?.Windows.Add(_window.Summarize());
+            Log($"measured {_window.Name}: {_window.Frames} frames");
+        }
         var followed = FollowedVehicle();
         if (_window.Vehicle != null && followed != _window.Vehicle && _window.Vehicle != _exploded)
             _sectionResult?.Errors.Add($"{_window.Name}: '{_window.Vehicle}' broke up (the camera follows '{followed ?? "nothing"}')");

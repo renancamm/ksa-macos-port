@@ -19,7 +19,7 @@ section earth
 18 @shot earth3
 18.5 @measure earth4 9
 28 @key Earth 0.600314 -35.167166 9 266.4 -6.8
-28 @shot earth4
+28 @shot earth4 70
 28.5 @measure earth5 13
 42 @key Earth -10.610988 -72.810129 843 247.7 -5.9
 42 @shot earth5
@@ -136,7 +136,7 @@ section capsule
 42.5 @aim 0.3 4
 42.5 @chase -165 5 0.9 4
 42.5 @measure fur 5
-47.5 @shot fur
+47.5 @shot fur 50
 
 # Rocket launch: the bundled rocket (a core stage and three solid boosters) on launch pad LC-39A, the camera turning
 # around it, then pulling back to the ground 300 m away for its ignition and lift-off, zooming to keep it in view; then
@@ -160,7 +160,7 @@ section launch
 8.5 @stage 1
 8.5 @measure liftoff 7
 9.5 @input MainEngineThrottleUp release
-15.5 @shot liftoff
+15.5 @shot liftoff 50
 16 @chase 230 8 150 5
 16 @measure climb 11
 21 @warp 4 1.5
@@ -187,9 +187,9 @@ section launch
 # Stress: the bundled "giga rocket" (about 2,000 parts: 200 solid boosters on eight curved arms, hundreds of batteries
 # and lights) on launch pad OLM A at Starbase. The camera turns slowly around it all along, starting close and slowly
 # rising and pulling back: the pad, the ignition and lift-off (200 plumes, many lights, a spiral of smoke), the rocket
-# blown up whole, the fire and smoke seen from above. No checkpoint between the ignition and the explosion: the
-# simulation slowing down for one makes the game's g-load check break the rocket up at a moment that differs from run to
-# run.
+# blown up whole, the fire and smoke seen from above. No checkpoint between the ignition and the explosion, and fast mode
+# plays that stretch as it is: the simulation slowing down or stopping makes the game's g-load check break the rocket up
+# at a moment that differs from run to run.
 section giga
 0 @launch benchmark-giga at Starbase OLM A
 0.1 @control benchmark-giga
@@ -199,13 +199,14 @@ section giga
 2 @measure pad 5
 7 @shot pad
 7.5 @chase - 30 180 12
+7.5 @steady 9.5
 7.5 @stage 1
 8 @input MainEngineStartup press
 8.1 @input MainEngineStartup release
 9 @measure liftoff 8
 17 @explode
 17 @measure explosion 3
-20 @shot explosion
+20 @shot explosion 60
 20.5 @chase - 55 380 12
 21 @measure smoke 9
-30.5 @shot smoke
+30.5 @shot smoke 30

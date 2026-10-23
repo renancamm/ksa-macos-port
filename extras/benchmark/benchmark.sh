@@ -5,9 +5,17 @@
 #        extras/benchmark/benchmark.sh compare <run folder> <run folder>
 #   With no sections, plays all of them. The game takes over the screen: leave the mouse and keyboard alone until it
 #   is done. The game runs from its own documents folder, with a copy of your settings: your files stay untouched.
-#   compare prints how the second run differs from the first, part by part.
+#   Exits with 1 when the run failed (the game crashed or hung, a step failed, errors in its log).
+#   compare prints how the second run differs from the first: settings, numbers part by part, and screenshots (exits
+#   with 1 when screenshots differ).
 #
 # Options:
+#   --fast            skip the way between screenshots: jump to each one, measure the view standing there, take it
+#   --no-shots        take no screenshots
+#   --hold <shot>     go to that screenshot's place (e.g. earth4 or launch_pad) fast and stay there, the game paused,
+#                     until you quit it
+#   --set <key=value> change one setting of settings.toml for the run (again for more), on top of the preset
+#   --compare <run>   compare with that run folder at the end (and fail when screenshots differ)
 #   --app <path>      the app to measure (default: ~/Applications/Kitten Space Agency.app)
 #   --preset <name>   low or high: fixed settings in a 1280x800 window, the same on every Mac (default: yours)
 #   --system <name>   sol (the solar system) or earth (Earth and the Moon only; skips the other worlds) (default: sol)
@@ -48,7 +56,7 @@ SDK="${DEPS}/dotnet-sdk/${SDK_VERSION}"
 REPORT="${DEPS}/benchmark/report/KsaMetalBenchmarkReport.dll"
 
 usage() {
-    sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
 }
 
@@ -91,8 +99,18 @@ SECTIONS=()
 PRESET=""
 SYSTEM="sol"
 EXPLORE=""
+FAST=""
+NO_SHOTS=""
+HOLD=""
+SETS=()
+REFERENCE=""
 while [ $# -gt 0 ]; do
     case "$1" in
+        --fast) FAST=1 ;;
+        --no-shots) NO_SHOTS=1 ;;
+        --hold) HOLD="$2"; shift ;;
+        --set) SETS+=("$2"); shift ;;
+        --compare) REFERENCE="${2%/}"; shift ;;
         --app) APP="${2%/}"; shift ;;
         --preset) PRESET="$2"; shift ;;
         --system) SYSTEM="$2"; shift ;;
@@ -117,6 +135,20 @@ esac
 for s in ${SECTIONS[@]+"${SECTIONS[@]}"}; do
     grep -q "^section ${s}\( \|$\)" "${SCRIPT}" || die "no section '${s}' in extras/benchmark/benchmark.txt."
 done
+# --hold <shot> or <section>_<shot>: its section only, fast
+if [ -n "${HOLD}" ]; then
+    # Each screenshot as <section>_<shot>
+    shots="$(awk '$1 == "section" { s = $2 } $2 == "@shot" { print s "_" $3 }' "${SCRIPT}")"
+    if ! echo "${shots}" | grep -qx "${HOLD}"; then
+        matches="$(echo "${shots}" | grep "_${HOLD}$" || true)"
+        [ -n "${matches}" ] || die "no screenshot '${HOLD}' in extras/benchmark/benchmark.txt."
+        [ "$(echo "${matches}" | wc -l)" -eq 1 ] || die "more than one screenshot '${HOLD}': $(echo ${matches})."
+        HOLD="${matches}"
+    fi
+    SECTIONS=("${HOLD%%_*}")
+    FAST=1
+fi
+[ -z "${REFERENCE}" ] || [ -f "${REFERENCE}/report.json" ] || die "no run at ${REFERENCE} (it has no report.json)."
 
 check_mac
 INSTALLED="$(app_version "${APP}")"
@@ -163,6 +195,15 @@ for kv in selectSystemOnStart=false "lastSystemId=\"${SYSTEM_ID}\"" 'startGameTy
     locationNames=false ${PRESET_SETTINGS[@]+"${PRESET_SETTINGS[@]}"}; do
     set_setting "${kv%%=*}" "${kv#*=}"
 done
+# --set: a value that is neither a number, true/false nor quoted is a string (TOML wants it quoted)
+for kv in ${SETS[@]+"${SETS[@]}"}; do
+    case "${kv}" in *=*) ;; *) die "--set needs key=value, not '${kv}'." ;; esac
+    value="${kv#*=}"
+    if ! [[ "${value}" =~ ^-?[0-9.]+$ || "${value}" == true || "${value}" == false || "${value}" == \"* ]]; then
+        value="\"${value}\""
+    fi
+    set_setting "${kv%%=*}" "${value}"
+done
 
 # Explore: the same game, paused, with the benchkey console command; the keys go to a folder of their own
 if [ -n "${EXPLORE}" ]; then
@@ -181,6 +222,8 @@ fi
 
 # 3. The run
 OUT="${DOCS}/benchmarks/$(date +%Y-%m-%d_%H%M)"
+[ -z "${HOLD}" ] || OUT="${OUT}_hold"
+[ ! -e "${OUT}" ] || OUT="${OUT}_$(date +%S)"
 mkdir -p "${OUT}"
 cp "${SETTINGS}" "${OUT}/settings.toml"
 # What the report says about this Mac and the run (values first: bash 3.2 misreads quotes in $() inside "")
@@ -206,7 +249,9 @@ switches="$(env | grep '^KSA_MTL_' | sed "s|${HOME}|~|g" | paste -sd ' ' - || tr
     echo "StarMap: $(cat "${RES}/StarMap/version.txt" 2> /dev/null || echo unknown)"
     echo "System: ${SYSTEM_ID}"
     echo "Sections: ${SECTIONS[*]:-all}"
+    echo "Mode: $([ -n "${FAST}" ] && echo fast || echo cinematic)$([ -n "${NO_SHOTS}" ] && echo ", no screenshots" || true)"
     echo "Preset: ${PRESET:-none, own settings}"
+    echo "Settings changed: ${SETS[*]:-none}"
     echo "Window: $(setting width) x $(setting height), $(setting mode), on $(setting screenName)"
     echo "V-Sync: $(setting vsync), FPS limit $(setting fpslimit)"
     echo "Anti-aliasing: $(setting antialiasing)"
@@ -218,33 +263,77 @@ caffeinate -d -i -w $$ &
 caffeinate -u -t 1
 
 # Loading takes up to a few minutes on a first start (shader compilation), then the script's own length, plus the
-# time slower Macs spend catching up at checkpoints
+# time slower Macs spend catching up at checkpoints. Once playing, the mod touches its heartbeat file every second: a
+# game that stops touching it has hung.
 length="$(awk '$1 == "section" { total += max; max = 0 } $1 ~ /^[0-9.]+$/ && $1 > max { max = $1 }
     END { print int(total + max) }' "${SCRIPT}")"
 timeout=$((length * 2 + 300))
-step "Benchmarking KSA ${INSTALLED} (about $(((length + 60) / 60)) minutes)"
-info "The game takes over the screen. Leave the mouse and keyboard alone until it is done."
-KSA_BENCH_ONLY="${SECTIONS[*]}" STARMAP_INSTANCE_PATH="${INSTANCE}" KSA_BENCH_SCRIPT="${SCRIPT}" KSA_BENCH_OUT="${OUT}" \
+hang=60
+if [ -n "${HOLD}" ]; then
+    step "Going to ${HOLD} in KSA ${INSTALLED}: it stays there, paused, until you quit the game"
+    timeout=0
+else
+    step "Benchmarking KSA ${INSTALLED} ($([ -n "${FAST}" ] && echo "fast, a few" || echo "about $(((length + 60) / 60))") minutes)"
+    info "The game takes over the screen. Leave the mouse and keyboard alone until it is done."
+fi
+KSA_BENCH_ONLY="${SECTIONS[*]}" KSA_BENCH_FAST="${FAST}" KSA_BENCH_NO_SHOTS="${NO_SHOTS}" KSA_BENCH_HOLD="${HOLD}" \
+    STARMAP_INSTANCE_PATH="${INSTANCE}" KSA_BENCH_SCRIPT="${SCRIPT}" KSA_BENCH_OUT="${OUT}" \
     "${APP}/Contents/MacOS/KSA" > /dev/null 2>&1 &
 pid=$!
-waited=0
+start="$(date +%s)"
+ending=""
+alongside=""
 while kill -0 "${pid}" 2> /dev/null; do
-    if [ "${waited}" -ge "${timeout}" ]; then
-        warn "the run did not finish in ${timeout} s: stopped."
+    now="$(date +%s)"
+    # Another game at the same time shares the Mac's GPU and memory (and may be the end of this one)
+    if [ -z "${alongside}" ] && pgrep -f "dotnet (KSA|StarMap).dll" | grep -qvx "${pid}"; then
+        alongside=1
+        warn "another game is running at the same time: this run's numbers won't count."
+    fi
+    if [ -f "${OUT}/heartbeat" ] && [ $((now - $(stat -f %m "${OUT}/heartbeat"))) -gt "${hang}" ]; then
+        ending="hung in $(cat "${OUT}/heartbeat" | awk '{ print $1 " at " $2 " s" }') (no frame for ${hang} s): stopped"
+    elif [ "${timeout}" -gt 0 ] && [ $((now - start)) -ge "${timeout}" ]; then
+        ending="did not finish in ${timeout} s: stopped"
+    fi
+    if [ -n "${ending}" ]; then
+        warn "the game ${ending}."
         kill -9 "${pid}" 2> /dev/null || true
         break
     fi
     sleep 1
-    waited=$((waited + 1))
 done
-wait "${pid}" 2> /dev/null || true
+status=0
+wait "${pid}" 2> /dev/null || status=$?
+if [ -z "${ending}" ]; then
+    case "${status}" in
+        0) ending="quit normally" ;;
+        13[0-9] | 1[4-9][0-9]) ending="crashed (signal $((status - 128)))" ;;
+        *) ending="quit with status ${status}" ;;
+    esac
+fi
+echo "Game: ${ending}" > "${OUT}/run.txt"
+[ -z "${alongside}" ] || echo "Alongside: another game" >> "${OUT}/run.txt"
+rm -f "${OUT}/heartbeat"
 # The game's log, without your home folder's name
 sed "s|${HOME}|~|g" "${INSTANCE}/logs/console.log" > "${OUT}/game.log" 2> /dev/null || true
-[ -f "${OUT}/results.json" ] || die "the run wrote no results: see ${OUT}/game.log"
+if [ -n "${HOLD}" ]; then
+    step "Done: ${OUT}"
+    exit
+fi
 
-report report "${OUT}" > /dev/null
+failed=0
+report report "${OUT}" > /dev/null || failed=1
 echo ""
 cat "${OUT}/report.md"
 echo ""
-step "Done: ${OUT}"
+if [ -n "${REFERENCE}" ]; then
+    report compare "${REFERENCE}" "${OUT}" || failed=1
+    echo ""
+fi
+if [ "${failed}" = 0 ]; then
+    step "Done: ${OUT}"
+else
+    step "Done, with problems: ${OUT}"
+fi
 info "Compare with another run: extras/benchmark/benchmark.sh compare <other run folder> \"${OUT}\""
+exit "${failed}"

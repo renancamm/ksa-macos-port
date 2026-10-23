@@ -101,6 +101,10 @@ public class SectionResult
 {
     public string Name { get; }
     public List<WindowResult> Windows { get; } = new();
+    // The screenshots taken, by their names in the script, and how much of those that physics or particles change may
+    // differ from run to run (percent)
+    public List<string> Screenshots { get; } = new();
+    public Dictionary<string, double> ShotLimits { get; } = new();
     public List<string> Errors { get; } = new();
 
     public SectionResult(string name) => Name = name;
@@ -109,6 +113,11 @@ public class SectionResult
 public class Results
 {
     public bool GpuTimes { get; }
+    // How the script played: "cinematic" (measured along the way) or "fast" (measured at each checkpoint)
+    public string Mode { get; init; } = "cinematic";
+    public bool Shots { get; init; } = true;
+    // Whether the script played to its end
+    public bool Completed { get; set; }
     public double LoadSeconds { get; set; }
     public List<SectionResult> Sections { get; } = new();
 

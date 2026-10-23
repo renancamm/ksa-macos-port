@@ -2,9 +2,14 @@
 //
 // Timing and measuring
 //   @measure <name> <seconds>    measure the next seconds as one part of the section
-//   @shot <name>                 checkpoint: catch up with the script's game time, pause, save <section>_<name>.png
+//   @shot <name> [<limit>]       checkpoint: catch up with the script's game time, pause, save <section>_<name>.png
+//                                (fast mode also measures the view there, as the part <name>). The limit is how much of
+//                                it may change from run to run (percent of its blocks, see Images.cs) for the comparison
+//                                of two runs' screenshots, for views that physics or particles change every time
 //   @warp <speed> [seconds]      run the simulation at that speed (1 is real time, 0 pauses it), moving to it over
 //                                the seconds
+//   @steady <seconds>            fast mode plays the next seconds as they are, without jumping or stopping the
+//                                simulation (a stop during a vehicle's flight can break it up); played runs ignore it
 //   @time <seconds>              move the game's clock forward to that many seconds since the start (the clouds drift
 //                                with it), so a section looks the same whether the sections before it played or not
 //   @gpuprof <name> <frames>     profile the next frames with KSA Metal's GPU profiler (needs KSA_MTL_GPUPROF=<csv>)
@@ -65,9 +70,17 @@ public partial class Benchmark
                 CloseWindow();
                 _window = new Window(a[1], _scriptTime + seconds) { Vehicle = FollowedVehicle() };
                 return true;
-            case "@shot" when a.Length == 2:
+            case "@shot" when a.Length is 2 or 3:
+            {
+                if (a.Length == 3)
+                {
+                    if (!double.TryParse(a[2], NumberStyles.Float, Inv, out var limit))
+                        return false;
+                    _sectionResult?.ShotLimits[a[1]] = limit;
+                }
                 StartCheckpoint(a[1]);
                 return true;
+            }
             case "@warp" when a.Length is 2 or 3 && double.TryParse(a[1], NumberStyles.Float, Inv, out var speed) && speed >= 0:
             {
                 double seconds = 0;
@@ -76,6 +89,13 @@ public partial class Benchmark
                 Warp(speed, seconds);
                 return true;
             }
+            case "@steady" when a.Length == 2 && double.TryParse(a[1], NumberStyles.Float, Inv, out var steady):
+                if (_fast)
+                {
+                    _steadyUntil = _scriptTime + steady;
+                    SetSpeed(SpeedAt(_scriptTime));
+                }
+                return true;
             case "@time" when a.Length == 2 && double.TryParse(a[1], NumberStyles.Float, Inv, out var time):
                 return SkipTo(time);
             case "@key" when a.Length == 7:

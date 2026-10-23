@@ -10,4 +10,8 @@
 		<SatelliteResourceLanguages>en</SatelliteResourceLanguages>
 		<UseAppHost>false</UseAppHost>
 	</PropertyGroup>
+	<ItemGroup>
+		<!-- The PNG reader and the comparison of screenshots, shared with the mod -->
+		<Compile Include="../mod/Images.cs" />
+	</ItemGroup>
 </Project>
