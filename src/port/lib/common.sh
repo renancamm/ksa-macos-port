@@ -40,10 +40,13 @@ kit_value() {
     sed -n "s/^$1=//p" "${KIT}/VERSION" 2> /dev/null
 }
 
-# require_kit: stops when this is not a built port folder (for example the scripts in the repository's src/port/)
+# require_kit: stops when this is not a built port folder (for example the scripts in the repository's src/port/).
+# A browser download marks every file as quarantined, and macOS then holds programs in it, like the .NET runtime the
+# benchmark's report runs on, for a Gatekeeper check: the folder's own files lose that mark.
 require_kit() {
     [ -f "${KIT}/VERSION" ] && [ -x "${SKELETON}/MacOS/dotnet" ] ||
         die "${KIT} is not a complete port folder. Download a release, or build one with ./build.sh."
+    xattr -dr com.apple.quarantine "${KIT}" 2> /dev/null || true
 }
 
 # game_version <game dir>: KSA's version from KSA.dll (for example 2026.10.19.5638)
