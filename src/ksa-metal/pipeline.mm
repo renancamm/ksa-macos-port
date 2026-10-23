@@ -836,7 +836,7 @@ static bool stripPassthroughControl(std::string& msl) {
 // Builds the compute stages of a tessellation pipeline: the vertex shader as three kernels (by index type) with a
 // stage-in descriptor for its vertex attributes, and the control shader as a multi-patch kernel
 static bool buildTessKernels(KDevice* dev, const VkGraphicsPipelineCreateInfo* ci, const VkPipelineShaderStageCreateInfo* vs,
-                             const VkPipelineShaderStageCreateInfo* tcs, KPipelineLayout* layout, KPipeline* p, KTranslated* htr,
+                             const VkPipelineShaderStageCreateInfo* tcs, KPipelineLayout* layout, KTessStages* st, KTranslated* htr,
                              const KTranslated& modes, KTranslated* vtrOut = nullptr) {
     static const CompilerMSL::Options::IndexType types[3] = {CompilerMSL::Options::IndexType::None,
         CompilerMSL::Options::IndexType::UInt16, CompilerMSL::Options::IndexType::UInt32};
@@ -874,13 +874,13 @@ static bool buildTessKernels(KDevice* dev, const VkGraphicsPipelineCreateInfo* c
         d.stageInputDescriptor = sd;
         NSError* err = nil;
         MTLComputePipelineReflection* refl = nil;
-        p->tessVertex[t] = [dev->mtl newComputePipelineStateWithDescriptor:d
+        st->vertex[t] = [dev->mtl newComputePipelineStateWithDescriptor:d
             options:MTLPipelineOptionBindingInfo | MTLPipelineOptionBufferTypeInfo reflection:&refl error:&err];
-        if (!p->tessVertex[t]) {
+        if (!st->vertex[t]) {
             KERR("tessellation vertex kernel: %s", err.description.UTF8String);
             return false;
         }
-        p->tessVertexStride = outputStride(refl, kTessOutputBufferIndex);
+        st->vertexStride = outputStride(refl, kTessOutputBufferIndex);
         if (vtrOut) *vtrOut = vtr;
     }
     KStageOptions so;
@@ -893,20 +893,14 @@ static bool buildTessKernels(KDevice* dev, const VkGraphicsPipelineCreateInfo* c
     d.computeFunction = hfn;
     NSError* err = nil;
     MTLComputePipelineReflection* refl = nil;
-    p->tessControl = [dev->mtl newComputePipelineStateWithDescriptor:d
+    st->control = [dev->mtl newComputePipelineStateWithDescriptor:d
         options:MTLPipelineOptionBindingInfo | MTLPipelineOptionBufferTypeInfo reflection:&refl error:&err];
-    if (!p->tessControl) {
+    if (!st->control) {
         KERR("tessellation control kernel: %s", err.description.UTF8String);
         return false;
     }
-    p->tessControlStride = outputStride(refl, kTessOutputBufferIndex);
-    p->tessPatchStride = outputStride(refl, kTessPatchBufferIndex);
-    p->tessPassthrough = htr->passthrough && p->tessControlStride == p->tessVertexStride && !p->tessPatchStride;
-    p->tessInCP = ci->pTessellationState ? ci->pTessellationState->patchControlPoints : 3;
-    p->tessOutCP = modes.outputVertices ? modes.outputVertices : p->tessInCP;
-    KLOG(1, "tessellation pipeline: %u -> %u control points, strides vertex %lu control %lu patch %lu%s", p->tessInCP,
-         p->tessOutCP, (unsigned long)p->tessVertexStride, (unsigned long)p->tessControlStride, (unsigned long)p->tessPatchStride,
-         p->tessPassthrough ? ", passthrough control stage" : "");
+    st->controlStride = outputStride(refl, kTessOutputBufferIndex);
+    st->patchStride = outputStride(refl, kTessPatchBufferIndex);
     return true;
 }
 
@@ -919,7 +913,7 @@ static bool buildFusedTess(KDevice* dev, const VkGraphicsPipelineCreateInfo* ci,
                            KPipelineLayout* layout, const KTranslated& modes, KStageOptions eso, MTLRenderPipelineDescriptor* d,
                            const std::function<id<MTLRenderPipelineState>(MTLRenderPipelineDescriptor*)>& makeState, KPipeline* p) {
     const auto* vi = ci->pVertexInputState;
-    if (!vi || !vi->vertexAttributeDescriptionCount || p->tessInCP != p->tessOutCP || p->tessPatchStride) return false;
+    if (!vi || !vi->vertexAttributeDescriptionCount || p->tessInCP != p->tessOutCP || p->tessPlain.patchStride) return false;
     auto* vsm = (KShaderModule*)vs->module;
     uint64_t teHash = ((KShaderModule*)tes->module)->hash;
     std::string err;
@@ -949,7 +943,7 @@ static bool buildFusedTess(KDevice* dev, const VkGraphicsPipelineCreateInfo* ci,
     vst.module = (VkShaderModule)&km[0];
     cst.module = (VkShaderModule)&km[1];
     est.module = (VkShaderModule)&km[2];
-    KPipeline parts;
+    KTessStages parts;
     KTranslated htr, vtr;
     if (!buildTessKernels(dev, ci, &vst, &cst, layout, &parts, &htr, modes, &vtr)) return false;
     // The vertex kernel's record must be what the control kernel reads
@@ -993,14 +987,14 @@ static bool buildFusedTess(KDevice* dev, const VkGraphicsPipelineCreateInfo* ci,
     id<MTLRenderPipelineState> ps = makeState(fd);
     if (!ps) return false;
     p->renderFused = ps;
-    for (int t = 0; t < 3; t++) p->tessVertexFused[t] = parts.tessVertex[t];
-    p->tessControlFused = parts.tessControl;
-    p->tessVertexStrideFused = parts.tessVertexStride;
+    // The reduced control kernel writes no control point or patch records (the draw gives it a token buffer)
+    parts.controlStride = parts.patchStride = 0;
+    p->tessFused = parts;
     KLOG(1, "fused tessellation (vs %016llx te %016llx fs %s, color %d depth %d samples %lu): vertex record %lu -> %lu bytes, "
          "%zu attributes per control point", (unsigned long long)vsm->hash, (unsigned long long)teHash,
          d.fragmentFunction ? "yes" : "no", (int)d.colorAttachments[0].pixelFormat, (int)d.depthAttachmentPixelFormat,
          (unsigned long)d.rasterSampleCount,
-         (unsigned long)p->tessVertexStride, (unsigned long)parts.tessVertexStride, raw.size());
+         (unsigned long)p->tessPlain.vertexStride, (unsigned long)parts.vertexStride, raw.size());
     return true;
 }
 
@@ -1026,7 +1020,7 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
         KERR("tessellation pipeline skipped (tessellation disabled by KSA_MTL_TESSELLATION=0)");
         return nullptr;
     }
-    std::unique_ptr<KPipeline> tessParts;
+    KTessStages tessPlain;
     KTranslated htr, dtr, tmodes;
     if (tess) {
         // Merge both stages' modes: evaluation first, the control stage's declarations win
@@ -1037,8 +1031,7 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
         if (hm.hasDomain) { tmodes.quads = hm.quads; tmodes.hasDomain = true; }
         if (hm.hasWinding && !tmodes.hasWinding) { tmodes.cw = hm.cw; tmodes.hasWinding = true; }
         if (hm.hasPartition && !tmodes.hasPartition) { tmodes.partition = hm.partition; tmodes.hasPartition = true; }
-        tessParts.reset(new KPipeline());
-        if (!buildTessKernels(dev, ci, vs, tcs, layout, tessParts.get(), &htr, tmodes)) return nullptr;
+        if (!buildTessKernels(dev, ci, vs, tcs, layout, &tessPlain, &htr, tmodes)) return nullptr;
     }
     if (!vs) {
         KERR("graphics pipeline without vertex shader");
@@ -1099,7 +1092,6 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
         if (dom && dom->domainOrigin == VK_TESSELLATION_DOMAIN_ORIGIN_LOWER_LEFT)
             w = w == MTLWindingClockwise ? MTLWindingCounterClockwise : MTLWindingClockwise;
         d.tessellationOutputWindingOrder = w;
-        tessParts->tessQuads = tmodes.quads;
     }
 
     // Vertex input (tessellation pipelines read it in the vertex kernel instead)
@@ -1204,15 +1196,15 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
     p->primitive = primitiveType(topo);
     if (tess) {
         p->tess = true;
-        for (int t = 0; t < 3; t++) p->tessVertex[t] = tessParts->tessVertex[t];
-        p->tessControl = tessParts->tessControl;
-        p->tessInCP = tessParts->tessInCP;
-        p->tessOutCP = tessParts->tessOutCP;
-        p->tessVertexStride = tessParts->tessVertexStride;
-        p->tessControlStride = tessParts->tessControlStride;
-        p->tessPatchStride = tessParts->tessPatchStride;
-        p->tessQuads = tessParts->tessQuads;
-        p->tessPassthrough = tessParts->tessPassthrough;
+        p->tessPlain = tessPlain;
+        p->tessInCP = ci->pTessellationState ? ci->pTessellationState->patchControlPoints : 3;
+        p->tessOutCP = tmodes.outputVertices ? tmodes.outputVertices : p->tessInCP;
+        p->tessQuads = tmodes.quads;
+        // A passthrough control stage leaves the control points as the vertex kernel wrote them: same record
+        p->tessPassthrough = htr.passthrough && tessPlain.controlStride == tessPlain.vertexStride && !tessPlain.patchStride;
+        KLOG(1, "tessellation pipeline: %u -> %u control points, strides vertex %lu control %lu patch %lu%s", p->tessInCP,
+             p->tessOutCP, (unsigned long)tessPlain.vertexStride, (unsigned long)tessPlain.controlStride,
+             (unsigned long)tessPlain.patchStride, p->tessPassthrough ? ", passthrough control stage" : "");
         static const bool fuse = kmtlEnvInt("KSA_MTL_TESS_FUSE", 1) != 0;
         if (fuse && p->tessPassthrough) buildFusedTess(dev, ci, vs, tcs, tes, layout, tmodes, vso, d, makeState, p);
     }

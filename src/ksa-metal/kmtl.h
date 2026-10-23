@@ -305,6 +305,15 @@ struct KFramebuffer {
     uint32_t width = 0, height = 0, layers = 1;
 };
 
+// The compute stages of a tessellation pipeline: the vertex shader as a kernel per index type (none, 16-bit, 32-bit)
+// and the control shader as a multi-patch kernel, with the byte strides of the records they write (per vertex, per
+// control point, per patch)
+struct KTessStages {
+    id<MTLComputePipelineState> vertex[3] = {nil, nil, nil};
+    id<MTLComputePipelineState> control = nil;
+    NSUInteger vertexStride = 0, controlStride = 0, patchStride = 0;
+};
+
 struct KPipeline {
     VkPipelineBindPoint bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     // Graphics
@@ -312,20 +321,15 @@ struct KPipeline {
     id<MTLDepthStencilState> depthStencil = nil;
     MTLPrimitiveType primitive = MTLPrimitiveTypeTriangle;
     bool triangleFan = false;  // emulated with a generated index buffer
-    // Tessellation: vertex stage as compute kernels (no index, 16-bit, 32-bit), control stage as a compute kernel
+    // Tessellation: the plain stages, and, when the control stage is a passthrough, the fused ones (32-bit indexed
+    // draws; KSA_MTL_TESS_FUSE=0 turns them off): their evaluation stage runs the vertex shader on attributes Metal
+    // fetches per control point, so their kernels only write what the tessellation factors need
     bool tess = false;
-    id<MTLComputePipelineState> tessVertex[3] = {nil, nil, nil};
-    id<MTLComputePipelineState> tessControl = nil;
+    KTessStages tessPlain, tessFused;
+    id<MTLRenderPipelineState> renderFused = nil;
     uint32_t tessInCP = 3, tessOutCP = 3;
-    NSUInteger tessVertexStride = 0, tessControlStride = 0, tessPatchStride = 0;
     bool tessQuads = false;
     bool tessPassthrough = false;  // control stage writes only tessellation factors; evaluation reads the vertex outputs
-    // Fused tessellation (32-bit indexed draws; KSA_MTL_TESS_FUSE=0 turns it off): the evaluation stage runs the vertex shader on
-    // attributes Metal fetches per control point, so the kernels only write what the tessellation factors need
-    id<MTLRenderPipelineState> renderFused = nil;
-    id<MTLComputePipelineState> tessVertexFused[3] = {nil, nil, nil};
-    id<MTLComputePipelineState> tessControlFused = nil;
-    NSUInteger tessVertexStrideFused = 0;
     MTLCullMode cull = MTLCullModeNone;
     MTLWinding winding = MTLWindingCounterClockwise;
     MTLTriangleFillMode fill = MTLTriangleFillModeFill;
