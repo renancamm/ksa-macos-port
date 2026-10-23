@@ -5,14 +5,20 @@
 //   @shot <name>                 checkpoint: catch up with the script's game time, pause, save <section>_<name>.png
 //   @warp <speed> [seconds]      run the simulation at that speed (1 is real time, 0 pauses it), moving to it over
 //                                the seconds
+//   @time <seconds>              move the game's clock forward to that many seconds since the start (the clouds drift
+//                                with it), so a section looks the same whether the sections before it played or not
 //   @gpuprof <name> <frames>     profile the next frames with KSA Metal's GPU profiler (needs KSA_MTL_GPUPROF=<csv>)
 //
 // Vehicles and kittens
-//   @launch <save> at <pad>      put a saved vehicle (Documents/.../Vehicles) on a launch pad of the celestial the camera
-//                                follows (e.g. CCSFS LC-39A), as the launch menu does; it becomes the controlled vehicle
-//                                and the camera follows it. @launch <lat> <lon> <save> puts it anywhere on the surface.
-//   @crew                        seat the benchmark's kitten in the controlled vehicle (always the same one, so its
-//                                fur is)
+//   @launch <save> at <pad>      put a saved vehicle (Documents/.../Vehicles) on a launch pad of the home celestial
+//                                (e.g. CCSFS LC-39A), as the launch menu does; it becomes the controlled vehicle and the
+//                                camera follows it. @launch <lat> <lon> <save> puts it anywhere on the surface. With
+//                                "as <id>" at the end the vehicle is called that (two of one save). A vehicle that is
+//                                there already stays as it is (@control <id> switches to it).
+//   @control <id>                make that vehicle the controlled one, the camera following it (at once, unlike the
+//                                console's control)
+//   @crew [name]                 seat a kitten of the benchmark's in the controlled vehicle (always with Hunter's
+//                                looks, so its fur is the same)
 //   @stage [n]                   activate the controlled vehicle's next stage n times (the staging key)
 //   @input <action> press|release  send a key action to the controlled vehicle, e.g. MainEngineStartup (ignite),
 //                                MainEngineThrottleUp (held until release) or TranslateForward (a kitten walks)
@@ -29,7 +35,13 @@
 //   @camera orbit|free|iva       the main view's camera mode
 //   @orbit <az> <el> <dist> [s]  the orbit camera around what it follows: azimuth and elevation in degrees (negative
 //                                elevation is above), the game's distance power (larger is farther)
-//   @rotate <degrees/s>          turn the orbit camera around what it follows (0 stops it)
+//   @rotate <degrees/s>          turn the orbit camera or the chase view around what it follows (0 stops it)
+//   @chase <az> <el> <dist> [s]  the vehicle camera (Rig.cs) going along with the controlled vehicle: from the direction
+//                                az (degrees from north), el degrees above its horizon, dist metres away
+//   @watch <az> <dist> <height> [<frame>] [s]  the vehicle camera standing on the ground dist metres from the vehicle
+//                                towards az, height metres above the ground; with frame, it zooms so that the view is
+//                                that many metres tall at the vehicle
+//   @aim <metres> [s]            aim the vehicle camera that far above the vehicle's center
 //   @look <yaw> <pitch> [s]      turn the cockpit camera from its seat's forward view, in degrees
 //   @sun <celestial> <lat> <lon> log where the sun stands over that point (to plan the light of a key)
 using System;
@@ -64,6 +76,8 @@ public partial class Benchmark
                 Warp(speed, seconds);
                 return true;
             }
+            case "@time" when a.Length == 2 && double.TryParse(a[1], NumberStyles.Float, Inv, out var time):
+                return SkipTo(time);
             case "@key" when a.Length == 7:
                 // The camera's flight (Path.cs) is laid out before the run; the step only marks the key's time
                 return true;
@@ -72,8 +86,19 @@ public partial class Benchmark
             case "@launch" when a.Length >= 4:
                 ReleaseCamera();
                 return Launch(a);
-            case "@crew":
-                return Crew();
+            case "@control" when a.Length == 2:
+            {
+                // The console's control waits for the next frame; this switches at once, so the next steps act on it
+                if (Universe.CurrentSystem?.Get(a[1]) is not Vehicle v)
+                    return false;
+                ReleaseCamera();
+                Program.ControlledVehicle = v;
+                Program.MainViewport.MapCamera.SetFollow(v, tidalLocking: false, changeControl: false, alert: false);
+                Program.MainViewport.BaseCamera.SetFollow(v, tidalLocking: false, changeControl: false, alert: false);
+                return true;
+            }
+            case "@crew" when a.Length <= 2:
+                return Crew(a.Length == 2 ? a[1] : "Benchy");
             case "@stage":
             {
                 var v = Program.ControlledVehicle;
@@ -99,6 +124,7 @@ public partial class Benchmark
                 if (v == null)
                     return false;
                 InputEvents.VehicleExplodeBuffer.Add(new InputEvents.VehicleExplodeData { Vehicle = v });
+                _exploded = v.Id;
                 return true;
             }
             case "@eva":
@@ -144,6 +170,12 @@ public partial class Benchmark
             case "@rotate" when a.Length == 2 && double.TryParse(a[1], NumberStyles.Float, Inv, out var degrees):
                 _rotateRadPerSecond = degrees * Math.PI / 180;
                 return true;
+            case "@chase" when a.Length is 4 or 5:
+                return StartChase(a);
+            case "@watch" when a.Length is >= 4 and <= 6:
+                return StartWatch(a);
+            case "@aim" when a.Length is 2 or 3:
+                return StartAim(a);
             case "@look" when a.Length is 3 or 4:
                 return LookIva(a);
             case "@sun" when a.Length == 4:
@@ -163,17 +195,17 @@ public partial class Benchmark
         return true;
     }
 
-    // Seats the benchmark's kitten: Banjo's looks under its own name (the game has a Banjo of its own out on EVA, and
-    // a new game's roster has random kittens)
-    private static bool Crew()
+    // Seats one of the benchmark's kittens: Hunter's looks under a name of its own (a new game's roster has random
+    // kittens)
+    private static bool Crew(string name)
     {
         var v = Program.ControlledVehicle;
         if (v == null)
             return false;
-        var kitten = Universe.KittenRoster.Find("Benchy");
+        var kitten = Universe.KittenRoster.Find(name);
         if (kitten == null)
         {
-            kitten = new KittenRosterEntryData("Benchy", "BanjoKitten");
+            kitten = new KittenRosterEntryData(name, "HunterKitten");
             Universe.KittenRoster.Kittens.Add(kitten);
         }
         if (!v.AddCrewToFirstAvailableSeat(kitten.NameHash))
@@ -185,18 +217,24 @@ public partial class Benchmark
         return true;
     }
 
-    // @launch <save> at <pad>: a launch pad of the celestial the camera follows (its landmarks in Astronomicals.xml), as
-    // the launch menu does; @launch <lat> <lon> <save>: anywhere on it
+    // @launch <save> at <pad>: a launch pad of the home celestial (its landmarks in Astronomicals.xml), as the launch menu
+    // does; @launch <lat> <lon> <save>: anywhere on it
     private static bool Launch(string[] a)
     {
-        var body = Program.GetHoveredCamera()?.Following as Celestial ?? Program.GetNearbyCelestial();
-        if (body == null)
+        if (Universe.CurrentSystem?.HomeBody is not Celestial body)
         {
-            Log("@launch: the camera is near no celestial");
+            Log("@launch: no home celestial");
             return false;
         }
         string name;
         double lat, lon;
+        string? id = null;
+        int asAt = Array.IndexOf(a, "as");
+        if (asAt > 1 && asAt == a.Length - 2)
+        {
+            id = a[^1];
+            a = a[..asAt];
+        }
         int at = Array.IndexOf(a, "at");
         if (at > 1)
         {
@@ -215,6 +253,12 @@ public partial class Benchmark
             name = string.Join(' ', a[3..]);
         else
             return false;
+        id ??= name;
+        if (Universe.CurrentSystem.All.TryGet(id, out Astronomical? placed) && placed is Vehicle)
+        {
+            Log($"@launch: '{id}' is there already");
+            return true;
+        }
         // The game keeps its vehicle saves in a private property
         var saves = typeof(VehicleSaves).GetProperty("Saves", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static)
             ?.GetValue(null) as LookupCollection<VehicleSave>;
@@ -232,7 +276,7 @@ public partial class Benchmark
             double3.Unpack(in mass.Offset), new Random(1).RandomColor());
         InputEvents.CreateVehicleBuffer.Add(new InputEvents.CreateVehicleData
         {
-            System = Universe.CurrentSystem!, Parent = state.Orbit.Parent!, Id = name, Body2Cce = state.Body2Cce,
+            System = Universe.CurrentSystem!, Parent = state.Orbit.Parent!, Id = id, Body2Cce = state.Body2Cce,
             BodyRates = state.BodyRates, Orbit = state.Orbit, Root = tree.Root
         });
         return true;

@@ -86,91 +86,126 @@ section jupiter needs Jupiter
 38 @key Jupiter -7.440038 121.302079 59548 231.2 -0.1
 38 @shot jupiter3
 
-# Rocket launch: the bundled rocket (a core stage and three solid boosters) on launch pad LC-39A, its ignition and
-# lift-off, the climb, ten times faster until it is high up, and a turn of the camera around it there. Plumes, smoke
-# trails, part physics (on the CPU, ten times as much while fast).
-section launch
-0 follow Earth
-0.5 @launch benchmark-srb at CCSFS LC-39A
-2 @orbit 200 -8 1.6
-2.5 @rotate 8
-5 @measure pad 6
-11 @shot pad
-11.5 @rotate 0
-12 @input MainEngineThrottleUp press
-12.3 @input MainEngineStartup press
-12.4 @input MainEngineStartup release
-12.5 @stage 1
-12.5 @measure liftoff 8
-13 @orbit 180 -5 1.4 6
-13.5 @input MainEngineThrottleUp release
-21 @shot liftoff
-21.5 @orbit 160 -25 1.5 4
-22 @measure climb 10
-32 @shot climb
-32.5 @warp 10 2
-33 @measure fast 8
-40 @warp 1 2
-42.5 @shot high
-43 @rotate 20
-43.5 @measure circle 9
-53 @shot circle
-53.5 @rotate 0
-
-# Capsule: a one-seat capsule with one kitten in tall grass by a forest in the afternoon. The cockpit (ray traced when
-# the settings say so), then the kitten climbs out and walks into the grass, four times faster, takes its helmet off
-# and the camera comes close to its face, then looks down on it and its shadow. Fur, grass and shadows.
+# Capsule: the vehicles of the sections that follow are put in their places first, all at once (the only cut away from
+# the tour). The cockpit of a one-seat capsule on launch pad ELA-4 in French Guiana in the afternoon (ray traced when
+# the settings say so: the sun comes in through its window), then a day goes by in twenty seconds, the light moving
+# round the cabin, to the next afternoon. Then the same capsule standing in tall grass by a forest in the Amazon: its
+# kitten climbs out and walks a few steps towards the camera's side, then the camera turns around it and its long shadow, it
+# takes its helmet off and the camera comes close to its face. Fur, grass, shadows.
 section capsule
-0 follow Earth
-0.5 @launch -3.1 -60 benchmark-capsule
-2 @crew
-3 @camera iva
-3.5 @look -50 5
-4 @measure cockpit 6
-10 @shot cockpit
-10.5 @look 50 -15 5
-11 @measure looking 5
-16 @shot panel
-16.5 @camera orbit
-17 @eva
-19 @input TranslateUp press
-19.2 @input TranslateUp release
-20 @orbit 200 -15 2.5
-22 @measure kitten 4
-26 @shot kitten
-26.5 @input TranslateForward press
-27 @warp 4 1
-27.5 @measure walk 8
-35 @warp 1 1
-36.5 @shot walk
-37 @input TranslateForward release
-37.5 @helmet off
-38 @orbit 20 -5 1.2 3
-41.5 @measure fur 4
-45.5 @shot fur
-46 @orbit 320 -40 2.0 3
-50 @shot shadow
+0 @launch benchmark-srb at CCSFS LC-39A
+0 @launch benchmark-giga at Starbase OLM A
+0 @launch -3.1 -60 benchmark-capsule as lander
+0 @launch benchmark-capsule at GSC ELA-4 as cockpit
+0.3 @control lander
+0.3 @crew Benchy
+0.3 @control cockpit
+0.3 @crew Pixel
+0.3 @camera iva
+0.3 @look -55 5
+0.3 @time 240
+3 @measure cockpit 5
+8 @shot cockpit
+8.5 @look -30 20 6
+8.5 @warp 1500 2
+8.5 @measure day 19
+13.5 @warp 12000 1.5
+17.5 @warp 1500 1.5
+17.5 @look 15 30 4
+20.5 @warp 8000 2
+21.5 @look -55 5 4
+25.1 @warp 1 2
+28 @time 86400
+28.5 @shot afternoon
+29 @control lander
+29 @time 86430
+29 @eva
+31 @input TranslateUp press
+31.2 @input TranslateUp release
+31.5 @chase -100 12 3.5 2
+33.5 @input TranslateBackward press
+33.5 @input TranslateRight press
+33.5 @measure kitten 5
+38.5 @input TranslateBackward release
+38.5 @input TranslateRight release
+38.5 @rotate 14
+38.5 @chase - 30 4.5 3
+42 @shot shadow
+42.5 @rotate 0
+42.5 @helmet off
+42.5 @aim 0.3 4
+42.5 @chase -85 5 0.9 4
+42.5 @measure fur 5
+47.5 @shot fur
+
+# Rocket launch: the bundled rocket (a core stage and three solid boosters) on launch pad LC-39A, the camera turning
+# around it, then pulling back to the ground 300 m away for its ignition and lift-off, zooming to keep it in view; then
+# flying up alongside it, four times faster up to the clouds, through them in real time, ten times faster up high; there
+# the camera looks down along it from above its nose, loops down its side to below its engines and pulls back again,
+# turning around it. Plumes, smoke trails, clouds, part
+# physics (on the CPU, more of it while fast).
+section launch
+0 @launch benchmark-srb at CCSFS LC-39A
+0.1 @control benchmark-srb
+0.1 @time 86480
+0.1 @chase 200 6 55
+0.1 @rotate 5
+2 @measure pad 5
+7 @shot pad
+7.5 @watch 240 300 2 70 3
+7.5 @rotate 0
+8 @input MainEngineThrottleUp press
+8.3 @input MainEngineStartup press
+8.4 @input MainEngineStartup release
+8.5 @stage 1
+8.5 @measure liftoff 7
+9.5 @input MainEngineThrottleUp release
+15.5 @shot liftoff
+16 @chase 230 8 150 5
+16 @measure climb 11
+21 @warp 4 1.5
+21 @rotate 2
+27 @warp 1 1.5
+27 @measure clouds 6
+33 @warp 10 2
+33 @measure fast 7
+40 @warp 1 2
+40 @rotate 0
+40 @chase 215 75 45 3
+40 @aim 10 3
+43 @shot high
+43.5 @chase - -50 55 6
+43.5 @aim -12 6
+43.5 @measure loop 6
+49.5 @rotate 9
+49.5 @aim 0 5
+49.5 @chase - 14 80 6
+50 @measure circle 6
+56 @shot circle
+56.5 @rotate 0
 
 # Stress: the bundled "giga rocket" (about 2,000 parts: 200 solid boosters on eight curved arms, hundreds of batteries
-# and lights) on launch pad OLM A at Starbase, seen from above with the camera turning around it; then, from the ground
-# 500 m away, ignited and lifting off (200 plumes, many lights) until the g-load breaks it up and it burns in its own
-# smoke.
+# and lights) on launch pad OLM A at Starbase. The camera turns slowly around it all along, starting close and slowly
+# rising and pulling back: the pad, the ignition and lift-off (200 plumes, many lights, a spiral of smoke), the rocket
+# blown up whole, the fire and smoke seen from above. No checkpoint between the ignition and the explosion: the
+# simulation slowing down for one makes the game's g-load check break the rocket up at a moment that differs from run to
+# run.
 section giga
-0 follow Earth
-3 @launch benchmark-giga at Starbase OLM A
-7 @orbit 90 -35 3.2
-8 @rotate 20
-10 @measure pad 5
-15 @shot pad
-15.5 @rotate 0
-15.5 @stage 1
-16 @input MainEngineStartup press
-16.1 @input MainEngineStartup release
-17 @key Earth 25.9915 -97.1544 80 0 -6
-19 @measure liftoff 10
-29 @shot liftoff
-29.5 @measure breakup 10
-39.5 @shot breakup
-40 @measure smoke 8
-48 @shot smoke
-
+0 @launch benchmark-giga at Starbase OLM A
+0.1 @control benchmark-giga
+0.1 @time 86640
+0.1 @chase 200 18 70
+0.1 @rotate 6
+2 @measure pad 5
+7 @shot pad
+7.5 @chase - 30 180 12
+7.5 @stage 1
+8 @input MainEngineStartup press
+8.1 @input MainEngineStartup release
+9 @measure liftoff 8
+17 @explode
+17 @measure explosion 3
+20 @shot explosion
+20.5 @chase - 55 380 12
+21 @measure smoke 9
+30.5 @shot smoke

@@ -26,7 +26,9 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using KSA;
+using KSA.Atmosphere.Rendering;
 using StarMap.API;
 
 namespace KsaMetalBenchmark;
@@ -41,6 +43,8 @@ public partial class Benchmark
     private const int SettleFrames = 10;
     // How long the simulation takes to ease to a stop at a checkpoint, and back to its speed after it
     private const double ShotEase = 0.75;
+    // While the script warps, how many seconds the game takes to make up what it fell behind
+    private const double WarpCatchUp = 0.5;
 
     private record Step(double At, string Command, int Line);
 
@@ -84,6 +88,8 @@ public partial class Benchmark
     private int _phaseFrames;
 
     private Window? _window;
+    // The vehicle @explode blew up
+    private string? _exploded;
     private StreamWriter? _trace;
     private double _filmEvery, _nextFilm;
 
@@ -167,6 +173,10 @@ public partial class Benchmark
         _scriptTime += dt;
         double speed = SpeedAt(_scriptTime);
         _gameTarget += speed * dt;
+        // The game keeps a little under the speed it is asked for (about 12% here), which adds up to hours over a
+        // time-lapse: while the script warps, it asks for a little more as the game falls behind
+        if (speed > 2)
+            speed += Math.Max(_gameTarget - Universe.GetElapsedSeconds(), 0) / WarpCatchUp;
         SetSpeed(speed);
         _window?.Add(dt * 1000, DriverStats.Read());
         if (_window != null && _scriptTime >= _window.EndsAt)
@@ -353,11 +363,63 @@ public partial class Benchmark
         _gameTarget -= SpeedAt(_stepAt) * over;
         if (Program.MainViewport.OrbitController.View is { } view)
             view.Azimuth -= _rotateRadPerSecond * over;
+        if (_rig != null)
+            _rig.Spin -= _rotateRadPerSecond * 180 / Math.PI * over;
         UpdateCamera(0);
         if (_window != null && _scriptTime >= _window.EndsAt)
             CloseWindow();
         _shotName = shot;
         _phase = Phase.CatchUp;
+    }
+
+    // @time: moves the game's clock forward to that many seconds since the start, the script's clock stopped meanwhile (a
+    // checkpoint without a screenshot), so that a section looks the same (its clouds drift with the game's time) whether
+    // the sections before it played or not
+    private bool SkipTo(double seconds)
+    {
+        double target = _gameStart + seconds;
+        if (_gameTarget > target + Tolerance)
+        {
+            Log(FormattableString.Invariant($"@time {seconds}: the script's game time is already {_gameTarget - _gameStart:F1} s"));
+            return false;
+        }
+        _gameTarget = target;
+        _shotName = "";
+        _phase = Phase.CatchUp;
+        return true;
+    }
+
+    // Each layer of a celestial's clouds moves its flow and noise on by the simulated time of every frame that draws it,
+    // so the clouds stand still while the camera is elsewhere and the same game time looks different after a different
+    // tour. @time puts them back to their start: from there on they look the same whatever played before.
+    private static void ResetClouds()
+    {
+        const BindingFlags Private = BindingFlags.NonPublic | BindingFlags.Instance;
+        var transparencies = typeof(Program).GetField("_planetTransparenciesRenderer", Private)?.GetValue(Program.Instance)
+            as PlanetTransparenciesRenderer;
+        if (transparencies?.GetCloudRenderer() is not { } clouds)
+        {
+            Log("@time: no clouds to reset");
+            return;
+        }
+        var fields = new (string Name, object Value)[]
+        {
+            ("_noiseScroll", default(Brutal.Numerics.double3)), ("_volumetricsFlowMapPhase", 0.0),
+            ("_twoDimensionalFlowMapPhase", 0.0), ("_detailTextureFrameInitialized", false)
+        };
+        foreach (var layers in clouds._planetToCloudRenderData.Values)
+        {
+            foreach (var layer in layers)
+            {
+                foreach (var (name, value) in fields)
+                {
+                    if (typeof(CloudLayerRenderData).GetField(name, Private) is { } field)
+                        field.SetValue(layer, value);
+                    else
+                        Log($"@time: the clouds have no {name}");
+                }
+            }
+        }
     }
 
     private void Checkpoint(double wall, double dt)
@@ -372,10 +434,18 @@ public partial class Benchmark
                     // Fast while far behind (at least the scripted speed), then just what the next frame needs
                     double frame = Math.Max(dt, 1.0 / 240);
                     double warp = Math.Max(_warpTo, 1);
-                    SetSpeed(behind > warp * frame * 2 ? Math.Max(warp, behind / 2) : behind / frame);
+                    // A jump of @time covers half of what is left every quarter of a second or so
+                    double pace = _shotName == "" ? 0.25 : 2;
+                    SetSpeed(behind > warp * frame * 2 ? Math.Max(warp, behind / pace) : behind / frame);
                     return;
                 }
                 SetSpeed(0);
+                if (_shotName == "")
+                {
+                    ResetClouds();
+                    Resume();
+                    return;
+                }
                 _phase = Phase.Settle;
                 _phaseEnds = wall + SettleSeconds;
                 _phaseFrames = 0;
@@ -401,13 +471,14 @@ public partial class Benchmark
     private void Resume()
     {
         Log(FormattableString.Invariant(
-            $"checkpoint {_shotName}: game time {Universe.GetElapsedSeconds() - _gameStart:F3} s (script {_gameTarget - _gameStart:F3} s)"));
+            $"{(_shotName == "" ? "@time" : "checkpoint " + _shotName)}: game time {Universe.GetElapsedSeconds() - _gameStart:F3} s (script {_gameTarget - _gameStart:F3} s)"));
         SetSpeed(SpeedAt(_scriptTime));
         _phase = Phase.Play;
     }
 
     // Closes the open measurement window. When the camera followed a vehicle at its start and follows another one
-    // now, the vehicle broke up during it (a breakup changes what is on screen, so the part's numbers don't compare)
+    // now, the vehicle broke up during it (a breakup changes what is on screen, so the part's numbers don't compare),
+    // unless @explode blew it up
     private void CloseWindow()
     {
         if (_window == null)
@@ -415,7 +486,7 @@ public partial class Benchmark
         _sectionResult?.Windows.Add(_window.Summarize());
         Log($"measured {_window.Name}: {_window.Frames} frames");
         var followed = FollowedVehicle();
-        if (_window.Vehicle != null && followed != _window.Vehicle)
+        if (_window.Vehicle != null && followed != _window.Vehicle && _window.Vehicle != _exploded)
             _sectionResult?.Errors.Add($"{_window.Name}: '{_window.Vehicle}' broke up (the camera follows '{followed ?? "nothing"}')");
         _window = null;
     }

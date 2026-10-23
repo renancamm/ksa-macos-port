@@ -163,11 +163,12 @@ public partial class Benchmark
     private static double Angle(Celestial body, double[] a, double[] b) =>
         Math.Acos(Math.Clamp(double3.Dot(body.GetDirCcfFromLatLon(a[0], a[1]), body.GetDirCcfFromLatLon(b[0], b[1])), -1, 1));
 
-    private void UpdatePath()
+    // Puts the free camera on its flight, if it is on one; false when it is not
+    private bool UpdatePath()
     {
         var path = _paths.LastOrDefault(p => p[0].T <= _scriptTime);
         if (path == null || path == _released)
-            return;
+            return false;
         if (path != _flight)
             _lastUp = null;
         _flight = path;
@@ -176,19 +177,19 @@ public partial class Benchmark
         {
             var last = path[^1];
             Apply(last.Body, Resolve(last.Body, last.C, last.Floor));
-            return;
+            return true;
         }
         Key a = path[i], b = path[i + 1];
         double s = Math.Clamp((_scriptTime - a.T) / (b.T - a.T), 0, 1);
         if (a.Body != b.Body)
         {
             Transfer(a, b, s);
-            return;
+            return true;
         }
         if (a.Next == Move.Curve)
         {
             Apply(a.Body, Resolve(a.Body, Curve(a, b, s), a.Floor + (b.Floor - a.Floor) * s));
-            return;
+            return true;
         }
         // Pans and zooms: heading and pitch eased from one key's to the next's
         double e = Smooth(s);
@@ -200,10 +201,15 @@ public partial class Benchmark
         if (a.Next == Move.Zoom)
             view = LookAhead(a, b, s, c, floor, view);
         Apply(a.Body, view);
+        return true;
     }
 
     // The directives' hold on the free camera ends when something else moves it
-    private void ReleaseCamera() => _released = _flight;
+    private void ReleaseCamera()
+    {
+        _released = _flight;
+        EndRig();
+    }
 
     private static double[] Curve(Key a, Key b, double s)
     {
@@ -433,15 +439,22 @@ public partial class Benchmark
         return a * Math.Cos(angle * w) + across * Math.Sin(angle * w);
     }
 
-    // Puts the free camera there, following that celestial, and out of the ground (and the sea) if it would be in it.
+    // Puts the free camera there, following that celestial (or a vehicle over it), and out of the ground (and the sea) if
+    // it would be in it (clearance metres above it).
     // Its up is the one given, square to the view; should the two ever line up, the up of the frame before carries on.
-    private static void Apply(Celestial body, (double3 position, double3 forward, double3 up) view)
+    private static void Apply(Celestial body, (double3 position, double3 forward, double3 up) view, double clearance = 1.5,
+        Vehicle? follow = null)
     {
         var camera = Program.GetHoveredCamera();
         if (camera == null || Program.MainViewport is not GameViewport viewport)
             return;
-        if (camera.Following != body)
-            camera.SetFollow(body, tidalLocking: true, changeControl: false, alert: false);
+        if (follow != null ? camera.Following != follow : camera.Following != body)
+        {
+            if (follow != null)
+                camera.SetFollow(follow, tidalLocking: false, changeControl: false, alert: false);
+            else
+                camera.SetFollow(body, tidalLocking: true, changeControl: false, alert: false);
+        }
         if (viewport.Mode != CameraMode.Free)
             viewport.SetCameraMode(CameraMode.Free);
         var forward = double3.Normalize(view.forward);
@@ -464,7 +477,7 @@ public partial class Benchmark
         if (body.BodyTemplate.OceanReference != null && double3.Distance(position, center) < body.MeanRadius + 1)
             position = center + double3.Normalize(position - center) * (body.MeanRadius + 1);
         camera.SetPosition(position);
-        if (camera.TryGetSurfaceClampPositionEcl(1.5, out var clamped))
+        if (camera.TryGetSurfaceClampPositionEcl(clearance, out var clamped))
             camera.SetPosition(clamped);
         camera.LocalRotation = Camera.LookAtRotation(forward, up);
         // The free camera re-applies its cached offset every frame: take the new place as that offset

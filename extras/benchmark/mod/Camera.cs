@@ -39,7 +39,9 @@ public partial class Benchmark
         }
         if (_rotateRadPerSecond != 0 && view != null)
             view.Azimuth += _rotateRadPerSecond * dt;
-        UpdatePath();
+        if (UpdatePath())
+            EndRig();
+        UpdateRig(dt);
         if (_lookMove is { } l)
         {
             double u = Ease(l.Start, l.Seconds);
@@ -64,13 +66,19 @@ public partial class Benchmark
         if (Program.MainViewport is not GameViewport viewport || viewport.Mode != CameraMode.IVA ||
             Program.GetHoveredCamera() is not { Following: Vehicle vehicle } camera || viewport.IvaController.Seat is not { } seat)
             return;
+        var (direction, up) = SeatView(vehicle, seat, look);
+        camera.LocalRotation = Camera.LookAtRotation(direction, up);
+    }
+
+    // A direction from a cockpit seat, yaw and pitch in degrees from its forward view, and the seat's up
+    private static (double3 direction, double3 up) SeatView(Vehicle vehicle, IVASeat seat, double2 look)
+    {
         var seat2Cce = vehicle.Asmb2Cce * seat.Parent.Asmb2VehicleAsmb;
         var forward = seat.ForwardAxisAsmb.Transform(seat2Cce).Normalized();
         var up = seat.UpAxisAsmb.Transform(seat2Cce).Normalized();
         var right = double3.Normalize(double3.Cross(forward, up));
         double yaw = look.X * Math.PI / 180, pitch = look.Y * Math.PI / 180;
-        var direction = (forward * Math.Cos(yaw) + right * Math.Sin(yaw)) * Math.Cos(pitch) + up * Math.Sin(pitch);
-        camera.LocalRotation = Camera.LookAtRotation(direction, up);
+        return ((forward * Math.Cos(yaw) + right * Math.Sin(yaw)) * Math.Cos(pitch) + up * Math.Sin(pitch), up);
     }
 
     private bool SetCameraMode(string mode)
@@ -116,6 +124,9 @@ public partial class Benchmark
     {
         if (!SetCameraMode("orbit"))
             return false;
+        // Back to the controlled vehicle after the vehicle camera or a flight left the camera on a celestial
+        if (Program.GetHoveredCamera() is { Following: Celestial } camera && Program.ControlledVehicle is { } vehicle)
+            camera.SetFollow(vehicle, tidalLocking: false, changeControl: false, alert: false);
         var view = Program.MainViewport.OrbitController.View;
         if (view == null)
             return false;
@@ -163,7 +174,8 @@ public partial class Benchmark
         var d = double3.Normalize(sun.GetPositionEcl() - body.GetPositionEcl());
         double elevation = Math.Asin(Math.Clamp(double3.Dot(d, up), -1, 1)) * 180 / Math.PI;
         double azimuth = Math.Atan2(double3.Dot(d, east), double3.Dot(d, north)) * 180 / Math.PI;
-        Log(FormattableString.Invariant($"@sun {body.Id} {lat} {lon}: elevation {elevation:F1}, azimuth {azimuth:F0}"));
+        Log(FormattableString.Invariant(
+            $"@sun {body.Id} {lat} {lon}: elevation {elevation:F1}, azimuth {azimuth:F0} (game time {Universe.GetElapsedSeconds():F0} s, speed {Universe.GetSimulationSpeed():F0})"));
         return true;
     }
 }

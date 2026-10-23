@@ -1,8 +1,9 @@
 # Benchmark
 
 An optional extra that measures how KSA runs on your Mac. It plays a fixed tour of the game in one session, a camera
-flight from Earth to Jupiter without a cut, then a rocket launch, a kitten in the grass and a 2,000-part rocket
-breaking up on its pad, measures each part of it, and writes a report you can compare with another run or share.
+flight from Earth to Jupiter without a cut, then a day going by in a capsule's cockpit, a kitten in the grass, a
+rocket launch and a 2,000-part rocket blown up on its pad, measures each part of it, and writes a report you can
+compare with another run or share.
 
 It is meant for spotting changes: between two settings, two versions of the port, or two Macs. Two runs on the same
 Mac differ by a few percent in most parts, so `compare` marks changes over 5%.
@@ -43,12 +44,14 @@ and attach `report.json` and the screenshots. For reports that compare across Ma
 | `mars` | the flight on to Mars, Olympus Mons, rocky ground facing the sunrise | terrain, the dusty air, rocks |
 | `saturn` | the rings from above, the haze under them, the rocks of the rings | rings, their rocks |
 | `jupiter` | Jupiter from afar and down into its clouds | volumetric clouds |
-| `launch` | a rocket with solid boosters lifting off from LC-39A, its climb, ten times faster up high | plumes, smoke trails, part physics |
-| `capsule` | a one-seat capsule in tall grass: its cockpit, then the kitten out, walking, helmet off | ray tracing in the cockpit (when your settings have it on), fur, grass and shadows |
-| `giga` | a rocket of about 2,000 parts on its pad, lifting off and breaking up | part physics on the CPU, many draw calls, lights, explosions and smoke |
+| `capsule` | a capsule's cockpit while a day goes by in twenty seconds, then a kitten climbing out of another capsule in tall grass, its long shadow, its face | ray tracing in the cockpit (when your settings have it on), fur, grass and shadows |
+| `launch` | a rocket with solid boosters lifting off from LC-39A, seen from the ground, then from alongside as it climbs through the clouds, faster in between, and close to its engines up high | plumes, smoke trails, clouds, part physics |
+| `giga` | a rocket of about 2,000 parts on its pad, lifting off, blown up whole, its fire and smoke, the camera turning around it all along | part physics on the CPU, many draw calls, lights, explosions and smoke |
 
 The camera flies from one world to the next without a cut, and eases to a stop for each screenshot. With
-`--system earth` the flight ends at the Moon.
+`--system earth` the flight ends at the Moon. The vehicles of the last three sections are all put in their places at
+once when the tour reaches Earth again, so the only cut is there; each of those sections starts at a set time of the
+game, so its light and clouds are the same whether the sections before it played or not.
 
 Every part of a section is measured for a few seconds:
 
@@ -65,7 +68,8 @@ chosen system, the game's test vessel in orbit); every quality setting stays you
 
 The tour is a text file, `benchmark.txt`: sections of steps timed in seconds, each a console command or a directive of
 the benchmark mod (`mod/Directives.cs` lists them). The camera's flight is its `@key` steps, places the camera passes
-through (`mod/Path.cs`). The mod, in `mod/`, plays the steps, moves the camera, measures the
+through (`mod/Path.cs`); around the vehicles, the camera goes along with them or stands on the ground (`mod/Rig.cs`).
+The mod, in `mod/`, plays the steps, moves the camera, measures the
 parts the sections mark and asks KSA Metal for each frame's GPU time and for the screenshots. It is built on your Mac
 against your copy of the game, so it never ships any of the game's files. `report/` holds the small program that
 writes the report and compares runs.
