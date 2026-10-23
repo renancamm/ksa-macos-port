@@ -101,7 +101,7 @@ struct KQueue : KDispatchable {
     KDevice* device = nullptr;
     uint32_t family = 0;  // 0 graphics/compute/transfer, 1 transfer only
     id<MTLCommandQueue> mtl = nil;
-    // Every encoder waits on and updates this fence, so encoders run in submission order (barriers are no-ops)
+    // Command buffers start after and end before this fence, so they run in submission order (command.mm)
     id<MTLFence> chain = nil;
     std::mutex submitMutex;
 };

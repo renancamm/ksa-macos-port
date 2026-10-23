@@ -6,7 +6,8 @@
 
 static const MTLRenderStages kAllRenderStages = MTLRenderStageVertex | MTLRenderStageFragment;
 
-// KSA_MTL_SYNC=strict: every encoder waits on and updates the queue's chain fence (strict submission order)
+// KSA_MTL_SYNC=strict: every encoder is of every class and every barrier covers every class, so encoders run in
+// submission order
 static bool strictSync() {
     static const bool v = [] { const char* s = kmtlEnv("KSA_MTL_SYNC"); return s && !strcmp(s, "strict"); }();
     return v;
@@ -21,13 +22,15 @@ static bool strictSync() {
 // vertex stage, or after the fragment stage, for render encoders), and encoders of one class run in order. A Vulkan
 // barrier adds its source classes to the pending mask of each destination class; the next encoder of that class
 // waits on their last fences. So a render pass's vertex work can start under the previous pass's fragment work,
-// and compute that no barrier ties to a render pass runs beside it.
+// and compute that no barrier ties to a render pass runs beside it. Strict mode is the degenerate case: every
+// encoder and every barrier is of every class (stageClasses, waitForRoles).
 
 static uint32_t classIndex(uint32_t bit) { return (uint32_t)__builtin_ctz(bit); }
 
 // Vulkan stage masks (synchronization2 bits are a superset of the legacy ones) -> stage classes
 static uint32_t stageClasses(VkPipelineStageFlags2 m, bool src) {
     using K = KCommandBuffer;
+    if (strictSync()) return m ? K::kClassAll : 0;
     uint32_t c = 0;
     if (m & (VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT)) c |= K::kClassAll;
     if (m & VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT && !src) c |= K::kClassAll;
@@ -62,7 +65,6 @@ void KCommandBuffer::beginCommands() {
 }
 
 id<MTLFence> KCommandBuffer::newFence() {
-    if (strictSync()) return queue->chain;
     if (fenceNext == fencePool.size()) fencePool.push_back([device->mtl newFence]);
     return fencePool[fenceNext++];
 }
@@ -87,19 +89,16 @@ static void collectWaits(KCommandBuffer* cb, uint32_t roles, std::vector<id<MTLF
 }
 
 template <typename E> void KCommandBuffer::waitForRoles(E enc, uint32_t roles) {
+    if (strictSync()) roles = kClassAll;
     encRoles = roles;
     encWaited.clear();
-    if (strictSync()) { [enc waitForFence:queue->chain]; return; }
     collectWaits(this, roles, encWaited);
     for (id<MTLFence> f : encWaited) [enc waitForFence:f];
 }
 template <> void KCommandBuffer::waitForRoles(id<MTLRenderCommandEncoder> enc, uint32_t roles) {
+    if (strictSync()) roles = kClassAll;
     encRoles = roles;
     encWaited.clear();
-    if (strictSync()) {
-        [enc waitForFence:queue->chain beforeStages:kAllRenderStages];
-        return;
-    }
     // Waiting before the vertex stage covers the fragment stage too
     collectWaits(this, roles & ~kClassFragment, encWaited);
     for (id<MTLFence> f : encWaited) [enc waitForFence:f beforeStages:MTLRenderStageVertex];
@@ -143,7 +142,6 @@ void KCommandBuffer::joinCommands() {
         [mtl encodeWaitForEvent:resolveEvent value:resolveSignaled];
         resolveWaited = resolveSignaled;
     }
-    if (strictSync() && !resolving) return;
     id<MTLBlitCommandEncoder> b = [mtl blitCommandEncoder];
     std::vector<id<MTLFence>> seen;
     for (id<MTLFence> f : lastFence) {
@@ -1098,11 +1096,6 @@ static void barrier(KCommandBuffer* cb, VkPipelineStageFlags2 srcStages, VkPipel
                                afterStages:MTLRenderStageFragment beforeStages:MTLRenderStageVertex];
         return;
     }
-    if (strictSync()) {
-        if (cb->compute) [cb->compute memoryBarrierWithScope:MTLBarrierScopeBuffers | MTLBarrierScopeTextures];
-        else if (cb->blit) cb->endEncoder();
-        return;
-    }
     cb->barrierClasses(stageClasses(srcStages, true), stageClasses(dstStages, false));
 }
 
@@ -1203,7 +1196,7 @@ VKFN(void) vkCmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPas
     if (sp.viewMask) d.renderTargetArrayLength = 32 - __builtin_clz(sp.viewMask);
     cb->renderPass = rp;
     cb->framebuffer = fb;
-    if (!strictSync()) cb->barrierClasses(KCommandBuffer::kClassAll, KCommandBuffer::kClassVertex | KCommandBuffer::kClassFragment);
+    cb->barrierClasses(KCommandBuffer::kClassAll, KCommandBuffer::kClassVertex | KCommandBuffer::kClassFragment);
     cb->beginRender(d, w, h);
 }
 
