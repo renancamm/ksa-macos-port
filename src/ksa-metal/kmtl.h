@@ -46,9 +46,12 @@ struct KAutoreleasePool {
     ~KAutoreleasePool() { objc_autoreleasePoolPop(token); }
 };
 
-// Every entry point starts with this: an autorelease pool, and a log of its first call at level 1
-#define KTRACE_FIRST() KAutoreleasePool _kpool; do { static std::atomic<bool> s_seen{false}; \
+// Every entry point starts with one of these: the log of its first call at level 1, and an autorelease pool unless
+// the entry point only stores what it is given and calls no Metal method that returns an object (the state setters
+// between draws: binds, push constants, viewport, scissor, depth bias, blend constants, stencil reference)
+#define KTRACE_FIRST_PLAIN() do { static std::atomic<bool> s_seen{false}; \
     if (g_logLevel >= 1 && !s_seen.exchange(true)) kmtlLog(1, "first call: %s", __func__); } while (0)
+#define KTRACE_FIRST() KAutoreleasePool _kpool; KTRACE_FIRST_PLAIN()
 #define KUNIMPL() do { static std::atomic<bool> s_seen{false}; \
     if (!s_seen.exchange(true)) kmtlLog(0, "UNIMPLEMENTED: %s", __func__); } while (0)
 
@@ -292,9 +295,9 @@ struct KDescriptorPool {
     };
     std::vector<Chunk> chunks;
     VkDeviceSize chunkSize = 0;
-    struct Free { uint32_t chunk; VkDeviceSize offset, size; };
-    std::vector<Free> freeList;
-    std::vector<struct KDescriptorSet*> sets;
+    struct Free { uint32_t chunk; VkDeviceSize offset; };
+    std::unordered_map<VkDeviceSize, std::vector<Free>> freeBySize;  // places of freed sets, by their size
+    std::vector<struct KDescriptorSet*> sets;  // the live sets; each knows its index, so a free swaps with the last
 };
 
 struct KDescriptorSet {
@@ -303,6 +306,7 @@ struct KDescriptorSet {
     id<MTLBuffer> buffer = nil;  // the pool chunk holding this set
     uint8_t* base = nullptr;     // CPU address of the set
     uint32_t chunk = 0;
+    uint32_t index = 0;          // in pool->sets
     VkDeviceSize offset = 0;     // within the chunk
     VkDeviceSize size = 0;
     uint64_t* slots() const { return (uint64_t*)base; }
@@ -381,17 +385,18 @@ struct KPipeline {
     id<MTLComputePipelineState> compute = nil;
     MTLSize workgroup = MTLSizeMake(1, 1, 1);
     bool computeUsesDrawId = false;
-    // Asynchronous creation: render / compute are set by a worker; binding the pipeline waits for it
+    // Asynchronous creation: render / compute are set by a worker; binding the pipeline waits for it, and once it is
+    // done every later bind sees that without the lock
     struct Pending {
         std::mutex m;
         std::condition_variable cv;
-        bool done = false;
+        std::atomic<bool> done{false};  // stored with release after the state, under the lock
     };
     std::shared_ptr<Pending> pending;
     void wait() {
-        if (!pending) return;
+        if (!pending || pending->done.load(std::memory_order_acquire)) return;
         std::unique_lock<std::mutex> lock(pending->m);
-        pending->cv.wait(lock, [&] { return pending->done; });
+        pending->cv.wait(lock, [&] { return pending->done.load(std::memory_order_acquire); });
     }
     // GPU profiler name: shader module hashes
     uint64_t profId = 0;

@@ -111,7 +111,7 @@ VKFN(VkResult) vkResetDescriptorPool(VkDevice, VkDescriptorPool pool, VkDescript
     for (auto* s : p->sets) delete s;
     p->sets.clear();
     for (auto& c : p->chunks) c.used = 0;
-    p->freeList.clear();
+    p->freeBySize.clear();
     return VK_SUCCESS;
 }
 
@@ -133,13 +133,10 @@ VKFN(VkResult) vkAllocateDescriptorSets(VkDevice, const VkDescriptorSetAllocateI
         VkDeviceSize size = (l->bytes() + 63) & ~63ull;
         uint32_t chunk = UINT32_MAX;
         VkDeviceSize off = 0;
-        for (size_t f = 0; f < p->freeList.size(); f++) {
-            if (p->freeList[f].size == size) {
-                chunk = p->freeList[f].chunk;
-                off = p->freeList[f].offset;
-                p->freeList.erase(p->freeList.begin() + f);
-                break;
-            }
+        if (auto it = p->freeBySize.find(size); it != p->freeBySize.end() && !it->second.empty()) {
+            chunk = it->second.back().chunk;
+            off = it->second.back().offset;
+            it->second.pop_back();
         }
         if (chunk == UINT32_MAX) {
             if (p->chunks.empty() || p->chunks.back().used + size > p->chunks.back().capacity) addChunk(p, size);
@@ -160,6 +157,7 @@ VKFN(VkResult) vkAllocateDescriptorSets(VkDevice, const VkDescriptorSetAllocateI
         // The size-table slot points at the set's own uint table
         s->slots()[l->sizeSlot] = s->buffer.gpuAddress + off + l->slotCount * 8;
         writeImmutableSamplers(s);
+        s->index = (uint32_t)p->sets.size();
         p->sets.push_back(s);
         out[i] = (VkDescriptorSet)s;
     }
@@ -172,8 +170,11 @@ VKFN(VkResult) vkFreeDescriptorSets(VkDevice, VkDescriptorPool pool, uint32_t n,
     for (uint32_t i = 0; i < n; i++) {
         auto* s = (KDescriptorSet*)sets[i];
         if (!s) continue;
-        p->freeList.push_back({s->chunk, s->offset, s->size});
-        p->sets.erase(std::remove(p->sets.begin(), p->sets.end(), s), p->sets.end());
+        p->freeBySize[s->size].push_back({s->chunk, s->offset});
+        KDescriptorSet* last = p->sets.back();  // the last set takes the freed one's index
+        p->sets[s->index] = last;
+        last->index = s->index;
+        p->sets.pop_back();
         delete s;
     }
     return VK_SUCCESS;

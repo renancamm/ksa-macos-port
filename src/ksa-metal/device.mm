@@ -135,12 +135,25 @@ static void checkCommandBufferError(id<MTLCommandBuffer> cb) {
     }
 }
 
+// Handles in an array: bare (VkSubmitInfo) or a field of each element (VkSubmitInfo2's VkSemaphoreSubmitInfo and
+// VkCommandBufferSubmitInfo), so one submission path serves both
+struct KHandles {
+    const void* first = nullptr;
+    size_t stride = 0;
+    uint32_t count = 0;
+    template <typename T> T at(uint32_t i) const { return *(const T*)((const uint8_t*)first + i * stride); }
+};
+template <typename T> static KHandles handles(const T* p, uint32_t n) { return {p, sizeof(T), n}; }
+template <typename S, typename T> static KHandles handles(const S* p, uint32_t n, T S::*field) {
+    return {n ? (const void*)&(p->*field) : nullptr, sizeof(S), n};
+}
+
 // Waits on semaphores another queue signals: a command buffer that waits for the events, then advances this queue's
 // chain fence, which the following command buffers' first encoders wait on
-static void waitSemaphores(KQueue* q, uint32_t n, const VkSemaphore* sems, std::vector<id<MTLCommandBuffer>>& toCommit) {
+static void waitSemaphores(KQueue* q, KHandles sems, std::vector<id<MTLCommandBuffer>>& toCommit) {
     id<MTLCommandBuffer> w = nil;
-    for (uint32_t i = 0; i < n; i++) {
-        auto* s = (KSemaphore*)sems[i];
+    for (uint32_t i = 0; i < sems.count; i++) {
+        auto* s = (KSemaphore*)sems.at<VkSemaphore>(i);
         if (!s || !s->signaledBy || s->signaledBy == q) continue;
         if (!w) { w = [q->mtl commandBuffer]; w.label = @"semaphore wait"; }
         [w encodeWaitForEvent:s->event value:s->value];
@@ -154,10 +167,9 @@ static void waitSemaphores(KQueue* q, uint32_t n, const VkSemaphore* sems, std::
 }
 
 // Signals after the submission's work: the event is raised at the end of its last command buffer
-static void signalSemaphores(KQueue* q, uint32_t n, const VkSemaphore* sems, std::vector<id<MTLCommandBuffer>>& toCommit) {
-    if (!n) return;
-    for (uint32_t i = 0; i < n; i++) {
-        auto* s = (KSemaphore*)sems[i];
+static void signalSemaphores(KQueue* q, KHandles sems, std::vector<id<MTLCommandBuffer>>& toCommit) {
+    for (uint32_t i = 0; i < sems.count; i++) {
+        auto* s = (KSemaphore*)sems.at<VkSemaphore>(i);
         if (!s) continue;
         if (!s->event) s->event = [q->device->mtl newSharedEvent];
         if (toCommit.empty()) toCommit.push_back([q->mtl commandBuffer]);
@@ -166,16 +178,18 @@ static void signalSemaphores(KQueue* q, uint32_t n, const VkSemaphore* sems, std
     }
 }
 
-VKFN(VkResult) vkQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo* submits, VkFence fence) {
-    KTRACE_FIRST();
+// The submission: handlesOf(s, &waits, &commandBuffers, &signals) gives submission s's handles
+template <typename F> static VkResult submit(VkQueue queue, uint32_t submitCount, VkFence fence, F handlesOf) {
     auto* q = (KQueue*)queue;
     q->device->commitResidency();
     std::lock_guard<std::mutex> lock(q->submitMutex);
     std::vector<id<MTLCommandBuffer>> toCommit;
     for (uint32_t s = 0; s < submitCount; s++) {
-        waitSemaphores(q, submits[s].waitSemaphoreCount, submits[s].pWaitSemaphores, toCommit);
-        for (uint32_t i = 0; i < submits[s].commandBufferCount; i++) {
-            auto* cb = (KCommandBuffer*)submits[s].pCommandBuffers[i];
+        KHandles waits, cbs, signals;
+        handlesOf(s, &waits, &cbs, &signals);
+        waitSemaphores(q, waits, toCommit);
+        for (uint32_t i = 0; i < cbs.count; i++) {
+            auto* cb = (KCommandBuffer*)cbs.at<VkCommandBuffer>(i);
             if (!cb->mtl) {
                 if (cb->submittedOnce) KERR("command buffer %p submitted again without re-recording (unsupported)", cb);
                 continue;
@@ -189,7 +203,7 @@ VKFN(VkResult) vkQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmit
             cb->mtl = nil;
             cb->submittedOnce = true;
         }
-        signalSemaphores(q, submits[s].signalSemaphoreCount, submits[s].pSignalSemaphores, toCommit);
+        signalSemaphores(q, signals, toCommit);
     }
     if (fence) {
         // Encoders are chained by the queue fence, so the last command buffer completing means all did
@@ -201,25 +215,24 @@ VKFN(VkResult) vkQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmit
     return VK_SUCCESS;
 }
 
+VKFN(VkResult) vkQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo* submits, VkFence fence) {
+    KTRACE_FIRST();
+    return submit(queue, submitCount, fence, [&](uint32_t s, KHandles* waits, KHandles* cbs, KHandles* signals) {
+        const VkSubmitInfo& si = submits[s];
+        *waits = handles(si.pWaitSemaphores, si.waitSemaphoreCount);
+        *cbs = handles(si.pCommandBuffers, si.commandBufferCount);
+        *signals = handles(si.pSignalSemaphores, si.signalSemaphoreCount);
+    });
+}
+
 VKFN(VkResult) vkQueueSubmit2(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* submits, VkFence fence) {
     KTRACE_FIRST();
-    std::vector<VkSubmitInfo> s1(submitCount);
-    std::vector<std::vector<VkCommandBuffer>> cbs(submitCount);
-    std::vector<std::vector<VkSemaphore>> waits(submitCount), signals(submitCount);
-    for (uint32_t s = 0; s < submitCount; s++) {
-        for (uint32_t i = 0; i < submits[s].commandBufferInfoCount; i++)
-            cbs[s].push_back(submits[s].pCommandBufferInfos[i].commandBuffer);
-        for (uint32_t i = 0; i < submits[s].waitSemaphoreInfoCount; i++) waits[s].push_back(submits[s].pWaitSemaphoreInfos[i].semaphore);
-        for (uint32_t i = 0; i < submits[s].signalSemaphoreInfoCount; i++) signals[s].push_back(submits[s].pSignalSemaphoreInfos[i].semaphore);
-        s1[s] = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
-        s1[s].commandBufferCount = (uint32_t)cbs[s].size();
-        s1[s].pCommandBuffers = cbs[s].data();
-        s1[s].waitSemaphoreCount = (uint32_t)waits[s].size();
-        s1[s].pWaitSemaphores = waits[s].data();
-        s1[s].signalSemaphoreCount = (uint32_t)signals[s].size();
-        s1[s].pSignalSemaphores = signals[s].data();
-    }
-    return vkQueueSubmit(queue, submitCount, s1.data(), fence);
+    return submit(queue, submitCount, fence, [&](uint32_t s, KHandles* waits, KHandles* cbs, KHandles* signals) {
+        const VkSubmitInfo2& si = submits[s];
+        *waits = handles(si.pWaitSemaphoreInfos, si.waitSemaphoreInfoCount, &VkSemaphoreSubmitInfo::semaphore);
+        *cbs = handles(si.pCommandBufferInfos, si.commandBufferInfoCount, &VkCommandBufferSubmitInfo::commandBuffer);
+        *signals = handles(si.pSignalSemaphoreInfos, si.signalSemaphoreInfoCount, &VkSemaphoreSubmitInfo::semaphore);
+    });
 }
 
 // ---------------------------------------------------------------------------------------------------------------

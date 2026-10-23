@@ -460,7 +460,7 @@ VKFN(VkResult) vkEndCommandBuffer(VkCommandBuffer commandBuffer) {
 // State
 
 VKFN(void) vkCmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint bp, VkPipeline pipeline) {
-    KTRACE_FIRST();
+    KTRACE_FIRST_PLAIN();
     auto* cb = (KCommandBuffer*)commandBuffer;
     auto* p = (KPipeline*)pipeline;
     p->wait();  // asynchronous creation
@@ -476,7 +476,7 @@ VKFN(void) vkCmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint 
 VKFN(void) vkCmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBindPoint bp, VkPipelineLayout layout,
                                    uint32_t firstSet, uint32_t count, const VkDescriptorSet* sets, uint32_t dynCount,
                                    const uint32_t* dynOffsets) {
-    KTRACE_FIRST();
+    KTRACE_FIRST_PLAIN();
     auto* cb = (KCommandBuffer*)commandBuffer;
     bool compute = bp != VK_PIPELINE_BIND_POINT_GRAPHICS;
     KBoundSet* bound = compute ? cb->computeSets : cb->graphicsSets;
@@ -511,7 +511,7 @@ VKFN(void) vkCmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBind
 
 VKFN(void) vkCmdPushConstants(VkCommandBuffer commandBuffer, VkPipelineLayout, VkShaderStageFlags, uint32_t offset, uint32_t size,
                               const void* data) {
-    KTRACE_FIRST();
+    KTRACE_FIRST_PLAIN();
     auto* cb = (KCommandBuffer*)commandBuffer;
     if (offset + size > kMaxPushConstants) return;
     memcpy(cb->push + offset, data, size);
@@ -521,7 +521,7 @@ VKFN(void) vkCmdPushConstants(VkCommandBuffer commandBuffer, VkPipelineLayout, V
 
 VKFN(void) vkCmdBindVertexBuffers(VkCommandBuffer commandBuffer, uint32_t first, uint32_t count, const VkBuffer* buffers,
                                   const VkDeviceSize* offsets) {
-    KTRACE_FIRST();
+    KTRACE_FIRST_PLAIN();
     auto* cb = (KCommandBuffer*)commandBuffer;
     for (uint32_t i = 0; i < count; i++) {
         uint32_t b = first + i;
@@ -540,7 +540,7 @@ VKFN(void) vkCmdBindVertexBuffers2(VkCommandBuffer commandBuffer, uint32_t first
 }
 
 VKFN(void) vkCmdBindIndexBuffer(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, VkIndexType type) {
-    KTRACE_FIRST();
+    KTRACE_FIRST_PLAIN();
     auto* cb = (KCommandBuffer*)commandBuffer;
     auto* buf = (KBuffer*)buffer;
     cb->indexBuffer = buf->mtl;
@@ -551,7 +551,7 @@ VKFN(void) vkCmdBindIndexBuffer(VkCommandBuffer commandBuffer, VkBuffer buffer, 
 }
 
 VKFN(void) vkCmdSetViewport(VkCommandBuffer commandBuffer, uint32_t first, uint32_t count, const VkViewport* vps) {
-    KTRACE_FIRST();
+    KTRACE_FIRST_PLAIN();
     auto* cb = (KCommandBuffer*)commandBuffer;
     if (cb->viewports.size() < first + count) cb->viewports.resize(first + count);
     for (uint32_t i = 0; i < count; i++) cb->viewports[first + i] = vps[i];
@@ -559,7 +559,7 @@ VKFN(void) vkCmdSetViewport(VkCommandBuffer commandBuffer, uint32_t first, uint3
 }
 
 VKFN(void) vkCmdSetScissor(VkCommandBuffer commandBuffer, uint32_t first, uint32_t count, const VkRect2D* rects) {
-    KTRACE_FIRST();
+    KTRACE_FIRST_PLAIN();
     auto* cb = (KCommandBuffer*)commandBuffer;
     if (cb->scissors.size() < first + count) cb->scissors.resize(first + count);
     for (uint32_t i = 0; i < count; i++) cb->scissors[first + i] = rects[i];
@@ -567,7 +567,7 @@ VKFN(void) vkCmdSetScissor(VkCommandBuffer commandBuffer, uint32_t first, uint32
 }
 
 VKFN(void) vkCmdSetDepthBias(VkCommandBuffer commandBuffer, float constant, float clamp, float slope) {
-    KTRACE_FIRST();
+    KTRACE_FIRST_PLAIN();
     auto* cb = (KCommandBuffer*)commandBuffer;
     cb->depthBias[0] = constant;
     cb->depthBias[1] = slope;
@@ -1144,27 +1144,30 @@ VKFN(void) vkCmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPas
     auto* cb = (KCommandBuffer*)commandBuffer;
     auto* rp = (KRenderPass*)bi->renderPass;
     auto* fb = (KFramebuffer*)bi->framebuffer;
-    std::vector<KImageView*> views = fb->attachments;
-    if (auto* ia = (const VkRenderPassAttachmentBeginInfo*)findNext(bi->pNext, VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO))
-        views.assign((KImageView* const*)ia->pAttachments, (KImageView* const*)ia->pAttachments + ia->attachmentCount);
+    KImageView* const* views = fb->attachments.data();
+    uint32_t viewCount = (uint32_t)fb->attachments.size();
+    if (auto* ia = (const VkRenderPassAttachmentBeginInfo*)findNext(bi->pNext, VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO)) {
+        views = (KImageView* const*)ia->pAttachments;  // imageless framebuffer
+        viewCount = ia->attachmentCount;
+    }
     const auto& sp = rp->subpasses[0];
     MTLRenderPassDescriptor* d = [MTLRenderPassDescriptor renderPassDescriptor];
     for (size_t i = 0; i < sp.colors.size(); i++) {
         int c = sp.colors[i];
-        if (c < 0 || c >= (int)views.size()) continue;
+        if (c < 0 || c >= (int)viewCount) continue;
         const auto& a = rp->attachments[c];
         MTLRenderPassColorAttachmentDescriptor* ca = d.colorAttachments[i];
         setAttachmentTexture(ca, views[c]);
         ca.loadAction = loadAction(a.loadOp);
         if (c < (int)bi->clearValueCount) ca.clearColor = clearColor(a.format, bi->pClearValues[c].color);
         int r = sp.resolves[i];
-        if (r >= 0 && r < (int)views.size()) {
+        if (r >= 0 && r < (int)viewCount) {
             ca.resolveTexture = views[r]->mtl;
             ca.resolveLevel = 0;
         }
         ca.storeAction = storeAction(a.storeOp, r >= 0);
     }
-    if (sp.depth >= 0 && sp.depth < (int)views.size()) {
+    if (sp.depth >= 0 && sp.depth < (int)viewCount) {
         const auto& a = rp->attachments[sp.depth];
         const KFormatInfo* fi = kmtlFormat(a.format);
         KImageView* v = views[sp.depth];
@@ -1269,9 +1272,8 @@ VKFN(void) vkCmdEndRendering(VkCommandBuffer commandBuffer) {
 // ---------------------------------------------------------------------------------------------------------------
 // Transfers
 
-VKFN(void) vkCmdCopyBuffer(VkCommandBuffer commandBuffer, VkBuffer src, VkBuffer dst, uint32_t n, const VkBufferCopy* regions) {
-    KTRACE_FIRST();
-    auto* cb = (KCommandBuffer*)commandBuffer;
+// R: VkBufferCopy or VkBufferCopy2 (the same three fields)
+template <typename R> static void copyBuffer(KCommandBuffer* cb, VkBuffer src, VkBuffer dst, uint32_t n, const R* regions) {
     auto* s = (KBuffer*)src;
     auto* d = (KBuffer*)dst;
     id<MTLBlitCommandEncoder> b = cb->blitEncoder();
@@ -1282,10 +1284,14 @@ VKFN(void) vkCmdCopyBuffer(VkCommandBuffer commandBuffer, VkBuffer src, VkBuffer
     }
 }
 
+VKFN(void) vkCmdCopyBuffer(VkCommandBuffer commandBuffer, VkBuffer src, VkBuffer dst, uint32_t n, const VkBufferCopy* regions) {
+    KTRACE_FIRST();
+    copyBuffer((KCommandBuffer*)commandBuffer, src, dst, n, regions);
+}
+
 VKFN(void) vkCmdCopyBuffer2(VkCommandBuffer commandBuffer, const VkCopyBufferInfo2* info) {
-    std::vector<VkBufferCopy> r(info->regionCount);
-    for (uint32_t i = 0; i < info->regionCount; i++) r[i] = {info->pRegions[i].srcOffset, info->pRegions[i].dstOffset, info->pRegions[i].size};
-    vkCmdCopyBuffer(commandBuffer, info->srcBuffer, info->dstBuffer, info->regionCount, r.data());
+    KTRACE_FIRST();
+    copyBuffer((KCommandBuffer*)commandBuffer, info->srcBuffer, info->dstBuffer, info->regionCount, info->pRegions);
 }
 
 static MTLBlitOption aspectOption(KImage* img, VkImageAspectFlags aspect) {

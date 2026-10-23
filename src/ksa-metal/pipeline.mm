@@ -1175,7 +1175,7 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
             }
             std::lock_guard<std::mutex> lock(pending->m);
             p->render = state;
-            pending->done = true;
+            pending->done.store(true, std::memory_order_release);
             pending->cv.notify_all();
         });
     }
@@ -1316,7 +1316,7 @@ KPipeline* kmtlCreateComputeFromStage(KDevice* dev, KPipelineLayout* layout, con
             id<MTLComputePipelineState> state = build(tr, name);
             std::lock_guard<std::mutex> lock(pending->m);
             p->compute = state;
-            pending->done = true;
+            pending->done.store(true, std::memory_order_release);
             pending->cv.notify_all();
         });
     }
