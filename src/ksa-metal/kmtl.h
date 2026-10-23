@@ -270,6 +270,7 @@ struct KBinding {
 
 struct KSetLayout {
     std::vector<KBinding> bindings;  // sorted by binding number
+    VkShaderStageFlags stages = 0;   // of all the bindings: the stages that read the set
     uint32_t slotCount = 0;          // including the trailing buffer-size slot
     uint32_t sizeSlot = 0;           // slot holding the address of the buffer-size table
     uint32_t dynamicCount = 0;
@@ -414,6 +415,7 @@ struct KCommandPool {
 struct KBoundSet {
     id<MTLBuffer> buffer = nil;
     NSUInteger offset = 0;
+    VkShaderStageFlags stages = 0;  // the layout's: a graphics set is bound to the functions that read it
 };
 
 struct KUploadRing {

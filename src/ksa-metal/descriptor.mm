@@ -33,6 +33,7 @@ VKFN(VkResult) vkCreateDescriptorSetLayout(VkDevice, const VkDescriptorSetLayout
     std::sort(l->bindings.begin(), l->bindings.end(), [](const KBinding& a, const KBinding& b) { return a.binding < b.binding; });
     uint32_t slot = 0;
     for (auto& kb : l->bindings) {
+        l->stages |= kb.stages;
         kb.id = slot;
         if (kb.type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) {
             kb.samplerId = slot + kb.count;

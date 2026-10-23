@@ -505,6 +505,7 @@ VKFN(void) vkCmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBind
             bound[idx].buffer = buf;
             bound[idx].offset = off;
         }
+        bound[idx].stages = l->stages;
         dirty |= 1u << idx;
     }
 }
@@ -643,13 +644,17 @@ static bool flushGraphics(KCommandBuffer* cb) {
         if (b < 16 && cb->vertexBuffers[b].buf)
             [enc setVertexBuffer:cb->vertexBuffers[b].buf offset:cb->vertexBuffers[b].off atIndex:vertexBufferIndex(b)];
     }
+    // A set goes to the functions whose stages read it (the game's layouts name them exactly; the evaluation stage
+    // is Metal's vertex function); a layout without stages goes to both
+    const VkShaderStageFlags vertexStages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT |
+        VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT | VK_SHADER_STAGE_GEOMETRY_BIT;
     while (cb->graphicsSetsDirty) {
         int s = __builtin_ctz(cb->graphicsSetsDirty);
         cb->graphicsSetsDirty &= ~(1u << s);
-        if (s < (int)kMaxSets && cb->graphicsSets[s].buffer) {
-            [enc setVertexBuffer:cb->graphicsSets[s].buffer offset:cb->graphicsSets[s].offset atIndex:s];
-            [enc setFragmentBuffer:cb->graphicsSets[s].buffer offset:cb->graphicsSets[s].offset atIndex:s];
-        }
+        if (s >= (int)kMaxSets || !cb->graphicsSets[s].buffer) continue;
+        const KBoundSet& b = cb->graphicsSets[s];
+        if (!b.stages || (b.stages & vertexStages)) [enc setVertexBuffer:b.buffer offset:b.offset atIndex:s];
+        if (!b.stages || (b.stages & VK_SHADER_STAGE_FRAGMENT_BIT)) [enc setFragmentBuffer:b.buffer offset:b.offset atIndex:s];
     }
     if (cb->graphicsPushDirty && cb->pushSize) {
         uint32_t n = (cb->pushSize + 15) & ~15u;
