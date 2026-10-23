@@ -134,7 +134,7 @@ section capsule
 42.5 @rotate 0
 42.5 @helmet off
 42.5 @aim 0.3 4
-42.5 @chase -85 5 0.9 4
+42.5 @chase -165 5 0.9 4
 42.5 @measure fur 5
 47.5 @shot fur
 
