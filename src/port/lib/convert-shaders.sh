@@ -13,9 +13,9 @@
 # Each fix prints [FIXED], [OK] (already fixed) or [WARN] (the code around it changed in this KSA version:
 # either RocketWerkz fixed the bug, or this script needs an update).
 #
-# Usage: scripts/convert-shaders.sh <game folder>
+# Usage: lib/convert-shaders.sh <game folder>
 set -eo pipefail
-source "$(dirname "$0")/lib.sh"
+source "$(dirname "$0")/common.sh"
 
 SHADERS="$1/Content/Core/Shaders/Planet/GroundClutter"
 [ -d "${SHADERS}" ] || die "${SHADERS} not found. Is this a KSA game folder?"

@@ -1,8 +1,8 @@
 #!/bin/bash
 # Measures how KSA runs on this Mac: plays a fixed tour of the game in one session and writes a report to share.
 #
-# Usage: extras/benchmark/benchmark.sh [options] [section...]
-#        extras/benchmark/benchmark.sh compare <run folder> <run folder>
+# Usage: ./benchmark.sh [options] [section...]
+#        ./benchmark.sh compare <run folder> <run folder>
 #   With no sections, plays all of them. The game takes over the screen: leave the mouse and keyboard alone until it
 #   is done. The game runs from its own documents folder, with a copy of your settings: your files stay untouched.
 #   Exits with 1 when the run failed (the game crashed or hung, a step failed, errors in its log).
@@ -22,19 +22,13 @@
 #   --explore         start the benchmark's game paused, to fly the free camera around and capture places for the
 #                     tour (@key lines, for benchmark.txt) with benchkey [name] in its console; quit it when done
 #
-# Needs StarMap in the app (extras/starmap/port-starmap.sh; it is added when missing). The benchmark mod is built on
-# this Mac against your copy of the game, with Microsoft's .NET SDK (downloaded once into deps/).
+# Needs StarMap in the app (./starmap.sh; it is added when missing). The benchmark mod in payload/benchmark/ is built
+# for the KSA version this port folder was made for.
 set -eo pipefail
-HERE="$(cd "$(dirname "$0")" && pwd)"
-source "${HERE}/../../scripts/lib.sh"
+source "$(dirname "$0")/lib/common.sh"
 
-# Microsoft's .NET SDK for building the mod (the feature band of the runtime in the app), SHA-512 from Microsoft's
-# release metadata (https://builds.dotnet.microsoft.com/dotnet/release-metadata/10.0/releases.json)
-SDK_VERSION="10.0.113"
-SDK_URL="https://builds.dotnet.microsoft.com/dotnet/Sdk/${SDK_VERSION}/dotnet-sdk-${SDK_VERSION}-osx-arm64.tar.gz"
-SDK_SHA512="1fe7e83b47037e175611504f0b238a18d95589e1413a22ea44de43d8a5bffc283b9aadbd5b2c4de3cef243ac5d0167f2c75d22e5e719ecea4b9e08707ca1050a"
-
-SCRIPT="${HERE}/benchmark.txt"
+BENCH="${PAYLOAD}/benchmark"
+SCRIPT="${BENCH}/benchmark.txt"
 
 # Presets: fixed settings, the same on every Mac, so reports compare. Without one, your own settings are used.
 # Both run in a 1280x800 window without V-Sync (frame times are then the game's, not the display's).
@@ -51,45 +45,21 @@ PRESET_HIGH=('antialiasing="MultisampleX4"' 'cloudUpscale="High"' 'exhaustUpscal
 MOD_ID="ksa-metal-benchmark"
 DOCS="${HOME}/Documents/My Games/Kitten Space Agency"
 # The game's documents folder during the run: StarMap points the game at it (STARMAP_INSTANCE_PATH)
-INSTANCE="${DEPS}/benchmark/instance"
-SDK="${DEPS}/dotnet-sdk/${SDK_VERSION}"
-REPORT="${DEPS}/benchmark/report/KsaMetalBenchmarkReport.dll"
+INSTANCE="${HOME}/Library/Caches/ksa-macos-port/benchmark/instance"
 
 usage() {
     sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
 }
 
-fetch_sdk() {
-    [ -x "${SDK}/dotnet" ] && return 0
-    step "Fetching the .NET ${SDK_VERSION} SDK (Microsoft), to build the benchmark mod"
-    local archive="${DEPS}/dotnet-sdk/dotnet-sdk-${SDK_VERSION}-osx-arm64.tar.gz"
-    download "${SDK_URL}" "${archive}" 512 "${SDK_SHA512}"
-    rm -rf "${SDK}"
-    mkdir -p "${SDK}"
-    tar -xzf "${archive}" -C "${SDK}"
-    rm -f "${archive}"
-}
-
-# build <project> <output folder> [msbuild arguments...]
-build() {
-    local project="$1" out="$2"
-    shift 2
-    mkdir -p "${DEPS}/benchmark"
-    DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 \
-        DOTNET_CLI_HOME="${DEPS}/benchmark/home" NUGET_PACKAGES="${DEPS}/benchmark/nuget" \
-        "${SDK}/dotnet" build "${project}" -c Release -nologo -v quiet -nodeReuse:false -o "${out}" "$@" \
-        > "${DEPS}/benchmark/build.log" 2>&1 || { cat "${DEPS}/benchmark/build.log"; return 1; }
-}
-
+# The report program runs on the .NET runtime that goes into the app
 report() {
-    "${SDK}/dotnet" "${REPORT}" "$@"
+    DOTNET_ROOT="${SKELETON}/MacOS" "${SKELETON}/MacOS/dotnet" "${BENCH}/report/KsaMetalBenchmarkReport.dll" "$@"
 }
 
+require_kit
 if [ "$1" = compare ]; then
     [ $# = 3 ] || usage 1
-    fetch_sdk
-    build "${HERE}/report/KsaMetalBenchmarkReport.csproj" "${DEPS}/benchmark/report" || die "the report program did not build."
     report compare "$2" "$3"
     exit
 fi
@@ -133,7 +103,7 @@ case "${SYSTEM}" in
     *) die "unknown system '${SYSTEM}' (sol or earth)." ;;
 esac
 for s in ${SECTIONS[@]+"${SECTIONS[@]}"}; do
-    grep -q "^section ${s}\( \|$\)" "${SCRIPT}" || die "no section '${s}' in extras/benchmark/benchmark.txt."
+    grep -q "^section ${s}\( \|$\)" "${SCRIPT}" || die "no section '${s}' in the tour (payload/benchmark/benchmark.txt)."
 done
 # --hold <shot> or <section>_<shot>: its section only, fast
 if [ -n "${HOLD}" ]; then
@@ -141,7 +111,7 @@ if [ -n "${HOLD}" ]; then
     shots="$(awk '$1 == "section" { s = $2 } $2 == "@shot" { print s "_" $3 }' "${SCRIPT}")"
     if ! echo "${shots}" | grep -qx "${HOLD}"; then
         matches="$(echo "${shots}" | grep "_${HOLD}$" || true)"
-        [ -n "${matches}" ] || die "no screenshot '${HOLD}' in extras/benchmark/benchmark.txt."
+        [ -n "${matches}" ] || die "no screenshot '${HOLD}' in the tour (payload/benchmark/benchmark.txt)."
         [ "$(echo "${matches}" | wc -l)" -eq 1 ] || die "more than one screenshot '${HOLD}': $(echo ${matches})."
         HOLD="${matches}"
     fi
@@ -157,16 +127,11 @@ RES="${APP}/Contents/Resources"
 [ -f "${DOCS}/settings.toml" ] || die "start the game once before benchmarking it (it has no settings yet)."
 pgrep -f "dotnet (KSA|StarMap).dll" > /dev/null && die "the game is running. Quit it first."
 
-# 1. StarMap, the mod and the report program
+# 1. StarMap, which loads the benchmark mod
 if [ ! -f "${RES}/StarMap/StarMap.dll" ]; then
-    bash "${HERE}/../starmap/port-starmap.sh" --app "${APP}"
+    bash "${KIT}/starmap.sh" --app "${APP}"
 fi
-fetch_sdk
-step "Building the benchmark mod against KSA ${INSTALLED}"
-MOD_OUT="${DEPS}/benchmark/mod"
-build "${HERE}/mod/KsaMetalBenchmark.csproj" "${MOD_OUT}" -p:KsaDir="${RES}" ||
-    die "the benchmark mod did not build (does this KSA version still match?)."
-build "${HERE}/report/KsaMetalBenchmarkReport.csproj" "${DEPS}/benchmark/report" || die "the report program did not build."
+check_ksa_match "${INSTALLED}"
 
 # 2. The game's documents folder for the run, made fresh: the game itself and the benchmark mod (none of your mods,
 #    so they neither change the numbers nor stop the game from starting) and the bundled vehicles
@@ -174,8 +139,8 @@ rm -rf "${INSTANCE}"
 mkdir -p "${INSTANCE}/mods/${MOD_ID}" "${INSTANCE}/Vehicles"
 printf '[[mods]]\nid = "Core"\nenabled = true\n\n[[mods]]\nid = "%s"\nenabled = true\n' "${MOD_ID}" \
     > "${INSTANCE}/manifest.toml"
-cp "${HERE}/mod/mod.toml" "${MOD_OUT}/KsaMetalBenchmark.dll" "${INSTANCE}/mods/${MOD_ID}/"
-cp -R "${HERE}/vehicles/"* "${INSTANCE}/Vehicles/"
+cp "${BENCH}/mod/mod.toml" "${BENCH}/mod/KsaMetalBenchmark.dll" "${INSTANCE}/mods/${MOD_ID}/"
+cp -R "${BENCH}/vehicles/"* "${INSTANCE}/Vehicles/"
 
 # The run's settings: yours, with the preset on top
 SETTINGS="${INSTANCE}/settings.toml"
@@ -232,6 +197,8 @@ displays="$(system_profiler SPDisplaysDataType 2> /dev/null | awk -F': ' '/Resol
 power="$(pmset -g batt | head -1 | sed -n "s/.*'\(.*\)'.*/\1/p")"
 low_power="$(pmset -g | awk '/lowpowermode/ { print ($2 == 1 ? "on" : "off"); exit }')"
 switches="$(env | grep '^KSA_MTL_' | sed "s|${HOME}|~|g" | paste -sd ' ' - || true)"
+port_version="$(/usr/libexec/PlistBuddy -c "Print :KSAPortVersion" "${APP}/Contents/Info.plist" 2> /dev/null || true)"
+port_commit="$(/usr/libexec/PlistBuddy -c "Print :KSAPortCommit" "${APP}/Contents/Info.plist" 2> /dev/null || true)"
 {
     echo "Mac: $(sysctl -n hw.model)"
     echo "Chip: $(sysctl -n machdep.cpu.brand_string)"
@@ -243,9 +210,7 @@ switches="$(env | grep '^KSA_MTL_' | sed "s|${HOME}|~|g" | paste -sd ' ' - || tr
     echo "Power: ${power}"
     echo "Low Power Mode: ${low_power}"
     echo "KSA: ${INSTALLED}"
-    if have_dev_tools && [ -d "${REPO}/.git" ]; then
-        echo "Port: $(git -C "${REPO}" describe --always --dirty 2> /dev/null)"
-    fi
+    echo "Port: ${port_version} (${port_commit})"
     echo "StarMap: $(cat "${RES}/StarMap/version.txt" 2> /dev/null || echo unknown)"
     echo "System: ${SYSTEM_ID}"
     echo "Sections: ${SECTIONS[*]:-all}"
@@ -335,5 +300,5 @@ if [ "${failed}" = 0 ]; then
 else
     step "Done, with problems: ${OUT}"
 fi
-info "Compare with another run: extras/benchmark/benchmark.sh compare <other run folder> \"${OUT}\""
+info "Compare with another run: ./benchmark.sh compare <other run folder> \"${OUT}\""
 exit "${failed}"

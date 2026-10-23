@@ -1,8 +1,9 @@
 # Third-party notices
 
-The app that `port.sh` makes contains the game you supply plus the components below. Each keeps its own licence.
-The full licence texts and notices are in the app at `Contents/Resources/Licenses/`, in the folder named in the
-last column; versions and sources are pinned in [`scripts/pins.sh`](scripts/pins.sh).
+The app that `port.sh` makes contains the game you supply plus the components below, all of which come in the port
+folder. Each keeps its own licence. The full licence texts and notices are in the app at
+`Contents/Resources/Licenses/`, in the folder named in the last column; versions and sources are pinned in
+[`scripts/pins.sh`](scripts/pins.sh).
 
 **Kitten Space Agency** itself is developed and owned by RocketWerkz. This repository contains no game code,
 binaries or assets, and none of the licences here apply to the game.
@@ -19,7 +20,8 @@ binaries or assets, and none of the licences here apply to the game.
 | Vulkan-Headers | compiled into `libvulkan.1.dylib` | [KhronosGroup/Vulkan-Headers](https://github.com/KhronosGroup/Vulkan-Headers) | Apache-2.0 OR MIT | `vulkan-headers/` |
 | .NET runtime | `Contents/MacOS/dotnet`, `host/`, `shared/` | Microsoft, [dotnet.microsoft.com](https://dotnet.microsoft.com), unmodified | MIT, with the notices in `ThirdPartyNotices.txt` | `dotnet/` |
 | FMOD Engine (core library) | `libfmod.dylib` | Firelight Technologies, from this repository's [`third_party/fmod/`](third_party/fmod/) | FMOD End User Licence Agreement (proprietary, not MIT) | `fmod/` |
-| App icon | `AppIcon.icns` | made at build time from KSA's [title card](https://ahwoo.com/ksa/title-card.jpg) | © RocketWerkz; not covered by any licence here | - |
+| StarMap mod loader, with Harmony (when added with `starmap.sh`) | `Contents/Resources/StarMap/` | [StarMapLoader/StarMap](https://github.com/StarMapLoader/StarMap) release, `StarMap.exe` left out and `StarMap.dll` marked ARM64; [Harmony](https://github.com/pardeike/Harmony) | MIT; Harmony: MIT | `starmap/`, `harmony/` |
+| App icon | `AppIcon.icns` | cropped from KSA's [title card](https://ahwoo.com/ksa/title-card.jpg) | © Ahwoo Limited (RocketWerkz), used to identify the game; not covered by any licence here, removed on request | `ksa-icon/` |
 
 The BRUTAL libraries contain these components, each listed with its licence text in the package notices in
 `Licenses/brutal/` (`BRUTAL-*-THIRD-PARTY-NOTICES.txt`):
@@ -39,6 +41,11 @@ The BRUTAL libraries contain these components, each listed with its licence text
 
 BRUTAL's notice, as its licence asks: *This product is built with BRUTAL, a game development framework by Ahwoo
 Limited, used under the BRUTAL License v1.0. www.ahwoo.com/brutal*. It is in `Licenses/brutal/NOTICE.txt`.
+
+## Beside the app
+
+The port folder also holds the benchmark (`payload/benchmark/`): its mod, report program, tour and vehicles are this
+project's, under the MIT License. The mod is compiled against KSA's assemblies but contains none of them.
 
 ## In this repository
 

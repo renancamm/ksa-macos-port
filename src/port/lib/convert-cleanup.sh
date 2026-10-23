@@ -2,9 +2,9 @@
 # Removes what macOS cannot use from a KSA game folder: the Linux executables and libraries, and the Windows
 # installer files. Safe to run again.
 #
-# Usage: scripts/convert-cleanup.sh <game folder>
+# Usage: lib/convert-cleanup.sh <game folder>
 set -eo pipefail
-source "$(dirname "$0")/lib.sh"
+source "$(dirname "$0")/common.sh"
 
 GAME="$1"
 [ -f "${GAME}/KSA.dll" ] || die "${GAME} has no KSA.dll."

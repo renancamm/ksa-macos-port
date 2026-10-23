@@ -1,9 +1,9 @@
-# Every external source the port uses, pinned to an exact version and checked against a checksum or commit.
+# Every external source the build uses, pinned to an exact version and checked against a checksum or commit.
 # Sourced by scripts/lib.sh. Updating a dependency means changing its lines here and nowhere else.
 
 # RocketWerkz's official BRUTAL packages on nuget.org. Their runtimes/osx-arm64/native/ folders hold the native
 # libraries KSA's BRUTAL assemblies load. KSA 2026.10.19 ships exactly these versions (the Linux libraries in its
-# archive are the packages' linux-x64 ones); scripts/convert-dotnet.sh compares them with the game's assemblies.
+# archive are the packages' linux-x64 ones); src/port/lib/convert-dotnet.sh compares them with the game's assemblies.
 # Format: "<package id> <version> <SHA-512 of the .nupkg>".
 BRUTAL_PACKAGES=(
     "Ahwoo.BRUTAL.Stb         2026.10.2 d8f1c0f544e7a00f75163defbcb6cb26e0dcb7fc6e1b42c0bd665b30f5f69b1bb914a683e0cc9de3b3f50018d993677da3cfb423cb2507f5b307099b2695f60f"
@@ -33,9 +33,19 @@ DOTNET_VERSION="10.0.13"
 DOTNET_URL="https://builds.dotnet.microsoft.com/dotnet/Runtime/${DOTNET_VERSION}/dotnet-runtime-${DOTNET_VERSION}-osx-arm64.tar.gz"
 DOTNET_SHA512="339c5b031b5fd7d64edd27314a1d0f8a1320b8c61f9ac305c1d4cdb61c94bc438482867ceea09d38fc7194da2a05e6a86b164992a5ec793ea3d65ccce0ea6bac"
 
-# Where the prebuilt natives (the libraries this repository builds itself) are published.
-PREBUILT_REPO="renancamm/ksa-macos-port"
+# Microsoft's .NET SDK, to build the benchmark mod and its report program (the feature band of the runtime above),
+# SHA-512 from the same release metadata.
+DOTNET_SDK_VERSION="10.0.113"
+DOTNET_SDK_URL="https://builds.dotnet.microsoft.com/dotnet/Sdk/${DOTNET_SDK_VERSION}/dotnet-sdk-${DOTNET_SDK_VERSION}-osx-arm64.tar.gz"
+DOTNET_SDK_SHA512="1fe7e83b47037e175611504f0b238a18d95589e1413a22ea44de43d8a5bffc283b9aadbd5b2c4de3cef243ac5d0167f2c75d22e5e719ecea4b9e08707ca1050a"
 
-# The app icon: the kitten astronaut from KSA's title card, cropped at build time. The card is RocketWerkz's
-# artwork and is never stored in this repository.
+# StarMap, the mod loader in payload/starmap/: its release (the Windows build, platform-neutral .NET) and the
+# licences of StarMap and of Harmony, which it includes, at the matching tags.
+STARMAP_VERSION="0.4.8"
+STARMAP_URL="https://github.com/StarMapLoader/StarMap/releases/download/${STARMAP_VERSION}/StarMap-${STARMAP_VERSION}.zip"
+STARMAP_SHA256="5324240f15d6841835158940057359ef011149bbc30b4d50f7b27480df7b2d5c"
+STARMAP_LICENSE_URL="https://raw.githubusercontent.com/StarMapLoader/StarMap/${STARMAP_VERSION}/LICENSE.txt"
+HARMONY_LICENSE_URL="https://raw.githubusercontent.com/pardeike/Harmony/v2.4.2.0/LICENSE"
+
+# The app icon: the kitten astronaut from KSA's title card, cropped by scripts/build-icon.sh.
 TITLE_CARD_URL="https://ahwoo.com/ksa/title-card.jpg"

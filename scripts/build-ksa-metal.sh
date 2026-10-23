@@ -1,7 +1,7 @@
 #!/bin/bash
-# src/ksa-metal/ -> dist/libvulkan.1.dylib (+ libvulkan.dylib)
+# src/ksa-metal/ -> deps/build/natives/libvulkan.1.dylib (+ libvulkan.dylib)
 #
-# KSA Metal (README.md, "KSA Metal") implements the Vulkan calls KSA makes on top of Metal. It takes the place of
+# KSA Metal (src/ksa-metal/README.md) implements the Vulkan calls KSA makes on top of Metal. It takes the place of
 # the Vulkan loader: Brutal, VulkanEx and GLFW find their Vulkan functions in it, and VMA gets them from Brutal.
 # Needs the static libraries from scripts/build-spirv-cross.sh and scripts/build-spirv-tools.sh.
 # KSA_MTL_OPT overrides the optimization flag (default -O2).
@@ -11,10 +11,10 @@ source "$(dirname "$0")/lib.sh"
 step "Building KSA Metal"
 VULKAN_HEADERS="${DEPS}/src/vulkan-headers"
 SPVC="${DEPS}/src/spirv-cross"
-SPVC_LIB="${DEPS}/build/spirv-cross"
+SPVC_LIB="${BUILD}/spirv-cross"
 SPVT="${DEPS}/src/spirv-tools"
-SPVT_LIB="${DEPS}/build/spirv-tools/source"
-OBJ="${DEPS}/build/ksa-metal"
+SPVT_LIB="${BUILD}/spirv-tools/source"
+OBJ="${BUILD}/ksa-metal"
 fetch_git "${VULKAN_HEADERS}" "${VULKAN_HEADERS_SOURCE}"
 [ -f "${SPVC_LIB}/libspirv-cross-msl.a" ] || die "run scripts/build-spirv-cross.sh first."
 [ -f "${SPVT_LIB}/link/libSPIRV-Tools-link.a" ] || die "run scripts/build-spirv-tools.sh first."
@@ -56,15 +56,15 @@ for p in ${PIDS[@]+"${PIDS[@]}"}; do
     wait "${p}"
 done
 
-clang++ -shared -fobjc-arc -arch arm64 -mmacosx-version-min="${MACOS_MIN}" -o "${DIST}/libvulkan.1.dylib" \
+clang++ -shared -fobjc-arc -arch arm64 -mmacosx-version-min="${MACOS_MIN}" -o "${NATIVES}/libvulkan.1.dylib" \
     "${OBJECTS[@]}" \
     "${SPVC_LIB}/libspirv-cross-msl.a" "${SPVC_LIB}/libspirv-cross-glsl.a" "${SPVC_LIB}/libspirv-cross-core.a" \
     "${SPVT_LIB}/link/libSPIRV-Tools-link.a" "${SPVT_LIB}/opt/libSPIRV-Tools-opt.a" "${SPVT_LIB}/libSPIRV-Tools.a" \
     -Wl,-install_name,@loader_path/libvulkan.1.dylib -Wl,-exported_symbols_list,/dev/stdin \
     -framework Metal -framework QuartzCore -framework Foundation -framework CoreGraphics -framework ImageIO \
     -framework UniformTypeIdentifiers <<< $'_vk*\n_ksaMtl*'
-ln -sf libvulkan.1.dylib "${DIST}/libvulkan.dylib"
-sign "${DIST}/libvulkan.1.dylib"
-info "libvulkan.1.dylib: $(nm -gU "${DIST}/libvulkan.1.dylib" | grep -c ' _vk') Vulkan functions"
+ln -sf libvulkan.1.dylib "${NATIVES}/libvulkan.dylib"
+sign "${NATIVES}/libvulkan.1.dylib"
+info "libvulkan.1.dylib: $(nm -gU "${NATIVES}/libvulkan.1.dylib" | grep -c ' _vk') Vulkan functions"
 
 copy_licenses "${VULKAN_HEADERS}" vulkan-headers

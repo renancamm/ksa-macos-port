@@ -4,10 +4,9 @@
 .LSOverride
 ._*
 
-# Downloads, source checkouts and build output (scripts/lib.sh: DEPS, DIST)
+# Downloads, source checkouts, build trees and the port folder (scripts/lib.sh: DEPS, BUILD, DIST)
 deps/
 dist/
-out/
 *.o
 *.a
 *.dylib
@@ -20,12 +19,11 @@ Content/
 *.toml
 *.iss
 *.bat
-app/AppIcon.icns
 
 # Private working notes and source trees for the native Metal effort: proprietary material, never committed
 .claude-docs/
 
-# Extras: the benchmark's mod.toml and vehicle saves are ours, and its build output stays out
-!extras/benchmark/**/*.toml
-extras/benchmark/*/bin/
-extras/benchmark/*/obj/
+# The benchmark's mod.toml and vehicle saves are ours, and its build output stays out
+!src/benchmark/**/*.toml
+src/benchmark/*/bin/
+src/benchmark/*/obj/

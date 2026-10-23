@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
-	<!-- Built by extras/benchmark/benchmark.sh against the player's own game:
-	     dotnet build -c Release -p:KsaDir=<app>/Contents/Resources -o <out>
+	<!-- Built by scripts/build-benchmark.sh against the KSA version the port folder is made for:
+	     dotnet build -c Release -p:KsaDir=<converted KSA assemblies> -p:StarMapDir=<StarMap> -o <out>
 	     The game's assemblies and StarMap's API are references only: the game loads them, the mod does not ship them. -->
 	<PropertyGroup>
 		<TargetFramework>net10.0</TargetFramework>
@@ -13,7 +13,7 @@
 		<SatelliteResourceLanguages>en</SatelliteResourceLanguages>
 	</PropertyGroup>
 	<ItemGroup>
-		<Reference Include="$(KsaDir)/StarMap/StarMap.API.dll" Private="false" />
+		<Reference Include="$(StarMapDir)/StarMap.API.dll" Private="false" />
 		<Reference Include="$(KsaDir)/*.dll" Private="false" />
 	</ItemGroup>
 </Project>

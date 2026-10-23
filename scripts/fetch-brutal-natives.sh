@@ -1,5 +1,5 @@
 #!/bin/bash
-# Native libraries from RocketWerkz's BRUTAL packages on nuget.org -> dist/
+# Native libraries from RocketWerkz's BRUTAL packages on nuget.org -> deps/build/natives/
 #
 # KSA is built on BRUTAL, RocketWerkz's open source framework. Its packages ship the native libraries the
 # BRUTAL assemblies load, built by RocketWerkz for macOS on Apple Silicon (runtimes/osx-arm64/native/). The
@@ -13,7 +13,7 @@ set -eo pipefail
 source "$(dirname "$0")/lib.sh"
 
 step "Fetching RocketWerkz's native libraries (nuget.org)"
-mkdir -p "${DIST}/licenses/brutal"
+mkdir -p "${NATIVES}/licenses/brutal"
 for entry in "${BRUTAL_PACKAGES[@]}"; do
     read -r id version sha512 <<< "${entry}"
     lower="$(echo "${id}" | tr '[:upper:]' '[:lower:]')"
@@ -24,16 +24,16 @@ for entry in "${BRUTAL_PACKAGES[@]}"; do
     unzip -q "${package}" 'runtimes/osx-arm64/native/*' LICENSE.txt NOTICE.txt 'LICENSES/*' -d "${unpacked}"
     natives=("${unpacked}"/runtimes/osx-arm64/native/*.dylib)
     [ -f "${natives[0]}" ] || die "${id} ${version} has no macOS libraries."
-    cp "${natives[@]}" "${DIST}/"
+    cp "${natives[@]}" "${NATIVES}/"
     for f in "${natives[@]}"; do
         name="$(basename "${f}")"
         install_name="$(LC_ALL=C grep -m 1 -aoE '@rpath/[A-Za-z0-9._+-]+\.dylib' "${f}" | head -1 || true)"
         install_name="${install_name#@rpath/}"
-        if [ -n "${install_name}" ] && [ "${install_name}" != "${name}" ] && cmp -s "${f}" "${DIST}/${install_name}"; then
-            ln -sf "${install_name}" "${DIST}/${name}"
+        if [ -n "${install_name}" ] && [ "${install_name}" != "${name}" ] && cmp -s "${f}" "${NATIVES}/${install_name}"; then
+            ln -sf "${install_name}" "${NATIVES}/${name}"
         fi
     done
-    cp "${unpacked}/LICENSE.txt" "${unpacked}/NOTICE.txt" "${unpacked}"/LICENSES/* "${DIST}/licenses/brutal/"
+    cp "${unpacked}/LICENSE.txt" "${unpacked}/NOTICE.txt" "${unpacked}"/LICENSES/* "${NATIVES}/licenses/brutal/"
     rm -rf "${unpacked}"
-    info "${id} ${version}: $(cd "${DIST}" && for f in "${natives[@]}"; do printf '%s ' "$(basename "${f}")"; done)"
+    info "${id} ${version}: $(cd "${NATIVES}" && for f in "${natives[@]}"; do printf '%s ' "$(basename "${f}")"; done)"
 done

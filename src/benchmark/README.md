@@ -13,15 +13,14 @@ another run's.
 
 ## Run it
 
-From the project's folder, after `./port.sh`:
+From the port folder, after `./port.sh`:
 
 ```bash
-./extras/benchmark/benchmark.sh
+./benchmark.sh
 ```
 
 It takes about 8 minutes. The game takes over the screen: leave the mouse and keyboard alone until the script says
-it is done. The first run also downloads Microsoft's .NET SDK (about 200 MB) to build the benchmark mod, and adds the
-[StarMap](../starmap/README.md) mod loader to the app when it isn't there yet.
+it is done. The first run adds the [StarMap](../../README.md#mods) mod loader to the app when it isn't there yet.
 
 The results go to `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/`: `report.md` with the numbers,
 `report.json` for comparing, the screenshots, and the game's log. The report starts with whether the run passed: it
@@ -32,7 +31,7 @@ The script then exits with 1.
 To compare two runs:
 
 ```bash
-./extras/benchmark/benchmark.sh compare <first run folder> <second run folder>
+./benchmark.sh compare <first run folder> <second run folder>
 ```
 
 It lists the settings that differ between them, the numbers of each part side by side, and whether each screenshot
@@ -47,9 +46,9 @@ catch up there, measures the view standing still for two seconds and takes the s
 and its screenshots come out the same from one run to the next, so it is the quick way to check a change:
 
 ```bash
-./extras/benchmark/benchmark.sh --fast
+./benchmark.sh --fast
 # ...make the change, then:
-./extras/benchmark/benchmark.sh --fast --compare <first run folder>
+./benchmark.sh --fast --compare <first run folder>
 ```
 
 The two ways measure different things (the flight, or the views standing still), so a fast run compares only with
@@ -91,7 +90,8 @@ Every part of a section is measured for a few seconds:
 
 ## How it works
 
-The game runs from its own documents folder, `deps/benchmark/instance`, which StarMap points it at: a copy of your
+The game runs from its own documents folder, `~/Library/Caches/ksa-macos-port/benchmark/instance`, which StarMap
+points it at: a copy of your
 settings (with the preset on top, if any), none of your mods, and the tour's vehicles. Your saves, settings and mods
 are never touched. The script only chooses the settings it needs to start straight into the tour (no system menu, the
 chosen system, the game's test vessel in orbit); every quality setting stays yours or the preset's.
@@ -100,9 +100,9 @@ The tour is a text file, `benchmark.txt`: sections of steps timed in seconds, ea
 the benchmark mod (`mod/Directives.cs` lists them). The camera's flight is its `@key` steps, places the camera passes
 through (`mod/Path.cs`); around the vehicles, the camera goes along with them or stands on the ground (`mod/Rig.cs`).
 The mod, in `mod/`, plays the steps, moves the camera, measures the
-parts the sections mark and asks KSA Metal for each frame's GPU time and for the screenshots. It is built on your Mac
-against your copy of the game, so it never ships any of the game's files. `report/` holds the small program that
-writes the report and compares runs.
+parts the sections mark and asks KSA Metal for each frame's GPU time and for the screenshots. `./build.sh` compiles it
+against the KSA version the port is made for; the game's assemblies are only references, so the mod holds none of the
+game's files. `report/` holds the small program that writes the report and compares runs.
 
 Each screenshot is a checkpoint. The game runs its simulation as fast as the Mac allows, so a slower Mac can fall a
 little behind the tour; at a checkpoint the tour waits for the game to reach the moment it should be at, pauses it
@@ -132,7 +132,8 @@ The rockets and the capsule in `vehicles/` were built by the project for the tou
 
 `--explore` starts the benchmark's game the same way as a run, with its clock paused so the light is the tour's. Fly
 the free camera to a place, open the console (`\`) and type `benchkey <name>`: the place is added as a `@key` line to
-`keys.txt` in a new run folder, and copied to the clipboard, ready for `benchmark.txt`.
+`keys.txt` in a new run folder, and copied to the clipboard, ready for `benchmark.txt`. The tour goes into the port
+folder with `./build.sh`, from `src/benchmark/benchmark.txt`.
 
 ## Options and files
 
@@ -152,5 +153,5 @@ the free camera to a place, open the console (`\`) and type `benchkey <name>`: t
 | File | |
 |---|---|
 | `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/` | the results |
-| `deps/benchmark/` | the built mod and report program, and the game's documents folder for the run |
-| `deps/dotnet-sdk/` | Microsoft's .NET SDK, to build them |
+| `~/Library/Caches/ksa-macos-port/benchmark/instance/` | the game's documents folder for the run |
+| `payload/benchmark/` in the port folder | the mod, the report program, the tour and its vehicles |

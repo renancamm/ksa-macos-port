@@ -169,7 +169,7 @@ static std::atomic<int> g_shotsPending{0};
 static std::mutex g_gpuMutex;
 static double g_gpuBusy = 0, g_gpuLastEnd = 0;
 
-// Interface for the benchmark mod (extras/benchmark), which calls these through P/Invoke:
+// Interface for the benchmark mod (src/benchmark), which calls these through P/Invoke:
 //   ksaMtlFrameStats(out, size)  the latest present's numbers (the KSA_MTL_FRAMES columns); returns the bytes written
 //   ksaMtlScreenshot(path)       PNG of the next presented image
 // Fields are only ever appended, so a mod built for an older layout still reads the ones it knows.

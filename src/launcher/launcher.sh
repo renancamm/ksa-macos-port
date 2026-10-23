@@ -1,5 +1,5 @@
 #!/bin/bash
-# The app's executable (Kitten Space Agency.app/Contents/MacOS/KSA), installed by scripts/make-app.sh.
+# The app's executable (Kitten Space Agency.app/Contents/MacOS/KSA), installed by lib/make-app.sh from the port folder.
 #
 # Starts KSA (Contents/Resources/KSA.dll) with the .NET runtime in Contents/MacOS:
 #   DYLD_LIBRARY_PATH      the game folder first, so every library, including KSA Metal as
@@ -24,7 +24,7 @@ fail() {
         -e 'end run' "$1" > /dev/null 2>&1
     exit 1
 }
-[ -x "${CONTENTS}/MacOS/dotnet" ] || fail "The .NET runtime is missing from the app. Run ./update.sh in the ksa-macos-port folder."
+[ -x "${CONTENTS}/MacOS/dotnet" ] || fail "The .NET runtime is missing from the app. Run ./update.sh in the port folder (ksa-macos-port)."
 [ -f "${RES}/KSA.dll" ] || fail "The game files are missing from the app. Convert the game again with ./port.sh."
 
 export DOTNET_ROOT="${CONTENTS}/MacOS"
@@ -38,7 +38,7 @@ for arg in "$@"; do
     [[ "${arg}" == -psn_* ]] || ARGS+=("${arg}")
 done
 
-# With the StarMap mod loader in the app (extras/starmap), the game starts through it. StarMap reads its config
+# With the StarMap mod loader in the app (starmap.sh), the game starts through it. StarMap reads its config
 # and DLLs from the current folder and needs the game's full path, which changes when the app moves: the config
 # is written at every start.
 if [ -f "${RES}/StarMap/StarMap.dll" ]; then

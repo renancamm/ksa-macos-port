@@ -13,13 +13,14 @@ Building needs the Command Line Tools (`xcode-select --install`) and cmake (`bre
 repository's folder:
 
 ```bash
-./update.sh --from-source
+./build.sh --install
 ```
 
-That runs `scripts/build-spirv-cross.sh` and `scripts/build-spirv-tools.sh` (pinned in `scripts/pins.sh`, static,
-built once), then `scripts/build-ksa-metal.sh` (`src/ksa-metal/` -> `dist/libvulkan.1.dylib`), and puts the result
-into the installed app. Objects in `deps/build/ksa-metal/` are reused while their source, the headers and the
-compiler flags stay the same. `KSA_MTL_OPT=-O0` changes the optimization level (default `-O2`).
+That builds the port folder (`dist/ksa-macos-port/`) and puts its files into the installed app. For KSA Metal it runs
+`scripts/build-spirv-cross.sh` and `scripts/build-spirv-tools.sh` (pinned in `scripts/pins.sh`, static, built once),
+then `scripts/build-ksa-metal.sh` (`src/ksa-metal/` -> `deps/build/natives/libvulkan.1.dylib`). Objects in
+`deps/build/ksa-metal/` are reused while their source, the headers and the compiler flags stay the same.
+`KSA_MTL_OPT=-O0` changes the optimization level (default `-O2`).
 
 ## Test
 
@@ -33,7 +34,7 @@ KSA_MTL_SHOTS=300,3000 KSA_MTL_SHOT_DIR=/tmp/ksa-shots KSA_MTL_EXIT_AFTER=3000 \
 
 A useful loop for rendering bugs: reproduce the problem in a save, take shots before and after a change, and turn
 on `MTL_SHADER_VALIDATION=1` and `KSA_MTL_DUMP_MSL` to see which shader misbehaves and what Metal source it became.
-Both shader fixes in `scripts/convert-shaders.sh` were found this way.
+Both shader fixes in `src/port/lib/convert-shaders.sh` were found this way.
 
 Vulkan validation layers can't be used, because KSA Metal takes the loader's place. `KSA_MTL_LOG=1` logs its
 warnings and the first call of each Vulkan function, which shows what the game asks for, and `KSA_MTL_STRICT=1`
@@ -58,10 +59,11 @@ The debugging variables, used the same way:
 Metal's own tools work too: `MTL_HUD_ENABLED=1` shows Apple's performance overlay, and `MTL_DEBUG_LAYER=1` and
 `MTL_SHADER_VALIDATION=1` check API use and catch out-of-bounds memory access in shaders (slow).
 
-To see what a change does across the game, run the [benchmark](../../extras/benchmark/README.md) before and after
-it and compare the two runs: `--fast` is the quick way, and `compare` checks the screenshots as well as the numbers. Its mod reads the same numbers as `KSA_MTL_FRAMES` through the only
-functions KSA Metal exports besides Vulkan's: `ksaMtlFrameStats` (the latest presented frame) and
-`ksaMtlScreenshot` (a PNG of the next one), both in `swapchain.mm`.
+To see what a change does across the game, run the [benchmark](../benchmark/README.md) before and after it
+(`dist/ksa-macos-port/benchmark.sh`) and compare the two runs: `--fast` is the quick way, and `compare` checks the
+screenshots as well as the numbers. Its mod reads the same numbers as `KSA_MTL_FRAMES` through the only functions
+KSA Metal exports besides Vulkan's: `ksaMtlFrameStats` (the latest presented frame) and `ksaMtlScreenshot` (a PNG of
+the next one), both in `swapchain.mm`.
 
 ## From Vulkan to Metal
 

@@ -1,4 +1,4 @@
-// The benchmark's report and comparison, run by extras/benchmark/benchmark.sh.
+// The benchmark's report and comparison, run by benchmark.sh in the port folder.
 //
 //   report <dir>       <dir>/results.json (written by the mod) + <dir>/system.txt and <dir>/run.txt (written by the
 //                      script, "key: value" lines) + <dir>/game.log -> <dir>/report.json and <dir>/report.md (to paste

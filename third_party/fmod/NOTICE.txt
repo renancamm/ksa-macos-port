@@ -18,7 +18,7 @@ logging libraries, SDK headers, documentation, examples and example media are
 not included. Kitten Space Agency uses FMOD under its developer's own license;
 its Linux release ships FMOD 2.03 for Linux.
 
-scripts/make-app.sh copies libfmod.dylib into the app unchanged, with its
+The build (scripts/make-kit.sh) copies libfmod.dylib into the app unchanged, with its
 original signature.
 
 SHA-256:

@@ -1,7 +1,7 @@
 // ksa-metal-benchmark: plays the benchmark's script in one game session and measures it.
 //
-// extras/benchmark/benchmark.sh starts the game with this mod installed and these variables set:
-//   KSA_BENCH_SCRIPT  the script (extras/benchmark/benchmark.txt)
+// benchmark.sh (in the port folder) starts the game with this mod installed and these variables set:
+//   KSA_BENCH_SCRIPT  the script (benchmark.txt)
 //   KSA_BENCH_OUT     the folder for the results (results.json) and the screenshots
 //   KSA_BENCH_ONLY    optional: the sections to play (space separated), to work on a few of them
 //   KSA_BENCH_FAST    optional: fast mode (below)

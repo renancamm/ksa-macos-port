@@ -31,32 +31,33 @@ Making the app takes one command and about a minute. You need:
 
 ### Install
 
-1. Download this project: on its GitHub page, **Code** > **Download ZIP**, then unzip it. (With git:
-   `git clone https://github.com/renancamm/ksa-macos-port.git`.)
-2. In Terminal, go to the project's folder (`ksa-macos-port-main` for the ZIP) and run `port.sh`:
+1. Download the port: the `ksa-macos-port-v….zip` of the
+   [latest release](https://github.com/renancamm/ksa-macos-port/releases/latest), then unzip it.
+2. In Terminal, go to the unzipped `ksa-macos-port` folder and run `port.sh`:
    ```bash
-   cd ~/Downloads/ksa-macos-port-main
+   cd ~/Downloads/ksa-macos-port
    ./port.sh
    ```
 3. Open **Kitten Space Agency** from `~/Applications`.
 
-`port.sh` needs an internet connection ([what it downloads](#downloads)). The first launch of the game takes longer
-than later ones, while Metal compiles the game's shaders.
+The port folder holds everything except the game, so `port.sh` works offline. The first launch of the game takes
+longer than later ones, while Metal compiles the game's shaders.
+
+Each release is made for one KSA version and named after it: `v5638.2` is the port's second release for KSA
+2026.10.19.5638. The folder's `VERSION` file says which one you have.
 
 ### Update
 
-When KSA tells you about a new version, download its Linux version into your Downloads folder and run this from
-the project's folder:
+When KSA tells you about a new version, download its Linux version into your Downloads folder and run this from the
+port folder:
 
 ```bash
 ./update.sh
 ```
 
-It makes the app again from the newer KSA and moves the old app to the Trash. Saves and settings are not touched.
-
-To get this project's latest fixes, download the ZIP again and run `./update.sh` from the new folder (in a git
-clone, `./update.sh --pull` updates the folder first). When there is no newer KSA, it applies the folder's version
-of the port to the app you have. `update.sh` doesn't look online for new KSA versions; the game does that.
+It first updates the port folder to the latest release, then makes the app again from the newer KSA and moves the old
+app to the Trash. Saves, settings and StarMap stay. When there is no newer KSA, it updates the app you have to the
+port's latest release. `update.sh` doesn't look online for new KSA versions; the game does that.
 
 ### Options and files
 
@@ -66,8 +67,7 @@ of the port to the app you have. `update.sh` doesn't look online for new KSA ver
 |---|---|---|
 | `<ksa_linux_v….tar.gz>` | convert this archive instead of the newest one in Downloads (an extracted folder works too, and is converted in place) | convert this archive, whatever its version |
 | `--app <path>` | make the app at this path instead of `~/Applications/Kitten Space Agency.app` | update the app at this path |
-| `--from-source` | build this project's own libraries on your Mac instead of downloading them ([details](#building-the-libraries-yourself)) | the same |
-| `--pull` | | run `git pull` first (a git clone, with the Command Line Tools) |
+| `--offline` | | don't look for a newer release of the port |
 
 Where things are:
 
@@ -78,8 +78,8 @@ Where things are:
 | Everything the last run printed, including KSA Metal's messages and startup errors | `.../Kitten Space Agency/logs/console.log` |
 | KSA Metal's shader cache | `~/Library/Caches/ksa-metal` |
 
-To uninstall, delete the app, the shader cache and this project's folder. The Documents folder holds your saves;
-delete it too if you don't want them.
+To uninstall, delete the app, the port folder, the shader cache and `~/Library/Caches/ksa-macos-port`. The Documents
+folder holds your saves; delete it too if you don't want them.
 
 ## How it works
 
@@ -106,25 +106,19 @@ So the app is made of three kinds of pieces:
   ([.NET](#net)), then get three small changes: two bytes in `KSA.dll`'s header, and two bug fixes in its shader
   sources.
 - **Built by this project:** the GLFW shim ([`src/glfw-shim/`](src/glfw-shim/)) and KSA Metal
-  ([`src/ksa-metal/`](src/ksa-metal/)), compiled into two libraries that `port.sh` usually downloads ready-built
-  ([details](#building-the-libraries-yourself)). The launcher ([`app/launcher.sh`](app/launcher.sh)) and the app
+  ([`src/ksa-metal/`](src/ksa-metal/)), compiled into two libraries that come ready-built in the port folder
+  ([details](#building-the-port)). The launcher ([`src/launcher/launcher.sh`](src/launcher/launcher.sh)) and the app
   bundle around everything are this project's too.
 
 ### The steps
 
-`port.sh` runs these scripts from `scripts/`, in this order. Each one does one thing and can be read on its own. They
-share [`scripts/lib.sh`](scripts/lib.sh), and every external source is pinned to a version and checksum in
-[`scripts/pins.sh`](scripts/pins.sh).
+The port folder holds the app without the game, `payload/app/Contents/`: the launcher, the .NET runtime, the native
+libraries, the icon and the licences. `port.sh` converts the game with the scripts in the folder's `lib/` and puts it
+into a copy of that app. Each script does one thing and can be read on its own; in this repository they are in
+[`src/port/lib/`](src/port/lib/).
 
 | Step | Script | What it does |
 |---|---|---|
-| Native libraries | `fetch-brutal-natives.sh` | RocketWerkz's macOS builds of BRUTAL's libraries, from nuget.org into `dist/` |
-| | `fetch-prebuilt.sh` | the GLFW shim and KSA Metal, ready-built, from a GitHub release that matches the sources; otherwise: |
-| | `build-glfw-shim.sh` | `src/glfw-shim/` -> `dist/libGlfwShim.dylib` |
-| | `build-spirv-cross.sh`, `build-spirv-tools.sh` | static libraries for KSA Metal |
-| | `build-ksa-metal.sh` | `src/ksa-metal/` -> `dist/libvulkan.1.dylib` |
-| | `check-natives.sh` | checks `dist/`: arm64, macOS 26, signatures, dependencies, licences |
-| .NET | `fetch-dotnet.sh` | Microsoft's .NET runtime for macOS, SHA-512 checked |
 | Convert | `convert-cleanup.sh` | removes the Linux binaries and the Windows installer files |
 | | `convert-dotnet.sh` | makes the .NET files run on the macOS runtime (with `mark-arm64.sh`) |
 | | `convert-shaders.sh` | fixes two bugs in the ground clutter shaders |
@@ -159,33 +153,42 @@ bindings don't match the newer libraries, and warns when the game is newer.
 GLFW has to be RocketWerkz's fork: it adds trackpad callbacks that `Brutal.Glfw` sets on every window, so upstream
 GLFW stops the game at startup.
 
-### Building the libraries yourself
+### Building the port
 
-The GLFW shim and KSA Metal are the two pieces of the app compiled from this repository. Compiling them needs the
-Command Line Tools and cmake, which most Macs don't have, so `port.sh` and `update.sh` download them ready-built
-and need nothing beyond macOS. To build them on your Mac instead, install the Command Line Tools
-(`xcode-select --install`) and cmake (`brew install cmake`), then run:
+The port folder is made by `build.sh`, from this repository. It needs the Command Line Tools
+(`xcode-select --install`) and cmake (`brew install cmake`):
 
 ```bash
-./update.sh --from-source
+git clone https://github.com/renancamm/ksa-macos-port.git
+cd ksa-macos-port
+./build.sh
 ```
 
-This builds SPIRV-Cross and SPIRV-Tools (static libraries for KSA Metal, built once), the shim and KSA Metal,
-checks the result and puts it into the installed app. Compiled objects are kept in `deps/`, so after a change only
-the changed files are compiled again.
+That makes `dist/ksa-macos-port/`, a port folder like a release's, whose commands work the same way.
+`./build.sh --install` also puts its files into the installed app. The build runs these scripts from `scripts/`,
+with every external source pinned to a version and checksum in [`scripts/pins.sh`](scripts/pins.sh):
 
-The ready-built libraries come from the [Prebuilt natives](.github/workflows/prebuilt.yml) workflow, which runs
-`package-prebuilt.sh` on GitHub's macOS runners whenever their sources change and publishes the result as a GitHub
-release. The release is
-named after a *stamp*: a SHA-256 over every file the libraries are built from. `fetch-prebuilt.sh` computes the
-stamp of your local files and downloads the release with that name, so you only ever get libraries built from
-exactly the sources you have. When there is no such release (a branch, local changes), the libraries are built on
-your Mac, which then needs the tools above. The download is checked against its SHA-256 and carries a build
-provenance attestation (`gh attestation verify <file> --repo renancamm/ksa-macos-port`).
+| Step | Script | What it does |
+|---|---|---|
+| Native libraries | `fetch-brutal-natives.sh` | RocketWerkz's macOS builds of BRUTAL's libraries, from nuget.org |
+| | `build-glfw-shim.sh` | `src/glfw-shim/` -> `libGlfwShim.dylib` |
+| | `build-spirv-cross.sh`, `build-spirv-tools.sh` | static libraries for KSA Metal |
+| | `build-ksa-metal.sh` | `src/ksa-metal/` -> `libvulkan.1.dylib` |
+| .NET | `fetch-dotnet.sh`, `fetch-dotnet-sdk.sh` | Microsoft's .NET runtime for the app, and the SDK for the benchmark |
+| Extras | `build-icon.sh`, `fetch-starmap.sh` | the app icon, and the StarMap mod loader |
+| | `build-benchmark.sh` | the benchmark mod and its report program, built against your copy of KSA |
+| Port folder | `make-kit.sh`, `check-kit.sh` | assembles `dist/ksa-macos-port/` and checks it: arm64, macOS 26, signatures, dependencies, licences, no game files |
 
-Everything compiled from this repository targets macOS 26 explicitly (`MACOS_MIN` in `lib.sh`) and is ad-hoc signed
-after linking, because macOS kills a process that loads a library with an invalid signature. `dist/` holds the
-libraries for the app and belongs to the build: when the stamp changes, it is emptied and filled again.
+Downloads and source checkouts go to `deps/`, build trees to `deps/build/`; after a change only the changed files are
+compiled again. The benchmark mod is built against the installed app's KSA, or another one with `--ksa <archive>`,
+and the port folder is made for that KSA version.
+
+Everything compiled here targets macOS 26 explicitly (`MACOS_MIN` in `src/port/lib/common.sh`) and is ad-hoc signed
+after linking, because macOS kills a process that loads a library with an invalid signature.
+
+Releases are made with `release.sh <ksa_linux_vX.tar.gz>`. It builds the port folder from a clean copy of the
+committed sources, zips it, and tests the zip by making an app with it and running the benchmark on that app.
+`release.sh --publish` then tags the commit and uploads the zip as a draft GitHub release.
 
 ### .NET
 
@@ -200,9 +203,9 @@ the shared macOS runtime the app bundles:
    64-bit assemblies marked for another CPU. `KSA.dll` contains only IL code, so this mark is the only thing in the
    way. The other game DLLs are platform-neutral and load as they are.
 
-The runtime itself (`fetch-dotnet.sh`, about 85 MB) is Microsoft's, checked against the SHA-512 Microsoft
-publishes. Its `dotnet` host is signed by Microsoft with the entitlements the launcher needs: DYLD environment
-variables, unsigned libraries and JIT.
+The runtime itself (about 85 MB) is Microsoft's, checked by the build against the SHA-512 Microsoft publishes. Its
+`dotnet` host is signed by Microsoft with the entitlements the launcher needs: DYLD environment variables, unsigned
+libraries and JIT.
 
 ### Shader fixes
 
@@ -237,52 +240,52 @@ without modifying GLFW ([`src/glfw-shim/`](src/glfw-shim/) explains each one):
 
 ### The app
 
-`make-app.sh` moves the converted game folder into the app as `Contents/Resources` and adds:
+`make-app.sh` moves the converted game folder into the app as `Contents/Resources` and adds the port's part from
+`payload/app/Contents/`:
 
-- `dist/*.dylib` and `libfmod.dylib` next to the game, and the .NET runtime in `Contents/MacOS`.
-- `Contents/MacOS/KSA`, the app's executable: [`app/launcher.sh`](app/launcher.sh). It sets `DYLD_LIBRARY_PATH` to
-  the game folder, so every library comes from the app and never from elsewhere on the Mac, loads the GLFW shim,
-  and starts `dotnet KSA.dll` (through StarMap when the [StarMap extra](#extras) is in the app). Its output goes to
-  `console.log` in the game's logs folder, or to the terminal when started from one.
+- The native libraries next to the game, and the .NET runtime in `Contents/MacOS`.
+- `Contents/MacOS/KSA`, the app's executable: [`src/launcher/launcher.sh`](src/launcher/launcher.sh). It sets
+  `DYLD_LIBRARY_PATH` to the game folder, so every library comes from the app and never from elsewhere on the Mac,
+  loads the GLFW shim, and starts `dotnet KSA.dll` (through StarMap when [StarMap](#mods) is in the app). Its output
+  goes to `console.log` in the game's logs folder, or to the terminal when started from one.
 - `Contents/Resources/Licenses/`: every component's licence and notices ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
-- An icon: `app/AppIcon.icns` if you add one, otherwise the kitten astronaut from KSA's title card, downloaded and
-  cropped at build time (RocketWerkz's artwork is never part of this repository).
-- `Info.plist`, with the game's version, the port's commit and natives stamp, and `NSHighResolutionCapable` off. The
-  game then renders one pixel per point, so its Resolution setting is the number of pixels it renders.
+- The icon, and `Info.plist`, with the game's version, the port's version and commit, and `NSHighResolutionCapable`
+  off. The game then renders one pixel per point, so its Resolution setting is the number of pixels it renders.
 
-The bundle isn't signed as a whole, because that would replace Microsoft's signature on `dotnet`. An app made on
-the Mac it runs on has no quarantine attribute, so macOS opens it as it is. When `port.sh` replaces an app, it builds
-the new one next to it, keeps its icon and window layout (`imgui.ini`), and moves the old one to the Trash only at
-the end; if anything fails, the old app is left as it was.
+The bundle isn't signed as a whole, because that would replace Microsoft's signature on `dotnet`. `make-app.sh`
+removes the quarantine attribute that a browser download puts on the files, so macOS opens the app as one made on
+this Mac. When `port.sh` replaces an app, it builds the new one next to it, keeps its window layout (`imgui.ini`) and
+StarMap, and moves the old one to the Trash only at the end; if anything fails, the old app is left as it was.
 
 ### Downloads
 
-The scripts contact only these hosts, and only when a file isn't downloaded already:
+`port.sh`, `starmap.sh` and `benchmark.sh` don't use the network. `update.sh` asks api.github.com for the latest
+release of the port, and downloads it from github.com, checked against the SHA-256 GitHub publishes for it.
 
-| Host | What | When |
-|---|---|---|
-| github.com | this project's prebuilt libraries; pinned sources (GLFW headers, SPIRV-Cross, SPIRV-Tools, SPIRV-Headers, Vulkan-Headers); `git pull` | looking for prebuilt libraries; building from source; `update.sh --pull` |
-| api.nuget.org | RocketWerkz's BRUTAL packages | first run, and when their pins change |
-| builds.dotnet.microsoft.com | the .NET runtime | first run, and when its pin changes |
-| ahwoo.com | KSA's title card, for the app icon | the first app you make |
+`build.sh` contacts these hosts, and only when a file isn't downloaded already:
 
-Every download is checked: against the checksum or commit pinned in `scripts/pins.sh`, or, for the prebuilt
-libraries, against the SHA-256 published with them and the stamp of your sources. The [extras](#extras) also
-download StarMap's release from github.com and Microsoft's .NET SDK from builds.dotnet.microsoft.com, each pinned
-and checked in its own script.
+| Host | What |
+|---|---|
+| github.com | pinned sources (GLFW headers, SPIRV-Cross, SPIRV-Tools, SPIRV-Headers, Vulkan-Headers), StarMap's release, and the licences of StarMap and Harmony |
+| api.nuget.org | RocketWerkz's BRUTAL packages |
+| builds.dotnet.microsoft.com | the .NET runtime and SDK |
+| ahwoo.com | KSA's title card, for the app icon |
+
+Every download of code is checked against the checksum or commit pinned in `scripts/pins.sh`.
 
 ### Repository layout
 
 ```text
-port.sh, update.sh        the two commands
-scripts/                  the steps, lib.sh and pins.sh; package-prebuilt.sh for the workflow
-app/launcher.sh           the app's executable
+build.sh, release.sh      make the port folder; make a release of it
+scripts/                  the build's steps, lib.sh and pins.sh
+src/port/                 the port folder's commands and lib/, its steps
+src/launcher/             the app's executable
 src/glfw-shim/            the GLFW shim
 src/ksa-metal/            KSA Metal, with its own README
-extras/                   optional tools, each with its own README: the StarMap mod loader and the benchmark
+src/benchmark/            the benchmark: mod, report program, tour and vehicles, with its own README
 third_party/fmod/         FMOD's macOS library, with its licence and notice (not MIT)
-.github/                  the prebuilt libraries workflow and the issue templates
-dist/, deps/              made by the build: the libraries for the app; downloads, sources and build trees
+.github/                  the issue templates
+deps/, dist/              made by the build: downloads, sources and build trees; the port folder and release zips
 ```
 
 ## KSA Metal
@@ -349,20 +352,39 @@ screenshots, shader dumps, profiles) are listed in [`src/ksa-metal/README.md`](s
 
 ## Extras
 
-Optional tools in [`extras/`](extras/), kept apart from the port itself: `port.sh` and `update.sh` never need them.
-Each works on the app `port.sh` made.
+Two optional tools come in the port folder. Each works on the app `port.sh` made.
 
-- **[StarMap mod loader](extras/starmap/README.md):** adds [StarMap](https://github.com/StarMapLoader/StarMap), a
-  community mod loader, to the app, so the game loads mods with their own code:
-  ```bash
-  ./extras/starmap/port-starmap.sh
-  ```
-- **[Benchmark](extras/benchmark/README.md):** plays a fixed tour of the game in one session (Earth from orbit,
-  flights over its ground and sea, a rocket launch, a kitten in the grass, other worlds, a 2,000-part rocket breaking
-  up), measures each part and writes a report to compare with another run or to share as an issue:
-  ```bash
-  ./extras/benchmark/benchmark.sh
-  ```
+### Mods
+
+[StarMap](https://github.com/StarMapLoader/StarMap) is a community mod loader for KSA: with it, the game loads mods
+with their own code, which KSA alone does not run. To add it to the app:
+
+```bash
+./starmap.sh
+```
+
+The game then starts through StarMap. Put each mod in its own folder in
+`~/Documents/My Games/Kitten Space Agency/mods/`; at the next start the game asks whether to enable it. When StarMap
+asks to restart the game, choose **Continue**, then quit and open the game again: **Restart** closes the game but
+cannot open it again on a Mac. StarMap's output goes to `console.log` with the game's. `./starmap.sh --remove` takes
+it out again; `port.sh` and `update.sh` keep it.
+
+StarMap is a separate project, still early: mods made for it may not work on a Mac, and a new KSA version can break
+it until it is updated. Its release is a Windows build, but only two of its files are Windows-specific: the port
+leaves out `StarMap.exe` (the app runs `StarMap.dll` with its own .NET runtime) and marks `StarMap.dll` as ARM64, as
+it does for `KSA.dll`.
+
+### Benchmark
+
+The benchmark plays a fixed tour of the game in one session (Earth from orbit, flights over its ground and sea, a
+rocket launch, a kitten in the grass, other worlds, a 2,000-part rocket breaking up), measures each part and writes a
+report to compare with another run or to share as an issue:
+
+```bash
+./benchmark.sh
+```
+
+[`src/benchmark/README.md`](src/benchmark/README.md) explains the tour, its options and how to compare runs.
 
 ## Credits and license
 

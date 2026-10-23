@@ -6,9 +6,9 @@
 # changing the mark is enough. Platform-neutral (PE32) assemblies load as they are and are left alone, and so are
 # files that are not assemblies. Safe to run again.
 #
-# Usage: scripts/mark-arm64.sh <file.dll...>
+# Usage: lib/mark-arm64.sh <file.dll...>
 set -eo pipefail
-source "$(dirname "$0")/lib.sh"
+source "$(dirname "$0")/common.sh"
 
 # PE layout: offset 0x3C holds the PE header offset; the header starts with "PE\0\0", the 2-byte machine type
 # follows, and the optional header magic (0x20B for PE32+) is 24 bytes in.

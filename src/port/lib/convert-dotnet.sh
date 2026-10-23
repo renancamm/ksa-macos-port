@@ -10,11 +10,11 @@
 #   3. KSA.runtimeconfig.json describes a self-contained program: replaced by one that uses the shared
 #      .NET 10 runtime (the one in the app).
 #   4. KSA.dll is a 64-bit assembly marked AMD64, which .NET on Apple Silicon does not load: marked ARM64
-#      (scripts/mark-arm64.sh). The other game DLLs are platform-neutral and load as they are.
+#      (lib/mark-arm64.sh). The other game DLLs are platform-neutral and load as they are.
 #
-# Usage: scripts/convert-dotnet.sh <game folder> <.NET runtime folder>
+# Usage: lib/convert-dotnet.sh <game folder> <.NET runtime folder>
 set -eo pipefail
-source "$(dirname "$0")/lib.sh"
+source "$(dirname "$0")/common.sh"
 
 GAME="$1"
 RUNTIME="$2"
@@ -22,11 +22,12 @@ RUNTIME="$2"
 FRAMEWORK="$(ls -d "${RUNTIME}"/shared/Microsoft.NETCore.App/*/ 2> /dev/null | head -1)"
 [ -n "${FRAMEWORK}" ] || die "no .NET runtime in ${RUNTIME}."
 
-# The port's BRUTAL libraries come from the packages pinned in scripts/pins.sh, each matching one of the game's
-# BRUTAL assemblies (Ahwoo.BRUTAL.Glfw: Brutal.Glfw.dll). An older game doesn't work with them (KSA 2026.10.13
-# passes the 2026.10 VMA library no Vulkan functions and crashes); a newer one may expect functions they lack.
-for entry in "${BRUTAL_PACKAGES[@]}"; do
-    read -r id version _ <<< "${entry}"
+# The port's BRUTAL libraries come from RocketWerkz's packages listed in lib/brutal.txt, each matching one of the
+# game's BRUTAL assemblies (Ahwoo.BRUTAL.Glfw: Brutal.Glfw.dll). An older game doesn't work with them (KSA
+# 2026.10.13 passes the 2026.10 VMA library no Vulkan functions and crashes); a newer one may expect functions they
+# lack.
+[ -f "${LIB}/brutal.txt" ] || die "${LIB}/brutal.txt is missing. Download the port again."
+while read -r id version; do
     assembly="Brutal.${id#Ahwoo.BRUTAL.}.dll"
     brutal="$(LC_ALL=C grep -m 1 -aoE '20[0-9]{2}\.[0-9]+\.[0-9]+\+[0-9a-f]{40}' "${GAME}/${assembly}" 2> /dev/null | head -1 || true)"
     brutal="${brutal%%+*}"
@@ -37,7 +38,7 @@ for entry in "${BRUTAL_PACKAGES[@]}"; do
         warn "this KSA uses ${assembly} ${brutal}, newer than the port's library (${version})." \
             "If the game fails to start, the port needs an update."
     fi
-done
+done < "${LIB}/brutal.txt"
 
 # 1. Linux runtime libraries
 removed=0
