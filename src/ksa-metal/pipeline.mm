@@ -1245,6 +1245,7 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
             case VK_DYNAMIC_STATE_SCISSOR: case VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT: p->dynamicScissor = true; break;
             case VK_DYNAMIC_STATE_DEPTH_BIAS: p->dynamicDepthBias = true; break;
             case VK_DYNAMIC_STATE_STENCIL_REFERENCE: p->dynamicStencilRef = true; break;
+            case VK_DYNAMIC_STATE_BLEND_CONSTANTS: p->dynamicBlendConstants = true; break;
             default: KLOG(1, "dynamic state %d ignored", dy->pDynamicStates[i]); break;
             }
         }

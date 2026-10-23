@@ -374,7 +374,8 @@ struct KPipeline {
     MTLDepthClipMode depthClip = MTLDepthClipModeClip;
     bool depthBiasEnable = false;
     float depthBias[3] = {0, 0, 0};  // constant, slope, clamp
-    bool dynamicViewport = false, dynamicScissor = false, dynamicDepthBias = false, dynamicStencilRef = false;
+    bool dynamicViewport = false, dynamicScissor = false, dynamicDepthBias = false, dynamicStencilRef = false,
+         dynamicBlendConstants = false;
     std::vector<VkViewport> viewports;
     std::vector<VkRect2D> scissors;
     uint32_t stencilRef[2] = {0, 0};
@@ -500,6 +501,9 @@ struct KCommandBuffer : KDispatchable {
     bool viewportDirty = false, scissorDirty = false;
     float depthBias[3] = {0, 0, 0};
     bool depthBiasDirty = false;
+    float blendConstants[4] = {0, 0, 0, 0};  // dynamic state, applied when the pipeline declares it dynamic
+    uint32_t stencilRef[2] = {0, 0};         // front, back
+    bool blendConstantsDirty = false, stencilRefDirty = false;
     bool pipelineDirty = false;
     KPipeline* encodedPipeline = nullptr;
 

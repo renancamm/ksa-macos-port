@@ -357,6 +357,9 @@ void KCommandBuffer::resetState() {
     viewports.clear();
     scissors.clear();
     pushSize = 0;
+    memset(blendConstants, 0, sizeof(blendConstants));
+    stencilRef[0] = stencilRef[1] = 0;
+    depthBiasDirty = blendConstantsDirty = stencilRefDirty = false;
     draws = dispatches = passes = 0;
     encodedPipeline = nullptr;
 }
@@ -574,13 +577,18 @@ VKFN(void) vkCmdSetDepthBias(VkCommandBuffer commandBuffer, float constant, floa
 }
 
 VKFN(void) vkCmdSetBlendConstants(VkCommandBuffer commandBuffer, const float c[4]) {
+    KTRACE_FIRST_PLAIN();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (cb->render) [cb->render setBlendColorRed:c[0] green:c[1] blue:c[2] alpha:c[3]];
+    memcpy(cb->blendConstants, c, sizeof(cb->blendConstants));
+    cb->blendConstantsDirty = true;
 }
 
-VKFN(void) vkCmdSetStencilReference(VkCommandBuffer commandBuffer, VkStencilFaceFlags, uint32_t ref) {
+VKFN(void) vkCmdSetStencilReference(VkCommandBuffer commandBuffer, VkStencilFaceFlags faces, uint32_t ref) {
+    KTRACE_FIRST_PLAIN();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (cb->render) [cb->render setStencilReferenceValue:ref];
+    if (faces & VK_STENCIL_FACE_FRONT_BIT) cb->stencilRef[0] = ref;
+    if (faces & VK_STENCIL_FACE_BACK_BIT) cb->stencilRef[1] = ref;
+    cb->stencilRefDirty = true;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -597,8 +605,12 @@ static bool flushGraphics(KCommandBuffer* cb) {
         [enc setFrontFacingWinding:p->winding];
         [enc setTriangleFillMode:p->fill];
         [enc setDepthClipMode:p->depthClip];
-        [enc setStencilFrontReferenceValue:p->stencilRef[0] backReferenceValue:p->stencilRef[1]];
-        [enc setBlendColorRed:p->blendConstants[0] green:p->blendConstants[1] blue:p->blendConstants[2] alpha:p->blendConstants[3]];
+        // Static state from the pipeline; what it declares dynamic comes from the command buffer, below
+        if (!p->dynamicStencilRef) [enc setStencilFrontReferenceValue:p->stencilRef[0] backReferenceValue:p->stencilRef[1]];
+        else cb->stencilRefDirty = true;
+        if (!p->dynamicBlendConstants)
+            [enc setBlendColorRed:p->blendConstants[0] green:p->blendConstants[1] blue:p->blendConstants[2] alpha:p->blendConstants[3]];
+        else cb->blendConstantsDirty = true;
         if (!p->depthBiasEnable) [enc setDepthBias:0 slopeScale:0 clamp:0];
         else if (!p->dynamicDepthBias) [enc setDepthBias:p->depthBias[0] slopeScale:p->depthBias[1] clamp:p->depthBias[2]];
         else cb->depthBiasDirty = true;
@@ -607,6 +619,14 @@ static bool flushGraphics(KCommandBuffer* cb) {
     if (cb->depthBiasDirty && p->depthBiasEnable && p->dynamicDepthBias) {
         [enc setDepthBias:cb->depthBias[0] slopeScale:cb->depthBias[1] clamp:cb->depthBias[2]];
         cb->depthBiasDirty = false;
+    }
+    if (cb->stencilRefDirty && p->dynamicStencilRef) {
+        [enc setStencilFrontReferenceValue:cb->stencilRef[0] backReferenceValue:cb->stencilRef[1]];
+        cb->stencilRefDirty = false;
+    }
+    if (cb->blendConstantsDirty && p->dynamicBlendConstants) {
+        [enc setBlendColorRed:cb->blendConstants[0] green:cb->blendConstants[1] blue:cb->blendConstants[2] alpha:cb->blendConstants[3]];
+        cb->blendConstantsDirty = false;
     }
     if (cb->viewportDirty && !cb->viewports.empty()) {
         MTLViewport v[16];
