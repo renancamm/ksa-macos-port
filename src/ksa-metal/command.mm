@@ -8,10 +8,7 @@ static const MTLRenderStages kAllRenderStages = MTLRenderStageVertex | MTLRender
 
 // KSA_MTL_SYNC=strict: every encoder is of every class and every barrier covers every class, so encoders run in
 // submission order
-static bool strictSync() {
-    static const bool v = [] { const char* s = kmtlEnv("KSA_MTL_SYNC"); return s && !strcmp(s, "strict"); }();
-    return v;
-}
+static bool strictSync() { return kmtlConfig().strictSync; }
 
 // ---------------------------------------------------------------------------------------------------------------
 // Encoder ordering
@@ -186,11 +183,6 @@ void* KUploadRing::alloc(KDevice* dev, size_t size, id<MTLBuffer>* outBuf, NSUIn
 // ---------------------------------------------------------------------------------------------------------------
 // Encoders
 
-bool kmtlLabelsEnabled() {
-    static const bool v = kmtlEnvInt("KSA_MTL_LABELS", 0) != 0;
-    return v;
-}
-
 // The encoder's name: its first pipeline (shader hashes, as the GPU profiler names them), how many others it ran, and
 // a render pass's size
 void KCommandBuffer::notePipelineLabel(KPipeline* p) {
@@ -300,7 +292,7 @@ void KCommandBuffer::beginRender(MTLRenderPassDescriptor* rp, uint32_t w, uint32
         passResolves = rp.depthAttachment.resolveTexture || rp.stencilAttachment.resolveTexture;
         for (int i = 0; i < 8; i++) passResolves |= rp.colorAttachments[i].resolveTexture != nil;
     }
-    deferredStores = kmtlTessellationEnabled();
+    deferredStores = kmtlConfig().tessellation;
     if (deferredStores) {
         if (!resuming) {
             for (int i = 0; i < 8; i++) colorStores[i] = rp.colorAttachments[i].storeAction;
@@ -852,7 +844,7 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
         [enc dispatchThreads:MTLSizeMake(t.count, t.instances, 1) threadsPerThreadgroup:MTLSizeMake(vw, 1, 1)];
     }
     [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
-    if (kmtlProfSplit()) {
+    if (kmtlConfig().gpuprofSplit) {
         // Profiling: the control stage in its own encoder
         kmtlProfNote(cb, p, true, 1);
         cb->endEncoder();
@@ -1050,7 +1042,7 @@ VKFN(void) vkCmdDispatch(VkCommandBuffer commandBuffer, uint32_t x, uint32_t y, 
     [cb->compute dispatchThreadgroups:MTLSizeMake(x, y, z) threadsPerThreadgroup:cb->computePipeline->workgroup];
     kmtlProfNote(cb, cb->computePipeline, true, 1);
     cb->dispatches++;
-    if (kmtlProfSplit()) cb->endEncoder();
+    if (kmtlConfig().gpuprofSplit) cb->endEncoder();
 }
 
 VKFN(void) vkCmdDispatchIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset) {
@@ -1062,7 +1054,7 @@ VKFN(void) vkCmdDispatchIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer,
                                   threadsPerThreadgroup:cb->computePipeline->workgroup];
     kmtlProfNote(cb, cb->computePipeline, true, 1);
     cb->dispatches++;
-    if (kmtlProfSplit()) cb->endEncoder();
+    if (kmtlConfig().gpuprofSplit) cb->endEncoder();
 }
 
 // Ray tracing pipelines are compute kernels of 8x8 threads; the launch size goes to kRtLaunchBufferIndex and the

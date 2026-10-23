@@ -29,11 +29,6 @@ KPipeline* kmtlCreateComputeFromStage(KDevice* dev, KPipelineLayout* layout, con
 
 static const uint32_t kGroupHandleSize = 32;
 
-bool kmtlRayTracingPipelinesEnabled() {
-    static const bool v = kmtlRayQueryEnabled() && kmtlEnvInt("KSA_MTL_RTPIPELINE", 1) != 0;
-    return v;
-}
-
 static KPipeline* createRayTracingPipeline(KDevice* dev, const VkRayTracingPipelineCreateInfoKHR* ci) {
     auto module = [&](uint32_t stage) -> KShaderModule* { return stage < ci->stageCount ? (KShaderModule*)ci->pStages[stage].module : nullptr; };
     int raygen = -1, chit = -1;
@@ -61,7 +56,7 @@ static KPipeline* createRayTracingPipeline(KDevice* dev, const VkRayTracingPipel
         KERR("ray tracing pipeline: %s", err.c_str());
         return nullptr;
     }
-    if (const char* dir = kmtlEnv("KSA_MTL_DUMP_SPV")) {
+    if (const char* dir = kmtlConfig().dumpSpv) {
         char path[1200];
         snprintf(path, sizeof(path), "%s/rt_%016llx.spv", dir, (unsigned long long)module(raygen)->hash);
         if (FILE* f = fopen(path, "wb")) { fwrite(linked.data(), 4, linked.size(), f); fclose(f); }

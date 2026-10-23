@@ -61,7 +61,7 @@ VKFN(void) vkDestroyShaderModule(VkDevice, VkShaderModule m, const VkAllocationC
 // MSL compilation (cached per device by MSL text hash)
 
 static void dumpMSL(const std::string& name, const std::string& msl, const std::string& err) {
-    const char* dir = kmtlEnv("KSA_MTL_DUMP_MSL");
+    const char* dir = kmtlConfig().dumpMsl;
     if (!dir) return;
     mkdir(dir, 0755);
     std::string path = std::string(dir) + "/" + name + ".metal";
@@ -93,7 +93,7 @@ id<MTLLibrary> kmtlCompileMSL(KDevice* dev, const std::string& msl, std::string*
     auto t0 = std::chrono::steady_clock::now();
     MTLCompileOptions* o = [MTLCompileOptions new];
     o.languageVersion = MTLLanguageVersion3_2;
-    o.mathMode = kmtlEnvInt("KSA_MTL_SAFE_MATH", 0) ? MTLMathModeSafe : MTLMathModeFast;
+    o.mathMode = kmtlConfig().safeMath ? MTLMathModeSafe : MTLMathModeFast;
     o.preserveInvariance = YES;
     NSError* e = nil;
     id<MTLLibrary> lib = [dev->mtl newLibraryWithSource:[NSString stringWithUTF8String:msl.c_str()] options:o error:&e];
@@ -114,12 +114,6 @@ id<MTLLibrary> kmtlCompileMSL(KDevice* dev, const std::string& msl, std::string*
 
 // Per-stage translation options
 enum class KTessRole { None, VertexKernel, ControlKernel, Evaluation };
-// Shaders read their argument buffers from the constant address space, which lets the compiler load resource
-// handles as uniforms (2-5% faster across the benchmark than device). KSA_MTL_AB_CONSTANT=0: device, everywhere
-static uint32_t constantArgumentBuffers() {
-    static const uint32_t on = kmtlEnvInt("KSA_MTL_AB_CONSTANT", 1) ? 1 : 0;
-    return on;
-}
 
 struct KStageOptions {
     uint32_t fragMask = 0xffffffff;
@@ -280,9 +274,11 @@ static bool translate(KShaderModule* mod, const char* entryName, spv::ExecutionM
             for (uint32_t s = 0; s < layout->sets.size(); s++) {
                 KSetLayout* sl = layout->sets[s];
                 if (!sl) continue;
-                // Ray tracing kernels (rtspirv.cpp) pass their resources to functions declared for device memory, and
-                // the constant address space holds at most 64 KiB
-                if (!constantArgumentBuffers() || so.rtLaunch || sl->bytes() > 65536)
+                // Shaders read their argument buffers from the constant address space, which lets the compiler load
+                // resource handles as uniforms (2-5% faster across the benchmark than device; KSA_MTL_AB_CONSTANT=0:
+                // device everywhere). Ray tracing kernels (rtspirv.cpp) pass their resources to functions declared for
+                // device memory, and the constant address space holds at most 64 KiB
+                if (!kmtlConfig().constantArgumentBuffers || so.rtLaunch || sl->bytes() > 65536)
                     c.set_argument_buffer_device_address_space(s, true);
                 MSLResourceBinding ab;
                 ab.stage = model;
@@ -349,7 +345,7 @@ static bool translate(KShaderModule* mod, const char* entryName, spv::ExecutionM
 
         // Quality presets (KSA_MTL_SPEC=<module hash>:<constant id>=<value>[,...]): replace a specialization constant
         // of one module whatever the game passes, e.g. fewer iterations of an expensive loop
-        if (const char* presets = kmtlEnv("KSA_MTL_SPEC")) {
+        if (const char* presets = kmtlConfig().spec) {
             char want[24];
             snprintf(want, sizeof(want), "%016llx:", (unsigned long long)mod->hash);
             for (const char* q = strstr(presets, want); q; q = strstr(q + 1, want)) {
@@ -435,7 +431,7 @@ static bool stripPassthroughControl(std::string& msl);
 // translation of a module stage. The replacement keeps the translated interface: same entry point name, same
 // argument buffer bindings (the set layouts fix them). Specialization values come from the translation it replaces
 static void applyOverride(const char* name, uint64_t key, KTranslated* tr) {
-    static const char* dir = kmtlEnv("KSA_MTL_OVERRIDES");
+    const char* dir = kmtlConfig().overrides;
     if (!dir) return;
     char path[1200];
     snprintf(path, sizeof(path), "%s/%016llx.metal", dir, (unsigned long long)key);
@@ -471,8 +467,9 @@ static uint64_t translationKey(KShaderModule* mod, const char* entry, spv::Execu
     static const uint32_t kTranslatorVersion = 3;
     std::vector<uint32_t> k = {kTranslatorVersion, 0x300681bbu /* SPIRV-Cross pin */, (uint32_t)model, so.fragMask,
         so.sampleRate, so.viewMask, (uint32_t)so.tess, (uint32_t)so.indexType, so.tessControlPoints, so.tessQuads,
-        1u /* passthrough control stripped */, (uint32_t)mod->hash, (uint32_t)(mod->hash >> 32), so.rtLaunch, constantArgumentBuffers(), so.tessFusedInput};
-    if (const char* presets = kmtlEnv("KSA_MTL_SPEC")) k.push_back((uint32_t)kmtlHash(presets, strlen(presets)));
+        1u /* passthrough control stripped */, (uint32_t)mod->hash, (uint32_t)(mod->hash >> 32), so.rtLaunch,
+        (uint32_t)kmtlConfig().constantArgumentBuffers, so.tessFusedInput};
+    if (const char* presets = kmtlConfig().spec) k.push_back((uint32_t)kmtlHash(presets, strlen(presets)));
     for (const char* c = entry; *c; c++) k.push_back((uint8_t)*c);
     if (layout) {
         for (KSetLayout* sl : layout->sets) {
@@ -556,11 +553,6 @@ static id<MTLFunction> compileStage(KDevice* dev, const KTranslated& t, const st
 // Asynchronous pipeline creation (KSA_MTL_ASYNC_PIPELINES=0 turns it off): KSA creates its pipelines one at a time,
 // so on a cold shader cache the MSL compiles run serially; workers compile them in parallel instead, and the first
 // bind of a pipeline waits for its compile
-static bool asyncPipelines() {
-    static const bool v = kmtlEnvInt("KSA_MTL_ASYNC_PIPELINES", 1) != 0;
-    return v;
-}
-
 static void runPipelineJob(std::function<void()> job) {
     static dispatch_queue_t queue = dispatch_queue_create("ksa-metal.pipelines", DISPATCH_QUEUE_CONCURRENT);
     // Leave two cores to the game
@@ -925,7 +917,7 @@ static bool buildFusedTess(KDevice* dev, const VkGraphicsPipelineCreateInfo* ci,
         KLOG(1, "fused tessellation unavailable: %s", err.c_str());
         return false;
     }
-    if (const char* dir = kmtlEnv("KSA_MTL_DUMP_SPV")) {
+    if (const char* dir = kmtlConfig().dumpSpv) {
         auto dump = [&](const char* what, const std::vector<uint32_t>& w) {
             char path[1200];
             snprintf(path, sizeof(path), "%s/fused_%s_%016llx.spv", dir, what, (unsigned long long)vsm->hash);
@@ -1016,7 +1008,7 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
         }
     }
     bool tess = tcs && tes;
-    if ((tcs || tes) && (!tess || !kmtlTessellationEnabled())) {
+    if ((tcs || tes) && (!tess || !kmtlConfig().tessellation)) {
         KERR("tessellation pipeline skipped (tessellation disabled by KSA_MTL_TESSELLATION=0)");
         return nullptr;
     }
@@ -1054,7 +1046,7 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
     // With tessellation the evaluation stage is Metal's (post-tessellation) vertex function
     // Translation here; MSL compile and pipeline state on a worker unless the pipeline is tessellated (its kernels
     // are built above) or asynchronous creation is off
-    bool async = !tess && asyncPipelines();
+    bool async = !tess && kmtlConfig().asyncPipelines;
     std::string vname, fname;
     id<MTLFunction> vfn = nil, ffn = nil;
     if (tess) {
@@ -1205,8 +1197,7 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
         KLOG(1, "tessellation pipeline: %u -> %u control points, strides vertex %lu control %lu patch %lu%s", p->tessInCP,
              p->tessOutCP, (unsigned long)tessPlain.vertexStride, (unsigned long)tessPlain.controlStride,
              (unsigned long)tessPlain.patchStride, p->tessPassthrough ? ", passthrough control stage" : "");
-        static const bool fuse = kmtlEnvInt("KSA_MTL_TESS_FUSE", 1) != 0;
-        if (fuse && p->tessPassthrough) buildFusedTess(dev, ci, vs, tcs, tes, layout, tmodes, vso, d, makeState, p);
+        if (kmtlConfig().tessFuse && p->tessPassthrough) buildFusedTess(dev, ci, vs, tcs, tes, layout, tmodes, vso, d, makeState, p);
     }
     p->triangleFan = topo == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
     p->vertexUsesDrawId = vtr.usesDrawId;
@@ -1285,7 +1276,7 @@ VKFN(VkResult) vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache, uint3
         }
     }
     // A failed pipeline is reported but does not stop the game: KSA_MTL_STRICT=1 returns the error instead
-    if (res != VK_SUCCESS && !kmtlEnvInt("KSA_MTL_STRICT", 0)) {
+    if (res != VK_SUCCESS && !kmtlConfig().strictPipelines) {
         for (uint32_t i = 0; i < n; i++)
             if (!out[i]) out[i] = (VkPipeline) new KPipeline();  // null pipeline: draws with it are skipped
         return VK_SUCCESS;
@@ -1319,7 +1310,7 @@ KPipeline* kmtlCreateComputeFromStage(KDevice* dev, KPipelineLayout* layout, con
         return ps;
     };
     // Ray tracing kernels translate a module that lives only for this call: they compile here
-    bool async = asyncPipelines() && !rtLaunch;
+    bool async = kmtlConfig().asyncPipelines && !rtLaunch;
     id<MTLComputePipelineState> ps = nil;
     if (!async && !(ps = build(tr, name))) return nullptr;
     auto* p = new KPipeline();
@@ -1363,7 +1354,7 @@ VKFN(VkResult) vkCreateComputePipelines(VkDevice device, VkPipelineCache, uint32
             if (!p) res = VK_ERROR_INITIALIZATION_FAILED;
         }
     }
-    if (res != VK_SUCCESS && !kmtlEnvInt("KSA_MTL_STRICT", 0)) {
+    if (res != VK_SUCCESS && !kmtlConfig().strictPipelines) {
         for (uint32_t i = 0; i < n; i++)
             if (!out[i]) {
                 auto* p = new KPipeline();

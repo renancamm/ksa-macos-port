@@ -42,7 +42,7 @@ static std::vector<id<MTLCounterSampleBuffer>> g_samplePool;
 static bool profInit(KDevice* dev) {
     static std::once_flag once;
     std::call_once(once, [dev] {
-        const char* path = kmtlEnv("KSA_MTL_GPUPROF");
+        const char* path = kmtlConfig().gpuprof;
         if (!path) return;
         if (![dev->mtl supportsCounterSampling:MTLCounterSamplingPointAtStageBoundary]) {
             KERR("GPU profiler: no stage-boundary counter sampling");
@@ -52,7 +52,7 @@ static bool profInit(KDevice* dev) {
             if ([cs.name isEqualToString:MTLCommonCounterSetTimestamp]) g_timestampSet = cs;
         if (!g_timestampSet) return;
         unsigned long long first, count;
-        if (const char* f = kmtlEnv("KSA_MTL_GPUPROF_FRAMES"); f && sscanf(f, "%llu,%llu", &first, &count) == 2) {
+        if (const char* f = kmtlConfig().gpuprofFrames; f && sscanf(f, "%llu,%llu", &first, &count) == 2) {
             g_profFirst = first;
             g_profCount = count;
         }
@@ -172,8 +172,9 @@ id<MTLBlitCommandEncoder> kmtlProfBlitEncoder(KCommandBuffer* cb) {
 
 // A draw or dispatch with this pipeline in the current encoder
 void kmtlProfNote(KCommandBuffer* cb, KPipeline* p, bool dispatch, uint32_t n) {
-    if (!cb->prof && !kmtlLabelsEnabled()) return;  // the common case: two predictable branches per draw
-    if (kmtlLabelsEnabled()) cb->notePipelineLabel(p);
+    const KConfig& cfg = kmtlConfig();
+    if (!cb->prof && !cfg.labels) return;  // the common case: two predictable branches per draw
+    if (cfg.labels) cb->notePipelineLabel(p);
     KProfState* s = cb->prof;
     if (!s || s->current < 0) return;
     KProfEncoder& e = s->encoders[s->current];
@@ -183,15 +184,10 @@ void kmtlProfNote(KCommandBuffer* cb, KPipeline* p, bool dispatch, uint32_t n) {
         e.pipelines += p->profName;
         e.lastPipeline = p->profId;
     }
-    if (kmtlProfSplit() && !dispatch && cb->render && cb->deferredStores) {
+    if (cfg.gpuprofSplit && !dispatch && cb->render && cb->deferredStores) {
         cb->suspendRender();
         cb->resumeRender();
     }
-}
-
-bool kmtlProfSplit() {
-    static const bool v = kmtlEnvInt("KSA_MTL_GPUPROF_SPLIT", 0) != 0;
-    return v;
 }
 
 void kmtlProfEncoderEnded(KCommandBuffer* cb) {
@@ -238,7 +234,7 @@ void kmtlProfSubmit(KCommandBuffer* cb, id<MTLCommandBuffer> mtl) {
 }
 
 void kmtlProfDumpSpirv(const uint32_t* code, size_t bytes, uint64_t hash) {
-    static const char* dir = kmtlEnv("KSA_MTL_DUMP_SPV");
+    const char* dir = kmtlConfig().dumpSpv;
     if (!dir) return;
     mkdir(dir, 0755);
     char path[1200];

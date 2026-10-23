@@ -207,6 +207,7 @@ vertex buffer n.
 | File | What it holds |
 |---|---|
 | `kmtl.h` | shared declarations |
+| `config.mm` | the `KSA_MTL_*` variables above, read once |
 | `entry.mm` | the table behind `vkGetInstanceProcAddr` and `vkGetDeviceProcAddr` |
 | `instance.mm` | instance, physical device queries, features and limits |
 | `device.mm` | device, queues, memory, buffers, images, samplers, synchronization, submission |

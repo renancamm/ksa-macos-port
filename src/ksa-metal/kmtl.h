@@ -52,8 +52,43 @@ struct KAutoreleasePool {
 #define KUNIMPL() do { static std::atomic<bool> s_seen{false}; \
     if (!s_seen.exchange(true)) kmtlLog(0, "UNIMPLEMENTED: %s", __func__); } while (0)
 
-const char* kmtlEnv(const char* name);
-int kmtlEnvInt(const char* name, int def);
+// ---------------------------------------------------------------------------------------------------------------
+// Configuration: the KSA_MTL_* environment variables, read once (config.mm). README.md documents them in the same two
+// groups. Strings are null when unset.
+struct KConfig {
+    // Switches: turn a feature off or change a default
+    bool tessellation = true;             // KSA_MTL_TESSELLATION=0 hides tessellation from the game
+    bool tessFuse = true;                 // KSA_MTL_TESS_FUSE=0 tessellates without the fused path
+    bool rayQuery = true;                 // KSA_MTL_RAYQUERY=0 hides ray queries and ray tracing
+    bool rtPipeline = true;               // KSA_MTL_RTPIPELINE=0 hides ray tracing pipelines (off with rayQuery)
+    bool asyncPipelines = true;           // KSA_MTL_ASYNC_PIPELINES=0 compiles pipelines on the game's thread
+    bool cache = true;                    // KSA_MTL_CACHE=0: no shader cache on disk, no prewarm
+    bool strictSync = false;              // KSA_MTL_SYNC=strict: all GPU work in submission order
+    bool safeMath = false;                // KSA_MTL_SAFE_MATH=1: shaders without fast math
+    bool constantArgumentBuffers = true;  // KSA_MTL_AB_CONSTANT=0: argument buffers in device memory
+    int budgetMb = 0;                     // KSA_MTL_BUDGET_MB: GPU memory budget reported (0: Metal's recommendation)
+    // Debugging
+    int logLevel = 0;                     // KSA_MTL_LOG (see Logging above)
+    const char* logFile = nullptr;        // KSA_MTL_LOG_FILE
+    bool strictPipelines = false;         // KSA_MTL_STRICT=1: pipeline errors go back to the game
+    const char* dumpMsl = nullptr;        // KSA_MTL_DUMP_MSL=<dir>
+    const char* dumpSpv = nullptr;        // KSA_MTL_DUMP_SPV=<dir>
+    const char* overrides = nullptr;      // KSA_MTL_OVERRIDES=<dir>
+    const char* spec = nullptr;           // KSA_MTL_SPEC=<hash>:<id>=<value>,...
+    const char* cacheDir = nullptr;       // KSA_MTL_CACHE_DIR=<dir>
+    const char* shots = nullptr;          // KSA_MTL_SHOTS=<n,...>
+    const char* shotUnit = nullptr;       // KSA_MTL_SHOT_UNIT=presents|frames|seconds
+    const char* shotDir = nullptr;        // KSA_MTL_SHOT_DIR=<dir>
+    int exitAfter = 0;                    // KSA_MTL_EXIT_AFTER=<presents>
+    double exitAfterSeconds = 0;          // KSA_MTL_EXIT_AFTER_S=<seconds>
+    bool exitAfterShots = false;          // KSA_MTL_EXIT_AFTER_SHOTS=1
+    const char* frames = nullptr;         // KSA_MTL_FRAMES=<csv>
+    const char* gpuprof = nullptr;        // KSA_MTL_GPUPROF=<csv>
+    const char* gpuprofFrames = nullptr;  // KSA_MTL_GPUPROF_FRAMES=<first>,<count>
+    bool gpuprofSplit = false;            // KSA_MTL_GPUPROF_SPLIT=1: every draw and dispatch in its own encoder
+    bool labels = false;                  // KSA_MTL_LABELS=1: encoders named after their pipelines
+};
+const KConfig& kmtlConfig();
 
 // ---------------------------------------------------------------------------------------------------------------
 // Buffer indices per stage (vertex buffers count down from 30, so the low indices stay free for sets and push constants)
@@ -596,7 +631,6 @@ void kmtlOnPresent(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb);
 void kmtlCountWork(uint32_t draws, uint32_t dispatches, uint32_t passes);
 void kmtlNoteGpuTime(id<MTLCommandBuffer> cb);  // from completion handlers: GPU busy time for the frame log
 void kmtlPipelineCounts(uint32_t* shaders, uint32_t* pipelines);  // MSL compiled (not from the cache), states made
-bool kmtlLabelsEnabled();  // KSA_MTL_LABELS=1: encoders named after their pipelines (command.mm)
 
 PFN_vkVoidFunction kmtlLookup(const char* name, int level);
 
@@ -607,7 +641,6 @@ void kmtlProfRenderPass(KCommandBuffer* cb, MTLRenderPassDescriptor* rp);
 id<MTLComputeCommandEncoder> kmtlProfComputeEncoder(KCommandBuffer* cb);
 id<MTLBlitCommandEncoder> kmtlProfBlitEncoder(KCommandBuffer* cb);
 void kmtlProfNote(KCommandBuffer* cb, KPipeline* p, bool dispatch, uint32_t n);
-bool kmtlProfSplit();
 void kmtlProfEncoderEnded(KCommandBuffer* cb);
 void kmtlProfSubmit(KCommandBuffer* cb, id<MTLCommandBuffer> mtl);
 void kmtlProfPresent();
@@ -617,8 +650,6 @@ void kmtlProfDumpSpirv(const uint32_t* code, size_t bytes, uint64_t hash);
 void kmtlRegisterMemory(KDeviceMemory* m);
 void kmtlUnregisterMemory(KDeviceMemory* m);
 uint64_t kmtlAccelId(VkAccelerationStructureKHR as);
-bool kmtlRayQueryEnabled();
-bool kmtlTessellationEnabled();  // level 0 global, 1 instance, 2 device
 
 // Memory accounting (frame log and budget)
 extern std::atomic<int64_t> g_allocatedBytes;

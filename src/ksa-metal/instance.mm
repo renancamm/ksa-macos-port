@@ -8,15 +8,9 @@
 int g_logLevel = 0;
 static FILE* g_logFile = nullptr;
 
-const char* kmtlEnv(const char* name) { return getenv(name); }
-int kmtlEnvInt(const char* name, int def) {
-    const char* v = getenv(name);
-    return (v && *v) ? atoi(v) : def;
-}
-
 __attribute__((constructor)) static void kmtlInitLogging() {
-    g_logLevel = kmtlEnvInt("KSA_MTL_LOG", 0);
-    const char* path = kmtlEnv("KSA_MTL_LOG_FILE");
+    g_logLevel = kmtlConfig().logLevel;
+    const char* path = kmtlConfig().logFile;
     g_logFile = path ? fopen(path, "w") : nullptr;
     if (!g_logFile) g_logFile = stdout;
     setvbuf(g_logFile, nullptr, _IOLBF, 0);
@@ -63,21 +57,8 @@ static const VkExtensionProperties kDeviceExtensions[] = {
     {VK_KHR_PRESENT_WAIT_EXTENSION_NAME, VK_KHR_PRESENT_WAIT_SPEC_VERSION},
 };
 
-// Ray query: acceleration structures and ray queries (KSA_MTL_RAYQUERY=0 hides them, the game then uses its
-// software BVH for grass placement)
-bool kmtlRayQueryEnabled() {
-    static const bool v = kmtlEnvInt("KSA_MTL_RAYQUERY", 1) != 0;
-    return v;
-}
-
-bool kmtlRayTracingPipelinesEnabled();
-
-// Tessellation (KSA_MTL_TESSELLATION=0 hides the feature; the game then skips terrain/ocean tessellation)
-bool kmtlTessellationEnabled() {
-    static const bool v = kmtlEnvInt("KSA_MTL_TESSELLATION", 1) != 0;
-    return v;
-}
-
+// Ray query (acceleration structures and ray queries; KSA_MTL_RAYQUERY=0 hides them, the game then uses its software
+// BVH for grass placement) and ray tracing pipelines are advertised by the configuration, as is tessellation
 static const VkExtensionProperties kRayQueryExtensions[] = {
     {VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME, VK_KHR_ACCELERATION_STRUCTURE_SPEC_VERSION},
     {VK_KHR_RAY_QUERY_EXTENSION_NAME, VK_KHR_RAY_QUERY_SPEC_VERSION},
@@ -147,8 +128,8 @@ VKFN(VkResult) vkEnumerateDeviceExtensionProperties(VkPhysicalDevice, const char
     KTRACE_FIRST();
     if (layer) { *count = 0; return VK_ERROR_LAYER_NOT_PRESENT; }
     std::vector<VkExtensionProperties> all(kDeviceExtensions, kDeviceExtensions + sizeof(kDeviceExtensions) / sizeof(kDeviceExtensions[0]));
-    if (kmtlRayQueryEnabled()) all.insert(all.end(), kRayQueryExtensions, kRayQueryExtensions + 3);
-    if (kmtlRayTracingPipelinesEnabled()) all.push_back({VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME, VK_KHR_RAY_TRACING_PIPELINE_SPEC_VERSION});
+    if (kmtlConfig().rayQuery) all.insert(all.end(), kRayQueryExtensions, kRayQueryExtensions + 3);
+    if (kmtlConfig().rtPipeline) all.push_back({VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME, VK_KHR_RAY_TRACING_PIPELINE_SPEC_VERSION});
     return fillExtensions(all.data(), (uint32_t)all.size(), count, props);
 }
 
@@ -454,7 +435,7 @@ static void fillFeatures(VkPhysicalDeviceFeatures* f) {
     f->imageCubeArray = VK_TRUE;
     f->independentBlend = VK_TRUE;
     f->geometryShader = VK_FALSE;
-    f->tessellationShader = kmtlTessellationEnabled();
+    f->tessellationShader = kmtlConfig().tessellation;
     f->sampleRateShading = VK_TRUE;
     f->dualSrcBlend = VK_TRUE;
     f->logicOp = VK_FALSE;
@@ -581,14 +562,14 @@ VKFN(void) vkGetPhysicalDeviceFeatures2(VkPhysicalDevice, VkPhysicalDeviceFeatur
             break;
         }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR:
-            ((VkPhysicalDeviceAccelerationStructureFeaturesKHR*)s)->accelerationStructure = kmtlRayQueryEnabled();
+            ((VkPhysicalDeviceAccelerationStructureFeaturesKHR*)s)->accelerationStructure = kmtlConfig().rayQuery;
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR:
-            ((VkPhysicalDeviceRayQueryFeaturesKHR*)s)->rayQuery = kmtlRayQueryEnabled();
+            ((VkPhysicalDeviceRayQueryFeaturesKHR*)s)->rayQuery = kmtlConfig().rayQuery;
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR:
             // Pipelines run as compute kernels with ray queries (rtpipeline.mm): no indirect traces, no primitive culling
-            ((VkPhysicalDeviceRayTracingPipelineFeaturesKHR*)s)->rayTracingPipeline = kmtlRayTracingPipelinesEnabled();
+            ((VkPhysicalDeviceRayTracingPipelineFeaturesKHR*)s)->rayTracingPipeline = kmtlConfig().rtPipeline;
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR:
             ((VkPhysicalDevicePresentIdFeaturesKHR*)s)->presentId = VK_TRUE;
@@ -657,7 +638,7 @@ VKFN(void) vkGetPhysicalDeviceMemoryProperties2(VkPhysicalDevice pd, VkPhysicalD
         memset(b->heapUsage, 0, sizeof(b->heapUsage));
         id<MTLDevice> d = ((KPhysicalDevice*)pd)->mtl;
         // KSA_MTL_BUDGET_MB overrides the reported budget (the game's texture streamer sizes itself from it)
-        int mb = kmtlEnvInt("KSA_MTL_BUDGET_MB", 0);
+        int mb = kmtlConfig().budgetMb;
         b->heapBudget[0] = mb > 0 ? (VkDeviceSize)mb << 20 : d.recommendedMaxWorkingSetSize;
         b->heapUsage[0] = (VkDeviceSize)g_allocatedBytes.load();
     }

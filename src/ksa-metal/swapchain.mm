@@ -318,26 +318,26 @@ static std::vector<double> parseList(const char* s) {
 }
 
 static void initInstruments() {
+    const KConfig& cfg = kmtlConfig();
     g_start = g_lastPresent = std::chrono::steady_clock::now();
-    if (const char* f = kmtlEnv("KSA_MTL_FRAMES")) {
-        g_frameCsv = fopen(f, "w");
+    if (cfg.frames) {
+        g_frameCsv = fopen(cfg.frames, "w");
         if (g_frameCsv) fprintf(g_frameCsv, "present,ms,draws,dispatches,passes,submits,allocated_mb,gpu_ms\n");
     }
-    if (const char* s = kmtlEnv("KSA_MTL_SHOTS")) {
-        const char* dir = kmtlEnv("KSA_MTL_SHOT_DIR");
-        const char* unit = kmtlEnv("KSA_MTL_SHOT_UNIT");
+    if (cfg.shots) {
+        const char* unit = cfg.shotUnit;
         g_shotUnit = unit && !strcmp(unit, "frames") ? ShotUnit::InGameFrames
                    : unit && !strcmp(unit, "seconds") ? ShotUnit::InGameSeconds : ShotUnit::Presents;
-        for (double v : parseList(s)) {
+        for (double v : parseList(cfg.shots)) {
             char name[64];
             snprintf(name, sizeof(name), "/shot_%.10g.png", v);
-            g_shots.push_back({v, std::string(dir ? dir : ".") + name});
+            g_shots.push_back({v, std::string(cfg.shotDir ? cfg.shotDir : ".") + name});
         }
-        g_exitAfterShots = kmtlEnvInt("KSA_MTL_EXIT_AFTER_SHOTS", 0) != 0;
+        g_exitAfterShots = cfg.exitAfterShots;
     }
     std::sort(g_shots.begin(), g_shots.end(), [](const Shot& a, const Shot& b) { return a.at < b.at; });
-    if (const char* e = kmtlEnv("KSA_MTL_EXIT_AFTER_S")) g_exitSeconds = atof(e);
-    g_exitAfter = kmtlEnvInt("KSA_MTL_EXIT_AFTER", 0);
+    g_exitSeconds = cfg.exitAfterSeconds;
+    g_exitAfter = cfg.exitAfter;
 }
 
 static void ensureInstruments() {
