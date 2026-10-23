@@ -76,14 +76,31 @@ renders with Vulkan. Its Linux release holds the game's .NET assemblies and cont
 native: the .NET runtime, BRUTAL's native libraries and FMOD. The .NET code runs on any platform, so the port keeps
 the game's files and puts macOS libraries under them:
 
-```
-KSA.dll, the other game assemblies, Content/      from your KSA archive         Linux runtime removed, small fixes
-  |-- .NET runtime                                Microsoft's macOS build       unchanged
-  |-- BRUTAL native libraries (ImGui, KTX, VMA...) RocketWerkz's macOS builds    unchanged
-  |-- GLFW (window, input)                        RocketWerkz's macOS build     unchanged, plus a shim built by this project
-  |-- FMOD (audio)                                FMOD's macOS library          unchanged
-  `-- Vulkan                                      KSA Metal                     built by this project
-        `-- Metal                                 macOS
+```text
+ KSA's Linux release                              The Mac app
+ ┌─────────────────────────────────┐              ┌─────────────────────────────────────┐
+ │ The game                        │     kept     │ The game                            │
+ │ KSA.dll, the .NET assemblies,   ├─────────────►│ the same files                      │
+ │ Content/ with the shaders       │              │ + ARM64 mark: two bytes in KSA.dll  │
+ │                                 │              │ + shader fixes: two bugs            │
+ └─────────────────────────────────┘              └─────────────────────────────────────┘
+ ┌─────────────────────────────────┐              ┌─────────────────────────────────────┐
+ │ .NET runtime                    │   swapped    │ .NET runtime                        │
+ │ for Linux x64                   ├─────────────►│ Microsoft's build for macOS         │
+ └─────────────────────────────────┘              └─────────────────────────────────────┘
+ ┌─────────────────────────────────┐              ┌─────────────────────────────────────┐
+ │ Native libraries                │   swapped    │ Native libraries                    │
+ │ BRUTAL's and FMOD, for Linux    ├─────────────►│ the same versions, built for macOS  │
+ │                                 │              │ by RocketWerkz and FMOD             │
+ │                                 │              │ + GLFW shim: fixes a few calls      │
+ └─────────────────────────────────┘              └─────────────────────────────────────┘
+ ┌─────────────────────────────────┐              ┌─────────────────────────────────────┐
+ │ Vulkan driver                   │ written here │ KSA Metal                           │
+ │ comes with the system           ├─────────────►│ a Vulkan driver made for KSA,       │
+ │                                 │              │ built on Apple's Metal              │
+ └─────────────────────────────────┘              └─────────────────────────────────────┘
+
+ + a fix made by the port
 ```
 
 So the app is made of three kinds of pieces:
