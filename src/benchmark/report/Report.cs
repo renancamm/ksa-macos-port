@@ -206,10 +206,12 @@ public static class Program
             foreach (var e in section["errors"] as JsonArray ?? new JsonArray())
                 problems.Add($"{section["name"]}: {e}");
         }
-        var log = Path.Combine(dir, "game.log");
-        if (File.Exists(log))
+        // The game's log of each session (game-2.log... for repeats)
+        foreach (var log in Directory.GetFiles(dir, "game*.log").OrderBy(f => f.Length).ThenBy(f => f, StringComparer.Ordinal))
         {
+            var name = Path.GetFileName(log);
             var errors = new Dictionary<string, int>();
+            bool gpuReset = false;
             var ansi = new Regex(@"\x1b\[[0-9;]*m");
             var gameError = new Regex(@"^\d\d:\d\d:\d\d\s+(ERROR|FATAL)\b");
             foreach (var raw in File.ReadLines(log))
@@ -218,14 +220,19 @@ public static class Program
                 if (line.StartsWith("[ksa-metal ERROR]", StringComparison.Ordinal) || gameError.IsMatch(line) ||
                     line.StartsWith("Unhandled exception", StringComparison.Ordinal))
                 {
+                    gpuReset |= line.Contains("kIOGPUCommandBufferCallbackError", StringComparison.Ordinal);
                     var key = line.Length > 160 ? line[..160] + "..." : line;
                     errors[key] = errors.GetValueOrDefault(key) + 1;
                 }
             }
+            // macOS recovered the GPU from a hang or fault: the game's work since then was thrown away
+            if (gpuReset)
+                problems.Add($"{name}: the GPU hung or faulted and macOS reset it: from then on the game's frames were thrown away, " +
+                             "so the numbers after it are not real");
             foreach (var (line, count) in errors.Take(10))
-                problems.Add($"game.log: {line}{(count > 1 ? $" ({count} times)" : "")}");
+                problems.Add($"{name}: {line}{(count > 1 ? $" ({count} times)" : "")}");
             if (errors.Count > 10)
-                problems.Add($"game.log: {errors.Count - 10} more kinds of errors");
+                problems.Add($"{name}: {errors.Count - 10} more kinds of errors");
         }
         return problems;
     }
