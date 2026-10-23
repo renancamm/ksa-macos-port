@@ -131,8 +131,8 @@ To update an app, `port.sh` runs the same steps on it again, without the extract
 
 ### BRUTAL's native libraries
 
-RocketWerkz publishes BRUTAL as NuGet packages (`Ahwoo.BRUTAL.*`). The packages that wrap native libraries carry
-RocketWerkz's builds for Windows, Linux and macOS on Apple Silicon. The port takes the macOS builds of the ten it
+RocketWerkz publishes BRUTAL as NuGet packages (`Ahwoo.BRUTAL.*`). The packages that wrap native code carry
+RocketWerkz's builds for Windows, Linux and macOS on Apple Silicon. The port takes the macOS builds from the eleven it
 needs, unmodified:
 
 | Package | Library | Used for |
@@ -147,6 +147,7 @@ needs, unmodified:
 | Ahwoo.BRUTAL.Ktx | `libKtx.dylib` | KTX2 textures |
 | Ahwoo.BRUTAL.ShaderC | `libshaderc_shared.dylib`, `libSPIRV-Tools-shared.dylib` | compiling the game's GLSL shaders at startup |
 | Ahwoo.BRUTAL.RakNet | `libRakNetDLL.dylib` | networking (RakNet), loaded only when a network session starts |
+| Ahwoo.BRUTAL.Monitor.Host | `Brutal.Monitor.Subprocess`, a program | crash dumps: the game starts it beside itself, and it writes a dump when the game fails |
 
 These are the same versions KSA ships for Linux: the Linux libraries in the game's archive are identical to the
 Linux builds in these packages. `convert-dotnet.sh` compares each package version with the matching game assembly

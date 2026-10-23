@@ -12,6 +12,7 @@
 #   Contents/MacOS/KSA            the launcher
 #   Contents/MacOS/dotnet, ...    Microsoft's .NET runtime
 #   Contents/Resources/*.dylib    the native libraries, which the game finds next to it
+#   Contents/Resources/Brutal.Monitor.Subprocess   BRUTAL's crash-dump helper, which the game starts
 #   Contents/Resources/AppIcon.icns, Licenses/
 # The bundle is not signed as a whole: that would replace Microsoft's signature on dotnet. The quarantine
 # attribute a browser download puts on the files is removed, so macOS opens the app as one made on this Mac.
@@ -22,9 +23,10 @@ source "$(dirname "$0")/common.sh"
 install_port_files() {
     local contents="$1" res="$1/Resources" macos="$1/MacOS"
 
-    # Native libraries: every .dylib next to the game is the port's (the game ships none for macOS)
+    # Native libraries: every .dylib next to the game is the port's (the game ships none for macOS). And BRUTAL's
+    # crash-dump helper, which the game starts from beside it.
     rm -f "${res}"/*.dylib
-    cp -P "${SKELETON}"/Resources/*.dylib "${res}/"
+    cp -P "${SKELETON}"/Resources/*.dylib "${SKELETON}/Resources/Brutal.Monitor.Subprocess" "${res}/"
 
     # .NET runtime and launcher (ditto keeps Microsoft's signatures)
     rm -rf "${macos}"

@@ -28,9 +28,11 @@ FetchContent_MakeAvailable(vulkan_headers spirv_cross spirv_tools glfw_headers d
     harmony_license title_card)
 
 # BRUTAL's native libraries: RocketWerkz's macOS builds, unmodified, from each package's runtimes/osx-arm64/native/,
-# with BRUTAL's licence, notice and the packages' third-party notices. Some packages ship one library under several
-# names, as identical copies (libglfw.dylib, libglfw.3.dylib, libglfw.3.5.dylib): the copies become links to the one
-# named by the library's install name, so that the game and the GLFW shim, which links that name, load the same GLFW.
+# with BRUTAL's licence, notice and the packages' third-party notices. The one file there that is not a library,
+# Brutal.Monitor.Subprocess, is a program: it gets back the execute permission the package's zip doesn't keep.
+# Some packages ship one library under several names, as identical copies (libglfw.dylib, libglfw.3.dylib,
+# libglfw.3.5.dylib): the copies become links to the one named by the library's install name, so that the game and
+# the GLFW shim, which links that name, load the same GLFW.
 # The folder starts anew when the list of packages changes, so no library of an older package stays behind.
 if(NOT "${BRUTAL_PACKAGES}" STREQUAL "$CACHE{KSA_BRUTAL_STAGED}")
     file(REMOVE_RECURSE "${KSA_NATIVES_DIR}")
@@ -46,12 +48,21 @@ foreach(entry IN LISTS BRUTAL_PACKAGES)
     file(REMOVE_RECURSE "${unpacked}")
     file(GLOB package "${${name}_SOURCE_DIR}/*.nupkg")
     file(ARCHIVE_EXTRACT INPUT "${package}" DESTINATION "${unpacked}"
-        PATTERNS "runtimes/osx-arm64/native/*" LICENSE.txt NOTICE.txt "LICENSES/*")
-    file(GLOB natives "${unpacked}/runtimes/osx-arm64/native/*.dylib")
+        PATTERNS "runtimes/osx-arm64/native/*" "*.txt") # every pattern must match: not all packages have LICENSES/
+    file(GLOB natives LIST_DIRECTORIES false "${unpacked}/runtimes/osx-arm64/native/*")
     if(NOT natives)
         message(FATAL_ERROR "${id} has no macOS libraries.")
     endif()
-    file(COPY ${natives} DESTINATION "${KSA_NATIVES_DIR}")
+    set(programs ${natives})
+    list(FILTER natives INCLUDE REGEX "\\.dylib$")
+    list(FILTER programs EXCLUDE REGEX "\\.dylib$")
+    if(natives)
+        file(COPY ${natives} DESTINATION "${KSA_NATIVES_DIR}")
+    endif()
+    if(programs)
+        file(COPY ${programs} DESTINATION "${KSA_NATIVES_DIR}" FILE_PERMISSIONS
+            OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+    endif()
     foreach(native IN LISTS natives)
         get_filename_component(file_name "${native}" NAME)
         file(STRINGS "${native}" install_name REGEX "@rpath/[A-Za-z0-9._+-]+\\.dylib")

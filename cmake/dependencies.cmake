@@ -43,7 +43,7 @@ FetchContent_Declare(glfw_headers
     SOURCE_SUBDIR none) # headers only
 
 # RocketWerkz's official BRUTAL packages on nuget.org. Their runtimes/osx-arm64/native/ folders hold the native
-# libraries KSA's BRUTAL assemblies load. KSA 2026.10.19 ships exactly these versions (the Linux libraries in its
+# libraries KSA's BRUTAL assemblies load, and Monitor.Host's the crash-dump helper Brutal.Monitor.Subprocess. KSA 2026.10.19 ships exactly these versions (the Linux libraries in its
 # archive are the packages' linux-x64 ones); src/port/lib/convert-dotnet.sh compares them with the game's assemblies.
 # Format: "<package id> <version> <SHA-512 of the .nupkg>".
 set(BRUTAL_PACKAGES
@@ -57,6 +57,7 @@ set(BRUTAL_PACKAGES
     "Ahwoo.BRUTAL.Glfw        2026.10.4 927964af93896c17efb40e9ae914b994e7cbdc8f31a00c77c782fc6d55543ca1ccf54baaf73e0d8230961d57d6c264828cc37a68a851b6cfa904a0bbe1d0aca9"
     "Ahwoo.BRUTAL.Vulkan.Vma  2026.10.2 164713a8eedadbdf83a192cea9ccb598a87ab750b5b6b293e83a6cabef9b1547d77b6f303395fac2aba482cd0401d0adfdcc067420539f71be7db61898748888"
     "Ahwoo.BRUTAL.RakNet      2026.10.2 aa36db96a4ea169457e69dbb536a83a94eb507b9e857a9a4c4d68507215e278c3d57dbbd0f90a528b3f2518670ce975e0c9f77d7d88f151fafa2eb64e0dda496"
+    "Ahwoo.BRUTAL.Monitor.Host 2026.10.2 b6f14a123257c5b28d364279bb8c3024622be0ff3b3c0ae880ce5dbc05e907118f1c8106a969bfedbc884b7ef598ff60a06815b8a6ade1d3772bf8240875f3be"
 )
 foreach(entry IN LISTS BRUTAL_PACKAGES)
     string(REGEX MATCHALL "[^ ]+" fields "${entry}")

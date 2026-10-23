@@ -13,7 +13,7 @@ binaries or assets, and none of the licences here apply to the game.
 | Component | In the app | Source | Licence | `Licenses/` |
 |---|---|---|---|---|
 | This port: launcher, GLFW shim, KSA Metal | `Contents/MacOS/KSA`, `libGlfwShim.dylib`, `libvulkan.1.dylib` | this repository | MIT | `ksa-macos-port/` |
-| BRUTAL native libraries, built by RocketWerkz | `libstb`, `libVulkanEx`, `libvma`, `libglfw.3`, `libgli`, `libimgui`, `libimplot`, `libKtx`, `libshaderc_shared`, `libSPIRV-Tools-shared`, `libRakNetDLL` (`.dylib`) | the `Ahwoo.BRUTAL.*` packages on [nuget.org](https://www.nuget.org/profiles/Ahwoo), unmodified | BRUTAL License v1.0 (© Ahwoo Limited), and the licences of the components compiled into them (below) | `brutal/` |
+| BRUTAL native libraries, built by RocketWerkz | `libstb`, `libVulkanEx`, `libvma`, `libglfw.3`, `libgli`, `libimgui`, `libimplot`, `libKtx`, `libshaderc_shared`, `libSPIRV-Tools-shared`, `libRakNetDLL` (`.dylib`); the crash-dump helper `Brutal.Monitor.Subprocess` | the `Ahwoo.BRUTAL.*` packages on [nuget.org](https://www.nuget.org/profiles/Ahwoo), unmodified | BRUTAL License v1.0 (© Ahwoo Limited), and the licences of the components compiled into them (below) | `brutal/` |
 | SPIRV-Cross | compiled into `libvulkan.1.dylib` | [KhronosGroup/SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) | Apache-2.0 (some files MIT or CC-BY-4.0, see its `LICENSES/`) | `spirv-cross/` |
 | SPIRV-Tools | compiled into `libvulkan.1.dylib` | [KhronosGroup/SPIRV-Tools](https://github.com/KhronosGroup/SPIRV-Tools) | Apache-2.0 | `spirv-tools/` |
 | SPIRV-Headers | compiled into `libvulkan.1.dylib` | [KhronosGroup/SPIRV-Headers](https://github.com/KhronosGroup/SPIRV-Headers) | MIT (Khronos), CC-BY-4.0 | `spirv-headers/` |
@@ -39,6 +39,7 @@ The BRUTAL libraries contain these components, each listed with its licence text
 | `libshaderc_shared` | shaderc (Apache-2.0); glslang (BSD-3-Clause, BSD-2-Clause, Apache-2.0, MIT and others, see the notice); SPIRV-Tools (Apache-2.0); SPIRV-Headers (MIT-style, CC-BY-4.0) |
 | `libSPIRV-Tools-shared` | SPIRV-Tools (Apache-2.0); SPIRV-Headers |
 | `libRakNetDLL` | RakNet 4.081 (BSD-2-Clause); Mersenne Twister MT19937, DR_SHA1 (their own notices); SLikeNet (MIT) |
+| `Brutal.Monitor.Subprocess` | BRUTAL code, compiled ahead of time with .NET, which builds parts of the .NET runtime and libraries into it (MIT, see `dotnet/`) |
 
 BRUTAL's notice, as its licence asks: *This product is built with BRUTAL, a game development framework by Ahwoo
 Limited, used under the BRUTAL License v1.0. www.ahwoo.com/brutal*. It is in `Licenses/brutal/NOTICE.txt`.

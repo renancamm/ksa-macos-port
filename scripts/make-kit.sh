@@ -34,12 +34,13 @@ kit_payload() {
     step "Assembling ${OUT#"${REPO}/"}"
     rm -rf "${OUT}/payload"
 
-    # The app without the game: launcher and .NET runtime (ditto keeps Microsoft's signatures), libraries, icon
+    # The app without the game: launcher and .NET runtime (ditto keeps Microsoft's signatures), libraries and
+    # BRUTAL's crash-dump helper, icon
     mkdir -p "${contents}/Resources"
     ditto "${DOTNET_RUNTIME}" "${contents}/MacOS"
     cp "${REPO}/src/launcher/launcher.sh" "${contents}/MacOS/KSA"
     chmod +x "${contents}/MacOS/KSA"
-    cp -P "${NATIVES}"/*.dylib "${contents}/Resources/"
+    cp -P "${NATIVES}"/*.dylib "${NATIVES}/Brutal.Monitor.Subprocess" "${contents}/Resources/"
     cp "${REPO}/third_party/fmod/libfmod.dylib" "${contents}/Resources/libfmod.dylib"
     chmod u+w "${contents}/Resources/libfmod.dylib"
     cp "${BUILD}/icon/AppIcon.icns" "${contents}/Resources/"

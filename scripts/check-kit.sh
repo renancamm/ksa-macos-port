@@ -1,7 +1,8 @@
 #!/bin/bash
-# Audits the port folder after a build: the commands and VERSION are there; every library in the app is arm64, runs
-# on MACOS_MIN, has a valid signature and depends only on macOS and the app's libraries; StarMap is marked ARM64;
-# every component has its licence; and nothing of the game is in it. Needs otool (Command Line Tools).
+# Audits the port folder after a build: the commands and VERSION are there; every library in the app, and BRUTAL's
+# crash-dump helper, is arm64, runs on MACOS_MIN, has a valid signature and depends only on macOS and the app's
+# libraries; StarMap is marked ARM64; every component has its licence; and nothing of the game is in it. Needs otool
+# (Command Line Tools).
 #
 # Usage: scripts/check-kit.sh [port folder]   (default: dist/ksa-macos-port)
 set -eo pipefail
@@ -22,12 +23,13 @@ for f in port.sh starmap.sh benchmark.sh README.md LICENSE THIRD_PARTY_NOTICES.m
     payload/benchmark/benchmark.txt "payload/app/Contents/Resources/AppIcon.icns"; do
     [ -e "${KIT_DIR}/${f}" ] || problem "${f} is missing"
 done
-for f in port.sh starmap.sh benchmark.sh payload/app/Contents/MacOS/KSA; do
+for f in port.sh starmap.sh benchmark.sh payload/app/Contents/MacOS/KSA \
+    payload/app/Contents/Resources/Brutal.Monitor.Subprocess; do
     [ -x "${KIT_DIR}/${f}" ] || problem "${f} is not executable"
 done
 grep -q '^version=.' "${KIT_DIR}/VERSION" && grep -q '^ksa=20' "${KIT_DIR}/VERSION" || problem "VERSION is incomplete"
 
-for lib in "${RES}"/*.dylib; do
+for lib in "${RES}"/*.dylib "${RES}/Brutal.Monitor.Subprocess"; do
     name="$(basename "${lib}")"
     if [ -L "${lib}" ]; then
         [ -e "${lib}" ] || problem "${name} is a broken link"
@@ -67,5 +69,6 @@ hidden="$(find "${KIT_DIR}" -path '*/Contents/MacOS' -prune -o -name '.*' -print
 [ -z "${hidden}" ] || problem "hidden file in the folder: ${hidden#"${KIT_DIR}/"}"
 
 [ "${problems}" = 0 ] || die "${problems} problem(s) in ${KIT_DIR}"
-info "All $(ls "${RES}"/*.dylib | wc -l | tr -d ' ') libraries are arm64, macOS ${MACOS_MIN}+, signed and self-contained;" \
+info "All $(ls "${RES}"/*.dylib | wc -l | tr -d ' ') libraries and the crash-dump helper are arm64, macOS ${MACOS_MIN}+," \
+    "signed and self-contained;" \
     "licences complete; no game files."
