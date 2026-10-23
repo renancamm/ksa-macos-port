@@ -211,7 +211,9 @@ void KCommandBuffer::endEncoder() {
             bool tileOnly = t.storageMode == MTLStorageModeMemoryless;
             if (suspending && tileOnly) {
                 static std::atomic<bool> warned{false};
-                if (!warned.exchange(true)) KERR("tessellated draw in a pass with a memoryless attachment: its contents are lost");
+                if (!warned.exchange(true))
+                    KERR("render pass suspended with a memoryless attachment (a tessellated draw, or KSA_MTL_GPUPROF_SPLIT=1): "
+                         "its contents are lost");
             }
             [render setColorStoreAction:suspending && !tileOnly ? MTLStoreActionStore : colorStores[i] atIndex:i];
         }
