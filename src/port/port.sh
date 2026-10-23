@@ -90,6 +90,7 @@ self_update() {
     case "${digest}" in
         sha256:*) [ "$(shasum -a 256 "${tmp}/port.zip" | cut -d' ' -f1)" = "${digest#sha256:}" ] ||
             die "the download does not match the checksum GitHub publishes for it." ;;
+        *) die "GitHub publishes no checksum for the download of ${tag}, so it was not installed." ;;
     esac
     ditto -x -k "${tmp}/port.zip" "${tmp}/new"
     new="${tmp}/new/ksa-macos-port"
