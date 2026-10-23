@@ -41,7 +41,6 @@ VKFN(VkResult) vkCreateDescriptorSetLayout(VkDevice, const VkDescriptorSetLayout
             slot += kb.count;
         }
         if (isDynamic(kb.type)) {
-            kb.dynamicIndex = (int)l->dynamicCount;
             for (uint32_t j = 0; j < kb.count; j++) l->dynamicSlots.push_back(kb.id + j);
             l->dynamicCount += kb.count;
         }

@@ -128,20 +128,25 @@ struct KStageOptions {
     bool tessFusedInput = false;  // fused evaluation stage: control points as stage-in attributes, not a raw buffer
 };
 
+// The tessellation execution modes a stage declares (the control and evaluation stages each declare part of them)
+static void readTessModes(CompilerMSL& c, KTranslated* out) {
+    auto& modes = c.get_execution_mode_bitset();
+    if (modes.get(spv::ExecutionModeOutputVertices)) out->outputVertices = c.get_execution_mode_argument(spv::ExecutionModeOutputVertices);
+    if (modes.get(spv::ExecutionModeQuads)) { out->quads = true; out->hasDomain = true; }
+    if (modes.get(spv::ExecutionModeTriangles)) { out->quads = false; out->hasDomain = true; }
+    if (modes.get(spv::ExecutionModeVertexOrderCw)) { out->cw = true; out->hasWinding = true; }
+    if (modes.get(spv::ExecutionModeVertexOrderCcw)) { out->cw = false; out->hasWinding = true; }
+    if (modes.get(spv::ExecutionModeSpacingEqual)) { out->partition = MTLTessellationPartitionModeInteger; out->hasPartition = true; }
+    if (modes.get(spv::ExecutionModeSpacingFractionalEven)) { out->partition = MTLTessellationPartitionModeFractionalEven; out->hasPartition = true; }
+    if (modes.get(spv::ExecutionModeSpacingFractionalOdd)) { out->partition = MTLTessellationPartitionModeFractionalOdd; out->hasPartition = true; }
+}
+
 // Reads the tessellation execution modes of one stage module
 static void tessModes(KShaderModule* mod, const char* entry, spv::ExecutionModel model, KTranslated* out) {
     try {
         CompilerMSL c(mod->spirv);
         c.set_entry_point(entry, model);
-        auto& modes = c.get_execution_mode_bitset();
-        if (modes.get(spv::ExecutionModeOutputVertices)) out->outputVertices = c.get_execution_mode_argument(spv::ExecutionModeOutputVertices);
-        if (modes.get(spv::ExecutionModeQuads)) { out->quads = true; out->hasDomain = true; }
-        if (modes.get(spv::ExecutionModeTriangles)) { out->quads = false; out->hasDomain = true; }
-        if (modes.get(spv::ExecutionModeVertexOrderCw)) { out->cw = true; out->hasWinding = true; }
-        if (modes.get(spv::ExecutionModeVertexOrderCcw)) { out->cw = false; out->hasWinding = true; }
-        if (modes.get(spv::ExecutionModeSpacingEqual)) { out->partition = MTLTessellationPartitionModeInteger; out->hasPartition = true; }
-        if (modes.get(spv::ExecutionModeSpacingFractionalEven)) { out->partition = MTLTessellationPartitionModeFractionalEven; out->hasPartition = true; }
-        if (modes.get(spv::ExecutionModeSpacingFractionalOdd)) { out->partition = MTLTessellationPartitionModeFractionalOdd; out->hasPartition = true; }
+        readTessModes(c, out);
     } catch (const std::exception& e) {
         KERR("tessellation mode reflection: %s", e.what());
     }
@@ -374,18 +379,7 @@ static bool translate(KShaderModule* mod, const char* entryName, spv::ExecutionM
                 out->msl = std::regex_replace(out->msl, asArray, "const device $1* $2");
         }
         out->entry = c.get_cleansed_entry_point_name(entryName, model);
-        if (so.tess == KTessRole::ControlKernel || so.tess == KTessRole::Evaluation) {
-            auto& modes = c.get_execution_mode_bitset();
-            if (modes.get(spv::ExecutionModeOutputVertices))
-                out->outputVertices = c.get_execution_mode_argument(spv::ExecutionModeOutputVertices);
-            if (modes.get(spv::ExecutionModeQuads)) { out->quads = true; out->hasDomain = true; }
-            if (modes.get(spv::ExecutionModeTriangles)) { out->quads = false; out->hasDomain = true; }
-            if (modes.get(spv::ExecutionModeVertexOrderCw)) { out->cw = true; out->hasWinding = true; }
-            if (modes.get(spv::ExecutionModeVertexOrderCcw)) { out->cw = false; out->hasWinding = true; }
-            if (modes.get(spv::ExecutionModeSpacingEqual)) { out->partition = MTLTessellationPartitionModeInteger; out->hasPartition = true; }
-            if (modes.get(spv::ExecutionModeSpacingFractionalEven)) { out->partition = MTLTessellationPartitionModeFractionalEven; out->hasPartition = true; }
-            if (modes.get(spv::ExecutionModeSpacingFractionalOdd)) { out->partition = MTLTessellationPartitionModeFractionalOdd; out->hasPartition = true; }
-        }
+        if (so.tess == KTessRole::ControlKernel || so.tess == KTessRole::Evaluation) readTessModes(c, out);
         out->usesDrawId = out->msl.find("spvDrawIndex") != std::string::npos;
 
         if (model == spv::ExecutionModelGLCompute) {
@@ -1203,7 +1197,6 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
     p->vertexUsesDrawId = vtr.usesDrawId;
     p->fragmentUsesDrawId = ftr.usesDrawId;
     p->viewMask = af.viewMask;
-    p->hasFragment = fs != nullptr;
     {
         char nm[80];
         auto* vm = (KShaderModule*)(tess ? tes->module : vs->module);

@@ -98,6 +98,8 @@ enum : uint32_t {
     kDrawIdBufferIndex = 11,
     kBufferSizeBufferIndex = 12,
     kViewMaskBufferIndex = 13,
+    // Given to SPIRV-Cross so its defaults for them (23, and 30: a vertex buffer) stay out of the way; never bound,
+    // since dynamic offsets are added when a set is copied and texture swizzling is off
     kDynamicOffsetBufferIndex = 14,
     kSwizzleBufferIndex = 15,
     // Tessellation stage buffers (vertex/control kernels, evaluation function)
@@ -190,7 +192,6 @@ struct KDeviceMemory {
 struct KBuffer {
     KDevice* device = nullptr;
     VkDeviceSize size = 0;
-    VkBufferUsageFlags usage = 0;
     KDeviceMemory* memory = nullptr;
     VkDeviceSize offset = 0;
     id<MTLBuffer> mtl = nil;  // = memory->whole
@@ -214,7 +215,6 @@ struct KImage {
 struct KImageView {
     KDevice* device = nullptr;
     KImage* image = nullptr;
-    VkImageViewCreateInfo info{};
     id<MTLTexture> mtl = nil;
     // For depth/stencil aspect-only views of combined formats the render pass still uses the image
     VkFormat format = VK_FORMAT_UNDEFINED;
@@ -241,7 +241,6 @@ struct KSemaphore {
 
 // Timestamp query pool: values resolve from counter samples when the command buffer completes
 struct KQueryPool {
-    VkQueryType type;
     uint32_t count;
     std::vector<uint64_t> values;
     std::vector<uint8_t> available;
@@ -264,7 +263,6 @@ struct KBinding {
     uint32_t samplerId = 0;  // combined image sampler: first sampler slot (id + count)
     VkShaderStageFlags stages = 0;
     std::vector<KSampler*> immutableSamplers;
-    int dynamicIndex = -1;   // index among the set's dynamic buffers, in binding order
 };
 
 struct KSetLayout {
@@ -379,12 +377,10 @@ struct KPipeline {
     bool vertexUsesDrawId = false;
     bool fragmentUsesDrawId = false;
     uint32_t viewMask = 0;
-    bool hasFragment = false;
-    // Compute
+    // Compute (ray tracing pipelines run as compute kernels, rtpipeline.mm)
     id<MTLComputePipelineState> compute = nil;
     MTLSize workgroup = MTLSizeMake(1, 1, 1);
     bool computeUsesDrawId = false;
-    uint32_t rtGroupCount = 0;  // ray tracing pipelines (run as compute kernels, rtpipeline.mm)
     // Asynchronous creation: render / compute are set by a worker; binding the pipeline waits for it
     struct Pending {
         std::mutex m;

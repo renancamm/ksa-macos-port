@@ -71,7 +71,6 @@ static KPipeline* createRayTracingPipeline(KDevice* dev, const VkRayTracingPipel
     KPipeline* p = kmtlCreateComputeFromStage(dev, (KPipelineLayout*)ci->layout, &st, true);
     if (!p) return nullptr;
     p->bindPoint = VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR;
-    p->rtGroupCount = ci->groupCount;
     KLOG(1, "ray tracing pipeline: %u groups, %zu miss shaders, closest-hit %s -> compute kernel %lux%lu",
          ci->groupCount, misses.size(), chit >= 0 ? "yes" : "no", (unsigned long)p->workgroup.width, (unsigned long)p->workgroup.height);
     return p;

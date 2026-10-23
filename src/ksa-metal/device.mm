@@ -376,9 +376,6 @@ VKFN(VkResult) vkCreateBuffer(VkDevice device, const VkBufferCreateInfo* ci, con
     auto* b = new KBuffer();
     b->device = (KDevice*)device;
     b->size = ci->size;
-    b->usage = ci->usage;
-    if (auto* u2 = (const VkBufferUsageFlags2CreateInfo*)findNext(ci->pNext, VK_STRUCTURE_TYPE_BUFFER_USAGE_FLAGS_2_CREATE_INFO))
-        b->usage = (VkBufferUsageFlags)u2->usage;
     *out = (VkBuffer)b;
     return VK_SUCCESS;
 }
@@ -675,8 +672,6 @@ VKFN(VkResult) vkCreateImageView(VkDevice device, const VkImageViewCreateInfo* c
     auto* v = new KImageView();
     v->device = (KDevice*)device;
     v->image = img;
-    v->info = *ci;
-    v->info.pNext = nullptr;
     v->format = ci->format;
     const VkImageSubresourceRange& r = ci->subresourceRange;
     v->baseLevel = r.baseMipLevel;
@@ -808,7 +803,6 @@ VKFN(void) vkDestroySampler(VkDevice, VkSampler sampler, const VkAllocationCallb
 VKFN(VkResult) vkCreateQueryPool(VkDevice, const VkQueryPoolCreateInfo* ci, const VkAllocationCallbacks*, VkQueryPool* out) {
     KTRACE_FIRST();
     auto* p = new KQueryPool();
-    p->type = ci->queryType;
     p->count = ci->queryCount;
     p->values.assign(ci->queryCount, 0);
     p->available.assign(ci->queryCount, 0);
