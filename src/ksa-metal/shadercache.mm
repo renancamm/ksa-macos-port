@@ -13,7 +13,7 @@
 #include <set>
 #include <thread>
 
-static const char* kFormat = "KSAMTL-TR 1";
+static const char* kFormat = "KSAMTL-TR 2";
 
 static const std::string& cacheDir() {
     static const std::string dir = [] {
@@ -58,10 +58,10 @@ bool kmtlCacheLoad(uint64_t key, KTranslated* out) {
     KTranslated t;
     t.entry = data.substr(a + 1, b - a - 1);
     unsigned long wx, wy, wz;
-    int drawId, quads, cw, partition, hasPartition, hasWinding, hasDomain, passthrough;
+    int drawId, quads, cw, partition, hasPartition, hasWinding, hasDomain;
     unsigned outputVertices;
-    if (sscanf(data.c_str() + b + 1, "%d %lu %lu %lu %u %d %d %d %d %d %d %d", &drawId, &wx, &wy, &wz, &outputVertices, &quads, &cw,
-               &partition, &hasPartition, &hasWinding, &hasDomain, &passthrough) != 12)
+    if (sscanf(data.c_str() + b + 1, "%d %lu %lu %lu %u %d %d %d %d %d %d", &drawId, &wx, &wy, &wz, &outputVertices, &quads, &cw,
+               &partition, &hasPartition, &hasWinding, &hasDomain) != 11)
         return false;
     t.usesDrawId = drawId;
     t.workgroup = MTLSizeMake(wx, wy, wz);
@@ -72,7 +72,6 @@ bool kmtlCacheLoad(uint64_t key, KTranslated* out) {
     t.hasPartition = hasPartition;
     t.hasWinding = hasWinding;
     t.hasDomain = hasDomain;
-    t.passthrough = passthrough;
     t.msl = data.substr(c + 1);
     *out = std::move(t);
     return true;
@@ -84,9 +83,9 @@ void kmtlCacheStore(uint64_t key, const KTranslated& t) {
     std::string tmp = path + ".tmp" + std::to_string((unsigned long)pthread_mach_thread_np(pthread_self()));
     FILE* f = fopen(tmp.c_str(), "wb");
     if (!f) return;
-    fprintf(f, "%s\n%s\n%d %lu %lu %lu %u %d %d %d %d %d %d %d\n", kFormat, t.entry.c_str(), (int)t.usesDrawId,
+    fprintf(f, "%s\n%s\n%d %lu %lu %lu %u %d %d %d %d %d %d\n", kFormat, t.entry.c_str(), (int)t.usesDrawId,
             (unsigned long)t.workgroup.width, (unsigned long)t.workgroup.height, (unsigned long)t.workgroup.depth, t.outputVertices,
-            (int)t.quads, (int)t.cw, (int)t.partition, (int)t.hasPartition, (int)t.hasWinding, (int)t.hasDomain, (int)t.passthrough);
+            (int)t.quads, (int)t.cw, (int)t.partition, (int)t.hasPartition, (int)t.hasWinding, (int)t.hasDomain);
     fwrite(t.msl.data(), 1, t.msl.size(), f);
     bool ok = fclose(f) == 0;
     if (ok) rename(tmp.c_str(), path.c_str());

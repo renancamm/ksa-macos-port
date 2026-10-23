@@ -219,7 +219,7 @@ vertex buffer n.
 | `internal.mm` | KSA Metal's own shaders: buffer fills, scaled blits, tessellation helpers |
 | `accel.mm` | acceleration structures for ray queries |
 | `rtpipeline.mm`, `rtspirv.cpp`, `rtspirv.h` | ray tracing pipelines rewritten as compute kernels |
-| `tessspirv.cpp`, `tessspirv.h` | the SPIR-V rewrites behind fused tessellation |
+| `tessspirv.cpp`, `tessspirv.h` | the SPIR-V rewrites behind passthrough and fused tessellation |
 | `spvmodule.h` | a SPIR-V module as a list of instructions, for those rewrites |
 | `swapchain.mm` | swapchain, presentation, screenshots and frame log |
 | `profile.mm` | the GPU profiler |

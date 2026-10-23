@@ -418,8 +418,6 @@ static char stageChar(spv::ExecutionModel m, KTessRole role) {
     }
 }
 
-static bool stripPassthroughControl(std::string& msl);
-
 // Hand-written replacements for translated shaders (KSA_MTL_OVERRIDES=<dir>): <dir>/<translation key>.metal for one
 // exact translation, or <dir>/<module hash>_<stage><index type>.metal (the KSA_MTL_DUMP_MSL file name) for every
 // translation of a module stage. The replacement keeps the translated interface: same entry point name, same
@@ -458,11 +456,11 @@ static void applyOverride(const char* name, uint64_t key, KTranslated* tr) {
 // specialization data, and the translator version. Bump kTranslatorVersion when translate() or its MSL patches change
 static uint64_t translationKey(KShaderModule* mod, const char* entry, spv::ExecutionModel model, KPipelineLayout* layout,
                                const VkSpecializationInfo* spec, const KStageOptions& so) {
-    static const uint32_t kTranslatorVersion = 3;
+    static const uint32_t kTranslatorVersion = 4;
     std::vector<uint32_t> k = {kTranslatorVersion, 0x300681bbu /* SPIRV-Cross pin */, (uint32_t)model, so.fragMask,
         so.sampleRate, so.viewMask, (uint32_t)so.tess, (uint32_t)so.indexType, so.tessControlPoints, so.tessQuads,
-        1u /* passthrough control stripped */, (uint32_t)mod->hash, (uint32_t)(mod->hash >> 32), so.rtLaunch,
-        (uint32_t)kmtlConfig().constantArgumentBuffers, so.tessFusedInput};
+        (uint32_t)mod->hash, (uint32_t)(mod->hash >> 32), so.rtLaunch, (uint32_t)kmtlConfig().constantArgumentBuffers,
+        so.tessFusedInput};
     if (const char* presets = kmtlConfig().spec) k.push_back((uint32_t)kmtlHash(presets, strlen(presets)));
     for (const char* c = entry; *c; c++) k.push_back((uint8_t)*c);
     if (layout) {
@@ -508,8 +506,6 @@ static bool prepareStage(const VkPipelineShaderStageCreateInfo* st, spv::Executi
             dumpMSL(name, "", err);
             return false;
         }
-        if (so.tess == KTessRole::ControlKernel && stripPassthroughControl(tr->msl))
-            tr->passthrough = true;
         kmtlCacheStore(key, *tr);
     }
     kmtlCacheNoteUsed(key);
@@ -770,9 +766,7 @@ static NSUInteger outputStride(MTLComputePipelineReflection* refl, NSUInteger in
     return 0;
 }
 
-// Passthrough control stage: when every control-point output is copied from the same input of the same type in the
-// same order, the copies are removed from the control kernel and the evaluation stage reads the vertex kernel's output
-// directly (control point k of the draw is vertex-kernel output k)
+// The field types (and names) of a struct in translated MSL: how the records two kernels exchange are compared
 static std::vector<std::string> structFieldTypes(const std::string& msl, const std::string& name, std::vector<std::string>* names) {
     std::vector<std::string> types;
     size_t p = msl.find("struct " + name + "\n{");
@@ -792,38 +786,12 @@ static std::vector<std::string> structFieldTypes(const std::string& msl, const s
     return types;
 }
 
-static bool stripPassthroughControl(std::string& msl) {
-    std::vector<std::string> outNames, inNames;
-    auto outTypes = structFieldTypes(msl, "main0_out", &outNames);
-    auto inTypes = structFieldTypes(msl, "main0_in", &inNames);
-    if (outTypes.empty() || outTypes != inTypes) return false;
-    std::regex copy(R"(\n\s*gl_out\[gl_InvocationID\]\.(\w+) = gl_in\[gl_InvocationID\]\.(\w+);)");
-    std::vector<bool> seen(outNames.size(), false);
-    std::string stripped;
-    size_t last = 0;
-    for (auto it = std::sregex_iterator(msl.begin(), msl.end(), copy); it != std::sregex_iterator(); ++it) {
-        auto o = std::find(outNames.begin(), outNames.end(), (*it)[1].str()) - outNames.begin();
-        auto i = std::find(inNames.begin(), inNames.end(), (*it)[2].str()) - inNames.begin();
-        if (o != i || o >= (long)outNames.size()) return false;
-        seen[o] = true;
-        stripped += msl.substr(last, it->position() - last);
-        last = it->position() + it->length();
-    }
-    stripped += msl.substr(last);
-    for (bool s : seen) if (!s) return false;
-    // Any other use of gl_out means the stage computes outputs
-    size_t uses = 0;
-    for (size_t q = stripped.find("gl_out"); q != std::string::npos; q = stripped.find("gl_out", q + 1)) uses++;
-    if (uses != 1) return false;  // only its declaration is left
-    msl = stripped;
-    return true;
-}
-
 // Builds the compute stages of a tessellation pipeline: the vertex shader as three kernels (by index type) with a
-// stage-in descriptor for its vertex attributes, and the control shader as a multi-patch kernel
+// stage-in descriptor for its vertex attributes, and the control shader as a multi-patch kernel. With *passthrough
+// given, a control stage that only copies its control points is built without the copies (see below)
 static bool buildTessKernels(KDevice* dev, const VkGraphicsPipelineCreateInfo* ci, const VkPipelineShaderStageCreateInfo* vs,
                              const VkPipelineShaderStageCreateInfo* tcs, KPipelineLayout* layout, KTessStages* st, KTranslated* htr,
-                             const KTranslated& modes, KTranslated* vtrOut = nullptr) {
+                             const KTranslated& modes, bool* passthrough, KTranslated* vtrOut = nullptr) {
     static const CompilerMSL::Options::IndexType types[3] = {CompilerMSL::Options::IndexType::None,
         CompilerMSL::Options::IndexType::UInt16, CompilerMSL::Options::IndexType::UInt32};
     for (int t = 0; t < 3; t++) {
@@ -873,21 +841,54 @@ static bool buildTessKernels(KDevice* dev, const VkGraphicsPipelineCreateInfo* c
     so.tess = KTessRole::ControlKernel;
     so.tessControlPoints = modes.outputVertices;
     so.tessQuads = modes.quads;
-    id<MTLFunction> hfn = makeFunction(dev, tcs, spv::ExecutionModelTessellationControl, layout, so, htr);
-    if (!hfn) return false;
-    MTLComputePipelineDescriptor* d = [MTLComputePipelineDescriptor new];
-    d.computeFunction = hfn;
-    NSError* err = nil;
-    MTLComputePipelineReflection* refl = nil;
-    st->control = [dev->mtl newComputePipelineStateWithDescriptor:d
-        options:MTLPipelineOptionBindingInfo | MTLPipelineOptionBufferTypeInfo reflection:&refl error:&err];
-    if (!st->control) {
-        KERR("tessellation control kernel: %s", err.description.UTF8String);
-        return false;
+    auto buildControl = [&](const VkPipelineShaderStageCreateInfo* stage) {
+        id<MTLFunction> hfn = makeFunction(dev, stage, spv::ExecutionModelTessellationControl, layout, so, htr);
+        if (!hfn) return false;
+        MTLComputePipelineDescriptor* d = [MTLComputePipelineDescriptor new];
+        d.computeFunction = hfn;
+        NSError* err = nil;
+        MTLComputePipelineReflection* refl = nil;
+        st->control = [dev->mtl newComputePipelineStateWithDescriptor:d
+            options:MTLPipelineOptionBindingInfo | MTLPipelineOptionBufferTypeInfo reflection:&refl error:&err];
+        if (!st->control) {
+            KERR("tessellation control kernel: %s", err.description.UTF8String);
+            return false;
+        }
+        st->controlStride = outputStride(refl, kTessOutputBufferIndex);
+        st->patchStride = outputStride(refl, kTessPatchBufferIndex);
+        return true;
+    };
+    // A passthrough control stage (tessspirv.cpp) loses its copies, and the evaluation stage reads the vertex kernel's
+    // records in their place: so the stripped kernel's record must be the vertex kernel's (the translated records
+    // compared the way the fused path compares its own, and the reflected strides). Otherwise, and for a stage that
+    // computes something per control point, the stage runs as written
+    auto* tcsModule = (KShaderModule*)tcs->module;
+    std::string why;
+    if (passthrough) *passthrough = false;
+    std::vector<uint32_t> stripped;
+    if (passthrough && tcsModule && kmtlStripPassthroughControl(tcsModule->spirv, &stripped, &why)) {
+        KShaderModule km;
+        km.spirv = std::move(stripped);
+        km.hash = kmtlHash(km.spirv.data(), km.spirv.size() * 4);
+        if (const char* dir = kmtlConfig().dumpSpv) {
+            char path[1200];
+            snprintf(path, sizeof(path), "%s/passthrough_control_%016llx.spv", dir, (unsigned long long)tcsModule->hash);
+            if (FILE* f = fopen(path, "wb")) { fwrite(km.spirv.data(), 4, km.spirv.size(), f); fclose(f); }
+        }
+        VkPipelineShaderStageCreateInfo cst = *tcs;
+        cst.module = (VkShaderModule)&km;
+        std::vector<std::string> outNames, inNames;
+        bool built = buildControl(&cst);
+        auto outTypes = built ? structFieldTypes(htr->msl, "main0_out", &outNames) : std::vector<std::string>();
+        auto inTypes = built ? structFieldTypes(htr->msl, "main0_in", &inNames) : std::vector<std::string>();
+        if (built && !outTypes.empty() && outTypes == inTypes && st->controlStride == st->vertexStride && !st->patchStride)
+            *passthrough = true;
+        else
+            why = "the stripped kernel's record is not the vertex kernel's";
     }
-    st->controlStride = outputStride(refl, kTessOutputBufferIndex);
-    st->patchStride = outputStride(refl, kTessPatchBufferIndex);
-    return true;
+    if (passthrough && !*passthrough)
+        KLOG(1, "tessellation control stage %016llx runs as written: %s", (unsigned long long)(tcsModule ? tcsModule->hash : 0), why.c_str());
+    return (passthrough && *passthrough) || buildControl(tcs);
 }
 
 // Fused tessellation (KSA_MTL_TESS_FUSE=0 turns it off; tessspirv.cpp has the rewrites). With a passthrough control stage the
@@ -931,7 +932,7 @@ static bool buildFusedTess(KDevice* dev, const VkGraphicsPipelineCreateInfo* ci,
     est.module = (VkShaderModule)&km[2];
     KTessStages parts;
     KTranslated htr, vtr;
-    if (!buildTessKernels(dev, ci, &vst, &cst, layout, &parts, &htr, modes, &vtr)) return false;
+    if (!buildTessKernels(dev, ci, &vst, &cst, layout, &parts, &htr, modes, nullptr, &vtr)) return false;
     // The vertex kernel's record must be what the control kernel reads
     std::vector<std::string> outNames, inNames;
     auto outTypes = structFieldTypes(vtr.msl, "main0_out", &outNames);
@@ -1007,6 +1008,7 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
         return nullptr;
     }
     KTessStages tessPlain;
+    bool passthrough = false;
     KTranslated htr, dtr, tmodes;
     if (tess) {
         // Merge both stages' modes: evaluation first, the control stage's declarations win
@@ -1017,7 +1019,7 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
         if (hm.hasDomain) { tmodes.quads = hm.quads; tmodes.hasDomain = true; }
         if (hm.hasWinding && !tmodes.hasWinding) { tmodes.cw = hm.cw; tmodes.hasWinding = true; }
         if (hm.hasPartition && !tmodes.hasPartition) { tmodes.partition = hm.partition; tmodes.hasPartition = true; }
-        if (!buildTessKernels(dev, ci, vs, tcs, layout, &tessPlain, &htr, tmodes)) return nullptr;
+        if (!buildTessKernels(dev, ci, vs, tcs, layout, &tessPlain, &htr, tmodes, &passthrough)) return nullptr;
     }
     if (!vs) {
         KERR("graphics pipeline without vertex shader");
@@ -1186,8 +1188,7 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
         p->tessInCP = ci->pTessellationState ? ci->pTessellationState->patchControlPoints : 3;
         p->tessOutCP = tmodes.outputVertices ? tmodes.outputVertices : p->tessInCP;
         p->tessQuads = tmodes.quads;
-        // A passthrough control stage leaves the control points as the vertex kernel wrote them: same record
-        p->tessPassthrough = htr.passthrough && tessPlain.controlStride == tessPlain.vertexStride && !tessPlain.patchStride;
+        p->tessPassthrough = passthrough;  // the control points stay as the vertex kernel wrote them
         KLOG(1, "tessellation pipeline: %u -> %u control points, strides vertex %lu control %lu patch %lu%s", p->tessInCP,
              p->tessOutCP, (unsigned long)tessPlain.vertexStride, (unsigned long)tessPlain.controlStride,
              (unsigned long)tessPlain.patchStride, p->tessPassthrough ? ", passthrough control stage" : "");

@@ -620,7 +620,6 @@ struct KTranslated {
     bool quads = false, cw = false;
     MTLTessellationPartitionMode partition = MTLTessellationPartitionModeInteger;
     bool hasPartition = false, hasWinding = false, hasDomain = false;
-    bool passthrough = false;  // control kernel stripped to tessellation factors only
 };
 
 // Shader cache (shadercache.mm): translations on disk keyed by everything that shapes them, and a background
