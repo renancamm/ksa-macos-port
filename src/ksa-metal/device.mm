@@ -64,22 +64,20 @@ VKFN(VkResult) vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCre
     [cb commit];
     dev->queue = q;
     // A transfer-only queue family: KSA's texture streamer then uploads on its own queue
-    if (kmtlTransferQueueEnabled()) {
-        auto* t = new KQueue();
-        t->device = dev;
-        t->family = 1;
-        t->mtl = [dev->mtl newCommandQueueWithMaxCommandBufferCount:64];
-        t->mtl.label = @"KSA Metal transfer queue";
-        [t->mtl addResidencySet:dev->residency];
-        t->chain = [dev->mtl newFence];
-        t->chain.label = @"KSA Metal transfer chain";
-        id<MTLCommandBuffer> tc = [t->mtl commandBuffer];
-        id<MTLBlitCommandEncoder> tb = [tc blitCommandEncoder];
-        [tb updateFence:t->chain];
-        [tb endEncoding];
-        [tc commit];
-        dev->transferQueue = t;
-    }
+    auto* t = new KQueue();
+    t->device = dev;
+    t->family = 1;
+    t->mtl = [dev->mtl newCommandQueueWithMaxCommandBufferCount:64];
+    t->mtl.label = @"KSA Metal transfer queue";
+    [t->mtl addResidencySet:dev->residency];
+    t->chain = [dev->mtl newFence];
+    t->chain.label = @"KSA Metal transfer chain";
+    id<MTLCommandBuffer> tc = [t->mtl commandBuffer];
+    id<MTLBlitCommandEncoder> tb = [tc blitCommandEncoder];
+    [tb updateFence:t->chain];
+    [tb endEncoding];
+    [tc commit];
+    dev->transferQueue = t;
     kmtlInitInternal(dev);
     kmtlShaderPrewarm(dev);
     KLOG(1, "device created");
@@ -533,13 +531,12 @@ VKFN(void) vkDestroyImage(VkDevice, VkImage image, const VkAllocationCallbacks*)
     kmtlDestroyImage((KImage*)image);
 }
 
-// Transient attachments live only in tile memory (KSA_MTL_MEMORYLESS=0 turns it off): Metal memoryless textures,
-// outside the heaps; the memory the game binds them to is a token allocation
+// Transient attachments live only in tile memory: Metal memoryless textures, outside the heaps; the memory the game
+// binds them to is a token allocation
 static bool memoryless(const VkImageCreateInfo& ci) {
-    static const bool on = kmtlEnvInt("KSA_MTL_MEMORYLESS", 1) != 0;
     const VkImageUsageFlags attachmentOnly = VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                                              VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
-    return on && (ci.usage & VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT) && !(ci.usage & ~attachmentOnly) && ci.tiling == VK_IMAGE_TILING_OPTIMAL;
+    return (ci.usage & VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT) && !(ci.usage & ~attachmentOnly) && ci.tiling == VK_IMAGE_TILING_OPTIMAL;
 }
 
 static void imageRequirements(KImage* img, VkMemoryRequirements* r) {
@@ -602,8 +599,7 @@ static VkResult bindImage(VkImage image, VkDeviceMemory memory, VkDeviceSize off
         return VK_ERROR_OUT_OF_DEVICE_MEMORY;
     }
     const KFormatInfo* fi = kmtlFormat(img->format);
-    static const bool zero = kmtlEnvInt("KSA_MTL_ZERO_IMAGES", 1) != 0;
-    if (zero && fi && !fi->depth && !fi->stencil && (img->mtl.usage & MTLTextureUsageRenderTarget) &&
+    if (fi && !fi->depth && !fi->stencil && (img->mtl.usage & MTLTextureUsageRenderTarget) &&
         (img->info.usage & (VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)))
         kmtlZeroImage(img);
     return VK_SUCCESS;

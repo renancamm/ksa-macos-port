@@ -438,12 +438,6 @@ bool kmtlLinkRayTracing(const std::vector<uint32_t>& raygen, const std::vector<u
     std::vector<std::vector<uint32_t>> inputs = {rg};
     if (plan.chit) inputs.push_back(hit.words);
     for (auto& mc : missCallees) inputs.push_back(mc.words);
-    if (const char* dir = getenv("KSA_MTL_RT_DUMP")) {
-        for (size_t i = 0; i < inputs.size(); i++) {
-            std::string p = std::string(dir) + "/rt_in_" + std::to_string(i) + ".spv";
-            if (FILE* f = fopen(p.c_str(), "wb")) { fwrite(inputs[i].data(), 4, inputs[i].size(), f); fclose(f); }
-        }
-    }
     spvtools::Context ctx(SPV_ENV_UNIVERSAL_1_6);
     std::string log;
     ctx.SetMessageConsumer([&](spv_message_level_t, const char*, const spv_position_t&, const char* msg) { log += msg; log += "\n"; });

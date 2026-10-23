@@ -73,7 +73,6 @@ static void dumpMSL(const std::string& name, const std::string& msl, const std::
 }
 
 // One compile per MSL text: a second caller (the game and the prewarm thread) waits for the first.
-// KSA_MTL_MSL_SALT=<text> prepends a comment so every compile misses the system shader cache (cold-start tests)
 id<MTLLibrary> kmtlCompileMSL(KDevice* dev, const std::string& msl, std::string* err) {
     uint64_t h = kmtlHash(msl.data(), msl.size());
     std::shared_ptr<KDevice::LibraryEntry> entry;
@@ -96,10 +95,8 @@ id<MTLLibrary> kmtlCompileMSL(KDevice* dev, const std::string& msl, std::string*
     o.languageVersion = MTLLanguageVersion3_2;
     o.mathMode = kmtlEnvInt("KSA_MTL_SAFE_MATH", 0) ? MTLMathModeSafe : MTLMathModeFast;
     o.preserveInvariance = YES;
-    static const char* salt = kmtlEnv("KSA_MTL_MSL_SALT");
-    std::string src = salt ? std::string("// ") + salt + "\n" + msl : msl;
     NSError* e = nil;
-    id<MTLLibrary> lib = [dev->mtl newLibraryWithSource:[NSString stringWithUTF8String:src.c_str()] options:o error:&e];
+    id<MTLLibrary> lib = [dev->mtl newLibraryWithSource:[NSString stringWithUTF8String:msl.c_str()] options:o error:&e];
     g_usCompile += usSince(t0);
     g_nCompile++;
     std::lock_guard<std::mutex> lock(entry->m);
@@ -456,11 +453,6 @@ static void applyOverride(const char* name, uint64_t key, KTranslated* tr) {
     KLOG(0, "shader override: %s", path);
 }
 
-static bool passthroughEnabled() {
-    static const bool v = kmtlEnvInt("KSA_MTL_TESS_PASSTHROUGH", 1) != 0;
-    return v;
-}
-
 // Everything that shapes a stage's translation: the module, entry, stage options, the slot map of every set,
 // specialization data, and the translator version. Bump kTranslatorVersion when translate() or its MSL patches change
 static uint64_t translationKey(KShaderModule* mod, const char* entry, spv::ExecutionModel model, KPipelineLayout* layout,
@@ -468,7 +460,7 @@ static uint64_t translationKey(KShaderModule* mod, const char* entry, spv::Execu
     static const uint32_t kTranslatorVersion = 3;
     std::vector<uint32_t> k = {kTranslatorVersion, 0x300681bbu /* SPIRV-Cross pin */, (uint32_t)model, so.fragMask,
         so.sampleRate, so.viewMask, (uint32_t)so.tess, (uint32_t)so.indexType, so.tessControlPoints, so.tessQuads,
-        passthroughEnabled(), (uint32_t)mod->hash, (uint32_t)(mod->hash >> 32), so.rtLaunch, constantArgumentBuffers(), so.tessFusedInput};
+        1u /* passthrough control stripped */, (uint32_t)mod->hash, (uint32_t)(mod->hash >> 32), so.rtLaunch, constantArgumentBuffers(), so.tessFusedInput};
     if (const char* presets = kmtlEnv("KSA_MTL_SPEC")) k.push_back((uint32_t)kmtlHash(presets, strlen(presets)));
     for (const char* c = entry; *c; c++) k.push_back((uint8_t)*c);
     if (layout) {
@@ -514,7 +506,7 @@ static bool prepareStage(const VkPipelineShaderStageCreateInfo* st, spv::Executi
             dumpMSL(name, "", err);
             return false;
         }
-        if (so.tess == KTessRole::ControlKernel && passthroughEnabled() && stripPassthroughControl(tr->msl))
+        if (so.tess == KTessRole::ControlKernel && stripPassthroughControl(tr->msl))
             tr->passthrough = true;
         kmtlCacheStore(key, *tr);
     }
@@ -781,9 +773,9 @@ static NSUInteger outputStride(MTLComputePipelineReflection* refl, NSUInteger in
     return 0;
 }
 
-// Passthrough control stage (on by default, KSA_MTL_TESS_PASSTHROUGH=0 turns it off): when every control-point output is copied from the same
-// input of the same type in the same order, the copies are removed from the control kernel and the evaluation stage
-// reads the vertex kernel's output directly (control point k of the draw is vertex-kernel output k)
+// Passthrough control stage: when every control-point output is copied from the same input of the same type in the
+// same order, the copies are removed from the control kernel and the evaluation stage reads the vertex kernel's output
+// directly (control point k of the draw is vertex-kernel output k)
 static std::vector<std::string> structFieldTypes(const std::string& msl, const std::string& name, std::vector<std::string>* names) {
     std::vector<std::string> types;
     size_t p = msl.find("struct " + name + "\n{");

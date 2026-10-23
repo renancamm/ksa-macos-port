@@ -1,13 +1,13 @@
 // GPU profiler: per-encoder GPU time from stage-boundary timestamps (Apple GPUs sample only at encoder stage
-// boundaries, not per draw or dispatch; KSA_MTL_SERIAL=1 gives each dispatch its own encoder).
+// boundaries, not per draw or dispatch; KSA_MTL_GPUPROF_SPLIT=1 gives each its own encoder).
 //
 //   KSA_MTL_GPUPROF=<csv>   one row per encoder of every profiled frame:
 //                           frame,cb,encoder,type,draws,dispatches,start_us,vertex_us,fragment_us,total_us,pipelines
 //                           plus one "cb" row per command buffer (GPUStartTime..GPUEndTime)
 //   KSA_MTL_GPUPROF_FRAMES=<first>,<count>   presents to profile (default 2000,300; the benchmark's @gpuprof
 //                           directive moves the window with ksaMtlProfileFrames)
-//   KSA_MTL_GPUPROF_SPLIT=1 end the render encoder after every draw call (per-draw attribution; adds a store and
-//                           load of the attachments per draw, so absolute times grow)
+//   KSA_MTL_GPUPROF_SPLIT=1 end the encoder after every draw call and dispatch (per-draw attribution; adds a store
+//                           and load of the attachments per draw, so absolute times grow)
 //   KSA_MTL_DUMP_SPV=<dir>  every shader module as <hash>.spv (pipelines are named by these hashes)
 //   KSA_MTL_LABELS=1        name every encoder after its pipelines, for Instruments, the Metal HUD and Xcode's
 //                           frame capture (command.mm)
@@ -151,11 +151,9 @@ void kmtlProfRenderPass(KCommandBuffer* cb, MTLRenderPassDescriptor* rp) {
 id<MTLComputeCommandEncoder> kmtlProfComputeEncoder(KCommandBuffer* cb) {
     KProfState* s = state(cb);
     int i = s ? newEncoder(s, 'c', 2) : -1;
-    // KSA_MTL_CONCURRENT=1: dispatches between Vulkan barriers may overlap (barriers are memory barriers in the encoder)
-    static const MTLDispatchType type = (kmtlEnvInt("KSA_MTL_CONCURRENT", 0) || kmtlEnvInt("KSA_MTL_NOSYNC", 0) == 3) ? MTLDispatchTypeConcurrent : MTLDispatchTypeSerial;
-    if (i < 0) return [cb->mtl computeCommandEncoderWithDispatchType:type];
+    if (i < 0) return [cb->mtl computeCommandEncoderWithDispatchType:MTLDispatchTypeSerial];
     MTLComputePassDescriptor* d = [MTLComputePassDescriptor computePassDescriptor];
-    d.dispatchType = type;
+    d.dispatchType = MTLDispatchTypeSerial;
     d.sampleBufferAttachments[0].sampleBuffer = s->samples;
     d.sampleBufferAttachments[0].startOfEncoderSampleIndex = i;
     d.sampleBufferAttachments[0].endOfEncoderSampleIndex = i + 1;
@@ -185,11 +183,15 @@ void kmtlProfNote(KCommandBuffer* cb, KPipeline* p, bool dispatch, uint32_t n) {
         e.pipelines += p->profName;
         e.lastPipeline = p->profId;
     }
-    static const bool split = kmtlEnvInt("KSA_MTL_GPUPROF_SPLIT", 0) != 0;
-    if (split && !dispatch && cb->render && cb->deferredStores) {
+    if (kmtlProfSplit() && !dispatch && cb->render && cb->deferredStores) {
         cb->suspendRender();
         cb->resumeRender();
     }
+}
+
+bool kmtlProfSplit() {
+    static const bool v = kmtlEnvInt("KSA_MTL_GPUPROF_SPLIT", 0) != 0;
+    return v;
 }
 
 void kmtlProfEncoderEnded(KCommandBuffer* cb) {

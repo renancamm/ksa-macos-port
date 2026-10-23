@@ -6,15 +6,6 @@
 
 static const MTLRenderStages kAllRenderStages = MTLRenderStageVertex | MTLRenderStageFragment;
 
-// KSA_MTL_NOSYNC (measurement only, renders wrong): bounds of what finer synchronization could overlap.
-// 1 no fence waits and no barriers, 2 no fence waits between encoders, 3 no barriers inside compute encoders
-// (dispatches overlap), 4 render encoders wait only before their fragment stage
-static int noSyncMode() {
-    static const int v = kmtlEnvInt("KSA_MTL_NOSYNC", 0);
-    return v;
-}
-static bool noSync() { return noSyncMode() == 1 || noSyncMode() == 2; }
-
 // KSA_MTL_SYNC=strict: every encoder waits on and updates the queue's chain fence (strict submission order)
 static bool strictSync() {
     static const bool v = [] { const char* s = kmtlEnv("KSA_MTL_SYNC"); return s && !strcmp(s, "strict"); }();
@@ -98,7 +89,6 @@ static void collectWaits(KCommandBuffer* cb, uint32_t roles, std::vector<id<MTLF
 template <typename E> void KCommandBuffer::waitForRoles(E enc, uint32_t roles) {
     encRoles = roles;
     encWaited.clear();
-    if (noSync()) return;
     if (strictSync()) { [enc waitForFence:queue->chain]; return; }
     collectWaits(this, roles, encWaited);
     for (id<MTLFence> f : encWaited) [enc waitForFence:f];
@@ -106,9 +96,8 @@ template <typename E> void KCommandBuffer::waitForRoles(E enc, uint32_t roles) {
 template <> void KCommandBuffer::waitForRoles(id<MTLRenderCommandEncoder> enc, uint32_t roles) {
     encRoles = roles;
     encWaited.clear();
-    if (noSync()) return;
     if (strictSync()) {
-        [enc waitForFence:queue->chain beforeStages:noSyncMode() == 4 ? MTLRenderStageFragment : kAllRenderStages];
+        [enc waitForFence:queue->chain beforeStages:kAllRenderStages];
         return;
     }
     // Waiting before the vertex stage covers the fragment stage too
@@ -141,7 +130,7 @@ void KCommandBuffer::barrierClasses(uint32_t src, uint32_t dst) {
         if (f && std::find(encWaited.begin(), encWaited.end(), f) == encWaited.end()) reopen = true;
     }
     if (reopen) endEncoder();
-    else if (noSyncMode() != 3) [compute memoryBarrierWithScope:MTLBarrierScopeBuffers | MTLBarrierScopeTextures];
+    else [compute memoryBarrierWithScope:MTLBarrierScopeBuffers | MTLBarrierScopeTextures];
 }
 
 // End of recording: one encoder that waits on the last fence of every class and updates the chain fence
@@ -149,7 +138,7 @@ void KCommandBuffer::joinCommands() {
     if (!mtl) return;
     endEncoder();
     // Later command buffers start after the chain fence, which the join updates after resolves still in flight
-    bool resolving = resolveWaited != resolveSignaled && !noSync();
+    bool resolving = resolveWaited != resolveSignaled;
     if (resolving) {
         [mtl encodeWaitForEvent:resolveEvent value:resolveSignaled];
         resolveWaited = resolveSignaled;
@@ -165,12 +154,6 @@ void KCommandBuffer::joinCommands() {
     [b updateFence:queue->chain];
     [b endEncoding];
     for (auto& f : lastFence) f = queue->chain;
-}
-
-// KSA_MTL_SERIAL=1: end compute and blit encoders at every barrier and after every dispatch (sync debugging)
-static bool serialMode() {
-    static const bool v = kmtlEnvInt("KSA_MTL_SERIAL", 0) != 0;
-    return v;
 }
 
 
@@ -284,7 +267,7 @@ void KCommandBuffer::endEncoder() {
 // KSA's passes after a resolve load the multisample attachments, and those that sample resolved images come after
 // compute work that has waited; waiting there would cost the overlap of every pass with the previous one.
 void KCommandBuffer::waitForResolves(uint32_t roles) {
-    if (resolveWaited == resolveSignaled || noSync()) return;
+    if (resolveWaited == resolveSignaled) return;
     bool dependent = false;
     for (uint32_t r = roles; r; r &= r - 1)
         if (needMask[classIndex(r & -r)] & kClassFragment) dependent = true;
@@ -867,8 +850,7 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
         [enc dispatchThreads:MTLSizeMake(t.count, t.instances, 1) threadsPerThreadgroup:MTLSizeMake(vw, 1, 1)];
     }
     [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
-    static const bool profSplit = kmtlEnvInt("KSA_MTL_GPUPROF_SPLIT", 0) != 0;
-    if (profSplit) {
+    if (kmtlProfSplit()) {
         // Profiling: the control stage in its own encoder (state rebound below)
         kmtlProfNote(cb, p, true, 1);
         cb->endEncoder();
@@ -1074,7 +1056,7 @@ VKFN(void) vkCmdDispatch(VkCommandBuffer commandBuffer, uint32_t x, uint32_t y, 
     [cb->compute dispatchThreadgroups:MTLSizeMake(x, y, z) threadsPerThreadgroup:cb->computePipeline->workgroup];
     kmtlProfNote(cb, cb->computePipeline, true, 1);
     cb->dispatches++;
-    if (serialMode()) cb->endEncoder();
+    if (kmtlProfSplit()) cb->endEncoder();
 }
 
 VKFN(void) vkCmdDispatchIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset) {
@@ -1086,7 +1068,7 @@ VKFN(void) vkCmdDispatchIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer,
                                   threadsPerThreadgroup:cb->computePipeline->workgroup];
     kmtlProfNote(cb, cb->computePipeline, true, 1);
     cb->dispatches++;
-    if (serialMode()) cb->endEncoder();
+    if (kmtlProfSplit()) cb->endEncoder();
 }
 
 // Ray tracing pipelines are compute kernels of 8x8 threads; the launch size goes to kRtLaunchBufferIndex and the
@@ -1114,16 +1096,14 @@ VKFN(void) vkCmdDispatchBase(VkCommandBuffer commandBuffer, uint32_t bx, uint32_
 // Barriers
 
 static void barrier(KCommandBuffer* cb, VkPipelineStageFlags2 srcStages, VkPipelineStageFlags2 dstStages) {
-    if (noSyncMode() == 1) return;
     if (cb->render) {
         // Inside a pass only framebuffer-local dependencies are legal: a memory barrier covers them
         [cb->render memoryBarrierWithScope:MTLBarrierScopeBuffers | MTLBarrierScopeTextures
                                afterStages:MTLRenderStageFragment beforeStages:MTLRenderStageVertex];
         return;
     }
-    if (serialMode()) cb->endEncoder();
     if (strictSync()) {
-        if (cb->compute && noSyncMode() != 3) [cb->compute memoryBarrierWithScope:MTLBarrierScopeBuffers | MTLBarrierScopeTextures];
+        if (cb->compute) [cb->compute memoryBarrierWithScope:MTLBarrierScopeBuffers | MTLBarrierScopeTextures];
         else if (cb->blit) cb->endEncoder();
         return;
     }

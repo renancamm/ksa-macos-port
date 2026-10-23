@@ -51,17 +51,21 @@ CMake's.
 
 ## Test
 
-Start the app's executable from Terminal with the debugging variables below, as with the switches above. For
-example, to save two screenshots and quit:
+To see what a change does across the game, run the [benchmark](../benchmark/README.md) before and after it
+(`dist/ksa-macos-port/benchmark.sh`): `--fast` is the quick way, and `--compare` checks the screenshots as well as the
+numbers. To look at one place, play only that place (`--fast jupiter2`) or stay there with `--hold jupiter2`. The
+game gets the variables below from the script, so `MTL_SHADER_VALIDATION=1 ./benchmark.sh --hold jupiter2` works too.
+
+For a problem the tour doesn't reach, reproduce it in a save and start the app's executable from Terminal with the
+debugging variables below, as with the switches above. For example, to save two screenshots and quit:
 
 ```bash
-KSA_MTL_SHOTS=300,3000 KSA_MTL_SHOT_DIR=/tmp/ksa-shots KSA_MTL_EXIT_AFTER=3000 \
+KSA_MTL_SHOTS=300,3000 KSA_MTL_SHOT_DIR=/tmp/ksa-shots KSA_MTL_EXIT_AFTER_SHOTS=1 \
   ~/Applications/"Kitten Space Agency.app"/Contents/MacOS/KSA
 ```
 
-A useful loop for rendering bugs: reproduce the problem in a save, take shots before and after a change, and turn
-on `MTL_SHADER_VALIDATION=1` and `KSA_MTL_DUMP_MSL` to see which shader misbehaves and what Metal source it became.
-Both shader fixes in `src/port/lib/convert-shaders.sh` were found this way.
+Either way, `MTL_SHADER_VALIDATION=1` and `KSA_MTL_DUMP_MSL` show which shader misbehaves and what Metal source it
+became. Both shader fixes in `src/port/lib/convert-shaders.sh` were found this way.
 
 Vulkan validation layers can't be used, because KSA Metal takes the loader's place. `KSA_MTL_LOG=1` logs its
 warnings and the first call of each Vulkan function, which shows what the game asks for, and `KSA_MTL_STRICT=1`
@@ -75,22 +79,25 @@ The debugging variables, used the same way:
 | `KSA_MTL_LOG_FILE=<file>` | write the log to a file instead of the terminal |
 | `KSA_MTL_STRICT=1` | return pipeline errors to the game, instead of skipping the pipeline and continuing |
 | `KSA_MTL_DUMP_MSL=<dir>` | write every translated shader, and the errors of those that fail to compile |
+| `KSA_MTL_DUMP_SPV=<dir>` | write every shader module the game creates as `<hash>.spv`, and the modules KSA Metal rewrites for tessellation and ray tracing |
+| `KSA_MTL_OVERRIDES=<dir>` | use hand-written Metal source in place of a translated shader: `<dir>/<name>.metal`, named as in `KSA_MTL_DUMP_MSL` |
+| `KSA_MTL_SPEC=<hash>:<id>=<value>,...` | replace a specialization constant of a shader module, whatever the game passes (e.g. fewer iterations of an expensive loop) |
+| `KSA_MTL_CACHE_DIR=<dir>` | where the shader cache goes (default: `~/Library/Caches/ksa-metal`) |
 | `KSA_MTL_SHOTS=<n,...>` | save the presented image as `shot_<n>.png` at these points |
 | `KSA_MTL_SHOT_UNIT=<unit>` | count shots in `presents` (default), or in `frames` or `seconds` from the first in-game frame |
 | `KSA_MTL_SHOT_DIR=<dir>` | where shots go (default: the current folder) |
-| `KSA_MTL_EXIT_AFTER=<n>` | quit after n presents |
+| `KSA_MTL_EXIT_AFTER=<n>` | quit after n presents (`KSA_MTL_EXIT_AFTER_S=<s>`: s seconds after start) |
 | `KSA_MTL_EXIT_AFTER_SHOTS=1` | quit once the last shot is saved |
 | `KSA_MTL_FRAMES=<file.csv>` | per frame: CPU frame time, GPU busy time, draws, dispatches and allocated memory |
 | `KSA_MTL_GPUPROF=<file.csv>` | GPU time of every encoder, for 300 frames from present 2000 (`KSA_MTL_GPUPROF_FRAMES=<first>,<count>` changes that) |
+| `KSA_MTL_GPUPROF_SPLIT=1` | give every draw and dispatch its own encoder, so the profiler times each one (times grow: each draw stores and loads its attachments) |
 | `KSA_MTL_LABELS=1` | name every encoder after its pipelines (render pass size, shader hashes), for Instruments, the Metal HUD and Xcode's frame capture |
 
 Metal's own tools work too: `MTL_HUD_ENABLED=1` shows Apple's performance overlay, and `MTL_DEBUG_LAYER=1` and
 `MTL_SHADER_VALIDATION=1` check API use and catch out-of-bounds memory access in shaders (slow).
 
-To see what a change does across the game, run the [benchmark](../benchmark/README.md) before and after it
-(`dist/ksa-macos-port/benchmark.sh`) and compare the two runs: `--fast` is the quick way, and `compare` checks the
-screenshots as well as the numbers. Its mod talks to KSA Metal through the only functions it exports besides Vulkan's,
-in `swapchain.mm` and `profile.mm`:
+The benchmark's mod talks to KSA Metal through the only functions it exports besides Vulkan's, in `swapchain.mm` and
+`profile.mm`:
 
 | Function | |
 |---|---|

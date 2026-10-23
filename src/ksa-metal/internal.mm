@@ -97,7 +97,7 @@ void kmtlInitInternal(KDevice* dev) {
     ip->tessPrep = [dev->mtl newComputePipelineStateWithFunction:[ip->lib newFunctionWithName:@"kmtl_tess_prep"] error:&e];
     ip->tessStats = [dev->mtl newBufferWithLength:32 options:MTLResourceStorageModeShared | MTLResourceHazardTrackingModeUntracked];
     memset(ip->tessStats.contents, 0, 32);
-    ip->tessCap = (uint32_t)std::max(3, kmtlEnvInt("KSA_MTL_TESS_MAX_INDICES", 1 << 19));
+    ip->tessCap = 1u << 19;
     MTLSamplerDescriptor* sd = [MTLSamplerDescriptor new];
     sd.sAddressMode = sd.tAddressMode = sd.rAddressMode = MTLSamplerAddressModeClampToEdge;
     ip->nearest = [dev->mtl newSamplerStateWithDescriptor:sd];
@@ -227,8 +227,7 @@ uint32_t kmtlTessCap(KDevice* dev) {
     KInternalPipelines* ip = dev->internal;
     const volatile uint32_t* st = (const volatile uint32_t*)ip->tessStats.contents;
     uint32_t want = st[0], cap = ip->tessCap.load(std::memory_order_relaxed);
-    static const bool grow = kmtlEnvInt("KSA_MTL_TESS_GROW", 1) != 0;
-    if (want > cap && grow) {
+    if (want > cap) {
         uint32_t grown = (uint32_t)std::min<uint64_t>(((uint64_t)want * 5 / 4 + 65535) & ~65535ull, 0xffffffffu);
         if (ip->tessCap.compare_exchange_strong(cap, grown))
             KLOG(1, "tessellation index cap %u -> %u (largest draw %u indices, firstIndex up to %u, instances up to %u, "

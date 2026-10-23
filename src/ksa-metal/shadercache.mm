@@ -7,7 +7,6 @@
 //
 //   KSA_MTL_CACHE=0          no disk cache, no prewarm
 //   KSA_MTL_CACHE_DIR=<dir>  cache location (default ~/Library/Caches/ksa-metal)
-//   KSA_MTL_PREWARM=0        no prewarm
 #include "kmtl.h"
 #include <dirent.h>
 #include <sys/stat.h>
@@ -125,7 +124,7 @@ void kmtlCacheFlushRecent() {
 }
 
 void kmtlShaderPrewarm(KDevice* dev) {
-    if (cacheDir().empty() || !kmtlEnvInt("KSA_MTL_PREWARM", 1)) return;
+    if (cacheDir().empty()) return;
     std::string list;
     if (!readFile(cacheDir() + "/recent", &list)) return;
     auto keys = std::make_shared<std::vector<uint64_t>>();

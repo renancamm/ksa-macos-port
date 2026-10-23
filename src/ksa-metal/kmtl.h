@@ -98,7 +98,7 @@ struct KPhysicalDevice : KDispatchable {
 
 struct KQueue : KDispatchable {
     KDevice* device = nullptr;
-    uint32_t family = 0;  // 0 graphics/compute/transfer, 1 transfer only (KSA_MTL_TRANSFER_QUEUE)
+    uint32_t family = 0;  // 0 graphics/compute/transfer, 1 transfer only
     id<MTLCommandQueue> mtl = nil;
     // Every encoder waits on and updates this fence, so encoders run in submission order (barriers are no-ops)
     id<MTLFence> chain = nil;
@@ -598,6 +598,7 @@ void kmtlProfRenderPass(KCommandBuffer* cb, MTLRenderPassDescriptor* rp);
 id<MTLComputeCommandEncoder> kmtlProfComputeEncoder(KCommandBuffer* cb);
 id<MTLBlitCommandEncoder> kmtlProfBlitEncoder(KCommandBuffer* cb);
 void kmtlProfNote(KCommandBuffer* cb, KPipeline* p, bool dispatch, uint32_t n);
+bool kmtlProfSplit();
 void kmtlProfEncoderEnded(KCommandBuffer* cb);
 void kmtlProfSubmit(KCommandBuffer* cb, id<MTLCommandBuffer> mtl);
 void kmtlProfPresent();
@@ -609,7 +610,6 @@ void kmtlUnregisterMemory(KDeviceMemory* m);
 uint64_t kmtlAccelId(VkAccelerationStructureKHR as);
 bool kmtlRayQueryEnabled();
 bool kmtlTessellationEnabled();  // level 0 global, 1 instance, 2 device
-bool kmtlTransferQueueEnabled();
 
 // Memory accounting (frame log and budget)
 extern std::atomic<int64_t> g_allocatedBytes;

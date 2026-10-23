@@ -70,14 +70,9 @@ bool kmtlRayQueryEnabled() {
     return v;
 }
 
-// Tessellation (KSA_MTL_TESSELLATION=0 hides the feature; the game then skips terrain/ocean tessellation)
 bool kmtlRayTracingPipelinesEnabled();
 
-bool kmtlTransferQueueEnabled() {
-    static const bool v = kmtlEnvInt("KSA_MTL_TRANSFER_QUEUE", 1) != 0;
-    return v;
-}
-
+// Tessellation (KSA_MTL_TESSELLATION=0 hides the feature; the game then skips terrain/ocean tessellation)
 bool kmtlTessellationEnabled() {
     static const bool v = kmtlEnvInt("KSA_MTL_TESSELLATION", 1) != 0;
     return v;
@@ -614,9 +609,9 @@ VKFN(void) vkGetPhysicalDeviceFeatures2(VkPhysicalDevice, VkPhysicalDeviceFeatur
 
 VKFN(void) vkGetPhysicalDeviceQueueFamilyProperties(VkPhysicalDevice, uint32_t* count, VkQueueFamilyProperties* out) {
     KTRACE_FIRST();
-    // Family 0 does everything; family 1 (KSA_MTL_TRANSFER_QUEUE, on by default) only transfers. No compute-only
-    // family: KSA would put only its ocean readbacks there and make every frame wait for that queue
-    uint32_t n = kmtlTransferQueueEnabled() ? 2 : 1;
+    // Family 0 does everything; family 1 only transfers. No compute-only family: KSA would put only its ocean
+    // readbacks there and make every frame wait for that queue
+    uint32_t n = 2;
     if (!out) { *count = n; return; }
     n = std::min(n, *count);
     for (uint32_t f = 0; f < n; f++) {
