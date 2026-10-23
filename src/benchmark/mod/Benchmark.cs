@@ -34,11 +34,12 @@
 // expects and pauses there, the screenshot is taken once the world has settled, and both clocks go on, the simulation
 // easing back to its speed. So every Mac takes its screenshots at the same moments of the game.
 //
-// Fast mode skips the way between: the script's clock jumps from one step to the next, and before each step the
-// simulation catches up with the game time the script expects there and pauses, so vehicles get their inputs at the
-// same game times as in a played run. At each checkpoint the mod waits until the view stops changing (terrain and
-// textures streaming in after the jump), measures a few seconds of the view standing there (the @measure parts belong to
-// the way, which fast mode skips) and takes the screenshot. Its numbers compare only with other fast runs.
+// Fast mode skips the way between in the sections of the camera's flight alone (@key, @shot and @measure steps only):
+// the game stays paused all along them, and the script's clock jumps from one chosen checkpoint to the next (the light
+// and the clouds stay as they were at the start). Sections with vehicles play as written, as in the cinematic run. At
+// each checkpoint the mod waits until the view stops changing (terrain and textures streaming in after a jump),
+// measures a few seconds of the view standing there (instead of the @measure parts) and takes the screenshot. Its
+// numbers compare only with other fast runs.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -81,13 +82,14 @@ public partial class Benchmark
         public string[] Needs = Array.Empty<string>();
         public readonly List<Step> Steps = new();
         public double Length => Steps.Count > 0 ? Steps.Max(s => s.At) : 0;
+        // Only the camera's flight: no vehicles, nothing that needs the game's clock
+        public bool CameraOnly => Steps.All(s => s.Command.Split(' ')[0] is "@key" or "@shot" or "@measure");
     }
 
     private enum Phase { Play, CatchUp, Settle, Measure, Capture, Shoot, Hold }
 
-    // What a catch-up of the game's clock leads to: a checkpoint's screenshot, the end of a jump of @time, or (in fast
-    // mode) the next step
-    private enum After { Shot, Time, Step }
+    // What a catch-up of the game's clock leads to: a checkpoint's screenshot, or the end of a jump of @time
+    private enum After { Shot, Time }
 
     private readonly List<Section> _sections = new();
     private readonly Stopwatch _wall = new();
@@ -102,8 +104,6 @@ public partial class Benchmark
     private Results? _results;
     private bool _fast, _shots = true;
     private string? _hold;
-    // Fast mode plays the script's clock as it is (no jumps, no stops) until then: @steady
-    private double _steadyUntil;
     private double _nextBeat;
 
     // The section playing, its steps and where it started on the script's clock
@@ -276,15 +276,11 @@ public partial class Benchmark
             Checkpoint(wall, dt);
             return;
         }
-        if (_fast && _scriptTime >= _steadyUntil)
+        if (Paused)
         {
-            double next = NextEvent();
-            if (next > _scriptTime)
-            {
-                FastForward(next);
-                return;
-            }
-            dt = 0;
+            // Fast mode: straight on to the next checkpoint
+            dt = NextStop() - _scriptTime;
+            _scriptTime += dt;
         }
         else
         {
@@ -367,31 +363,21 @@ public partial class Benchmark
         return warp;
     }
 
-    // Fast mode: when the next thing happens on the script's clock (a step, the end of a section or of a measured part)
-    private double NextEvent()
+    // Whether the game stays paused: fast mode, in a section of the camera's flight alone (or before the first section)
+    private bool Paused => _fast && (_section < 0 || _sections[_section].CameraOnly);
+
+    // Fast mode: where the camera's flight stops next on the script's clock: its next chosen checkpoint, or its end
+    private double NextStop()
     {
         if (_section < 0)
             return _scriptTime;
-        var steps = _sections[_section].Steps;
-        double next = _next < steps.Count ? _sectionStart + steps[_next].At : _sectionStart + _sections[_section].Length;
-        return _window != null ? Math.Min(next, _window.EndsAt) : next;
-    }
-
-    // Fast mode: the script's clock jumps there, the camera with it, and the simulation catches up with the game time the
-    // script expects there (its speeds added up over the way, eased around checkpoints as in a played run)
-    private void FastForward(double to)
-    {
-        const double Step = 1.0 / 240;
-        for (double t = _scriptTime; t < to; t += Step)
+        var section = _sections[_section];
+        for (int i = _next; i < section.Steps.Count; i++)
         {
-            double h = Math.Min(Step, to - t);
-            _gameTarget += SpeedAt(t + h / 2) * h;
+            if (section.Steps[i].Command.Split(' ') is ["@shot", var shot, ..] && IsChosen(shot))
+                return _sectionStart + section.Steps[i].At;
         }
-        double jump = to - _scriptTime;
-        _scriptTime = to;
-        UpdateCamera(jump);
-        _after = After.Step;
-        _phase = Phase.CatchUp;
+        return _sectionStart + section.Length;
     }
 
     private void Warp(double speed, double seconds)
@@ -411,7 +397,7 @@ public partial class Benchmark
         Program.DrawUI = false;
         _gameStart = _gameTarget = Universe.GetElapsedSeconds();
         _warpFrom = _warpTo = Universe.GetSimulationSpeed();
-        // Fast mode: the simulation only runs to catch up with the script
+        // Fast mode: paused until a section with vehicles
         if (_fast)
             SetSpeed(0);
         foreach (var section in _sections)
@@ -543,7 +529,9 @@ public partial class Benchmark
     private bool Holding => _hold == $"{_sectionResult?.Name}_{_shotName}";
 
     // Whether this checkpoint is one of the places chosen (or all are): the others only keep the clocks in step
-    private bool Chosen => _only?.GetValueOrDefault(_sectionResult?.Name ?? "") is not { } chosen || chosen.Contains(_shotName);
+    private bool Chosen => IsChosen(_shotName);
+
+    private bool IsChosen(string shot) => _only?.GetValueOrDefault(_sectionResult?.Name ?? "") is not { } chosen || chosen.Contains(shot);
 
     // @time: moves the game's clock forward to that many seconds since the start, the script's clock stopped meanwhile (a
     // checkpoint without a screenshot), so that a section looks the same (its clouds drift with the game's time) whether
@@ -615,9 +603,8 @@ public partial class Benchmark
                     }
                     // Fast while far behind (at least the scripted speed), then half of what is left every frame
                     double warp = Math.Max(_warpTo, 1);
-                    // A jump of @time covers half of what is left every quarter of a second or so, fast mode's catch-ups
-                    // faster still
-                    double pace = _fast ? 0.1 : _after == After.Shot ? 2 : 0.25;
+                    // A jump of @time covers half of what is left every quarter of a second or so
+                    double pace = _after == After.Shot ? 2 : 0.25;
                     SetSpeed(left > warp * frame * 2 ? Math.Max(warp, left / pace) : left / (2 * frame));
                     return;
                 }
@@ -626,15 +613,11 @@ public partial class Benchmark
                 if (-behind > AheadLimit)
                     _sectionResult?.Errors.Add(FormattableString.Invariant(
                         $"{_scriptTime - _sectionStart:F1} s: the game's clock is {-behind:F1} s ahead of the script's"));
-                switch (_after)
+                if (_after == After.Time)
                 {
-                    case After.Time:
-                        ResetClouds();
-                        Resume();
-                        return;
-                    case After.Step:
-                        Resume();
-                        return;
+                    ResetClouds();
+                    Resume();
+                    return;
                 }
                 // Without screenshots the checkpoint ends here, its clocks in step (fast mode still measures the view), and so
                 // does a checkpoint that isn't one of the places chosen
@@ -806,10 +789,9 @@ public partial class Benchmark
 
     private void Resume()
     {
-        if (_after != After.Step)
-            Log(FormattableString.Invariant(
-                $"{(_after == After.Time ? "@time" : "checkpoint " + _shotName)}: game time {Universe.GetElapsedSeconds() - _gameStart:F3} s (script {_gameTarget - _gameStart:F3} s)"));
-        SetSpeed(_fast && _scriptTime >= _steadyUntil ? 0 : SpeedAt(_scriptTime));
+        Log(FormattableString.Invariant(
+            $"{(_after == After.Time ? "@time" : "checkpoint " + _shotName)}: game time {Universe.GetElapsedSeconds() - _gameStart:F3} s (script {_gameTarget - _gameStart:F3} s)"));
+        SetSpeed(Paused ? 0 : SpeedAt(_scriptTime));
         _phase = Phase.Play;
     }
 
@@ -820,7 +802,7 @@ public partial class Benchmark
     {
         if (_window == null)
             return;
-        // Fast mode skips the way, so it only watches its parts for vehicles that broke up
+        // Fast mode measures the views standing still instead, so it only watches its parts for vehicles that broke up
         if (!_fast)
         {
             DriverStats.Marker(_window.Name, false);

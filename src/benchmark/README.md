@@ -43,9 +43,11 @@ of a run folder.
 
 ### Two ways to play it
 
-By default the tour is cinematic: the camera flies the whole way and the parts are measured as it goes. With `--fast`
-it jumps from one screenshot's place to the next and measures each view standing still. That takes about 4 minutes
-and gives screenshots that match from one run to the next, so it is the quick way to check a change:
+By default the tour is cinematic: the camera flies the whole way and the parts are measured as it goes. `--fast` is a
+short test instead: three places on Earth (from space, the sea close up, the Andes), the game paused and the camera
+jumping from one to the next, then a rocket lifting off, seen from above its nose over the clouds, and blown up. It
+measures each view standing still. A run takes about a minute and gives screenshots that match from one run to the
+next, so it is the quick way to check a change:
 
 ```bash
 ./benchmark.sh --fast
@@ -57,7 +59,8 @@ The two modes measure different things, so a fast run compares only with another
 
 You can also play part of the tour: name sections (`./benchmark.sh --fast jupiter`) or places by their screenshots'
 names (`./benchmark.sh --fast earth4 jupiter2`; `giga_pad` where two sections have a screenshot of that name). A
-place plays its section up to that point, so one place in fast mode takes well under a minute.
+place plays its section up to that point. In fast mode the camera jumps straight to the places of the flight between
+the worlds, and the sections with vehicles play as in the cinematic tour.
 
 ## For work on the port
 
@@ -105,6 +108,7 @@ shaders' hashes, how many other pipelines it ran) instead of an anonymous encode
 | `capsule` | a capsule's cockpit while a day goes by in twenty seconds, then a kitten climbing out of another capsule in tall grass, its long shadow, its face | ray tracing in the cockpit (when your settings have it on), fur, grass and shadows |
 | `launch` | a rocket with solid boosters lifting off from LC-39A, seen from the ground, then from alongside as it climbs through the clouds, faster in between, and close to its engines up high | plumes, smoke trails, clouds, part physics |
 | `giga` | a rocket of about 2,000 parts on its pad, lifting off, blown up whole, its fire and smoke, the camera turning around it all along | part physics on the CPU, many draw calls, lights, explosions and smoke |
+| `rocket` | fast mode's rocket: the `launch` rocket lifting off, seen from the ground, then from above its nose over the clouds, then blown up there; only fast mode plays it, unless you name it | plumes, smoke trails, clouds, an explosion |
 
 The camera flies from one world to the next without a cut and eases to a stop for each screenshot. The vehicles of
 the last three sections are all placed when the tour returns to Earth, the tour's only cut. Each of those sections
@@ -130,13 +134,12 @@ Each screenshot is a checkpoint. The game runs its simulation as fast as the Mac
 little behind the tour. At a checkpoint the tour waits for the game to reach the moment it should be at, pauses it
 there and takes the screenshot, so the screenshots show the same moments, in the same light, on every Mac.
 
-In fast mode the tour's clock jumps from one step to the next; before each step the game catches up with that moment
-and pauses, so the vehicles receive their controls at the same game time as in the cinematic tour. At a checkpoint the
-mod takes a screenshot every half second until two in a row match, which means the ground and textures that stream in
-after a jump have settled; then it measures the view for two seconds and takes the real screenshot. Stretches where
-stopping would break a vehicle apart (the 2,000-part rocket's flight) play through as they are. Clouds are the one
-thing the two modes show differently: the game moves their patterns with the camera's path, so the same place at the
-same moment has different clouds after a jump than after a flight.
+In fast mode the game stays paused through the flight between the worlds, and the tour's clock jumps from one
+screenshot to the next, so the light and the clouds there are those of the game's start. The sections with vehicles
+play as written, as in the cinematic tour. At a checkpoint the mod takes a screenshot every half second until two in
+a row match, which means the ground and textures that stream in after a jump have settled; then it measures the view
+for two seconds and takes the real screenshot. Fast mode plays in the game's smaller system (Earth and the Moon) when
+the places played are all there, since the other worlds' textures would only take memory.
 
 A run fails when the game crashed or hung, a step of the tour failed, a vehicle broke apart before it should, a
 screenshot is missing, the game's log has errors, or another game ran at the same time; the script then exits with 1.
@@ -171,8 +174,8 @@ the tour from `src/benchmark/benchmark.txt` into the port folder.
 | Option | |
 |---|---|
 | `--preset low`, `--preset medium`, `--preset high` | fixed settings in a 1280x800 window without V-Sync, the same on every Mac (default: your settings) |
-| `--system earth` | Earth and the Moon only (the game's smaller system): skips Mars, Saturn and Jupiter, and needs less memory (default: `sol`) |
-| `--fast` | jump from one screenshot's place to the next, and measure the views standing still (default: the cinematic tour) |
+| `--system earth` | Earth and the Moon only (the game's smaller system): skips Mars, Saturn and Jupiter, and needs less memory (default: `sol`; in fast mode `earth` when the places played are all on Earth or the Moon) |
+| `--fast` | the short test (three places on Earth, the `rocket` section), or the sections and places named with the camera jumping between places; measures the views standing still (default: the cinematic tour) |
 | `--no-shots` | take no screenshots |
 | `--set <key>=<value>` | change a setting of `settings.toml` for the run, on top of the preset (repeat for more; strings need no quotes) |
 | `--settings <file>` | apply the settings in a file of `key = value` lines, on top of the preset and before `--set` |

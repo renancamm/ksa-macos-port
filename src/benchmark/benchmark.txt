@@ -5,6 +5,9 @@
 # climbing and turning again as it goes, from Earth to Jupiter without a cut. Every @shot is a checkpoint: the camera
 # and the simulation ease to a stop, the game catches up with the script's game time and the screenshot is taken, so
 # the screenshots show the same moments on every Mac. benchmark.sh --explore captures keys from the game.
+#
+# Fast mode (benchmark.sh --fast) plays a short test of its own: three places of Earth's section, the game paused and the
+# camera jumping from one to the next, then the rocket section at the end, which only fast mode plays unless named.
 
 # Earth: from high above South America to orbit, down through the clouds to the sea, the Andes and the coast of
 # Peru, then up over northern Quebec.
@@ -187,9 +190,9 @@ section launch
 # Stress: the bundled "giga rocket" (about 2,000 parts: 200 solid boosters on eight curved arms, hundreds of batteries
 # and lights) on launch pad OLM A at Starbase. The camera turns slowly around it all along, starting close and slowly
 # rising and pulling back: the pad, the ignition and lift-off (200 plumes, many lights, a spiral of smoke), the rocket
-# blown up whole, the fire and smoke seen from above. No checkpoint between the ignition and the explosion, and fast mode
-# plays that stretch as it is: the simulation slowing down or stopping makes the game's g-load check break the rocket up
-# at a moment that differs from run to run.
+# blown up whole, the fire and smoke seen from above. No checkpoint between the ignition and the explosion: the
+# simulation slowing down or stopping makes the game's g-load check break the rocket up at a moment that differs from
+# run to run.
 section giga
 0 @launch benchmark-giga at Starbase OLM A
 0.1 @control benchmark-giga
@@ -199,7 +202,6 @@ section giga
 2 @measure pad 5
 7 @shot pad
 7.5 @chase - 30 180 12
-7.5 @steady 9.5
 7.5 @stage 1
 8 @input MainEngineStartup press
 8.1 @input MainEngineStartup release
@@ -210,3 +212,25 @@ section giga
 20.5 @chase - 55 380 12
 21 @measure smoke 9
 30.5 @shot smoke 30
+
+# Fast mode's rocket: the launch section's rocket lifting off from LC-39A, seen from the ground, then from above its
+# nose looking down along its plumes over the coast, then blown up high in the sky; faster in between. It starts at the
+# game's start time (fast mode's flight over Earth keeps the game paused), so it has the light of the launch section.
+section rocket
+0 @launch benchmark-srb at CCSFS LC-39A
+0.1 @control benchmark-srb
+0.1 @watch 240 300 2 70
+0.5 @input MainEngineThrottleUp press
+0.8 @input MainEngineStartup press
+0.9 @input MainEngineStartup release
+1 @stage 1
+2 @input MainEngineThrottleUp release
+6 @shot liftoff 50
+6.5 @chase 215 75 45 2
+6.5 @aim 10 2
+6.5 @warp 8 2
+13 @shot topdown 50
+13 @warp 1
+13.5 @chase - 50 150 2
+15 @explode
+18 @shot explosion 60

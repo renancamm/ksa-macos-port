@@ -4,19 +4,21 @@
 #
 # Usage: ./benchmark.sh [options] [section or place...]
 #        ./benchmark.sh compare <run> <run>
-#   With no sections, plays all of them, with your own settings. A place is a screenshot of the tour (earth4, or
-#   giga_pad where a name is in more than one section): its section up to there. The game takes over the screen:
-#   leave the mouse and keyboard alone until it is done. The game runs from its own documents folder, with a copy of
-#   your settings: your files stay untouched. Exits with 1 when the run failed (the game crashed or hung, a step
-#   failed, errors in its log).
+#   With no sections, plays the whole tour (with --fast, its short test), with your own settings. A place is a
+#   screenshot of the tour (earth4, or giga_pad where a name is in more than one section): its section up to there.
+#   The game takes over the screen: leave the mouse and keyboard alone until it is done. The game runs from its own
+#   documents folder, with a copy of your settings: your files stay untouched. Exits with 1 when the run failed (the
+#   game crashed or hung, a step failed, errors in its log).
 #   compare prints how the second run differs from the first: the Macs, settings, numbers part by part, and
 #   screenshots (exits with 1 when screenshots differ). A run is a run folder or a shared zip.
 #
 # Options:
 #   --preset <name>    low, medium or high: fixed settings in a 1280x800 window, the same on every Mac (default: yours)
 #   --system <name>    sol (the solar system) or earth (Earth and the Moon only: for Macs with 8 GB of memory)
-#                      (default: sol)
-#   --fast             skip the way between screenshots: jump to each one, measure the view standing there, take it
+#                      (default: sol, or earth in fast mode when the places played are all on Earth or the Moon)
+#   --fast             a short test: three places on Earth, the game paused and the camera jumping between them,
+#                      then a rocket's launch and explosion (with sections or places: those, the camera's flight
+#                      paused and jumping, vehicles played as written); measures the views standing still
 #   --no-shots         take no screenshots
 #   --set <key=value>  change one setting of settings.toml for the run (again for more), on top of the preset
 #   --settings <file>  change the settings in that file ("key = value" lines, as in settings.toml), on top of the
@@ -70,7 +72,7 @@ STARMAP_RUN="${HOME}/Library/Caches/ksa-macos-port/benchmark/starmap"
 ISSUES="https://github.com/${RELEASES_REPO}/issues/new?template=benchmark-report.md"
 
 usage() {
-    sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,42p' "$0" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
 }
 
@@ -134,11 +136,6 @@ case "${PRESET}" in
     high) PRESET_SETTINGS=("${PRESET_COMMON[@]}" "${PRESET_HIGH[@]}") ;;
     *) die "unknown preset '${PRESET}' (low, medium or high)." ;;
 esac
-case "${SYSTEM:-sol}" in
-    sol) SYSTEM_ID="Sol" ;;
-    earth) SYSTEM_ID="SolLite" ;;
-    *) die "unknown system '${SYSTEM}' (sol or earth)." ;;
-esac
 [[ "${REPEAT}" =~ ^[1-9][0-9]*$ ]] || die "--repeat needs a number of runs, not '${REPEAT}'."
 [ -z "${SETTINGS_FILE}" ] || [ -f "${SETTINGS_FILE}" ] || die "no settings file ${SETTINGS_FILE}."
 
@@ -168,6 +165,31 @@ if [ -n "${HOLD}" ]; then
     FAST=1
     REPEAT=1
 fi
+# Places named (the tools that take GB at each place need some)
+NAMED=${#ONLY[@]}
+SECTIONS="${ONLY[*]:-all}"
+# Without places: fast mode's short test, or every section but the rocket that only fast mode plays
+if [ "${NAMED}" = 0 ]; then
+    if [ -n "${FAST}" ]; then
+        ONLY=(earth_earth1 earth_earth4 earth_earth7 rocket)
+        SECTIONS="${ONLY[*]}"
+    else
+        ONLY=($(awk '$1 == "section" && $2 != "rocket" { print $2 }' "${SCRIPT}"))
+    fi
+fi
+# Fast mode plays in Earth's small system when its sections need no other celestial than the Moon
+if [ -z "${SYSTEM}" ] && [ -n "${FAST}" ]; then
+    SYSTEM=earth
+    for p in "${ONLY[@]}"; do
+        awk -v s="${p%%_*}" '$1 == "section" && $2 == s && $3 == "needs" { for (i = 4; i <= NF; i++) if ($i != "Luna") n++ }
+            END { exit n > 0 }' "${SCRIPT}" || SYSTEM=sol
+    done
+fi
+case "${SYSTEM:-sol}" in
+    sol) SYSTEM_ID="Sol" ;;
+    earth) SYSTEM_ID="SolLite" ;;
+    *) die "unknown system '${SYSTEM}' (sol or earth)." ;;
+esac
 [ -z "${REFERENCE}" ] || [ -f "${REFERENCE}/report.json" ] || [ -f "${REFERENCE}" ] ||
     die "no run at ${REFERENCE} (no report.json, and not a zip)."
 
@@ -206,13 +228,13 @@ if [ -n "${TRACE}" ]; then
     templates="$(xcrun xctrace list templates 2> /dev/null || true)"
     echo "${templates}" | grep -qx "${TEMPLATE}" ||
         die "Instruments has no template '${TEMPLATE}' (xcrun xctrace list templates)."
-    [ ${#ONLY[@]} -gt 0 ] || die "a trace of the whole tour takes tens of GB: choose sections or places (e.g. --fast jupiter2 --trace)."
+    [ "${NAMED}" -gt 0 ] || die "a trace of the whole tour takes tens of GB: choose sections or places (e.g. --fast jupiter2 --trace)."
     [ "$(free_gb)" -ge 10 ] || die "--trace needs 10 GB free on this disk ($(free_gb) GB free)."
     TOOLS+=("Instruments (${TEMPLATE})")
 fi
 if [ -n "${CAPTURE}" ]; then
     driver_has ksaMtlCapture || die "this app's KSA Metal can't capture frames: update it with ./port.sh."
-    [ ${#ONLY[@]} -gt 0 ] || die "--capture takes several GB at every screenshot: choose places (e.g. --fast jupiter2 --capture)."
+    [ "${NAMED}" -gt 0 ] || die "--capture takes several GB at every screenshot: choose places (e.g. --fast jupiter2 --capture)."
     [ "$(free_gb)" -ge 20 ] || die "--capture needs 20 GB free on this disk ($(free_gb) GB free)."
     [ -d /Applications/Xcode.app ] || warn "the captures open in Xcode, which isn't in /Applications."
     TOOLS+=("GPU frame capture")
@@ -321,7 +343,7 @@ changed="${SETS[*]:-}"
     echo "Port: ${port_version} (${port_commit})"
     echo "StarMap: $(cat "${STARMAP_RUN}/version.txt")"
     echo "System: ${SYSTEM_ID}"
-    echo "Sections: ${ONLY[*]:-all}"
+    echo "Sections: ${SECTIONS}"
     echo "Mode: $([ -n "${FAST}" ] && echo fast || echo cinematic)$([ -n "${NO_SHOTS}" ] && echo ", no screenshots" || true)"
     echo "Preset: ${PRESET:-none, own settings}"
     echo "Settings changed: ${changed:-none}"
@@ -357,8 +379,8 @@ fi
 # Loading takes up to a few minutes on a first start (shader compilation), then the script's own length, plus the
 # time slower Macs spend catching up at checkpoints. Once playing, the mod touches its heartbeat file every second: a
 # game that stops touching it has hung.
-length="$(awk '$1 == "section" { total += max; max = 0 } $1 ~ /^[0-9.]+$/ && $1 > max { max = $1 }
-    END { print int(total + max) }' "${SCRIPT}")"
+length="$(awk -v play=" ${ONLY[*]%%_*} " '$1 == "section" { total += max; max = 0; on = index(play, " " $2 " ") }
+    on && $1 ~ /^[0-9.]+$/ && $1 > max { max = $1 } END { print int(total + max) }' "${SCRIPT}")"
 timeout=$((length * 2 + 300))
 hang=60
 [ -z "${CAPTURE}" ] || hang=180
@@ -368,7 +390,8 @@ if [ -n "${HOLD}" ]; then
     step "Going to ${HOLD} in KSA ${INSTALLED}: it stays there, paused, until you quit the game"
     timeout=0
 else
-    what="$([ -n "${FAST}" ] && echo "fast, a few" || echo "about $(((length + 60) / 60))") minutes"
+    what="about $(((length + 60) / 60)) minutes"
+    [ -z "${FAST}" ] || what="fast$([ "${NAMED}" -gt 0 ] || echo ", about a minute")"
     [ "${REPEAT}" = 1 ] || what="${REPEAT} times, ${what} each"
     step "Benchmarking KSA ${INSTALLED} (${what})"
     info "The game takes over the screen. Leave the mouse and keyboard alone until it is done."
