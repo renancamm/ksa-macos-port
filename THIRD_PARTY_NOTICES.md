@@ -3,7 +3,7 @@
 The app that `port.sh` makes contains the game you supply plus the components below, all of which come in the port
 folder. Each keeps its own licence. The full licence texts and notices are in the app at
 `Contents/Resources/Licenses/`, in the folder named in the last column; versions and sources are pinned in
-[`scripts/pins.sh`](scripts/pins.sh).
+[`cmake/dependencies.cmake`](cmake/dependencies.cmake).
 
 **Kitten Space Agency** itself is developed and owned by RocketWerkz. This repository contains no game code,
 binaries or assets, and none of the licences here apply to the game.

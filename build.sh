@@ -3,8 +3,9 @@
 # release (dist/ksa-macos-port/port.sh, update.sh, ...); ./release.sh zips it.
 #
 # Usage: ./build.sh [options]
-#   Needs the Command Line Tools and cmake. Pinned downloads and source checkouts go to deps/, build trees to
-#   deps/build/; a second build only compiles what changed.
+#   Needs the Command Line Tools, cmake, ninja and the .NET 10 SDK. The native libraries are built by CMake
+#   (CMakeLists.txt), with every download pinned in cmake/dependencies.cmake; everything goes to deps/build/, and a
+#   second build only compiles what changed.
 #
 # Options:
 #   --ksa <archive | folder | app>  the KSA the benchmark mod is built against and the folder is made for (default:
@@ -72,29 +73,28 @@ fi
 KSA_VERSION="$(game_version "${KSA_DIR}")"
 step "Building the port ${VERSION} (${COMMIT}) for KSA ${KSA_VERSION}"
 
-step "[1/6] The port's scripts"
+# The native libraries, and the downloads the other steps use. CMake's output goes to a log, shown when it fails.
+step "[1/5] Native libraries (CMake)"
+mkdir -p "${CMAKE_TREE}"
+LOG="${CMAKE_TREE}/build.log"
+{ cmake --preset default -B "${CMAKE_TREE}" -DKSA_NATIVES_DIR="${NATIVES}" -DKSA_MTL_OPT="${KSA_MTL_OPT:--O2}" &&
+    cmake --build "${CMAKE_TREE}"; } > "${LOG}" 2>&1 || { grep -v xcrun_db "${LOG}" | tail -40; die "the native build failed (${LOG})."; }
+info "Libraries in ${NATIVES#"${REPO}/"}, CMake's output in ${LOG#"${REPO}/"}"
+# For editors: compile_commands.json at the repository's root, where clangd and VS Code look for it
+ln -sfn "${CMAKE_TREE}/compile_commands.json" "${REPO}/compile_commands.json"
+
+step "[2/5] The port's scripts"
 run make-kit scripts "${VERSION}" "${KSA_VERSION}" "${COMMIT}"
 
-step "[2/6] Native libraries"
-rm -rf "${NATIVES}"
-mkdir -p "${NATIVES}"
-for s in fetch-brutal-natives build-glfw-shim build-spirv-cross build-spirv-tools build-ksa-metal; do
-    run "${s}"
-done
-
-step "[3/6] .NET"
-run fetch-dotnet
-run fetch-dotnet-sdk
-
-step "[4/6] Icon and StarMap"
+step "[3/5] Icon"
 run build-icon
-run fetch-starmap
 
-step "[5/6] Benchmark"
-[ "${CONVERT}" = 0 ] || bash "${OUT}/lib/convert-dotnet.sh" "${KSA_DIR}" "$(dotnet_runtime_dir)" > /dev/null
+step "[4/5] Benchmark"
+load_deps
+[ "${CONVERT}" = 0 ] || bash "${OUT}/lib/convert-dotnet.sh" "${KSA_DIR}" "${DOTNET_RUNTIME}" > /dev/null
 run build-benchmark "${KSA_DIR}"
 
-step "[6/6] The port folder"
+step "[5/5] The port folder"
 run make-kit payload
 run check-kit
 

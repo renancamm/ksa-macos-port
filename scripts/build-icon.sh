@@ -1,23 +1,22 @@
 #!/bin/bash
 # The app icon -> deps/build/icon/AppIcon.icns and its notice
 #
-# The kitten astronaut from KSA's title card: the bottom 898x898 of the 900x1350 card, downloaded once into deps/.
+# The kitten astronaut from KSA's title card (TITLE_CARD_URL in cmake/dependencies.cmake): the bottom 898x898 of the
+# 900x1350 card.
 set -eo pipefail
 source "$(dirname "$0")/lib.sh"
+load_deps
 
 step "Making the app icon"
-CARD="${DEPS}/icon/title-card.jpg"
-if [ ! -s "${CARD}" ]; then
-    mkdir -p "$(dirname "${CARD}")"
-    curl -fsSL --retry 3 -o "${CARD}" "${TITLE_CARD_URL}" || die "could not download ${TITLE_CARD_URL}"
-fi
+CARD="${TITLE_CARD}"
+[ -s "${CARD}" ] || die "the title card was not downloaded. Run ./build.sh."
 
 OUT_DIR="${BUILD}/icon"
 TMP="$(mktemp -d)"
 rm -rf "${OUT_DIR}"
 mkdir -p "${OUT_DIR}" "${TMP}/AppIcon.iconset"
 sips -s format png -c 898 898 --cropOffset 452 1 "${CARD}" --out "${TMP}/card.png" > /dev/null ||
-    die "${CARD} is not the title card it should be. Delete it and run again."
+    die "${TITLE_CARD_URL} is not the title card it was: the icon needs a new crop in scripts/build-icon.sh."
 for size in 16 32 128 256 512; do
     sips -z ${size} ${size} "${TMP}/card.png" --out "${TMP}/AppIcon.iconset/icon_${size}x${size}.png" > /dev/null
     sips -z $((size * 2)) $((size * 2)) "${TMP}/card.png" --out "${TMP}/AppIcon.iconset/icon_${size}x${size}@2x.png" > /dev/null

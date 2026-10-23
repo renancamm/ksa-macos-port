@@ -9,18 +9,22 @@ source file holds.
 
 ## Build
 
-Building needs the Command Line Tools (`xcode-select --install`) and cmake (`brew install cmake`). From the
+Building needs the tools in the main README's [Building the port](../../README.md#building-the-port). From the
 repository's folder:
 
 ```bash
 ./build.sh --install
 ```
 
-That builds the port folder (`dist/ksa-macos-port/`) and puts its files into the installed app. For KSA Metal it runs
-`scripts/build-spirv-cross.sh` and `scripts/build-spirv-tools.sh` (pinned in `scripts/pins.sh`, static, built once),
-then `scripts/build-ksa-metal.sh` (`src/ksa-metal/` -> `deps/build/natives/libvulkan.1.dylib`). Objects in
-`deps/build/ksa-metal/` are reused while their source, the headers and the compiler flags stay the same.
-`KSA_MTL_OPT=-O0` changes the optimization level (default `-O2`).
+That builds the port folder (`dist/ksa-macos-port/`) and puts its files into the installed app. KSA Metal is a target
+of the CMake project: [`CMakeLists.txt`](CMakeLists.txt) in this folder lists its sources and flags, and
+`cmake/dependencies.cmake` pins Vulkan-Headers, SPIRV-Cross and SPIRV-Tools, which are built once as static libraries
+and linked in. The library goes to `deps/build/natives/libvulkan.1.dylib`, and a change recompiles only the files it
+affects, including after a dependency's update. `KSA_MTL_OPT=-O0 ./build.sh` changes the optimization level
+(default `-O2`). To build only the native libraries: `cmake --preset default && cmake --build --preset default`.
+
+Editors find the compiler flags in `compile_commands.json` at the repository's root, which `build.sh` links to
+CMake's.
 
 ## Test
 
@@ -181,6 +185,7 @@ tessellation stage buffers, 22 ray tracing launch size, 30 - n vertex buffer n.
 | `spvmodule.h` | a SPIR-V module as a list of instructions, for those rewrites |
 | `swapchain.mm` | swapchain, presentation, screenshots and frame log |
 | `profile.mm` | the GPU profiler |
+| `CMakeLists.txt`, `exports.txt` | the build: sources, flags, and the symbols the library exports |
 
 ## Not implemented
 

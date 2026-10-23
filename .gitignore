@@ -4,9 +4,11 @@
 .LSOverride
 ._*
 
-# Downloads, source checkouts, build trees and the port folder (scripts/lib.sh: DEPS, BUILD, DIST)
+# Downloads, build trees and the port folder (scripts/lib.sh: DEPS, BUILD, DIST), and build.sh's link to CMake's
+# compile_commands.json for editors
 deps/
 dist/
+/compile_commands.json
 *.o
 *.a
 *.dylib

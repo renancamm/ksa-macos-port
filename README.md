@@ -156,7 +156,8 @@ GLFW stops the game at startup.
 ### Building the port
 
 The port folder is made by `build.sh`, from this repository. It needs the Command Line Tools
-(`xcode-select --install`) and cmake (`brew install cmake`):
+(`xcode-select --install`), cmake and ninja (`brew install cmake ninja`), and the .NET 10 SDK
+(`brew install --cask dotnet-sdk`):
 
 ```bash
 git clone https://github.com/renancamm/ksa-macos-port.git
@@ -165,26 +166,27 @@ cd ksa-macos-port
 ```
 
 That makes `dist/ksa-macos-port/`, a port folder like a release's, whose commands work the same way.
-`./build.sh --install` also puts its files into the installed app. The build runs these scripts from `scripts/`,
-with every external source pinned to a version and checksum in [`scripts/pins.sh`](scripts/pins.sh):
+`./build.sh --install` also puts its files into the installed app.
 
-| Step | Script | What it does |
+Every external source the build uses is declared in [`cmake/dependencies.cmake`](cmake/dependencies.cmake), pinned
+to a version and checked against its checksum: the sources KSA Metal is built from, BRUTAL's packages, the .NET
+runtime and StarMap. The native part is a CMake project ([`CMakeLists.txt`](CMakeLists.txt)), and the scripts in
+`scripts/` do the rest:
+
+| Step | Where | What it does |
 |---|---|---|
-| Native libraries | `fetch-brutal-natives.sh` | RocketWerkz's macOS builds of BRUTAL's libraries, from nuget.org |
-| | `build-glfw-shim.sh` | `src/glfw-shim/` -> `libGlfwShim.dylib` |
-| | `build-spirv-cross.sh`, `build-spirv-tools.sh` | static libraries for KSA Metal |
-| | `build-ksa-metal.sh` | `src/ksa-metal/` -> `libvulkan.1.dylib` |
-| .NET | `fetch-dotnet.sh`, `fetch-dotnet-sdk.sh` | Microsoft's .NET runtime for the app, and the SDK for the benchmark |
-| Extras | `build-icon.sh`, `fetch-starmap.sh` | the app icon, and the StarMap mod loader |
-| | `build-benchmark.sh` | the benchmark mod and its report program, built against your copy of KSA |
-| Port folder | `make-kit.sh`, `check-kit.sh` | assembles `dist/ksa-macos-port/` and checks it: arm64, macOS 26, signatures, dependencies, licences, no game files |
+| Native libraries | `CMakeLists.txt` | `src/ksa-metal/` -> `libvulkan.1.dylib`, with SPIRV-Cross and SPIRV-Tools linked in; `src/glfw-shim/` -> `libGlfwShim.dylib`; RocketWerkz's macOS builds of BRUTAL's libraries, from nuget.org |
+| Icon | `build-icon.sh` | the app icon |
+| Benchmark | `build-benchmark.sh` | the benchmark mod and its report program, built against your copy of KSA |
+| Port folder | `make-kit.sh`, `check-kit.sh` | assembles `dist/ksa-macos-port/` with the .NET runtime and StarMap, and checks it: arm64, macOS 26, signatures, dependencies, licences, no game files |
 
-Downloads and source checkouts go to `deps/`, build trees to `deps/build/`; after a change only the changed files are
-compiled again. The benchmark mod is built against the installed app's KSA, or another one with `--ksa <archive>`,
-and the port folder is made for that KSA version.
+Everything goes to `deps/build/`, CMake's build tree and downloads to `deps/build/cmake/`; after a change only the
+changed files are compiled again. CMake also writes `compile_commands.json` for editors, linked at the repository's
+root. The benchmark mod is built with the .NET SDK that [`global.json`](global.json) picks, against the installed
+app's KSA, or another one with `--ksa <archive>`, and the port folder is made for that KSA version.
 
-Everything compiled here targets macOS 26 explicitly (`MACOS_MIN` in `src/port/lib/common.sh`) and is ad-hoc signed
-after linking, because macOS kills a process that loads a library with an invalid signature.
+Everything compiled here targets macOS 26 explicitly (`MACOS_MIN` in `src/port/lib/common.sh`, which CMake reads)
+and is ad-hoc signed after linking, because macOS kills a process that loads a library with an invalid signature.
 
 Releases are made with `release.sh <ksa_linux_vX.tar.gz>`. It builds the port folder from a clean copy of the
 committed sources, zips it, and tests the zip by making an app with it and running the benchmark on that app.
@@ -268,16 +270,18 @@ release of the port, and downloads it from github.com, checked against the SHA-2
 |---|---|
 | github.com | pinned sources (GLFW headers, SPIRV-Cross, SPIRV-Tools, SPIRV-Headers, Vulkan-Headers), StarMap's release, and the licences of StarMap and Harmony |
 | api.nuget.org | RocketWerkz's BRUTAL packages |
-| builds.dotnet.microsoft.com | the .NET runtime and SDK |
+| builds.dotnet.microsoft.com | the .NET runtime |
 | ahwoo.com | KSA's title card, for the app icon |
 
-Every download of code is checked against the checksum or commit pinned in `scripts/pins.sh`.
+Every download of code is checked against the checksum pinned in `cmake/dependencies.cmake`.
 
 ### Repository layout
 
 ```text
 build.sh, release.sh      make the port folder; make a release of it
-scripts/                  the build's steps, lib.sh and pins.sh
+CMakeLists.txt, cmake/    the native build, and every external source the build uses (dependencies.cmake)
+scripts/                  the build's other steps, and lib.sh
+global.json               the .NET SDK version that builds the benchmark
 src/port/                 the port folder's commands and lib/, its steps
 src/launcher/             the app's executable
 src/glfw-shim/            the GLFW shim
@@ -285,7 +289,7 @@ src/ksa-metal/            KSA Metal, with its own README
 src/benchmark/            the benchmark: mod, report program, tour and vehicles, with its own README
 third_party/fmod/         FMOD's macOS library, with its licence and notice (not MIT)
 .github/                  the issue templates
-deps/, dist/              made by the build: downloads, sources and build trees; the port folder and release zips
+deps/, dist/              made by the build: downloads and build trees; the port folder and release zips
 ```
 
 ## KSA Metal

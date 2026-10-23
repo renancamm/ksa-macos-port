@@ -90,12 +90,11 @@ COMMIT="$(git -C "${REPO}" rev-parse --short HEAD)"
 ZIP="${DIST}/ksa-macos-port-v${VERSION}.zip"
 step "Releasing the port ${VERSION} for KSA ${KSA_VERSION}, from ${COMMIT}"
 
-# 1. A clean copy of the committed sources, built with fresh build trees; the pinned downloads in deps/ are shared,
-#    because each is checked against scripts/pins.sh
+# 1. A clean copy of the committed sources, built in a fresh build tree, with fresh downloads (each checked against
+#    cmake/dependencies.cmake)
 mkdir -p "${WORK}/src"
 git -C "${REPO}" archive HEAD | tar -x -C "${WORK}/src" -f -
-KSA_DEPS="${DEPS}" KSA_BUILD="${WORK}/build" bash "${WORK}/src/build.sh" --ksa "${ARCHIVE}" --version "${VERSION}" \
-    --commit "${COMMIT}"
+KSA_BUILD="${WORK}/build" bash "${WORK}/src/build.sh" --ksa "${ARCHIVE}" --version "${VERSION}" --commit "${COMMIT}"
 
 # 2. The zip: one folder, ksa-macos-port/
 mkdir -p "${DIST}"

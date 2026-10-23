@@ -1,0 +1,37 @@
+# KSA Metal (README.md in this folder) -> libvulkan.1.dylib (+ libvulkan.dylib) in KSA_NATIVES_DIR
+#
+# It implements the Vulkan calls KSA makes on top of Metal and takes the place of the Vulkan loader: Brutal, VulkanEx
+# and GLFW find their Vulkan functions in it, and VMA gets them from Brutal. SPIRV-Cross and SPIRV-Tools are linked in
+# statically; only the Vulkan functions and KSA Metal's own ksaMtl* calls are exported (exports.txt).
+
+# Its own flags instead of CMake's Release ones (-O3 -DNDEBUG). KSA_MTL_OPT changes the optimization level.
+set(CMAKE_CXX_FLAGS_RELEASE "")
+set(CMAKE_OBJCXX_FLAGS_RELEASE "")
+set(KSA_MTL_OPT "-O2" CACHE STRING "Optimization flag for KSA Metal")
+
+add_library(ksa-metal SHARED
+    entry.mm instance.mm device.mm format.mm descriptor.mm pipeline.mm command.mm swapchain.mm internal.mm accel.mm
+    profile.mm shadercache.mm rtpipeline.mm rtspirv.cpp tessspirv.cpp)
+set_target_properties(ksa-metal PROPERTIES
+    OUTPUT_NAME vulkan
+    SOVERSION 1
+    LIBRARY_OUTPUT_DIRECTORY "${KSA_NATIVES_DIR}"
+    INSTALL_NAME_DIR @loader_path
+    BUILD_WITH_INSTALL_NAME_DIR ON
+    CXX_STANDARD 17
+    CXX_EXTENSIONS OFF
+    CXX_VISIBILITY_PRESET hidden
+    OBJCXX_VISIBILITY_PRESET hidden)
+target_compile_options(ksa-metal PRIVATE ${KSA_MTL_OPT} -g -Wall
+    $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function
+    -Wno-missing-braces>)
+target_link_libraries(ksa-metal PRIVATE
+    Vulkan::Headers spirv-cross-msl spirv-cross-glsl spirv-cross-core SPIRV-Tools-link SPIRV-Tools-opt SPIRV-Tools-static
+    "-framework Metal" "-framework QuartzCore" "-framework Foundation" "-framework CoreGraphics" "-framework ImageIO"
+    "-framework UniformTypeIdentifiers")
+target_link_options(ksa-metal PRIVATE -fobjc-arc "LINKER:-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/exports.txt")
+set_property(TARGET ksa-metal APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/exports.txt")
+
+# An ad-hoc signature of its own, as for everything built here (macOS kills a process that loads a library with an
+# invalid one)
+add_custom_command(TARGET ksa-metal POST_BUILD COMMAND codesign -f -s - "$<TARGET_FILE:ksa-metal>" 2> /dev/null)

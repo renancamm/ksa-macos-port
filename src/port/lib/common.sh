@@ -7,7 +7,8 @@
 #   payload/app/Contents/                          the app without the game: launcher, .NET runtime, libraries,
 #                                                  icon, licences
 #   payload/starmap/, payload/benchmark/           the extras
-#   VERSION                                        version=, ksa= (the KSA it was made for), commit=
+#   VERSION                                        version=, ksa= (the KSA it was made for), commit=,
+#                                                  dotnet_sdk= (the .NET SDK that built the benchmark)
 
 LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KIT="$(cd "${LIB}/.." && pwd)"
