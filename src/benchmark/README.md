@@ -33,7 +33,8 @@ the second run's folder.
 
 ### Sharing a run
 
-Each run writes its results to `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/` and a zip next to it.
+Each run writes its results to `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/`, and a zip of them in that
+folder (`<date>.zip`).
 The zip holds the report, every frame's numbers, the game's log and any crash report of the run, the settings and the
 screenshots as JPEG; your home folder's name is replaced by `~` throughout. To share one, open an issue with the
 **Benchmark report** template and attach the zip. For numbers that compare across Macs, run with a preset
@@ -189,6 +190,6 @@ the tour from `src/benchmark/benchmark.txt` into the port folder.
 | File | |
 |---|---|
 | `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/` | the results: `report.md`, `report.json`, `frames.csv`, the screenshots, `game.log`, and what the tools wrote |
-| `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>.zip` | the run to share |
+| `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/<date>.zip` | the run to share |
 | `~/Library/Caches/ksa-macos-port/benchmark/` | the game's documents folder for the run (`instance/`) and the StarMap it starts through (`starmap/`) |
 | `payload/benchmark/` in the port folder | the mod, the report program, the tour and its vehicles |

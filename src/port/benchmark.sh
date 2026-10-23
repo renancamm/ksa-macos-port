@@ -1,6 +1,6 @@
 #!/bin/bash
 # Measures how KSA runs on this Mac: plays a fixed tour of the game in one session and writes a report, and a zip of
-# it to share if you like.
+# it in the run's folder to share if you like.
 #
 # Usage: ./benchmark.sh [options] [section or place...]
 #        ./benchmark.sh compare <run> <run>
@@ -497,7 +497,8 @@ if [ -n "${REFERENCE}" ]; then
 fi
 
 # The zip to share: the report, every frame's numbers, the logs and crash reports of the run, the settings, and the
-# screenshots as JPEG; your home folder's name replaced by ~
+# screenshots as JPEG; your home folder's name replaced by ~. It goes in the run's folder, named after it.
+ZIP="${OUT}/$(basename "${OUT}").zip"
 STAGE="$(mktemp -d)/$(basename "${OUT}")"
 mkdir -p "${STAGE}"
 for f in report.md report.json system.txt run.txt settings.toml profile.md "${OUT}"/game*.log "${OUT}"/frames*.csv \
@@ -515,8 +516,8 @@ find "${HOME}/Library/Logs/DiagnosticReports" -maxdepth 1 -name '*.ips' -newer "
         mkdir -p "${STAGE}/crashes"
         sed "s|${HOME}|~|g; s|/Users/$(id -un)|~|g" "${crash}" > "${STAGE}/crashes/$(basename "${crash}")"
     done
-rm -f "${OUT}.zip"
-ditto -c -k --norsrc --noextattr --keepParent "${STAGE}" "${OUT}.zip"
+rm -f "${ZIP}"
+ditto -c -k --norsrc --noextattr --keepParent "${STAGE}" "${ZIP}"
 rm -rf "$(dirname "${STAGE}")"
 
 if [ "${failed}" = 0 ]; then
@@ -525,6 +526,6 @@ else
     step "Done, with problems: ${OUT}"
 fi
 info "Compare with another run: ./benchmark.sh compare <other run> \"${OUT}\""
-info "To share it (up to you): ${OUT}.zip ($(du -h "${OUT}.zip" | cut -f1 | tr -d ' ')) holds the report, the numbers,"
+info "To share it (up to you): ${ZIP} ($(du -h "${ZIP}" | cut -f1 | tr -d ' ')) holds the report, the numbers,"
 info "the logs and the screenshots. Attach it to a new issue: ${ISSUES}"
 exit "${failed}"

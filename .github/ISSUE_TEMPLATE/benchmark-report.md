@@ -7,7 +7,7 @@ labels: benchmark
 
 <!--
 Thanks for measuring! Run ./benchmark.sh in the port folder (with --preset low, medium or high for numbers that
-compare across Macs, or --system earth on a Mac with 8 GB of memory). When it is done, it shows a zip next to its
+compare across Macs, or --system earth on a Mac with 8 GB of memory). When it is done, it shows a zip in its
 results folder: drag that zip into this issue. It holds the report, the numbers of every frame, the game's log, the
 settings and the screenshots, with your home folder's name replaced by ~.
 Anything you noticed while it ran (stutters, flicker, a part that looked wrong) is welcome too.
