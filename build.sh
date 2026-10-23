@@ -9,7 +9,7 @@
 #
 # Options:
 #   --ksa <archive | folder | app>  the KSA the benchmark mod is built against and the folder is made for (default:
-#                                   the installed app, otherwise the newest ksa_linux_v*.tar.gz in ~/Downloads)
+#                                   the installed app, otherwise the newest ksa_linux_v*.tar.gz or .tar in ~/Downloads)
 #   --install                       then update the installed app with it (port.sh --app)
 #   --app <path>                    the app for --install (default: ~/Applications/Kitten Space Agency.app)
 #   --version <v>, --commit <id>    what VERSION says (default: dev, and the checkout's commit); set by release.sh
@@ -46,8 +46,8 @@ if [ -z "${KSA_SOURCE}" ]; then
     if [ -n "$(app_version "${APP}")" ]; then
         KSA_SOURCE="${APP}"
     else
-        KSA_SOURCE="$(ls -t "${HOME}"/Downloads/ksa_linux_v*.tar.gz 2> /dev/null | head -1)"
-        [ -n "${KSA_SOURCE}" ] || die "no KSA to build against: no app at ${APP} and no ksa_linux_v*.tar.gz in ~/Downloads. Pass --ksa."
+        KSA_SOURCE="$(newest_download)"
+        [ -n "${KSA_SOURCE}" ] || die "no KSA to build against: no app at ${APP} and no ksa_linux_v*.tar.gz (or .tar) in ~/Downloads. Pass --ksa."
     fi
 fi
 

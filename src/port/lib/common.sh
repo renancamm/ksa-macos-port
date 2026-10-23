@@ -66,6 +66,26 @@ version_newer() {
     return 1
 }
 
+# download_version <archive>: KSA's version from an archive's name (2026.10.19.5638 for ksa_linux_v2026.10.19.5638.tar.gz)
+download_version() {
+    basename "$1" | sed -nE 's/^ksa_linux_v([0-9]+(\.[0-9]+)+).*$/\1/p'
+}
+
+# newest_download [<version>]: the KSA archive in ~/Downloads with the newest version, newer than <version> when
+# given; empty when there is none. Safari unpacks the .gz of a download, so a .tar counts too.
+newest_download() {
+    local f v newest="" best="${1:-0}"
+    for f in "${HOME}"/Downloads/ksa_linux_v*.tar.gz "${HOME}"/Downloads/ksa_linux_v*.tar; do
+        [ -f "${f}" ] || continue
+        v="$(download_version "${f}")"
+        if [ -n "${v}" ] && version_newer "${v}" "${best}"; then
+            newest="${f}"
+            best="${v}"
+        fi
+    done
+    echo "${newest}"
+}
+
 # app_version <app>: the KSA version an app built by this port contains, empty for anything else
 app_version() {
     local plist="$1/Contents/Info.plist"

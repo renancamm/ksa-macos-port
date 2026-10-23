@@ -4,8 +4,8 @@
 #
 # Usage: ./port.sh [options] [ksa_linux_vX.tar.gz | extracted folder]
 #   With an archive, makes the app from it, replacing the one you have. Without one, takes the newest
-#   ksa_linux_v*.tar.gz in ~/Downloads when it is newer than the app you have (or there is no app yet); otherwise it
-#   puts this folder's files into the app you have.
+#   ksa_linux_v*.tar.gz (or .tar) in ~/Downloads when it is newer than the app you have (or there is no app yet);
+#   otherwise it puts this folder's files into the app you have.
 #
 # Options:
 #   --update          first update this folder to the newest release of the port, from GitHub
@@ -120,21 +120,13 @@ require_kit
 INSTALLED="$(app_version "${APP}")"
 if [ -z "${SOURCE}" ]; then
     if [ -z "${INSTALLED}" ]; then
-        SOURCE="$(ls -t "${HOME}"/Downloads/ksa_linux_v*.tar.gz 2> /dev/null | head -1)"
-        [ -n "${SOURCE}" ] || die "no ksa_linux_v*.tar.gz in ~/Downloads. Download the Linux version of KSA from https://ksa.ahwoo.com, or pass the archive's path."
+        SOURCE="$(newest_download)"
+        [ -n "${SOURCE}" ] || die "no ksa_linux_v*.tar.gz (or .tar) in ~/Downloads. Download the Linux version of KSA from https://ksa.ahwoo.com, or pass the archive's path."
         info "Using ${SOURCE}"
     else
         # A KSA in ~/Downloads newer than the app's
-        NEWEST=""
-        for candidate in "${HOME}"/Downloads/ksa_linux_v*.tar.gz; do
-            [ -f "${candidate}" ] || continue
-            v="$(basename "${candidate}" | sed -E 's/^ksa_linux_v([0-9.]+[0-9])\..*$/\1/')"
-            if version_newer "${v}" "${INSTALLED}" && { [ -z "${NEWEST}" ] || version_newer "${v}" "${NEWEST}"; }; then
-                SOURCE="${candidate}"
-                NEWEST="${v}"
-            fi
-        done
-        [ -z "${SOURCE}" ] || info "Found KSA ${NEWEST} in ~/Downloads (the app has ${INSTALLED})."
+        SOURCE="$(newest_download "${INSTALLED}")"
+        [ -z "${SOURCE}" ] || info "Found KSA $(download_version "${SOURCE}") in ~/Downloads (the app has ${INSTALLED})."
     fi
 fi
 
