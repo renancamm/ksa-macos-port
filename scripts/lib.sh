@@ -1,7 +1,7 @@
 # Shared by build.sh, release.sh and the scripts in scripts/. Source it; it defines no behaviour of its own.
 #
 # The build runs on the maintainer's Mac and needs the Command Line Tools, cmake, ninja and the .NET 10 SDK. It
-# shares the player-side helpers in src/port/lib/common.sh (names, versions, messages).
+# shares the port folder's helpers in src/port/lib/common.sh (names, versions, messages).
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPTS="${REPO}/scripts"

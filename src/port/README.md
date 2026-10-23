@@ -8,8 +8,7 @@ In Terminal, from this folder:
 
 | Command | What it does |
 |---|---|
-| `./port.sh` | makes `~/Applications/Kitten Space Agency.app` from the newest KSA archive in Downloads |
-| `./update.sh` | updates this folder to the newest version of the port, then the app: to a newer KSA in Downloads, or to this folder's version of the port |
+| `./port.sh` | makes `~/Applications/Kitten Space Agency.app` from the newest KSA archive in Downloads, or updates the app you have; `--update` first updates this folder to the newest release of the port |
 | `./starmap.sh` | adds the StarMap mod loader to the app (`--remove` takes it out) |
 | `./benchmark.sh` | measures how the game runs on this Mac and writes a report |
 

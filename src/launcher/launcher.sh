@@ -24,7 +24,7 @@ fail() {
         -e 'end run' "$1" > /dev/null 2>&1
     exit 1
 }
-[ -x "${CONTENTS}/MacOS/dotnet" ] || fail "The .NET runtime is missing from the app. Run ./update.sh in the port folder (ksa-macos-port)."
+[ -x "${CONTENTS}/MacOS/dotnet" ] || fail "The .NET runtime is missing from the app. Run ./port.sh in the port folder (ksa-macos-port)."
 [ -f "${RES}/KSA.dll" ] || fail "The game files are missing from the app. Convert the game again with ./port.sh."
 
 export DOTNET_ROOT="${CONTENTS}/MacOS"
@@ -38,12 +38,14 @@ for arg in "$@"; do
     [[ "${arg}" == -psn_* ]] || ARGS+=("${arg}")
 done
 
-# With the StarMap mod loader in the app (starmap.sh), the game starts through it. StarMap reads its config
-# and DLLs from the current folder and needs the game's full path, which changes when the app moves: the config
-# is written at every start.
-if [ -f "${RES}/StarMap/StarMap.dll" ]; then
-    echo "==> $(date): starting ${RES}/KSA.dll through StarMap"
-    cd "${RES}/StarMap" || exit 1
+# With the StarMap mod loader in the app (starmap.sh), the game starts through it; KSA_STARMAP_DIR names another
+# StarMap folder to use instead (the benchmark's, so that the app needs none). StarMap reads its config and DLLs
+# from the current folder and needs the game's full path, which changes when the app moves: the config is written
+# at every start.
+STARMAP="${KSA_STARMAP_DIR:-${RES}/StarMap}"
+if [ -f "${STARMAP}/StarMap.dll" ]; then
+    echo "==> $(date): starting ${RES}/KSA.dll through StarMap in ${STARMAP}"
+    cd "${STARMAP}" || exit 1
     game="${RES//\\/\\\\}/KSA.dll"
     printf '{ "GameLocation": "%s", "RepositoryLocation": "", "GameArguments": [] }\n' "${game//\"/\\\"}" \
         > StarMapConfig.json

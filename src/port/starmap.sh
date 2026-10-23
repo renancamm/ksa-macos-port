@@ -3,7 +3,7 @@
 # then starts the game through StarMap, which loads the StarMap mods in the game's mods folder.
 #
 # Usage: ./starmap.sh [options]
-#   ./port.sh and ./update.sh keep StarMap in the app once it is there.
+#   ./port.sh keeps StarMap in the app once it is there.
 #
 # Options:
 #   --app <path>      the app to change (default: ~/Applications/Kitten Space Agency.app)
@@ -46,7 +46,7 @@ fi
 
 step "Adding StarMap $(cat "${PAYLOAD}/starmap/version.txt") to ${APP} (KSA ${INSTALLED})"
 check_ksa_match "${INSTALLED}"
-install_starmap "${APP}"
+install_starmap "${APP}/Contents/Resources/StarMap"
 touch "${APP}"
 
 step "Done: the game now starts through StarMap."

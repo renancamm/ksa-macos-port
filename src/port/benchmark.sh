@@ -5,7 +5,7 @@
 # Usage: ./benchmark.sh [options] [section or place...]
 #        ./benchmark.sh compare <run> <run>
 #   With no sections, plays all of them, with your own settings. A place is a screenshot of the tour (earth4, or
-#   capsule_fur where a name is in more than one section): its section up to there. The game takes over the screen:
+#   giga_pad where a name is in more than one section): its section up to there. The game takes over the screen:
 #   leave the mouse and keyboard alone until it is done. The game runs from its own documents folder, with a copy of
 #   your settings: your files stay untouched. Exits with 1 when the run failed (the game crashed or hung, a step
 #   failed, errors in its log).
@@ -36,8 +36,8 @@
 #   --explore          start the benchmark's game paused, to fly the free camera around and capture places for the
 #                      tour (@key lines, for benchmark.txt) with benchkey [name] in its console; quit it when done
 #
-# Needs StarMap in the app (./starmap.sh; it is added when missing). The benchmark mod in payload/benchmark/ is built
-# for the KSA version this port folder was made for.
+# The benchmark is a mod: the game starts through the port folder's copy of StarMap for the run, so the app needs none.
+# The mod in payload/benchmark/ is built for the KSA version this port folder was made for.
 set -eo pipefail
 source "$(dirname "$0")/lib/common.sh"
 
@@ -65,6 +65,8 @@ MOD_ID="ksa-metal-benchmark"
 DOCS="${HOME}/Documents/My Games/Kitten Space Agency"
 # The game's documents folder during the run: StarMap points the game at it (STARMAP_INSTANCE_PATH)
 INSTANCE="${HOME}/Library/Caches/ksa-macos-port/benchmark/instance"
+# The StarMap the game starts through for the run (the launcher's KSA_STARMAP_DIR), so the app needs none
+STARMAP_RUN="${HOME}/Library/Caches/ksa-macos-port/benchmark/starmap"
 ISSUES="https://github.com/${RELEASES_REPO}/issues/new?template=benchmark-report.md"
 
 usage() {
@@ -191,7 +193,7 @@ if [ -n "${PROFILE}${HUD}${TRACE}${CAPTURE}" ]; then
     driver_has ksaMtlFrameStats || die "the tools need the app's KSA Metal driver, which this app doesn't have."
 fi
 if [ -n "${PROFILE}" ]; then
-    driver_has ksaMtlProfileFrames || die "this app's KSA Metal has no GPU profiler: update it with ./update.sh."
+    driver_has ksaMtlProfileFrames || die "this app's KSA Metal has no GPU profiler: update it with ./port.sh."
     [ -z "${HUD}" ] || die "--profile and --hud can't run together: both use the GPU's counters."
     TOOLS+=("GPU profiler")
 fi
@@ -209,17 +211,16 @@ if [ -n "${TRACE}" ]; then
     TOOLS+=("Instruments (${TEMPLATE})")
 fi
 if [ -n "${CAPTURE}" ]; then
-    driver_has ksaMtlCapture || die "this app's KSA Metal can't capture frames: update it with ./update.sh."
-    [ ${#ONLY[@]} -gt 0 ] || die "--capture takes a GB or more at every screenshot: choose places (e.g. --fast jupiter2 --capture)."
+    driver_has ksaMtlCapture || die "this app's KSA Metal can't capture frames: update it with ./port.sh."
+    [ ${#ONLY[@]} -gt 0 ] || die "--capture takes several GB at every screenshot: choose places (e.g. --fast jupiter2 --capture)."
     [ "$(free_gb)" -ge 20 ] || die "--capture needs 20 GB free on this disk ($(free_gb) GB free)."
     [ -d /Applications/Xcode.app ] || warn "the captures open in Xcode, which isn't in /Applications."
     TOOLS+=("GPU frame capture")
 fi
 
-# 1. StarMap, which loads the benchmark mod
-if [ ! -f "${RES}/StarMap/StarMap.dll" ]; then
-    bash "${KIT}/starmap.sh" --app "${APP}"
-fi
+# 1. StarMap, which loads the benchmark mod: the port folder's copy, outside the app
+install_starmap "${STARMAP_RUN}"
+export KSA_STARMAP_DIR="${STARMAP_RUN}"
 check_ksa_match "${INSTALLED}"
 
 # 2. The game's documents folder for the run, made fresh: the game itself and the benchmark mod (none of your mods,
@@ -318,7 +319,7 @@ changed="${SETS[*]:-}"
     echo "Low Power Mode: ${low_power}"
     echo "KSA: ${INSTALLED}"
     echo "Port: ${port_version} (${port_commit})"
-    echo "StarMap: $(cat "${RES}/StarMap/version.txt" 2> /dev/null || echo unknown)"
+    echo "StarMap: $(cat "${STARMAP_RUN}/version.txt")"
     echo "System: ${SYSTEM_ID}"
     echo "Sections: ${ONLY[*]:-all}"
     echo "Mode: $([ -n "${FAST}" ] && echo fast || echo cinematic)$([ -n "${NO_SHOTS}" ] && echo ", no screenshots" || true)"

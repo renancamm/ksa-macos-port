@@ -53,7 +53,7 @@ publish() {
     git -C "${REPO}" push -q origin "${tag}"
     gh release create "${tag}" "${zip}" --repo "${RELEASES_REPO}" --draft --verify-tag \
         --title "Port ${version} for KSA ${ksa}" \
-        --notes "The Mac port for Kitten Space Agency ${ksa}. Download $(basename "${zip}"), unzip it, and run \`./port.sh\` in the folder to make the app, or \`./update.sh\` to update an app made by an earlier version."
+        --notes "The Mac port for Kitten Space Agency ${ksa}. Download $(basename "${zip}"), unzip it, and run \`./port.sh\` in the folder to make the app, or to update one made by an earlier version."
     step "Done: look over the draft on GitHub and publish it there."
 }
 

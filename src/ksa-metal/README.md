@@ -3,9 +3,32 @@
 KSA Metal implements the part of Vulkan that Kitten Space Agency uses, on top of Metal. The app ships it as
 `libvulkan.1.dylib`, in the place of the Vulkan loader and a Vulkan driver, so nothing in the game changes.
 
-The main README says what it is and lists its compatibility switches ([KSA Metal](../../README.md#ksa-metal)).
-This file has the rest: how to build and test a change, how each Vulkan concept maps onto Metal, and what each
-source file holds.
+The main README says what it is, in short ([KSA Metal](../../README.md#ksa-metal)). This file has the detail: its
+switches, how to build and test a change, how each Vulkan concept maps onto Metal, and what each source file holds.
+
+## Configuration
+
+KSA Metal takes its settings from environment variables. To use one, start the app's executable from Terminal, where
+its output stays visible:
+
+```bash
+KSA_MTL_TESSELLATION=0 ~/Applications/"Kitten Space Agency.app"/Contents/MacOS/KSA
+```
+
+These switches turn a feature off or change a default, to work around a problem or to find out what causes it:
+
+| Variable | Effect |
+|---|---|
+| `KSA_MTL_TESSELLATION=0` | hide tessellation from the game; it draws terrain and ocean without it |
+| `KSA_MTL_TESS_FUSE=0` | tessellate without the fused path ([Tessellation](#from-vulkan-to-metal)): the vertex stage's outputs go through memory (slower; try it when terrain or ocean look wrong) |
+| `KSA_MTL_RAYQUERY=0` | hide ray queries and ray tracing; the game places clutter without them, and ray tracing inside the cockpit (IVA) is unavailable |
+| `KSA_MTL_RTPIPELINE=0` | hide only ray tracing pipelines (the cockpit's ray tracing) |
+| `KSA_MTL_ASYNC_PIPELINES=0` | compile pipelines on the game's thread, when the game creates them |
+| `KSA_MTL_CACHE=0` | don't use the shader cache on disk |
+| `KSA_MTL_SYNC=strict` | run all GPU work strictly in order; slower, but rules out synchronization bugs |
+| `KSA_MTL_SAFE_MATH=1` | compile shaders without fast math; rules out precision problems |
+| `KSA_MTL_AB_CONSTANT=0` | shaders read their resources from device memory instead of constant memory; a bit slower, try it when a shader fails to compile |
+| `KSA_MTL_BUDGET_MB=<n>` | the GPU memory budget reported to the game, which sizes its texture streaming from it (default: what Metal recommends for this Mac) |
 
 ## Build
 
@@ -18,9 +41,9 @@ repository's folder:
 
 That builds the port folder (`dist/ksa-macos-port/`) and puts its files into the installed app. KSA Metal is a target
 of the CMake project: [`CMakeLists.txt`](CMakeLists.txt) in this folder lists its sources and flags, and
-`cmake/dependencies.cmake` pins Vulkan-Headers, SPIRV-Cross and SPIRV-Tools, which are built once as static libraries
-and linked in. The library goes to `deps/build/natives/libvulkan.1.dylib`, and a change recompiles only the files it
-affects, including after a dependency's update. `KSA_MTL_OPT=-O0 ./build.sh` changes the optimization level
+`cmake/dependencies.cmake` pins Vulkan-Headers, SPIRV-Cross and SPIRV-Tools; the last two are built once as static
+libraries and linked in. The library goes to `deps/build/natives/libvulkan.1.dylib`, and a change recompiles only the
+files it affects, including after a dependency's update. `KSA_MTL_OPT=-O0 ./build.sh` changes the optimization level
 (default `-O2`). To build only the native libraries: `cmake --preset default && cmake --build --preset default`.
 
 Editors find the compiler flags in `compile_commands.json` at the repository's root, which `build.sh` links to
@@ -28,8 +51,8 @@ CMake's.
 
 ## Test
 
-Start the app's executable from Terminal with the debugging variables below, the same way as the switches in the
-main README. For example, to save two screenshots and quit:
+Start the app's executable from Terminal with the debugging variables below, as with the switches above. For
+example, to save two screenshots and quit:
 
 ```bash
 KSA_MTL_SHOTS=300,3000 KSA_MTL_SHOT_DIR=/tmp/ksa-shots KSA_MTL_EXIT_AFTER=3000 \
@@ -48,7 +71,7 @@ The debugging variables, used the same way:
 
 | Variable | Effect |
 |---|---|
-| `KSA_MTL_LOG=<0-3>` | log detail: 0 errors only (default), 1 also warnings and the first call of each function, 2 also object creation, 3 also every command |
+| `KSA_MTL_LOG=<0-2>` | log detail: 0 errors only (default), 1 also warnings and the first call of each function, 2 also object creation |
 | `KSA_MTL_LOG_FILE=<file>` | write the log to a file instead of the terminal |
 | `KSA_MTL_STRICT=1` | return pipeline errors to the game, instead of skipping the pipeline and continuing |
 | `KSA_MTL_DUMP_MSL=<dir>` | write every translated shader, and the errors of those that fail to compile |
@@ -66,12 +89,18 @@ Metal's own tools work too: `MTL_HUD_ENABLED=1` shows Apple's performance overla
 
 To see what a change does across the game, run the [benchmark](../benchmark/README.md) before and after it
 (`dist/ksa-macos-port/benchmark.sh`) and compare the two runs: `--fast` is the quick way, and `compare` checks the
-screenshots as well as the numbers. Its mod talks to KSA Metal through the only functions it exports besides Vulkan's:
-`ksaMtlFrameStats` (the latest presented frame: the `KSA_MTL_FRAMES` numbers, thermal state, shaders compiled, memory
-footprint, drawable size, display interval), `ksaMtlScreenshot` (a PNG of the next one), `ksaMtlMarker` (a signpost
-interval for each measured part, under Points of Interest in Instruments) and `ksaMtlCapture` (an Xcode GPU frame
-capture of the next frames, with `MTL_CAPTURE_ENABLED=1`), in `swapchain.mm`, and `ksaMtlProfileFrames` (the GPU
-profiler's frames) in `profile.mm`. The benchmark's `--profile`, `--trace`, `--capture` and `--hud` use them.
+screenshots as well as the numbers. Its mod talks to KSA Metal through the only functions it exports besides Vulkan's,
+in `swapchain.mm` and `profile.mm`:
+
+| Function | |
+|---|---|
+| `ksaMtlFrameStats` | the latest presented frame: the `KSA_MTL_FRAMES` numbers, thermal state, shaders compiled, memory footprint, drawable size, display interval |
+| `ksaMtlScreenshot` | a PNG of the next frame |
+| `ksaMtlMarker` | begins or ends a signpost interval, one per measured part, under Points of Interest in Instruments |
+| `ksaMtlCapture`, `ksaMtlCapturing` | an Xcode GPU frame capture of the next frames (with `MTL_CAPTURE_ENABLED=1`), and whether it is still being written |
+| `ksaMtlProfileFrames` | the GPU profiler (`KSA_MTL_GPUPROF`) on the next frames, under a label |
+
+The benchmark's `--profile`, `--trace`, `--capture` and `--hud` use them.
 
 ## From Vulkan to Metal
 
@@ -121,7 +150,7 @@ SPIR-V level, so the evaluation stage runs it for each of its control points on 
 draw's index buffer. The control shader loses its copies, and the vertex and control kernels shrink to what the
 tessellation factors need (for the terrain, 32 bytes per vertex instead of 128). Draws with 16-bit indices or
 instances keep the evaluation stage reading the vertex kernel's output. In the benchmark this takes 5-15% off the GPU
-time of every scene with terrain; `KSA_MTL_TESS_FUSE=0` turns it off.
+time of the scenes with terrain; `KSA_MTL_TESS_FUSE=0` turns it off.
 
 **Ray tracing.** KSA uses ray queries for ground clutter placement, and ray tracing pipelines for lighting inside
 the cockpit (IVA). Ray queries and acceleration structures map onto Metal's. Metal has no ray tracing pipelines, so
@@ -130,8 +159,8 @@ ray query, and the hit and miss shaders become functions called from it. The rew
 [SPIRV-Tools](https://github.com/KhronosGroup/SPIRV-Tools) to link the shaders together
 ([`rtspirv.cpp`](rtspirv.cpp)).
 
-**Presentation.** The swapchain's images are KSA Metal's own textures; at present, the image is copied into the
-window's `CAMetalLayer` drawable.
+**Presentation.** The swapchain's images are KSA Metal's own textures. When the game presents one, it is copied into
+the window's `CAMetalLayer` drawable.
 
 The complete mapping:
 
@@ -162,8 +191,9 @@ The complete mapping:
 | Transient attachments | memoryless textures (tile memory only) |
 | Swapchain | own textures, copied into the `CAMetalLayer` drawable at present |
 
-Buffer indices per shader stage: 0-9 descriptor sets, 10 push constants, 11 draw index, 13 view mask, 16-21
-tessellation stage buffers, 22 ray tracing launch size, 30 - n vertex buffer n.
+Buffer indices per shader stage: 0-9 descriptor sets, 10 push constants, 11 draw index, 12 buffer sizes, 13 view
+mask, 14 dynamic offsets, 15 texture swizzles, 16-21 tessellation stage buffers, 22 ray tracing launch size, 30 - n
+vertex buffer n.
 
 ## Source files
 
@@ -180,8 +210,8 @@ tessellation stage buffers, 22 ray tracing launch size, 30 - n vertex buffer n.
 | `command.mm` | command buffers, every `vkCmd*`, encoder ordering |
 | `internal.mm` | KSA Metal's own shaders: buffer fills, scaled blits, tessellation helpers |
 | `accel.mm` | acceleration structures for ray queries |
-| `rtpipeline.mm`, `rtspirv.cpp` | ray tracing pipelines rewritten as compute kernels |
-| `tessspirv.cpp` | the SPIR-V rewrites behind fused tessellation |
+| `rtpipeline.mm`, `rtspirv.cpp`, `rtspirv.h` | ray tracing pipelines rewritten as compute kernels |
+| `tessspirv.cpp`, `tessspirv.h` | the SPIR-V rewrites behind fused tessellation |
 | `spvmodule.h` | a SPIR-V module as a list of instructions, for those rewrites |
 | `swapchain.mm` | swapchain, presentation, screenshots and frame log |
 | `profile.mm` | the GPU profiler |

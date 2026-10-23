@@ -1,5 +1,5 @@
 // What KSA Metal measures for each presented frame, read through its benchmark interface (src/ksa-metal/swapchain.mm:
-// ksaMtlFrameStats, ksaMtlScreenshot, ksaMtlMarker, ksaMtlCapture; profile.mm: ksaMtlProfileFrames). With another
+// ksaMtlFrameStats, ksaMtlScreenshot, ksaMtlMarker, ksaMtlCapture, ksaMtlCapturing; profile.mm: ksaMtlProfileFrames). With another
 // Vulkan driver the mod still measures CPU frame times.
 using System;
 using System.Runtime.InteropServices;

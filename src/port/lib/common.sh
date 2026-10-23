@@ -2,7 +2,7 @@
 #
 # Everything here runs on macOS's own bash 3.2 and base tools: the port folder needs nothing else installed.
 # The folder is what ./build.sh makes (dist/ksa-macos-port/) and what a release contains:
-#   port.sh, update.sh, starmap.sh, benchmark.sh   the commands
+#   port.sh, starmap.sh, benchmark.sh              the commands
 #   lib/                                           the steps they run, this file, brutal.txt
 #   payload/app/Contents/                          the app without the game: launcher, .NET runtime, libraries,
 #                                                  icon, licences
@@ -18,7 +18,7 @@ SKELETON="${PAYLOAD}/app/Contents"
 APP_NAME="Kitten Space Agency"
 BUNDLE_ID="io.github.ksa-macos-port.ksa"
 DEFAULT_APP="${HOME}/Applications/${APP_NAME}.app"
-# Where releases are published (update.sh)
+# Where releases are published (port.sh --update)
 RELEASES_REPO="renancamm/ksa-macos-port"
 
 # Oldest macOS the app supports: KSA Metal uses macOS 26 API (MTLSamplerDescriptor.lodBias).
@@ -79,7 +79,7 @@ check_ksa_match() {
     made_for="$(kit_value ksa)"
     [ -n "${made_for}" ] && [ "$1" != "${made_for}" ] || return 0
     if version_newer "$1" "${made_for}"; then
-        warn "this version of the port was made for KSA ${made_for}, not ${1}. If something doesn't work, ./update.sh" \
+        warn "this version of the port was made for KSA ${made_for}, not ${1}. If something doesn't work, ./port.sh --update" \
             "may find a newer one."
     else
         warn "this version of the port was made for KSA ${made_for}, not ${1}. Download the current Linux version" \
@@ -87,9 +87,10 @@ check_ksa_match() {
     fi
 }
 
-# install_starmap <app>: puts the folder's StarMap into the app (the launcher then starts the game through it)
+# install_starmap <folder>: a copy of the port folder's StarMap there (the launcher starts the game through the app's
+# Contents/Resources/StarMap, or through the folder KSA_STARMAP_DIR names)
 install_starmap() {
-    local target="$1/Contents/Resources/StarMap"
+    local target="$1"
     rm -rf "${target}"
     ditto "${PAYLOAD}/starmap" "${target}"
     xattr -cr "${target}" 2> /dev/null || true

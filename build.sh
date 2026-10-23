@@ -1,6 +1,6 @@
 #!/bin/bash
 # Builds the port folder, dist/ksa-macos-port/: everything the port needs except the game. Its commands work as in a
-# release (dist/ksa-macos-port/port.sh, update.sh, ...); ./release.sh zips it.
+# release (dist/ksa-macos-port/port.sh, ...); ./release.sh zips it.
 #
 # Usage: ./build.sh [options]
 #   Needs the Command Line Tools, cmake, ninja and the .NET 10 SDK. The native libraries are built by CMake
@@ -10,7 +10,7 @@
 # Options:
 #   --ksa <archive | folder | app>  the KSA the benchmark mod is built against and the folder is made for (default:
 #                                   the installed app, otherwise the newest ksa_linux_v*.tar.gz in ~/Downloads)
-#   --install                       then put the new folder's files into the installed app (update.sh --offline)
+#   --install                       then update the installed app with it (port.sh --app)
 #   --app <path>                    the app for --install (default: ~/Applications/Kitten Space Agency.app)
 #   --version <v>, --commit <id>    what VERSION says (default: dev, and the checkout's commit); set by release.sh
 set -eo pipefail
@@ -101,7 +101,7 @@ run check-kit
 echo ""
 step "Done: ${OUT#"${REPO}/"} (port ${VERSION}, KSA ${KSA_VERSION})"
 if [ "${INSTALL}" = 1 ]; then
-    "${OUT}/update.sh" --offline --app "${APP}"
+    "${OUT}/port.sh" --app "${APP}"
 else
-    info "Make or update the app with it: dist/ksa-macos-port/port.sh or dist/ksa-macos-port/update.sh"
+    info "Make or update the app with it: dist/ksa-macos-port/port.sh"
 fi

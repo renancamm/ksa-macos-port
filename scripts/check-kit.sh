@@ -16,13 +16,13 @@ problem() {
     problems=$((problems + 1))
 }
 
-for f in port.sh update.sh starmap.sh benchmark.sh README.md LICENSE THIRD_PARTY_NOTICES.md VERSION lib/common.sh \
+for f in port.sh starmap.sh benchmark.sh README.md LICENSE THIRD_PARTY_NOTICES.md VERSION lib/common.sh \
     lib/brutal.txt payload/app/Contents/MacOS/KSA payload/app/Contents/MacOS/dotnet payload/starmap/StarMap.dll \
     payload/benchmark/mod/KsaMetalBenchmark.dll payload/benchmark/report/KsaMetalBenchmarkReport.dll \
     payload/benchmark/benchmark.txt "payload/app/Contents/Resources/AppIcon.icns"; do
     [ -e "${KIT_DIR}/${f}" ] || problem "${f} is missing"
 done
-for f in port.sh update.sh starmap.sh benchmark.sh payload/app/Contents/MacOS/KSA; do
+for f in port.sh starmap.sh benchmark.sh payload/app/Contents/MacOS/KSA; do
     [ -x "${KIT_DIR}/${f}" ] || problem "${f} is not executable"
 done
 grep -q '^version=.' "${KIT_DIR}/VERSION" && grep -q '^ksa=20' "${KIT_DIR}/VERSION" || problem "VERSION is incomplete"

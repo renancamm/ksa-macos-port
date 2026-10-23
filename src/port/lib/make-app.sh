@@ -92,7 +92,7 @@ case "$1" in
         if [ -n "${OLD}" ]; then
             [ -f "${OLD}/Contents/Resources/imgui.ini" ] && cp "${OLD}/Contents/Resources/imgui.ini" "${TARGET}/Contents/Resources/"
             if [ -d "${OLD}/Contents/Resources/StarMap" ]; then
-                install_starmap "${TARGET}"
+                install_starmap "${TARGET}/Contents/Resources/StarMap"
                 info "StarMap is in the new app too."
             fi
             TRASHED="${HOME}/.Trash/${APP_NAME} ${OLD_VERSION} $(date +%Y%m%d-%H%M%S).app"
@@ -107,7 +107,7 @@ case "$1" in
         APP="${2%/}"
         [ -n "$(app_version "${APP}")" ] || die "${APP} is not an app made by this port."
         install_port_files "${APP}/Contents"
-        [ -d "${APP}/Contents/Resources/StarMap" ] && install_starmap "${APP}"
+        [ -d "${APP}/Contents/Resources/StarMap" ] && install_starmap "${APP}/Contents/Resources/StarMap"
         touch "${APP}"
         ;;
     *)
