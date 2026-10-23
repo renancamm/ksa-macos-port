@@ -378,13 +378,14 @@ it does for `KSA.dll`.
 
 The benchmark plays a fixed tour of the game in one session (Earth from orbit, flights over its ground and sea, a
 rocket launch, a kitten in the grass, other worlds, a 2,000-part rocket breaking up), measures each part and writes a
-report to compare with another run or to share as an issue:
+report to compare with another run, and a zip you can share as an issue if you like:
 
 ```bash
 ./benchmark.sh
 ```
 
-[`src/benchmark/README.md`](src/benchmark/README.md) explains the tour, its options and how to compare runs.
+[`src/benchmark/README.md`](src/benchmark/README.md) explains the tour, its presets and options, how to compare runs,
+and the tools it brings for work on the port (repeats, GPU profiles, Instruments traces, Xcode frame captures).
 
 ## Credits and license
 

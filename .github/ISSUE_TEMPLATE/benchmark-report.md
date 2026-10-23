@@ -6,10 +6,9 @@ labels: benchmark
 ---
 
 <!--
-Thanks for measuring! Run ./benchmark.sh in the port folder (or with --preset low or --preset high), then:
-1. paste the contents of report.md from the folder it prints below this comment;
-2. drag report.json and the screenshots (*.png) from the same folder into this issue: the screenshots show
-   whether every part rendered the way it should.
+Thanks for measuring! Run ./benchmark.sh in the port folder (with --preset low, medium or high for numbers that
+compare across Macs, or --system earth on a Mac with 8 GB of memory). When it is done, it shows a zip next to its
+results folder: drag that zip into this issue. It holds the report, the numbers of every frame, the game's log, the
+settings and the screenshots, with your home folder's name replaced by ~.
 Anything you noticed while it ran (stutters, flicker, a part that looked wrong) is welcome too.
 -->
-

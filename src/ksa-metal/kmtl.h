@@ -471,6 +471,14 @@ struct KCommandBuffer : KDispatchable {
     // Counters for the frame log
     uint32_t draws = 0, dispatches = 0, passes = 0;
 
+    // KSA_MTL_LABELS=1: the open encoder's name, from the pipelines it ran (the game sets no debug labels in its
+    // release builds); Instruments, the Metal HUD and Xcode's frame capture show it
+    std::string encLabel;
+    uint32_t encPipelines = 0;
+    uint64_t encLastPipeline = 0;
+    void notePipelineLabel(KPipeline* p);
+    template <typename E> void nameEncoder(E enc);
+
     void endEncoder();
     id<MTLComputeCommandEncoder> computeEncoder(uint32_t roles = kClassCompute);
     id<MTLBlitCommandEncoder> blitEncoder();
@@ -579,6 +587,8 @@ void kmtlInternalBlit(KCommandBuffer* cb, KImage* src, KImage* dst, const VkImag
 void kmtlOnPresent(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb);
 void kmtlCountWork(uint32_t draws, uint32_t dispatches, uint32_t passes);
 void kmtlNoteGpuTime(id<MTLCommandBuffer> cb);  // from completion handlers: GPU busy time for the frame log
+void kmtlPipelineCounts(uint32_t* shaders, uint32_t* pipelines);  // MSL compiled (not from the cache), states made
+bool kmtlLabelsEnabled();  // KSA_MTL_LABELS=1: encoders named after their pipelines (command.mm)
 
 PFN_vkVoidFunction kmtlLookup(const char* name, int level);
 

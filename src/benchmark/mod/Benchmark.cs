@@ -2,16 +2,25 @@
 //
 // benchmark.sh (in the port folder) starts the game with this mod installed and these variables set:
 //   KSA_BENCH_SCRIPT  the script (benchmark.txt)
-//   KSA_BENCH_OUT     the folder for the results (results.json) and the screenshots
-//   KSA_BENCH_ONLY    optional: the sections to play (space separated), to work on a few of them
+//   KSA_BENCH_OUT     the folder for the results (results.json, frames.csv) and the screenshots
+//   KSA_BENCH_ONLY    optional: what to play (space separated): sections, or places as <section>_<shot> (the section
+//                     up to that checkpoint, its other checkpoints only keeping the clocks in step)
 //   KSA_BENCH_FAST    optional: fast mode (below)
 //   KSA_BENCH_NO_SHOTS optional: no screenshots (the checkpoints still keep the game's clock in step)
 //   KSA_BENCH_HOLD    optional: <section>_<shot>: stop at that checkpoint for good, the game paused, until it is quit
+//   KSA_BENCH_RUN     optional: a suffix for the results' file names (results-2.json, frames-2.csv), for repeats
+//   KSA_BENCH_PROFILE optional: profile that many frames of every measured part with KSA Metal's GPU profiler (the
+//                     game needs KSA_MTL_GPUPROF=<csv>)
+//   KSA_BENCH_CAPTURE optional: an Xcode GPU frame capture of the view at every checkpoint, <section>_<shot>.gputrace
+//                     (the game needs MTL_CAPTURE_ENABLED=1)
+//   KSA_BENCH_WAIT    optional: a file to wait for in the game before playing (up to a minute), so that a tool the
+//                     script starts once the game is up (an Instruments trace) sees the whole run
 //   KSA_BENCH_TRACE   optional: write the camera's place every frame to trace.csv, to check its moves are smooth
 //   KSA_BENCH_FILM    optional: a screenshot every that many seconds of the script's clock, into film/, to see moves
 //   KSA_BENCH_EXPLORE optional: no script, the explore mode's console command instead (Explore.cs)
 // Without the first two the mod does nothing. While it plays, it touches the file "heartbeat" in the results' folder
-// every second, so the script can tell a game that hangs from one that is busy.
+// every second, so the script can tell a game that hangs from one that is busy. Every frame goes into frames.csv, and
+// every measured part is a signpost interval (KSA Metal's ksaMtlMarker), so an Instruments trace shows the parts.
 //
 // The script is a series of sections. "section <name> [needs <celestial>...]" starts one; a section whose celestials
 // the loaded system lacks is skipped. Each section is a list of "<seconds> <command>" steps timed from its start. A
@@ -74,7 +83,7 @@ public partial class Benchmark
         public double Length => Steps.Count > 0 ? Steps.Max(s => s.At) : 0;
     }
 
-    private enum Phase { Play, CatchUp, Settle, Measure, Shoot, Hold }
+    private enum Phase { Play, CatchUp, Settle, Measure, Capture, Shoot, Hold }
 
     // What a catch-up of the game's clock leads to: a checkpoint's screenshot, the end of a jump of @time, or (in fast
     // mode) the next step
@@ -83,7 +92,12 @@ public partial class Benchmark
     private readonly List<Section> _sections = new();
     private readonly Stopwatch _wall = new();
     private string _outDir = "";
-    private HashSet<string>? _only;
+    // KSA_BENCH_ONLY: the sections to play, each with the checkpoints chosen in it (null: all of them)
+    private Dictionary<string, HashSet<string>?>? _only;
+    private string _resultsFile = "results.json";
+    private FrameLog? _frames;
+    private uint _profileFrames;
+    private bool _capture;
     private bool _active;
     private Results? _results;
     private bool _fast, _shots = true;
@@ -127,6 +141,8 @@ public partial class Benchmark
     private string? _exploded;
     private StreamWriter? _trace;
     private double _filmEvery, _nextFilm;
+    private string? _waitFor;
+    private readonly Stopwatch _waiting = new();
 
     // StarMap only calls an ImmediateLoad method with the signature void(Mod)
     [StarMapImmediateLoad]
@@ -144,9 +160,6 @@ public partial class Benchmark
             Log($"script {script} not found");
             return;
         }
-        var only = Environment.GetEnvironmentVariable("KSA_BENCH_ONLY");
-        if (!string.IsNullOrWhiteSpace(only))
-            _only = only.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
         _fast = Environment.GetEnvironmentVariable("KSA_BENCH_FAST") is { Length: > 0 };
         _shots = Environment.GetEnvironmentVariable("KSA_BENCH_NO_SHOTS") is not { Length: > 0 };
         _hold = Environment.GetEnvironmentVariable("KSA_BENCH_HOLD") is { Length: > 0 } hold ? hold : null;
@@ -173,7 +186,35 @@ public partial class Benchmark
             section.Steps.Clear();
             section.Steps.AddRange(ordered);
         }
+        var only = Environment.GetEnvironmentVariable("KSA_BENCH_ONLY");
+        if (!string.IsNullOrWhiteSpace(only))
+        {
+            _only = new Dictionary<string, HashSet<string>?>();
+            foreach (var name in only.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (_sections.Any(s => s.Name == name))
+                {
+                    _only[name] = null;
+                    continue;
+                }
+                var section = _sections.FirstOrDefault(s => name.StartsWith(s.Name + "_", StringComparison.Ordinal) &&
+                    s.Steps.Any(step => step.Command.Split(' ')[0] == "@shot" && $"{s.Name}_{step.Command.Split(' ')[1]}" == name));
+                if (section == null)
+                {
+                    Log($"no section or place '{name}' in the script");
+                    continue;
+                }
+                if (!_only.TryGetValue(section.Name, out var shots))
+                    _only[section.Name] = shots = new HashSet<string>();
+                shots?.Add(name[(section.Name.Length + 1)..]);
+            }
+        }
+        _resultsFile = $"results{Environment.GetEnvironmentVariable("KSA_BENCH_RUN")}.json";
+        uint.TryParse(Environment.GetEnvironmentVariable("KSA_BENCH_PROFILE"), out _profileFrames);
+        _capture = Environment.GetEnvironmentVariable("KSA_BENCH_CAPTURE") is { Length: > 0 };
+        _waitFor = Environment.GetEnvironmentVariable("KSA_BENCH_WAIT") is { Length: > 0 } wait ? wait : null;
         Directory.CreateDirectory(_outDir);
+        _frames = new FrameLog(Path.Combine(_outDir, $"frames{Environment.GetEnvironmentVariable("KSA_BENCH_RUN")}.csv"));
         if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("KSA_BENCH_TRACE")))
         {
             _trace = new StreamWriter(Path.Combine(_outDir, "trace.csv"));
@@ -185,7 +226,8 @@ public partial class Benchmark
         _results = new Results(DriverStats.Available) { Mode = _fast ? "fast" : "cinematic", Shots = _shots };
         _active = true;
         Log($"{_sections.Count} sections, {_results.Mode}{(_shots ? "" : ", no screenshots")}{(_hold != null ? $", holding at {_hold}" : "")}, " +
-            $"GPU times {(DriverStats.Available ? "available" : "not available")}");
+            $"GPU times {(DriverStats.Available ? "available" : "not available")}{(_profileFrames > 0 ? $", profiling {_profileFrames} frames a part" : "")}" +
+            $"{(_capture ? ", capturing a frame at each checkpoint" : "")}");
     }
 
     [StarMapAfterOnFrame]
@@ -195,6 +237,21 @@ public partial class Benchmark
             ExploreFrame();
         if (!_active)
             return;
+        if (!_wall.IsRunning && _waitFor != null)
+        {
+            // Up in the game: the heartbeat tells the script, which starts its tool and then makes the file
+            if (!_waiting.IsRunning || _waiting.Elapsed.TotalSeconds >= _nextBeat)
+            {
+                File.WriteAllText(Path.Combine(_outDir, "heartbeat"), "waiting 0\n");
+                _nextBeat = _waiting.Elapsed.TotalSeconds + 1;
+            }
+            _waiting.Start();
+            if (!File.Exists(_waitFor) && _waiting.Elapsed.TotalSeconds < 60)
+                return;
+            Log(FormattableString.Invariant($"waited {_waiting.Elapsed.TotalSeconds:F1} s for {Path.GetFileName(_waitFor)}"));
+            _waitFor = null;
+            _nextBeat = 0;
+        }
         if (!_wall.IsRunning)
             Start();
         double wall = _wall.Elapsed.TotalSeconds;
@@ -210,6 +267,8 @@ public partial class Benchmark
             return;
         // The game's messages stay in its log, off the screen
         Program.ConsoleWindow.ClearConsole();
+        _frames?.Add(_scriptTime - _sectionStart, _sectionResult?.Name, _window?.Name ?? _still?.Name, _phase.ToString(), dt * 1000,
+            DriverStats.Read());
 
         if (_phase != Phase.Play)
         {
@@ -346,7 +405,7 @@ public partial class Benchmark
     private void Start()
     {
         _wall.Start();
-        _results!.LoadSeconds = Math.Round((DateTime.Now - Process.GetCurrentProcess().StartTime).TotalSeconds, 1);
+        _results!.LoadSeconds = Math.Round((DateTime.Now - Process.GetCurrentProcess().StartTime).TotalSeconds - _waiting.Elapsed.TotalSeconds, 1);
         Log(FormattableString.Invariant($"first in-game frame after {_results.LoadSeconds:F1} s"));
         // The scene alone, without the game's interface (F2)
         Program.DrawUI = false;
@@ -360,7 +419,7 @@ public partial class Benchmark
             var missing = section.Needs.Where(id => Universe.CurrentSystem?.All.TryGet(id, out Astronomical? _) != true).ToList();
             if (missing.Count > 0)
                 Log($"skipping section {section.Name}: no {string.Join(", ", missing)} in this system");
-            else if (_only != null && !_only.Contains(section.Name))
+            else if (_only != null && !_only.ContainsKey(section.Name))
                 Log($"skipping section {section.Name}");
             else
                 continue;
@@ -368,6 +427,16 @@ public partial class Benchmark
             section.Name = "";
         }
         _sections.RemoveAll(s => s.Name == "");
+        // A section with chosen places ends at the last of them
+        foreach (var section in _sections)
+        {
+            if (_only?.GetValueOrDefault(section.Name) is not { } chosen)
+                continue;
+            double end = section.Steps.Where(s => s.Command.Split(' ') is ["@shot", var shot, ..] && chosen.Contains(shot))
+                .Select(s => s.At).DefaultIfEmpty(section.Length).Max();
+            section.Steps.RemoveAll(s => s.At > end);
+            Log(FormattableString.Invariant($"section {section.Name}: {string.Join(", ", chosen)}, until {end:F1} s"));
+        }
         // The sections play one after the other, each as long as its last step's time
         double start = 0;
         foreach (var section in _sections)
@@ -390,8 +459,9 @@ public partial class Benchmark
         {
             _active = false;
             _trace?.Dispose();
+            _frames?.Dispose();
             _results!.Completed = true;
-            _results.Write(Path.Combine(_outDir, "results.json"));
+            _results.Write(Path.Combine(_outDir, _resultsFile));
             Log(FormattableString.Invariant($"done after {_wall.Elapsed.TotalSeconds:F1} s"));
             Program.TerminalInterface.Execute("exit");
             return;
@@ -406,7 +476,9 @@ public partial class Benchmark
         if (_sectionResult == null)
             return;
         CloseWindow();
-        _results!.Write(Path.Combine(_outDir, "results.json"));
+        if (DriverStats.Read() is { DrawableWidth: > 0 } d)
+            _results!.Drawable = $"{d.DrawableWidth}x{d.DrawableHeight}";
+        _results!.Write(Path.Combine(_outDir, _resultsFile));
         _sectionResult = null;
     }
 
@@ -470,6 +542,9 @@ public partial class Benchmark
     // Whether the run stops for good at this checkpoint
     private bool Holding => _hold == $"{_sectionResult?.Name}_{_shotName}";
 
+    // Whether this checkpoint is one of the places chosen (or all are): the others only keep the clocks in step
+    private bool Chosen => _only?.GetValueOrDefault(_sectionResult?.Name ?? "") is not { } chosen || chosen.Contains(_shotName);
+
     // @time: moves the game's clock forward to that many seconds since the start, the script's clock stopped meanwhile (a
     // checkpoint without a screenshot), so that a section looks the same (its clouds drift with the game's time) whether
     // the sections before it played or not
@@ -529,13 +604,21 @@ public partial class Benchmark
                 double behind = _gameTarget - Universe.GetElapsedSeconds();
                 if (behind > Tolerance)
                 {
-                    // Fast while far behind (at least the scripted speed), then just what the next frame needs
+                    // The game takes a new speed a frame late: the frame under way still runs at the speed sent last,
+                    // which at a time-lapse's speed covers minutes
                     double frame = Math.Max(dt, 1.0 / 240);
+                    double left = behind - (double.IsNaN(_speedSent) ? 0 : _speedSent) * frame;
+                    if (left <= Tolerance)
+                    {
+                        SetSpeed(0);
+                        return;
+                    }
+                    // Fast while far behind (at least the scripted speed), then half of what is left every frame
                     double warp = Math.Max(_warpTo, 1);
                     // A jump of @time covers half of what is left every quarter of a second or so, fast mode's catch-ups
                     // faster still
                     double pace = _fast ? 0.1 : _after == After.Shot ? 2 : 0.25;
-                    SetSpeed(behind > warp * frame * 2 ? Math.Max(warp, behind / pace) : behind / frame);
+                    SetSpeed(left > warp * frame * 2 ? Math.Max(warp, left / pace) : left / (2 * frame));
                     return;
                 }
                 SetSpeed(0);
@@ -553,8 +636,9 @@ public partial class Benchmark
                         Resume();
                         return;
                 }
-                // Without screenshots the checkpoint ends here, its clocks in step (fast mode still measures the view)
-                if (!_shots && !_fast && !Holding)
+                // Without screenshots the checkpoint ends here, its clocks in step (fast mode still measures the view), and so
+                // does a checkpoint that isn't one of the places chosen
+                if ((!Chosen || !_shots && !_fast) && !Holding)
                 {
                     Resume();
                     return;
@@ -574,20 +658,34 @@ public partial class Benchmark
                 {
                     _phase = Phase.Measure;
                     _still = new Window(_shotName, double.NaN);
+                    Opened(_still);
                     _phaseEnds = wall + FastMeasureSeconds;
                     return;
                 }
-                Shoot();
+                CaptureThenShoot(wall);
                 return;
             case Phase.Measure:
                 _still!.Add(dt * 1000, DriverStats.Read());
                 if (wall < _phaseEnds)
                     return;
+                DriverStats.Marker(_still.Name, false);
                 _sectionResult?.Windows.Add(_still.Summarize());
                 Log($"measured {_still.Name}: {_still.Frames} frames");
                 _still = null;
+                CaptureThenShoot(wall);
+                return;
+            case Phase.Capture:
+            {
+                if (DriverStats.Capturing() && wall < _phaseEnds)
+                    return;
+                var path = CapturePath();
+                if (Directory.Exists(path) || File.Exists(path))
+                    Log($"{_shotName}: frame capture {Path.GetFileName(path)}");
+                else
+                    _sectionResult?.Errors.Add($"{_shotName}: no frame capture");
                 Shoot();
                 return;
+            }
             case Phase.Shoot:
             {
                 // The image is the next presented one: give it a few frames, and a moment more to be written
@@ -605,6 +703,35 @@ public partial class Benchmark
     }
 
     private string ShotPath() => Path.Combine(_outDir, $"{_sectionResult?.Name}_{_shotName}.png");
+
+    private string CapturePath() => Path.Combine(_outDir, $"{_sectionResult?.Name}_{_shotName}.gputrace");
+
+    // With KSA_BENCH_CAPTURE, an Xcode frame capture of the view (one frame, the game paused) before the screenshot
+    private void CaptureThenShoot(double wall)
+    {
+        if (_capture)
+        {
+            if (DriverStats.Capture(CapturePath(), 1))
+            {
+                _phase = Phase.Capture;
+                _phaseEnds = wall + 120;
+                return;
+            }
+            _sectionResult?.Errors.Add($"{_shotName}: KSA Metal could not capture a frame (does the game have MTL_CAPTURE_ENABLED=1?)");
+        }
+        Shoot();
+    }
+
+    // A measured part opens: a signpost interval for traces, and the GPU profiler's frames with KSA_BENCH_PROFILE
+    private void Opened(Window window)
+    {
+        DriverStats.Marker(window.Name, true);
+        if (_profileFrames > 0 && !DriverStats.ProfileFrames($"{_sectionResult?.Name}/{window.Name}", _profileFrames))
+        {
+            _sectionResult?.Errors.Add($"{window.Name}: KSA Metal's GPU profiler is off (does the game have KSA_MTL_GPUPROF=<csv>?)");
+            _profileFrames = 0;
+        }
+    }
 
     private void Shoot()
     {
@@ -674,7 +801,7 @@ public partial class Benchmark
         _phase = Phase.Hold;
         // The game's interface (F2) and console stay usable
         Log($"holding at {_hold}: quit the game when done");
-        _results!.Write(Path.Combine(_outDir, "results.json"));
+        _results!.Write(Path.Combine(_outDir, _resultsFile));
     }
 
     private void Resume()
@@ -696,6 +823,7 @@ public partial class Benchmark
         // Fast mode skips the way, so it only watches its parts for vehicles that broke up
         if (!_fast)
         {
+            DriverStats.Marker(_window.Name, false);
             _sectionResult?.Windows.Add(_window.Summarize());
             Log($"measured {_window.Name}: {_window.Frames} frames");
         }

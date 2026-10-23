@@ -55,15 +55,19 @@ The debugging variables, used the same way:
 | `KSA_MTL_EXIT_AFTER_SHOTS=1` | quit once the last shot is saved |
 | `KSA_MTL_FRAMES=<file.csv>` | per frame: CPU frame time, GPU busy time, draws, dispatches and allocated memory |
 | `KSA_MTL_GPUPROF=<file.csv>` | GPU time of every encoder, for 300 frames from present 2000 (`KSA_MTL_GPUPROF_FRAMES=<first>,<count>` changes that) |
+| `KSA_MTL_LABELS=1` | name every encoder after its pipelines (render pass size, shader hashes), for Instruments, the Metal HUD and Xcode's frame capture |
 
 Metal's own tools work too: `MTL_HUD_ENABLED=1` shows Apple's performance overlay, and `MTL_DEBUG_LAYER=1` and
 `MTL_SHADER_VALIDATION=1` check API use and catch out-of-bounds memory access in shaders (slow).
 
 To see what a change does across the game, run the [benchmark](../benchmark/README.md) before and after it
 (`dist/ksa-macos-port/benchmark.sh`) and compare the two runs: `--fast` is the quick way, and `compare` checks the
-screenshots as well as the numbers. Its mod reads the same numbers as `KSA_MTL_FRAMES` through the only functions
-KSA Metal exports besides Vulkan's: `ksaMtlFrameStats` (the latest presented frame) and `ksaMtlScreenshot` (a PNG of
-the next one), both in `swapchain.mm`.
+screenshots as well as the numbers. Its mod talks to KSA Metal through the only functions it exports besides Vulkan's:
+`ksaMtlFrameStats` (the latest presented frame: the `KSA_MTL_FRAMES` numbers, thermal state, shaders compiled, memory
+footprint, drawable size, display interval), `ksaMtlScreenshot` (a PNG of the next one), `ksaMtlMarker` (a signpost
+interval for each measured part, under Points of Interest in Instruments) and `ksaMtlCapture` (an Xcode GPU frame
+capture of the next frames, with `MTL_CAPTURE_ENABLED=1`), in `swapchain.mm`, and `ksaMtlProfileFrames` (the GPU
+profiler's frames) in `profile.mm`. The benchmark's `--profile`, `--trace`, `--capture` and `--hud` use them.
 
 ## From Vulkan to Metal
 

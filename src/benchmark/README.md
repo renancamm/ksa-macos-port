@@ -7,9 +7,8 @@ compare with another run or share.
 
 It is meant for spotting changes: between two settings, two versions of the port, or two Macs. Two runs on the same
 Mac differ by a few percent in most parts, so `compare` marks changes over 5% (the flights through space vary more:
-little is on screen there, and the frame rate is high). Since it plays the same way every
-time, it also serves as the project's test: every run passes or fails, and `compare` checks its screenshots against
-another run's.
+little is on screen there, and the frame rate is high). Since it plays the same way every time, it also serves as
+the project's test: every run passes or fails, and `compare` checks its screenshots against another run's.
 
 ## Run it
 
@@ -19,24 +18,39 @@ From the port folder, after `./port.sh`:
 ./benchmark.sh
 ```
 
-It takes about 8 minutes. The game takes over the screen: leave the mouse and keyboard alone until the script says
-it is done. The first run adds the [StarMap](../../README.md#mods) mod loader to the app when it isn't there yet.
+It takes about 8 minutes, with your own settings. The game takes over the screen: leave the mouse and keyboard alone
+until the script says it is done. The first run adds the [StarMap](../../README.md#mods) mod loader to the app when it
+isn't there yet. On a Mac with 8 GB of memory, `--system earth` plays Earth and the Moon only, which needs a few GB
+less.
 
 The results go to `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/`: `report.md` with the numbers,
-`report.json` for comparing, the screenshots, and the game's log. The report starts with whether the run passed: it
-fails when the game crashed or hung, a step of the tour failed, a vehicle broke up before its time, a screenshot is
-missing, the game's log has errors (KSA Metal's, the game's own, or exceptions), or another game ran at the same time.
-The script then exits with 1.
+`report.json` for comparing, `frames.csv` with every frame of the run, the screenshots, and the game's log. The report
+starts with whether the run passed: it fails when the game crashed or hung, a step of the tour failed, a vehicle broke
+up before its time, a screenshot is missing, the game's log has errors (KSA Metal's, the game's own, or exceptions),
+or another game ran at the same time. The script then exits with 1. Below that, the report lists the conditions
+worth knowing that don't fail a run but can change its numbers: running on battery or in Low Power Mode, a Mac hot
+enough to slow down, macOS short of memory or swapping, shaders compiled while measuring (the first run after an
+update compiles them, the next runs don't).
 
 To compare two runs:
 
 ```bash
-./benchmark.sh compare <first run folder> <second run folder>
+./benchmark.sh compare <first run> <second run>
 ```
 
-It lists the settings that differ between them, the numbers of each part side by side, and whether each screenshot
-still looks the same. Copies of those that differ, with the changed places in red, go to `diff/` in the second run's
-folder.
+It lists what differs between the two Macs and their settings, the numbers of each part side by side, and whether
+each screenshot still looks the same. Copies of those that differ, with the changed places in red, go to `diff/` in
+the second run's folder.
+
+### Sharing a run
+
+Each run also leaves a zip next to its folder, `<date>.zip`: the report, the numbers of every frame, the game's log
+and any crash report from the run, the settings, and the screenshots as JPEG, with your home folder's name replaced by
+`~`. Whether you share it is up to you. Reports from other Macs are very welcome: open an issue with the **Benchmark
+report** template and attach the zip. `compare` reads zips as they are.
+
+For numbers that compare across Macs, run with a preset as well: `--preset low`, `--preset medium` or
+`--preset high`, fixed settings in a 1280x800 window without V-Sync, the same on every Mac.
 
 ### Two ways to play it
 
@@ -48,21 +62,53 @@ and its screenshots come out the same from one run to the next, so it is the qui
 ```bash
 ./benchmark.sh --fast
 # ...make the change, then:
-./benchmark.sh --fast --compare <first run folder>
+./benchmark.sh --fast --compare <first run>
 ```
 
 The two ways measure different things (the flight, or the views standing still), so a fast run compares only with
 other fast runs. `--no-shots` plays either way without taking screenshots, for the numbers alone.
 
-To look at one place closely, `--hold <screenshot>` (for example `--hold earth4` or `--hold launch_pad`) goes there
-the fast way and stays, the game paused, until you quit it: for Apple's performance overlay, or a GPU capture in
-Xcode. `--set <key>=<value>` changes one setting for a run (again for more), to see what it does.
+The tour can also play in part: name sections (`./benchmark.sh --fast jupiter`) or single places, by their
+screenshots' names (`./benchmark.sh --fast earth4 jupiter2`, or `capsule_fur` where a name is in more than one
+section). A place plays its section up to there, so one place in fast mode is done in well under a minute.
 
-### Sharing a report
+## For work on the port
 
-Reports from other Macs are very welcome: open an issue with the **Benchmark report** template, paste `report.md`,
-and attach `report.json` and the screenshots. For reports that compare across Macs, run with a preset:
-`--preset high` (or `--preset low` on smaller Macs).
+The same tour is the project's tool for looking into the driver, the shaders and the game. These options are for
+that, and some need tools a player's Mac doesn't have; the script checks what each one needs before the game starts.
+
+- `--set <key>=<value>` changes one setting for a run (again for more), and `--settings <file>` the settings in a file
+  of `key = value` lines, as in `settings.toml`. Both go on top of the preset.
+- `--repeat <n>` plays the run n times, one game session each, and reports the median of each number and the range of
+  the runs' frame and GPU times. `compare` between two repeated runs marks a change when the ranges don't overlap
+  (and it is over 2%), so a small real change shows, and noise doesn't.
+- `--hold <place>` goes to a place the fast way and stays, the game paused, until you quit it: to look at it closely,
+  with Apple's overlay or Xcode.
+- `--profile` turns on KSA Metal's GPU profiler for 60 frames of every measured part. `profile.md` lists, per part,
+  the encoders that cost the most GPU time, named after their shaders' hashes. Its timestamps count an encoder from
+  its start to its end, waits included, so it shows where to look rather than exact costs.
+- `--trace` records an Instruments trace (the Metal System Trace template, or another with `--trace-template
+  <name>`) of the places played, with each measured part marked under Points of Interest. `trace.md` sums up, per
+  part, the GPU time of the game's encoders by the GPU's channels (compute, vertex, fragment), as Instruments measured
+  it. Needs Xcode; a trace takes a few hundred MB for a few places, so it asks for sections or places.
+- `--capture` makes an Xcode GPU frame capture at each place played, `<section>_<shot>.gputrace`, to open in Xcode:
+  every draw and dispatch, its resources, and the shader profiler and debugger. A capture holds all of the game's GPU
+  memory (about 8 GB), so it asks for places and 20 GB free.
+- `--hud` shows Apple's Metal Performance HUD over the game, with its per-frame log in `hud.log`. Its menu (in the
+  menu bar while the game runs) makes performance reports, which go to `hud/`. It can't run with `--profile`: both use
+  the GPU's counters.
+
+With `--trace`, `--capture` and `--hud`, KSA Metal names every encoder after its pipelines (`KSA_MTL_LABELS=1`), so the
+tools show `1280x800 v1658c4ba926081e2+f7e01e1b174a96688 +1` rather than an anonymous encoder. Their own cost is in the
+numbers of such runs, and the report says so.
+
+```bash
+# Where does jupiter2's GPU time go?
+./benchmark.sh --fast --trace jupiter2
+# Is a shader change faster where it matters?
+./benchmark.sh --fast --repeat 3 earth4 jupiter2      # before
+./benchmark.sh --fast --repeat 3 earth4 jupiter2 --compare <run before>
+```
 
 ## The tour
 
@@ -128,6 +174,12 @@ stopped.
 
 The rockets and the capsule in `vehicles/` were built by the project for the tour.
 
+Every frame of a run goes into `frames.csv`: the script's time, the section and part, the frame and GPU time, draws
+and passes, memory, thermal state, shaders compiled so far and the time between the last two images the display
+showed. The parts' numbers in the report are summaries of it, and it stays in the zip, so a shared run can answer
+questions nobody asked when it was made. While a part is measured, KSA Metal also marks it as a signpost interval,
+which is how an Instruments trace knows the parts.
+
 ### Changing the tour
 
 `--explore` starts the benchmark's game the same way as a run, with its clock paused so the light is the tour's. Fly
@@ -139,19 +191,26 @@ folder with `./build.sh`, from `src/benchmark/benchmark.txt`.
 
 | Option | |
 |---|---|
+| `--preset low`, `--preset medium`, `--preset high` | fixed settings in a 1280x800 window without V-Sync, the same on every Mac (default: your settings) |
+| `--system earth` | Earth and the Moon only (the game's smaller system): skips Mars, Saturn and Jupiter, and needs less memory (default: `sol`) |
 | `--fast` | jump from one screenshot's place to the next, and measure the views standing still (default: the cinematic tour) |
 | `--no-shots` | take no screenshots |
-| `--hold <screenshot>` | go to that screenshot's place the fast way and stay there, paused, until you quit the game (`earth4`, or `launch_pad` where a name is in more than one section) |
 | `--set <key>=<value>` | change a setting of `settings.toml` for the run, on top of the preset (again for more; words need no quotes) |
-| `--compare <run folder>` | compare with that run at the end; the script fails when screenshots differ |
-| `--preset low`, `--preset high` | fixed settings in a 1280x800 window without V-Sync, the same on every Mac (default: your settings) |
-| `--system earth` | Earth and the Moon only (the game's smaller system): skips Mars, Saturn and Jupiter (default: `sol`) |
-| `--explore` | start the benchmark's game paused, with a console command (`benchkey`) that captures the camera's place for the tour |
+| `--settings <file>` | change the settings in a file of `key = value` lines, on top of the preset and before `--set` |
+| `--compare <run>` | compare with that run (folder or zip) at the end; the script fails when screenshots differ |
 | `--app <path>` | the app to measure (default: `~/Applications/Kitten Space Agency.app`) |
-| `<section> ...` | play only these sections |
+| `<section or place> ...` | play only these sections, or each section up to these places (screenshots' names) |
+| `--hold <place>` | go to that place the fast way and stay there, paused, until you quit the game |
+| `--repeat <n>` | play it n times, one game session each; the report shows medians and ranges |
+| `--profile` | KSA Metal's GPU profiler on every measured part: `gpuprof.csv`, `profile.md` |
+| `--trace`, `--trace-template <name>` | an Instruments trace of the run: `trace.trace`, `trace.md` (needs Xcode, and sections or places) |
+| `--capture` | an Xcode GPU frame capture at each place played: `<section>_<shot>.gputrace` (needs places, 20 GB free) |
+| `--hud` | Apple's Metal Performance HUD, its log in `hud.log` and its reports in `hud/` |
+| `--explore` | start the benchmark's game paused, with a console command (`benchkey`) that captures the camera's place for the tour |
 
 | File | |
 |---|---|
-| `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/` | the results |
+| `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/` | the results: `report.md`, `report.json`, `frames.csv`, the screenshots, `game.log`, and what the tools wrote |
+| `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>.zip` | the run to share |
 | `~/Library/Caches/ksa-macos-port/benchmark/instance/` | the game's documents folder for the run |
 | `payload/benchmark/` in the port folder | the mod, the report program, the tour and its vehicles |

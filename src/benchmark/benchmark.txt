@@ -71,7 +71,7 @@ section saturn needs Saturn
 30 @shot saturn2
 30.5 @measure saturn3 7
 38 @key Saturn -0.000350 -51.672887 44599km 265.5 -26.2
-38 @shot saturn3
+38 @shot saturn3 5
 40 @key Saturn -0.000350 -51.672887 44599km 265.5 -26.2
 
 # Jupiter: from afar, down to its cloud deck, then straight down into the layers under it.

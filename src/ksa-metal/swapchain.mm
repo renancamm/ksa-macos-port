@@ -6,6 +6,11 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #include <chrono>
 #include <algorithm>
+#include <mach/mach.h>
+#include <os/signpost.h>
+
+// When the display last showed one of the images (presentedTime), and the time between the last two it showed
+static std::atomic<double> g_lastPresented{0}, g_displayMs{0};
 
 // The window was resized since the swapchain was made: report VK_SUBOPTIMAL_KHR like other drivers, which makes the
 // game check the surface extent and rebuild (a resize it did not schedule itself, e.g. a display mode change)
@@ -130,7 +135,16 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
                 if (drawable) [drawable addPresentedHandler:^(id<MTLDrawable>) { state->mark(presentId); }];
                 else [cb addCompletedHandler:^(id<MTLCommandBuffer>) { state->mark(presentId); }];
             }
-            if (drawable) [cb presentDrawable:drawable];
+            if (drawable) {
+                // When the display showed it (0 for an image it never showed)
+                [drawable addPresentedHandler:^(id<MTLDrawable> d) {
+                    double t = d.presentedTime;
+                    if (t <= 0) return;
+                    double last = g_lastPresented.exchange(t);
+                    if (last > 0) g_displayMs = (t - last) * 1e3;
+                }];
+                [cb presentDrawable:drawable];
+            }
             [cb commit];
             if (pi->pResults) pi->pResults[i] = r;
             if (r != VK_SUCCESS) result = r;
@@ -172,15 +186,32 @@ static double g_gpuBusy = 0, g_gpuLastEnd = 0;
 // Interface for the benchmark mod (src/benchmark), which calls these through P/Invoke:
 //   ksaMtlFrameStats(out, size)  the latest present's numbers (the KSA_MTL_FRAMES columns); returns the bytes written
 //   ksaMtlScreenshot(path)       PNG of the next presented image
+//   ksaMtlMarker(name, begin)    begins or ends a signpost interval "part" with that name (Points of Interest in
+//                                Instruments), so a trace comes split into the benchmark's parts
+//   ksaMtlCapture(path, frames)  Xcode GPU frame capture of the next frames into path (.gputrace); false when Metal
+//                                does not allow it (the game needs MTL_CAPTURE_ENABLED=1); ksaMtlCapturing() is true
+//                                until the file is written
 // Fields are only ever appended, so a mod built for an older layout still reads the ones it knows.
 struct KsaMtlFrameStats {
     uint64_t present;
     double cpuMs, gpuMs;
     uint32_t draws, dispatches, passes, submits;
     int64_t allocatedMb;
+    // NSProcessInfo.thermalState (0 nominal, 1 fair, 2 serious, 3 critical), MSL compiled (not from the cache) and
+    // pipeline states made since the start, the presented image's size in pixels
+    int32_t thermalState;
+    uint32_t shadersCompiled, pipelinesCreated, drawableWidth, drawableHeight, reserved;
+    // The process's memory footprint (what Activity Monitor shows), the time between the last two images the display
+    // actually showed (0 until known)
+    int64_t footprintMb;
+    double displayMs;
 };
 static KsaMtlFrameStats g_lastFrame{};
 static std::vector<std::string> g_shotRequests;
+// Frame capture: the file, the presents left to capture (0 when none is running), whether one waits to start
+static std::string g_capturePath;
+static std::atomic<uint32_t> g_captureFrames{0};
+static std::atomic<bool> g_captureStart{false}, g_capturing{false};
 
 KMTL_EXPORT uint32_t ksaMtlFrameStats(KsaMtlFrameStats* out, uint32_t size) {
     std::lock_guard<std::mutex> lock(g_frameMutex);
@@ -192,6 +223,77 @@ KMTL_EXPORT uint32_t ksaMtlFrameStats(KsaMtlFrameStats* out, uint32_t size) {
 KMTL_EXPORT void ksaMtlScreenshot(const char* path) {
     std::lock_guard<std::mutex> lock(g_frameMutex);
     g_shotRequests.push_back(path);
+}
+
+static os_log_t benchmarkLog() {
+    static os_log_t log = os_log_create("io.github.ksa-macos-port", OS_LOG_CATEGORY_POINTS_OF_INTEREST);
+    return log;
+}
+
+KMTL_EXPORT void ksaMtlMarker(const char* name, bool begin) {
+    // Parts never overlap: one interval at a time
+    static os_signpost_id_t open = OS_SIGNPOST_ID_NULL;
+    os_log_t log = benchmarkLog();
+    if (begin) {
+        open = os_signpost_id_generate(log);
+        os_signpost_interval_begin(log, open, "part", "%{public}s", name);
+    } else if (open != OS_SIGNPOST_ID_NULL) {
+        os_signpost_interval_end(log, open, "part", "%{public}s", name);
+        open = OS_SIGNPOST_ID_NULL;
+    }
+}
+
+KMTL_EXPORT bool ksaMtlCapture(const char* path, uint32_t frames) {
+    if (g_capturing || ![[MTLCaptureManager sharedCaptureManager] supportsDestination:MTLCaptureDestinationGPUTraceDocument])
+        return false;
+    std::lock_guard<std::mutex> lock(g_frameMutex);
+    g_capturePath = path;
+    g_captureFrames = std::max(1u, frames);
+    g_capturing = true;
+    g_captureStart = true;
+    return true;
+}
+
+KMTL_EXPORT bool ksaMtlCapturing() { return g_capturing; }
+
+// At a present: starts a requested capture (the next frames' command buffers go into it) or ends a running one
+static void captureAtPresent(KDevice* dev) {
+    MTLCaptureManager* manager = [MTLCaptureManager sharedCaptureManager];
+    if (g_captureStart.exchange(false)) {
+        MTLCaptureDescriptor* d = [MTLCaptureDescriptor new];
+        d.captureObject = dev->mtl;
+        d.destination = MTLCaptureDestinationGPUTraceDocument;
+        d.outputURL = [NSURL fileURLWithPath:[NSString stringWithUTF8String:g_capturePath.c_str()]];
+        NSError* e = nil;
+        if ([manager startCaptureWithDescriptor:d error:&e]) {
+            KLOG(0, "frame capture started: %s", g_capturePath.c_str());
+        } else {
+            KERR("frame capture failed to start: %s", e.localizedDescription.UTF8String);
+            g_captureFrames = 0;
+            g_capturing = false;
+        }
+        return;
+    }
+    if (g_captureFrames && manager.isCapturing && --g_captureFrames == 0) {
+        [manager stopCapture];
+        KLOG(0, "frame capture written: %s", g_capturePath.c_str());
+        g_capturing = false;
+    }
+}
+
+// Thermal state and memory footprint, sampled every 30 presents (a system call each)
+static void sampleSystem(KsaMtlFrameStats& f) {
+    static int32_t thermal = 0;
+    static int64_t footprint = 0;
+    if (f.present % 30 == 1) {
+        thermal = (int32_t)[NSProcessInfo processInfo].thermalState;
+        task_vm_info_data_t info;
+        mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+        if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&info, &count) == KERN_SUCCESS)
+            footprint = (int64_t)(info.phys_footprint >> 20);
+    }
+    f.thermalState = thermal;
+    f.footprintMb = footprint;
 }
 
 void kmtlNoteGpuTime(id<MTLCommandBuffer> cb) {
@@ -326,6 +428,12 @@ void kmtlOnPresent(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb) {
     }
     g_lastFrame = {g_presents, ms, gpu, g_frameDraws, g_frameDispatches, g_framePasses, g_frameSubmits,
                    (int64_t)(g_allocatedBytes.load() >> 20)};
+    sampleSystem(g_lastFrame);
+    kmtlPipelineCounts(&g_lastFrame.shadersCompiled, &g_lastFrame.pipelinesCreated);
+    g_lastFrame.drawableWidth = (uint32_t)image->mtl.width;
+    g_lastFrame.drawableHeight = (uint32_t)image->mtl.height;
+    g_lastFrame.displayMs = g_displayMs.load();
+    if (g_capturing) captureAtPresent(dev);
     if (g_frameCsv) {
         fprintf(g_frameCsv, "%llu,%.3f,%u,%u,%u,%u,%lld,%.3f\n", (unsigned long long)g_presents, ms, g_frameDraws, g_frameDispatches,
                 g_framePasses, g_frameSubmits, (long long)g_lastFrame.allocatedMb, gpu);

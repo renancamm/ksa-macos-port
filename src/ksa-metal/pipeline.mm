@@ -24,6 +24,11 @@ void kmtlReportPipelineTimes() {
          g_nPipeline.load(), g_usPipeline / 1e6);
 }
 
+void kmtlPipelineCounts(uint32_t* shaders, uint32_t* pipelines) {
+    *shaders = (uint32_t)g_nCompile.load();
+    *pipelines = (uint32_t)g_nPipeline.load();
+}
+
 MTLCompareFunction kmtlCompare(VkCompareOp op);
 
 uint64_t kmtlHash(const void* data, size_t size) {

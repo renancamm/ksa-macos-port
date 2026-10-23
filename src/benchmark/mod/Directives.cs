@@ -69,6 +69,9 @@ public partial class Benchmark
             case "@measure" when a.Length == 3 && double.TryParse(a[2], NumberStyles.Float, Inv, out var seconds):
                 CloseWindow();
                 _window = new Window(a[1], _scriptTime + seconds) { Vehicle = FollowedVehicle() };
+                // Fast mode skips the way, which the part measures
+                if (!_fast)
+                    Opened(_window);
                 return true;
             case "@shot" when a.Length is 2 or 3:
             {

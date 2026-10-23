@@ -9,6 +9,8 @@
 //   KSA_MTL_GPUPROF_SPLIT=1 end the render encoder after every draw call (per-draw attribution; adds a store and
 //                           load of the attachments per draw, so absolute times grow)
 //   KSA_MTL_DUMP_SPV=<dir>  every shader module as <hash>.spv (pipelines are named by these hashes)
+//   KSA_MTL_LABELS=1        name every encoder after its pipelines, for Instruments, the Metal HUD and Xcode's
+//                           frame capture (command.mm)
 #include "kmtl.h"
 #include <sys/stat.h>
 
@@ -173,6 +175,7 @@ id<MTLBlitCommandEncoder> kmtlProfBlitEncoder(KCommandBuffer* cb) {
 
 // A draw or dispatch with this pipeline in the current encoder
 void kmtlProfNote(KCommandBuffer* cb, KPipeline* p, bool dispatch, uint32_t n) {
+    if (kmtlLabelsEnabled()) cb->notePipelineLabel(p);
     KProfState* s = state(cb);
     if (!s || s->current < 0) return;
     KProfEncoder& e = s->encoders[s->current];

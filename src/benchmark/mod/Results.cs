@@ -17,7 +17,9 @@ public class Window
     private readonly List<double> _frameMs = new();
     private readonly List<double> _gpuMs = new();
     private readonly List<double> _draws = new();
-    private long _memoryPeakMb;
+    private long _memoryPeakMb, _footprintPeakMb;
+    private int _thermalMax = -1;
+    private uint _shadersFirst, _shadersLast, _pipelinesFirst, _pipelinesLast;
     private ulong _lastPresent;
 
     public string Name { get; }
@@ -42,6 +44,14 @@ public class Window
             _gpuMs.Add(d.GpuMs);
             _draws.Add(d.Draws);
             _memoryPeakMb = Math.Max(_memoryPeakMb, d.AllocatedMb);
+            if (DriverStats.Full)
+            {
+                _footprintPeakMb = Math.Max(_footprintPeakMb, d.FootprintMb);
+                _thermalMax = Math.Max(_thermalMax, d.ThermalState);
+                if (_gpuMs.Count == 1)
+                    (_shadersFirst, _pipelinesFirst) = (d.ShadersCompiled, d.PipelinesCreated);
+                (_shadersLast, _pipelinesLast) = (d.ShadersCompiled, d.PipelinesCreated);
+            }
         }
     }
 
@@ -65,6 +75,10 @@ public class Window
             GpuMsP95 = gpu.Length > 0 ? Round(Percentile(gpu, 95)) : null,
             DrawsMedian = _draws.Count > 0 ? Percentile(_draws.OrderBy(x => x).ToArray(), 50) : null,
             GpuMemoryPeakMb = gpu.Length > 0 ? _memoryPeakMb : null,
+            FootprintPeakMb = _thermalMax >= 0 ? _footprintPeakMb : null,
+            ThermalMax = _thermalMax >= 0 ? _thermalMax : null,
+            ShadersCompiled = _thermalMax >= 0 ? (int)(_shadersLast - _shadersFirst) : null,
+            PipelinesCreated = _thermalMax >= 0 ? (int)(_pipelinesLast - _pipelinesFirst) : null,
         };
     }
 
@@ -95,6 +109,13 @@ public class WindowResult
     public double? GpuMsP95 { get; set; }
     public double? DrawsMedian { get; set; }
     public long? GpuMemoryPeakMb { get; set; }
+    // The game's memory footprint at its peak (what Activity Monitor shows)
+    public long? FootprintPeakMb { get; set; }
+    // The Mac's thermal state at its worst: 0 nominal, 1 fair, 2 serious, 3 critical (macOS slows the chip down from 2)
+    public int? ThermalMax { get; set; }
+    // Shaders compiled and pipelines made while measuring: each is a stutter that a warm shader cache avoids
+    public int? ShadersCompiled { get; set; }
+    public int? PipelinesCreated { get; set; }
 }
 
 public class SectionResult
@@ -119,6 +140,8 @@ public class Results
     // Whether the script played to its end
     public bool Completed { get; set; }
     public double LoadSeconds { get; set; }
+    // The size in pixels of the images the game presented (a window's points times the display's scale)
+    public string? Drawable { get; set; }
     public List<SectionResult> Sections { get; } = new();
 
     public Results(bool gpuTimes) => GpuTimes = gpuTimes;
@@ -128,4 +151,37 @@ public class Results
         var options = new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
         File.WriteAllText(path, JsonSerializer.Serialize(this, options));
     }
+}
+
+// Every frame of the run, one line each (frames.csv): the raw data the parts' summaries come from, kept so that a
+// shared run can answer later questions. The driver's columns are those of its latest present (a frame that presented
+// nothing repeats them: the present column tells).
+public class FrameLog : IDisposable
+{
+    private readonly StreamWriter _out;
+    private readonly System.Diagnostics.Stopwatch _since = System.Diagnostics.Stopwatch.StartNew();
+
+    public FrameLog(string path)
+    {
+        _out = new StreamWriter(path);
+        _out.WriteLine("time,script,section,part,phase,frame_ms,present,gpu_ms,cpu_ms,draws,passes,metal_mb,footprint_mb," +
+                       "thermal,shaders,pipelines,display_ms");
+    }
+
+    public void Add(double script, string? section, string? part, string phase, double frameMs, FrameStats? driver)
+    {
+        var line = FormattableString.Invariant($"{_since.Elapsed.TotalSeconds:F4},{script:F3},{section},{part},{phase},{frameMs:F3}");
+        if (driver is { } d)
+        {
+            line += FormattableString.Invariant($",{d.Present},{d.GpuMs:F3},{d.CpuMs:F3},{d.Draws},{d.Passes},{d.AllocatedMb}");
+            line += DriverStats.Full
+                ? FormattableString.Invariant($",{d.FootprintMb},{d.ThermalState},{d.ShadersCompiled},{d.PipelinesCreated},{d.DisplayMs:F3}")
+                : ",,,,,";
+        }
+        else
+            line += ",,,,,,,,,,,";
+        _out.WriteLine(line);
+    }
+
+    public void Dispose() => _out.Dispose();
 }

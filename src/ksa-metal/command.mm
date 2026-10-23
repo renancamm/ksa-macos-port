@@ -205,6 +205,32 @@ void* KUploadRing::alloc(KDevice* dev, size_t size, id<MTLBuffer>* outBuf, NSUIn
 // ---------------------------------------------------------------------------------------------------------------
 // Encoders
 
+bool kmtlLabelsEnabled() {
+    static const bool v = kmtlEnvInt("KSA_MTL_LABELS", 0) != 0;
+    return v;
+}
+
+// The encoder's name: its first pipeline (shader hashes, as the GPU profiler names them), how many others it ran, and
+// a render pass's size
+void KCommandBuffer::notePipelineLabel(KPipeline* p) {
+    if (!p || p->profId == encLastPipeline) return;
+    if (encLabel.empty()) encLabel = p->profName;
+    encPipelines++;
+    encLastPipeline = p->profId;
+}
+
+template <typename E> void KCommandBuffer::nameEncoder(E enc) {
+    if (!encLabel.empty()) {
+        std::string name = encLabel;
+        if (encPipelines > 1) name += " +" + std::to_string(encPipelines - 1);
+        if (render) name = std::to_string(rtWidth) + "x" + std::to_string(rtHeight) + " " + name;
+        enc.label = [NSString stringWithUTF8String:name.c_str()];
+    }
+    encLabel.clear();
+    encPipelines = 0;
+    encLastPipeline = 0;
+}
+
 void KCommandBuffer::endEncoder() {
     if (render && deferredStores) {
         for (int i = 0; i < 8; i++) {
@@ -225,6 +251,7 @@ void KCommandBuffer::endEncoder() {
         if (encRoles & kClassVertex) [render updateFence:finishFence(kClassVertex) afterStages:MTLRenderStageVertex];
         uint32_t late = encRoles & ~kClassVertex;
         if (late) [render updateFence:finishFence(late) afterStages:kAllRenderStages];
+        nameEncoder(render);
         [render endEncoding];
         render = nil;
         inRenderPass = false;
@@ -236,11 +263,13 @@ void KCommandBuffer::endEncoder() {
     }
     if (compute) {
         [compute updateFence:finishFence(encRoles)];
+        nameEncoder(compute);
         [compute endEncoding];
         compute = nil;
     }
     if (blit) {
         [blit updateFence:finishFence(encRoles)];
+        nameEncoder(blit);
         [blit endEncoding];
         blit = nil;
     }
