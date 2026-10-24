@@ -77,6 +77,13 @@ if [ -f "${SETTINGS}" ]; then
         fi
     done < "${SETTINGS}"
 fi
+# Retina: the app must be marked NSHighResolutionCapable, which AppKit reads from Info.plist when the game starts
+retina=false
+[ "${KSA_MTL_RETINA:-0}" = 0 ] || retina=true
+if [ "$(/usr/bin/plutil -extract NSHighResolutionCapable raw "${CONTENTS}/Info.plist" 2> /dev/null)" != "${retina}" ]; then
+    /usr/bin/plutil -replace NSHighResolutionCapable -bool "${retina}" "${CONTENTS}/Info.plist" ||
+        echo "[WARN] could not set NSHighResolutionCapable in Info.plist: retina = ${retina} may not take effect"
+fi
 echo "==> Mac settings: $( [ ${#CHANGED[@]} -gt 0 ] && (IFS=,; echo "${CHANGED[*]}" | sed 's/,/, /g') || echo defaults)"
 
 # Drop the process serial number argument that older macOS versions pass to apps

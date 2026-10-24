@@ -47,7 +47,8 @@ write_info_plist() {
     local contents="$1" version
     version="$(game_version "${contents}/Resources")"
     # NSHighResolutionCapable false: one rendered pixel per point, so the game's Resolution setting is the
-    # number of pixels it renders, instead of a 2x Retina framebuffer
+    # number of pixels it renders, instead of a 2x Retina framebuffer (the launcher turns it on for retina = true in
+    # mac-settings.toml, where the GLFW shim keeps the game in points)
     cat > "${contents}/Info.plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
