@@ -9,9 +9,10 @@
  * mapped from a file:
  *
  * - the game's own file, when the texture is stored uncompressed and its bytes are the file's (compared);
- * - otherwise a copy written once to ~/Library/Caches/ksa-macos-port/textures, named after the file's path, size and
- *   date (a zstd-compressed texture is decompressed there once). A copy is dated when used; copies unused for 60 days
- *   (from an older version of the game) are deleted when the game starts.
+ * - otherwise a copy written once to textures/ in KSA Metal's cache folder (~/Library/Caches/ksa-metal, or
+ *   KSA_MTL_CACHE_DIR), named after the file's path, size and date (a zstd-compressed texture is decompressed there
+ *   once). A copy is dated when used; copies unused for 60 days (from an older version of the game) are deleted when
+ *   the game starts.
  *
  * Mapped pages are the file's: macOS drops them when memory runs short and reads them back when the game touches
  * them again, instead of swapping them. The mapping is private and writable, so a write changes only this process's
@@ -139,15 +140,20 @@ static void cleanOnce(void) { cleanCache(g_cacheDir); }
 // The cache's copy (written now if missing), named after the file's path, size and date and the data's size
 static uint8_t* mapCacheFile(const char* path, const uint8_t* data, size_t size, void** base, size_t* mapped) {
     struct stat st;
-    const char* home = getenv("HOME");
-    if (!home || stat(path, &st) != 0) return NULL;
+    if (stat(path, &st) != 0) return NULL;
     uint64_t h = 1469598103934665603ull;  // FNV-1a
     for (const char* c = path; *c; c++) h = (h ^ (uint8_t)*c) * 1099511628211ull;
     h = (h ^ (uint64_t)st.st_size) * 1099511628211ull;
     h = (h ^ (uint64_t)st.st_mtimespec.tv_sec) * 1099511628211ull;
     h = (h ^ (uint64_t)size) * 1099511628211ull;
-    char dir[1024], file[1100], temp[1200];
-    snprintf(dir, sizeof dir, "%s/Library/Caches/ksa-macos-port/textures", home);
+    // KSA Metal's cache folder, like the driver picks it (shadercache.mm)
+    char parent[1024], dir[1024], file[1100], temp[1200];
+    const char* custom = getenv("KSA_MTL_CACHE_DIR");
+    const char* home = getenv("HOME");
+    if (custom && *custom) snprintf(parent, sizeof parent, "%s", custom);
+    else if (home) snprintf(parent, sizeof parent, "%s/Library/Caches/ksa-metal", home);
+    else return NULL;
+    snprintf(dir, sizeof dir, "%s/textures", parent);
     snprintf(file, sizeof file, "%s/%016llx", dir, (unsigned long long)h);
     snprintf(g_cacheDir, sizeof g_cacheDir, "%s", dir);
     pthread_once(&g_cleanOnce, cleanOnce);
@@ -158,8 +164,6 @@ static uint8_t* mapCacheFile(const char* path, const uint8_t* data, size_t size,
         fd = -1;
     }
     if (fd < 0) {
-        char parent[1024];
-        snprintf(parent, sizeof parent, "%s/Library/Caches/ksa-macos-port", home);
         mkdir(parent, 0755);
         mkdir(dir, 0755);
         snprintf(temp, sizeof temp, "%s.%d.%p", file, getpid(), (const void*)data);

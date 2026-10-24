@@ -84,7 +84,7 @@ The debugging variables, used the same way:
 | `KSA_MTL_DUMP_SPV=<dir>` | write every shader module the game creates as `<hash>.spv`, and the modules KSA Metal rewrites for tessellation and ray tracing |
 | `KSA_MTL_OVERRIDES=<dir>` | use hand-written Metal source in place of a translated shader: `<dir>/<name>.metal`, named as in `KSA_MTL_DUMP_MSL`; each use keeps its own specialization values |
 | `KSA_MTL_SPEC=<hash>:<id>=<value>,...` | replace a specialization constant of a shader module, whatever the game passes (e.g. fewer iterations of an expensive loop) |
-| `KSA_MTL_CACHE_DIR=<dir>` | where the shader cache goes (default: `~/Library/Caches/ksa-metal`) |
+| `KSA_MTL_CACHE_DIR=<dir>` | where the shader cache goes, and the KTX shim's textures (default: `~/Library/Caches/ksa-metal`) |
 | `KSA_MTL_SHOTS=<n,...>` | save the presented image as `shot_<n>.png` at these points |
 | `KSA_MTL_SHOT_UNIT=<unit>` | count shots in `presents` (default), or in `frames` or `seconds` from the first in-game frame |
 | `KSA_MTL_SHOT_DIR=<dir>` | where shots go (default: the current folder) |
