@@ -15,7 +15,7 @@ Benchmark reports from your Mac are welcome too ([Extras](#extras)).
 
 1. [Quick start](#quick-start): install and update.
 2. [How it works](#how-it-works): what the port changes, step by step.
-3. [KSA Metal](#ksa-metal): the Vulkan driver.
+3. [KSA Metal](#ksa-metal): the Vulkan driver, and the settings and patches that make the game lighter.
 4. [Extras](#extras): the StarMap mod loader and the benchmark.
 5. [Credits and license](#credits-and-license).
 
@@ -46,24 +46,6 @@ the app anew from the newer KSA and moves the old one to the Trash. Saves, setti
 To update the port, run `./port.sh --update`. It replaces this folder with the latest release, then runs as
 `./port.sh` does.
 
-### Mac settings
-
-A few choices that trade some image quality for speed are in `mac-settings.toml`, next to the game's own
-`settings.toml` in `~/Documents/My Games/Kitten Space Agency`. The app puts a commented copy there the first time it
-starts. Edit it in any text editor, then quit the game and start it again.
-
-| Setting | Default | What it does |
-|---|---|---|
-| `render_scale` | `1.0` | draws the 3D view at this fraction of the window's size, from `0.5` to `1.0`, and scales it back up: less work for the GPU, a slightly softer image |
-| `upscaler` | `"metalfx"` | how a smaller view is scaled back up: `"metalfx"` (Apple's MetalFX, from the last frames), `"spatial"` (MetalFX, one frame at a time) or `"none"` (stretched) |
-| `retina` | `false` | shows the image at the display's full resolution, scaled up with MetalFX from the window's size, which the game keeps drawing at |
-| `frame_interpolation` | `false` | shows a frame made by MetalFX between every two the game draws: smoother motion, one display refresh more delay |
-| `cloud_shadows` | `"normal"` | `"slow"` saves about 1.5 ms per frame over Earth; cloud shadows then follow moving clouds about 4 times more slowly |
-
-These are new. With frame interpolation, rocket plumes can look ragged in the frames MetalFX makes. If something
-looks wrong with a setting, set it back to its default, and please open an issue. `logs/console.log` shows how the
-game read the file.
-
 ### Options and files
 
 Without an archive, `port.sh` takes the newest KSA in Downloads when it is newer than the app's; otherwise it puts the
@@ -82,8 +64,7 @@ Where things are:
 | The app | `~/Applications/Kitten Space Agency.app` |
 | Saves, settings, crash dumps and logs | `~/Documents/My Games/Kitten Space Agency` |
 | Everything the last run printed, including KSA Metal's messages and startup errors | `.../Kitten Space Agency/logs/console.log` |
-| KSA Metal's shader cache | `~/Library/Caches/ksa-metal` |
-| Textures the [KTX shim](#ktx-shim) decompressed (about 2 GB) | `~/Library/Caches/ksa-macos-port/textures` |
+| KSA Metal's shader cache, and the textures the [KTX shim](#ktx-shim) decompressed (about 2 GB) | `~/Library/Caches/ksa-metal` |
 
 To uninstall, delete the app, the port folder, the shader cache and `~/Library/Caches/ksa-macos-port`. The Documents
 folder holds your saves; delete it too if you don't want them.
@@ -101,8 +82,7 @@ the game's files and puts macOS libraries under them:
  │ The game                        │     kept     │ The game                            │
  │ KSA.dll, the .NET assemblies,   ├─────────────►│ the same files                      │
  │ Content/ with the shaders       │              │ + ARM64 mark: two bytes in KSA.dll  │
- │                                 │              │ + shader fixes and edits            │
- │                                 │              │ + patches made in memory at start   │
+ │                                 │              │ + shader fixes: three bugs          │
  └─────────────────────────────────┘              └─────────────────────────────────────┘
  ┌─────────────────────────────────┐              ┌─────────────────────────────────────┐
  │ .NET runtime                    │   swapped    │ .NET runtime                        │
@@ -113,7 +93,6 @@ the game's files and puts macOS libraries under them:
  │ BRUTAL's and FMOD, for Linux    ├─────────────►│ the same versions, built for macOS  │
  │                                 │              │ by RocketWerkz and FMOD             │
  │                                 │              │ + GLFW shim: fixes a few calls      │
- │                                 │              │ + KTX shim: file-backed textures    │
  └─────────────────────────────────┘              └─────────────────────────────────────┘
  ┌─────────────────────────────────┐              ┌─────────────────────────────────────┐
  │ Vulkan driver                   │ written here │ KSA Metal                           │
@@ -129,14 +108,11 @@ So the app is made of three kinds of pieces:
 - **Unchanged:** Microsoft's .NET runtime, RocketWerkz's macOS builds of BRUTAL's libraries and FMOD's macOS library
   are used as their makers publish them, byte for byte.
 - **Patched:** the game's own files lose the Linux .NET runtime and the two files that point the .NET host at it
-  ([.NET](#net)), then get small changes: two bytes in `KSA.dll`'s header, and fixes in its shader sources
-  ([Shader fixes](#shader-fixes)). While the game runs, a few changes to its code are made in memory
-  ([Game patches](#game-patches)).
-- **Built by this project:** the GLFW and KTX shims ([`src/glfw-shim/`](src/glfw-shim/),
-  [`src/ktx-shim/`](src/ktx-shim/)), KSA Metal
-  ([`src/ksa-metal/`](src/ksa-metal/)), the game patches ([`src/game-patches/`](src/game-patches/)), the launcher
-  ([`src/launcher/launcher.sh`](src/launcher/launcher.sh)) and the app bundle around everything
-  ([Building the port](#building-the-port)).
+  ([.NET](#net)), then get small changes: two bytes in `KSA.dll`'s header, and bug fixes in its shader sources
+  ([Shader fixes](#shader-fixes)).
+- **Built by this project:** the GLFW shim ([`src/glfw-shim/`](src/glfw-shim/)), KSA Metal
+  ([`src/ksa-metal/`](src/ksa-metal/)), the launcher ([`src/launcher/launcher.sh`](src/launcher/launcher.sh)) and the
+  app bundle around everything ([Building the port](#building-the-port)).
 
 ### The steps
 
@@ -148,7 +124,7 @@ into a copy of that app; in this repository they are in [`src/port/lib/`](src/po
 |---|---|---|
 | Convert | `convert-cleanup.sh` | removes the Linux binaries and the Windows installer files |
 | | `convert-dotnet.sh` | makes the .NET files run on the macOS runtime (with `mark-arm64.sh`) |
-| | `convert-shaders.sh` | fixes bugs in the game's shaders, and prepares them for the render scale |
+| | `convert-shaders.sh` | fixes bugs in the game's shaders |
 | App | `make-app.sh` | builds the app around the converted game, or puts the port's files into one |
 
 To update an app, `port.sh` runs the same steps on it again, without the extraction.
@@ -156,7 +132,7 @@ To update an app, `port.sh` runs the same steps on it again, without the extract
 ### BRUTAL's native libraries
 
 RocketWerkz publishes BRUTAL as NuGet packages (`Ahwoo.BRUTAL.*`). The packages that wrap native code carry
-RocketWerkz's builds for Windows, Linux and macOS on Apple Silicon. The port takes the macOS builds from the eleven it
+RocketWerkz's builds for Windows, Linux and macOS on Apple Silicon. The port takes the macOS builds of the eleven it
 needs, unmodified:
 
 | Package | Library | Used for |
@@ -170,15 +146,13 @@ needs, unmodified:
 | Ahwoo.BRUTAL.ImPlot | `libimplot.dylib` | the profiler's plots |
 | Ahwoo.BRUTAL.Ktx | `libKtx.dylib` | KTX2 textures |
 | Ahwoo.BRUTAL.ShaderC | `libshaderc_shared.dylib`, `libSPIRV-Tools-shared.dylib` | compiling the game's GLSL shaders at startup |
-| Ahwoo.BRUTAL.RakNet | `libRakNetDLL.dylib` | networking (RakNet), loaded only when a network session starts |
-| Ahwoo.BRUTAL.Monitor.Host | `Brutal.Monitor.Subprocess`, a program | crash dumps: the game starts it beside itself, and it writes a dump when the game fails |
+| Ahwoo.BRUTAL.RakNet | `libRakNetDLL.dylib` | networking (RakNet) |
+| Ahwoo.BRUTAL.Monitor.Host | `Brutal.Monitor.Subprocess`, a program | crash dumps |
 
 These are the same versions KSA ships for Linux: the Linux libraries in the game's archive are identical to the
 Linux builds in these packages. `convert-dotnet.sh` compares each package version with the matching game assembly
 (`Ahwoo.BRUTAL.Glfw` with `Brutal.Glfw.dll`). It stops when the game is older than the packages, because older
 bindings don't match the newer libraries, and warns when the game is newer.
-
-GLFW has to be RocketWerkz's fork: `Brutal.Glfw` calls functions that upstream GLFW doesn't have.
 
 ### Building the port
 
@@ -229,27 +203,8 @@ KSA compiles its GLSL shaders from `Content/` at startup, so fixes can go straig
 | `Planet/GroundClutter/PrefixSum.comp` | its ecotype uniform block leaves out the 16-byte `textureHandles` member of `EcotypeData`, so the shader reads a texture index as the object count and runs past its buffers: clutter pops and changes shape, and the GPU can hang | adds the member |
 | `Planet/GroundClutter/Solid.vert`, `SolidDepth.vert` | the depth pre-pass and the colour pass (depth `EQUAL`) need bit-identical positions, which Vulkan only guarantees for `invariant` outputs; with Metal's fast math they differ: black stripes and see-through patches on trees and rocks | declares `invariant gl_Position` |
 | `Lighting/LightFineClusterCompact.comp` | a tile whose depth range comes out inverted makes a loop run about 4 billion times: the GPU hangs | skips such a tile |
-| `Common/Global.glsl`, `Planet/GroundClutter/CullInstances.comp`, `StaticCelestialDistance.vert` | with `render_scale` below 1, the screen size these shaders see is the smaller render size, so trees lose detail early and star and planet discs grow | measure in the window's size, which the game patches pass in the camera data (no change without render scale) |
 
 When a KSA update changes the code around a fix, the script prints `[WARN]` and skips it.
-
-### Game patches
-
-Some changes need the game's C# code. The game patches make them in memory when the game starts, with
-[Harmony](https://github.com/pardeike/Harmony), so `KSA.dll` stays as it is on disk. Each patch finds the code it
-changes by name and by pattern. When a KSA update has moved that code, the patch is left out, `console.log` says so,
-and the game runs as it would without it. [`src/game-patches/`](src/game-patches/) has the details.
-
-| Patch | What it changes | Image |
-|---|---|---|
-| Terrain cache | the terrain's height passes (one per terrain modifier) run only when their inputs changed, and every 2 s; its normals pass only when the terrain turned | the same |
-| Outline skip | the outline pass around selected parts runs only while a part is selected | the same |
-| Crew portraits | the crew panel's faces are drawn only while the panel is on screen | the same |
-| Worker parking | the game's idle job workers sleep after 0.25 ms instead of spinning for half a frame | the same, less CPU time |
-| Render scale | `render_scale`, `upscaler`: the 3D view's size, and MetalFX before the final composite; `frame_interpolation` also needs it | changes, by choice |
-| Cloud shadows | `cloud_shadows = "slow"`: fewer cloud shadow slices refreshed per frame | changes in motion, by choice |
-
-`KSA_PATCHES=0 ~/Applications/"Kitten Space Agency.app"/Contents/MacOS/KSA` starts the game without them.
 
 ### GLFW shim
 
@@ -263,19 +218,6 @@ without modifying GLFW; [`glfw_shim.c`](src/glfw-shim/glfw_shim.c) explains each
 | `glfwSetWindowMonitor`, `glfwPollEvents` | GLFW's macOS backend doesn't report the window's new position after a display mode change, so dropdowns opened in the wrong spot | reports it |
 | `glfwSetInputMode` | the game turns raw mouse motion off without checking whether it is supported, and GLFW logs an error after every right-drag | skips those calls |
 
-### KTX shim
-
-The game keeps a copy of every texture's pixels in memory for the whole session, about 3.5 GB with the solar
-system, and macOS can only compress that memory or write it to swap when memory runs short. The launcher also loads
-`libKtxShim.dylib`, which replaces libktx's create and destroy calls: once a texture is loaded, its pixels are mapped
-from a file instead, so macOS can drop those pages and read them back later. [`ktx_shim.c`](src/ktx-shim/ktx_shim.c)
-has the details.
-
-- A texture stored uncompressed is mapped from the game's own file, after a check that the bytes are the same.
-- A compressed one is decompressed once into `~/Library/Caches/ksa-macos-port/textures` and mapped from there. Copies
-  that no start of the game used for 60 days are deleted.
-- `KSA_KTX_SHIM=0` keeps the textures as libktx loads them.
-
 ### The app bundle
 
 `make-app.sh` moves the converted game folder into the app as `Contents/Resources` and adds the port's part from
@@ -283,13 +225,13 @@ has the details.
 
 | In the app | What |
 |---|---|
-| `Contents/MacOS/KSA` | the app's executable, [`src/launcher/launcher.sh`](src/launcher/launcher.sh): starts `dotnet KSA.dll` (through StarMap when [StarMap](#mods) is in the app) with `DYLD_LIBRARY_PATH` set to the game folder, so every library comes from the app and never from elsewhere on the Mac, with the GLFW and KTX shims and the game patches loaded, and with the [Mac settings](#mac-settings) passed on; its output goes to `console.log` in the game's logs folder, or to the terminal when started from one |
+| `Contents/MacOS/KSA` | the app's executable, [`src/launcher/launcher.sh`](src/launcher/launcher.sh): starts `dotnet KSA.dll` (through StarMap when [StarMap](#mods) is in the app) with `DYLD_LIBRARY_PATH` set to the game folder, so every library comes from the app and never from elsewhere on the Mac, and with the GLFW shim loaded; its output goes to `console.log` in the game's logs folder, or to the terminal when started from one |
 | `Contents/MacOS/dotnet`, `host/`, `shared/` | the .NET runtime |
 | `Contents/Resources/*.dylib` | the native libraries, next to the game that loads them |
-| `Contents/Resources/GamePatches/` | the game patches, with Harmony |
-| `Contents/Resources/mac-settings.toml` | the commented copy of the Mac settings the launcher gives you |
+| `Contents/Resources/GamePatches/` | the [game patches](#game-patches), with Harmony |
+| `Contents/Resources/mac-settings.toml` | the [Mac settings](#mac-settings), the commented copy the app puts in your documents folder |
 | `Contents/Resources/Licenses/` | every component's licence and notices ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)) |
-| `Contents/Resources/AppIcon.icns`, `Contents/Info.plist` | the icon; the game's version, the port's version and commit, and `NSHighResolutionCapable` off, so the game renders one pixel per point and its Resolution setting is the number of pixels it renders (the launcher turns it on while `retina = true`) |
+| `Contents/Resources/AppIcon.icns`, `Contents/Info.plist` | the icon; the game's version, the port's version and commit, and `NSHighResolutionCapable` off, so the game renders one pixel per point and its Resolution setting is the number of pixels it renders |
 
 The bundle isn't signed as a whole, because that would replace Microsoft's signature on `dotnet`. `make-app.sh`
 removes the quarantine attribute that a browser download puts on the files, so macOS opens the app as one made on
@@ -346,14 +288,66 @@ possible. In short:
 - **Tessellation:** the vertex and control stages run as compute kernels, and Metal's tessellator draws the patches
   with the evaluation shader, which runs the vertex shader itself where it can.
 - **Ray tracing:** ray queries map onto Metal's. Each ray tracing pipeline is rewritten into one compute kernel.
-- **Presentation:** the swapchain's images are copied into the window's drawable. With V-Sync, the game's wait
-  for an earlier frame ends when the GPU is ready for the next one, not only when the display shows it.
-- **MetalFX:** for the [Mac settings](#mac-settings), the patched game calls a few entry points of KSA Metal's own,
-  which makes the motion vectors from the depth buffer and runs Apple's MetalFX: upscaling, Retina output and frame
-  interpolation.
+- **Presentation:** the swapchain's images are copied into the window's drawable.
 
 The detail is in [`src/ksa-metal/README.md`](src/ksa-metal/README.md): its switches, how to build and test a change,
 how each Vulkan concept maps onto Metal, and what each source file holds.
+
+The game runs without what follows. Around KSA Metal, a few more changes make drawing cheaper: settings that trade
+some image quality for speed, patches to the game's rendering code, and a shim that lets macOS page texture memory
+out. Each of them can be turned off.
+
+### Mac settings
+
+The settings are in `mac-settings.toml`, next to the game's own `settings.toml` in
+`~/Documents/My Games/Kitten Space Agency`. The app puts a commented copy there the first time it starts. Edit it in
+any text editor, then quit the game and start it again.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `render_scale` | `1.0` | draws the 3D view at this fraction of the window's size, from `0.5` to `1.0`, and scales it back up: less work for the GPU, a slightly softer image |
+| `upscaler` | `"metalfx"` | how a smaller view is scaled back up: `"metalfx"` (Apple's MetalFX, from the last frames), `"spatial"` (MetalFX, one frame at a time) or `"none"` (stretched) |
+| `retina` | `false` | shows the image at the display's full resolution: the game draws at the window's size and MetalFX scales it up |
+| `frame_interpolation` | `false` | shows a frame made by MetalFX between every two the game draws: smoother motion, a little more delay; works best when the game runs at least at half the display's refresh rate |
+| `cloud_shadows` | `"normal"` | `"slow"` saves about 1.5 ms per frame over Earth; cloud shadows then follow moving clouds about 4 times more slowly |
+
+These settings are recent. With frame interpolation, rocket plumes can look ragged in the frames MetalFX makes. If
+something looks wrong, set the setting back to its default, and please open an issue. `logs/console.log` shows how
+the game read the file.
+
+### Game patches
+
+Some changes need the game's C# code. The game patches make them in memory when the game starts, with
+[Harmony](https://github.com/pardeike/Harmony), so `KSA.dll` stays as it is on disk. Each patch finds the code it
+changes by name and by pattern; when a KSA update has moved that code, the patch is left out, `console.log` says so,
+and the game runs as it would without it. [`src/game-patches/`](src/game-patches/) has the details.
+
+| Patch | What it changes | Image |
+|---|---|---|
+| Terrain cache | the terrain's height passes (one per terrain modifier) run only when their inputs changed, and every 2 s; its normals pass only when the planet has rotated | the same |
+| Outline skip | the outline pass around selected parts runs only while a part is selected | the same |
+| Crew portraits | the crew panel's faces are drawn only while the panel is on screen | the same |
+| Worker parking | the game's idle job workers sleep after 0.25 ms instead of spinning for half a frame | the same |
+| Render scale | `render_scale`, `upscaler`: the 3D view's size, and MetalFX before the final composite; `frame_interpolation` also needs it | changes, by choice |
+| Cloud shadows | `cloud_shadows = "slow"`: fewer cloud shadow slices refreshed per frame | changes in motion, by choice |
+
+For the render scale, `convert-shaders.sh` also edits three shaders to measure in the window's size rather than the
+smaller view's; without it, they draw as before.
+
+`KSA_PATCHES=0 ~/Applications/"Kitten Space Agency.app"/Contents/MacOS/KSA` starts the game without them.
+
+### KTX shim
+
+The game keeps a copy of every texture's pixels in memory for the whole session, about 3.5 GB with the solar
+system, and macOS can only compress that memory or write it to swap when memory runs short. The launcher loads
+`libKtxShim.dylib` like the GLFW shim; it replaces libktx's create and destroy calls, so that once a texture is
+loaded, its pixels are mapped from a file instead, and macOS can drop those pages and read them back later.
+[`ktx_shim.c`](src/ktx-shim/ktx_shim.c) has the details.
+
+- A texture stored uncompressed is mapped from the game's own file, after a check that the bytes are the same.
+- A compressed one is decompressed once into `textures/` in KSA Metal's cache folder and mapped from there. Copies
+  unused for 60 days are deleted.
+- `KSA_KTX_SHIM=0` keeps the textures as libktx loads them.
 
 ## Extras
 
