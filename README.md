@@ -242,8 +242,10 @@ and the game runs as it would without it. [`src/game-patches/`](src/game-patches
 
 | Patch | What it changes | Image |
 |---|---|---|
-| Terrain cache | the terrain's height passes (one per terrain modifier) run only when their inputs changed, and every 2 s | the same |
+| Terrain cache | the terrain's height passes (one per terrain modifier) run only when their inputs changed, and every 2 s; its normals pass only when the terrain turned | the same |
 | Outline skip | the outline pass around selected parts runs only while a part is selected | the same |
+| Crew portraits | the crew panel's faces are drawn only while the panel is on screen | the same |
+| Worker parking | the game's idle job workers sleep after 0.25 ms instead of spinning for half a frame | the same, less CPU time |
 | Render scale | `render_scale`, `upscaler`: the 3D view's size, and MetalFX before the final composite; `frame_interpolation` also needs it | changes, by choice |
 | Cloud shadows | `cloud_shadows = "slow"`: fewer cloud shadow slices refreshed per frame | changes in motion, by choice |
 
