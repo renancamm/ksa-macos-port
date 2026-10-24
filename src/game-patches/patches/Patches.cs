@@ -17,6 +17,7 @@ public static class Patches
         Run("terrain cache", "terrain_cache", TerrainCache.Apply);
         Run("outline skip", "outline_skip", OutlineSkip.Apply);
         Run("cloud shadows", "cloud_shadows", CloudShadows.Apply);
+        Run("render scale", "render_scale", RenderScale.Apply);
     }
 
     // apply(harmony) patches and returns what it did ("on", "off", ...); throws Skip (or anything) when it can't

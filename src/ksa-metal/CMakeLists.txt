@@ -15,7 +15,7 @@ set(KSA_MTL_DEBUG_MAP ON CACHE BOOL "Keep the debug map (object file paths) in K
 
 add_library(ksa-metal SHARED
     config.mm entry.mm instance.mm device.mm format.mm descriptor.mm pipeline.mm command.mm swapchain.mm internal.mm
-    accel.mm profile.mm shadercache.mm rtpipeline.mm rtspirv.cpp tessspirv.cpp)
+    accel.mm profile.mm shadercache.mm upscale.mm rtpipeline.mm rtspirv.cpp tessspirv.cpp)
 set_target_properties(ksa-metal PROPERTIES
     OUTPUT_NAME vulkan
     SOVERSION 1
@@ -31,7 +31,7 @@ target_compile_options(ksa-metal PRIVATE ${KSA_MTL_OPT} -g -Wall
     -Wno-missing-braces>)
 target_link_libraries(ksa-metal PRIVATE
     Vulkan::Headers spirv-cross-msl spirv-cross-glsl spirv-cross-core SPIRV-Tools-link SPIRV-Tools-opt SPIRV-Tools-static
-    "-framework Metal" "-framework QuartzCore" "-framework Foundation" "-framework CoreGraphics" "-framework ImageIO"
+    "-framework Metal" "-framework MetalFX" "-framework QuartzCore" "-framework Foundation" "-framework CoreGraphics" "-framework ImageIO"
     "-framework UniformTypeIdentifiers")
 target_link_options(ksa-metal PRIVATE -fobjc-arc "LINKER:-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/exports.txt")
 set_property(TARGET ksa-metal APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/exports.txt")

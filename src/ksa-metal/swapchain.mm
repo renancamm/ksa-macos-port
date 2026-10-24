@@ -72,7 +72,9 @@ VKFN(VkResult) vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfo
         layer.device = dev->mtl;
         layer.pixelFormat = pf;
         layer.framebufferOnly = NO;
-        layer.drawableSize = CGSizeMake(ci->imageExtent.width, ci->imageExtent.height);
+        // KSA_MTL_RETINA: the images are in points, the drawable at the display's scale (upscaled at present)
+        CGFloat scale = kmtlConfig().retina ? layer.contentsScale : 1.0;
+        layer.drawableSize = CGSizeMake(ci->imageExtent.width * scale, ci->imageExtent.height * scale);
         layer.maximumDrawableCount = 3;
         layer.displaySyncEnabled = ci->presentMode == VK_PRESENT_MODE_FIFO_KHR || ci->presentMode == VK_PRESENT_MODE_FIFO_RELAXED_KHR;
         layer.opaque = YES;
@@ -192,6 +194,18 @@ VKFN(VkResult) vkAcquireNextImage2KHR(VkDevice device, const VkAcquireNextImageI
     return vkAcquireNextImageKHR(device, info->swapchain, info->timeout, info->semaphore, info->fence, index);
 }
 
+static std::atomic<uint64_t> g_displayed{0};  // drawables the display showed, interpolated ones too
+
+// The image into a drawable: copied, or upscaled with MetalFX when the drawable is larger (KSA_MTL_RETINA)
+static bool present(KDevice* dev, id<MTLCommandBuffer> cb, id<MTLTexture> image, id<MTLTexture> drawable) {
+    if (drawable.width != image.width || drawable.height != image.height)
+        return kmtlPresentUpscale(dev, cb, image, drawable);
+    id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
+    [b copyFromTexture:image toTexture:drawable];
+    [b endEncoding];
+    return true;
+}
+
 VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
     KTRACE_FIRST();
     auto* q = (KQueue*)queue;
@@ -203,12 +217,29 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
             auto* sc = (KSwapchain*)pi->pSwapchains[i];
             VkResult r = outdated(sc) ? VK_SUBOPTIMAL_KHR : VK_SUCCESS;
             KImage* img = sc->images[pi->pImageIndices[i]];
-            id<CAMetalDrawable> drawable = [sc->surface->layer nextDrawable];
             id<MTLCommandBuffer> cb = [q->mtl commandBuffer];
             cb.label = @"present";
             id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
             [b waitForFence:q->chain];
-            if (drawable) {
+            // KSA_MTL_FX_INTERPOLATE: a frame between the last one and this one goes to the display first
+            if (kmtlConfig().fxInterpolate) {
+                [b endEncoding];
+                id<MTLTexture> mid = kmtlPresentInterpolate(q->device, cb, img->mtl);
+                id<CAMetalDrawable> first = mid ? [sc->surface->layer nextDrawable] : nil;
+                if (first && present(q->device, cb, mid, first.texture)) {
+                    [first addPresentedHandler:^(id<MTLDrawable> d) { if (d.presentedTime > 0) g_displayed++; }];
+                    [cb presentDrawable:first];
+                }
+                b = [cb blitCommandEncoder];
+                [b waitForFence:q->chain];
+            }
+            id<CAMetalDrawable> drawable = [sc->surface->layer nextDrawable];
+            if (drawable && (drawable.texture.width != img->mtl.width || drawable.texture.height != img->mtl.height)) {
+                [b endEncoding];
+                if (!kmtlPresentUpscale(q->device, cb, img->mtl, drawable.texture)) drawable = nil;
+                b = [cb blitCommandEncoder];
+                [b waitForFence:q->chain];
+            } else if (drawable) {
                 id<MTLTexture> t = drawable.texture;
                 NSUInteger w = std::min(t.width, img->mtl.width), h = std::min(t.height, img->mtl.height);
                 [b copyFromTexture:img->mtl sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0)
@@ -257,6 +288,7 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
                 [drawable addPresentedHandler:^(id<MTLDrawable> d) {
                     double t = d.presentedTime;
                     if (t <= 0) return;
+                    g_displayed++;
                     double last = g_lastPresented.exchange(t);
                     if (last > 0) g_displayMs = (t - last) * 1e3;
                 }];
@@ -512,6 +544,8 @@ static void writePNG(id<MTLBuffer> buf, NSUInteger w, NSUInteger h, bool bgra, c
     KLOG(0, "screenshot %s: %s", ok ? "written" : "FAILED", path.c_str());
 }
 
+void kmtlWritePNG(id<MTLBuffer> buf, NSUInteger w, NSUInteger h, bool bgra, std::string path) { writePNG(buf, w, h, bgra, path); }
+
 // The path is taken by value: the completion block keeps its own copy (a captured reference would outlive requests)
 static void takeShot(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb, std::string path, bool last) {
     NSUInteger w = image->mtl.width, h = image->mtl.height;
@@ -559,6 +593,18 @@ void kmtlOnPresent(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb) {
     g_lastFrame.drawableWidth = (uint32_t)image->mtl.width;
     g_lastFrame.drawableHeight = (uint32_t)image->mtl.height;
     g_lastFrame.displayMs = g_displayMs.load();
+    if (kmtlConfig().fxInterpolate && g_presents % 600 == 0) {
+        static uint64_t lastShown = 0, lastPresents = 0;
+        static auto lastTime = now;
+        double secs = std::chrono::duration<double>(now - lastTime).count();
+        uint64_t shown = g_displayed.load();
+        if (secs > 0 && lastPresents)
+            KLOG(1, "frame interpolation: game %.1f fps, display %.1f fps", (g_presents - lastPresents) / secs,
+                 (shown - lastShown) / secs);
+        lastShown = shown;
+        lastPresents = g_presents;
+        lastTime = now;
+    }
     if (g_capturing) captureAtPresent(dev);
     if (g_frameCsv) {
         fprintf(g_frameCsv, "%llu,%.3f,%u,%u,%u,%u,%lld,%.3f\n", (unsigned long long)g_presents, ms, g_frameDraws, g_frameDispatches,

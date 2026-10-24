@@ -711,7 +711,7 @@ VKFN(VkResult) vkGetPhysicalDeviceSurfaceSupportKHR(VkPhysicalDevice, uint32_t f
 
 VkExtent2D kmtlLayerExtent(CAMetalLayer* layer) {
     CGSize size = layer.bounds.size;  // property reads are safe off the main thread
-    CGFloat scale = layer.contentsScale;
+    CGFloat scale = kmtlConfig().retina ? 1.0 : layer.contentsScale;  // KSA_MTL_RETINA: the game draws in points
     return {(uint32_t)(size.width * scale + 0.5), (uint32_t)(size.height * scale + 0.5)};
 }
 
