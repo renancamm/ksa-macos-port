@@ -49,6 +49,7 @@ const KConfig& kmtlConfig() {
         c.exitAfterShots = envOn("KSA_MTL_EXIT_AFTER_SHOTS", false);
         c.frames = env("KSA_MTL_FRAMES");
         c.latency = env("KSA_MTL_LATENCY");
+        if (const char* st = env("KSA_MTL_STALLS")) c.stallMs = atof(st);
         c.gpuprof = env("KSA_MTL_GPUPROF");
         c.gpuprofFrames = env("KSA_MTL_GPUPROF_FRAMES");
         c.gpuprofSplit = envOn("KSA_MTL_GPUPROF_SPLIT", false);

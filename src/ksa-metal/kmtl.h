@@ -90,6 +90,7 @@ struct KConfig {
     bool exitAfterShots = false;          // KSA_MTL_EXIT_AFTER_SHOTS=1
     const char* frames = nullptr;         // KSA_MTL_FRAMES=<csv>
     const char* latency = nullptr;        // KSA_MTL_LATENCY=<csv>
+    double stallMs = 0;                   // KSA_MTL_STALLS=<ms>: log what blocks the game longer than that
     const char* gpuprof = nullptr;        // KSA_MTL_GPUPROF=<csv>
     const char* gpuprofFrames = nullptr;  // KSA_MTL_GPUPROF_FRAMES=<first>,<count>
     bool gpuprofSplit = false;            // KSA_MTL_GPUPROF_SPLIT=1: every draw and dispatch in its own encoder
@@ -99,6 +100,19 @@ struct KConfig {
     const char* throttle = nullptr;       // KSA_MTL_THROTTLE=<hash>:<N>,...: experiment, run a shader every N-th present (0 never)
 };
 const KConfig& kmtlConfig();
+
+uint64_t kmtlPresentCount();  // swapchain.mm
+// KSA_MTL_STALLS: a scope that logs when it took longer than the threshold
+struct KStallTimer {
+    const char* what;
+    double start;
+    explicit KStallTimer(const char* w) : what(w), start(kmtlConfig().stallMs > 0 ? CACurrentMediaTime() : 0) {}
+    ~KStallTimer() {
+        if (start == 0) return;
+        double ms = (CACurrentMediaTime() - start) * 1000.0;
+        if (ms >= kmtlConfig().stallMs) KLOG(0, "stall: %s %.1f ms at %.3f present %llu", what, ms, start, (unsigned long long)kmtlPresentCount());
+    }
+};
 
 // ---------------------------------------------------------------------------------------------------------------
 // Buffer indices per stage (vertex buffers count down from 30, so the low indices stay free for sets and push constants)

@@ -116,6 +116,7 @@ VKFN(VkResult) vkGetSwapchainImagesKHR(VkDevice, VkSwapchainKHR swapchain, uint3
 
 VKFN(VkResult) vkAcquireNextImageKHR(VkDevice, VkSwapchainKHR swapchain, uint64_t, VkSemaphore, VkFence fence, uint32_t* index) {
     KTRACE_FIRST();
+    KStallTimer stall("vkAcquireNextImageKHR");
     auto* sc = (KSwapchain*)swapchain;
     *index = sc->next;
     sc->next = (sc->next + 1) % sc->images.size();
@@ -208,6 +209,7 @@ static bool present(KDevice* dev, id<MTLCommandBuffer> cb, id<MTLTexture> image,
 
 VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
     KTRACE_FIRST();
+    KStallTimer stall("vkQueuePresentKHR");
     auto* q = (KQueue*)queue;
     std::lock_guard<std::mutex> lock(q->submitMutex);
     auto* ids = (const VkPresentIdKHR*)findNext(pi->pNext, VK_STRUCTURE_TYPE_PRESENT_ID_KHR);
@@ -233,7 +235,11 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
                 b = [cb blitCommandEncoder];
                 [b waitForFence:q->chain];
             }
-            id<CAMetalDrawable> drawable = [sc->surface->layer nextDrawable];
+            id<CAMetalDrawable> drawable;
+            {
+                KStallTimer stall("nextDrawable");
+                drawable = [sc->surface->layer nextDrawable];
+            }
             if (drawable && (drawable.texture.width != img->mtl.width || drawable.texture.height != img->mtl.height)) {
                 [b endEncoding];
                 if (!kmtlPresentUpscale(q->device, cb, img->mtl, drawable.texture)) drawable = nil;

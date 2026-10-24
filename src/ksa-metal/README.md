@@ -94,6 +94,7 @@ The debugging variables, used the same way:
 | `KSA_MTL_FX_DEBUG=1` | the upscaled image shows MetalFX's motion vectors instead (red and green: horizontal and vertical, 32 pixels = full; blue: the followed vessel) |
 | `KSA_MTL_FX_SHOTS=<dir>` | now and then, a PNG of what MetalFX made: the drawable as shown with Retina, an interpolated frame with the frames around it |
 | `KSA_MTL_LATENCY=<file.csv>` | per frame: when it began (when the game's wait for an earlier frame ended), was presented, was done on the GPU and was shown, how long it waited, and whether pacing ended the wait |
+| `KSA_MTL_STALLS=<ms>` | logs what blocks the game longer than that: waits for fences, drawables and submits, residency set commits (with what they added), command buffers that started late on the GPU, and allocations of 16 MB or more, each with the present it falls in |
 | `KSA_MTL_GPUPROF=<file.csv>` | GPU time of every encoder, for 300 frames from present 2000 (`KSA_MTL_GPUPROF_FRAMES=<first>,<count>` changes that) |
 | `KSA_MTL_GPUPROF_SPLIT=1` | give every draw and dispatch its own encoder, so the profiler times each one (times grow: each draw stores and loads its attachments) |
 | `KSA_MTL_LABELS=1` | name every encoder after its pipelines (render pass size, shader hashes), for Instruments, the Metal HUD and Xcode's frame capture |

@@ -9,22 +9,46 @@ std::atomic<int64_t> g_internalBytes{0};  // descriptor pool chunks and upload r
 // Residency: every heap and standalone texture lives in one residency set attached to the queue, so resources
 // reached only through argument buffers are resident without per-encoder useResource calls.
 
+// KSA_MTL_STALLS: what changed in the set since its last commit, and on which threads, for the log of a slow commit
+static int g_resAdds, g_resRemoves; static int64_t g_resAddBytes, g_resRemoveBytes; static std::string g_resThreads;
+static void noteChange(bool add, id<MTLAllocation> a) {
+    if (kmtlConfig().stallMs <= 0) return;
+    (add ? g_resAdds : g_resRemoves)++;
+    (add ? g_resAddBytes : g_resRemoveBytes) += (int64_t)a.allocatedSize;
+    char name[64] = "";
+    pthread_getname_np(pthread_self(), name, sizeof name);
+    if (!name[0]) snprintf(name, sizeof name, "%p", (void*)pthread_self());
+    if (g_resThreads.find(name) == std::string::npos && g_resThreads.size() < 200) g_resThreads += std::string(name) + " ";
+}
+
 void KDevice::addResident(id<MTLAllocation> a) {
     std::lock_guard<std::mutex> lock(residencyMutex);
     [residency addAllocation:a];
     residencyDirty = true;
+    noteChange(true, a);
 }
 
 void KDevice::removeResident(id<MTLAllocation> a) {
     std::lock_guard<std::mutex> lock(residencyMutex);
     [residency removeAllocation:a];
     residencyDirty = true;
+    noteChange(false, a);
 }
 
 void KDevice::commitResidency() {
     std::lock_guard<std::mutex> lock(residencyMutex);
     if (residencyDirty) {
+        double t0 = CACurrentMediaTime();
         [residency commit];
+        double ms = (CACurrentMediaTime() - t0) * 1000.0;
+        if (kmtlConfig().stallMs > 0 && ms >= kmtlConfig().stallMs) {
+            char name[64] = "";
+            pthread_getname_np(pthread_self(), name, sizeof name);
+            KLOG(0, "stall: residency commit %.1f ms on '%s': +%d (%lld MB) -%d (%lld MB), set %llu allocations; changed on %s",
+                 ms, name, g_resAdds, (long long)(g_resAddBytes >> 20), g_resRemoves, (long long)(g_resRemoveBytes >> 20),
+                 (unsigned long long)residency.allocationCount, g_resThreads.c_str());
+        }
+        g_resAdds = g_resRemoves = 0; g_resAddBytes = g_resRemoveBytes = 0; g_resThreads.clear();
         residencyDirty = false;
     }
 }
@@ -182,7 +206,11 @@ static void signalSemaphores(KQueue* q, KHandles sems, std::vector<id<MTLCommand
 template <typename F> static VkResult submit(VkQueue queue, uint32_t submitCount, VkFence fence, F handlesOf) {
     auto* q = (KQueue*)queue;
     q->device->commitResidency();
-    std::lock_guard<std::mutex> lock(q->submitMutex);
+    std::unique_lock<std::mutex> lock(q->submitMutex, std::defer_lock);
+    {
+        KStallTimer stall("submit lock");
+        lock.lock();
+    }
     std::vector<id<MTLCommandBuffer>> toCommit;
     for (uint32_t s = 0; s < submitCount; s++) {
         KHandles waits, cbs, signals;
@@ -211,12 +239,30 @@ template <typename F> static VkResult submit(VkQueue queue, uint32_t submitCount
         if (toCommit.empty()) toCommit.push_back([q->mtl commandBuffer]);
         [toCommit.back() addCompletedHandler:^(id<MTLCommandBuffer>) { signalFence(f); }];
     }
-    for (id<MTLCommandBuffer> cb : toCommit) [cb commit];
+    if (kmtlConfig().stallMs > 0) {
+        // KSA_MTL_STALLS: command buffers that started on the GPU long after they were committed
+        double now = CACurrentMediaTime();
+        uint32_t family = q->family;
+        for (id<MTLCommandBuffer> cb : toCommit) {
+            NSString* label = cb.label;
+            [cb addCompletedHandler:^(id<MTLCommandBuffer> c) {
+                double delay = (c.GPUStartTime - now) * 1000.0, run = (c.GPUEndTime - c.GPUStartTime) * 1000.0;
+                if (c.GPUStartTime > 0 && delay >= 2 * kmtlConfig().stallMs)
+                    KLOG(0, "stall: gpu start %.1f ms after commit (ran %.1f ms) queue %u '%s' at %.3f present %llu", delay,
+                         run, family, label ? label.UTF8String : "", now, (unsigned long long)kmtlPresentCount());
+            }];
+        }
+    }
+    {
+        KStallTimer stall("commit");
+        for (id<MTLCommandBuffer> cb : toCommit) [cb commit];
+    }
     return VK_SUCCESS;
 }
 
 VKFN(VkResult) vkQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo* submits, VkFence fence) {
     KTRACE_FIRST();
+    KStallTimer stall("vkQueueSubmit");
     return submit(queue, submitCount, fence, [&](uint32_t s, KHandles* waits, KHandles* cbs, KHandles* signals) {
         const VkSubmitInfo& si = submits[s];
         *waits = handles(si.pWaitSemaphores, si.waitSemaphoreCount);
@@ -227,6 +273,7 @@ VKFN(VkResult) vkQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmit
 
 VKFN(VkResult) vkQueueSubmit2(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* submits, VkFence fence) {
     KTRACE_FIRST();
+    KStallTimer stall("vkQueueSubmit2");
     return submit(queue, submitCount, fence, [&](uint32_t s, KHandles* waits, KHandles* cbs, KHandles* signals) {
         const VkSubmitInfo2& si = submits[s];
         *waits = handles(si.pWaitSemaphoreInfos, si.waitSemaphoreInfoCount, &VkSemaphoreSubmitInfo::semaphore);
@@ -272,6 +319,7 @@ VKFN(VkResult) vkGetFenceStatus(VkDevice, VkFence fence) {
 
 VKFN(VkResult) vkWaitForFences(VkDevice, uint32_t n, const VkFence* fences, VkBool32 waitAll, uint64_t timeout) {
     KTRACE_FIRST();
+    KStallTimer stall("vkWaitForFences");
     auto deadline = std::chrono::steady_clock::now() +
         std::chrono::nanoseconds(timeout > (uint64_t)INT64_MAX / 2 ? (uint64_t)INT64_MAX / 2 : timeout);
     if (waitAll || n == 1) {
@@ -342,6 +390,12 @@ VKFN(VkResult) vkAllocateMemory(VkDevice device, const VkMemoryAllocateInfo* ai,
     g_allocatedBytes += (int64_t)hd.size;
     g_allocatedByType[std::min(ai->memoryTypeIndex, 2u)] += (int64_t)hd.size;
     KLOG(2, "allocate memory %llu bytes type %u -> %p", (unsigned long long)ai->allocationSize, ai->memoryTypeIndex, m);
+    if (kmtlConfig().stallMs > 0 && ai->allocationSize >= (16u << 20)) {
+        char name[64] = "";
+        pthread_getname_np(pthread_self(), name, sizeof name);
+        KLOG(0, "stall: memory +%llu MB type %u on '%s' at %.3f present %llu", (unsigned long long)(ai->allocationSize >> 20),
+             ai->memoryTypeIndex, name, CACurrentMediaTime(), (unsigned long long)kmtlPresentCount());
+    }
     *out = (VkDeviceMemory)m;
     return VK_SUCCESS;
 }
@@ -350,6 +404,9 @@ VKFN(void) vkFreeMemory(VkDevice, VkDeviceMemory memory, const VkAllocationCallb
     KTRACE_FIRST();
     auto* m = (KDeviceMemory*)memory;
     if (!m) return;
+    if (kmtlConfig().stallMs > 0 && m->size >= (16u << 20))
+        KLOG(0, "stall: memory -%llu MB type %u at %.3f present %llu", (unsigned long long)(m->size >> 20), m->typeIndex,
+             CACurrentMediaTime(), (unsigned long long)kmtlPresentCount());
     if (g_logLevel >= 2) {
         // Retains beyond ours mean something (a buffer, texture or command buffer) keeps the heap alive
         long rw = CFGetRetainCount((__bridge CFTypeRef)m->whole), rh = CFGetRetainCount((__bridge CFTypeRef)m->heap);
