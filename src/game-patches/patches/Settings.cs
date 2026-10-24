@@ -10,6 +10,7 @@ namespace KsaPatches;
 //   KSA_RENDER_SCALE=<0.25..1>     the 3D view's size, as a fraction of the window
 //   KSA_UPSCALER=metalfx|spatial|none  how the view is scaled back up to the window
 //   KSA_CLOUD_SHADOWS=normal|slow  how fast cloud shadows follow the clouds
+//   KSA_PARK_MS=<ms>               how long an idle job worker spins before it sleeps (default 0.25)
 //   KSA_PORTRAIT_FPS=<n>           crew portraits refreshed at most n times a second (0: every frame)
 public static class Settings
 {

@@ -18,6 +18,7 @@ public static class Patches
         Run("outline skip", "outline_skip", OutlineSkip.Apply);
         Run("cloud shadows", "cloud_shadows", CloudShadows.Apply);
         Run("crew portraits", "crew_portraits", CrewPortraits.Apply);
+        Run("worker parking", "worker_park", WorkerPark.Apply);
         Run("render scale", "render_scale", RenderScale.Apply);
     }
 
