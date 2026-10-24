@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<!-- Built by scripts/build-game-patches.sh against the KSA version the port folder is made for:
+	     dotnet build -c Release -p:KsaDir=<converted KSA assemblies> -p:HarmonyDll=<0Harmony.dll> -o <out>
+	     The game's assemblies and Harmony are references only here; the port folder ships Harmony next to the patches. -->
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<AssemblyName>KsaPatches</AssemblyName>
+		<RootNamespace>KsaPatches</RootNamespace>
+		<ImplicitUsings>disable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<GenerateDependencyFile>false</GenerateDependencyFile>
+		<SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+	</PropertyGroup>
+	<ItemGroup>
+		<Reference Include="$(KsaDir)/*.dll" Private="false" />
+		<Reference Include="$(HarmonyDll)" Private="false" />
+	</ItemGroup>
+</Project>

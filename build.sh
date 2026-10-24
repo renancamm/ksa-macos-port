@@ -8,8 +8,9 @@
 #   second build only compiles what changed.
 #
 # Options:
-#   --ksa <archive | folder | app>  the KSA the benchmark mod is built against and the folder is made for (default:
-#                                   the installed app, otherwise the newest ksa_linux_v*.tar.gz or .tar in ~/Downloads)
+#   --ksa <archive | folder | app>  the KSA the benchmark mod and the game patches are built against and the folder
+#                                   is made for (default: the installed app, otherwise the newest ksa_linux_v*.tar.gz
+#                                   or .tar in ~/Downloads)
 #   --install                       then update the installed app with it (port.sh --app)
 #   --app <path>                    the app for --install (default: ~/Applications/Kitten Space Agency.app)
 #   --version <v>, --commit <id>    what VERSION says (default: dev, and the checkout's commit); set by release.sh
@@ -17,7 +18,7 @@ set -eo pipefail
 source "$(dirname "$0")/scripts/lib.sh"
 
 usage() {
-    sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
 }
 
@@ -51,7 +52,7 @@ if [ -z "${KSA_SOURCE}" ]; then
     fi
 fi
 
-# KSA's assemblies, for the benchmark mod: an app's are converted already; an archive's or a folder's are copied
+# KSA's assemblies, for the benchmark mod and the game patches: an app's are converted already; an archive's or a folder's are copied
 # into deps/build/ksa/ and converted there (lib/convert-dotnet.sh, once the port's scripts are in place)
 KSA_DIR="${BUILD}/ksa"
 CONVERT=1
@@ -74,7 +75,7 @@ KSA_VERSION="$(game_version "${KSA_DIR}")"
 step "Building the port ${VERSION} (${COMMIT}) for KSA ${KSA_VERSION}"
 
 # The native libraries, and the downloads the other steps use. CMake's output goes to a log, shown when it fails.
-step "[1/5] Native libraries (CMake)"
+step "[1/6] Native libraries (CMake)"
 mkdir -p "${CMAKE_TREE}"
 LOG="${CMAKE_TREE}/build.log"
 DEBUG_MAP=ON
@@ -86,18 +87,21 @@ info "Libraries in ${NATIVES#"${REPO}/"}, CMake's output in ${LOG#"${REPO}/"}"
 # For editors: compile_commands.json at the repository's root, where clangd and VS Code look for it
 ln -sfn "${CMAKE_TREE}/compile_commands.json" "${REPO}/compile_commands.json"
 
-step "[2/5] The port's scripts"
+step "[2/6] The port's scripts"
 run make-kit scripts "${VERSION}" "${KSA_VERSION}" "${COMMIT}"
 
-step "[3/5] Icon"
+step "[3/6] Icon"
 run build-icon
 
-step "[4/5] Benchmark"
+step "[4/6] Benchmark"
 load_deps
 [ "${CONVERT}" = 0 ] || bash "${OUT}/lib/convert-dotnet.sh" "${KSA_DIR}" "${DOTNET_RUNTIME}" > /dev/null
 run build-benchmark "${KSA_DIR}"
 
-step "[5/5] The port folder"
+step "[5/6] Game patches"
+run build-game-patches "${KSA_DIR}"
+
+step "[6/6] The port folder"
 run make-kit payload
 run check-kit
 

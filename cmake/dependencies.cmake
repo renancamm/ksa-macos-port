@@ -94,6 +94,14 @@ FetchContent_Declare(harmony_license
     URL_HASH SHA256=a5883d0c45eb7e176d3d1631220e7f96e958e37064773d40245ae6db560bbd6d
     DOWNLOAD_NO_EXTRACT TRUE)
 
+# Harmony, which the game patches (src/game-patches/) use to change KSA's code at runtime: the official package on
+# nuget.org, the version StarMap includes (its licence: harmony_license above). Its net10.0 build goes into the app.
+set(HARMONY_VERSION 2.4.2)
+FetchContent_Declare(lib_harmony
+    URL https://api.nuget.org/v3-flatcontainer/lib.harmony/${HARMONY_VERSION}/lib.harmony.${HARMONY_VERSION}.nupkg
+    URL_HASH SHA512=c96a96244fda8eb2d463626c6882162b1a5877c7e8255960537227b02a74f7fea834e89bb373310bf0879262d4a98485b03dee60c81f9281d14d4eafdbeb1eca
+    DOWNLOAD_NO_EXTRACT TRUE) # CMakeLists.txt takes the .NET 10 assembly out of it
+
 # The app icon: the kitten astronaut from KSA's title card, cropped by scripts/build-icon.sh. Not pinned: it is
 # artwork, not code, and its owner may update it.
 set(TITLE_CARD_URL https://ahwoo.com/ksa/title-card.jpg)

@@ -5,13 +5,18 @@
 #   DYLD_LIBRARY_PATH      the game folder first, so every library, including KSA Metal as
 #                          libvulkan.1.dylib, comes from the app and never from elsewhere on the Mac
 #   DYLD_INSERT_LIBRARIES  the GLFW shim (src/glfw-shim/glfw_shim.c)
+#   DOTNET_STARTUP_HOOKS   the game patches (src/game-patches/), unless KSA_PATCHES=0
+# The player's Mac settings, mac-settings.toml in the game's documents folder (a commented copy of
+# Contents/Resources/mac-settings.toml is put there when there is none), reach KSA Metal and the game patches as
+# environment variables; a variable already set when the game starts wins over the file.
 # Output goes to console.log in the game's logs folder (~/Documents/My Games/Kitten Space Agency/logs, next
 # to the game's own logs), or to the terminal when started from one. A StarMap instance
 # (STARMAP_INSTANCE_PATH, the game's documents folder moved elsewhere) gets its own console.log.
 
 CONTENTS="$(cd "$(dirname "$0")/.." && pwd)"
 RES="${CONTENTS}/Resources"
-LOG="${STARMAP_INSTANCE_PATH:-${HOME}/Documents/My Games/Kitten Space Agency}/logs/console.log"
+DOCS="${STARMAP_INSTANCE_PATH:-${HOME}/Documents/My Games/Kitten Space Agency}"
+LOG="${DOCS}/logs/console.log"
 
 if [ ! -t 1 ]; then
     mkdir -p "$(dirname "${LOG}")"
@@ -31,6 +36,48 @@ export DOTNET_ROOT="${CONTENTS}/MacOS"
 export PATH="${CONTENTS}/MacOS:${PATH}"
 export DYLD_LIBRARY_PATH="${RES}"
 export DYLD_INSERT_LIBRARIES="${RES}/libGlfwShim.dylib"
+if [ "${KSA_PATCHES:-1}" != 0 ] && [ -f "${RES}/GamePatches/KsaPatchesLoader.dll" ]; then
+    export DOTNET_STARTUP_HOOKS="${RES}/GamePatches/KsaPatchesLoader.dll${DOTNET_STARTUP_HOOKS:+:${DOTNET_STARTUP_HOOKS}}"
+fi
+
+SETTINGS="${DOCS}/mac-settings.toml"
+if [ ! -f "${SETTINGS}" ] && [ -f "${RES}/mac-settings.toml" ]; then
+    mkdir -p "${DOCS}" && cp "${RES}/mac-settings.toml" "${SETTINGS}" ||
+        echo "[WARN] could not write ${SETTINGS}"
+fi
+CHANGED=()
+if [ -f "${SETTINGS}" ]; then
+    while IFS= read -r line || [ -n "${line}" ]; do
+        line="${line%%#*}"
+        [ -n "${line//[[:space:]]/}" ] || continue
+        key="$(echo "${line%%=*}" | tr -d ' \t')"
+        value="$(echo "${line#*=}" | tr -d ' \t"')"
+        var="" setting="${value}"
+        case "${key}=${value}" in
+            render_scale=1 | render_scale=1.0 | upscaler=metalfx | retina=false | frame_interpolation=false | \
+                cloud_shadows=normal) continue ;;
+            render_scale=*)
+                awk -v s="${value}" 'BEGIN { exit !(s ~ /^[0-9]*\.?[0-9]+$/ && s >= 0.5 && s < 1) }' || {
+                    echo "[WARN] mac-settings.toml: render_scale must be from 0.5 to 1.0, not ${value}: ignored"
+                    continue
+                }
+                var=KSA_RENDER_SCALE ;;
+            upscaler=spatial | upscaler=none) var=KSA_UPSCALER ;;
+            retina=true) var=KSA_MTL_RETINA setting=1 ;;
+            frame_interpolation=true) var=KSA_MTL_FX_INTERPOLATE setting=1 ;;
+            cloud_shadows=slow) var=KSA_CLOUD_SHADOWS ;;
+            *) echo "[WARN] mac-settings.toml: unknown setting or value '${key} = ${value}': ignored"; continue ;;
+        esac
+        # A variable set when the game starts wins over the file
+        if eval "[ -n \"\${${var}+x}\" ]"; then
+            CHANGED+=("${key} = ${value} (but ${var}=$(eval "echo \"\${${var}}\"") is set)")
+        else
+            export "${var}=${setting}"
+            CHANGED+=("${key} = ${value}")
+        fi
+    done < "${SETTINGS}"
+fi
+echo "==> Mac settings: $( [ ${#CHANGED[@]} -gt 0 ] && (IFS=,; echo "${CHANGED[*]}" | sed 's/,/, /g') || echo defaults)"
 
 # Drop the process serial number argument that older macOS versions pass to apps
 ARGS=()

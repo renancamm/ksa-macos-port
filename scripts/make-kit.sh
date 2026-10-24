@@ -29,7 +29,8 @@ kit_payload() {
     local contents="${OUT}/payload/app/Contents" licenses
     [ -f "${OUT}/VERSION" ] || die "run scripts/make-kit.sh scripts first."
     [ -f "${NATIVES}/libvulkan.1.dylib" ] && [ -x "${DOTNET_RUNTIME}/dotnet" ] && [ -f "${BUILD}/icon/AppIcon.icns" ] &&
-        [ -f "${BUILD}/benchmark/mod/KsaMetalBenchmark.dll" ] || die "the pieces of the port are not all built. Run ./build.sh."
+        [ -f "${BUILD}/benchmark/mod/KsaMetalBenchmark.dll" ] && [ -f "${BUILD}/game-patches/out/KsaPatches.dll" ] ||
+        die "the pieces of the port are not all built. Run ./build.sh."
     [ -f "${STARMAP}/StarMap.dll" ] && [ -f "${STARMAP}/StarMap.Core.dll" ] || die "the StarMap archive has an unexpected layout."
     step "Assembling ${OUT#"${REPO}/"}"
     rm -rf "${OUT}/payload"
@@ -39,11 +40,15 @@ kit_payload() {
     mkdir -p "${contents}/Resources"
     ditto "${DOTNET_RUNTIME}" "${contents}/MacOS"
     cp "${REPO}/src/launcher/launcher.sh" "${contents}/MacOS/KSA"
+    cp "${REPO}/src/launcher/mac-settings.toml" "${contents}/Resources/"
     chmod +x "${contents}/MacOS/KSA"
     cp -P "${NATIVES}"/*.dylib "${NATIVES}/Brutal.Monitor.Subprocess" "${contents}/Resources/"
     cp "${REPO}/third_party/fmod/libfmod.dylib" "${contents}/Resources/libfmod.dylib"
     chmod u+w "${contents}/Resources/libfmod.dylib"
     cp "${BUILD}/icon/AppIcon.icns" "${contents}/Resources/"
+    # The game patches, which the launcher loads (src/game-patches/), with Harmony
+    mkdir -p "${contents}/Resources/GamePatches"
+    cp "${BUILD}"/game-patches/out/*.dll "${contents}/Resources/GamePatches/"
 
     # Every component's licence and notices (THIRD_PARTY_NOTICES.md lists them)
     licenses="${contents}/Resources/Licenses"

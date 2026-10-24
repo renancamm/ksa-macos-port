@@ -13,6 +13,8 @@
 #   Contents/MacOS/dotnet, ...    Microsoft's .NET runtime
 #   Contents/Resources/*.dylib    the native libraries, which the game finds next to it
 #   Contents/Resources/Brutal.Monitor.Subprocess   BRUTAL's crash-dump helper, which the game starts
+#   Contents/Resources/GamePatches/   the game patches, which the launcher loads, and Harmony
+#   Contents/Resources/mac-settings.toml  the Mac settings' template, which the launcher copies for the player
 #   Contents/Resources/AppIcon.icns, Licenses/
 # The bundle is not signed as a whole: that would replace Microsoft's signature on dotnet. The quarantine
 # attribute a browser download puts on the files is removed, so macOS opens the app as one made on this Mac.
@@ -32,9 +34,10 @@ install_port_files() {
     rm -rf "${macos}"
     ditto "${SKELETON}/MacOS" "${macos}"
 
-    rm -rf "${res}/Licenses"
+    rm -rf "${res}/Licenses" "${res}/GamePatches"
     ditto "${SKELETON}/Resources/Licenses" "${res}/Licenses"
-    cp "${SKELETON}/Resources/AppIcon.icns" "${res}/AppIcon.icns"
+    ditto "${SKELETON}/Resources/GamePatches" "${res}/GamePatches"
+    cp "${SKELETON}/Resources/AppIcon.icns" "${SKELETON}/Resources/mac-settings.toml" "${res}/"
     write_info_plist "${contents}"
     xattr -cr "${contents}" 2> /dev/null || true
 }

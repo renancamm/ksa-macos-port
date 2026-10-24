@@ -25,7 +25,13 @@ include(cmake/dependencies.cmake)
 FetchContent_MakeAvailable(spirv_headers)
 set(SPIRV-Headers_SOURCE_DIR "${spirv_headers_SOURCE_DIR}")
 FetchContent_MakeAvailable(vulkan_headers spirv_cross spirv_tools glfw_headers dotnet_runtime starmap starmap_license
-    harmony_license title_card)
+    harmony_license lib_harmony title_card)
+
+# Harmony for the game patches: the package's .NET 10 assembly
+set(HARMONY_DIR "${CMAKE_BINARY_DIR}/harmony")
+file(REMOVE_RECURSE "${HARMONY_DIR}")
+file(GLOB harmony_package "${lib_harmony_SOURCE_DIR}/*.nupkg")
+file(ARCHIVE_EXTRACT INPUT "${harmony_package}" DESTINATION "${HARMONY_DIR}" PATTERNS "lib/net10.0/0Harmony.dll")
 
 # BRUTAL's native libraries: RocketWerkz's macOS builds, unmodified, from each package's runtimes/osx-arm64/native/,
 # with BRUTAL's licence, notice and the packages' third-party notices. The one file there that is not a library,
@@ -114,6 +120,8 @@ STARMAP_VERSION="${STARMAP_VERSION}"
 STARMAP="${starmap_SOURCE_DIR}"
 STARMAP_LICENSE="${starmap_license_SOURCE_DIR}/LICENSE.txt"
 HARMONY_LICENSE="${harmony_license_SOURCE_DIR}/LICENSE"
+HARMONY_VERSION="${HARMONY_VERSION}"
+HARMONY_DLL="${HARMONY_DIR}/lib/net10.0/0Harmony.dll"
 TITLE_CARD="${title_card}"
 TITLE_CARD_URL="${TITLE_CARD_URL}"
 BRUTAL_PACKAGES=(

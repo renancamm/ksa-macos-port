@@ -53,7 +53,23 @@ load_deps() {
     source "${CMAKE_TREE}/deps.sh"
 }
 
-# dotnet_sdk_version: the .NET SDK that builds the benchmark, as global.json picks it for this repository
+# dotnet_sdk_version: the .NET SDK that builds the benchmark and the game patches, as global.json picks it for this
+# repository
 dotnet_sdk_version() {
     (cd "${REPO}" && dotnet --version)
+}
+
+# dotnet_build <work folder> <project> <output folder> [msbuild arguments...]: a Release build, its SDK state and
+# log in the work folder. No PDB: the port folder doesn't ship them, and a DLL built with one records its path.
+# The SDK is chosen by the global.json of the folder dotnet runs in: run it from ${REPO}.
+dotnet_build() {
+    local work="$1" project="$2" out="$3"
+    shift 3
+    rm -rf "${out}"
+    mkdir -p "${work}"
+    DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 \
+        DOTNET_CLI_HOME="${work}/home" NUGET_PACKAGES="${work}/nuget" \
+        dotnet build "${project}" -c Release -nologo -v quiet -nodeReuse:false -o "${out}" \
+        -p:BaseIntermediateOutputPath="${work}/obj/$(basename "${project}" .csproj)/" -p:DebugType=none "$@" \
+        > "${work}/build.log" 2>&1 || { cat "${work}/build.log"; return 1; }
 }

@@ -20,7 +20,9 @@ problem() {
 for f in port.sh starmap.sh benchmark.sh README.md LICENSE THIRD_PARTY_NOTICES.md VERSION lib/common.sh \
     lib/brutal.txt payload/app/Contents/MacOS/KSA payload/app/Contents/MacOS/dotnet payload/starmap/StarMap.dll \
     payload/benchmark/mod/KsaMetalBenchmark.dll payload/benchmark/report/KsaMetalBenchmarkReport.dll \
-    payload/benchmark/benchmark.txt "payload/app/Contents/Resources/AppIcon.icns"; do
+    payload/benchmark/benchmark.txt "payload/app/Contents/Resources/AppIcon.icns" \
+    payload/app/Contents/Resources/GamePatches/KsaPatchesLoader.dll \
+    payload/app/Contents/Resources/GamePatches/KsaPatches.dll payload/app/Contents/Resources/GamePatches/0Harmony.dll; do
     [ -e "${KIT_DIR}/${f}" ] || problem "${f} is missing"
 done
 for f in port.sh starmap.sh benchmark.sh payload/app/Contents/MacOS/KSA \
