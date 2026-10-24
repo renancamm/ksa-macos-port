@@ -96,6 +96,7 @@ struct KConfig {
     bool labels = false;                  // KSA_MTL_LABELS=1: encoders named after their pipelines
     bool fxDebug = false;                 // KSA_MTL_FX_DEBUG=1: the upscale shows its motion vectors
     const char* fxShots = nullptr;        // KSA_MTL_FX_SHOTS=<dir>: PNGs of what MetalFX made now and then
+    const char* throttle = nullptr;       // KSA_MTL_THROTTLE=<hash>:<N>,...: experiment, run a shader every N-th present (0 never)
 };
 const KConfig& kmtlConfig();
 
@@ -409,11 +410,18 @@ struct KPipeline {
     // GPU profiler name: shader module hashes
     uint64_t profId = 0;
     std::string profName;
+    int throttle = -1;  // KSA_MTL_THROTTLE: run every N-th present (0 never, -1 always)
 };
 void kmtlWritePNG(id<MTLBuffer> buf, NSUInteger w, NSUInteger h, bool bgra, std::string path);  // swapchain.mm
 // upscale.mm: the present's MetalFX passes
 bool kmtlPresentUpscale(KDevice* dev, id<MTLCommandBuffer> cb, id<MTLTexture> src, id<MTLTexture> dst);
 id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<MTLTexture> color);
+uint64_t kmtlPresentCount();
+int kmtlThrottleFor(const std::string& profName);
+inline bool kmtlThrottled(const KPipeline* p) {
+    if (!p || p->throttle < 0) return false;
+    return p->throttle == 0 || kmtlPresentCount() % (uint64_t)p->throttle != 0;
+}
 
 // ---------------------------------------------------------------------------------------------------------------
 // Command buffers

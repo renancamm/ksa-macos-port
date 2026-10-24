@@ -1208,6 +1208,7 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
             p->profName += nm;
         }
         p->profId = kmtlHash(p->profName.data(), p->profName.size());
+        p->throttle = kmtlThrottleFor(p->profName);
     }
     if (rs) {
         p->cull = rs->cullMode == VK_CULL_MODE_FRONT_BIT ? MTLCullModeFront
@@ -1329,6 +1330,7 @@ KPipeline* kmtlCreateComputeFromStage(KDevice* dev, KPipelineLayout* layout, con
         snprintf(nm, sizeof(nm), "c%016llx", (unsigned long long)((KShaderModule*)stage->module)->hash);
         p->profName = nm;
         p->profId = kmtlHash(nm, strlen(nm));
+        p->throttle = kmtlThrottleFor(p->profName);
     }
     return p;
 }

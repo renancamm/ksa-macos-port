@@ -958,6 +958,7 @@ VKFN(void) vkCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32
                      uint32_t firstInstance) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
+    if (kmtlThrottled(cb->graphicsPipeline)) return;
     if (cb->graphicsPipeline && cb->graphicsPipeline->tess) {
         if (!vertexCount || !instanceCount) return;
         KTessDraw t;
@@ -993,6 +994,7 @@ VKFN(void) vkCmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indexCount, 
                             int32_t vertexOffset, uint32_t firstInstance) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
+    if (kmtlThrottled(cb->graphicsPipeline)) return;
     if (cb->graphicsPipeline && cb->graphicsPipeline->tess) {
         if (!indexCount || !instanceCount || !cb->indexBuffer) return;
         KTessDraw t;
@@ -1019,6 +1021,7 @@ VKFN(void) vkCmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indexCount, 
 VKFN(void) vkCmdDrawIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
+    if (kmtlThrottled(cb->graphicsPipeline)) return;
     if (!flushGraphics(cb)) return;
     auto* buf = (KBuffer*)buffer;
     if (stride == 0) stride = sizeof(VkDrawIndirectCommand);
@@ -1037,6 +1040,7 @@ VKFN(void) vkCmdDrawIndexedIndirect(VkCommandBuffer commandBuffer, VkBuffer buff
                                     uint32_t stride) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
+    if (kmtlThrottled(cb->graphicsPipeline)) return;
     if (cb->graphicsPipeline && cb->graphicsPipeline->tess) {
         if (!cb->indexBuffer) return;
         if (stride == 0) stride = sizeof(VkDrawIndexedIndirectCommand);
@@ -1067,6 +1071,7 @@ VKFN(void) vkCmdDrawIndexedIndirect(VkCommandBuffer commandBuffer, VkBuffer buff
 VKFN(void) vkCmdDispatch(VkCommandBuffer commandBuffer, uint32_t x, uint32_t y, uint32_t z) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
+    if (kmtlThrottled(cb->computePipeline)) return;
     if (!x || !y || !z || !flushCompute(cb)) return;
     [cb->compute dispatchThreadgroups:MTLSizeMake(x, y, z) threadsPerThreadgroup:cb->computePipeline->workgroup];
     kmtlProfNote(cb, cb->computePipeline, true, 1);
@@ -1077,6 +1082,7 @@ VKFN(void) vkCmdDispatch(VkCommandBuffer commandBuffer, uint32_t x, uint32_t y, 
 VKFN(void) vkCmdDispatchIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
+    if (kmtlThrottled(cb->computePipeline)) return;
     if (!flushCompute(cb)) return;
     auto* buf = (KBuffer*)buffer;
     [cb->compute dispatchThreadgroupsWithIndirectBuffer:buf->mtl indirectBufferOffset:buf->offset + offset

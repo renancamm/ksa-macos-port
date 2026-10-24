@@ -318,6 +318,7 @@ struct Shot { double at; std::string path; };
 
 static std::mutex g_frameMutex;
 static uint64_t g_presents = 0, g_ingamePresent = 0;
+uint64_t kmtlPresentCount() { return g_presents; }
 static uint32_t g_frameDraws = 0, g_frameDispatches = 0, g_framePasses = 0, g_frameSubmits = 0;
 static FILE* g_frameCsv = nullptr;
 static std::chrono::steady_clock::time_point g_start, g_lastPresent, g_ingameTime;
