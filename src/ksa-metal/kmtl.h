@@ -70,6 +70,7 @@ struct KConfig {
     bool safeMath = false;                // KSA_MTL_SAFE_MATH=1: shaders without fast math
     bool constantArgumentBuffers = true;  // KSA_MTL_AB_CONSTANT=0: argument buffers in device memory
     int budgetMb = 0;                     // KSA_MTL_BUDGET_MB: GPU memory budget reported (0: Metal's recommendation)
+    bool presentPacing = true;            // KSA_MTL_PRESENT_PACING=0: a present counts only once the display shows it
     // Debugging
     int logLevel = 0;                     // KSA_MTL_LOG (see Logging above)
     const char* logFile = nullptr;        // KSA_MTL_LOG_FILE
@@ -86,6 +87,7 @@ struct KConfig {
     double exitAfterSeconds = 0;          // KSA_MTL_EXIT_AFTER_S=<seconds>
     bool exitAfterShots = false;          // KSA_MTL_EXIT_AFTER_SHOTS=1
     const char* frames = nullptr;         // KSA_MTL_FRAMES=<csv>
+    const char* latency = nullptr;        // KSA_MTL_LATENCY=<csv>
     const char* gpuprof = nullptr;        // KSA_MTL_GPUPROF=<csv>
     const char* gpuprofFrames = nullptr;  // KSA_MTL_GPUPROF_FRAMES=<first>,<count>
     bool gpuprofSplit = false;            // KSA_MTL_GPUPROF_SPLIT=1: every draw and dispatch in its own encoder
@@ -549,17 +551,18 @@ struct KSurface {
     CAMetalLayer* layer = nil;
 };
 
-// Present ids of a swapchain: set from the drawables' presented handlers, waited on by vkWaitForPresentKHR. Shared
-// with the handlers, which may run after the swapchain is destroyed
+// Present ids of a swapchain, waited on by vkWaitForPresentKHR, and the recent presents its pacing looks at
+// (swapchain.mm). Shared with the presents' handlers, which may run after the swapchain is destroyed
 struct KPresentState {
+    struct Frame { uint64_t present, id; double made, gpuEnd; bool gpuDone, shown; };
     std::mutex m;
     std::condition_variable cv;
-    uint64_t presented = 0;
-    void mark(uint64_t id) {
-        std::lock_guard<std::mutex> lock(m);
-        if (id > presented) presented = id;
-        cv.notify_all();
-    }
+    uint64_t presented = 0;     // the latest id the display showed
+    uint64_t presents = 0;      // presents made
+    std::vector<Frame> frames;  // the last 16, oldest first
+    double began = 0;           // when the game's last wait for a present ended
+    double cpuMs[8] = {}, gpuMs[8] = {};  // recent frames: from that wait to the present; GPU time
+    uint32_t cpuSamples = 0, gpuSamples = 0;
 };
 
 // Pixel size of a surface's layer (bounds x contentsScale): the surface's current extent

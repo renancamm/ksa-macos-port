@@ -285,7 +285,8 @@ possible. In short:
 - **Tessellation:** the vertex and control stages run as compute kernels, and Metal's tessellator draws the patches
   with the evaluation shader, which runs the vertex shader itself where it can.
 - **Ray tracing:** ray queries map onto Metal's. Each ray tracing pipeline is rewritten into one compute kernel.
-- **Presentation:** the swapchain's images are copied into the window's drawable.
+- **Presentation:** the swapchain's images are copied into the window's drawable. With V-Sync, the game's wait
+  for an earlier frame ends when the GPU is ready for the next one, not only when the display shows it.
 
 The detail is in [`src/ksa-metal/README.md`](src/ksa-metal/README.md): its switches, how to build and test a change,
 how each Vulkan concept maps onto Metal, and what each source file holds.

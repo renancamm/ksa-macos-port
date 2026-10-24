@@ -29,6 +29,7 @@ These switches turn a feature off or change a default, to work around a problem 
 | `KSA_MTL_SAFE_MATH=1` | compile shaders without fast math; rules out precision problems |
 | `KSA_MTL_AB_CONSTANT=0` | shaders read their resources from device memory instead of constant memory; a bit slower, try it when a shader fails to compile |
 | `KSA_MTL_BUDGET_MB=<n>` | the GPU memory budget reported to the game, which sizes its texture streaming from it (default: what Metal recommends for this Mac) |
+| `KSA_MTL_PRESENT_PACING=0` | with V-Sync, the game's wait for an earlier frame ends only when the display shows it ([Presentation](#from-vulkan-to-metal)); in a window, frames that take less than about 23 ms on the GPU then run slower |
 
 ## Build
 
@@ -89,6 +90,7 @@ The debugging variables, used the same way:
 | `KSA_MTL_EXIT_AFTER=<n>` | quit after n presents (`KSA_MTL_EXIT_AFTER_S=<s>`: s seconds after start) |
 | `KSA_MTL_EXIT_AFTER_SHOTS=1` | quit once the last shot is saved |
 | `KSA_MTL_FRAMES=<file.csv>` | per frame: CPU frame time, GPU busy time, draws, dispatches and allocated memory |
+| `KSA_MTL_LATENCY=<file.csv>` | per frame: when it began (when the game's wait for an earlier frame ended), was presented, was done on the GPU and was shown, how long it waited, and whether pacing ended the wait |
 | `KSA_MTL_GPUPROF=<file.csv>` | GPU time of every encoder, for 300 frames from present 2000 (`KSA_MTL_GPUPROF_FRAMES=<first>,<count>` changes that) |
 | `KSA_MTL_GPUPROF_SPLIT=1` | give every draw and dispatch its own encoder, so the profiler times each one (times grow: each draw stores and loads its attachments) |
 | `KSA_MTL_LABELS=1` | name every encoder after its pipelines (render pass size, shader hashes), for Instruments, the Metal HUD and Xcode's frame capture |
@@ -167,7 +169,11 @@ ray query, and the hit and miss shaders become functions called from it. The rew
 ([`rtspirv.cpp`](rtspirv.cpp)).
 
 **Presentation.** The swapchain's images are KSA Metal's own textures. When the game presents one, it is copied into
-the window's `CAMetalLayer` drawable.
+the window's `CAMetalLayer` drawable. With V-Sync, KSA waits for the frame before last to be presented before it
+reads input. In a window, macOS shows a frame about 21 ms after the GPU finishes it, so waiting for the display
+would leave the GPU idle whenever a frame takes less than that. KSA Metal also ends the wait once that frame is done
+on the GPU, the one before it is on screen, and the GPU is about to need the next frame (predicted from the last
+frames' GPU and CPU times). Frames then start when the GPU can take them, without queueing up.
 
 The complete mapping:
 
@@ -194,7 +200,7 @@ The complete mapping:
 | Semaphores | in-order within a queue; `MTLSharedEvent` across queues |
 | Fences | signalled from command buffer completion |
 | Timestamps | GPU counter samples at encoder boundaries |
-| Present wait | the drawables' presented handlers advance the present ID |
+| Present wait | the drawables' presented handlers advance the present ID; a wait also ends when the GPU is about to need the next frame |
 | Transient attachments | memoryless textures (tile memory only) |
 | Swapchain | own textures, copied into the `CAMetalLayer` drawable at present |
 

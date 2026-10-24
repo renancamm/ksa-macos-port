@@ -29,6 +29,7 @@ const KConfig& kmtlConfig() {
         c.safeMath = envOn("KSA_MTL_SAFE_MATH", false);
         c.constantArgumentBuffers = envOn("KSA_MTL_AB_CONSTANT", true);
         c.budgetMb = envInt("KSA_MTL_BUDGET_MB", 0);
+        c.presentPacing = envOn("KSA_MTL_PRESENT_PACING", true);
         // Debugging
         c.logLevel = envInt("KSA_MTL_LOG", 0);
         c.logFile = env("KSA_MTL_LOG_FILE");
@@ -45,6 +46,7 @@ const KConfig& kmtlConfig() {
         c.exitAfterSeconds = env("KSA_MTL_EXIT_AFTER_S") ? atof(env("KSA_MTL_EXIT_AFTER_S")) : 0;
         c.exitAfterShots = envOn("KSA_MTL_EXIT_AFTER_SHOTS", false);
         c.frames = env("KSA_MTL_FRAMES");
+        c.latency = env("KSA_MTL_LATENCY");
         c.gpuprof = env("KSA_MTL_GPUPROF");
         c.gpuprofFrames = env("KSA_MTL_GPUPROF_FRAMES");
         c.gpuprofSplit = envOn("KSA_MTL_GPUPROF_SPLIT", false);
