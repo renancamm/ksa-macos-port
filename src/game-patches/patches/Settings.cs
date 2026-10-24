@@ -10,6 +10,7 @@ namespace KsaPatches;
 //   KSA_RENDER_SCALE=<0.25..1>     the 3D view's size, as a fraction of the window
 //   KSA_UPSCALER=metalfx|spatial|none  how the view is scaled back up to the window
 //   KSA_CLOUD_SHADOWS=normal|slow  how fast cloud shadows follow the clouds
+//   KSA_PORTRAIT_FPS=<n>           crew portraits refreshed at most n times a second (0: every frame)
 public static class Settings
 {
     private static readonly string[] Off = (Environment.GetEnvironmentVariable("KSA_PATCHES_OFF") ?? "")
@@ -25,4 +26,7 @@ public static class Settings
 
     public static readonly bool SlowCloudShadows =
         string.Equals(Environment.GetEnvironmentVariable("KSA_CLOUD_SHADOWS"), "slow", StringComparison.OrdinalIgnoreCase);
+
+    public static readonly int PortraitFps =
+        int.TryParse(Environment.GetEnvironmentVariable("KSA_PORTRAIT_FPS"), out int fps) && fps > 0 ? fps : 0;
 }
