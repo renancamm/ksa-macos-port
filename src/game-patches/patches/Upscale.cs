@@ -21,7 +21,8 @@ namespace KsaPatches;
 // depth buffer and two reprojections passed here, both computed in double: the scene through the nearby body's
 // rotating frame, and inside its bounding sphere the vessel the camera follows, through its own frame. A copy of the
 // image before the exhausts, particles and glass lets the driver mark what those change as reactive (no smearing).
-// With frame interpolation and a render scale of 1, the temporal upscaler runs at 1:1, for the motion and depth.
+// With frame interpolation and a render scale of 1, the temporal upscaler runs at 1:1, for the motion and depth; the
+// final composite then marks where the UI starts, so that MetalFX can draw this frame's UI over the frame it makes.
 internal static class Upscale
 {
     private static readonly bool Interpolate = Environment.GetEnvironmentVariable("KSA_MTL_FX_INTERPOLATE") is "1" or "true";
@@ -56,6 +57,9 @@ internal static class Upscale
     [DllImport("libvulkan.1.dylib")]
     private static extern void vkCmdUpscaleSnapshotKSA(nint commandBuffer, ulong image);
 
+    [DllImport("libvulkan.1.dylib")]
+    private static extern void vkCmdMarkUiKSA(nint commandBuffer);
+
     public static void Apply(Harmony harmony)
     {
         harmony.Patch(Find.Method(typeof(ScreenspaceRenderer), nameof(ScreenspaceRenderer.AddImage)),
@@ -65,6 +69,18 @@ internal static class Upscale
         if (!Spatial)
             harmony.Patch(Find.Method(typeof(Program), "RenderGame"),
                 transpiler: new HarmonyMethod(typeof(Upscale), nameof(SnapshotTranspiler)));
+        if (Interpolate)
+            harmony.Patch(Find.Method(typeof(Program), "RenderFinalComposite"),
+                postfix: new HarmonyMethod(typeof(Upscale), nameof(CompositePostfix)));
+    }
+
+    // Frame interpolation: the main view's composite is done and its UI comes next, in the same pass
+    private static void CompositePostfix(CommandBuffer commandBuffer, int shaderSlot)
+    {
+        if (shaderSlot != Program.MainViewport.ShaderSlot)
+            return;
+        VkCommandBuffer handle = commandBuffer.Handle;
+        vkCmdMarkUiKSA(Unsafe.As<VkCommandBuffer, nint>(ref handle));
     }
 
     private static RenderImage? _output;

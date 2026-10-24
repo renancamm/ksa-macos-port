@@ -4,7 +4,8 @@
 // passes: the scene's motion through the nearby body's frame, and inside a bounding sphere the motion of the vessel
 // the camera follows, through its own frame. What the translucent effects and the bloom changed since the snapshot
 // becomes MetalFX's reactive mask, so that plumes moving with the camera don't smear. The same file has the present's
-// MetalFX passes: Retina (KSA_MTL_RETINA) and frame interpolation (KSA_MTL_FX_INTERPOLATE).
+// MetalFX passes: Retina (KSA_MTL_RETINA) and frame interpolation (KSA_MTL_FX_INTERPOLATE), for which the game marks
+// where its UI starts (vkCmdMarkUiKSA).
 #import <MetalFX/MetalFX.h>
 #include "kmtl.h"
 
@@ -81,7 +82,11 @@ struct UpscaleState {
     id<MTLTexture> snapshotTex = nil;
     // KSA_MTL_FX_INTERPOLATE=1: the last upscale's inputs, for a frame interpolated at present
     id<MTLFXFrameInterpolator> interpolator = nil;
-    id<MTLTexture> frameDepth = nil, prevColor = nil, interpolated = nil;
+    id<MTLTexture> frameDepth = nil, interpolated = nil;
+    // vkCmdMarkUiKSA: the scene without the UI, this frame's and the last one's
+    id<MTLTexture> scene = nil, prevScene = nil;
+    uint64_t sceneSerial = 0;
+    bool prevSceneValid = false;  // prevScene holds the frame before (no gap, no new interpolator)
     float frameJitter[2] = {0, 0}, fovY = 1, nearPlane = 0.1f, farPlane = 1e11f, deltaTime = 0.016f;
     uint64_t frameSerial = 0, presentedSerial = 0;
     bool frameReset = true;
@@ -266,6 +271,35 @@ VKFN(void) vkCmdUpscaleSnapshotKSA(VkCommandBuffer commandBuffer, VkImage image)
     cb->fxSnapshot = true;
 }
 
+// For frame interpolation: the game calls it inside its final pass, between the composited scene and the UI. The pass
+// is suspended (its attachments stored), the colour attachment copied, and the pass resumed.
+VKFN(void) vkCmdMarkUiKSA(VkCommandBuffer commandBuffer) {
+    KTRACE_FIRST();
+    auto* cb = (KCommandBuffer*)commandBuffer;
+    if (!kmtlConfig().fxInterpolate || !cb->inRenderPass || !cb->passDesc) return;
+    id<MTLTexture> src = cb->passDesc.colorAttachments[0].texture;
+    if (!src || src.sampleCount > 1 || src.storageMode == MTLStorageModeMemoryless) return;
+    std::lock_guard<std::mutex> lock(g_up.m);
+    if (!g_up.scene || g_up.scene.width != src.width || g_up.scene.height != src.height || g_up.scene.pixelFormat != src.pixelFormat) {
+        MTLTextureDescriptor* d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:src.pixelFormat width:src.width
+                                                                                   height:src.height mipmapped:NO];
+        d.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite | MTLTextureUsageRenderTarget;
+        d.storageMode = MTLStorageModePrivate;
+        g_up.scene = [cb->device->mtl newTextureWithDescriptor:d];
+        g_up.prevScene = [cb->device->mtl newTextureWithDescriptor:d];
+        g_up.sceneSerial = 0;
+    }
+    cb->suspendRender();
+    fullBarrier(cb);
+    id<MTLBlitCommandEncoder> b = [cb->mtl blitCommandEncoder];
+    b.label = @"scene before the UI";
+    [b copyFromTexture:src toTexture:g_up.scene];
+    [b endEncoding];
+    fullBarrier(cb);
+    cb->resumeRender();
+    g_up.sceneSerial = g_up.frameSerial;
+}
+
 // KSA_MTL_RETINA: the swapchain image (points) upscaled into the drawable (pixels) with MetalFX spatial, between event
 // barriers (the present command buffer's first encoder waited for the queue's chain fence)
 bool kmtlPresentUpscale(KDevice* dev, id<MTLCommandBuffer> cb, id<MTLTexture> src, id<MTLTexture> dst) {
@@ -332,12 +366,19 @@ bool kmtlPresentUpscale(KDevice* dev, id<MTLCommandBuffer> cb, id<MTLTexture> sr
     return true;
 }
 
-// KSA_MTL_FX_INTERPOLATE=1: a frame between the previous presented image and this one (the game's UI included), with
-// the motion and depth of this frame's upscale. Returns the texture to present first, or nil.
+// KSA_MTL_FX_INTERPOLATE=1: a frame between the last presented one and this one, from the scenes without the UI
+// (vkCmdMarkUiKSA) and the motion and depth of this frame's upscale; MetalFX takes this frame's UI from the presented
+// image, which has it composited, and draws it on top. Returns the texture to present first, or nil.
 id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<MTLTexture> color) {
     std::lock_guard<std::mutex> lock(g_up.m);
     if (g_up.failed || !g_up.temporal || !g_up.frameDepth || g_up.frameSerial == g_up.presentedSerial) return nil;
     g_up.presentedSerial = g_up.frameSerial;
+    // Without this frame's scene (no UI mark: a loading screen), no frame in between, and no history for the next
+    if (!g_up.scene || g_up.sceneSerial != g_up.frameSerial || g_up.scene.width != color.width ||
+        g_up.scene.height != color.height || g_up.scene.pixelFormat != color.pixelFormat) {
+        g_up.prevSceneValid = false;
+        return nil;
+    }
     id<MTLDevice> d = dev->mtl;
     if (!g_up.interpolator || g_up.interpolator.outputWidth != color.width || g_up.interpolator.outputHeight != color.height ||
         g_up.interpolator.inputWidth != g_up.inW || g_up.interpolator.colorTextureFormat != color.pixelFormat) {
@@ -354,7 +395,6 @@ id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<
                                                                                     height:color.height mipmapped:NO];
         td.storageMode = MTLStorageModePrivate;
         td.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite | MTLTextureUsageRenderTarget;
-        g_up.prevColor = [d newTextureWithDescriptor:td];
         g_up.interpolated = [d newTextureWithDescriptor:td];
         if (!g_up.interpolator) {
             KERR("frame interpolation: interpolator %ux%u -> %lux%lu not created", g_up.inW, g_up.inH, (unsigned long)color.width,
@@ -364,7 +404,7 @@ id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<
         }
         KLOG(0, "frame interpolation: %ux%u motion -> %lux%lu frames", g_up.inW, g_up.inH, (unsigned long)color.width,
              (unsigned long)color.height);
-        g_up.frameReset = true;
+        g_up.prevSceneValid = false;
     }
     static id<MTLEvent> event = nil;
     static uint64_t value = 0;
@@ -372,10 +412,12 @@ id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<
     id<MTLTexture> result = nil;
     [cb encodeSignalEvent:event value:++value];
     [cb encodeWaitForEvent:event value:value];
-    if (!g_up.frameReset) {
+    if (!g_up.frameReset && g_up.prevSceneValid) {
         id<MTLFXFrameInterpolator> fi = g_up.interpolator;
-        fi.colorTexture = color;
-        fi.prevColorTexture = g_up.prevColor;
+        fi.colorTexture = g_up.scene;
+        fi.prevColorTexture = g_up.prevScene;
+        fi.uiTexture = color;
+        fi.uiTextureComposited = YES;
         fi.depthTexture = g_up.frameDepth;
         fi.motionTexture = g_up.motionTex;
         fi.motionVectorScaleX = 1.f;
@@ -387,7 +429,6 @@ id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<
         fi.aspectRatio = (float)color.width / (float)color.height;
         fi.jitterOffsetX = g_up.frameJitter[0];
         fi.jitterOffsetY = g_up.frameJitter[1];
-        fi.uiTexture = nil;
         fi.shouldResetHistory = NO;
         fi.depthReversed = YES;
         fi.outputTexture = g_up.interpolated;
@@ -395,15 +436,15 @@ id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<
         [cb encodeSignalEvent:event value:++value];
         [cb encodeWaitForEvent:event value:value];
         result = g_up.interpolated;
-        // KSA_MTL_FX_SHOTS=<dir>: every 300th interpolated frame, with the frames around it
+        // KSA_MTL_FX_SHOTS=<dir>: every 300th interpolated frame, with the scenes around it and this frame as shown
         const char* shotDir = kmtlConfig().fxShots;
         static uint64_t count = 0;
         if (shotDir && ++count % 300 == 0) {
             NSUInteger w = color.width, h = color.height;
             bool bgra = color.pixelFormat == MTLPixelFormatBGRA8Unorm || color.pixelFormat == MTLPixelFormatBGRA8Unorm_sRGB;
-            id<MTLTexture> texs[3] = {g_up.prevColor, g_up.interpolated, color};
-            const char* names[3] = {"a_prev", "b_mid", "c_this"};
-            for (int i = 0; i < 3; i++) {
+            id<MTLTexture> texs[4] = {g_up.prevScene, g_up.interpolated, g_up.scene, color};
+            const char* names[4] = {"a_prev_scene", "b_interpolated", "c_scene", "d_shown"};
+            for (int i = 0; i < 4; i++) {
                 id<MTLBuffer> buf = [d newBufferWithLength:w * h * 4 options:MTLResourceStorageModeShared];
                 id<MTLBlitCommandEncoder> sb = [cb blitCommandEncoder];
                 [sb copyFromTexture:texs[i] sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(w, h, 1)
@@ -414,8 +455,9 @@ id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<
             }
         }
     }
+    g_up.prevSceneValid = true;
     id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
-    [b copyFromTexture:color toTexture:g_up.prevColor];
+    [b copyFromTexture:g_up.scene toTexture:g_up.prevScene];
     [b endEncoding];
     [cb encodeSignalEvent:event value:++value];
     [cb encodeWaitForEvent:event value:value];
