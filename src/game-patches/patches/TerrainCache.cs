@@ -14,8 +14,10 @@ namespace KsaPatches;
 // on the GPU: a prepare pass, one pass per terrain modifier (noise, craters, erosion...), then a finalize and a normals
 // pass. The first two depend on the body, the mesh's level of detail and its snapped texture rotation, which change
 // only now and then, and on the streamed heightmap. When the frame slot's height buffer already holds the result for
-// the same inputs, the prepare and modifier passes are skipped; every 2 s they run anyway, for the heightmap. Finalize
-// and normals always run. The image is the same.
+// the same inputs, the prepare and modifier passes are skipped; every 2 s they run anyway, for the heightmap. The
+// finalize pass always runs: it moves the mesh to the camera. The normals pass computes normals from those positions,
+// where the camera's translation cancels out: it is skipped too while the mesh's rotation (the snapped billboard and
+// the planet's spin) has turned less than 1e-4 rad since the slot's normals were made. The image is the same.
 internal static class TerrainCache
 {
     private struct Key
@@ -28,10 +30,12 @@ internal static class TerrainCache
     }
 
     private const long RefreshMs = 2000;
+    private const float NormalTolerance = 1e-4f;
     private static readonly Key[] Keys = new Key[8];
+    private static readonly float4x4[] NormalRotations = new float4x4[8];
     private static System.Reflection.FieldInfo? _buffers;
 
-    [ThreadStatic] private static bool _skip;
+    [ThreadStatic] private static bool _skip, _skipNormals;
 
     public static string Apply(Harmony harmony)
     {
@@ -49,8 +53,10 @@ internal static class TerrainCache
         // VkDeviceExtensions.Dispatch<T>, made for CommandBuffer at the call
         bool isDispatch(CodeInstruction c) => c.operand is System.Reflection.MethodInfo m && m.Name == "Dispatch" &&
             m.DeclaringType == typeof(VkDeviceExtensions) && m.GetParameters() is { Length: 4 } p && p[0].ParameterType == typeof(CommandBuffer);
-        var ours = Find.Method(typeof(TerrainCache), nameof(Dispatch));
-        foreach (string pipeline in new[] { "_meshVertexPreparePipeline", "_proceduralModifierTerrainPipelines" })
+        var heights = Find.Method(typeof(TerrainCache), nameof(Dispatch));
+        var normals = Find.Method(typeof(TerrainCache), nameof(DispatchNormals));
+        foreach (var (pipeline, ours) in new[] { ("_meshVertexPreparePipeline", heights),
+                     ("_proceduralModifierTerrainPipelines", heights), ("_meshNormalPipeline", normals) })
         {
             var field = Find.Field(typeof(PlanetRenderer), pipeline);
             int load = Find.Once(code, c => c.LoadsField(field), pipeline);
@@ -62,7 +68,7 @@ internal static class TerrainCache
 
     private static void Prefix(PlanetRenderer __instance, IViewport inViewport, int frameIndex)
     {
-        _skip = false;
+        _skip = _skipNormals = false;
         PlanetViewportData data = __instance.ViewportData(inViewport);
         Celestial? body = data.NearbyCelestial;
         if (body == null || !body.IsBillboarded() || (uint)frameIndex >= Keys.Length)
@@ -73,18 +79,41 @@ internal static class TerrainCache
         texture.M44 = 1f;  // the modifier loop passes its index there
         long now = Environment.TickCount64;
         ref Key key = ref Keys[frameIndex];
+        float4x4 rotation = data.MeshPushConst.MeshMatrix;
         if (buffer != null && Equals(key.Buffer, buffer) && key.Body == body && key.Mesh == mesh && key.Texture == texture &&
             now - key.Time < RefreshMs)
         {
             _skip = true;
+            _skipNormals = Turned(NormalRotations[frameIndex], rotation) < NormalTolerance;
+            if (!_skipNormals)
+                NormalRotations[frameIndex] = rotation;
             return;
         }
         key = new Key { Buffer = buffer, Body = body, Mesh = mesh, Texture = texture, Time = now };
+        NormalRotations[frameIndex] = rotation;
+    }
+
+    // How far the rotation part of b differs from a's (largest change of a unit axis), with the scale divided out
+    private static float Turned(in float4x4 a, in float4x4 b)
+    {
+        float scale = MathF.Sqrt(b.M11 * b.M11 + b.M12 * b.M12 + b.M13 * b.M13);
+        if (scale <= 0f)
+            return float.PositiveInfinity;
+        float d = MathF.Max(MathF.Max(MathF.Abs(a.M11 - b.M11), MathF.Abs(a.M12 - b.M12)), MathF.Abs(a.M13 - b.M13));
+        d = MathF.Max(d, MathF.Max(MathF.Max(MathF.Abs(a.M21 - b.M21), MathF.Abs(a.M22 - b.M22)), MathF.Abs(a.M23 - b.M23)));
+        d = MathF.Max(d, MathF.Max(MathF.Max(MathF.Abs(a.M31 - b.M31), MathF.Abs(a.M32 - b.M32)), MathF.Abs(a.M33 - b.M33)));
+        return d / scale;
     }
 
     private static void Dispatch(CommandBuffer handle, int groupCountX, int groupCountY, int groupCountZ)
     {
         if (!_skip)
+            handle.Dispatch(groupCountX, groupCountY, groupCountZ);
+    }
+
+    private static void DispatchNormals(CommandBuffer handle, int groupCountX, int groupCountY, int groupCountZ)
+    {
+        if (!_skipNormals)
             handle.Dispatch(groupCountX, groupCountY, groupCountZ);
     }
 }
