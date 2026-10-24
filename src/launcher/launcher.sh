@@ -4,7 +4,7 @@
 # Starts KSA (Contents/Resources/KSA.dll) with the .NET runtime in Contents/MacOS:
 #   DYLD_LIBRARY_PATH      the game folder first, so every library, including KSA Metal as
 #                          libvulkan.1.dylib, comes from the app and never from elsewhere on the Mac
-#   DYLD_INSERT_LIBRARIES  the GLFW shim (src/glfw-shim/glfw_shim.c)
+#   DYLD_INSERT_LIBRARIES  the GLFW shim (src/glfw-shim/glfw_shim.c) and the KTX shim (src/ktx-shim/ktx_shim.c)
 #   DOTNET_STARTUP_HOOKS   the game patches (src/game-patches/), unless KSA_PATCHES=0
 # The player's Mac settings, mac-settings.toml in the game's documents folder (a commented copy of
 # Contents/Resources/mac-settings.toml is put there when there is none), reach KSA Metal and the game patches as
@@ -35,7 +35,7 @@ fail() {
 export DOTNET_ROOT="${CONTENTS}/MacOS"
 export PATH="${CONTENTS}/MacOS:${PATH}"
 export DYLD_LIBRARY_PATH="${RES}"
-export DYLD_INSERT_LIBRARIES="${RES}/libGlfwShim.dylib"
+export DYLD_INSERT_LIBRARIES="${RES}/libGlfwShim.dylib:${RES}/libKtxShim.dylib"
 if [ "${KSA_PATCHES:-1}" != 0 ] && [ -f "${RES}/GamePatches/KsaPatchesLoader.dll" ]; then
     export DOTNET_STARTUP_HOOKS="${RES}/GamePatches/KsaPatchesLoader.dll${DOTNET_STARTUP_HOOKS:+:${DOTNET_STARTUP_HOOKS}}"
 fi

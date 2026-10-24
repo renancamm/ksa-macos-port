@@ -101,6 +101,7 @@ endforeach()
 
 add_subdirectory(src/ksa-metal)
 add_subdirectory(src/glfw-shim)
+add_subdirectory(src/ktx-shim)
 
 # For build.sh's other steps: where each download is, and the versions the port folder records
 set(brutal_list "")
