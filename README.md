@@ -83,6 +83,7 @@ Where things are:
 | Saves, settings, crash dumps and logs | `~/Documents/My Games/Kitten Space Agency` |
 | Everything the last run printed, including KSA Metal's messages and startup errors | `.../Kitten Space Agency/logs/console.log` |
 | KSA Metal's shader cache | `~/Library/Caches/ksa-metal` |
+| Textures the [KTX shim](#ktx-shim) decompressed (about 2 GB) | `~/Library/Caches/ksa-macos-port/textures` |
 
 To uninstall, delete the app, the port folder, the shader cache and `~/Library/Caches/ksa-macos-port`. The Documents
 folder holds your saves; delete it too if you don't want them.
@@ -112,6 +113,7 @@ the game's files and puts macOS libraries under them:
  │ BRUTAL's and FMOD, for Linux    ├─────────────►│ the same versions, built for macOS  │
  │                                 │              │ by RocketWerkz and FMOD             │
  │                                 │              │ + GLFW shim: fixes a few calls      │
+ │                                 │              │ + KTX shim: file-backed textures    │
  └─────────────────────────────────┘              └─────────────────────────────────────┘
  ┌─────────────────────────────────┐              ┌─────────────────────────────────────┐
  │ Vulkan driver                   │ written here │ KSA Metal                           │
@@ -130,7 +132,8 @@ So the app is made of three kinds of pieces:
   ([.NET](#net)), then get small changes: two bytes in `KSA.dll`'s header, and fixes in its shader sources
   ([Shader fixes](#shader-fixes)). While the game runs, a few changes to its code are made in memory
   ([Game patches](#game-patches)).
-- **Built by this project:** the GLFW shim ([`src/glfw-shim/`](src/glfw-shim/)), KSA Metal
+- **Built by this project:** the GLFW and KTX shims ([`src/glfw-shim/`](src/glfw-shim/),
+  [`src/ktx-shim/`](src/ktx-shim/)), KSA Metal
   ([`src/ksa-metal/`](src/ksa-metal/)), the game patches ([`src/game-patches/`](src/game-patches/)), the launcher
   ([`src/launcher/launcher.sh`](src/launcher/launcher.sh)) and the app bundle around everything
   ([Building the port](#building-the-port)).
@@ -258,6 +261,19 @@ without modifying GLFW; [`glfw_shim.c`](src/glfw-shim/glfw_shim.c) explains each
 | `glfwSetWindowMonitor`, `glfwPollEvents` | GLFW's macOS backend doesn't report the window's new position after a display mode change, so dropdowns opened in the wrong spot | reports it |
 | `glfwSetInputMode` | the game turns raw mouse motion off without checking whether it is supported, and GLFW logs an error after every right-drag | skips those calls |
 
+### KTX shim
+
+The game keeps a copy of every texture's pixels in memory for the whole session, about 3.5 GB with the solar
+system, and macOS can only compress that memory or write it to swap when memory runs short. The launcher also loads
+`libKtxShim.dylib`, which replaces libktx's create and destroy calls: once a texture is loaded, its pixels are mapped
+from a file instead, so macOS can drop those pages and read them back later. [`ktx_shim.c`](src/ktx-shim/ktx_shim.c)
+has the details.
+
+- A texture stored uncompressed is mapped from the game's own file, after a check that the bytes are the same.
+- A compressed one is decompressed once into `~/Library/Caches/ksa-macos-port/textures` and mapped from there. Copies
+  that no start of the game used for 60 days are deleted.
+- `KSA_KTX_SHIM=0` keeps the textures as libktx loads them.
+
 ### The app bundle
 
 `make-app.sh` moves the converted game folder into the app as `Contents/Resources` and adds the port's part from
@@ -265,7 +281,7 @@ without modifying GLFW; [`glfw_shim.c`](src/glfw-shim/glfw_shim.c) explains each
 
 | In the app | What |
 |---|---|
-| `Contents/MacOS/KSA` | the app's executable, [`src/launcher/launcher.sh`](src/launcher/launcher.sh): starts `dotnet KSA.dll` (through StarMap when [StarMap](#mods) is in the app) with `DYLD_LIBRARY_PATH` set to the game folder, so every library comes from the app and never from elsewhere on the Mac, with the GLFW shim and the game patches loaded, and with the [Mac settings](#mac-settings) passed on; its output goes to `console.log` in the game's logs folder, or to the terminal when started from one |
+| `Contents/MacOS/KSA` | the app's executable, [`src/launcher/launcher.sh`](src/launcher/launcher.sh): starts `dotnet KSA.dll` (through StarMap when [StarMap](#mods) is in the app) with `DYLD_LIBRARY_PATH` set to the game folder, so every library comes from the app and never from elsewhere on the Mac, with the GLFW and KTX shims and the game patches loaded, and with the [Mac settings](#mac-settings) passed on; its output goes to `console.log` in the game's logs folder, or to the terminal when started from one |
 | `Contents/MacOS/dotnet`, `host/`, `shared/` | the .NET runtime |
 | `Contents/Resources/*.dylib` | the native libraries, next to the game that loads them |
 | `Contents/Resources/GamePatches/` | the game patches, with Harmony |
@@ -289,6 +305,7 @@ global.json               the .NET SDK version that builds the benchmark and the
 src/port/                 the port folder's commands and lib/, its steps
 src/launcher/             the app's executable
 src/glfw-shim/            the GLFW shim
+src/ktx-shim/             the KTX shim
 src/game-patches/         the game patches and their loader, with their own README
 src/ksa-metal/            KSA Metal, with its own README
 src/benchmark/            the benchmark: mod, report program, tour and vehicles, with its own README
