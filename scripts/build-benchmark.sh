@@ -4,7 +4,7 @@
 # The director (src/benchmark/director/), which KSA Metal Hooks start in the game, is compiled against KSA's
 # assemblies, which are references only: the game loads them, the director doesn't ship them. So it is built for one
 # KSA version, the one the port folder is made for. The report program (src/benchmark/report/) needs nothing from the
-# game. Both are built with the .NET SDK that global.json picks.
+# game, nor do its tests (src/benchmark/tests/), which run here. All are built with the .NET SDK that global.json picks.
 #
 # Usage: scripts/build-benchmark.sh <folder with KSA's converted assemblies>
 set -eo pipefail
@@ -21,3 +21,6 @@ dotnet_build "${WORK}" "${REPO}/src/benchmark/director/KsaMetalBenchmark.csproj"
     die "the benchmark's director did not build (does this KSA version still match?)."
 dotnet_build "${WORK}" "${REPO}/src/benchmark/report/KsaMetalBenchmarkReport.csproj" "${WORK}/report" ||
     die "the report program did not build."
+dotnet_build "${WORK}" "${REPO}/src/benchmark/tests/KsaMetalBenchmarkTests.csproj" "${WORK}/tests" ||
+    die "the benchmark's tests did not build."
+dotnet "${WORK}/tests/KsaMetalBenchmarkTests.dll" || die "the benchmark's tests failed."

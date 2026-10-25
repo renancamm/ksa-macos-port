@@ -144,7 +144,11 @@ camera passes through (`director/Path.cs`); around the vehicles, the camera foll
 (`director/Rig.cs`). The director in `director/` plays the steps, moves the camera, measures the parts each section
 marks, and asks KSA Metal for each frame's GPU time and for the screenshots. `./build.sh` compiles it against the KSA
 version the port is made for. `report/` holds the small program that describes the Mac, writes the report and the
-zip, and compares runs.
+zip, and compares runs. The build then runs its tests ([`tests/`](tests/)), which need no game, and stops when one
+fails: what passes and fails a run, the conditions the report notes, repeats merged into medians, numbers the same on
+a Mac in any region, what `finish` takes from the game's log and puts in the zip, the comparison of two runs, and the
+PNG reader. They write their runs with the director's own classes, so they also check that the report reads what the
+director writes.
 
 Each screenshot is a checkpoint. The game runs its simulation as fast as the Mac allows, so a slower Mac falls a
 little behind the tour. At a checkpoint the tour waits for the game to reach the moment it should be at, pauses it
