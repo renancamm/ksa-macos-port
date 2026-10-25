@@ -55,9 +55,9 @@ static KPipeline* createRayTracingPipeline(KDevice* dev, const VkRayTracingPipel
         return nullptr;
     }
     if (const char* dir = kmtlConfig().dumpSpv) {
-        char path[1200];
-        snprintf(path, sizeof(path), "%s/rt_%016llx.spv", dir, (unsigned long long)module(raygen)->hash);
-        if (FILE* f = fopen(path, "wb")) { fwrite(linked.data(), 4, linked.size(), f); fclose(f); }
+        char name[64];
+        snprintf(name, sizeof(name), "rt_%016llx.spv", (unsigned long long)module(raygen)->hash);
+        kmtlDumpFile(dir, name, linked.data(), linked.size() * 4);
     }
     // The linked kernel goes through the compute path; the module lives as long as the call
     KShaderModule km;

@@ -46,7 +46,11 @@ VKFN(VkResult) vkCreateShaderModule(VkDevice, const VkShaderModuleCreateInfo* ci
     auto* m = new KShaderModule();
     m->spirv.assign(ci->pCode, ci->pCode + ci->codeSize / 4);
     m->hash = kmtlHash(ci->pCode, ci->codeSize);
-    kmtlProfDumpSpirv(ci->pCode, ci->codeSize, m->hash);
+    if (const char* dir = kmtlConfig().dumpSpv) {
+        char name[32];
+        snprintf(name, sizeof(name), "%016llx.spv", (unsigned long long)m->hash);
+        kmtlDumpFile(dir, name, ci->pCode, ci->codeSize, true);
+    }
     *out = (VkShaderModule)m;
     return VK_SUCCESS;
 }
@@ -59,16 +63,22 @@ VKFN(void) vkDestroyShaderModule(VkDevice, VkShaderModule m, const VkAllocationC
 // ---------------------------------------------------------------------------------------------------------------
 // MSL compilation (cached per device by MSL text hash)
 
+void kmtlDumpFile(const char* dir, const std::string& name, const void* data, size_t size, bool keep) {
+    mkdir(dir, 0755);
+    std::string path = std::string(dir) + "/" + name;
+    struct stat st;
+    if (keep && stat(path.c_str(), &st) == 0) return;
+    if (FILE* f = fopen(path.c_str(), "wb")) {
+        fwrite(data, 1, size, f);
+        fclose(f);
+    }
+}
+
 static void dumpMSL(const std::string& name, const std::string& msl, const std::string& err) {
     const char* dir = kmtlConfig().dumpMsl;
     if (!dir) return;
-    mkdir(dir, 0755);
-    std::string path = std::string(dir) + "/" + name + ".metal";
-    if (FILE* f = fopen(path.c_str(), "w")) {
-        fwrite(msl.data(), 1, msl.size(), f);
-        if (!err.empty()) fprintf(f, "\n/* COMPILE ERROR:\n%s\n*/\n", err.c_str());
-        fclose(f);
-    }
+    std::string text = err.empty() ? msl : msl + "\n/* COMPILE ERROR:\n" + err + "\n*/\n";
+    kmtlDumpFile(dir, name + ".metal", text.data(), text.size());
 }
 
 // One compile per MSL text: a second caller (the game and the prewarm thread) waits for the first.
@@ -1038,9 +1048,9 @@ static bool buildTessKernels(KDevice* dev, const VkGraphicsPipelineCreateInfo* c
         km.spirv = std::move(stripped);
         km.hash = kmtlHash(km.spirv.data(), km.spirv.size() * 4);
         if (const char* dir = kmtlConfig().dumpSpv) {
-            char path[1200];
-            snprintf(path, sizeof(path), "%s/passthrough_control_%016llx.spv", dir, (unsigned long long)tcsModule->hash);
-            if (FILE* f = fopen(path, "wb")) { fwrite(km.spirv.data(), 4, km.spirv.size(), f); fclose(f); }
+            char name[64];
+            snprintf(name, sizeof(name), "passthrough_control_%016llx.spv", (unsigned long long)tcsModule->hash);
+            kmtlDumpFile(dir, name, km.spirv.data(), km.spirv.size() * 4);
         }
         VkPipelineShaderStageCreateInfo cst = *tcs;
         cst.module = (VkShaderModule)&km;
@@ -1081,9 +1091,9 @@ static bool buildFusedTess(KDevice* dev, const VkGraphicsPipelineCreateInfo* ci,
     }
     if (const char* dir = kmtlConfig().dumpSpv) {
         auto dump = [&](const char* what, const std::vector<uint32_t>& w) {
-            char path[1200];
-            snprintf(path, sizeof(path), "%s/fused_%s_%016llx.spv", dir, what, (unsigned long long)vsm->hash);
-            if (FILE* f = fopen(path, "wb")) { fwrite(w.data(), 4, w.size(), f); fclose(f); }
+            char name[64];
+            snprintf(name, sizeof(name), "fused_%s_%016llx.spv", what, (unsigned long long)vsm->hash);
+            kmtlDumpFile(dir, name, w.data(), w.size() * 4);
         };
         dump("control", ctl); dump("vertex", vred); dump("eval", eval);
     }

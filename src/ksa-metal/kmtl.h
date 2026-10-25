@@ -631,6 +631,9 @@ void kmtlZeroImage(KImage* img);  // command.mm: a new color image cleared to ze
 uint64_t kmtlBufferViewId(VkBufferView view);
 MTLCompareFunction kmtlCompare(VkCompareOp op);
 uint64_t kmtlHash(const void* data, size_t size);
+// pipeline.mm: a file in a dump folder (KSA_MTL_DUMP_SPV, KSA_MTL_DUMP_MSL), the folder made if missing; with keep, a
+// file already there stays
+void kmtlDumpFile(const char* dir, const std::string& name, const void* data, size_t size, bool keep = false);
 id<MTLLibrary> kmtlCompileStageMSL(KDevice* dev, const std::string& msl, std::string* err);
 
 // Result of translating one pipeline stage (SPIR-V -> MSL plus reflection); cached on disk by shadercache.mm
@@ -682,7 +685,6 @@ id<MTLBlitCommandEncoder> kmtlProfBlitEncoder(KCommandBuffer* cb);
 void kmtlProfNote(KCommandBuffer* cb, KPipeline* p, bool dispatch, uint32_t n);
 void kmtlProfEncoderEnded(KCommandBuffer* cb);
 void kmtlProfSubmit(KCommandBuffer* cb, id<MTLCommandBuffer> mtl);
-void kmtlProfDumpSpirv(const uint32_t* code, size_t bytes, uint64_t hash);
 
 // Acceleration structures (accel.mm)
 void kmtlRegisterMemory(KDeviceMemory* m);

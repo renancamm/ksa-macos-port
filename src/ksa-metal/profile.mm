@@ -12,7 +12,6 @@
 //   KSA_MTL_LABELS=1        name every encoder after its pipelines, for Instruments, the Metal HUD and Xcode's
 //                           frame capture (command.mm)
 #include "kmtl.h"
-#include <sys/stat.h>
 
 struct KProfEncoder {
     char type = '?';  // r render, c compute, b blit
@@ -251,18 +250,4 @@ void kmtlProfSubmit(KCommandBuffer* cb, id<MTLCommandBuffer> mtl) {
         kmtlRecycleTimestamps(s->samples);
         delete s;
     }];
-}
-
-void kmtlProfDumpSpirv(const uint32_t* code, size_t bytes, uint64_t hash) {
-    const char* dir = kmtlConfig().dumpSpv;
-    if (!dir) return;
-    mkdir(dir, 0755);
-    char path[1200];
-    snprintf(path, sizeof(path), "%s/%016llx.spv", dir, (unsigned long long)hash);
-    struct stat st;
-    if (stat(path, &st) == 0) return;
-    if (FILE* f = fopen(path, "wb")) {
-        fwrite(code, 1, bytes, f);
-        fclose(f);
-    }
 }
