@@ -12,8 +12,9 @@
 #    them slightly differently: black stripes and see-through patches on clutter. Fix: declare it invariant.
 # For the hooks' render scale (src/hooks/), where the shaders' screen size is the render size:
 # 3. Sizes that mean pixels on the window use the window's size, which the patches put in the camera data's spare
-#    int (0 without render scale: then nothing changes): ground clutter's level of detail (CullInstances.comp), the
-#    size of star and planet discs (StaticCelestialDistance.vert) and of the starfield's glow (Star.frag).
+#    int (0 without render scale: then nothing changes): the level of detail of ground clutter (CullInstances.comp)
+#    and of ring rocks (RingMeshCulling.comp), the size of star and planet discs (StaticCelestialDistance.vert) and
+#    of the starfield's glow (Star.frag).
 # 4. LightFineClusterCompact.comp: a tile whose depth range comes out inverted makes `maxBin - minBin + 1u` wrap
 #    to about 4 billion iterations, a GPU hang. Fix: skip such a tile.
 #
@@ -85,6 +86,8 @@ fix Common/Global.glsl replace "    int pad0;\n    mat4 galacticPlane;" \
     "defined the window's size"
 fix Planet/GroundClutter/CullInstances.comp replace "projRadius * global.camera.screenHeight)" \
     "projRadius * KSA_WINDOW_HEIGHT)" "made the level of detail use the window's height"
+fix Rings/Culling/RingMeshCulling.comp replace "projRadius * global.camera.screenHeight * 0.5;" \
+    "projRadius * KSA_WINDOW_HEIGHT * 0.5;" "made the ring rocks' level of detail use the window's height"
 fix StaticCelestialDistance.vert replace \
     "scalePixel / global.camera.screenWidth;\n    vertPosition.y *= instanceData.scalePixel / global.camera.screenHeight;" \
     "scalePixel / KSA_WINDOW_WIDTH;\n    vertPosition.y *= instanceData.scalePixel / KSA_WINDOW_HEIGHT;" \
