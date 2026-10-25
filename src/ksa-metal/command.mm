@@ -134,11 +134,7 @@ void KCommandBuffer::joinCommands() {
     if (!mtl) return;
     endEncoder();
     // Later command buffers start after the chain fence, which the join updates after resolves still in flight
-    bool resolving = resolveWaited != resolveSignaled;
-    if (resolving) {
-        [mtl encodeWaitForEvent:resolveEvent value:resolveSignaled];
-        resolveWaited = resolveSignaled;
-    }
+    waitForAllResolves();
     id<MTLBlitCommandEncoder> b = [mtl blitCommandEncoder];
     std::vector<id<MTLFence>> seen;
     for (id<MTLFence> f : lastFence) {
@@ -262,7 +258,11 @@ void KCommandBuffer::waitForResolves(uint32_t roles) {
     bool dependent = false;
     for (uint32_t r = roles; r; r &= r - 1)
         if (needMask[classIndex(r & -r)] & kClassFragment) dependent = true;
-    if (!dependent) return;
+    if (dependent) waitForAllResolves();
+}
+
+void KCommandBuffer::waitForAllResolves() {
+    if (resolveWaited == resolveSignaled) return;
     [mtl encodeWaitForEvent:resolveEvent value:resolveSignaled];
     resolveWaited = resolveSignaled;
 }

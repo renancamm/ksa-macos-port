@@ -93,6 +93,9 @@ struct UpscaleState {
     bool prevSceneValid = false;  // prevScene holds the frame before (no gap, no new interpolator)
     float frameJitter[2] = {0, 0}, fovY = 1, nearPlane = 0.1f, farPlane = 1e11f, deltaTime = 0.016f;
     uint64_t frameSerial = 0, presentedSerial = 0;
+    // The barriers around the interpolator in the present's command buffer, and its KSA_MTL_FX_SHOTS count
+    id<MTLEvent> presentEvent = nil;
+    uint64_t presentEventValue = 0, fxShotCount = 0;
     bool frameReset = true;
     bool failed = false;
 };
@@ -176,12 +179,17 @@ static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uin
     return true;
 }
 
+// Everything encoded before it finishes before anything encoded after it starts: a signal and a wait on an event
+static void eventBarrier(id<MTLCommandBuffer> cb, id<MTLEvent> event, uint64_t* value) {
+    [cb encodeSignalEvent:event value:++*value];
+    [cb encodeWaitForEvent:event value:*value];
+}
+
 // Everything before the upscaler finishes before it starts, and it finishes before anything after it: the game's
 // images are untracked, and MetalFX's own encoders can't wait on KSA Metal's fences
 static void fullBarrier(KCommandBuffer* cb) {
     if (!cb->fxEvent) cb->fxEvent = [cb->device->mtl newEvent];
-    [cb->mtl encodeSignalEvent:cb->fxEvent value:++cb->fxValue];
-    [cb->mtl encodeWaitForEvent:cb->fxEvent value:cb->fxValue];
+    eventBarrier(cb->mtl, cb->fxEvent, &cb->fxValue);
 }
 
 VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA* info) {
@@ -196,10 +204,7 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
     std::lock_guard<std::mutex> lock(g_up.m);
     if (!prepare(cb->device, info->inputWidth, info->inputHeight, outW, outH, spatial)) return;
     cb->endEncoder();
-    if (cb->resolveWaited != cb->resolveSignaled) {
-        [cb->mtl encodeWaitForEvent:cb->resolveEvent value:cb->resolveSignaled];
-        cb->resolveWaited = cb->resolveSignaled;
-    }
+    cb->waitForAllResolves();
     fullBarrier(cb);
     if (spatial) {
         g_up.spatial.colorTexture = color->mtl;
@@ -289,10 +294,7 @@ VKFN(void) vkCmdUpscaleSnapshotKSA(VkCommandBuffer commandBuffer, VkImage image)
         g_up.snapshotTex = [cb->device->mtl newTextureWithDescriptor:d];
     }
     cb->endEncoder();
-    if (cb->resolveWaited != cb->resolveSignaled) {
-        [cb->mtl encodeWaitForEvent:cb->resolveEvent value:cb->resolveSignaled];
-        cb->resolveWaited = cb->resolveSignaled;
-    }
+    cb->waitForAllResolves();
     fullBarrier(cb);
     id<MTLBlitCommandEncoder> b = [cb->mtl blitCommandEncoder];
     b.label = @"upscale snapshot";
@@ -371,12 +373,9 @@ id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<
              (unsigned long)color.height);
         g_up.prevSceneValid = false;
     }
-    static id<MTLEvent> event = nil;
-    static uint64_t value = 0;
-    if (!event) event = [d newEvent];
+    if (!g_up.presentEvent) g_up.presentEvent = [d newEvent];
     id<MTLTexture> result = nil;
-    [cb encodeSignalEvent:event value:++value];
-    [cb encodeWaitForEvent:event value:value];
+    eventBarrier(cb, g_up.presentEvent, &g_up.presentEventValue);
     if (!g_up.frameReset && g_up.prevSceneValid) {
         id<MTLFXFrameInterpolator> fi = g_up.interpolator;
         fi.colorTexture = g_up.scene;
@@ -398,13 +397,11 @@ id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<
         fi.depthReversed = YES;
         fi.outputTexture = g_up.interpolated;
         [fi encodeToCommandBuffer:cb];
-        [cb encodeSignalEvent:event value:++value];
-        [cb encodeWaitForEvent:event value:value];
+        eventBarrier(cb, g_up.presentEvent, &g_up.presentEventValue);
         result = g_up.interpolated;
         // KSA_MTL_FX_SHOTS=<dir>: every 300th interpolated frame, with the scenes around it and this frame as shown
         const char* shotDir = kmtlConfig().fxShots;
-        static uint64_t count = 0;
-        if (shotDir && ++count % 300 == 0) {
+        if (shotDir && ++g_up.fxShotCount % 300 == 0) {
             NSUInteger w = color.width, h = color.height;
             bool bgra = color.pixelFormat == MTLPixelFormatBGRA8Unorm || color.pixelFormat == MTLPixelFormatBGRA8Unorm_sRGB;
             id<MTLTexture> texs[4] = {g_up.prevScene, g_up.interpolated, g_up.scene, color};
@@ -415,7 +412,7 @@ id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<
                 [sb copyFromTexture:texs[i] sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(w, h, 1)
                            toBuffer:buf destinationOffset:0 destinationBytesPerRow:w * 4 destinationBytesPerImage:w * h * 4];
                 [sb endEncoding];
-                std::string path = std::string(shotDir) + "/fi_" + std::to_string(count) + "_" + names[i] + ".png";
+                std::string path = std::string(shotDir) + "/fi_" + std::to_string(g_up.fxShotCount) + "_" + names[i] + ".png";
                 [cb addCompletedHandler:^(id<MTLCommandBuffer>) { kmtlWritePNG(buf, w, h, bgra, path); }];
             }
         }
@@ -424,7 +421,6 @@ id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<
     id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
     [b copyFromTexture:g_up.scene toTexture:g_up.prevScene];
     [b endEncoding];
-    [cb encodeSignalEvent:event value:++value];
-    [cb encodeWaitForEvent:event value:value];
+    eventBarrier(cb, g_up.presentEvent, &g_up.presentEventValue);
     return result;
 }

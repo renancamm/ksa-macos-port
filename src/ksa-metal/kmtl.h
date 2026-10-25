@@ -491,7 +491,8 @@ struct KCommandBuffer : KDispatchable {
     id<MTLEvent> fxEvent = nil;
     uint64_t fxValue = 0;
     bool fxSnapshot = false;  // vkCmdUpscaleSnapshotKSA ran in this recording
-    void waitForResolves(uint32_t roles);
+    void waitForResolves(uint32_t roles);  // an encoder of these roles that depends on fragment work
+    void waitForAllResolves();             // whatever comes next (the end of recording, MetalFX)
     void beginCommands();
     void joinCommands();
     id<MTLFence> newFence();
