@@ -689,7 +689,6 @@ id<MTLBlitCommandEncoder> kmtlProfBlitEncoder(KCommandBuffer* cb);
 void kmtlProfNote(KCommandBuffer* cb, KPipeline* p, bool dispatch, uint32_t n);
 void kmtlProfEncoderEnded(KCommandBuffer* cb);
 void kmtlProfSubmit(KCommandBuffer* cb, id<MTLCommandBuffer> mtl);
-void kmtlProfPresent();
 void kmtlProfDumpSpirv(const uint32_t* code, size_t bytes, uint64_t hash);
 
 // Acceleration structures (accel.mm)

@@ -1242,6 +1242,7 @@ VKFN(void) vkCmdEndRenderPass(VkCommandBuffer commandBuffer) {
 }
 
 VKFN(void) vkCmdEndRenderPass2(VkCommandBuffer commandBuffer, const VkSubpassEndInfo*) {
+    KTRACE_FIRST();
     ((KCommandBuffer*)commandBuffer)->endRender();
 }
 

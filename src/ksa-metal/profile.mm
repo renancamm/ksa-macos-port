@@ -33,7 +33,6 @@ struct KProfState {
 static FILE* g_prof = nullptr;
 // The profiled presents; ksaMtlProfileFrames (the benchmark's @gpuprof) moves them to the next ones
 static std::atomic<uint64_t> g_profFirst{2000}, g_profCount{300};
-static std::atomic<uint64_t> g_profPresent{0};
 static std::mutex g_profMutex;  // guards g_samplePool and the CSV
 static id<MTLCounterSet> g_timestampSet = nil;
 // Metal caps the number of live counter sample buffers: they are recycled after their command buffer completes
@@ -64,17 +63,15 @@ static bool profInit(KDevice* dev) {
 
 static bool profiling(KDevice* dev) {
     if (!profInit(dev)) return false;
-    uint64_t p = g_profPresent.load();
+    uint64_t p = kmtlPresentCount();
     return p >= g_profFirst && p < g_profFirst + g_profCount;
 }
-
-void kmtlProfPresent() { g_profPresent++; }
 
 // Profiles the next <count> presents (with KSA_MTL_GPUPROF set), marked in the CSV by a row
 // "<first present>,label,<label>"; returns false when the profiler is off
 KMTL_EXPORT bool ksaMtlProfileFrames(const char* label, uint32_t count) {
     if (!g_prof) return false;
-    uint64_t first = g_profPresent.load() + 1;
+    uint64_t first = kmtlPresentCount() + 1;
     {
         std::lock_guard<std::mutex> lock(g_profMutex);
         fprintf(g_prof, "%llu,label,%s\n", (unsigned long long)first, label);
@@ -118,7 +115,7 @@ void kmtlProfBegin(KCommandBuffer* cb) {
         }
     }
     s->capacity = 4096;
-    s->frame = g_profPresent.load();
+    s->frame = kmtlPresentCount();
     cb->prof = s;
 }
 

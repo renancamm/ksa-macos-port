@@ -497,7 +497,7 @@ VKFN(void) vkGetPhysicalDeviceFeatures2(VkPhysicalDevice, VkPhysicalDeviceFeatur
             ON(descriptorBindingUpdateUnusedWhilePending); ON(descriptorBindingPartiallyBound);
             ON(descriptorBindingVariableDescriptorCount); ON(runtimeDescriptorArray); ON(scalarBlockLayout);
             ON(imagelessFramebuffer); ON(uniformBufferStandardLayout); ON(shaderSubgroupExtendedTypes);
-            ON(separateDepthStencilLayouts); ON(hostQueryReset); ON(timelineSemaphore); ON(bufferDeviceAddress);
+            ON(separateDepthStencilLayouts); ON(hostQueryReset); ON(bufferDeviceAddress);
             ON(vulkanMemoryModel); ON(vulkanMemoryModelDeviceScope); ON(shaderOutputViewportIndex);
             ON(shaderOutputLayer); ON(subgroupBroadcastDynamicId);
             break;

@@ -310,7 +310,9 @@ enum class ShotUnit { Presents, InGameFrames, InGameSeconds };
 struct Shot { double at; std::string path; };
 
 static std::mutex g_frameMutex;
-static uint64_t g_presents = 0, g_ingamePresent = 0;
+// Read without the lock by game threads (kmtlPresentCount: the throttle, stall logs, the GPU profiler)
+static std::atomic<uint64_t> g_presents{0};
+static uint64_t g_ingamePresent = 0;
 uint64_t kmtlPresentCount() { return g_presents; }
 static uint32_t g_frameDraws = 0, g_frameDispatches = 0, g_framePasses = 0, g_frameSubmits = 0;
 static FILE* g_frameCsv = nullptr;
@@ -563,7 +565,6 @@ void kmtlOnPresent(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb) {
     ensureInstruments();
     std::lock_guard<std::mutex> lock(g_frameMutex);
     g_presents++;
-    kmtlProfPresent();
     auto now = std::chrono::steady_clock::now();
     double ms = std::chrono::duration<double, std::milli>(now - g_lastPresent).count();
     g_lastPresent = now;

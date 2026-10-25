@@ -631,8 +631,12 @@ VKFN(void) vkGetImageMemoryRequirements2(VkDevice, const VkImageMemoryRequiremen
 }
 
 VKFN(void) vkGetDeviceImageMemoryRequirements(VkDevice device, const VkDeviceImageMemoryRequirements* info, VkMemoryRequirements2* r) {
-    VkImage tmp;
-    vkCreateImage(device, info->pCreateInfo, nullptr, &tmp);
+    KTRACE_FIRST();
+    VkImage tmp = VK_NULL_HANDLE;
+    if (vkCreateImage(device, info->pCreateInfo, nullptr, &tmp) != VK_SUCCESS) {
+        r->memoryRequirements = {};
+        return;
+    }
     imageRequirements((KImage*)tmp, &r->memoryRequirements);
     fillDedicated(r->pNext, false);
     kmtlDestroyImage((KImage*)tmp);
@@ -678,6 +682,7 @@ VKFN(VkResult) vkBindImageMemory(VkDevice, VkImage image, VkDeviceMemory memory,
 }
 
 VKFN(VkResult) vkBindImageMemory2(VkDevice, uint32_t n, const VkBindImageMemoryInfo* infos) {
+    KTRACE_FIRST();
     for (uint32_t i = 0; i < n; i++) {
         VkResult r = bindImage(infos[i].image, infos[i].memory, infos[i].memoryOffset);
         if (r != VK_SUCCESS) return r;
