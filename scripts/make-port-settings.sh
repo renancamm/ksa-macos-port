@@ -9,9 +9,9 @@ set -eo pipefail
 cat << 'EOF'
 # Port settings for Kitten Space Agency (ksa-macos-port)
 #
-# The Mac Port tab in the game's settings changes these too, and says which take effect at once and which when the
-# game starts again. A line you delete takes its default (the value written here); delete the file to get this one
-# back. Messages about the file go to logs/console.log in this folder.
+# The Mac Port tab in the game's settings (Esc) changes these too, and says which take effect at once and which when
+# the game starts again. A line you delete takes its default (the value written here); delete the file to get this
+# one back. Messages about the file go to logs/console.log in this folder.
 EOF
 
 awk -F'|' '
@@ -50,8 +50,8 @@ awk -F'|' '
         printf "\n[%s]\n", section
         if (section == "developer") {
             print ""
-            comment("For work on the port, and for testing a problem: KSA Metal'"'"'s README in the port'"'"'s repository " \
-                "(src/ksa-metal/) has the details. Remove the # in front of a line to use it.")
+            comment("For work on the port, and for testing a problem: the driver'"'"'s README in the port'"'"'s repository " \
+                "(src/ksa-metal/) explains them. Remove the # in front of a line to use it.")
         }
         next
     }

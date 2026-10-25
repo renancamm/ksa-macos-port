@@ -11,12 +11,12 @@ KSA's Linux version.
 and ray tracing. Expect rough edges.
 
 Bug reports are welcome as GitHub issues; attach the files in `~/Documents/My Games/Kitten Space Agency/logs`.
-Benchmark reports from your Mac are welcome too ([Extras](#extras)).
+Benchmark reports from your Mac are welcome too ([The benchmark](#the-benchmark)).
 
 1. [Quick start](#quick-start): install and update.
 2. [How it works](#how-it-works): what the port changes, step by step.
-3. [KSA Metal](#ksa-metal): the Vulkan driver, and the settings and patches that make the game lighter.
-4. [Extras](#extras): the StarMap mod loader and the benchmark.
+3. [KSA Metal](#ksa-metal): the Vulkan driver that draws the game, the Mac Port tab, the hooks and the benchmark.
+4. [Extras](#extras): the StarMap mod loader.
 5. [Credits and license](#credits-and-license).
 
 ## Quick start
@@ -64,7 +64,7 @@ Where things are:
 | The app | `~/Applications/Kitten Space Agency.app` |
 | Saves, settings, crash dumps and logs | `~/Documents/My Games/Kitten Space Agency` |
 | Everything the last run printed, including KSA Metal's messages and startup errors | `.../Kitten Space Agency/logs/console.log` |
-| KSA Metal's shader cache, and the textures the [KTX shim](#ktx-shim) decompressed (about 2 GB) | `~/Library/Caches/ksa-metal` |
+| KSA Metal's shader cache, and the textures the [KTX shim](#the-ktx-shim) decompressed (about 2 GB) | `~/Library/Caches/ksa-metal` |
 
 To uninstall, delete the app, the port folder, the shader cache and `~/Library/Caches/ksa-macos-port`. The Documents
 folder holds your saves; delete it too if you don't want them.
@@ -110,7 +110,7 @@ So the app is made of three kinds of pieces:
 - **Patched:** the game's own files lose the Linux .NET runtime and the two files that point the .NET host at it
   ([.NET](#net)), then get small changes: two bytes in `KSA.dll`'s header, and bug fixes in its shader sources
   ([Shader fixes](#shader-fixes)).
-- **Built by this project:** the GLFW shim ([`src/glfw-shim/`](src/glfw-shim/)), KSA Metal
+- **Built by this project:** the GLFW shim ([`src/glfw-shim/`](src/glfw-shim/)), KSA Metal's driver
   ([`src/ksa-metal/`](src/ksa-metal/)), the launcher ([`src/launcher/launcher.sh`](src/launcher/launcher.sh)) and the
   app bundle around everything ([Building the port](#building-the-port)).
 
@@ -228,9 +228,9 @@ without modifying GLFW; [`glfw_shim.c`](src/glfw-shim/glfw_shim.c) explains each
 | `Contents/MacOS/KSA` | the app's executable, [`src/launcher/launcher.sh`](src/launcher/launcher.sh): starts `dotnet KSA.dll` (through StarMap when [StarMap](#mods) is in the app) with `DYLD_LIBRARY_PATH` set to the game folder, so every library comes from the app and never from elsewhere on the Mac, and with the GLFW shim loaded; its output goes to `console.log` in the game's logs folder, or to the terminal when started from one |
 | `Contents/MacOS/dotnet`, `host/`, `shared/` | the .NET runtime |
 | `Contents/Resources/*.dylib` | the native libraries, next to the game that loads them |
-| `Contents/Resources/Hooks/` | [KSA Metal Hooks](#hooks), with Harmony |
-| `Contents/Resources/Benchmark/` | the [benchmark](#benchmark): its director, its report program, the tour and its vehicles |
-| `Contents/Resources/port-settings.txt`, `port-settings.toml` | the [port settings](#port-settings): the table of them all, and the commented copy the app puts in your documents folder |
+| `Contents/Resources/Hooks/` | [KSA Metal Hooks](#the-hooks), with Harmony |
+| `Contents/Resources/Benchmark/` | the [benchmark](#the-benchmark): its director, its report program, the tour and its vehicles |
+| `Contents/Resources/port-settings.txt`, `port-settings.toml` | the [port settings](#the-mac-port-tab): the table of them all, and the commented copy the app puts in your documents folder |
 | `Contents/Resources/Licenses/` | every component's licence and notices ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)) |
 | `Contents/Resources/AppIcon.icns`, `Contents/Info.plist` | the icon; the game's version, the port's version and commit, and `NSHighResolutionCapable` off, so the game renders one pixel per point and its Resolution setting is the number of pixels it renders |
 
@@ -261,19 +261,24 @@ deps/, dist/              made by the build: downloads and build trees; the port
 
 ## KSA Metal
 
+KSA Metal is the port's Vulkan driver and what grew around it: **hooks** that patch the game's rendering code to make
+drawing cheaper, a **benchmark** that measures how the game runs on a Mac, and the **Mac Port** tab in the game's
+settings, where all of it is set. The game runs with the driver alone; the rest can be turned off, and the defaults
+keep the game's image as it is.
+
+### The driver
+
 KSA draws everything through Vulkan, a cross-platform graphics API. macOS doesn't have Vulkan; its GPU API is Metal.
-KSA Metal sits between the two: it implements the Vulkan functions KSA calls, and does the work with Metal.
+The driver sits between the two: it implements the Vulkan functions KSA calls, and does the work with Metal.
 
 On other platforms, a Vulkan program loads `libvulkan`, the *loader*, which finds and loads the actual driver for
-the GPU. KSA Metal takes the place of both: the app ships it as `libvulkan.1.dylib`, so BRUTAL, `libVulkanEx` and
+the GPU. The driver takes the place of both: the app ships it as `libvulkan.1.dylib`, so BRUTAL, `libVulkanEx` and
 GLFW find their Vulkan functions directly in it. Nothing in the game changes.
 
-KSA Metal implements only the part of Vulkan that KSA uses: about 180 functions and two dozen extensions, one GPU.
-That keeps it small (about 9,000 lines of Objective-C++ in [`src/ksa-metal/`](src/ksa-metal/)) and lets each Vulkan
+It implements only the part of Vulkan that KSA uses: about 180 functions and two dozen extensions, one GPU. That
+keeps it small (about 9,000 lines of Objective-C++ in [`src/ksa-metal/`](src/ksa-metal/)) and lets each Vulkan
 concept map onto Metal in the most direct way that works for this game. It is not a general Vulkan driver, and
 other Vulkan programs won't run on it. It needs macOS 26 for the Metal features it uses.
-
-### How it works, in short
 
 Vulkan and Metal are both explicit, low-level GPU APIs with similar ideas, which is what makes a thin translation
 possible. In short:
@@ -281,8 +286,7 @@ possible. In short:
 - **Memory:** each block of Vulkan device memory is a Metal heap. Buffers are offsets into it, images are textures
   placed in it.
 - **Shaders:** SPIR-V is translated to Metal's shading language with SPIRV-Cross when a pipeline is created, on
-  worker threads, and the translations are cached on disk. Helper functions read the game's parameter blocks in
-  place, where SPIRV-Cross would copy them for each call.
+  worker threads, and the translations are cached on disk.
 - **Descriptors:** each descriptor set is written directly as a Metal argument buffer.
 - **Commands:** Metal commands are encoded while the game records, so submitting is cheap.
 - **Synchronization:** barriers become Metal fences between groups of commands, sorted by stage, so independent
@@ -295,75 +299,68 @@ possible. In short:
 The detail is in [`src/ksa-metal/README.md`](src/ksa-metal/README.md): its switches, how to build and test a change,
 how each Vulkan concept maps onto Metal, and what each source file holds.
 
-The game runs without what follows. Around KSA Metal, a few more changes make drawing cheaper: settings that trade
-some image quality for speed, patches to the game's rendering code, and a shim that lets macOS page texture memory
-out. Each of them can be turned off.
+### The Mac Port tab
 
-### Port settings
+The port's own settings are in the game's settings (Esc), in the **Mac Port** tab. It works like the game's other
+tabs: Apply saves, the game offers to restart when a setting takes effect only at startup, and a row that needs
+another setting is greyed out until that one is on. Each row's tooltip says what it changes and what it costs.
 
-The port's settings are in the **Mac Port** tab of the game's settings (Esc), and in `port-settings.toml`, next to the
-game's own `settings.toml` in `~/Documents/My Games/Kitten Space Agency` (the app puts a commented copy there the first
-time it starts). The tab works like the game's own: Apply writes the file, and when a setting takes effect only when
-the game starts, the game offers to restart. A setting that needs another one is greyed out until that one is on.
-
-| Section | Settings |
+| Section | What's there |
 |---|---|
-| Image | `upscaling`: Apple's MetalFX, off by default, which the three others need. `render_scale`: draws the 3D view at 50 to 100% of the window's size and scales it back up, less work for the GPU and a slightly softer image. `frame_interpolation`: a frame made by MetalFX between every two the game draws, smoother motion with a little more delay. `retina`: the image at the display's full resolution |
-| Performance | `cloud_shadows`: `"slow"` saves about 1.5 ms per frame over Earth, and cloud shadows follow moving clouds about 4 times more slowly. `plume_shadows`: with the game's Plume trail shadows on, `"light"` draws the smoke's shadow maps smaller, so the smoke of a big rocket draws about 10-20% faster, with coarser shadows on the ground. `crew_portraits`: the crew panel's faces are drawn only while the panel shows them |
-| Optimizations | the same image, faster: the [hooks](#hooks)' patches and KSA Metal's own ways; on by default, each can be turned off to find a problem |
-| Game features | what the Mac offers the game: tessellation, ray queries, ray tracing. Off hides it from the game; while it's available, the game's own settings decide |
-| Overlay | Apple's Metal Performance HUD |
-| Benchmark | the [benchmark](#benchmark), run from the game |
+| Image | Apple's MetalFX, off by default: a render scale that draws the 3D view smaller and scales it back up, frame interpolation, and Retina output |
+| Performance | a visible trade for speed: cloud shadows, plume shadows, crew portraits. The game's own behaviour is one of the choices |
+| Optimizations | the same image, faster: on by default. Turn one off to find out whether it causes a problem |
+| Game features | what the Mac offers the game: tessellation, ray queries, ray tracing. Off hides one from the game; while it is available, the game's own settings decide |
+| Overlay | Apple's Metal Performance HUD over the game |
+| Benchmark | runs the [benchmark](#the-benchmark) |
 
-The file has one more section, `[developer]`: switches for testing and debugging, which the tab doesn't show
-([`src/ksa-metal/README.md`](src/ksa-metal/README.md) explains KSA Metal's). Each setting is an environment variable
-that the launcher sets when the game starts ([`port-settings.txt`](src/launcher/port-settings.txt) says which); a
-variable set where the game is started wins over the file, and the tab shows that setting as set outside.
+The settings live in `port-settings.toml`, next to the game's `settings.toml` in
+`~/Documents/My Games/Kitten Space Agency`; the app puts a commented copy there the first time it starts, and the
+file can be edited instead of the tab. Its `[developer]` section holds switches for testing and debugging, which
+the tab doesn't show. Every setting reaches the driver, the hooks and the shims as an environment variable the
+launcher sets ([`port-settings.txt`](src/launcher/port-settings.txt) is the table of them all); a variable set where
+the game is started wins over the file, and the tab shows that row as set outside.
 
-These settings are recent. With frame interpolation, rocket plumes can look ragged in the frames MetalFX makes. If
-something looks wrong, set the setting back to its default, and please open an issue. `logs/console.log` shows how
-the game read the file.
+The Image and Performance settings are recent. If something looks wrong, set the setting back to its default and
+please open an issue; `console.log` shows how the game read the file.
 
-### Hooks
+### The hooks
 
-Some changes need the game's C# code. KSA Metal Hooks make them in memory when the game starts, with
-[Harmony](https://github.com/pardeike/Harmony), so `KSA.dll` stays as it is on disk. Each patch finds the code it
-changes by name and by pattern; when a KSA update has moved that code, the patch is left out, `console.log` says so,
-and the game runs as it would without it. [`src/hooks/`](src/hooks/) has the details.
+Some of the port's changes need the game's C# code. KSA Metal Hooks make them in memory when the game starts, with
+[Harmony](https://github.com/pardeike/Harmony), so `KSA.dll` stays as it is on disk. Each hook finds the code it
+changes by name and by pattern; when a KSA update has moved that code, the hook is left out, `console.log` says so,
+and the game runs as it would without it.
 
-| Patch | What it changes | Image |
-|---|---|---|
-| Terrain cache | the terrain's height passes (one per terrain modifier) run only when their inputs changed, and every 2 s; its normals pass only when the planet has rotated | the same |
-| Outline skip | the outline pass around selected parts runs only while a part is selected | the same |
-| Crew portraits | the crew panel's faces are drawn only while the panel is on screen | the same |
-| Worker parking | the game's idle job workers sleep after 0.25 ms instead of spinning for half a frame | the same |
-| Render scale | `upscaling`, `render_scale`: the 3D view's size, and MetalFX before the final composite; `frame_interpolation` also needs it | changes, by choice |
-| Cloud shadows | `cloud_shadows = "slow"`: fewer cloud shadow slices refreshed per frame | changes in motion, by choice |
-| Plume shadows | `plume_shadows = "light"`: smaller shadow maps for the smoke | changes, by choice |
+Their patches are the tab's rows that reach into the game. Four keep the image and are on by default: the terrain
+cache, the selection outline skip, worker parking and the crew portraits. Three change it and are off until you
+choose them: render scale, cloud shadows and plume shadows. The hooks also draw the tab itself, start the benchmark
+from it, and make the game's Restart button start the app again. [`src/hooks/`](src/hooks/) says what each one
+changes and how; `hooks = false` in the file's `[developer]` section starts the game without them.
 
-For the render scale, `convert-shaders.sh` also edits three shaders to measure in the window's size rather than the
-smaller view's; without it, they draw as before.
+### The KTX shim
 
-The hooks also draw the Mac Port tab, start the benchmark's runs, and make the game's Restart button start the app
-again (in the app it starts .NET alone, so the game only quit). `hooks = false` in the file's `[developer]` section
-starts the game without them.
-
-### KTX shim
-
-The game keeps a copy of every texture's pixels in memory for the whole session, about 3.5 GB with the solar
-system, and macOS can only compress that memory or write it to swap when memory runs short. The launcher loads
-`libKtxShim.dylib` like the GLFW shim; it replaces libktx's create and destroy calls, so that once a texture is
-loaded, its pixels are mapped from a file instead, and macOS can drop those pages and read them back later.
+The game keeps every texture's pixels in memory for the whole session, about 3.5 GB with the solar system, which
+macOS can only compress or swap when memory runs short. The KTX shim, which the launcher loads like the GLFW shim,
+maps a loaded texture's pixels from a file instead, so macOS can drop them and read them back when needed. A texture
+stored uncompressed maps to the game's own file; a compressed one is decompressed once into the cache folder (about
+2 GB; copies unused for 60 days are deleted). It is the tab's **Texture file mapping** row;
 [`ktx_shim.c`](src/ktx-shim/ktx_shim.c) has the details.
 
-- A texture stored uncompressed is mapped from the game's own file, after a check that the bytes are the same.
-- A compressed one is decompressed once into `textures/` in KSA Metal's cache folder and mapped from there. Copies
-  unused for 60 days are deleted.
-- `KSA_KTX_SHIM=0` keeps the textures as libktx loads them.
+### The benchmark
+
+The benchmark plays a fixed tour of the game in one session (Earth from orbit, flights over its ground and sea, other
+worlds, a kitten in the grass, a rocket launch, a 2,000-part rocket blown up on its pad), measures each part and
+writes a report to compare with another run, and a zip you can share as an issue if you like. It is in the app: run
+it from the Mac Port tab (**Run benchmark**), or from the port folder:
+
+```bash
+./benchmark.sh
+```
+
+[`src/benchmark/README.md`](src/benchmark/README.md) explains the tour, its presets and options, how to compare runs,
+and the tools it brings for work on the port (repeats, GPU profiles, Instruments traces, Xcode frame captures).
 
 ## Extras
-
-Two extras: StarMap, which the port folder adds to the app if you like, and the benchmark, which is in the app.
 
 ### Mods
 
@@ -382,20 +379,6 @@ StarMap is a separate project: mods made for it may not work on a Mac, and a new
 is updated. Its release is a Windows build, but only two of its files are Windows-specific: the port leaves out
 `StarMap.exe` (the app runs `StarMap.dll` with its own .NET runtime) and marks `StarMap.dll` as ARM64, as it does for
 `KSA.dll`.
-
-### Benchmark
-
-The port's benchmark plays a fixed tour of the game in one session (Earth from orbit, flights over its ground and sea,
-other worlds, a kitten in the grass, a rocket launch, a 2,000-part rocket blown up on its pad), measures each part and
-writes a report to compare with another run, and a zip you can share as an issue if you like. It is in the app: run it
-from the game's settings (**Mac Port**, **Run benchmark**), or from the port folder:
-
-```bash
-./benchmark.sh
-```
-
-[`src/benchmark/README.md`](src/benchmark/README.md) explains the tour, its presets and options, how to compare runs,
-and the tools it brings for work on the port (repeats, GPU profiles, Instruments traces, Xcode frame captures).
 
 ## Credits and license
 

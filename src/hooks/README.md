@@ -1,13 +1,13 @@
 # KSA Metal Hooks
 
-The hooks change a few parts of KSA's C# code in memory when the game starts, with
+The hooks are the part of KSA Metal that changes the game's C# code, in memory, when the game starts, with
 [Harmony](https://github.com/pardeike/Harmony). `KSA.dll` stays as it is on disk, and the repository holds only the
 hooks' own code. Most of them are patches that make drawing cheaper; the others add the port's part of the game: the
 Mac Port tab in the game's settings, a Restart button that works in the app, and the benchmark's runs.
 
-The main README says what each patch does, in short ([Hooks](../../README.md#hooks)). This file has the detail: how
-they load, the rule every hook follows, what each one changes, the settings they read, and how to build and test a
-change.
+The main README says what the hooks are, in short ([The hooks](../../README.md#the-hooks)). This file has the
+detail: how they load, the rule every hook follows, what each one changes, the settings they read, and how to build
+and test a change.
 
 ## How they load
 
@@ -68,9 +68,9 @@ The MetalFX entry points are KSA Metal's own ([`../ksa-metal/upscale.mm`](../ksa
 ## Settings
 
 The hooks read environment variables, which the launcher sets from `port-settings.toml`
-([port settings](../../README.md#port-settings)); one set before the game starts wins over the file, and the Mac Port
-tab shows its row as set outside. The table [`../launcher/port-settings.txt`](../launcher/port-settings.txt) lists every
-setting with its variable; those of the hooks:
+([The Mac Port tab](../../README.md#the-mac-port-tab)); one set before the game starts wins over the file, and the
+Mac Port tab shows its row as set outside. The table [`../launcher/port-settings.txt`](../launcher/port-settings.txt)
+lists every setting with its variable; those of the hooks:
 
 | Variable | Setting |
 |---|---|

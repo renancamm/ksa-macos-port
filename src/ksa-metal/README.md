@@ -1,18 +1,19 @@
-# KSA Metal
+# KSA Metal: the driver
 
-KSA Metal implements the part of Vulkan that Kitten Space Agency uses, on top of Metal. The app ships it as
-`libvulkan.1.dylib`, in the place of the Vulkan loader and a Vulkan driver, so nothing in the game changes.
+The driver is the part of KSA Metal that draws the game: it implements the part of Vulkan that Kitten Space Agency
+uses, on top of Metal. The app ships it as `libvulkan.1.dylib`, in the place of the Vulkan loader and a Vulkan
+driver, so nothing in the game changes. In this file, KSA Metal means the driver.
 
-The main README says what it is, in short ([KSA Metal](../../README.md#ksa-metal)). This file has the detail: its
+The main README says what it is, in short ([The driver](../../README.md#the-driver)). This file has the detail: its
 switches, how to build and test a change, how each Vulkan concept maps onto Metal, and what each source file holds.
 
 ## Configuration
 
-KSA Metal takes its settings from environment variables, which the launcher sets from the
-[port settings](../../README.md#port-settings): each variable below has a setting in `port-settings.toml`
-([`../launcher/port-settings.txt`](../launcher/port-settings.txt) says which), the switches in the game's Mac Port tab
-too, the debugging variables in the file's `[developer]` section. A variable can also be set where the app's
-executable starts, from Terminal, where its output stays visible; it then wins over the file:
+KSA Metal takes its settings from environment variables, which the launcher sets from the port settings
+([The Mac Port tab](../../README.md#the-mac-port-tab)): each variable below has a setting in `port-settings.toml`
+([`../launcher/port-settings.txt`](../launcher/port-settings.txt) says which), the switches in the tab's Optimizations
+and Game features sections, the debugging variables in the file's `[developer]` section. A variable can also be set
+where the app's executable starts, from Terminal, where its output stays visible; it then wins over the file:
 
 ```bash
 KSA_MTL_TESSELLATION=0 ~/Applications/"Kitten Space Agency.app"/Contents/MacOS/KSA
