@@ -12,8 +12,8 @@
 #    them slightly differently: black stripes and see-through patches on clutter. Fix: declare it invariant.
 # For the hooks' render scale (src/hooks/), where the shaders' screen size is the render size:
 # 3. Sizes that mean pixels on the window use the window's size, which the patches put in the camera data's spare
-#    int (0 without render scale: then nothing changes): ground clutter's level of detail (CullInstances.comp) and
-#    the size of star and planet discs (StaticCelestialDistance.vert).
+#    int (0 without render scale: then nothing changes): ground clutter's level of detail (CullInstances.comp), the
+#    size of star and planet discs (StaticCelestialDistance.vert) and of the starfield's glow (Star.frag).
 # 4. LightFineClusterCompact.comp: a tile whose depth range comes out inverted makes `maxBin - minBin + 1u` wrap
 #    to about 4 billion iterations, a GPU hang. Fix: skip such a tile.
 #
@@ -89,6 +89,10 @@ fix StaticCelestialDistance.vert replace \
     "scalePixel / global.camera.screenWidth;\n    vertPosition.y *= instanceData.scalePixel / global.camera.screenHeight;" \
     "scalePixel / KSA_WINDOW_WIDTH;\n    vertPosition.y *= instanceData.scalePixel / KSA_WINDOW_HEIGHT;" \
     "made the disc sizes use the window's size"
+fix Star.frag replace \
+    "    float screenWidth = global.camera.screenWidth;\n    float screenHeight = global.camera.screenHeight;" \
+    "    float screenWidth = KSA_WINDOW_WIDTH;\n    float screenHeight = KSA_WINDOW_HEIGHT;" \
+    "made the starfield's glow use the window's size"
 fix Lighting/LightFineClusterCompact.comp replace "    uint binCount = maxBin - minBin + 1u;" \
     "    if (maxBin < minBin) return;  // macOS port: an inverted depth range would loop for billions of bins\n    uint binCount = maxBin - minBin + 1u;" \
     "skipped tiles with an inverted depth range"
