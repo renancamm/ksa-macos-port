@@ -106,7 +106,7 @@ struct KConfig {
 };
 const KConfig& kmtlConfig();
 
-uint64_t kmtlPresentCount();  // swapchain.mm
+uint64_t kmtlPresentCount();  // instruments.mm
 // KSA_MTL_STALLS: a scope that logs when it took longer than the threshold
 struct KStallTimer {
     const char* what;
@@ -424,7 +424,7 @@ struct KPipeline {
     std::string profName;
     int throttle = -1;  // KSA_MTL_THROTTLE: run every N-th present (0 never, -1 always)
 };
-// swapchain.mm: a texture (8-bit RGBA or BGRA) saved as a PNG once the command buffer completes, then done (if any);
+// instruments.mm: a texture (8-bit RGBA or BGRA) saved as a PNG once the command buffer completes, then done (if any);
 // the copy waits for the fence after (if any)
 void kmtlSavePNG(id<MTLCommandBuffer> cb, id<MTLTexture> tex, id<MTLFence> after, std::string path, void (^done)(void) = nil);
 // upscale.mm: the present's MetalFX passes
@@ -684,10 +684,14 @@ id<MTLComputePipelineState> kmtlTessPrepPipeline(KDevice* dev);
 id<MTLBuffer> kmtlTessStats(KDevice* dev);
 uint32_t kmtlTessCap(KDevice* dev);
 
-// Frame instruments
+// Frame instruments (instruments.mm)
 void kmtlOnPresent(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb);
 void kmtlCountWork(uint32_t draws, uint32_t dispatches, uint32_t passes);
 void kmtlNoteGpuTime(id<MTLCommandBuffer> cb);  // from completion handlers: GPU busy time for the frame log
+double kmtlTakeFrameGpuTime();  // one frame's GPU busy time in seconds (since the last present completed), reset
+// swapchain.mm: the display showed a drawable at t (presentedTime); timed: a game frame, whose interval since the last
+// one is the frame log's display_ms (interpolated frames only count)
+void kmtlNoteShown(double t, bool timed);
 void kmtlPipelineCounts(uint32_t* shaders, uint32_t* pipelines);  // MSL compiled (not from the cache), states made
 void kmtlReportPipelineTimes();  // pipeline.mm: the pipelines' creation cost, with the first in-game frame
 

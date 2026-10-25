@@ -14,7 +14,7 @@ set(KSA_MTL_OPT "-O2" CACHE STRING "Optimization flag for KSA Metal")
 set(KSA_MTL_DEBUG_MAP ON CACHE BOOL "Keep the debug map (object file paths) in KSA Metal")
 
 add_library(ksa-metal SHARED
-    config.mm entry.mm instance.mm device.mm format.mm descriptor.mm pipeline.mm command.mm swapchain.mm internal.mm
+    config.mm entry.mm instance.mm device.mm format.mm descriptor.mm pipeline.mm command.mm swapchain.mm instruments.mm internal.mm
     accel.mm profile.mm shadercache.mm upscale.mm rtpipeline.mm rtspirv.cpp tessspirv.cpp)
 set_target_properties(ksa-metal PROPERTIES
     OUTPUT_NAME vulkan

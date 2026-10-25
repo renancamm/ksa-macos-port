@@ -108,7 +108,7 @@ The debugging variables, used the same way:
 Metal's own tools work too: `MTL_HUD_ENABLED=1` shows Apple's performance overlay, and `MTL_DEBUG_LAYER=1` and
 `MTL_SHADER_VALIDATION=1` check API use and catch out-of-bounds memory access in shaders (slow).
 
-The benchmark's mod talks to KSA Metal through the only functions it exports besides Vulkan's, in `swapchain.mm` and
+The benchmark's mod talks to KSA Metal through the only functions it exports besides Vulkan's, in `instruments.mm` and
 `profile.mm`:
 
 | Function | |
@@ -241,7 +241,7 @@ vertex buffer n.
 | File | What it holds |
 |---|---|
 | `kmtl.h` | shared declarations |
-| `config.mm` | the `KSA_MTL_*` variables above, read once |
+| `config.mm` | the `KSA_MTL_*` variables above, read once, and the log |
 | `entry.mm` | the table behind `vkGetInstanceProcAddr` and `vkGetDeviceProcAddr` |
 | `instance.mm` | instance, physical device queries, features and limits |
 | `device.mm` | device, queues, memory, buffers, images, samplers, synchronization, submission |
@@ -255,7 +255,8 @@ vertex buffer n.
 | `rtpipeline.mm`, `rtspirv.cpp`, `rtspirv.h` | ray tracing pipelines rewritten as compute kernels |
 | `tessspirv.cpp`, `tessspirv.h` | the SPIR-V rewrites behind passthrough and fused tessellation |
 | `spvmodule.h` | a SPIR-V module as a list of instructions, for those rewrites |
-| `swapchain.mm` | swapchain, presentation, screenshots and frame log |
+| `swapchain.mm` | swapchain and presentation: pacing, frame interpolation at present, latency |
+| `instruments.mm` | what is measured at each present: frame log, screenshots, exits, the benchmark's interface, frame captures, signposts |
 | `upscale.mm` | MetalFX: upscaling, motion vectors, frame interpolation |
 | `profile.mm` | the GPU profiler |
 | `CMakeLists.txt`, `exports.txt` | the build: sources, flags, and the symbols the library exports |
