@@ -33,10 +33,51 @@ struct KProfState {
 static FILE* g_prof = nullptr;
 // The profiled presents; ksaMtlProfileFrames (the benchmark's @gpuprof) moves them to the next ones
 static std::atomic<uint64_t> g_profFirst{2000}, g_profCount{300};
-static std::mutex g_profMutex;  // guards g_samplePool and the CSV
-static id<MTLCounterSet> g_timestampSet = nil;
-// Metal caps the number of live counter sample buffers: they are recycled after their command buffer completes
-static std::vector<id<MTLCounterSampleBuffer>> g_samplePool;
+static std::mutex g_profMutex;  // guards the CSV
+
+// Timestamp sample buffers, for the profiler and the game's timestamp queries (command.mm). Metal caps the number of
+// live counter sample buffers: they are recycled once their command buffer completes.
+static std::mutex g_timestampMutex;
+static std::vector<id<MTLCounterSampleBuffer>> g_timestampPool;
+
+id<MTLCounterSet> kmtlTimestampSet(KDevice* dev) {
+    static id<MTLCounterSet> set = nil;
+    static std::once_flag once;
+    std::call_once(once, [dev] {
+        for (id<MTLCounterSet> cs in dev->mtl.counterSets)
+            if ([cs.name isEqualToString:MTLCommonCounterSetTimestamp]) set = cs;
+    });
+    return set;
+}
+
+id<MTLCounterSampleBuffer> kmtlAcquireTimestamps(KDevice* dev, const char* what) {
+    {
+        std::lock_guard<std::mutex> lock(g_timestampMutex);
+        if (!g_timestampPool.empty()) {
+            id<MTLCounterSampleBuffer> b = g_timestampPool.back();
+            g_timestampPool.pop_back();
+            return b;
+        }
+    }
+    id<MTLCounterSet> set = kmtlTimestampSet(dev);
+    MTLCounterSampleBufferDescriptor* d = [MTLCounterSampleBufferDescriptor new];
+    d.counterSet = set;
+    d.storageMode = MTLStorageModeShared;
+    d.sampleCount = kTimestampSamples;
+    NSError* e = nil;
+    id<MTLCounterSampleBuffer> b = set ? [dev->mtl newCounterSampleBufferWithDescriptor:d error:&e] : nil;
+    if (!b) {
+        static std::atomic<int> warned{0};
+        if (warned++ < 3) KERR("%s: timestamp sample buffer: %s", what, e ? e.description.UTF8String : "no timestamp counters");
+    }
+    return b;
+}
+
+void kmtlRecycleTimestamps(id<MTLCounterSampleBuffer> b) {
+    if (!b) return;
+    std::lock_guard<std::mutex> lock(g_timestampMutex);
+    g_timestampPool.push_back(b);
+}
 
 static bool profInit(KDevice* dev) {
     static std::once_flag once;
@@ -47,9 +88,7 @@ static bool profInit(KDevice* dev) {
             KERR("GPU profiler: no stage-boundary counter sampling");
             return;
         }
-        for (id<MTLCounterSet> cs in dev->mtl.counterSets)
-            if ([cs.name isEqualToString:MTLCommonCounterSetTimestamp]) g_timestampSet = cs;
-        if (!g_timestampSet) return;
+        if (!kmtlTimestampSet(dev)) return;
         unsigned long long first, count;
         if (const char* f = kmtlConfig().gpuprofFrames; f && sscanf(f, "%llu,%llu", &first, &count) == 2) {
             g_profFirst = first;
@@ -85,10 +124,7 @@ void kmtlProfDrop(KCommandBuffer* cb) {
     KProfState* s = cb->prof;
     if (!s) return;
     cb->prof = nullptr;
-    if (s->samples) {
-        std::lock_guard<std::mutex> lock(g_profMutex);
-        g_samplePool.push_back(s->samples);
-    }
+    kmtlRecycleTimestamps(s->samples);
     delete s;
 }
 
@@ -96,25 +132,12 @@ void kmtlProfBegin(KCommandBuffer* cb) {
     kmtlProfDrop(cb);
     if (!profiling(cb->device)) return;
     auto* s = new KProfState();
-    {
-        std::lock_guard<std::mutex> lock(g_profMutex);
-        if (!g_samplePool.empty()) { s->samples = g_samplePool.back(); g_samplePool.pop_back(); }
-    }
+    s->samples = kmtlAcquireTimestamps(cb->device, "GPU profiler");
     if (!s->samples) {
-        MTLCounterSampleBufferDescriptor* d = [MTLCounterSampleBufferDescriptor new];
-        d.counterSet = g_timestampSet;
-        d.storageMode = MTLStorageModeShared;
-        d.sampleCount = 4096;
-        NSError* e = nil;
-        s->samples = [cb->device->mtl newCounterSampleBufferWithDescriptor:d error:&e];
-        if (!s->samples) {
-            static std::atomic<int> warned{0};
-            if (warned++ < 3) KERR("GPU profiler: sample buffer: %s", e.description.UTF8String);
-            delete s;
-            return;
-        }
+        delete s;
+        return;
     }
-    s->capacity = 4096;
+    s->capacity = kTimestampSamples;
     s->frame = kmtlPresentCount();
     cb->prof = s;
 }
@@ -225,7 +248,7 @@ void kmtlProfSubmit(KCommandBuffer* cb, id<MTLCommandBuffer> mtl) {
                     e.draws, e.dispatches, startUs, vtx, frag, total, e.pipelines.c_str());
         }
         if (s->frame + 1 >= g_profFirst + g_profCount) fflush(g_prof);
-        g_samplePool.push_back(s->samples);
+        kmtlRecycleTimestamps(s->samples);
         delete s;
     }];
 }

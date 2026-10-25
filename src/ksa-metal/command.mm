@@ -1565,36 +1565,16 @@ VKFN(void) vkCmdResolveImage(VkCommandBuffer, VkImage, VkImageLayout, VkImage, V
 // Timestamps. Apple GPUs sample counters only at encoder stage boundaries, so a timestamp is the end of a tiny blit
 // encoder ordered after everything before it. Used only while the game's profiler is open.
 
-static std::mutex g_tsPoolMutex;
-static std::vector<id<MTLCounterSampleBuffer>> g_tsPool;  // Metal caps live sample buffers: recycle them
-static const uint32_t kTimestampSamples = 4096;
-
 void KCommandBuffer::writeTimestamp(KQueryPool* pool, uint32_t query) {
     if (render) {
         tsDeferred.push_back({pool, query});
         return;
     }
     if (!tsSamples) {
-        {
-            std::lock_guard<std::mutex> lock(g_tsPoolMutex);
-            if (!g_tsPool.empty()) { tsSamples = g_tsPool.back(); g_tsPool.pop_back(); }
-        }
+        tsSamples = kmtlAcquireTimestamps(device, "vkCmdWriteTimestamp");
         if (!tsSamples) {
-            id<MTLCounterSet> set = nil;
-            for (id<MTLCounterSet> cs in device->mtl.counterSets)
-                if ([cs.name isEqualToString:MTLCommonCounterSetTimestamp]) set = cs;
-            MTLCounterSampleBufferDescriptor* d = [MTLCounterSampleBufferDescriptor new];
-            d.counterSet = set;
-            d.storageMode = MTLStorageModeShared;
-            d.sampleCount = kTimestampSamples;
-            NSError* e = nil;
-            tsSamples = set ? [device->mtl newCounterSampleBufferWithDescriptor:d error:&e] : nil;
-            if (!tsSamples) {
-                static std::atomic<int> warned{0};
-                if (warned++ < 3) KERR("timestamp sample buffer: %s", e ? e.description.UTF8String : "no timestamp counters");
-                tsWrites.push_back({pool, query, UINT32_MAX});
-                return;
-            }
+            tsWrites.push_back({pool, query, UINT32_MAX});
+            return;
         }
         tsUsed = 0;
     }
@@ -1642,18 +1622,12 @@ void KCommandBuffer::submitTimestamps(id<MTLCommandBuffer> c) {
             }
             w.pool->cv.notify_all();
         }
-        if (samples) {
-            std::lock_guard<std::mutex> lock(g_tsPoolMutex);
-            g_tsPool.push_back(samples);
-        }
+        kmtlRecycleTimestamps(samples);
     }];
 }
 
 void KCommandBuffer::releaseTimestamps() {
-    if (tsSamples) {
-        std::lock_guard<std::mutex> lock(g_tsPoolMutex);
-        g_tsPool.push_back(tsSamples);
-    }
+    kmtlRecycleTimestamps(tsSamples);
     tsSamples = nil;
     tsWrites.clear();
     tsDeferred.clear();

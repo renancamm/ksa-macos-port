@@ -666,7 +666,12 @@ void kmtlNoteGpuTime(id<MTLCommandBuffer> cb);  // from completion handlers: GPU
 void kmtlPipelineCounts(uint32_t* shaders, uint32_t* pipelines);  // MSL compiled (not from the cache), states made
 void kmtlReportPipelineTimes();  // pipeline.mm: the pipelines' creation cost, with the first in-game frame
 
-// GPU profiler (profile.mm, KSA_MTL_GPUPROF)
+// GPU profiler (profile.mm, KSA_MTL_GPUPROF), and the timestamp sample buffers it shares with the game's timestamp
+// queries: recycled, since Metal caps how many are alive; null (logged a few times) without timestamp counters
+constexpr uint32_t kTimestampSamples = 4096;
+id<MTLCounterSet> kmtlTimestampSet(KDevice* dev);
+id<MTLCounterSampleBuffer> kmtlAcquireTimestamps(KDevice* dev, const char* what);
+void kmtlRecycleTimestamps(id<MTLCounterSampleBuffer> b);
 void kmtlProfBegin(KCommandBuffer* cb);
 void kmtlProfDrop(KCommandBuffer* cb);  // a recording dropped without a submit: frees its state
 void kmtlProfRenderPass(KCommandBuffer* cb, MTLRenderPassDescriptor* rp);
