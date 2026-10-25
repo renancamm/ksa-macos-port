@@ -1,7 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 	<!-- Built by scripts/build-hooks.sh against the KSA version the port folder is made for:
-	     dotnet build -c Release -p:KsaDir=<converted KSA assemblies> -p:HarmonyDll=<0Harmony.dll> -o <out>
-	     The game's assemblies and Harmony are references only here; the app ships Harmony next to the hooks.
+	     dotnet build -c Release -p:KsaDir=<converted KSA assemblies> -p:HarmonyDll=<0Harmony.dll>
+	       -p:BenchmarkDll=<the benchmark's director> -o <out>
+	     The game's assemblies, Harmony and the director are references only here; the app ships Harmony next to the
+	     hooks and the director in its Benchmark folder.
 	     The loader (loader/) is a project of its own. -->
 	<PropertyGroup>
 		<TargetFramework>net10.0</TargetFramework>
@@ -17,5 +19,6 @@
 		<Compile Remove="loader/**" />
 		<Reference Include="$(KsaDir)/*.dll" Private="false" />
 		<Reference Include="$(HarmonyDll)" Private="false" />
+		<Reference Include="$(BenchmarkDll)" Private="false" />
 	</ItemGroup>
 </Project>

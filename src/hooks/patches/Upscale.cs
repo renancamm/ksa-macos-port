@@ -14,7 +14,7 @@ using KSA.Rendering;
 
 namespace KsaMetalHooks;
 
-// MetalFX for the render scale (upscaler "metalfx" or "spatial"), and the motion that frame interpolation needs. Before
+// MetalFX for the render scale (upscaling "metalfx" or "spatial"), and the motion that frame interpolation needs. Before
 // the final composite, KSA Metal's vkCmdUpscaleKSA (src/ksa-metal/upscale.mm) scales the main view's image into a
 // window-size image, which the composite then reads instead. For MetalFX's temporal upscaler, the projection moves by
 // a different sub-pixel offset every frame (a Halton sequence of 16), and the driver makes the motion vectors from the
@@ -28,10 +28,10 @@ internal static class Upscale
     private static readonly bool Interpolate = Environment.GetEnvironmentVariable("KSA_MTL_FX_INTERPOLATE") is "1" or "true";
     public static bool Wanted, Spatial;  // set by Configure
 
-    // Whether MetalFX runs, given the render scale
+    // Whether MetalFX runs, given the render scale (which needs upscaling)
     public static void Configure(bool scaled)
     {
-        Wanted = (scaled && Settings.Upscaler is "metalfx" or "spatial") || Interpolate;
+        Wanted = scaled || Interpolate;
         Spatial = Settings.Upscaler == "spatial" && !Interpolate;
     }
 

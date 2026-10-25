@@ -5,8 +5,8 @@
 #   port.sh, starmap.sh, benchmark.sh              the commands
 #   lib/                                           the steps they run, this file, brutal.txt
 #   payload/app/Contents/                          the app without the game: launcher, .NET runtime, libraries,
-#                                                  icon, licences
-#   payload/starmap/, payload/benchmark/           the extras
+#                                                  hooks, benchmark, icon, licences
+#   payload/starmap/                               StarMap, which starmap.sh adds to the app
 #   VERSION                                        version=, ksa= (the KSA it was made for), commit=,
 #                                                  dotnet_sdk= (the .NET SDK that built the benchmark)
 

@@ -6,7 +6,7 @@
 #   scripts/make-kit.sh scripts <version> <KSA version> <commit>
 #       Starts the folder anew with the commands, lib/, the notices and VERSION.
 #   scripts/make-kit.sh payload
-#       Adds payload/: the app without the game (app/Contents/), StarMap and the benchmark.
+#       Adds payload/: the app without the game (app/Contents/), with the benchmark, and StarMap.
 set -eo pipefail
 source "$(dirname "$0")/lib.sh"
 load_deps
@@ -29,7 +29,7 @@ kit_payload() {
     local contents="${OUT}/payload/app/Contents" licenses
     [ -f "${OUT}/VERSION" ] || die "run scripts/make-kit.sh scripts first."
     [ -f "${NATIVES}/libvulkan.1.dylib" ] && [ -x "${DOTNET_RUNTIME}/dotnet" ] && [ -f "${BUILD}/icon/AppIcon.icns" ] &&
-        [ -f "${BUILD}/benchmark/mod/KsaMetalBenchmark.dll" ] && [ -f "${BUILD}/hooks/out/KsaMetalHooks.dll" ] ||
+        [ -f "${BUILD}/benchmark/director/KsaMetalBenchmark.dll" ] && [ -f "${BUILD}/hooks/out/KsaMetalHooks.dll" ] ||
         die "the pieces of the port are not all built. Run ./build.sh."
     [ -f "${STARMAP}/StarMap.dll" ] && [ -f "${STARMAP}/StarMap.Core.dll" ] || die "the StarMap archive has an unexpected layout."
     step "Assembling ${OUT#"${REPO}/"}"
@@ -40,7 +40,10 @@ kit_payload() {
     mkdir -p "${contents}/Resources"
     ditto "${DOTNET_RUNTIME}" "${contents}/MacOS"
     cp "${REPO}/src/launcher/launcher.sh" "${contents}/MacOS/KSA"
-    cp "${REPO}/src/launcher/port-settings.toml" "${contents}/Resources/"
+    # The port settings: their table, and the commented template the launcher copies for the player
+    cp "${REPO}/src/launcher/port-settings.txt" "${contents}/Resources/"
+    bash "${REPO}/scripts/make-port-settings.sh" "${REPO}/src/launcher/port-settings.txt" \
+        > "${contents}/Resources/port-settings.toml"
     chmod +x "${contents}/MacOS/KSA"
     cp -P "${NATIVES}"/*.dylib "${NATIVES}/Brutal.Monitor.Subprocess" "${contents}/Resources/"
     cp "${REPO}/third_party/fmod/libfmod.dylib" "${contents}/Resources/libfmod.dylib"
@@ -49,6 +52,15 @@ kit_payload() {
     # KSA Metal Hooks, which the launcher loads (src/hooks/), with Harmony
     mkdir -p "${contents}/Resources/Hooks"
     cp "${BUILD}"/hooks/out/*.dll "${contents}/Resources/Hooks/"
+    # The benchmark (src/benchmark/): its director, which the hooks start, the report program, the tour and its vehicles
+    local bench="${contents}/Resources/Benchmark"
+    mkdir -p "${bench}"
+    cp "${BUILD}/benchmark/director/KsaMetalBenchmark.dll" "${BUILD}"/benchmark/report/*.dll "${BUILD}"/benchmark/report/*.json \
+        "${REPO}/src/benchmark/benchmark.txt" "${bench}/"
+    for v in "${REPO}"/src/benchmark/vehicles/*/; do
+        mkdir -p "${bench}/vehicles/$(basename "${v}")"
+        cp "${v}"* "${bench}/vehicles/$(basename "${v}")/"
+    done
 
     # Every component's licence and notices (THIRD_PARTY_NOTICES.md lists them)
     licenses="${contents}/Resources/Licenses"
@@ -70,16 +82,6 @@ kit_payload() {
     rm -f "${OUT}/payload/starmap/StarMap.exe"
     run mark-arm64 "${OUT}"/payload/starmap/*.dll
     echo "${STARMAP_VERSION}" > "${OUT}/payload/starmap/version.txt"
-
-    local bench="${OUT}/payload/benchmark"
-    mkdir -p "${bench}/mod" "${bench}/report"
-    cp "${BUILD}/benchmark/mod/KsaMetalBenchmark.dll" "${REPO}/src/benchmark/mod/mod.toml" "${bench}/mod/"
-    cp "${BUILD}"/benchmark/report/*.dll "${BUILD}"/benchmark/report/*.json "${bench}/report/"
-    cp "${REPO}/src/benchmark/benchmark.txt" "${bench}/"
-    for v in "${REPO}"/src/benchmark/vehicles/*/; do
-        mkdir -p "${bench}/vehicles/$(basename "${v}")"
-        cp "${v}"* "${bench}/vehicles/$(basename "${v}")/"
-    done
 }
 
 case "$1" in

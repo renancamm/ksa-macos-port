@@ -1,6 +1,7 @@
-// ksa-metal-benchmark: plays the benchmark's script in one game session and measures it.
+// The benchmark's director: plays the benchmark's script in one game session and measures it.
 //
-// benchmark.sh (in the port folder) starts the game with this mod installed and these variables set:
+// KSA Metal Hooks start it (src/hooks/BenchmarkRun.cs): when the game starts with the variables below set, which
+// benchmark.sh in the port folder sets, or with the same options from the Mac Port tab in the game's settings.
 //   KSA_BENCH_SCRIPT  the script (benchmark.txt)
 //   KSA_BENCH_OUT     the folder for the results (results.json, frames.csv) and the screenshots
 //   KSA_BENCH_ONLY    optional: what to play (space separated): sections, or places as <section>_<shot> (the section
@@ -18,7 +19,9 @@
 //   KSA_BENCH_TRACE   optional: write the camera's place every frame to trace.csv, to check its moves are smooth
 //   KSA_BENCH_FILM    optional: a screenshot every that many seconds of the script's clock, into film/, to see moves
 //   KSA_BENCH_EXPLORE optional: no script, the explore mode's console command instead (Explore.cs)
-// Without the first two the mod does nothing. While it plays, it touches the file "heartbeat" in the results' folder
+//   KSA_BENCH_END     optional: "stay": the game goes on when the script ends (Done), instead of quitting
+//   KSA_BENCH_START   optional: "game": the run plays in a game that was running already (no loading time)
+// Without the first two there is nothing to play. While it plays, it touches the file "heartbeat" in the results' folder
 // every second, so the script can tell a game that hangs from one that is busy. Every frame goes into frames.csv, and
 // every measured part is a signpost interval (KSA Metal's ksaMtlMarker), so an Instruments trace shows the parts.
 //
@@ -49,11 +52,9 @@ using System.Linq;
 using System.Reflection;
 using KSA;
 using KSA.Atmosphere.Rendering;
-using StarMap.API;
 
 namespace KsaMetalBenchmark;
 
-[StarMapMod]
 public partial class Benchmark
 {
     // How close a checkpoint gets to the game time it waits for (game seconds), how far ahead of it the game may be
@@ -144,12 +145,24 @@ public partial class Benchmark
     private string? _waitFor;
     private readonly Stopwatch _waiting = new();
 
-    // StarMap only calls an ImmediateLoad method with the signature void(Mod)
-    [StarMapImmediateLoad]
-    public void Init(Mod mod)
+    private readonly Func<string, string?> _option;
+
+    // Whether the script has ended (played to its end, or stopped)
+    public bool Done { get; private set; }
+
+    // Starts a run with these options (the variables above, by name), or null when there is nothing to play. The
+    // caller calls OnFrame after every frame of the game.
+    public static Benchmark? Begin(Func<string, string?> option)
     {
-        var script = Environment.GetEnvironmentVariable("KSA_BENCH_SCRIPT");
-        _outDir = Environment.GetEnvironmentVariable("KSA_BENCH_OUT") ?? "";
+        var benchmark = new Benchmark(option);
+        return benchmark._active || benchmark._exploring ? benchmark : null;
+    }
+
+    private Benchmark(Func<string, string?> option)
+    {
+        _option = option;
+        var script = _option("KSA_BENCH_SCRIPT");
+        _outDir = _option("KSA_BENCH_OUT") ?? "";
         if (string.IsNullOrEmpty(_outDir))
             return;
         StartExplore();
@@ -160,9 +173,9 @@ public partial class Benchmark
             Log($"script {script} not found");
             return;
         }
-        _fast = Environment.GetEnvironmentVariable("KSA_BENCH_FAST") is { Length: > 0 };
-        _shots = Environment.GetEnvironmentVariable("KSA_BENCH_NO_SHOTS") is not { Length: > 0 };
-        _hold = Environment.GetEnvironmentVariable("KSA_BENCH_HOLD") is { Length: > 0 } hold ? hold : null;
+        _fast = _option("KSA_BENCH_FAST") is { Length: > 0 };
+        _shots = _option("KSA_BENCH_NO_SHOTS") is not { Length: > 0 };
+        _hold = _option("KSA_BENCH_HOLD") is { Length: > 0 } hold ? hold : null;
         var lines = File.ReadAllLines(script);
         for (int i = 0; i < lines.Length; i++)
         {
@@ -186,7 +199,7 @@ public partial class Benchmark
             section.Steps.Clear();
             section.Steps.AddRange(ordered);
         }
-        var only = Environment.GetEnvironmentVariable("KSA_BENCH_ONLY");
+        var only = _option("KSA_BENCH_ONLY");
         if (!string.IsNullOrWhiteSpace(only))
         {
             _only = new Dictionary<string, HashSet<string>?>();
@@ -209,18 +222,18 @@ public partial class Benchmark
                 shots?.Add(name[(section.Name.Length + 1)..]);
             }
         }
-        _resultsFile = $"results{Environment.GetEnvironmentVariable("KSA_BENCH_RUN")}.json";
-        uint.TryParse(Environment.GetEnvironmentVariable("KSA_BENCH_PROFILE"), out _profileFrames);
-        _capture = Environment.GetEnvironmentVariable("KSA_BENCH_CAPTURE") is { Length: > 0 };
-        _waitFor = Environment.GetEnvironmentVariable("KSA_BENCH_WAIT") is { Length: > 0 } wait ? wait : null;
+        _resultsFile = $"results{_option("KSA_BENCH_RUN")}.json";
+        uint.TryParse(_option("KSA_BENCH_PROFILE"), out _profileFrames);
+        _capture = _option("KSA_BENCH_CAPTURE") is { Length: > 0 };
+        _waitFor = _option("KSA_BENCH_WAIT") is { Length: > 0 } wait ? wait : null;
         Directory.CreateDirectory(_outDir);
-        _frames = new FrameLog(Path.Combine(_outDir, $"frames{Environment.GetEnvironmentVariable("KSA_BENCH_RUN")}.csv"));
-        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("KSA_BENCH_TRACE")))
+        _frames = new FrameLog(Path.Combine(_outDir, $"frames{_option("KSA_BENCH_RUN")}.csv"));
+        if (!string.IsNullOrEmpty(_option("KSA_BENCH_TRACE")))
         {
             _trace = new StreamWriter(Path.Combine(_outDir, "trace.csv"));
             _trace.WriteLine("wall,script,phase,following,x,y,z,fx,fy,fz,ux,uy,uz,lat,lon,alt,ground");
         }
-        if (double.TryParse(Environment.GetEnvironmentVariable("KSA_BENCH_FILM"), NumberStyles.Float, CultureInfo.InvariantCulture,
+        if (double.TryParse(_option("KSA_BENCH_FILM"), NumberStyles.Float, CultureInfo.InvariantCulture,
                 out _filmEvery) && _filmEvery > 0)
             Directory.CreateDirectory(Path.Combine(_outDir, "film"));
         _results = new Results(DriverStats.Available) { Mode = _fast ? "fast" : "cinematic", Shots = _shots };
@@ -230,8 +243,7 @@ public partial class Benchmark
             $"{(_capture ? ", capturing a frame at each checkpoint" : "")}");
     }
 
-    [StarMapAfterOnFrame]
-    public void OnFrame(double currentPlayerTime, double dtPlayer)
+    public void OnFrame()
     {
         if (_exploring)
             ExploreFrame();
@@ -391,8 +403,12 @@ public partial class Benchmark
     private void Start()
     {
         _wall.Start();
-        _results!.LoadSeconds = Math.Round((DateTime.Now - Process.GetCurrentProcess().StartTime).TotalSeconds - _waiting.Elapsed.TotalSeconds, 1);
-        Log(FormattableString.Invariant($"first in-game frame after {_results.LoadSeconds:F1} s"));
+        // A run in a running game has no loading of its own
+        if (_option("KSA_BENCH_START") != "game")
+        {
+            _results!.LoadSeconds = Math.Round((DateTime.Now - Process.GetCurrentProcess().StartTime).TotalSeconds - _waiting.Elapsed.TotalSeconds, 1);
+            Log(FormattableString.Invariant($"first in-game frame after {_results.LoadSeconds:F1} s"));
+        }
         // The scene alone, without the game's interface (F2)
         Program.DrawUI = false;
         _gameStart = _gameTarget = Universe.GetElapsedSeconds();
@@ -449,12 +465,32 @@ public partial class Benchmark
             _results!.Completed = true;
             _results.Write(Path.Combine(_outDir, _resultsFile));
             Log(FormattableString.Invariant($"done after {_wall.Elapsed.TotalSeconds:F1} s"));
-            Program.TerminalInterface.Execute("exit");
+            // The camera's field of view as it was
+            EndRig();
+            Done = true;
+            if (_option("KSA_BENCH_END") != "stay")
+                Program.TerminalInterface.Execute("exit");
             return;
         }
         _sectionResult = new SectionResult(_sections[_section].Name);
         _results!.Sections.Add(_sectionResult);
         Log(FormattableString.Invariant($"section {_sectionResult.Name} (game time {Universe.GetElapsedSeconds():F1} s, {_wall.Elapsed.TotalSeconds:F1} s into the run)"));
+    }
+
+    // Ends the run before the script's end (the player stopped it): the results say why, and that it did not complete
+    public void Stop(string why)
+    {
+        if (Done)
+            return;
+        _sectionResult?.Errors.Add(why);
+        EndSection();
+        _active = false;
+        _trace?.Dispose();
+        _frames?.Dispose();
+        _results?.Write(Path.Combine(_outDir, _resultsFile));
+        Log($"stopped: {why}");
+        EndRig();
+        Done = true;
     }
 
     private void EndSection()

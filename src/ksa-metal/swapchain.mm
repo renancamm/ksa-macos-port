@@ -341,7 +341,7 @@ static std::mutex g_gpuMutex;
 static double g_gpuBusy = 0, g_gpuLastEnd = 0;
 static double g_gpuBusyFrame = 0;  // the same, since the last present completed: one frame's GPU time
 
-// Interface for the benchmark mod (src/benchmark), which calls these through P/Invoke:
+// Interface for the benchmark's director (src/benchmark), which calls these through P/Invoke:
 //   ksaMtlFrameStats(out, size)  the latest present's numbers (the KSA_MTL_FRAMES columns); returns the bytes written
 //   ksaMtlScreenshot(path)       PNG of the next presented image
 //   ksaMtlMarker(name, begin)    begins or ends a signpost interval "part" with that name (Points of Interest in

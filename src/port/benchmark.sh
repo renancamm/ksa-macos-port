@@ -40,13 +40,11 @@
 #   --explore          start the benchmark's game paused, to fly the free camera around and capture places for the
 #                      tour (@key lines, for benchmark.txt) with benchkey [name] in its console; quit it when done
 #
-# The benchmark is a mod: the game starts through the port folder's copy of StarMap for the run, so the app needs none.
-# The mod in payload/benchmark/ is built for the KSA version this port folder was made for.
+# The benchmark is in the app (Contents/Resources/Benchmark/), built for the KSA version this port folder was made for:
+# KSA Metal Hooks start its director when the game starts with the run's variables set, in a documents folder of its
+# own. The Mac Port tab in the game's settings runs it too.
 set -eo pipefail
 source "$(dirname "$0")/lib/common.sh"
-
-BENCH="${PAYLOAD}/benchmark"
-SCRIPT="${BENCH}/benchmark.txt"
 
 # Presets: fixed settings, the same on every Mac, so reports compare. Without one, your own settings are used.
 # All run in a 1280x800 window without V-Sync (frame times are then the game's, not the display's).
@@ -65,12 +63,9 @@ PRESET_HIGH=('antialiasing="MultisampleX4"' 'cloudUpscale="High"' 'exhaustUpscal
     plumeTrailShadows=true 'explosionQuality="High"' 'oceanSimQuality="High"' 'particleCountQuality="High"'
     IVARayTracing=true celestialTextureCap=2048 vesselTextureCap=2048 cascadedShadowMapSize=2048
     terrainShadowMapSize=2048)
-MOD_ID="ksa-metal-benchmark"
 DOCS="${HOME}/Documents/My Games/Kitten Space Agency"
-# The game's documents folder during the run: StarMap points the game at it (STARMAP_INSTANCE_PATH)
+# The game's documents folder during the run (STARMAP_INSTANCE_PATH, which the hooks and StarMap both follow)
 INSTANCE="${HOME}/Library/Caches/ksa-macos-port/benchmark/instance"
-# The StarMap the game starts through for the run (the launcher's KSA_STARMAP_DIR), so the app needs none
-STARMAP_RUN="${HOME}/Library/Caches/ksa-macos-port/benchmark/starmap"
 ISSUES="https://github.com/${RELEASES_REPO}/issues/new?template=benchmark-report.md"
 
 usage() {
@@ -78,19 +73,22 @@ usage() {
     exit "${1:-0}"
 }
 
-# The report program runs on the .NET runtime that goes into the app
+APP="${DEFAULT_APP}"
+# The report program, from the app, on its .NET runtime
 report() {
-    DOTNET_ROOT="${SKELETON}/MacOS" "${SKELETON}/MacOS/dotnet" "${BENCH}/report/KsaMetalBenchmarkReport.dll" "$@"
+    DOTNET_ROOT="${APP}/Contents/MacOS" "${APP}/Contents/MacOS/dotnet" \
+        "${APP}/Contents/Resources/Benchmark/KsaMetalBenchmarkReport.dll" "$@"
 }
 
 require_kit
 if [ "$1" = compare ]; then
     [ $# = 3 ] || usage 1
+    [ -f "${APP}/Contents/Resources/Benchmark/KsaMetalBenchmarkReport.dll" ] ||
+        die "no benchmark in ${APP}: update it with ./port.sh."
     report compare "$2" "$3"
     exit
 fi
 
-APP="${DEFAULT_APP}"
 PLACES=()
 PRESET=""
 SYSTEM=""
@@ -142,6 +140,12 @@ case "${PRESET}" in
 esac
 [[ "${REPEAT}" =~ ^[1-9][0-9]*$ ]] || die "--repeat needs a number of runs, not '${REPEAT}'."
 [ -z "${SETTINGS_FILE}" ] || [ -f "${SETTINGS_FILE}" ] || die "no settings file ${SETTINGS_FILE}."
+INSTALLED="$(app_version "${APP}")"
+[ -n "${INSTALLED}" ] || die "no app made by this port at ${APP}. Use ./port.sh to make one (or pass --app)."
+RES="${APP}/Contents/Resources"
+SCRIPT="${RES}/Benchmark/benchmark.txt"
+[ -f "${SCRIPT}" ] && [ -f "${RES}/Hooks/KsaMetalHooks.dll" ] ||
+    die "the app at ${APP} has no benchmark: update it with ./port.sh."
 
 # Places: a section, <section>_<shot>, or a screenshot's name alone where only one section has it
 SHOTS="$(awk '$1 == "section" { s = $2 } $2 == "@shot" { print s "_" $3 }' "${SCRIPT}")"
@@ -153,7 +157,7 @@ place() {
     fi
     local matches
     matches="$(echo "${SHOTS}" | grep "_$1$" || true)"
-    [ -n "${matches}" ] || die "no section or screenshot '$1' in the tour (payload/benchmark/benchmark.txt)."
+    [ -n "${matches}" ] || die "no section or screenshot '$1' in the tour (the app's Benchmark/benchmark.txt)."
     [ "$(echo "${matches}" | wc -l)" -eq 1 ] || die "more than one screenshot '$1': $(echo ${matches})."
     echo "${matches}"
 }
@@ -198,9 +202,6 @@ esac
     die "no run at ${REFERENCE} (no report.json, and not a zip)."
 
 check_mac
-INSTALLED="$(app_version "${APP}")"
-[ -n "${INSTALLED}" ] || die "no app made by this port at ${APP}. Use ./port.sh to make one (or pass --app)."
-RES="${APP}/Contents/Resources"
 [ -f "${DOCS}/settings.toml" ] || die "start the game once before benchmarking it (it has no settings yet)."
 pgrep -f "dotnet (KSA|StarMap).dll" > /dev/null && die "the game is running. Quit it first."
 
@@ -244,19 +245,13 @@ if [ -n "${CAPTURE}" ]; then
     TOOLS+=("GPU frame capture")
 fi
 
-# 1. StarMap, which loads the benchmark mod: the port folder's copy, outside the app
-install_starmap "${STARMAP_RUN}"
-export KSA_STARMAP_DIR="${STARMAP_RUN}"
 check_ksa_match "${INSTALLED}"
 
-# 2. The game's documents folder for the run, made fresh: the game itself and the benchmark mod (none of your mods,
-#    so they neither change the numbers nor stop the game from starting) and the bundled vehicles
+# 1. The game's documents folder for the run, made fresh: the game alone (none of your mods, so they neither change
+#    the numbers nor stop the game from starting; the hooks add the benchmark's vehicles from the app)
 rm -rf "${INSTANCE}"
-mkdir -p "${INSTANCE}/mods/${MOD_ID}" "${INSTANCE}/Vehicles"
-printf '[[mods]]\nid = "Core"\nenabled = true\n\n[[mods]]\nid = "%s"\nenabled = true\n' "${MOD_ID}" \
-    > "${INSTANCE}/manifest.toml"
-cp "${BENCH}/mod/mod.toml" "${BENCH}/mod/KsaMetalBenchmark.dll" "${INSTANCE}/mods/${MOD_ID}/"
-cp -R "${BENCH}/vehicles/"* "${INSTANCE}/Vehicles/"
+mkdir -p "${INSTANCE}"
+printf '[[mods]]\nid = "Core"\nenabled = true\n' > "${INSTANCE}/manifest.toml"
 
 # The run's settings: yours, with the preset on top
 SETTINGS="${INSTANCE}/settings.toml"
@@ -296,7 +291,7 @@ for kv in ${SETS[@]+"${SETS[@]}"}; do
     set_setting "${kv%%=*}" "${value}"
 done
 
-# The run's port settings (src/launcher/port-settings.toml): yours unless a preset is played, --port on top
+# The run's port settings (the app's port-settings.toml template): yours unless a preset is played, --port on top
 PORT_SETTINGS="${INSTANCE}/port-settings.toml"
 if [ -z "${PRESET}" ] && [ -f "${DOCS}/port-settings.toml" ]; then
     cp "${DOCS}/port-settings.toml" "${PORT_SETTINGS}"
@@ -333,47 +328,23 @@ if [ -z "${SYSTEM}" ] && [ "${memory_gb}" -le 8 ]; then
     info "This Mac has ${memory_gb} GB of memory: if the game runs out of it, --system earth plays Earth and the Moon only."
 fi
 
-# 3. The run
+# 2. The run
 OUT="${DOCS}/benchmarks/$(date +%Y-%m-%d_%H%M)"
 [ -z "${HOLD}" ] || OUT="${OUT}_hold"
 [ ! -e "${OUT}" ] || OUT="${OUT}_$(date +%S)"
 mkdir -p "${OUT}"
 cp "${SETTINGS}" "${OUT}/settings.toml"
-# What the report says about this Mac and the run (values first: bash 3.2 misreads quotes in $() inside "")
-gpu_cores="$(system_profiler SPDisplaysDataType 2> /dev/null | awk -F': ' '/Total Number of Cores/ { print $2; exit }')"
-displays="$(system_profiler SPDisplaysDataType 2> /dev/null | awk -F': ' '/Resolution:/ { print $2 }' | paste -sd ';' - | sed 's/;/; /g')"
-power="$(pmset -g batt | head -1 | sed -n "s/.*'\(.*\)'.*/\1/p")"
-low_power="$(pmset -g | awk '/lowpowermode/ { print ($2 == 1 ? "on" : "off"); exit }')"
+# What the report says about this Mac and the run (the report program asks macOS about the Mac)
 switches="$(env | grep -E '^KSA_(MTL_|HOOKS)' | sed "s|${HOME}|~|g" | paste -sd ' ' - || true)"
-port_version="$(/usr/libexec/PlistBuddy -c "Print :KSAPortVersion" "${APP}/Contents/Info.plist" 2> /dev/null || true)"
-port_commit="$(/usr/libexec/PlistBuddy -c "Print :KSAPortCommit" "${APP}/Contents/Info.plist" 2> /dev/null || true)"
 tools="$(IFS=,; echo "${TOOLS[*]:-none}" | sed 's/,/, /g')"
 changed="${SETS[*]:-}${PORTS[*]:+${SETS[*]:+ }port-settings: ${PORTS[*]}}"
 [ -z "${SETTINGS_FILE}" ] || changed="$(basename "${SETTINGS_FILE}")${changed:+ }${changed}"
-{
-    echo "Mac: $(sysctl -n hw.model)"
-    echo "Chip: $(sysctl -n machdep.cpu.brand_string)"
-    echo "CPU cores: $(sysctl -n hw.perflevel0.physicalcpu) performance, $(sysctl -n hw.perflevel1.physicalcpu 2> /dev/null || echo 0) efficiency"
-    echo "GPU cores: ${gpu_cores}"
-    echo "Memory: ${memory_gb} GB"
-    echo "macOS: $(sw_vers -productVersion) ($(sw_vers -buildVersion))"
-    echo "Displays: ${displays}"
-    echo "Power: ${power}"
-    echo "Low Power Mode: ${low_power}"
-    echo "KSA: ${INSTALLED}"
-    echo "Port: ${port_version} (${port_commit})"
-    echo "StarMap: $(cat "${STARMAP_RUN}/version.txt")"
-    echo "System: ${SYSTEM_ID}"
-    echo "Sections: ${SECTIONS}"
-    echo "Mode: $([ -n "${FAST}" ] && echo fast || echo cinematic)$([ -n "${NO_SHOTS}" ] && echo ", no screenshots" || true)"
-    echo "Preset: ${PRESET:-none, own settings}"
-    echo "Settings changed: ${changed:-none}"
-    echo "Window: $(setting width) x $(setting height), $(setting mode), on $(setting screenName)"
-    echo "V-Sync: $(setting vsync), FPS limit $(setting fpslimit)"
-    echo "Anti-aliasing: $(setting antialiasing)"
-    echo "KSA Metal switches: ${switches:-none}"
-    echo "Tools: ${tools}"
-} > "${OUT}/system.txt"
+starmap=none
+[ ! -f "${RES}/StarMap/StarMap.dll" ] || starmap="$(cat "${RES}/StarMap/version.txt" 2> /dev/null || echo "in the app")"
+report system "${OUT}" "${APP}" "StarMap=${starmap}" "System=${SYSTEM_ID}" "Sections=${SECTIONS}" \
+    "Mode=$([ -n "${FAST}" ] && echo fast || echo cinematic)$([ -n "${NO_SHOTS}" ] && echo ", no screenshots" || true)" \
+    "Preset=${PRESET:-none, own settings}" "Settings changed=${changed:-none}" "Start=a new game, from benchmark.sh" \
+    "KSA Metal switches=${switches:-none}" "Tools=${tools}" > /dev/null || die "the report program did not run."
 # Keeps the display awake while the script runs (the game needs it), and wakes it now: a display that went to sleep
 # makes the game fail at start
 caffeinate -d -i -w $$ &
@@ -500,11 +471,6 @@ done
 case "${pressure}" in 1) pressure=normal ;; 2) pressure=warning ;; *) pressure=critical ;; esac
 swap_after="$(sysctl -n vm.swapusage | sed -n 's/.*used = \([0-9.]*\)M.*/\1/p')"
 echo "Memory pressure: ${pressure}" >> "${OUT}/run.txt"
-# What the launcher made of the port settings, and what the hooks did (from the first run's log)
-port="$(sed -n 's/^==> port settings: //p' "${OUT}/game.log" 2> /dev/null | head -1)"
-hooks="$(sed -n 's/^\[hooks\] //p' "${OUT}/game.log" 2> /dev/null | paste -sd ';' - | sed 's/;/; /g')"
-echo "port settings: ${port:-?}" >> "${OUT}/system.txt"
-echo "Hooks: ${hooks:-none}" >> "${OUT}/system.txt"
 echo "Swap used: ${swap_before:-?} -> ${swap_after:-?} MB" >> "${OUT}/run.txt"
 
 # The tools' output
@@ -534,8 +500,10 @@ if [ -n "${HOLD}" ]; then
     exit
 fi
 
+# The report, then the zip to share (report finish): the report, every frame's numbers, the logs and crash reports of
+# the run, the settings, and the screenshots as JPEG; your home folder's name replaced by ~
 failed=0
-report report "${OUT}" > /dev/null || failed=1
+ZIP="$(report finish "${OUT}" | tail -1)" || failed=1
 [ -z "${PROFILE}" ] || report profile "${OUT}" > /dev/null || true
 echo ""
 cat "${OUT}/report.md"
@@ -544,30 +512,6 @@ if [ -n "${REFERENCE}" ]; then
     report compare "${REFERENCE}" "${OUT}" || failed=1
     echo ""
 fi
-
-# The zip to share: the report, every frame's numbers, the logs and crash reports of the run, the settings, and the
-# screenshots as JPEG; your home folder's name replaced by ~. It goes in the run's folder, named after it.
-ZIP="${OUT}/$(basename "${OUT}").zip"
-STAGE="$(mktemp -d)/$(basename "${OUT}")"
-mkdir -p "${STAGE}"
-for f in report.md report.json system.txt run.txt settings.toml profile.md "${OUT}"/game*.log "${OUT}"/frames*.csv \
-    "${OUT}"/results*.json; do
-    f="$(basename "${f}")"
-    [ ! -f "${OUT}/${f}" ] || cp "${OUT}/${f}" "${STAGE}/"
-done
-for shot in "${OUT}"/*_*.png; do
-    [ -f "${shot}" ] || continue
-    sips -s format jpeg -s formatOptions 70 -Z 1600 "${shot}" --out "${STAGE}/$(basename "${shot}" .png).jpg" > /dev/null 2>&1 || true
-done
-find "${HOME}/Library/Logs/DiagnosticReports" -maxdepth 1 -name '*.ips' -newer "${OUT}/system.txt" 2> /dev/null |
-    while read -r crash; do
-        grep -q '"procName" *: *"dotnet"\|KSA\.dll\|StarMap' "${crash}" 2> /dev/null || continue
-        mkdir -p "${STAGE}/crashes"
-        sed "s|${HOME}|~|g; s|/Users/$(id -un)|~|g" "${crash}" > "${STAGE}/crashes/$(basename "${crash}")"
-    done
-rm -f "${ZIP}"
-ditto -c -k --norsrc --noextattr --keepParent "${STAGE}" "${ZIP}"
-rm -rf "$(dirname "${STAGE}")"
 
 if [ "${failed}" = 0 ]; then
     step "Done: ${OUT}"

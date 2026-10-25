@@ -8,8 +8,9 @@ namespace KsaMetalHooks;
 // around it, 0.4 to 0.8 ms a frame), drawn every frame while the controlled vessel has crew, also when the panel isn't
 // on screen (UI hidden, map view). After CrewPortraitPanel.Update has chosen the portraits, the patch hides a
 // portrait's view for this frame unless the panel was drawn in the previous one, the way the game hides it when
-// portraits are off; the panel keeps showing the view's last image. With KSA_PORTRAIT_FPS, a drawn panel is also
-// refreshed at most that many times a second.
+// portraits are off; the panel keeps showing the view's last image. With crew_portraits = "shown_15", a drawn panel is
+// also refreshed at most 15 times a second, and with "always" the game draws them as it does without the patch. The
+// Mac Port tab changes the setting while the game runs.
 internal static class CrewPortraits
 {
     private static long _frame, _drawnFrame = -2, _shownSince = -1;
@@ -23,24 +24,28 @@ internal static class CrewPortraits
         Find.Method(typeof(Program), nameof(Program.GetCrewPortraitViewport));
         harmony.Patch(update, postfix: new HarmonyMethod(typeof(CrewPortraits), nameof(UpdatePostfix)));
         harmony.Patch(draw, postfix: new HarmonyMethod(typeof(CrewPortraits), nameof(DrawPostfix)));
-        return Settings.PortraitFps > 0 ? $"on, at most {Settings.PortraitFps} per second" : "on";
+        return Settings.CrewPortraits switch { "always" => "on, every frame", "shown_15" => "on, when shown, 15 a second", _ => "on, when shown" };
     }
 
     private static void DrawPostfix() => _drawnFrame = _frame;
 
+    private const int ShownFps = 15;
+
     private static void UpdatePostfix()
     {
         _frame++;
+        if (Settings.CrewPortraits == "always")
+            return;
         bool shown = _drawnFrame >= _frame - 1;
         if (!shown)
             _shownSince = -1;
         else if (_shownSince < 0)
             _shownSince = _frame;
         bool render = shown;
-        if (render && Settings.PortraitFps > 0 && _frame > _shownSince + 1)
+        if (render && Settings.CrewPortraits == "shown_15" && _frame > _shownSince + 1)
         {
             double now = Clock.Elapsed.TotalSeconds;
-            render = now - _lastRender >= 1.0 / Settings.PortraitFps;
+            render = now - _lastRender >= 1.0 / ShownFps;
         }
         if (render)
         {

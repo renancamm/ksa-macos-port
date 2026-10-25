@@ -1,15 +1,21 @@
 # Benchmark
 
-The port's benchmark is a mod that measures how KSA runs on your Mac. It plays a fixed tour of the game in one
-session: a camera flight from Earth to Jupiter without a cut, then a day in a capsule's cockpit, a kitten in the grass,
-a rocket launch and a 2,000-part rocket blown up on its pad. It measures each part and writes a report you can compare
-with another run or share.
+The port's benchmark measures how KSA runs on your Mac. It plays a fixed tour of the game in one session: a camera
+flight from Earth to Jupiter without a cut, then a day in a capsule's cockpit, a kitten in the grass, a rocket launch
+and a 2,000-part rocket blown up on its pad. It measures each part and writes a report you can compare with another
+run or share.
 
 It is for spotting differences: between two settings, two versions of the port, or two Macs. Since it plays the same
 way every time, it is also the project's test: every run passes or fails, and `compare` checks its screenshots
 against another run's.
 
 ## Run it
+
+In the game, open the settings (Esc), then **Mac Port**, and press **Run benchmark** at the bottom: the fast test or
+the full tour, with your own settings. It plays in the game you have open. Your game is saved first, the tour plays in
+a new game's world, and your game comes back when it ends; Esc stops it. With **Restart the game first** on, the game
+starts again for it instead, the way `./benchmark.sh` plays it, and quits at the end with the report's folder open.
+**Show report** under the button finds the last report in the Finder.
 
 From the port folder, after `./port.sh`:
 
@@ -20,6 +26,9 @@ From the port folder, after `./port.sh`:
 A run takes about 8 minutes and uses your own settings. The game takes over the screen: leave the mouse and keyboard
 alone until the script says it is done. On a Mac with 8 GB of memory, add `--system earth`: it plays Earth and the
 Moon only and needs a few GB less.
+
+A run in the game you have open starts with that game's clouds and sea, and after what the game played before, so its
+numbers compare best with other runs played the same way, and `compare` doesn't check its screenshots.
 
 To compare two runs:
 
@@ -116,19 +125,24 @@ starts at a fixed game time, so its light and clouds are the same whether or not
 
 ## How it works
 
-The benchmark is a [StarMap](../../README.md#mods) mod. For a run, the game starts through the port folder's copy of
-StarMap and from a documents folder of its own, both under `~/Library/Caches/ksa-macos-port/benchmark/`. That folder
-holds a copy of your settings (with the preset on top, if any) and of your port settings (the defaults with a preset),
-the tour's vehicles and no mod but the benchmark's, so the app, your saves, settings and mods are never touched. The
-script changes only the settings that start the game straight into the tour (no system menu, the chosen system, the
-game's test vessel in orbit); every quality setting stays yours or the preset's.
+The benchmark is in the app, in `Contents/Resources/Benchmark/`, and [KSA Metal Hooks](../hooks/) start it. For a run
+of `./benchmark.sh`, the game starts from a documents folder of its own,
+`~/Library/Caches/ksa-macos-port/benchmark/instance/`. That folder holds a copy of your settings (with the preset on
+top, if any) and of your port settings (the defaults with a preset), and no mods, so your saves, settings and mods are
+never touched. The script changes only the settings that start the game straight into the tour (no system menu, the
+chosen system, the game's test vessel in orbit); every quality setting stays yours or the preset's. A run from the
+game with **Restart the game first** starts the same way. A run in the game you have open keeps its system: the hooks
+save your game, set the world to a new game's (the clock at its start, no vehicles), and load your game again at the
+end. The hooks add the tour's vehicles to the game's list of vehicles from the app, and write the report of a run from
+the game.
 
 The tour is a text file, `benchmark.txt`: sections of steps timed in seconds, each a console command or a directive of
-the benchmark mod (`mod/Directives.cs` lists them). The camera's flight is given by `@key` steps, places the camera
-passes through (`mod/Path.cs`); around the vehicles, the camera follows them or stands on the ground (`mod/Rig.cs`).
-The mod in `mod/` plays the steps, moves the camera, measures the parts each section marks, and asks KSA Metal for
-each frame's GPU time and for the screenshots. `./build.sh` compiles it against the KSA version the port is made for.
-`report/` holds the small program that writes the report and compares runs.
+the benchmark's director (`director/Directives.cs` lists them). The camera's flight is given by `@key` steps, places the
+camera passes through (`director/Path.cs`); around the vehicles, the camera follows them or stands on the ground
+(`director/Rig.cs`). The director in `director/` plays the steps, moves the camera, measures the parts each section
+marks, and asks KSA Metal for each frame's GPU time and for the screenshots. `./build.sh` compiles it against the KSA
+version the port is made for. `report/` holds the small program that describes the Mac, writes the report and the
+zip, and compares runs.
 
 Each screenshot is a checkpoint. The game runs its simulation as fast as the Mac allows, so a slower Mac falls a
 little behind the tour. At a checkpoint the tour waits for the game to reach the moment it should be at, pauses it
@@ -136,14 +150,14 @@ there and takes the screenshot, so the screenshots show the same moments, in the
 
 In fast mode the game stays paused through the flight between the worlds, and the tour's clock jumps from one
 screenshot to the next, so the light and the clouds there are those of the game's start. The sections with vehicles
-play as written, as in the cinematic tour. At a checkpoint the mod takes a screenshot every half second until two in
-a row match, which means the ground and textures that stream in after a jump have settled; then it measures the view
-for two seconds and takes the real screenshot. Fast mode plays in the game's smaller system (Earth and the Moon) when
-the places played are all there, since the other worlds' textures would only take memory.
+play as written, as in the cinematic tour. At a checkpoint the director takes a screenshot every half second until two
+in a row match, which means the ground and textures that stream in after a jump have settled; then it measures the
+view for two seconds and takes the real screenshot. Fast mode plays in the game's smaller system (Earth and the Moon)
+when the places played are all there, since the other worlds' textures would only take memory.
 
 A run fails when the game crashed or hung, a step of the tour failed, a vehicle broke apart before it should, a
 screenshot is missing, the game's log has errors, or another game ran at the same time; the script then exits with 1.
-The mod touches a file every second; a game that hasn't touched it for a minute counts as hung and is stopped.
+The director touches a file every second; a game that hasn't touched it for a minute counts as hung and is stopped.
 
 `compare` marks a number as changed when it moved by more than 5%, because two runs on the same Mac differ by a few
 percent in most parts; the flights through space vary more, with little on screen and a high frame rate. Between
@@ -166,8 +180,8 @@ The rockets and the capsule in `vehicles/` were built for the tour.
 
 `--explore` starts the benchmark's game as a run would, with its clock paused so the light matches the tour's. Fly the
 free camera to a place, open the console (`\`) and type `benchkey <name>`: the place is written as a `@key` line to
-`keys.txt` in a new run folder and copied to the clipboard, ready to paste into `benchmark.txt`. `./build.sh` copies
-the tour from `src/benchmark/benchmark.txt` into the port folder.
+`keys.txt` in a new run folder and copied to the clipboard, ready to paste into `benchmark.txt`. `./build.sh --install`
+puts the tour from `src/benchmark/benchmark.txt` into the app.
 
 ## Options and files
 
@@ -195,5 +209,5 @@ the tour from `src/benchmark/benchmark.txt` into the port folder.
 |---|---|
 | `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/` | the results: `report.md`, `report.json`, `frames.csv`, the screenshots, `game.log`, and what the tools wrote |
 | `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/<date>.zip` | the run to share |
-| `~/Library/Caches/ksa-macos-port/benchmark/` | the game's documents folder for the run (`instance/`) and the StarMap it starts through (`starmap/`) |
-| `payload/benchmark/` in the port folder | the mod, the report program, the tour and its vehicles |
+| `~/Library/Caches/ksa-macos-port/benchmark/instance/` | the game's documents folder for a run that starts the game |
+| `Contents/Resources/Benchmark/` in the app | the director, the report program, the tour and its vehicles |

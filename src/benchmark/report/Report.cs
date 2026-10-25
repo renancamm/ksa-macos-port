@@ -1,12 +1,19 @@
-// The benchmark's report and comparison, run by benchmark.sh in the port folder.
+// The benchmark's report and comparison, run by benchmark.sh in the port folder, and by KSA Metal Hooks for a run from
+// the game's settings.
 //
-//   report <dir>       <dir>/results.json (written by the mod; results-2.json... for repeats, merged into medians) +
-//                      <dir>/system.txt and <dir>/run.txt (written by the script, "key: value" lines) + <dir>/game.log
-//                      -> <dir>/report.json and <dir>/report.md. Exits with 1 when the run had problems (it failed).
+//   system <dir> <app> [<key>=<value>...]  -> <dir>/system.txt: this Mac, the app, the run's facts given as key=value
+//                      (in that order), and the window from <dir>/settings.toml
+//   report <dir>       <dir>/results.json (written by the director; results-2.json... for repeats, merged into medians) +
+//                      <dir>/system.txt and <dir>/run.txt ("key: value" lines) + <dir>/game.log -> <dir>/report.json
+//                      and <dir>/report.md. Exits with 1 when the run had problems (it failed).
+//   finish <dir>       the port settings and the hooks from game.log into system.txt (when it has them not), then the
+//                      report, then <dir>/<dir's name>.zip to share: the report, every frame's numbers, the logs, crash
+//                      reports of the game since the run started, the settings, and the screenshots as JPEG, your home
+//                      folder's name replaced by ~. Exits as report does.
 //   compare <a> <b>    two runs (folders or shared zips): the Macs and settings that differ, per part of each section
 //                      b's numbers against a's, and each screenshot of b against a's (marked copies of those that
-//                      differ go to <b>/diff/). Exits with 1 when screenshots differ, 2 when the runs don't compare
-//                      (different modes).
+//                      differ go to <b>/diff/; not when a run played in a running game). Exits with 1 when screenshots
+//                      differ, 2 when the runs don't compare (different modes).
 //   profile <dir>      <dir>/gpuprof.csv (KSA Metal's GPU profiler, one window per measured part) -> <dir>/profile.md:
 //                      the encoders that took the most GPU time in each part
 //   trace <dir>        <dir>/trace-parts.xml and <dir>/trace-gpu.xml (tables exported from an Instruments trace: the
@@ -43,15 +50,19 @@ public static class Program
     {
         CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
         CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+        if (args.Length >= 3 && args[0] == "system")
+            return SystemFacts(args[1], args[2], args[3..]);
         if (args.Length == 2 && args[0] == "report")
             return Report(args[1]);
+        if (args.Length == 2 && args[0] == "finish")
+            return Finish(args[1]);
         if (args.Length == 3 && args[0] == "compare")
             return Compare(args[1], args[2]);
         if (args.Length == 2 && args[0] == "profile")
             return Profile(args[1]);
         if (args.Length == 2 && args[0] == "trace")
             return Trace(args[1]);
-        Console.Error.WriteLine("usage: report <dir> | compare <a> <b> | profile <dir> | trace <dir>");
+        Console.Error.WriteLine("usage: system <dir> <app> [key=value...] | report <dir> | finish <dir> | compare <a> <b> | profile <dir> | trace <dir>");
         return 2;
     }
 
@@ -88,6 +99,135 @@ public static class Program
         File.WriteAllText(Path.Combine(dir, "report.md"), Markdown(report));
         Console.WriteLine(Path.Combine(dir, "report.md"));
         return problems.Count == 0 ? 0 : 1;
+    }
+
+    // system.txt: what the report says about this Mac and the run
+    private static int SystemFacts(string dir, string app, string[] facts)
+    {
+        var settings = File.Exists(Path.Combine(dir, "settings.toml")) ? File.ReadAllLines(Path.Combine(dir, "settings.toml")) : [];
+        string Setting(string key) => settings.Select(l => l.Trim()).Where(l => l.StartsWith(key + " = ", StringComparison.Ordinal))
+            .Select(l => l[(key.Length + 3)..].Trim('"')).FirstOrDefault() ?? "?";
+        string Plist(string key) => Run("/usr/libexec/PlistBuddy", "-c", $"Print :{key}", Path.Combine(app, "Contents", "Info.plist")).Trim();
+        var displays = Run("/usr/sbin/system_profiler", "SPDisplaysDataType");
+        string Display(string key) => string.Join("; ", displays.Split('\n').Select(l => l.Trim())
+            .Where(l => l.StartsWith(key + ": ", StringComparison.Ordinal)).Select(l => l[(key.Length + 2)..]));
+        var power = Regex.Match(Run("/usr/bin/pmset", "-g", "batt"), "'(.*)'").Groups[1].Value;
+        var lowPower = Regex.Match(Run("/usr/bin/pmset", "-g"), @"lowpowermode\s+(\d)").Groups[1].Value == "1" ? "on" : "off";
+        long memory = long.TryParse(Sysctl("hw.memsize"), out var bytes) ? bytes / 1073741824 : 0;
+        var lines = new List<string>
+        {
+            $"Mac: {Sysctl("hw.model")}",
+            $"Chip: {Sysctl("machdep.cpu.brand_string")}",
+            $"CPU cores: {Sysctl("hw.perflevel0.physicalcpu")} performance, {(Sysctl("hw.perflevel1.physicalcpu") is { Length: > 0 } e ? e : "0")} efficiency",
+            $"GPU cores: {Display("Total Number of Cores").Split(';')[0]}",
+            $"Memory: {memory} GB",
+            $"macOS: {Run("/usr/bin/sw_vers", "-productVersion").Trim()} ({Run("/usr/bin/sw_vers", "-buildVersion").Trim()})",
+            $"Displays: {Display("Resolution")}",
+            $"Power: {power}",
+            $"Low Power Mode: {lowPower}",
+            $"KSA: {Plist("CFBundleShortVersionString")}",
+            $"Port: {Plist("KSAPortVersion")} ({Plist("KSAPortCommit")})"
+        };
+        foreach (var fact in facts)
+        {
+            int eq = fact.IndexOf('=');
+            if (eq > 0)
+                lines.Add($"{fact[..eq]}: {fact[(eq + 1)..]}");
+        }
+        lines.Add($"Window: {Setting("width")} x {Setting("height")}, {Setting("mode")}, on {Setting("screenName")}");
+        lines.Add($"V-Sync: {Setting("vsync")}, FPS limit {Setting("fpslimit")}");
+        lines.Add($"Anti-aliasing: {Setting("antialiasing")}");
+        File.WriteAllLines(Path.Combine(dir, "system.txt"), lines);
+        return 0;
+    }
+
+    private static string Sysctl(string name) => Run("/usr/sbin/sysctl", "-n", name).Trim();
+
+    // A program's output (empty when it fails)
+    private static string Run(string program, params string[] arguments)
+    {
+        try
+        {
+            var start = new System.Diagnostics.ProcessStartInfo(program) { RedirectStandardOutput = true, RedirectStandardError = true };
+            foreach (var a in arguments)
+                start.ArgumentList.Add(a);
+            using var process = System.Diagnostics.Process.Start(start)!;
+            var output = process.StandardOutput.ReadToEnd();
+            process.WaitForExit();
+            return process.ExitCode == 0 ? output : "";
+        }
+        catch (Exception)
+        {
+            return "";
+        }
+    }
+
+    // After the run: what the launcher and the hooks said (from the first session's log), the report, and the zip
+    private static int Finish(string dir)
+    {
+        var system = Path.Combine(dir, "system.txt");
+        var have = KeyValues(system).Select(kv => kv.key).ToHashSet();
+        var log = Path.Combine(dir, "game.log");
+        var lines = File.Exists(log) ? File.ReadAllLines(log) : [];
+        var added = new List<string>();
+        if (!have.Contains("port settings"))
+            added.Add($"port settings: {lines.Where(l => l.StartsWith("==> port settings: ", StringComparison.Ordinal)).Select(l => l[19..]).FirstOrDefault() ?? "?"}");
+        if (!have.Contains("Hooks"))
+        {
+            var hooks = lines.Where(l => l.StartsWith("[hooks] ", StringComparison.Ordinal)).Select(l => l[8..]).ToList();
+            added.Add($"Hooks: {(hooks.Count > 0 ? string.Join("; ", hooks) : "none")}");
+        }
+        File.AppendAllLines(system, added);
+        int status = Report(dir);
+        Package(dir);
+        return status;
+    }
+
+    // <dir>/<name>.zip: what a shared run holds
+    private static void Package(string dir)
+    {
+        var name = Path.GetFileName(Path.GetFullPath(dir).TrimEnd('/'));
+        var zip = Path.Combine(dir, name + ".zip");
+        var home = Environment.GetEnvironmentVariable("HOME") ?? "";
+        var stage = Path.Combine(Path.GetTempPath(), $"ksa-metal-benchmark-{Environment.ProcessId}", name);
+        Directory.CreateDirectory(stage);
+        try
+        {
+            foreach (var file in Directory.GetFiles(dir))
+            {
+                var f = Path.GetFileName(file);
+                if (f is "report.md" or "report.json" or "system.txt" or "run.txt" or "settings.toml" or "profile.md" ||
+                    f.StartsWith("game", StringComparison.Ordinal) && f.EndsWith(".log", StringComparison.Ordinal) ||
+                    f.StartsWith("frames", StringComparison.Ordinal) && f.EndsWith(".csv", StringComparison.Ordinal) ||
+                    f.StartsWith("results", StringComparison.Ordinal) && f.EndsWith(".json", StringComparison.Ordinal))
+                    File.Copy(file, Path.Combine(stage, f));
+                else if (f.Contains('_') && f.EndsWith(".png", StringComparison.Ordinal))
+                    Run("/usr/bin/sips", "-s", "format", "jpeg", "-s", "formatOptions", "70", "-Z", "1600", file, "--out",
+                        Path.Combine(stage, Path.ChangeExtension(f, ".jpg")));
+            }
+            // The game's crash reports since the run started
+            var since = File.GetLastWriteTimeUtc(Path.Combine(dir, "system.txt"));
+            var reports = Path.Combine(home, "Library", "Logs", "DiagnosticReports");
+            var user = Environment.UserName;
+            foreach (var crash in Directory.Exists(reports) ? Directory.GetFiles(reports, "*.ips") : [])
+            {
+                if (File.GetLastWriteTimeUtc(crash) < since)
+                    continue;
+                var text = File.ReadAllText(crash);
+                if (!Regex.IsMatch(text, "\"procName\" *: *\"dotnet\"|KSA\\.dll|StarMap"))
+                    continue;
+                Directory.CreateDirectory(Path.Combine(stage, "crashes"));
+                File.WriteAllText(Path.Combine(stage, "crashes", Path.GetFileName(crash)),
+                    text.Replace(home, "~").Replace($"/Users/{user}", "~"));
+            }
+            File.Delete(zip);
+            ZipFile.CreateFromDirectory(Path.GetDirectoryName(stage)!, zip);
+        }
+        finally
+        {
+            Directory.Delete(Path.GetDirectoryName(stage)!, recursive: true);
+        }
+        Console.WriteLine(zip);
     }
 
     // "key: value" lines
@@ -157,8 +297,10 @@ public static class Program
             notes.Add("Low Power Mode was on: the Mac runs slower");
         if (Sys("KSA Metal switches") is { Length: > 0 } switches && switches != "none")
             notes.Add($"KSA Metal switches were set ({switches}): they change what the driver does");
-        if (Sys("Mac settings") is { Length: > 0 } mac && mac != "defaults")
-            notes.Add($"Mac settings were changed ({mac}): they change what the game draws");
+        if (Sys("port settings") is { Length: > 0 } port && port != "defaults")
+            notes.Add($"port settings were changed ({port}): they change what the game draws or how");
+        if (Sys("Start") is { Length: > 0 } start && start.StartsWith("in the running game", StringComparison.Ordinal))
+            notes.Add("played in a running game, after what was played before: its numbers compare best with runs started the same way");
         if (Sys("Hooks").Contains("skipped"))
             notes.Add("a hook was skipped (the game's code changed): see Hooks");
         if (Sys("Tools") is { Length: > 0 } tools && tools != "none")
@@ -196,7 +338,7 @@ public static class Program
         var problems = new List<string>();
         foreach (var (key, ending) in KeyValues(Path.Combine(dir, "run.txt")).Where(kv => kv.key.StartsWith("Game", StringComparison.Ordinal)))
         {
-            if (ending != "quit normally")
+            if (ending is not ("quit normally" or "kept running"))
                 problems.Add($"the game {(key == "Game" ? "" : $"(repeat {key[5..]}) ")}{ending}");
         }
         if (KeyValues(Path.Combine(dir, "run.txt")).Any(kv => kv.key == "Alongside"))
@@ -274,7 +416,8 @@ public static class Program
             md.AppendLine($"| {key} | {value} |");
         if (report["drawable"] is { } drawable)
             md.AppendLine($"| Drawn | {drawable} pixels |");
-        md.AppendLine($"| Loading | {Num(report["loadSeconds"], "F1")} s |");
+        if (report["loadSeconds"] is JsonValue load && load.TryGetValue<double>(out var seconds) && seconds > 0)
+            md.AppendLine($"| Loading | {Num(load, "F1")} s |");
         int runs = report["runs"]?.GetValue<int>() ?? 1;
         if (runs > 1)
             md.AppendLine($"| Runs | {runs}: each number is the median of the runs, Frame ms shows their range |");
@@ -331,6 +474,12 @@ public static class Program
         Macs(ra, rb);
         Settings(Directory.Exists(a) ? a : Path.GetDirectoryName(a)!, Directory.Exists(b) ? b : Path.GetDirectoryName(b)!);
         Numbers(ra, rb);
+        // A run in a running game starts with the clouds and the sea where that game had them
+        if (new[] { ra, rb }.Any(r => ((string?)r["system"]?["Start"] ?? "").StartsWith("in the running game", StringComparison.Ordinal)))
+        {
+            Console.WriteLine("Screenshots: not compared, a run played in a running game (its clouds and sea are that game's).");
+            return 0;
+        }
         return Screenshots(Directory.Exists(a) ? a : Path.GetDirectoryName(a)!, Directory.Exists(b) ? b : Path.GetDirectoryName(b)!,
             modeA == "fast" ? FastShotLimit : CinematicShotLimit);
     }

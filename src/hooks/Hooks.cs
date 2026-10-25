@@ -12,36 +12,65 @@ namespace KsaMetalHooks;
 // and the log says so, and the game runs as it would without it. A patch is applied whole or not at all.
 public static class Hooks
 {
+    // What each hook did, by its key ("on, ...", "off", "skipped, ..."): the Mac Port tab shows a setting whose hook was
+    // skipped as unavailable
+    public static readonly Dictionary<string, string> Status = new();
+    // The hooks in the order they were applied: name and key
+    private static readonly List<(string Name, string Key)> Applied = new();
+
+    // What every hook did, as the log said it ("terrain cache: on; ...")
+    public static string Summary => string.Join("; ", Applied.Select(h => $"{h.Name}: {Status[h.Key]}"));
+
+    // The app's Contents/Resources: the hooks are in its Hooks folder
+    public static string Resources => System.IO.Path.GetFullPath(System.IO.Path.Combine(
+        System.IO.Path.GetDirectoryName(typeof(Hooks).Assembly.Location)!, ".."));
+
     public static void Apply()
     {
-        Run("terrain cache", "terrain_cache", TerrainCache.Apply);
-        Run("outline skip", "outline_skip", OutlineSkip.Apply);
-        Run("cloud shadows", "cloud_shadows", CloudShadows.Apply);
-        Run("crew portraits", "crew_portraits", CrewPortraits.Apply);
-        Run("worker parking", "worker_park", WorkerPark.Apply);
-        Run("render scale", "render_scale", RenderScale.Apply);
+        // Off (KSA_HOOKS=0), they load only for a benchmark run, which they start
+        if (Environment.GetEnvironmentVariable("KSA_HOOKS") == "0")
+        {
+            Log("off, except for the benchmark");
+            Run("documents folder", "documents", true, Documents.Apply);
+            Run("benchmark", "benchmark", true, BenchmarkRun.Apply);
+            return;
+        }
+        Run("terrain cache", "terrain_cache", Settings.On("KSA_TERRAIN_CACHE"), TerrainCache.Apply);
+        Run("outline skip", "outline_skip", Settings.On("KSA_OUTLINE_SKIP"), OutlineSkip.Apply);
+        Run("cloud shadows", "cloud_shadows", true, CloudShadows.Apply);
+        Run("crew portraits", "crew_portraits", true, CrewPortraits.Apply);
+        Run("worker parking", "worker_park", Settings.On("KSA_WORKER_PARKING"), WorkerPark.Apply);
+        Run("render scale", "render_scale", true, RenderScale.Apply);
+        // The port's own parts of the game
+        Run("documents folder", "documents", true, Documents.Apply);
+        Run("restart", "restart", true, Restart.Apply);
+        Run("Mac Port tab", "mac_port_tab", true, MacPortTab.Apply);
+        Run("benchmark", "benchmark", true, BenchmarkRun.Apply);
     }
 
     // apply(harmony) patches and returns what it did ("on", "off", ...); throws Skip (or anything) when it can't
-    private static void Run(string name, string key, Func<Harmony, string> apply)
+    private static void Run(string name, string key, bool enabled, Func<Harmony, string> apply)
     {
-        if (Settings.Disabled(key))
+        Applied.Add((name, key));
+        if (!enabled)
         {
-            Log($"{name}: off (KSA_PATCHES_OFF)");
+            Status[key] = "off";
+            Log($"{name}: off");
             return;
         }
         var harmony = new Harmony($"io.github.ksa-macos-port.{key}");
         try
         {
-            Log($"{name}: {apply(harmony)}");
+            Status[key] = apply(harmony);
         }
         catch (Exception e)
         {
             harmony.UnpatchAll(harmony.Id);
             while (e.InnerException != null && e is not Skip)
                 e = e.InnerException;
-            Log($"{name}: skipped, the game's code changed ({e.Message})");
+            Status[key] = $"skipped, the game's code changed ({e.Message})";
         }
+        Log($"{name}: {Status[key]}");
     }
 
     public static void Log(string message) => Console.WriteLine($"[hooks] {message}");

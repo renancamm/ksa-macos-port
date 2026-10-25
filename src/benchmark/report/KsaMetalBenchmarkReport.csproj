@@ -11,7 +11,7 @@
 		<UseAppHost>false</UseAppHost>
 	</PropertyGroup>
 	<ItemGroup>
-		<!-- The PNG reader and the comparison of screenshots, shared with the mod -->
-		<Compile Include="../mod/Images.cs" />
+		<!-- The PNG reader and the comparison of screenshots, shared with the director -->
+		<Compile Include="../director/Images.cs" />
 	</ItemGroup>
 </Project>

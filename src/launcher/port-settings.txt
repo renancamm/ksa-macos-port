@@ -1,0 +1,86 @@
+# The port settings: every setting of port-settings.toml, in the file's order. Three parts read this table: the
+# launcher (launcher.sh), which exports each setting the file changes as the environment variable that KSA Metal, its
+# shims and its hooks read; scripts/make-port-settings.sh, which writes the file's commented template from it; and the
+# Mac Port tab in the game's settings (src/hooks/), which draws its rows from it. A variable already set when the game
+# starts wins over the file.
+#
+# [<section>] <title>: starts a section of the file and of the tab; [developer]'s settings are in the file only.
+# Then one setting per line:
+#
+#   key | type | default | variable | needs | applies | hook | label | help
+#
+#   type      bool: on or off; available: Available or Off, a feature the Mac offers the game, which the game's own
+#             settings still turn on and off; choice:<value>=<label>/...; scale:<min>:<max>, a fraction shown in
+#             percent; int:<min>:<max>; number:<min>:<max>; text
+#   default   the value a line left out takes, and the one the variable means when it isn't set
+#   variable  what the setting sets when it isn't at its default: on is 1 and off 0 (VAR=<value>: that, for on), other
+#             types their value. Without one, the setting is the tab's own
+#   needs     the settings it depends on (comma separated): <key> (on, or not empty), <key>=<value>, <key>!=<value>, or
+#             game:vsync (the game's V-Sync, which only the tab checks). While one isn't met, it keeps its default
+#   applies   live: on Apply, in the running game; restart: when the game starts
+#   hook      the hook that does it (src/hooks/): the tab shows the setting as unavailable when the hook was skipped
+#   label     its row in the tab; help: the row's tooltip and the file's comment
+
+[image] Image
+upscaling | choice:off=Off/metalfx=MetalFX/spatial=MetalFX spatial | off | KSA_UPSCALER | | restart | | Upscaling | Apple's MetalFX upscaler, for the settings below. MetalFX uses the last frames and is the sharpest; MetalFX spatial works one frame at a time. Off: the game draws as it does on other systems, and the settings below are off.
+render_scale | scale:0.5:1 | 1.0 | KSA_RENDER_SCALE | upscaling!=off | restart | render_scale | Render scale | The 3D view's size, as a share of the window's. Below 100% the view is drawn smaller and MetalFX scales it back up: less work for the GPU, a slightly softer image.
+frame_interpolation | bool | false | KSA_MTL_FX_INTERPOLATE | upscaling=metalfx | restart | render_scale | Frame interpolation | A frame made by MetalFX between every two the game draws: smoother motion, a little more delay. Works best when the game runs at least at half the display's refresh rate. Rocket plumes can look ragged in the frames MetalFX makes.
+retina | bool | false | KSA_MTL_RETINA | upscaling!=off | restart | | Retina | The image at the display's full resolution: the game draws at the window's size, and MetalFX scales it up.
+
+[performance] Performance
+cloud_shadows | choice:normal=Normal/slow=Slow | normal | KSA_CLOUD_SHADOWS | | restart | cloud_shadows | Cloud shadows | Slow saves about 1.5 ms per frame over Earth; cloud shadows then follow moving clouds about 4 times more slowly. Normal is the game's own.
+crew_portraits | choice:always=Every frame/shown=When shown/shown_15=When shown, 15 a second | shown | KSA_CREW_PORTRAITS | | live | crew_portraits | Crew portraits | The faces in the crew panel are views of their own, which the game draws every frame while the vessel has crew. When shown: only while the panel is on screen, which keeps their last image; 15 a second: also at most that often.
+
+[optimizations] Optimizations
+terrain_cache | bool | true | KSA_TERRAIN_CACHE | | restart | terrain_cache | Terrain cache | The terrain's height passes run only when their inputs changed, and every 2 s; its normals pass only when the planet has rotated. The same image.
+outline_skip | bool | true | KSA_OUTLINE_SKIP | | restart | outline_skip | Selection outline skip | The outline pass around selected parts runs only while a part is selected. The same image.
+worker_parking | bool | true | KSA_WORKER_PARKING | | restart | worker_park | Worker parking | The game's idle job workers sleep after 0.25 ms instead of spinning for half a frame: the same frames, with about 1.6 cores less CPU time.
+fused_tessellation | bool | true | KSA_MTL_TESS_FUSE | tessellation | restart | | Fused tessellation | Terrain and ocean are tessellated without a trip through memory between the stages. Off: slower; try it when terrain or ocean look wrong.
+vsync_pacing | bool | true | KSA_MTL_PRESENT_PACING | game:vsync | restart | | V-Sync pacing | With V-Sync, a frame starts when the GPU needs it, not only when the display shows the one before: in a window, frames that take less than about 23 ms on the GPU run faster.
+background_compiling | bool | true | KSA_MTL_ASYNC_PIPELINES | | restart | | Background shader compiling | Shaders are compiled on worker threads, so the game doesn't wait for each one. Off: on the game's thread, when the game creates them.
+shader_cache | bool | true | KSA_MTL_CACHE | | restart | | Shader cache | Translated shaders are kept on disk, in ~/Library/Caches/ksa-metal, so later starts don't compile them again.
+texture_mapping | bool | true | KSA_KTX_SHIM | | restart | | Texture file mapping | Textures' pixels are mapped from files instead of kept in memory of their own, so macOS can page them out: about 3 GB less memory with the solar system.
+constant_memory | bool | true | KSA_MTL_AB_CONSTANT | | restart | | Constant-memory resources | Shaders read their resources from constant memory, which is a little faster. Off: try it when a shader fails to compile.
+
+[game_features] Game features
+tessellation | available | true | KSA_MTL_TESSELLATION | | restart | | Tessellation | Lets the game tessellate terrain and ocean; its own Terrain Tessellation setting still decides. Off: the game draws them without it.
+ray_queries | available | true | KSA_MTL_RAYQUERY | | restart | | Ray queries | Lets the game place ground clutter with ray queries, and use ray tracing. Off: the game places clutter without them.
+ray_tracing | available | true | KSA_MTL_RTPIPELINE | ray_queries | restart | | Ray tracing | Lets the game use ray tracing in the cockpit (IVA); its own IVA Ray Tracing setting still decides. Off: unavailable to the game.
+
+[overlay] Overlay
+performance_overlay | bool | false | MTL_HUD_ENABLED | | restart | | Performance overlay | Apple's Metal Performance HUD in a corner of the window: frame rate, frame and GPU times, and memory.
+
+[benchmark] Benchmark
+benchmark_mode | choice:fast=Fast, 1 minute/full=Full tour, 8 minutes | fast | | | live | | Benchmark | Fast: three places on Earth, the game paused, then a rocket's launch and explosion. The full tour flies from Earth to Jupiter, with a kitten in the grass, a launch and a 2,000-part rocket.
+benchmark_restart | bool | false | | | live | | Restart the game first | Off: the benchmark plays in this game, and your game comes back when it ends. On: the game starts again for it, with a new game and none of your mods, the way benchmark.sh in the port folder runs it; when it ends, the game quits and the report's folder opens.
+
+[developer] Developer
+hooks | bool | true | KSA_HOOKS | | restart | | | KSA Metal Hooks, which also draw the Mac Port tab. Off: the game starts without them.
+log | int:0:2 | 0 | KSA_MTL_LOG | | restart | | | KSA Metal's log: 0 errors only, 1 also warnings and the first call of each function, 2 also object creation.
+log_file | text | | KSA_MTL_LOG_FILE | | restart | | | Write KSA Metal's log to this file instead of console.log.
+stalls | number:0:10000 | 0 | KSA_MTL_STALLS | | restart | | | Log what blocks the game longer than this many milliseconds: waits for fences, drawables and submits, residency set commits, late command buffers, allocations of 16 MB or more.
+frames | text | | KSA_MTL_FRAMES | | restart | | | A CSV file of every frame: CPU frame time, GPU busy time, draws, dispatches and allocated memory.
+latency | text | | KSA_MTL_LATENCY | | restart | | | A CSV file of every frame's timing: when it began, was presented, was done on the GPU and was shown.
+labels | bool | false | KSA_MTL_LABELS | | restart | | | Name every encoder after its pipelines, for Instruments, the Metal HUD and Xcode's frame capture.
+gpu_profile | text | | KSA_MTL_GPUPROF | | restart | | | A CSV file of the GPU time of every encoder, for 300 frames from present 2000.
+gpu_profile_frames | text | | KSA_MTL_GPUPROF_FRAMES | gpu_profile | restart | | | <first>,<count>: other frames for gpu_profile.
+gpu_profile_split | bool | false | KSA_MTL_GPUPROF_SPLIT | gpu_profile | restart | | | Give every draw and dispatch its own encoder, so the profiler times each one (times grow).
+dump_msl | text | | KSA_MTL_DUMP_MSL | | restart | | | A folder: write every translated shader, and the errors of those that fail to compile.
+dump_spv | text | | KSA_MTL_DUMP_SPV | | restart | | | A folder: write every shader module the game creates as <hash>.spv.
+shader_overrides | text | | KSA_MTL_OVERRIDES | | restart | | | A folder of hand-written Metal source used in place of translated shaders, named as in dump_msl.
+spec | text | | KSA_MTL_SPEC | | restart | | | <hash>:<id>=<value>,...: replace a specialization constant of a shader module.
+throttle | text | | KSA_MTL_THROTTLE | | restart | | | <hash>:<N>,...: a pipeline whose name holds one of these module hashes runs every N-th present (an experiment, to measure what skipping a pass would save).
+strict_pipelines | bool | false | KSA_MTL_STRICT | | restart | | | Return pipeline errors to the game, instead of skipping the pipeline and continuing.
+strict_sync | bool | false | KSA_MTL_SYNC=strict | | restart | | | Run all GPU work strictly in order: slower, but rules out synchronization bugs.
+precise_math | bool | false | KSA_MTL_SAFE_MATH | | restart | | | Compile shaders without fast math: rules out precision problems.
+shots | text | | KSA_MTL_SHOTS | | restart | | | <n>,...: save the presented image as shot_<n>.png at these points.
+shot_unit | choice:presents=presents/frames=frames/seconds=seconds | presents | KSA_MTL_SHOT_UNIT | shots | restart | | | What shots counts: presents, or frames or seconds from the first in-game frame.
+shot_dir | text | | KSA_MTL_SHOT_DIR | shots | restart | | | Where shots go (default: the current folder).
+exit_after_shots | bool | false | KSA_MTL_EXIT_AFTER_SHOTS | shots | restart | | | Quit once the last shot is saved.
+exit_after | int:0:100000000 | 0 | KSA_MTL_EXIT_AFTER | | restart | | | Quit after this many presents.
+exit_after_s | number:0:100000 | 0 | KSA_MTL_EXIT_AFTER_S | | restart | | | Quit this many seconds after the start.
+fx_debug | bool | false | KSA_MTL_FX_DEBUG | | restart | | | The upscaled image shows MetalFX's motion vectors instead.
+fx_shots | text | | KSA_MTL_FX_SHOTS | | restart | | | A folder: now and then, a PNG of what MetalFX made.
+cache_dir | text | | KSA_MTL_CACHE_DIR | | restart | | | Where the shader cache and the texture copies go (default: ~/Library/Caches/ksa-metal).
+texture_budget_mb | int:0:1048576 | 0 | KSA_MTL_BUDGET_MB | | restart | | | The GPU memory budget reported to the game, which sizes its texture streaming from it (0: what Metal recommends for this Mac).
+worker_park_ms | number:0:100 | 0.25 | KSA_PARK_MS | worker_parking | restart | | | How long an idle job worker spins before it sleeps, with worker_parking.

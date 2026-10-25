@@ -1,9 +1,8 @@
 <Project>
 	<!-- Defaults for building the benchmark in an editor, after a ./build.sh: the installed app's KSA, or the one
-	     build.sh extracted, and the StarMap it downloaded. scripts/build-benchmark.sh passes both explicitly. -->
+	     build.sh extracted. scripts/build-benchmark.sh passes it explicitly. -->
 	<PropertyGroup>
 		<KsaDir Condition="'$(KsaDir)' == '' and Exists('$(HOME)/Applications/Kitten Space Agency.app/Contents/Resources/KSA.dll')">$(HOME)/Applications/Kitten Space Agency.app/Contents/Resources</KsaDir>
 		<KsaDir Condition="'$(KsaDir)' == ''">$(MSBuildThisFileDirectory)../../deps/build/ksa</KsaDir>
-		<StarMapDir Condition="'$(StarMapDir)' == ''">$(MSBuildThisFileDirectory)../../deps/build/cmake/_deps/starmap-src</StarMapDir>
 	</PropertyGroup>
 </Project>

@@ -19,7 +19,7 @@ public partial class Benchmark
 
     private void StartExplore()
     {
-        _exploring = Environment.GetEnvironmentVariable("KSA_BENCH_EXPLORE") is { Length: > 0 };
+        _exploring = _option("KSA_BENCH_EXPLORE") is { Length: > 0 };
         if (_exploring)
             Log("explore mode: capture places with benchkey [name] in the console");
     }

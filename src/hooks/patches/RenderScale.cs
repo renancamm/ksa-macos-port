@@ -14,13 +14,13 @@ using KSA.Rendering.Lighting;
 namespace KsaMetalHooks;
 
 // Render scale (port-settings.toml). The main view renders at render_scale times the window's size, through the door
-// the game's own high-resolution screenshots use (Renderer.ExtentOverride), and its final composite stretches it back
+// the game's own high-resolution screenshots use (Renderer.ExtentOverride), and its final composite scales it back
 // to the window, where the UI is drawn at full size. The cameras keep the window's size (so picking and the UI's
 // world positions stay right), while what the shaders see as the screen size is the render size. The light
 // clustering's tiles follow the render size too. Pixel sizes measured on the window (the sun's glow, star and planet
 // discs, ground clutter's level of detail) are converted: the sun's radius here, the rest by the shader edits
-// convert-shaders.sh makes, from the window's height in the camera data. With upscaler "metalfx" or "spatial",
-// Upscale.cs replaces the stretch with MetalFX.
+// convert-shaders.sh makes, from the window's height in the camera data. Upscale.cs scales the view back up with
+// MetalFX (a render scale needs upscaling = "metalfx" or "spatial").
 internal static class RenderScale
 {
     public static bool Scaled;
@@ -64,7 +64,7 @@ internal static class RenderScale
             postfix: new HarmonyMethod(typeof(RenderScale), nameof(ShaderDataPostfix)));
         if (metalFx)
             Upscale.Apply(harmony);
-        string upscaler = metalFx ? (Upscale.Spatial ? "MetalFX spatial" : "MetalFX temporal") : "stretched";
+        string upscaler = Upscale.Spatial ? "MetalFX spatial" : "MetalFX temporal";
         string scale = Settings.RenderScale.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
         return Scaled ? $"{scale} of the window, {upscaler}" : $"1, {upscaler}";
     }

@@ -1,33 +1,32 @@
 using System;
 using System.Globalization;
-using System.Linq;
 
 namespace KsaMetalHooks;
 
-// The patches' settings, from the environment: the launcher sets these from port-settings.toml (src/launcher/), and a
-// variable set before starting the game wins over the file.
-//   KSA_PATCHES_OFF=<key>,...      patches not to apply (their keys in Patches.Apply)
-//   KSA_RENDER_SCALE=<0.25..1>     the 3D view's size, as a fraction of the window
-//   KSA_UPSCALER=metalfx|spatial|none  how the view is scaled back up to the window
-//   KSA_CLOUD_SHADOWS=normal|slow  how fast cloud shadows follow the clouds
-//   KSA_PARK_MS=<ms>               how long an idle job worker spins before it sleeps (default 0.25)
-//   KSA_PORTRAIT_FPS=<n>           crew portraits refreshed at most n times a second (0: every frame)
+// The patches' settings, from the environment: the launcher sets these from port-settings.toml (its table,
+// src/launcher/port-settings.txt, says which setting is which variable), and a variable set before starting the game
+// wins over the file. Unset, each means the table's default.
+//   KSA_UPSCALER=off|metalfx|spatial    MetalFX for the render scale (off: none, and no render scale)
+//   KSA_RENDER_SCALE=<0.25..1>          the 3D view's size, as a fraction of the window
+//   KSA_CLOUD_SHADOWS=normal|slow       how fast cloud shadows follow the clouds
+//   KSA_CREW_PORTRAITS=always|shown|shown_15  when the crew panel's faces are drawn (the Mac Port tab changes it live)
+//   KSA_TERRAIN_CACHE=0, KSA_OUTLINE_SKIP=0, KSA_WORKER_PARKING=0  leave out that patch
+//   KSA_PARK_MS=<ms>                    how long an idle job worker spins before it sleeps (default 0.25)
 public static class Settings
 {
-    private static readonly string[] Off = (Environment.GetEnvironmentVariable("KSA_PATCHES_OFF") ?? "")
-        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-    public static bool Disabled(string key) => Off.Contains(key, StringComparer.OrdinalIgnoreCase);
+    public static readonly string Upscaler = (Environment.GetEnvironmentVariable("KSA_UPSCALER") ?? "off").ToLowerInvariant();
 
     public static readonly float RenderScale =
+        Upscaler is "metalfx" or "spatial" &&
         float.TryParse(Environment.GetEnvironmentVariable("KSA_RENDER_SCALE"), NumberStyles.Float,
             CultureInfo.InvariantCulture, out float s) && s >= 0.25f && s < 1f ? s : 1f;
-
-    public static readonly string Upscaler = (Environment.GetEnvironmentVariable("KSA_UPSCALER") ?? "metalfx").ToLowerInvariant();
 
     public static readonly bool SlowCloudShadows =
         string.Equals(Environment.GetEnvironmentVariable("KSA_CLOUD_SHADOWS"), "slow", StringComparison.OrdinalIgnoreCase);
 
-    public static readonly int PortraitFps =
-        int.TryParse(Environment.GetEnvironmentVariable("KSA_PORTRAIT_FPS"), out int fps) && fps > 0 ? fps : 0;
+    public static string CrewPortraits = Environment.GetEnvironmentVariable("KSA_CREW_PORTRAITS") is { } p && p is "always" or "shown_15"
+        ? p : "shown";
+
+    // A patch's on/off variable: anything but 0 is on
+    public static bool On(string variable) => Environment.GetEnvironmentVariable(variable) is not "0";
 }

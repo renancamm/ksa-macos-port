@@ -14,6 +14,8 @@
 #   Contents/Resources/*.dylib    the native libraries, which the game finds next to it
 #   Contents/Resources/Brutal.Monitor.Subprocess   BRUTAL's crash-dump helper, which the game starts
 #   Contents/Resources/Hooks/     KSA Metal Hooks, which the launcher loads, and Harmony
+#   Contents/Resources/Benchmark/ the benchmark: its director, which the hooks start, the report program, the tour
+#   Contents/Resources/port-settings.txt   the table of the port settings, which the launcher and the hooks read
 #   Contents/Resources/port-settings.toml  the port settings' template, which the launcher copies for the player
 #   Contents/Resources/AppIcon.icns, Licenses/
 # The bundle is not signed as a whole: that would replace Microsoft's signature on dotnet. The quarantine
@@ -34,10 +36,12 @@ install_port_files() {
     rm -rf "${macos}"
     ditto "${SKELETON}/MacOS" "${macos}"
 
-    rm -rf "${res}/Licenses" "${res}/Hooks"
+    rm -rf "${res}/Licenses" "${res}/Hooks" "${res}/Benchmark"
     ditto "${SKELETON}/Resources/Licenses" "${res}/Licenses"
     ditto "${SKELETON}/Resources/Hooks" "${res}/Hooks"
-    cp "${SKELETON}/Resources/AppIcon.icns" "${SKELETON}/Resources/port-settings.toml" "${res}/"
+    ditto "${SKELETON}/Resources/Benchmark" "${res}/Benchmark"
+    cp "${SKELETON}/Resources/AppIcon.icns" "${SKELETON}/Resources/port-settings.txt" \
+        "${SKELETON}/Resources/port-settings.toml" "${res}/"
     write_info_plist "${contents}"
     xattr -cr "${contents}" 2> /dev/null || true
 }

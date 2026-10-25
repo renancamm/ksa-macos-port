@@ -27,11 +27,17 @@ internal class StartupHook
         try
         {
             AssemblyLoadContext context = AssemblyLoadContext.GetLoadContext(assembly)!;
-            // KsaMetalHooks.dll's references that the context can't find (Harmony, without StarMap) are in this folder
+            // KsaMetalHooks.dll's references that the context can't find are in this folder (Harmony, without StarMap),
+            // or in the benchmark's next to it (its director)
             context.Resolving += (ctx, name) =>
             {
-                string path = Path.Combine(folder, name.Name + ".dll");
-                return File.Exists(path) ? ctx.LoadFromAssemblyPath(path) : null;
+                foreach (string dir in new[] { folder, Path.Combine(folder, "..", "Benchmark") })
+                {
+                    string path = Path.Combine(dir, name.Name + ".dll");
+                    if (File.Exists(path))
+                        return ctx.LoadFromAssemblyPath(Path.GetFullPath(path));
+                }
+                return null;
             };
             Assembly hooks = context.LoadFromAssemblyPath(Path.Combine(folder, "KsaMetalHooks.dll"));
             hooks.GetType("KsaMetalHooks.Hooks", true)!.GetMethod("Apply")!.Invoke(null, null);
