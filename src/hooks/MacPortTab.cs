@@ -185,11 +185,16 @@ internal static class MacPortTab
 
     private static string Value(PortSetting s) => Pending.TryGetValue(s.Key, out var v) ? v : s.Saved;
 
-    private static bool Game(string what) => what switch
+    private static bool Game(string what)
     {
-        "vsync" => (_temporary.GetValue(null) as GameSettings)?.Vsync ?? true,
-        _ => true
-    };
+        var game = _temporary.GetValue(null) as GameSettings;
+        return what switch
+        {
+            "vsync" => game?.Vsync ?? true,
+            "plume_trail_shadows" => game?.Graphics is not { } g || g.PlumeTrails && g.PlumeTrailShadows,
+            _ => true
+        };
+    }
 
     // What a setting would run with: its value once its needs are met, its default otherwise
     private static string Effective(PortSetting s, string value) => PortSettings.Met(s, Value, Game) ? value : s.Default;
@@ -220,6 +225,11 @@ internal static class MacPortTab
             {
                 note = "needs V-Sync";
                 return "Needs the game's V-Sync (Display).";
+            }
+            if (need == "game:plume_trail_shadows")
+            {
+                note = "needs Plume trail shadows";
+                return "Needs the game's Plume trails and Plume trail shadows (Graphics).";
             }
             int ne = need.IndexOf("!=", StringComparison.Ordinal), eq = need.IndexOf('=');
             var other = PortSettings.Get(ne > 0 ? need[..ne] : eq > 0 ? need[..eq] : need);

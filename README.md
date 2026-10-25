@@ -309,7 +309,7 @@ the game starts, the game offers to restart. A setting that needs another one is
 | Section | Settings |
 |---|---|
 | Image | `upscaling`: Apple's MetalFX, off by default, which the three others need. `render_scale`: draws the 3D view at 50 to 100% of the window's size and scales it back up, less work for the GPU and a slightly softer image. `frame_interpolation`: a frame made by MetalFX between every two the game draws, smoother motion with a little more delay. `retina`: the image at the display's full resolution |
-| Performance | `cloud_shadows`: `"slow"` saves about 1.5 ms per frame over Earth, and cloud shadows follow moving clouds about 4 times more slowly. `crew_portraits`: the crew panel's faces are drawn only while the panel shows them |
+| Performance | `cloud_shadows`: `"slow"` saves about 1.5 ms per frame over Earth, and cloud shadows follow moving clouds about 4 times more slowly. `plume_shadows`: with the game's Plume trail shadows on, `"light"` draws the smoke's shadow maps smaller, so the smoke of a big rocket draws about 10-20% faster, with coarser shadows on the ground. `crew_portraits`: the crew panel's faces are drawn only while the panel shows them |
 | Optimizations | the same image, faster: the [hooks](#hooks)' patches and KSA Metal's own ways; on by default, each can be turned off to find a problem |
 | Game features | what the Mac offers the game: tessellation, ray queries, ray tracing. Off hides it from the game; while it's available, the game's own settings decide |
 | Overlay | Apple's Metal Performance HUD |
@@ -339,6 +339,7 @@ and the game runs as it would without it. [`src/hooks/`](src/hooks/) has the det
 | Worker parking | the game's idle job workers sleep after 0.25 ms instead of spinning for half a frame | the same |
 | Render scale | `upscaling`, `render_scale`: the 3D view's size, and MetalFX before the final composite; `frame_interpolation` also needs it | changes, by choice |
 | Cloud shadows | `cloud_shadows = "slow"`: fewer cloud shadow slices refreshed per frame | changes in motion, by choice |
+| Plume shadows | `plume_shadows = "light"`: smaller shadow maps for the smoke | changes, by choice |
 
 For the render scale, `convert-shaders.sh` also edits three shaders to measure in the window's size rather than the
 smaller view's; without it, they draw as before.

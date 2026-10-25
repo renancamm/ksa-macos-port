@@ -38,6 +38,7 @@ public static class Hooks
         Run("terrain cache", "terrain_cache", Settings.On("KSA_TERRAIN_CACHE"), TerrainCache.Apply);
         Run("outline skip", "outline_skip", Settings.On("KSA_OUTLINE_SKIP"), OutlineSkip.Apply);
         Run("cloud shadows", "cloud_shadows", true, CloudShadows.Apply);
+        Run("plume shadows", "plume_shadows", true, PlumeShadows.Apply);
         Run("crew portraits", "crew_portraits", true, CrewPortraits.Apply);
         Run("worker parking", "worker_park", Settings.On("KSA_WORKER_PARKING"), WorkerPark.Apply);
         Run("render scale", "render_scale", true, RenderScale.Apply);

@@ -15,8 +15,9 @@
 #   default   the value a line left out takes, and the one the variable means when it isn't set
 #   variable  what the setting sets when it isn't at its default: on is 1 and off 0 (VAR=<value>: that, for on), other
 #             types their value. Without one, the setting is the tab's own
-#   needs     the settings it depends on (comma separated): <key> (on, or not empty), <key>=<value>, <key>!=<value>, or
-#             game:vsync (the game's V-Sync, which only the tab checks). While one isn't met, it keeps its default
+#   needs     the settings it depends on (comma separated): <key> (on, or not empty), <key>=<value>, <key>!=<value>,
+#             game:vsync or game:plume_trail_shadows (the game's own settings, which only the tab checks). While one
+#             isn't met, it keeps its default
 #   applies   live: on Apply, in the running game; restart: when the game starts
 #   hook      the hook that does it (src/hooks/): the tab shows the setting as unavailable when the hook was skipped
 #   label     its row in the tab; help: the row's tooltip and the file's comment
@@ -29,6 +30,7 @@ retina | bool | false | KSA_MTL_RETINA | upscaling!=off | restart | | Retina | T
 
 [performance] Performance
 cloud_shadows | choice:normal=Normal/slow=Slow | normal | KSA_CLOUD_SHADOWS | | restart | cloud_shadows | Cloud shadows | Slow saves about 1.5 ms per frame over Earth; cloud shadows then follow moving clouds about 4 times more slowly. Normal is the game's own.
+plume_shadows | choice:normal=Normal/light=Light | normal | KSA_PLUME_SHADOWS | game:plume_trail_shadows | restart | plume_shadows | Plume shadows | With the game's Plume trail shadows, the smoke's shadows are drawn from the sun into maps of their own. Light makes them smaller (4 of 128 pixels out to 3 km, instead of 8 of 512 out to 20 km): the smoke of a big rocket draws about 10-20% faster, and its shadows on the ground are coarser and end 3 km away. Normal is the game's own.
 crew_portraits | choice:always=Every frame/shown=When shown/shown_15=When shown, 15 a second | shown | KSA_CREW_PORTRAITS | | live | crew_portraits | Crew portraits | The faces in the crew panel are views of their own, which the game draws every frame while the vessel has crew. When shown: only while the panel is on screen, which keeps their last image; 15 a second: also at most that often.
 
 [optimizations] Optimizations
@@ -72,7 +74,7 @@ shader_overrides | text | | KSA_MTL_OVERRIDES | | restart | | | A folder of hand
 spec | text | | KSA_MTL_SPEC | | restart | | | <hash>:<id>=<value>,...: replace a specialization constant of a shader module.
 throttle | text | | KSA_MTL_THROTTLE | | restart | | | <hash>:<N>,...: a pipeline whose name holds one of these module hashes runs every N-th present (an experiment, to measure what skipping a pass would save).
 trail_caches | text | | KSA_TRAIL_CACHE | | restart | trail_caches | | <large>,<small>,<tiny>[,<segments>]: the atlas budgets in MiB of the smoke's 16, 8 and 4 texel volume caches (the game's: 8,8,8), and the fewest segments a cell needs to get one (33).
-trail_shadows | text | | KSA_TRAIL_SHADOWS | | restart | trail_caches | | <cascades>,<resolution>,<metres>: the smoke's sun shadow cascades, which the game draws with its Plume trail shadows setting (the game's: 8,512,20000). With 4,128,3000 and the raymarch's own shadow samples off (spec 96fece4499453a44:6=0), the giga rocket's smoke draws about 20 % faster and casts shadows on the ground, with softer billows.
+trail_shadows | text | | KSA_TRAIL_SHADOWS | | restart | plume_shadows | | <cascades>,<resolution>,<metres>: the smoke's sun shadow cascades, which the game draws with its Plume trail shadows setting (the game's: 8,512,20000; plume_shadows light: 4,128,3000). Wins over plume_shadows.
 strict_pipelines | bool | false | KSA_MTL_STRICT | | restart | | | Return pipeline errors to the game, instead of skipping the pipeline and continuing.
 strict_sync | bool | false | KSA_MTL_SYNC=strict | | restart | | | Run all GPU work strictly in order: slower, but rules out synchronization bugs.
 precise_math | bool | false | KSA_MTL_SAFE_MATH | | restart | | | Compile shaders without fast math: rules out precision problems.
