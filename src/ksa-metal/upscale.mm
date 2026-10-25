@@ -115,7 +115,7 @@ static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uin
             return false;
         }
     }
-    if (g_up.inW == inW && g_up.inH == inH && g_up.outW == outW && g_up.outH == outH && (spatial ? g_up.spatial : g_up.temporal))
+    if (g_up.inW == inW && g_up.inH == inH && g_up.outW == outW && g_up.outH == outH && (spatial ? g_up.spatial != nil : g_up.temporal != nil))
         return true;
     g_up.inW = inW; g_up.inH = inH; g_up.outW = outW; g_up.outH = outH;
     g_up.temporal = nil;

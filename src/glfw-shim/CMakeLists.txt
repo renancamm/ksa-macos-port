@@ -19,7 +19,7 @@ set_target_properties(glfw-shim PROPERTIES
     BUILD_WITH_INSTALL_NAME_DIR ON
     INSTALL_RPATH @loader_path
     BUILD_WITH_INSTALL_RPATH ON)
-target_compile_options(glfw-shim PRIVATE -O2 -Wall)
+target_compile_options(glfw-shim PRIVATE -O2 -Wall -Werror)
 target_compile_definitions(glfw-shim PRIVATE NDEBUG)
 target_link_libraries(glfw-shim PRIVATE brutal-glfw "-framework CoreGraphics" "-framework CoreFoundation")
 

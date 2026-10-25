@@ -26,9 +26,7 @@ set_target_properties(ksa-metal PROPERTIES
     CXX_EXTENSIONS OFF
     CXX_VISIBILITY_PRESET hidden
     OBJCXX_VISIBILITY_PRESET hidden)
-target_compile_options(ksa-metal PRIVATE ${KSA_MTL_OPT} -g -Wall
-    $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function
-    -Wno-missing-braces>)
+target_compile_options(ksa-metal PRIVATE ${KSA_MTL_OPT} -g -Wall -Werror $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
 target_link_libraries(ksa-metal PRIVATE
     Vulkan::Headers spirv-cross-msl spirv-cross-glsl spirv-cross-core SPIRV-Tools-link SPIRV-Tools-opt SPIRV-Tools-static
     "-framework Metal" "-framework MetalFX" "-framework QuartzCore" "-framework Foundation" "-framework CoreGraphics" "-framework ImageIO"

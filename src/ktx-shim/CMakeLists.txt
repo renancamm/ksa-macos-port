@@ -16,7 +16,7 @@ set_target_properties(ktx-shim PROPERTIES
     BUILD_WITH_INSTALL_NAME_DIR ON
     INSTALL_RPATH @loader_path
     BUILD_WITH_INSTALL_RPATH ON)
-target_compile_options(ktx-shim PRIVATE -O2 -Wall)
+target_compile_options(ktx-shim PRIVATE -O2 -Wall -Werror)
 target_compile_definitions(ktx-shim PRIVATE NDEBUG)
 target_link_libraries(ktx-shim PRIVATE brutal-ktx)
 
