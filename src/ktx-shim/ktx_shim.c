@@ -133,9 +133,19 @@ static void cleanCache(const char* dir) {
     closedir(d);
 }
 
-static char g_cacheDir[1024];
-static pthread_once_t g_cleanOnce = PTHREAD_ONCE_INIT;
-static void cleanOnce(void) { cleanCache(g_cacheDir); }
+// KSA Metal's cache folder, like the driver picks it (shadercache.mm), and the copies' folder in it: found at the first
+// copy, when the copies unused for 60 days are deleted too
+static char g_parent[1024], g_cacheDir[1024];
+static pthread_once_t g_cacheOnce = PTHREAD_ONCE_INIT;
+static void findCache(void) {
+    const char* custom = getenv("KSA_MTL_CACHE_DIR");
+    const char* home = getenv("HOME");
+    if (custom && *custom) snprintf(g_parent, sizeof g_parent, "%s", custom);
+    else if (home) snprintf(g_parent, sizeof g_parent, "%s/Library/Caches/ksa-metal", home);
+    else return;
+    snprintf(g_cacheDir, sizeof g_cacheDir, "%s/textures", g_parent);
+    cleanCache(g_cacheDir);
+}
 
 // The cache's copy (written now if missing), named after the file's path, size and date and the data's size
 static uint8_t* mapCacheFile(const char* path, const uint8_t* data, size_t size, void** base, size_t* mapped) {
@@ -146,17 +156,10 @@ static uint8_t* mapCacheFile(const char* path, const uint8_t* data, size_t size,
     h = (h ^ (uint64_t)st.st_size) * 1099511628211ull;
     h = (h ^ (uint64_t)st.st_mtimespec.tv_sec) * 1099511628211ull;
     h = (h ^ (uint64_t)size) * 1099511628211ull;
-    // KSA Metal's cache folder, like the driver picks it (shadercache.mm)
-    char parent[1024], dir[1024], file[1100], temp[1200];
-    const char* custom = getenv("KSA_MTL_CACHE_DIR");
-    const char* home = getenv("HOME");
-    if (custom && *custom) snprintf(parent, sizeof parent, "%s", custom);
-    else if (home) snprintf(parent, sizeof parent, "%s/Library/Caches/ksa-metal", home);
-    else return NULL;
-    snprintf(dir, sizeof dir, "%s/textures", parent);
-    snprintf(file, sizeof file, "%s/%016llx", dir, (unsigned long long)h);
-    snprintf(g_cacheDir, sizeof g_cacheDir, "%s", dir);
-    pthread_once(&g_cleanOnce, cleanOnce);
+    pthread_once(&g_cacheOnce, findCache);
+    if (!g_cacheDir[0]) return NULL;
+    char file[1100], temp[1200];
+    snprintf(file, sizeof file, "%s/%016llx", g_cacheDir, (unsigned long long)h);
     int fd = open(file, O_RDONLY);
     struct stat cs;
     if (fd >= 0 && (fstat(fd, &cs) != 0 || (size_t)cs.st_size != size)) {
@@ -164,8 +167,8 @@ static uint8_t* mapCacheFile(const char* path, const uint8_t* data, size_t size,
         fd = -1;
     }
     if (fd < 0) {
-        mkdir(parent, 0755);
-        mkdir(dir, 0755);
+        mkdir(g_parent, 0755);
+        mkdir(g_cacheDir, 0755);
         snprintf(temp, sizeof temp, "%s.%d.%p", file, getpid(), (const void*)data);
         int out = open(temp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
         if (out < 0) return NULL;
