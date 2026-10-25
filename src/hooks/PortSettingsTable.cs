@@ -99,7 +99,7 @@ public static partial class PortSettings
                 case "available":
                     s.Choices = [("true", "Available"), ("false", "Off")];
                     break;
-                case "choice" or "shown":
+                case "choice":
                     s.Choices = parts[1].Split('/').Select(v => (v[..v.IndexOf('=')], v[(v.IndexOf('=') + 1)..])).ToArray();
                     break;
                 case "scale" or "int" or "number":

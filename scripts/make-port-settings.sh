@@ -58,7 +58,6 @@ awk -F'|' '
     /^[ \t]*(#|$)/ { next }
     {
         key = trim($1); type = trim($2); def = trim($3); help = trim($9)
-        if (type ~ /^shown/) next
         print ""
         comment(key " (" values(type) "): " help)
         printf "%s%s = %s\n", (section == "developer" ? "# " : ""), key, toml(type, def)

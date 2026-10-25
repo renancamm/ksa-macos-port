@@ -13,6 +13,7 @@ namespace KsaMetalHooks;
 //   KSA_PLUME_SHADOWS=normal|light     the size of the smoke's sun shadow cascades
 //   KSA_CREW_PORTRAITS=always|shown|shown_15  when the crew panel's faces are drawn (the Mac Port tab changes it live)
 //   KSA_HUD_LAYOUT=fit|game             the flight HUD fitted to the display, or the game's (changed live too)
+//   KSA_OVERRIDE_AA=0                   with MetalFX, the game's anti-aliasing setting applies (but CMAA2)
 //   KSA_TERRAIN_CACHE=0, KSA_OUTLINE_SKIP=0, KSA_WORKER_PARKING=0  leave out that patch
 //   KSA_PARK_MS=<ms>                    how long an idle job worker spins before it sleeps (default 0.25)
 public static class Settings

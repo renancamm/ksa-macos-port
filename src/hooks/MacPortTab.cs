@@ -262,11 +262,6 @@ internal static class MacPortTab
 
     private static void DrawRow(PortSetting s)
     {
-        if (s.Kind == "shown")
-        {
-            DrawShown(s);
-            return;
-        }
         string value = s.Outside != null ? s.Running : Pending[s.Key];
         bool pending = s.Outside == null && value != s.Saved;
         var reason = Reason(s, out var note);
@@ -325,35 +320,6 @@ internal static class MacPortTab
         }
         ConsoleWidgets.EndRow();
         ConsoleStyle.PopDisabled();
-    }
-
-    // A row that shows what the port does to one of the game's own settings: greyed out, its value worked out from the
-    // settings it follows (pending ones included)
-    private static void DrawShown(PortSetting s)
-    {
-        ConsoleStyle.PushDisabled(true);
-        ConsoleWidgets.BeginRow(s.Label);
-        if (ConsoleWidgets.BeginComboControl("MacPort_" + s.Key, s.LabelOf(ShownValue(s)), false))
-            ConsoleWidgets.EndComboControl();
-        if (ConsoleWidgets.RowHovered)
-            ConsoleWidgets.Tooltip(Wrap(s.Help + "\n\nTakes effect when the game starts."));
-        ConsoleWidgets.EndRow();
-        ConsoleStyle.PopDisabled();
-    }
-
-    private static string ShownValue(PortSetting s)
-    {
-        if (s.Hook.Length > 0 && Hooks.Status.GetValueOrDefault(s.Hook, "").StartsWith("skipped", StringComparison.Ordinal))
-            return s.Default;
-        switch (s.Key)
-        {
-            // The game's anti-aliasing: off with MetalFX, MSAA only with MetalFX spatial (patches/Upscale.cs)
-            case "antialiasing" when PortSettings.Get("upscaling") is { } upscaling:
-                string value = Effective(upscaling, upscaling.Outside != null ? upscaling.Running : Pending[upscaling.Key]);
-                return value switch { "metalfx" => "off", "spatial" => "msaa", _ => "game" };
-            default:
-                return s.Default;
-        }
     }
 
     // A short note in front of the row's control, where a pending row shows what it was

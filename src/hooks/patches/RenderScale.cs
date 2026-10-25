@@ -78,7 +78,8 @@ internal static class RenderScale
             Upscale.Apply(harmony);
         string scale = Settings.RenderScale.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
         string upscaler = !Upscale.Wanted ? "filtered stretch"
-            : Upscale.Spatial ? "MetalFX spatial, no CMAA2" : "MetalFX temporal, the game's anti-aliasing off";
+            : Upscale.Spatial ? "MetalFX spatial, no CMAA2"
+            : Settings.On("KSA_OVERRIDE_AA") ? "MetalFX temporal, the game's anti-aliasing off" : "MetalFX temporal, no CMAA2";
         return $"{scale} of the window, {upscaler}";
     }
 

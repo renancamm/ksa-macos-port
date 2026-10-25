@@ -75,7 +75,7 @@ internal static class Upscale
                 postfix: new HarmonyMethod(typeof(Upscale), nameof(CompositePostfix)));
         harmony.Patch(Find.Method(typeof(Cmaa2Renderer), "CreateResourcesIfNeeded"),
             transpiler: new HarmonyMethod(typeof(Upscale), nameof(NoCmaa2Transpiler)));
-        if (!Spatial)
+        if (!Spatial && Settings.On("KSA_OVERRIDE_AA"))
         {
             GameSettings.SampleCountOverride = VkSampleCountFlags._1Bit;
             var keep = new HarmonyMethod(typeof(Upscale), nameof(KeepSampleCount));
@@ -84,12 +84,12 @@ internal static class Upscale
         }
     }
 
-    // The game's anti-aliasing (the Mac Port tab's Anti-aliasing row shows what happens to it). The temporal upscaler
-    // smooths edges itself: the game's MSAA would cost 1-3 ms more on an M5 and leave dark specks on Earth's views, so
-    // the game runs with one sample (GameSettings.SampleCountOverride, the door its high-resolution screenshots use,
-    // which also turns CMAA2 off; a screenshot resets it, so it is set again after one). The spatial upscaler wants
-    // smoothed edges: MSAA stays. CMAA2 is off with either: it would smooth a copy of MetalFX's image shrunk back to the
-    // render size, and stretch that.
+    // The game's anti-aliasing. The temporal upscaler smooths edges itself: the game's MSAA under it would cost 1-3 ms
+    // more on an M5 and leave dark specks on Earth's views, so with override_antialiasing (on by default) the game runs
+    // with one sample (GameSettings.SampleCountOverride, the door its high-resolution screenshots use, which also turns
+    // CMAA2 off; a screenshot resets it, so it is set again after one). The spatial upscaler wants smoothed edges: MSAA
+    // stays. CMAA2 is off with either: it would smooth a copy of MetalFX's image shrunk back to the render size, and
+    // stretch that.
     private static void KeepSampleCount() => GameSettings.SampleCountOverride ??= VkSampleCountFlags._1Bit;
 
     // Cmaa2Renderer.CreateResourcesIfNeeded: GameSettings.IsCmaa2Enabled() -> false
