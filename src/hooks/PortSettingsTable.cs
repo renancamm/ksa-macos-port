@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 
 namespace KsaMetalHooks;
 
@@ -81,8 +82,9 @@ public sealed class PortSetting
         }
     }
 
-    // The value as port-settings.toml writes it
-    public string Toml(string value) => Kind is "choice" or "text" or "numbers" ? $"\"{value}\"" : value;
+    // The value as port-settings.toml writes it: a string in quotes, with \ and " escaped
+    public string Toml(string value) =>
+        Kind is "choice" or "text" or "numbers" ? $"\"{value.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"" : value;
 }
 
 // The table and the file, as both the loader (which sets the environment from them when the game starts) and the Mac
@@ -165,12 +167,12 @@ public static partial class PortSettings
             return values;
         foreach (var raw in File.ReadAllLines(FilePath))
         {
-            var line = raw.Split('#')[0].Trim();
-            if (line.Length == 0 || line[0] == '[')
+            var line = raw.Trim();
+            if (line.Length == 0 || line[0] is '#' or '[')
                 continue;
             int eq = line.IndexOf('=');
             var key = eq > 0 ? line[..eq].Trim() : line;
-            var value = eq > 0 ? line[(eq + 1)..].Trim().Trim('"') : "";
+            var value = eq > 0 ? Unquote(line[(eq + 1)..].Trim()) : "";
             if (eq <= 0 || Get(key) is not { } s)
                 warn?.Invoke($"port-settings.toml: unknown setting '{line}': ignored");
             else if (!s.Valid(value))
@@ -179,6 +181,23 @@ public static partial class PortSettings
                 values[key] = value;
         }
         return values;
+    }
+
+    // A value as the file holds it: a string in quotes ("..." with \" and \\ inside, or '...'), or the text before a
+    // comment
+    private static string Unquote(string text)
+    {
+        if (text.StartsWith('\''))
+        {
+            int end = text.IndexOf('\'', 1);
+            return end > 0 ? text[1..end] : text[1..];
+        }
+        if (!text.StartsWith('"'))
+            return text.Split('#')[0].Trim();
+        var value = new StringBuilder();
+        for (int i = 1; i < text.Length && text[i] != '"'; i++)
+            value.Append(text[i] == '\\' && i + 1 < text.Length ? text[++i] : text[i]);
+        return value.ToString();
     }
 
     // Whether a setting's needs are met, with the values value() gives (a need that names the game is checked by

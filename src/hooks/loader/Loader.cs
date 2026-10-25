@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Reflection;
 using System.Runtime.Loader;
+using System.Threading;
 
 // KSA Metal Hooks' entry point: the launcher names this assembly in DOTNET_STARTUP_HOOKS, so .NET runs Initialize
 // before the program it starts (KSA, or StarMap, which loads KSA itself). First it applies the port settings
@@ -11,7 +12,7 @@ using System.Runtime.Loader;
 // StarMap loads its own copy at start, and the hooks then use that one.
 internal class StartupHook
 {
-    private static bool _applied;
+    private static int _applied;
 
     public static void Initialize()
     {
@@ -37,9 +38,9 @@ internal class StartupHook
 
     private static void Apply(Assembly assembly, string folder)
     {
-        if (_applied || assembly.GetName().Name != "KSA")
+        // Once: KSA can load on another thread while Initialize looks at the assemblies loaded already
+        if (assembly.GetName().Name != "KSA" || Interlocked.Exchange(ref _applied, 1) == 1)
             return;
-        _applied = true;
         try
         {
             AssemblyLoadContext context = AssemblyLoadContext.GetLoadContext(assembly)!;

@@ -180,7 +180,8 @@ internal static class Tests
         [
             "# Port settings", "", "[image]", "upscaling = \"metalfx\"   # a comment", "render_scale = 0.75",
             "override_antialiasing = false", "unknown_setting = 1", "hud_layout = \"sideways\"", "trail_shadows = \"4,128\"",
-            "trail_caches = \"0, 0, 16\"",
+            "trail_caches = \"0, 0, 16\"", "log_file = \"~/a#b \\\"q\\\".log\"  # a comment", "shot_dir = '/tmp/x#y'",
+            "dump_msl = /tmp/msl # a comment",
         ]);
         var warnings = new List<string>();
         var values = PortSettings.ReadFile(warnings.Add);
@@ -188,6 +189,9 @@ internal static class Tests
         Equal("0.75", values.GetValueOrDefault("render_scale"), "render_scale");
         Equal("false", values.GetValueOrDefault("override_antialiasing"), "override_antialiasing");
         Equal("0, 0, 16", values.GetValueOrDefault("trail_caches"), "trail_caches");
+        Equal("~/a#b \"q\".log", values.GetValueOrDefault("log_file"), "a string with # and an escaped quote");
+        Equal("/tmp/x#y", values.GetValueOrDefault("shot_dir"), "a string in single quotes");
+        Equal("/tmp/msl", values.GetValueOrDefault("dump_msl"), "a value without quotes, before a comment");
         Check(!values.ContainsKey("hud_layout") && !values.ContainsKey("trail_shadows"), "an invalid value was read");
         Equal(3, warnings.Count, "warnings");
         Check(warnings.Any(w => w.Contains("unknown_setting")), "no warning for the unknown setting");
@@ -202,6 +206,7 @@ internal static class Tests
         PortSettings.Save(new Dictionary<string, string>
         {
             ["upscaling"] = "metalfx", ["render_scale"] = "0.5", ["crew_portraits"] = "shown_15", ["trail_shadows"] = "4,128,3000",
+            ["log_file"] = "~/logs #1/\"ksa\" \\ metal.log",
         });
         var lines = File.ReadAllLines(PortSettings.FilePath);
         Equal("upscaling = \"metalfx\"", lines[5], "the changed line");
@@ -214,6 +219,7 @@ internal static class Tests
         var values = PortSettings.ReadFile();
         Equal("shown_15", values.GetValueOrDefault("crew_portraits"), "read back");
         Equal("4,128,3000", values.GetValueOrDefault("trail_shadows"), "numbers read back");
+        Equal("~/logs #1/\"ksa\" \\ metal.log", values.GetValueOrDefault("log_file"), "a string with #, quotes and a backslash read back");
     }
 
     private static void Needs()

@@ -46,9 +46,12 @@ internal static class HudLayout
         var uvToPixels = Find.Method(typeof(ScreenReference), nameof(ScreenReference.UvToPixels), typeof(float2));
         var pixelsToUv = Find.Method(typeof(ScreenReference), nameof(ScreenReference.PixelsToUv), typeof(float2));
         int panels = Patch(harmony, Panels, nameof(PanelsTranspiler), gaugeScale);
+        _offsets = 0;
         int contents = Patch(harmony, Contents, nameof(ContentsTranspiler), uvToPixels, pixelsToUv);
         if (panels == 0 || contents == 0)
             throw new Skip(panels == 0 ? "the HUD no longer reads its scale" : "the HUD's panels no longer convert their sizes");
+        if (_offsets != 1)
+            throw new Skip($"ImGauge's window offset found {_offsets} times");
         harmony.Patch(Find.Method(typeof(ConsoleStyle), nameof(ConsoleStyle.BeginGaugeHostScope)),
             prefix: new HarmonyMethod(typeof(HudLayout), nameof(HostScopePrefix)));
         return Settings.HudLayout == "fit" ? "fit to the display" : "game's";
@@ -80,6 +83,9 @@ internal static class HudLayout
             yield return c.Calls(gaugeScale) ? new CodeInstruction(OpCodes.Call, ours).MoveLabelsFrom(c).MoveBlocksFrom(c) : c;
     }
 
+    // The conversions ContentsTranspiler left alone, as offsets: ImGauge's window offset, once
+    private static int _offsets;
+
     // ScreenReference.UvToPixels(uv) and PixelsToUv(pixels) -> UvToPixels and PixelsToUv here, but for an offset (an
     // argument read straight from a field named so: ImGauge's windows)
     private static IEnumerable<CodeInstruction> ContentsTranspiler(IEnumerable<CodeInstruction> instructions)
@@ -93,9 +99,15 @@ internal static class HudLayout
         foreach (var c in instructions)
         {
             bool offset = previous?.operand is FieldInfo field && field.Name.Contains("Offset", StringComparison.Ordinal);
-            yield return c.operand is MethodInfo m && replace.TryGetValue(m, out var ours) && !offset
-                ? new CodeInstruction(OpCodes.Call, ours).MoveLabelsFrom(c).MoveBlocksFrom(c)
-                : c;
+            var result = c;
+            if (c.operand is MethodInfo m && replace.TryGetValue(m, out var ours))
+            {
+                if (offset)
+                    _offsets++;
+                else
+                    result = new CodeInstruction(OpCodes.Call, ours).MoveLabelsFrom(c).MoveBlocksFrom(c);
+            }
+            yield return result;
             previous = c;
         }
     }
