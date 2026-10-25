@@ -13,8 +13,9 @@ against another run's.
 
 In the game, open the settings (Esc), then **Mac Port**, and press **Run benchmark** at the bottom: the fast test or
 the full tour, with your own settings. It plays in the game you have open. Your game is saved first, the tour plays in
-a new game's world, and your game comes back when it ends; Esc stops it. With **Fresh game** on, the game
-starts again for it instead, the way `./benchmark.sh` plays it, and quits at the end with the report's folder open.
+a new game's world, and your game comes back when it ends; Esc stops it. With **Fresh game** on, your game is saved
+as "Before the benchmark" and the game starts again for it instead, the way `./benchmark.sh` plays it, and quits at the
+end with the report's folder open.
 **Show report** under the button finds the last report in the Finder.
 
 From the port folder, after `./port.sh`:

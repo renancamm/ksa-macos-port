@@ -22,9 +22,9 @@ namespace KsaMetalHooks;
 // - The Mac Port tab's Run benchmark, in the running game: the player's game is saved (to disk, in case the game
 //   doesn't survive the run, and in memory), the world becomes a new game's (its clock at the start, no vehicles), the
 //   tour plays, and the player's game comes back; Esc stops it. The hooks write the report.
-// - The same with "Fresh game": the game starts again for it the way benchmark.sh starts it (a documents
-//   folder of its own with a copy of the settings, a new game, none of the player's mods), and at the end the hooks
-//   write the report, open its folder and quit the game.
+// - The same with "Fresh game": the player's game is saved, the game starts again for it the way benchmark.sh starts
+//   it (a documents folder of its own with a copy of the settings, a new game, none of the player's mods), and at the
+//   end the hooks write the report, open its folder and quit the game.
 // The benchmark's vehicles are added to the game's vehicle saves from the app (Contents/Resources/Benchmark/vehicles).
 internal static class BenchmarkRun
 {
@@ -42,20 +42,13 @@ internal static class BenchmarkRun
     private static Benchmark? _run;
     private static string _out = "";
     private static bool _fast;
-    // In the running game: what comes back after the run
-    private static UniverseData? _saved;
-    private static GameSave? _safety;
-    private static bool _celestialNames, _locationNames, _drawUi;
-    private static double _speed;
+    // In the running game: the player's game, which comes back after the run
+    private static PlayerGame? _player;
     private static long _logStart;
     private static Task? _finishing;
     // What system.txt says about the run (the report program asks macOS about the Mac after the run, not during it)
     private static string _system = "", _start = "", _sections = "";
-    // macOS's memory pressure during the run (1 normal, 2 warning, 4 critical) and the swap used before it
-    private static int _pressure = 1;
-    private static double _swapBefore;
-    private static readonly Stopwatch Watch = new();
-    private static double _nextSample;
+    private static readonly MemoryWatch Memory = new();
     private static Result? _last;
     private static bool _lastLooked;
 
@@ -148,11 +141,19 @@ internal static class BenchmarkRun
         {
             Hooks.Log($"benchmark: {e}");
             _run = null;
-            // The player's game back, or out of the game that started again for the run
-            if (_mode == Mode.InGame)
-                PutBack();
-            else if (_mode == Mode.Restarted)
-                Program.Instance.RequestExit(1);
+            try
+            {
+                // The player's game back, or out of the game that started again for the run
+                if (_mode == Mode.InGame)
+                    PutBack();
+                else if (_mode == Mode.Restarted)
+                    Program.Instance.RequestExit(1);
+            }
+            catch (Exception again)
+            {
+                Hooks.Log($"benchmark: the game could not be put back: {again}");
+                TimedAlert.CreateWarning($"The benchmark failed: your game is in the save \"{SafetySave}\"");
+            }
             _mode = Mode.None;
         }
     }
@@ -169,7 +170,7 @@ internal static class BenchmarkRun
                 _start = "a new game, restarted from the game's settings";
                 AddVehicles();
                 _run = Benchmark.Begin(Environment.GetEnvironmentVariable);
-                StartWatching();
+                Memory.Start();
             }
         }
         if (_startRequested)
@@ -190,7 +191,7 @@ internal static class BenchmarkRun
         }
         else
             _run.OnFrame();
-        Sample();
+        Memory.Sample();
         if (_run.Done && _mode != Mode.Script)
             End();
     }
@@ -228,7 +229,8 @@ internal static class BenchmarkRun
         return folder;
     }
 
-    // system.txt's facts about the run, for the report program, which adds the Mac's
+    // system.txt's facts about the run, for the report program, which adds the Mac's (and the defaults of those left
+    // out: no preset, no settings changed, no tools)
     private static string[] SystemFacts()
     {
         var outside = PortSettings.All.Where(s => s.Outside != null).Select(s => s.Outside!.Replace(Home, "~")).ToList();
@@ -237,8 +239,8 @@ internal static class BenchmarkRun
         [
             $"StarMap={(AppDomain.CurrentDomain.GetAssemblies().Any(a => a.GetName().Name == "StarMap.Core") ? "in the app" : "none")}",
             $"System={_system}", $"Sections={Environment.GetEnvironmentVariable("KSA_BENCH_ONLY") ?? _sections}",
-            $"Mode={(_fast ? "fast" : "cinematic")}", "Preset=none, own settings", "Settings changed=none", $"Start={_start}",
-            $"KSA Metal switches={(outside.Count > 0 ? string.Join(' ', outside) : "none")}", "Tools=none",
+            $"Mode={(_fast ? "fast" : "cinematic")}", $"Start={_start}",
+            $"KSA Metal switches={(outside.Count > 0 ? string.Join(' ', outside) : "none")}",
             // What this game ran with: the port settings that aren't at their defaults, and what the hooks did
             $"port settings={(port.Count > 0 ? string.Join(", ", port) : "defaults")}", $"Hooks={Hooks.Summary.Replace(Home, "~")}"
         ];
@@ -262,16 +264,7 @@ internal static class BenchmarkRun
         _logStart = File.Exists(ConsoleLog) ? new FileInfo(ConsoleLog).Length : 0;
         Hooks.Log($"benchmark: playing in this game, into {_out.Replace(Home, "~")}");
 
-        // The player's game: on disk in case the game doesn't survive the run, and in memory to come back, with what
-        // the run changes of the settings
-        var ui = GameSettings.Current.Interface;
-        (_celestialNames, _locationNames, _drawUi) = (ui.CelestialNames, ui.LocationNames, Program.DrawUI);
-        _saved = UniverseData.Create();
-        // The speed the player had: the settings window pauses the game while it is open, and keeps the speed to go back to
-        _speed = AccessTools.Field(typeof(Program), "_menuPauseActive")?.GetValue(null) is true &&
-                 AccessTools.Field(typeof(Program), "_menuPauseRestoreSpeed")?.GetValue(null) is double restore
-            ? restore : Universe.GetSimulationSpeed();
-        _safety = UncompressedSave.Make(SafetySave);
+        _player = new PlayerGame();
         // A new game's world: the clock at its start, no vehicles, no kittens on missions
         var fresh = UniverseData.Create();
         fresh.GameTime = new UniverseTimeReference(UniverseTime.Zero);
@@ -284,10 +277,11 @@ internal static class BenchmarkRun
         Universe.DeserializeSave(fresh);
         Program.OnGameLoaded();
         // The tour's view: no names over celestials and places (as benchmark.sh sets them)
+        var ui = GameSettings.Current.Interface;
         (ui.CelestialNames, ui.LocationNames) = (false, false);
         AddVehicles();
         _run = Benchmark.Begin(name => options.GetValueOrDefault(name));
-        StartWatching();
+        Memory.Start();
         if (_run == null)
         {
             Hooks.Log("benchmark: nothing to play");
@@ -295,27 +289,55 @@ internal static class BenchmarkRun
         }
     }
 
-    // The player's game as it was
+    // The player's game as it was, once (also when that fails halfway: the save on disk then has it)
     private static void PutBack()
     {
-        if (_saved == null)
+        if (_player is not { } player)
             return;
-        Universe.DeserializeSave(_saved);
-        Program.OnGameLoaded();
-        _saved = null;
-        // Loading a game runs it at real time: the speed it had (paused, perhaps)
-        InputEvents.SimSpeedBuffer.Add(new InputEvents.SimSpeedData { Speed = new SimSpeed(_speed) });
-        var ui = GameSettings.Current.Interface;
-        (ui.CelestialNames, ui.LocationNames, Program.DrawUI) = (_celestialNames, _locationNames, _drawUi);
-        VehicleSaves.Refresh();
-        _safety?.Delete();
-        _safety = null;
+        _player = null;
+        player.Restore();
     }
 
-    // With "Fresh game": the run's documents folder, its settings and system.txt, then the game starts
+    // The player's game as a run in it finds it: the world, in memory to come back and on disk in case the game doesn't
+    // survive the run, the speed it ran at, and what the run changes of the settings
+    private sealed class PlayerGame
+    {
+        private readonly bool _celestialNames, _locationNames, _drawUi;
+        private readonly UniverseData _world;
+        private readonly double _speed;
+        private readonly GameSave? _safety;
+
+        public PlayerGame()
+        {
+            var ui = GameSettings.Current.Interface;
+            (_celestialNames, _locationNames, _drawUi) = (ui.CelestialNames, ui.LocationNames, Program.DrawUI);
+            _world = UniverseData.Create();
+            // The settings window pauses the game while it is open, and keeps the speed to go back to
+            _speed = AccessTools.Field(typeof(Program), "_menuPauseActive")?.GetValue(null) is true &&
+                     AccessTools.Field(typeof(Program), "_menuPauseRestoreSpeed")?.GetValue(null) is double restore
+                ? restore : Universe.GetSimulationSpeed();
+            _safety = UncompressedSave.Make(SafetySave);
+        }
+
+        public void Restore()
+        {
+            Universe.DeserializeSave(_world);
+            Program.OnGameLoaded();
+            // Loading a game runs it at real time: the speed it had (paused, perhaps)
+            InputEvents.SimSpeedBuffer.Add(new InputEvents.SimSpeedData { Speed = new SimSpeed(_speed) });
+            var ui = GameSettings.Current.Interface;
+            (ui.CelestialNames, ui.LocationNames, Program.DrawUI) = (_celestialNames, _locationNames, _drawUi);
+            VehicleSaves.Refresh();
+            _safety?.Delete();
+        }
+    }
+
+    // With "Fresh game": the player's game saved, the run's documents folder and its settings, then the game starts
     // again with the director's options
     private static void RestartForRun()
     {
+        if (UncompressedSave.Make(SafetySave) == null)
+            throw new InvalidOperationException($"the game could not be saved as \"{SafetySave}\"");
         var instance = Path.Combine(Home, "Library", "Caches", "ksa-macos-port", "benchmark", "instance");
         if (Directory.Exists(instance))
             Directory.Delete(instance, true);
@@ -350,23 +372,6 @@ internal static class BenchmarkRun
         Program.Instance.RequestExit(0);
     }
 
-    private static void StartWatching()
-    {
-        _pressure = 1;
-        _swapBefore = SwapUsedMb();
-        Watch.Restart();
-        _nextSample = 0;
-    }
-
-    // Once a second: macOS's memory pressure
-    private static void Sample()
-    {
-        if (Watch.Elapsed.TotalSeconds < _nextSample)
-            return;
-        _nextSample = Watch.Elapsed.TotalSeconds + 1;
-        _pressure = Math.Max(_pressure, Sysctl("kern.memorystatus_vm_pressure_level"));
-    }
-
     // The run has ended: the player's game comes back, then the report is written in the background
     private static void End()
     {
@@ -374,9 +379,8 @@ internal static class BenchmarkRun
         _run = null;
         if (mode == Mode.InGame)
             PutBack();
-        var run = new List<string> { mode == Mode.InGame ? "Game: kept running" : "Game: quit normally",
-            $"Memory pressure: {(_pressure <= 1 ? "normal" : _pressure == 2 ? "warning" : "critical")}",
-            FormattableString.Invariant($"Swap used: {_swapBefore:F2} -> {SwapUsedMb():F2} MB") };
+        var run = new List<string> { mode == Mode.InGame ? "Game: kept running" : "Game: quit normally" };
+        run.AddRange(Memory.Lines());
         File.WriteAllLines(Path.Combine(_out, "run.txt"), run);
         File.Delete(Path.Combine(_out, "heartbeat"));
         // The game's log of the run, without the home folder's name
@@ -400,6 +404,8 @@ internal static class BenchmarkRun
 
     private static void Finished()
     {
+        if (_finishing?.Exception is { } e)
+            Hooks.Log($"benchmark: the report could not be written: {e.InnerException ?? e}");
         _finishing = null;
         _last = ReadResult(_out);
         Hooks.Log($"benchmark: {(_last.Passed ? "passed" : "done, with problems")}, report in {_out.Replace(Home, "~")}");
@@ -450,24 +456,56 @@ internal static class BenchmarkRun
         _ = output.Result;
     }
 
-    [DllImport("libc", EntryPoint = "sysctlbyname")]
-    private static extern int SysctlByName(string name, ref long value, ref nint size, nint newValue, nint newSize);
-
-    [DllImport("libc", EntryPoint = "sysctlbyname")]
-    private static extern int SysctlByName(string name, [Out] long[] value, ref nint size, nint newValue, nint newSize);
-
-    private static int Sysctl(string name)
+    // macOS's memory pressure during a run (1 normal, 2 warning, 4 critical), sampled once a second, and the swap used
+    // before it and after
+    private sealed class MemoryWatch
     {
-        long value = 0;
-        nint size = sizeof(long);
-        return SysctlByName(name, ref value, ref size, 0, 0) == 0 ? (int)value : 1;
-    }
+        private readonly Stopwatch _watch = new();
+        private int _pressure = 1;
+        private double _swapBefore, _nextSample;
 
-    // vm.swapusage is a struct xsw_usage: total, available and used bytes, then the page size and a flag
-    private static double SwapUsedMb()
-    {
-        var usage = new long[4];
-        nint size = usage.Length * sizeof(long);
-        return SysctlByName("vm.swapusage", usage, ref size, 0, 0) == 0 ? usage[2] / 1048576.0 : 0;
+        public void Start()
+        {
+            _pressure = 1;
+            _swapBefore = SwapUsedMb();
+            _watch.Restart();
+            _nextSample = 0;
+        }
+
+        public void Sample()
+        {
+            if (_watch.Elapsed.TotalSeconds < _nextSample)
+                return;
+            _nextSample = _watch.Elapsed.TotalSeconds + 1;
+            _pressure = Math.Max(_pressure, Sysctl("kern.memorystatus_vm_pressure_level"));
+        }
+
+        // run.txt's lines
+        public string[] Lines() =>
+        [
+            $"Memory pressure: {(_pressure <= 1 ? "normal" : _pressure == 2 ? "warning" : "critical")}",
+            FormattableString.Invariant($"Swap used: {_swapBefore:F2} -> {SwapUsedMb():F2} MB")
+        ];
+
+        [DllImport("libc", EntryPoint = "sysctlbyname")]
+        private static extern int SysctlByName(string name, ref long value, ref nint size, nint newValue, nint newSize);
+
+        [DllImport("libc", EntryPoint = "sysctlbyname")]
+        private static extern int SysctlByName(string name, [Out] long[] value, ref nint size, nint newValue, nint newSize);
+
+        private static int Sysctl(string name)
+        {
+            long value = 0;
+            nint size = sizeof(long);
+            return SysctlByName(name, ref value, ref size, 0, 0) == 0 ? (int)value : 1;
+        }
+
+        // vm.swapusage is a struct xsw_usage: total, available and used bytes, then the page size and a flag
+        private static double SwapUsedMb()
+        {
+            var usage = new long[4];
+            nint size = usage.Length * sizeof(long);
+            return SysctlByName("vm.swapusage", usage, ref size, 0, 0) == 0 ? usage[2] / 1048576.0 : 0;
+        }
     }
 }

@@ -60,7 +60,7 @@ performance_overlay | bool | false | MTL_HUD_ENABLED | | restart | | Performance
 
 [benchmark] Benchmark
 benchmark_mode | choice:fast=Fast, 1 minute/full=Full tour, 8 minutes | fast | | | live | | Benchmark | Fast: three places on Earth with the game paused, then a rocket's launch and explosion. The full tour flies from Earth to Jupiter, with a kitten in the grass, a launch and a 2,000-part rocket.
-benchmark_restart | bool | false | | | live | | Fresh game | Off: the benchmark plays in this game, and your game comes back when it ends. On: the game starts again for it, with a new game and none of your mods, the way benchmark.sh in the port folder runs it; when it ends, the game quits and the report's folder opens.
+benchmark_restart | bool | false | | | live | | Fresh game | Off: the benchmark plays in this game, and your game comes back when it ends. On: your game is saved as Before the benchmark, and the game starts again for it, with a new game and none of your mods, the way benchmark.sh in the port folder runs it; when it ends, the game quits and the report's folder opens.
 
 [developer] Developer
 hooks | bool | true | KSA_HOOKS | | restart | | | KSA Metal Hooks, which also draw the Mac Port tab. Off: the game starts without them.

@@ -102,6 +102,16 @@ public static class Program
     }
 
     // system.txt: what the report says about this Mac and the run
+    // The run's facts in system.txt, in this order, and what one a writer leaves out means (null: left out). benchmark.sh
+    // gives them all; the hooks, for a run from the game's settings, those that aren't the defaults' (they add the port
+    // settings and the hooks; finish takes those from the game's log otherwise).
+    private static readonly (string Key, string? Default)[] RunFacts =
+    [
+        ("StarMap", null), ("System", null), ("Sections", null), ("Mode", null), ("Preset", "none, own settings"),
+        ("Settings changed", "none"), ("Start", null), ("KSA Metal switches", "none"), ("Tools", "none"),
+        ("port settings", null), ("Hooks", null),
+    ];
+
     private static int SystemFacts(string dir, string app, string[] facts)
     {
         var settings = File.Exists(Path.Combine(dir, "settings.toml")) ? File.ReadAllLines(Path.Combine(dir, "settings.toml")) : [];
@@ -128,12 +138,16 @@ public static class Program
             $"KSA: {Plist("CFBundleShortVersionString")}",
             $"Port: {Plist("KSAPortVersion")} ({Plist("KSAPortCommit")})"
         };
-        foreach (var fact in facts)
+        var given = facts.Where(f => f.IndexOf('=') > 0).Select(f => (Key: f[..f.IndexOf('=')], Value: f[(f.IndexOf('=') + 1)..])).ToList();
+        foreach (var (key, fallback) in RunFacts)
         {
-            int eq = fact.IndexOf('=');
-            if (eq > 0)
-                lines.Add($"{fact[..eq]}: {fact[(eq + 1)..]}");
+            if (given.FirstOrDefault(f => f.Key == key).Value is { } value)
+                lines.Add($"{key}: {value}");
+            else if (fallback != null)
+                lines.Add($"{key}: {fallback}");
         }
+        foreach (var (key, value) in given.Where(f => !RunFacts.Any(r => r.Key == f.Key)))
+            lines.Add($"{key}: {value}");
         lines.Add($"Window: {Setting("width")} x {Setting("height")}, {Setting("mode")}, on {Setting("screenName")}");
         lines.Add($"V-Sync: {Setting("vsync")}, FPS limit {Setting("fpslimit")}");
         lines.Add($"Anti-aliasing: {Setting("antialiasing")}");
