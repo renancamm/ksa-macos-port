@@ -1052,15 +1052,21 @@ VKFN(void) vkCmdDrawIndexedIndirect(VkCommandBuffer commandBuffer, VkBuffer buff
     cb->draws += drawCount;
 }
 
+// After every dispatch, ray traces included: the profiler's note and the count, and with KSA_MTL_GPUPROF_SPLIT=1 the
+// encoder ends, so the profiler times each dispatch alone
+static void dispatched(KCommandBuffer* cb) {
+    kmtlProfNote(cb, cb->computePipeline, true, 1);
+    cb->dispatches++;
+    if (kmtlConfig().gpuprofSplit) cb->endEncoder();
+}
+
 VKFN(void) vkCmdDispatch(VkCommandBuffer commandBuffer, uint32_t x, uint32_t y, uint32_t z) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
     if (kmtlThrottled(cb->computePipeline)) return;
     if (!x || !y || !z || !flushCompute(cb)) return;
     [cb->compute dispatchThreadgroups:MTLSizeMake(x, y, z) threadsPerThreadgroup:cb->computePipeline->workgroup];
-    kmtlProfNote(cb, cb->computePipeline, true, 1);
-    cb->dispatches++;
-    if (kmtlConfig().gpuprofSplit) cb->endEncoder();
+    dispatched(cb);
 }
 
 VKFN(void) vkCmdDispatchIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset) {
@@ -1071,9 +1077,7 @@ VKFN(void) vkCmdDispatchIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer,
     auto* buf = (KBuffer*)buffer;
     [cb->compute dispatchThreadgroupsWithIndirectBuffer:buf->mtl indirectBufferOffset:buf->offset + offset
                                   threadsPerThreadgroup:cb->computePipeline->workgroup];
-    kmtlProfNote(cb, cb->computePipeline, true, 1);
-    cb->dispatches++;
-    if (kmtlConfig().gpuprofSplit) cb->endEncoder();
+    dispatched(cb);
 }
 
 // Ray tracing pipelines are compute kernels of 8x8 threads; the launch size goes to kRtLaunchBufferIndex and the
@@ -1082,14 +1086,14 @@ VKFN(void) vkCmdTraceRaysKHR(VkCommandBuffer commandBuffer, const VkStridedDevic
                              const VkStridedDeviceAddressRegionKHR*, const VkStridedDeviceAddressRegionKHR*, uint32_t w, uint32_t h, uint32_t d) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
+    if (kmtlThrottled(cb->computePipeline)) return;
     if (!w || !h || !d || !flushCompute(cb)) return;
     uint32_t size[4] = {w, h, d, 0};
     [cb->compute setBytes:size length:sizeof(size) atIndex:kRtLaunchBufferIndex];
     MTLSize wg = cb->computePipeline->workgroup;
     [cb->compute dispatchThreadgroups:MTLSizeMake((w + wg.width - 1) / wg.width, (h + wg.height - 1) / wg.height, d)
                 threadsPerThreadgroup:wg];
-    kmtlProfNote(cb, cb->computePipeline, true, 1);
-    cb->dispatches++;
+    dispatched(cb);
 }
 
 VKFN(void) vkCmdDispatchBase(VkCommandBuffer commandBuffer, uint32_t bx, uint32_t by, uint32_t bz, uint32_t x, uint32_t y, uint32_t z) {
