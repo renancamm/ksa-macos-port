@@ -17,13 +17,12 @@ using KsaMetalHooks;
 // the commented template there when the player has no port-settings.toml, and marks the app NSHighResolutionCapable
 // when the file's retina says otherwise (the tab marks it when it saves the setting: macOS reads it as the game starts,
 // so a change made here may take effect only from the next start). For the Mac Port tab it sets KSA_PORT_SETTINGS (the
-// file), KSA_PORT_SET (the variables it set) and KSA_PORT_OUTSIDE (those set already).
+// file) and KSA_PORT_OUTSIDE (the variables set already), and for Restart KSA_PORT_SET (those it set, which the new
+// game sets again).
 internal static class PortEnvironment
 {
     [DllImport("libc", SetLastError = true)]
     private static extern int setenv(string name, string value, int overwrite);
-    [DllImport("libc", SetLastError = true)]
-    private static extern int unsetenv(string name);
     [DllImport("libc")]
     private static extern int isatty(int fd);
     [DllImport("libc")]
@@ -37,11 +36,6 @@ internal static class PortEnvironment
             ? instance : Path.Combine(home, "Documents", "My Games", "Kitten Space Agency");
         if (isatty(1) == 0)
             Output(Path.Combine(documents, "logs", "console.log"));
-
-        // A game started again from its settings (Restart) inherits what the last start set: those variables came from
-        // the file, not from outside
-        foreach (var name in (Environment.GetEnvironmentVariable("KSA_PORT_SET") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
-            Set(name, null);
 
         PortSettings.LoadTable(resources);
         PortSettings.FilePath = Path.Combine(documents, "port-settings.toml");
@@ -114,15 +108,12 @@ internal static class PortEnvironment
         return Environment.GetEnvironmentVariable("KSA_HOOKS") != "0";
     }
 
-    // Sets (or with null, removes) a variable for both: .NET code reads its own copy of the environment, KSA Metal and
-    // the shims read the process's
-    private static void Set(string name, string? value)
+    // Sets a variable for both: .NET code reads its own copy of the environment, KSA Metal and the shims read the
+    // process's
+    private static void Set(string name, string value)
     {
         Environment.SetEnvironmentVariable(name, value);
-        if (value == null)
-            unsetenv(name);
-        else
-            setenv(name, value, 1);
+        setenv(name, value, 1);
     }
 
     // Standard output and error to this file, from now on

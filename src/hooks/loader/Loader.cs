@@ -15,6 +15,9 @@ internal class StartupHook
 
     public static void Initialize()
     {
+        // Only in the game's process: .NET programs it starts (the benchmark's report) inherit DOTNET_STARTUP_HOOKS
+        if (Assembly.GetEntryAssembly()?.GetName().Name is not ("KSA" or "StarMap"))
+            return;
         string folder = Path.GetDirectoryName(typeof(StartupHook).Assembly.Location)!;
         bool hooks = true;
         try

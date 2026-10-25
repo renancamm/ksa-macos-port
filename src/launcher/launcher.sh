@@ -8,12 +8,20 @@
 #   DOTNET_STARTUP_HOOKS   KSA Metal Hooks' loader (src/hooks/loader/), which applies the player's port settings
 #                          (port-settings.toml in the game's documents folder) and puts the game's output in
 #                          console.log, before the game starts
-#   KSA_PORT_LAUNCHER      this script, for the hooks to start the game again
+#   KSA_PORT_LAUNCHER      this script, for the hooks to find the app and start the game again
 # This script stays out of the documents folder: started from the Finder, macOS refuses it there (it is a shell, not
 # the app), while it lets the game's process in.
 
 CONTENTS="$(cd "$(dirname "$0")/.." && pwd)"
 RES="${CONTENTS}/Resources"
+
+# Started again by the hooks (Restart) while the game was still running: begin once it has quit
+if [ -n "${KSA_PORT_WAIT}" ]; then
+    while kill -0 "${KSA_PORT_WAIT}" 2> /dev/null; do
+        sleep 0.2
+    done
+    unset KSA_PORT_WAIT
+fi
 
 fail() {
     echo "ERROR: $1"
