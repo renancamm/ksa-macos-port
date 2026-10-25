@@ -308,7 +308,7 @@ another setting is greyed out until that one is on. Each row's tooltip says what
 | Section | What's there |
 |---|---|
 | Image | Apple's MetalFX, off by default: a render scale that draws the 3D view smaller and scales it back up, frame interpolation, and Retina output |
-| Performance | a visible trade for speed: cloud shadows, plume shadows, crew portraits. The game's own behaviour is one of the choices |
+| Performance | a visible trade for speed: cloud shadows, plume shadows. The game's own behaviour is one of the choices |
 | Optimizations | the same image, faster: on by default. Turn one off to find out whether it causes a problem |
 | Game features | what the Mac offers the game: tessellation, ray queries, ray tracing. Off hides one from the game; while it is available, the game's own settings decide |
 | Overlay | Apple's Metal Performance HUD over the game |
