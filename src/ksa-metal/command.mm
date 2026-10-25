@@ -152,7 +152,7 @@ void KCommandBuffer::joinCommands() {
 // Upload ring (dynamic-offset descriptor copies, vkCmdUpdateBuffer data)
 
 KUploadRing::Place KUploadRing::alloc(KDevice* dev, size_t size) {
-    size = (size + 255) & ~(size_t)255;
+    size = kmtlAlignUp<size_t>(size, 256);
     while (true) {
         if (chunk < chunks.size()) {
             const Chunk& c = chunks[chunk];
@@ -676,7 +676,7 @@ static bool flushGraphics(KCommandBuffer* cb) {
         if (!b.stages || (b.stages & VK_SHADER_STAGE_FRAGMENT_BIT)) [enc setFragmentBuffer:b.buffer offset:b.offset atIndex:s];
     }
     if (cb->graphicsPushDirty && cb->pushSize) {
-        uint32_t n = (cb->pushSize + 15) & ~15u;
+        uint32_t n = kmtlAlignUp(cb->pushSize, 16u);
         [enc setVertexBytes:cb->push length:n atIndex:kPushConstantBufferIndex];
         [enc setFragmentBytes:cb->push length:n atIndex:kPushConstantBufferIndex];
         cb->graphicsPushDirty = false;
@@ -716,7 +716,7 @@ static bool flushCompute(KCommandBuffer* cb) {
             [enc setBuffer:cb->computeSets[s].buffer offset:cb->computeSets[s].offset atIndex:s];
     }
     if (cb->computePushDirty && cb->pushSize) {
-        uint32_t n = (cb->pushSize + 15) & ~15u;
+        uint32_t n = kmtlAlignUp(cb->pushSize, 16u);
         [enc setBytes:cb->push length:n atIndex:kPushConstantBufferIndex];
         cb->computePushDirty = false;
     }
@@ -753,7 +753,7 @@ static uint32_t lcm(uint32_t a, uint32_t b) {
 static id<MTLBuffer> tessScratch(KDevice* dev, uint64_t size) {
     std::lock_guard<std::mutex> lock(dev->tessScratchMutex);
     if (dev->tessScratch && dev->tessScratch.length >= size) return dev->tessScratch;
-    uint64_t len = (size + (16 << 20) - 1) & ~(uint64_t)((16 << 20) - 1);
+    uint64_t len = kmtlAlignUp<uint64_t>(size, 16 << 20);
     id<MTLBuffer> b = [dev->mtl newBufferWithLength:len options:MTLResourceStorageModePrivate | MTLResourceHazardTrackingModeUntracked];
     if (!b) {
         KERR("tessellation scratch of %llu MB could not be allocated", (unsigned long long)(len >> 20));
@@ -789,7 +789,7 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
     const KTessStages& st = fused ? p->tessFused : p->tessPlain;
     if (!maxPatches || !st.vertex[idxType] || !st.control) return;
     // Scratch layout: vertex outputs, control outputs, per-patch outputs, tessellation factors
-    auto align = [](uint64_t n) { return (n + 255) & ~255ull; };
+    auto align = [](uint64_t n) { return kmtlAlignUp<uint64_t>(n, 256); };
     NSUInteger levelSize = p->tessQuads ? sizeof(MTLQuadTessellationFactorsHalf) : sizeof(MTLTriangleTessellationFactorsHalf);
     NSUInteger vtxOff = 0;
     NSUInteger tcOff = vtxOff + align(std::max<uint64_t>(maxVerts * st.vertexStride, 16));
@@ -815,7 +815,7 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
     auto bindGame = [&](id<MTLComputeCommandEncoder> e, bool vertexBuffers) {
         for (uint32_t s = 0; s < kMaxSets; s++)
             if (cb->graphicsSets[s].buffer) [e setBuffer:cb->graphicsSets[s].buffer offset:cb->graphicsSets[s].offset atIndex:s];
-        if (cb->pushSize) [e setBytes:cb->push length:(cb->pushSize + 15) & ~15u atIndex:kPushConstantBufferIndex];
+        if (cb->pushSize) [e setBytes:cb->push length:kmtlAlignUp(cb->pushSize, 16u) atIndex:kPushConstantBufferIndex];
         for (uint32_t b = 0; vertexBuffers && b < 16; b++)
             if (cb->vertexBuffers[b].buf) [e setBuffer:cb->vertexBuffers[b].buf offset:cb->vertexBuffers[b].off atIndex:vertexBufferIndex(b)];
     };

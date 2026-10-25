@@ -619,6 +619,9 @@ MTLVertexFormat kmtlVertexFormat(VkFormat f);
 
 // ---------------------------------------------------------------------------------------------------------------
 // Helpers shared between files
+// n rounded up to a multiple of a, a power of two
+template <typename T> constexpr T kmtlAlignUp(T n, T a) { return (n + a - 1) & ~(a - 1); }
+
 inline const void* findNext(const void* chain, VkStructureType type) {
     for (auto* p = (const VkBaseInStructure*)chain; p; p = p->pNext)
         if (p->sType == type) return p;

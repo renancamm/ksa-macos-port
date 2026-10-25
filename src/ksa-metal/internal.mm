@@ -229,7 +229,7 @@ uint32_t kmtlTessCap(KDevice* dev) {
     const volatile uint32_t* st = (const volatile uint32_t*)ip->tessStats.contents;
     uint32_t want = st[0], cap = ip->tessCap.load(std::memory_order_relaxed);
     if (want > cap) {
-        uint32_t grown = (uint32_t)std::min<uint64_t>(((uint64_t)want * 5 / 4 + 65535) & ~65535ull, 0xffffffffu);
+        uint32_t grown = (uint32_t)std::min<uint64_t>(kmtlAlignUp<uint64_t>((uint64_t)want * 5 / 4, 65536), 0xffffffffu);
         if (ip->tessCap.compare_exchange_strong(cap, grown))
             KLOG(1, "tessellation index cap %u -> %u (largest draw %u indices, firstIndex up to %u, instances up to %u, "
                  "%u clamped draws so far)", cap, grown, want, st[1], st[2], st[3]);

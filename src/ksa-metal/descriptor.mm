@@ -131,7 +131,7 @@ VKFN(VkResult) vkAllocateDescriptorSets(VkDevice, const VkDescriptorSetAllocateI
     auto* p = (KDescriptorPool*)ai->descriptorPool;
     for (uint32_t i = 0; i < ai->descriptorSetCount; i++) {
         auto* l = (KSetLayout*)ai->pSetLayouts[i];
-        VkDeviceSize size = (l->bytes() + 63) & ~63ull;
+        VkDeviceSize size = kmtlAlignUp<VkDeviceSize>(l->bytes(), 64);
         uint32_t chunk = UINT32_MAX;
         VkDeviceSize off = 0;
         if (auto it = p->freeBySize.find(size); it != p->freeBySize.end() && !it->second.empty()) {

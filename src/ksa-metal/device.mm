@@ -370,7 +370,7 @@ VKFN(VkResult) vkAllocateMemory(VkDevice device, const VkMemoryAllocateInfo* ai,
     hd.storageMode = shared ? MTLStorageModeShared : MTLStorageModePrivate;
     hd.cpuCacheMode = ai->memoryTypeIndex == 1 ? MTLCPUCacheModeWriteCombined : MTLCPUCacheModeDefaultCache;
     hd.hazardTrackingMode = MTLHazardTrackingModeUntracked;
-    hd.size = (sa.size + 0xFFFF) & ~(NSUInteger)0xFFFF;
+    hd.size = kmtlAlignUp<NSUInteger>(sa.size, 0x10000);
     id<MTLHeap> heap = [dev->mtl newHeapWithDescriptor:hd];
     if (!heap) {
         KERR("vkAllocateMemory: heap of %llu bytes failed", (unsigned long long)ai->allocationSize);
@@ -458,7 +458,7 @@ VKFN(void) vkDestroyBuffer(VkDevice, VkBuffer buffer, const VkAllocationCallback
 }
 
 static void bufferRequirements(KBuffer* b, VkMemoryRequirements* r) {
-    r->size = (b->size + 255) & ~255ull;
+    r->size = kmtlAlignUp<VkDeviceSize>(b->size, 256);
     r->alignment = 256;
     r->memoryTypeBits = 0x7;
 }
