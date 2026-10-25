@@ -418,7 +418,9 @@ struct KPipeline {
     std::string profName;
     int throttle = -1;  // KSA_MTL_THROTTLE: run every N-th present (0 never, -1 always)
 };
-void kmtlWritePNG(id<MTLBuffer> buf, NSUInteger w, NSUInteger h, bool bgra, std::string path);  // swapchain.mm
+// swapchain.mm: a texture (8-bit RGBA or BGRA) saved as a PNG once the command buffer completes, then done (if any);
+// the copy waits for the fence after (if any)
+void kmtlSavePNG(id<MTLCommandBuffer> cb, id<MTLTexture> tex, id<MTLFence> after, std::string path, void (^done)(void) = nil);
 // upscale.mm: the present's MetalFX passes
 id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<MTLTexture> color);
 int kmtlThrottleFor(const std::string& profName);

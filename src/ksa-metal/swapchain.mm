@@ -535,25 +535,29 @@ static void writePNG(id<MTLBuffer> buf, NSUInteger w, NSUInteger h, bool bgra, c
     KLOG(0, "screenshot %s: %s", ok ? "written" : "FAILED", path.c_str());
 }
 
-void kmtlWritePNG(id<MTLBuffer> buf, NSUInteger w, NSUInteger h, bool bgra, std::string path) { writePNG(buf, w, h, bgra, path); }
-
 // The path is taken by value: the completion block keeps its own copy (a captured reference would outlive requests)
-static void takeShot(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb, std::string path, bool last) {
-    NSUInteger w = image->mtl.width, h = image->mtl.height;
-    id<MTLBuffer> buf = [dev->mtl newBufferWithLength:w * h * 4 options:MTLResourceStorageModeShared];
-    bool bgra = image->pixelFormat == MTLPixelFormatBGRA8Unorm || image->pixelFormat == MTLPixelFormatBGRA8Unorm_sRGB;
-    // A second encoder after the present's blit (which updated the chain fence)
+void kmtlSavePNG(id<MTLCommandBuffer> cb, id<MTLTexture> tex, id<MTLFence> after, std::string path, void (^done)(void)) {
+    NSUInteger w = tex.width, h = tex.height;
+    id<MTLBuffer> buf = [tex.device newBufferWithLength:w * h * 4 options:MTLResourceStorageModeShared];
+    bool bgra = tex.pixelFormat == MTLPixelFormatBGRA8Unorm || tex.pixelFormat == MTLPixelFormatBGRA8Unorm_sRGB;
     id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
-    [b waitForFence:dev->queue->chain];
-    [b copyFromTexture:image->mtl sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(w, h, 1)
+    if (after) [b waitForFence:after];
+    [b copyFromTexture:tex sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(w, h, 1)
               toBuffer:buf destinationOffset:0 destinationBytesPerRow:w * 4 destinationBytesPerImage:w * h * 4];
     [b endEncoding];
-    g_shotsPending++;
-    bool exitAfter = last && kmtlConfig().exitAfterShots;
     [cb addCompletedHandler:^(id<MTLCommandBuffer>) {
         writePNG(buf, w, h, bgra, path);
-        if (--g_shotsPending == 0 && exitAfter) exitSoon("KSA_MTL_EXIT_AFTER_SHOTS");
+        if (done) done();
     }];
+}
+
+static void takeShot(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb, const std::string& path, bool last) {
+    g_shotsPending++;
+    bool exitAfter = last && kmtlConfig().exitAfterShots;
+    // A second encoder after the present's blit (which updated the chain fence)
+    kmtlSavePNG(cb, image->mtl, dev->queue->chain, path, ^{
+        if (--g_shotsPending == 0 && exitAfter) exitSoon("KSA_MTL_EXIT_AFTER_SHOTS");
+    });
 }
 
 void kmtlOnPresent(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb) {

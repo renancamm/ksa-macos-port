@@ -402,19 +402,10 @@ id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<
         // KSA_MTL_FX_SHOTS=<dir>: every 300th interpolated frame, with the scenes around it and this frame as shown
         const char* shotDir = kmtlConfig().fxShots;
         if (shotDir && ++g_up.fxShotCount % 300 == 0) {
-            NSUInteger w = color.width, h = color.height;
-            bool bgra = color.pixelFormat == MTLPixelFormatBGRA8Unorm || color.pixelFormat == MTLPixelFormatBGRA8Unorm_sRGB;
             id<MTLTexture> texs[4] = {g_up.prevScene, g_up.interpolated, g_up.scene, color};
             const char* names[4] = {"a_prev_scene", "b_interpolated", "c_scene", "d_shown"};
-            for (int i = 0; i < 4; i++) {
-                id<MTLBuffer> buf = [d newBufferWithLength:w * h * 4 options:MTLResourceStorageModeShared];
-                id<MTLBlitCommandEncoder> sb = [cb blitCommandEncoder];
-                [sb copyFromTexture:texs[i] sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(w, h, 1)
-                           toBuffer:buf destinationOffset:0 destinationBytesPerRow:w * 4 destinationBytesPerImage:w * h * 4];
-                [sb endEncoding];
-                std::string path = std::string(shotDir) + "/fi_" + std::to_string(g_up.fxShotCount) + "_" + names[i] + ".png";
-                [cb addCompletedHandler:^(id<MTLCommandBuffer>) { kmtlWritePNG(buf, w, h, bgra, path); }];
-            }
+            for (int i = 0; i < 4; i++)
+                kmtlSavePNG(cb, texs[i], nil, std::string(shotDir) + "/fi_" + std::to_string(g_up.fxShotCount) + "_" + names[i] + ".png");
         }
     }
     g_up.prevSceneValid = true;
