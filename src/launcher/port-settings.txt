@@ -10,7 +10,9 @@
 #   key | type | default | variable | needs | applies | hook | label | help
 #
 #   type      bool: on or off; available: Available or Off, a feature the Mac offers the game, which the game's own
-#             settings still turn on and off; choice:<value>=<label>/...; scale:<min>:<max>, a fraction shown in
+#             settings still turn on and off; shown:<value>=<label>/..., a row the tab shows greyed out and the file
+#             doesn't have: what the port does to one of the game's own settings, which the tab works out from other
+#             settings (MacPortTab.cs); choice:<value>=<label>/...; scale:<min>:<max>, a fraction shown in
 #             percent; int:<min>:<max>; number:<min>:<max>; text
 #   default   the value a line left out takes, and the one the variable means when it isn't set
 #   variable  what the setting sets when it isn't at its default: on is 1 and off 0 (VAR=<value>: that, for on), other
@@ -24,6 +26,7 @@
 
 [image] Image
 upscaling | choice:off=Off/metalfx=MetalFX/spatial=MetalFX spatial | off | KSA_UPSCALER | | restart | | Upscaling | Apple's MetalFX, which the settings below use. MetalFX uses the previous frames too and gives the sharpest image; MetalFX spatial uses only the current one. Off is the game's own, without the settings below.
+antialiasing | shown:game=The game's/off=Off/msaa=MSAA only | game | | | restart | render_scale | Anti-aliasing | What the port does to the game's own Anti-aliasing setting (Graphics), which Upscaling decides. MetalFX smooths edges itself: with it the game's anti-aliasing is off, for a higher frame rate and without the dark specks the two leave together. MetalFX spatial keeps the game's MSAA and turns CMAA2 off. Without upscaling, the game's setting applies.
 render_scale | scale:0.5:2 | 1.0 | KSA_RENDER_SCALE | upscaling!=off | restart | render_scale | Render scale | The 3D view is drawn at this share of the window's size and MetalFX scales it up to the display. Below 100 %: less work for the GPU, a slightly softer image. Above 100 %, up to the display's full resolution (200 % on a Retina display): a sharper image, much more work for the GPU.
 frame_interpolation | bool | false | KSA_MTL_FX_INTERPOLATE | upscaling=metalfx | restart | render_scale | Frame interpolation | MetalFX makes a frame between every two the game draws: smoother motion, a little more delay. Works best when the game already runs at half the display's refresh rate or more. Rocket plumes can look ragged in the frames it makes.
 

@@ -11,6 +11,7 @@ using Core;
 using HarmonyLib;
 using KSA;
 using KSA.Rendering;
+using KSA.Rendering.PostProcessing;
 
 namespace KsaMetalHooks;
 
@@ -72,6 +73,33 @@ internal static class Upscale
         if (Interpolate)
             harmony.Patch(Find.Method(typeof(Program), "RenderFinalComposite"),
                 postfix: new HarmonyMethod(typeof(Upscale), nameof(CompositePostfix)));
+        harmony.Patch(Find.Method(typeof(Cmaa2Renderer), "CreateResourcesIfNeeded"),
+            transpiler: new HarmonyMethod(typeof(Upscale), nameof(NoCmaa2Transpiler)));
+        if (!Spatial)
+        {
+            GameSettings.SampleCountOverride = VkSampleCountFlags._1Bit;
+            var keep = new HarmonyMethod(typeof(Upscale), nameof(KeepSampleCount));
+            harmony.Patch(Find.Method(typeof(ScreenshotCapture), nameof(ScreenshotCapture.OnPostRender)), postfix: keep);
+            harmony.Patch(Find.Method(typeof(ScreenshotCapture), nameof(ScreenshotCapture.Abort)), postfix: keep);
+        }
+    }
+
+    // The game's anti-aliasing (the Mac Port tab's Anti-aliasing row shows what happens to it). The temporal upscaler
+    // smooths edges itself: the game's MSAA would cost 1-3 ms more on an M5 and leave dark specks on Earth's views, so
+    // the game runs with one sample (GameSettings.SampleCountOverride, the door its high-resolution screenshots use,
+    // which also turns CMAA2 off; a screenshot resets it, so it is set again after one). The spatial upscaler wants
+    // smoothed edges: MSAA stays. CMAA2 is off with either: it would smooth a copy of MetalFX's image shrunk back to the
+    // render size, and stretch that.
+    private static void KeepSampleCount() => GameSettings.SampleCountOverride ??= VkSampleCountFlags._1Bit;
+
+    // Cmaa2Renderer.CreateResourcesIfNeeded: GameSettings.IsCmaa2Enabled() -> false
+    private static IEnumerable<CodeInstruction> NoCmaa2Transpiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var code = instructions.ToList();
+        var enabled = Find.Method(typeof(GameSettings), nameof(GameSettings.IsCmaa2Enabled));
+        int at = Find.Once(code, c => c.Calls(enabled), "CMAA2's switch");
+        code[at] = new CodeInstruction(OpCodes.Ldc_I4_0).MoveLabelsFrom(code[at]).MoveBlocksFrom(code[at]);
+        return code;
     }
 
     // Frame interpolation: the main view's composite is done and its UI comes next, in the same pass
