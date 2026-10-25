@@ -145,7 +145,7 @@ parameter blocks gets a copy of it, field by field, at every call. The smoke and
 1.2 KB of parameters several times per step, and a copy whose arrays a helper indexes has to live in memory. Before
 compiling, KSA Metal turns those copies into references to the block itself and lets the helpers take the block's
 own type. A shader where that doesn't compile (a copy the shader writes to, a helper also called with a local
-struct) is compiled as translated. The smoke of the giga rocket's explosion draws 6-9 % faster, with the same image.
+struct) is compiled as translated.
 
 **Descriptors.** Vulkan shaders find their resources (buffers, textures, samplers) through *descriptor sets*. Metal's
 equivalent is an *argument buffer*: a block of memory holding GPU addresses and resource IDs. KSA Metal writes each

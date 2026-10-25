@@ -228,7 +228,7 @@ internal static class MacPortTab
         if (s.Hook.Length > 0 && Hooks.Status.GetValueOrDefault(s.Hook, "").StartsWith("skipped", StringComparison.Ordinal))
         {
             note = "unavailable";
-            return "Unavailable: the game's code changed, so the hook that does this was left out (logs/console.log says more).";
+            return "Unavailable with this KSA version: the game's code it changes has moved, so it is left out (logs/console.log says more).";
         }
         foreach (var need in s.Needs)
         {

@@ -22,7 +22,7 @@ namespace KsaMetalHooks;
 // - The Mac Port tab's Run benchmark, in the running game: the player's game is saved (to disk, in case the game
 //   doesn't survive the run, and in memory), the world becomes a new game's (its clock at the start, no vehicles), the
 //   tour plays, and the player's game comes back; Esc stops it. The hooks write the report.
-// - The same with "Restart the game first": the game starts again for it the way benchmark.sh starts it (a documents
+// - The same with "Fresh game": the game starts again for it the way benchmark.sh starts it (a documents
 //   folder of its own with a copy of the settings, a new game, none of the player's mods), and at the end the hooks
 //   write the report, open its folder and quit the game.
 // The benchmark's vehicles are added to the game's vehicle saves from the app (Contents/Resources/Benchmark/vehicles).
@@ -78,7 +78,7 @@ internal static class BenchmarkRun
     public static string? CannotStart()
     {
         if (!_installed)
-            return "The benchmark is not in this app, or its hook was left out (logs/console.log says which).";
+            return "The benchmark is not in this app, or this KSA version moved the game's code it needs (logs/console.log says which).";
         if (_run != null || _startRequested || _finishing is { IsCompleted: false })
             return "A benchmark is running.";
         if (_mode == Mode.Script)
@@ -312,7 +312,7 @@ internal static class BenchmarkRun
         _safety = null;
     }
 
-    // With "Restart the game first": the run's documents folder, its settings and system.txt, then the game starts
+    // With "Fresh game": the run's documents folder, its settings and system.txt, then the game starts
     // again with the director's options
     private static void RestartForRun()
     {
