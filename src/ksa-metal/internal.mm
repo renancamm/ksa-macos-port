@@ -1,4 +1,5 @@
-// Internal shaders: 32-bit buffer fills (Metal's fillBuffer only repeats a byte) and scaled image blits.
+// Internal shaders: 32-bit buffer fills (Metal's fillBuffer only repeats a byte), scaled image blits, and the prep
+// kernel of indirect tessellated draws, which records their largest request (kmtlTessCap).
 #include "kmtl.h"
 
 static const char* kInternalMSL = R"(

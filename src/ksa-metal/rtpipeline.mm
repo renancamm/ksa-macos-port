@@ -19,8 +19,6 @@
 #include "kmtl.h"
 #include "rtspirv.h"
 
-KPipeline* kmtlCreateComputeFromStage(KDevice* dev, KPipelineLayout* layout, const VkPipelineShaderStageCreateInfo* stage,
-                                      bool rtLaunch);
 
 
 

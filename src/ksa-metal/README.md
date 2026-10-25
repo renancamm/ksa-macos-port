@@ -103,6 +103,7 @@ The debugging variables, used the same way:
 | `KSA_MTL_GPUPROF=<file.csv>` | GPU time of every encoder, for 300 frames from present 2000 (`KSA_MTL_GPUPROF_FRAMES=<first>,<count>` changes that) |
 | `KSA_MTL_GPUPROF_SPLIT=1` | give every draw and dispatch its own encoder, so the profiler times each one (times grow: each draw stores and loads its attachments) |
 | `KSA_MTL_LABELS=1` | name every encoder after its pipelines (render pass size, shader hashes), for Instruments, the Metal HUD and Xcode's frame capture |
+| `KSA_MTL_THROTTLE=<hash>:<n>,...` | experiment: a pipeline whose name holds that shader hash runs only every n-th present (0: never), to see what a shader costs and what it draws |
 
 Metal's own tools work too: `MTL_HUD_ENABLED=1` shows Apple's performance overlay, and `MTL_DEBUG_LAYER=1` and
 `MTL_SHADER_VALIDATION=1` check API use and catch out-of-bounds memory access in shaders (slow).

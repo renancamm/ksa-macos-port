@@ -188,8 +188,6 @@ static uint64_t textureId(VkImageView v) {
     return view && view->mtl ? view->mtl.gpuResourceID._impl : 0;
 }
 
-uint64_t kmtlBufferViewId(VkBufferView view);
-
 static void writeOne(KDescriptorSet* s, const KBinding* b, uint32_t elem, VkDescriptorType type,
                      const VkDescriptorImageInfo* ii, const VkDescriptorBufferInfo* bi, const VkBufferView* tb) {
     uint64_t* slots = s->slots();

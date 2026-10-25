@@ -30,8 +30,6 @@ void kmtlPipelineCounts(uint32_t* shaders, uint32_t* pipelines) {
     *pipelines = (uint32_t)g_nPipeline.load();
 }
 
-MTLCompareFunction kmtlCompare(VkCompareOp op);
-
 uint64_t kmtlHash(const void* data, size_t size) {
     // FNV-1a 64
     uint64_t h = 1469598103934665603ull;
@@ -74,7 +72,7 @@ static void dumpMSL(const std::string& name, const std::string& msl, const std::
 }
 
 // One compile per MSL text: a second caller (the game and the prewarm thread) waits for the first.
-id<MTLLibrary> kmtlCompileMSL(KDevice* dev, const std::string& msl, std::string* err) {
+static id<MTLLibrary> compileMSL(KDevice* dev, const std::string& msl, std::string* err) {
     uint64_t h = kmtlHash(msl.data(), msl.size());
     std::shared_ptr<KDevice::LibraryEntry> entry;
     bool owner = false;
@@ -271,11 +269,11 @@ id<MTLLibrary> kmtlCompileStageMSL(KDevice* dev, const std::string& msl, std::st
         std::string refs = uniformStructRefs(msl);
         if (refs != msl) {
             std::string refErr;
-            if (id<MTLLibrary> lib = kmtlCompileMSL(dev, refs, &refErr)) return lib;
+            if (id<MTLLibrary> lib = compileMSL(dev, refs, &refErr)) return lib;
             KLOG(1, "uniform struct references don't compile, the translation as it was instead: %s", refErr.c_str());
         }
     }
-    return kmtlCompileMSL(dev, msl, err);
+    return compileMSL(dev, msl, err);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -655,7 +653,6 @@ static uint64_t translationKey(KShaderModule* mod, const char* entry, spv::Execu
     return kmtlHash(k.data(), k.size() * 4);
 }
 
-// Translates and compiles one stage; returns the MTLFunction or nil (errors logged, MSL dumped)
 // Translation of one stage (SPIRV-Cross or the disk cache, then overrides): needs the create info, so it runs on the
 // calling thread. *name is the stage's dump/override name
 static bool prepareStage(const VkPipelineShaderStageCreateInfo* st, spv::ExecutionModel model, KPipelineLayout* layout,
@@ -1174,7 +1171,8 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
     }
     bool tess = tcs && tes;
     if ((tcs || tes) && (!tess || !kmtlConfig().tessellation)) {
-        KERR("tessellation pipeline skipped (tessellation disabled by KSA_MTL_TESSELLATION=0)");
+        KERR("tessellation pipeline skipped (%s)", tess ? "tessellation disabled by KSA_MTL_TESSELLATION=0"
+                                                         : "it has only one of the control and evaluation stages");
         return nullptr;
     }
     KTessStages tessPlain;

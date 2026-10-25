@@ -640,8 +640,6 @@ VKFN(void) vkGetDeviceImageMemoryRequirements(VkDevice device, const VkDeviceIma
     kmtlDestroyImage((KImage*)tmp);
 }
 
-void kmtlZeroImage(KImage* img);
-
 static VkResult bindImage(VkImage image, VkDeviceMemory memory, VkDeviceSize offset) {
     auto* img = (KImage*)image;
     auto* m = (KDeviceMemory*)memory;
@@ -869,7 +867,8 @@ VKFN(void) vkDestroySampler(VkDevice, VkSampler sampler, const VkAllocationCallb
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Query pools and pipeline caches (KSA creates query pools but never uses them; caches are kept empty)
+// Query pools and pipeline caches (KSA writes timestamps only while its profiler is open, command.mm; caches are kept
+// empty)
 
 VKFN(VkResult) vkCreateQueryPool(VkDevice, const VkQueryPoolCreateInfo* ci, const VkAllocationCallbacks*, VkQueryPool* out) {
     KTRACE_FIRST();

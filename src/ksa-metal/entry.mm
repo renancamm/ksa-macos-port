@@ -231,7 +231,7 @@ static const KEntry* findEntry(const char* name) {
     return it->second;
 }
 
-PFN_vkVoidFunction kmtlLookup(const char* name, int maxLevel) {
+static PFN_vkVoidFunction lookup(const char* name, int maxLevel) {
     const KEntry* e = findEntry(name);
     return e && e->level <= maxLevel ? e->fn : nullptr;
 }
@@ -239,7 +239,7 @@ PFN_vkVoidFunction kmtlLookup(const char* name, int maxLevel) {
 VKFN(PFN_vkVoidFunction) vkGetInstanceProcAddr(VkInstance instance, const char* name) {
     if (!name) return nullptr;
     // Without an instance only global functions resolve (plus vkGetInstanceProcAddr itself)
-    return kmtlLookup(name, instance ? 2 : 0);
+    return lookup(name, instance ? 2 : 0);
 }
 
 VKFN(PFN_vkVoidFunction) vkGetDeviceProcAddr(VkDevice, const char* name) {

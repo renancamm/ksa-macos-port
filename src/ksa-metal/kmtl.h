@@ -30,8 +30,7 @@
 #define KMTL_VERSION "0.1.0"
 
 // ---------------------------------------------------------------------------------------------------------------
-// Logging. KSA_MTL_LOG: 0 errors only, 1 + first call of each entry point and warnings, 2 + object creation,
-// 3 + per-command trace.
+// Logging. KSA_MTL_LOG: 0 errors only, 1 + first call of each entry point and warnings, 2 + object creation.
 extern int g_logLevel;
 void kmtlLog(int level, const char* fmt, ...) __attribute__((format(printf, 2, 3)));
 #define KLOG(lvl, ...) do { if (g_logLevel >= (lvl)) kmtlLog(lvl, __VA_ARGS__); } while (0)
@@ -625,8 +624,10 @@ inline const void* findNext(const void* chain, VkStructureType type) {
 
 KImage* kmtlCreateSwapchainImage(KDevice* dev, VkFormat format, uint32_t w, uint32_t h);
 void kmtlDestroyImage(KImage* img);
+void kmtlZeroImage(KImage* img);  // command.mm: a new color image cleared to zero at bind time
+uint64_t kmtlBufferViewId(VkBufferView view);
+MTLCompareFunction kmtlCompare(VkCompareOp op);
 uint64_t kmtlHash(const void* data, size_t size);
-id<MTLLibrary> kmtlCompileMSL(KDevice* dev, const std::string& msl, std::string* err);
 id<MTLLibrary> kmtlCompileStageMSL(KDevice* dev, const std::string& msl, std::string* err);
 
 // Result of translating one pipeline stage (SPIR-V -> MSL plus reflection); cached on disk by shadercache.mm
@@ -650,18 +651,20 @@ void kmtlCacheNoteUsed(uint64_t key);
 void kmtlCacheFlushRecent();
 void kmtlShaderPrewarm(KDevice* dev);
 
-// Internal shaders (fills, image blits)
+// Internal shaders (fills, image blits, the prep kernel of indirect tessellated draws)
 void kmtlInitInternal(KDevice* dev);
 void kmtlInternalFillBuffer(KCommandBuffer* cb, id<MTLBuffer> buf, NSUInteger offset, NSUInteger size, uint32_t data);
 void kmtlInternalBlit(KCommandBuffer* cb, KImage* src, KImage* dst, const VkImageBlit2& region, VkFilter filter);
+id<MTLComputePipelineState> kmtlTessPrepPipeline(KDevice* dev);
+id<MTLBuffer> kmtlTessStats(KDevice* dev);
+uint32_t kmtlTessCap(KDevice* dev);
 
 // Frame instruments
 void kmtlOnPresent(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb);
 void kmtlCountWork(uint32_t draws, uint32_t dispatches, uint32_t passes);
 void kmtlNoteGpuTime(id<MTLCommandBuffer> cb);  // from completion handlers: GPU busy time for the frame log
 void kmtlPipelineCounts(uint32_t* shaders, uint32_t* pipelines);  // MSL compiled (not from the cache), states made
-
-PFN_vkVoidFunction kmtlLookup(const char* name, int level);
+void kmtlReportPipelineTimes();  // pipeline.mm: the pipelines' creation cost, with the first in-game frame
 
 // GPU profiler (profile.mm, KSA_MTL_GPUPROF)
 void kmtlProfBegin(KCommandBuffer* cb);
@@ -679,8 +682,11 @@ void kmtlRegisterMemory(KDeviceMemory* m);
 void kmtlUnregisterMemory(KDeviceMemory* m);
 uint64_t kmtlAccelId(VkAccelerationStructureKHR as);
 
-// Ray tracing pipelines (rtpipeline.mm): the size of a shader group handle, which the device properties report
+// Ray tracing pipelines (rtpipeline.mm): the size of a shader group handle, which the device properties report, and
+// the compute pipeline a ray tracing pipeline runs as (pipeline.mm)
 uint32_t kmtlRtGroupHandleSize();
+KPipeline* kmtlCreateComputeFromStage(KDevice* dev, KPipelineLayout* layout, const VkPipelineShaderStageCreateInfo* stage,
+                                      bool rtLaunch);
 
 // Memory accounting (frame log and budget)
 extern std::atomic<int64_t> g_allocatedBytes;

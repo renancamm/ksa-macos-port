@@ -1,4 +1,5 @@
-// Acceleration structures for ray queries (KSA: grass placement in GroundClutter/Generate.comp).
+// Acceleration structures for ray queries (KSA: grass placement in GroundClutter/Generate.comp) and the cockpit's ray
+// tracing pipelines (rtpipeline.mm).
 //
 // KSA builds a few bottom-level structures from meshes (float3 positions, uint32 indices) and top-level structures
 // whose instances it writes from the CPU into host-visible memory. Device addresses in the build inputs are mapped

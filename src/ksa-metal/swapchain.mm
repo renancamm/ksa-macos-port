@@ -330,7 +330,8 @@ static double g_gpuBusyFrame = 0;  // the same, since the last present completed
 //   ksaMtlCapture(path, frames)  Xcode GPU frame capture of the next frames into path (.gputrace); false when Metal
 //                                does not allow it (the game needs MTL_CAPTURE_ENABLED=1); ksaMtlCapturing() is true
 //                                until the file is written
-// Fields are only ever appended, so a mod built for an older layout still reads the ones it knows.
+// The caller passes the size of the struct it knows and gets back how much was filled; the benchmark's director takes
+// the stats only when that is all of its struct, so a director and a driver from different builds don't misread them.
 struct KsaMtlFrameStats {
     uint64_t present;
     double cpuMs, gpuMs;
@@ -497,8 +498,6 @@ void kmtlCountWork(uint32_t draws, uint32_t dispatches, uint32_t passes) {
     g_framePasses += passes;
     g_frameSubmits++;
 }
-
-void kmtlReportPipelineTimes();
 
 static void exitSoon(const char* why) {
     KLOG(0, "%s: exiting", why);

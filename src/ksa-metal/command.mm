@@ -748,10 +748,6 @@ static uint32_t lcm(uint32_t a, uint32_t b) {
     return a / x * b;
 }
 
-id<MTLComputePipelineState> kmtlTessPrepPipeline(KDevice* dev);
-id<MTLBuffer> kmtlTessStats(KDevice* dev);
-uint32_t kmtlTessCap(KDevice* dev);
-
 // The shared scratch buffer, at least `size` bytes. A grown buffer replaces the old one for later draws; command
 // buffers already recorded keep the old one alive until they complete
 static id<MTLBuffer> tessScratch(KDevice* dev, uint64_t size) {
@@ -1564,7 +1560,7 @@ VKFN(void) vkCmdClearAttachments(VkCommandBuffer, uint32_t, const VkClearAttachm
 VKFN(void) vkCmdResolveImage(VkCommandBuffer, VkImage, VkImageLayout, VkImage, VkImageLayout, uint32_t, const VkImageResolve*) { KUNIMPL(); }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Queries and debug labels (KSA never records them in the census run)
+// Queries and debug labels
 
 // Timestamps. Apple GPUs sample counters only at encoder stage boundaries, so a timestamp is the end of a tiny blit
 // encoder ordered after everything before it. Used only while the game's profiler is open.
