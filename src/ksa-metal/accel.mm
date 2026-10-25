@@ -217,8 +217,7 @@ VKFN(void) vkCmdBuildAccelerationStructuresKHR(VkCommandBuffer commandBuffer, ui
         auto* dst = (KAccel*)infos[i].dstAccelerationStructure;
         // An update (refit in place, src == dst) is done as a full build: KSA's per-frame TLAS has few instances
         if (infos[i].mode != VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR) {
-            static std::atomic<bool> logged{false};
-            if (!logged.exchange(true)) KLOG(1, "acceleration structure update: rebuilt");
+            KLOG_LIMIT(1, 1, "acceleration structure update: rebuilt");
         }
         id<MTLBuffer> instances = nil;
         MTLAccelerationStructureDescriptor* d = describe(&infos[i], nullptr, true, ranges[i], dev->mtl, &instances);

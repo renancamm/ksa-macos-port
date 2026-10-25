@@ -79,7 +79,6 @@ struct KInternalPipelines {
     // count, [3] number of draws clamped to the cap, [4] largest vertexOffset (fused tessellation ignores it)
     id<MTLBuffer> tessStats = nil;
     std::atomic<uint32_t> tessCap{0};
-    uint32_t firstIndexWarned = 0, vertexOffsetWarned = 0;
     id<MTLSamplerState> nearest = nil, linear = nil;
     std::mutex m;
     std::unordered_map<uint64_t, id<MTLRenderPipelineState>> blit;  // (pixel format, variant) -> pipeline
@@ -145,8 +144,7 @@ void kmtlInternalBlit(KCommandBuffer* cb, KImage* src, KImage* dst, const VkImag
     const KFormatInfo* dfi = kmtlFormat(dst->format);
     const KFormatInfo* sfi = kmtlFormat(src->format);
     if (!dfi || !dfi->renderable || dfi->depth || dfi->stencil || dfi->isInt || dfi->isUint || sfi->isInt || sfi->isUint) {
-        static std::atomic<int> warned{0};
-        if (warned++ < 5) KERR("scaled blit between formats %d -> %d unsupported", src->format, dst->format);
+        KERR_LIMIT(5, "scaled blit between formats %d -> %d unsupported", src->format, dst->format);
         return;
     }
     uint32_t sl = r.srcSubresource.mipLevel, dl = r.dstSubresource.mipLevel;
@@ -235,13 +233,7 @@ uint32_t kmtlTessCap(KDevice* dev) {
                  "%u clamped draws so far)", cap, grown, want, st[1], st[2], st[3]);
         return std::max(cap, grown);
     }
-    if (st[1] && !ip->firstIndexWarned) {
-        ip->firstIndexWarned = 1;
-        KERR("indirect tessellated draws with firstIndex %u are drawn from index 0", st[1]);
-    }
-    if (st[4] && !ip->vertexOffsetWarned) {
-        ip->vertexOffsetWarned = 1;
-        KERR("indirect tessellated draws with vertexOffset %u: fused tessellation (KSA_MTL_TESS_FUSE) draws them from vertex 0", st[4]);
-    }
+    if (st[1]) KERR_ONCE("indirect tessellated draws with firstIndex %u are drawn from index 0", st[1]);
+    if (st[4]) KERR_ONCE("indirect tessellated draws with vertexOffset %u: fused tessellation (KSA_MTL_TESS_FUSE) draws them from vertex 0", st[4]);
     return cap;
 }

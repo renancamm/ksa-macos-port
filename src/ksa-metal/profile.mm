@@ -65,10 +65,7 @@ id<MTLCounterSampleBuffer> kmtlAcquireTimestamps(KDevice* dev, const char* what)
     d.sampleCount = kTimestampSamples;
     NSError* e = nil;
     id<MTLCounterSampleBuffer> b = set ? [dev->mtl newCounterSampleBufferWithDescriptor:d error:&e] : nil;
-    if (!b) {
-        static std::atomic<int> warned{0};
-        if (warned++ < 3) KERR("%s: timestamp sample buffer: %s", what, e ? e.description.UTF8String : "no timestamp counters");
-    }
+    if (!b) KERR_LIMIT(3, "%s: timestamp sample buffer: %s", what, e ? e.description.UTF8String : "no timestamp counters");
     return b;
 }
 

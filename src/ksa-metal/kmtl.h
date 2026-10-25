@@ -35,6 +35,11 @@ extern int g_logLevel;
 void kmtlLog(int level, const char* fmt, ...) __attribute__((format(printf, 2, 3)));
 #define KLOG(lvl, ...) do { if (g_logLevel >= (lvl)) kmtlLog(lvl, __VA_ARGS__); } while (0)
 #define KERR(...) kmtlLog(-1, __VA_ARGS__)
+// The first n times only, for what would repeat every frame (the count stops at n, so it never wraps around)
+#define KLOG_LIMIT(lvl, n, ...) do { static std::atomic<int> s_count{0}; \
+    if (g_logLevel >= (lvl) && s_count.load(std::memory_order_relaxed) < (n) && s_count++ < (n)) kmtlLog(lvl, __VA_ARGS__); } while (0)
+#define KERR_LIMIT(n, ...) KLOG_LIMIT(-1, n, __VA_ARGS__)
+#define KERR_ONCE(...) KERR_LIMIT(1, __VA_ARGS__)
 // Autorelease pool for the duration of an entry point: the game calls in from .NET threads that have no pool, so
 // autoreleased Metal objects (command buffers, encoders, descriptors) would otherwise never be released, and every
 // command buffer would keep the resources it used alive forever

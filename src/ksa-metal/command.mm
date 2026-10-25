@@ -206,9 +206,7 @@ void KCommandBuffer::endEncoder() {
             if (!t) continue;
             bool tileOnly = t.storageMode == MTLStorageModeMemoryless;
             if (suspending && tileOnly) {
-                static std::atomic<bool> warned{false};
-                if (!warned.exchange(true))
-                    KERR("render pass suspended with a memoryless attachment (a tessellated draw, or KSA_MTL_GPUPROF_SPLIT=1): "
+                KERR_ONCE("render pass suspended with a memoryless attachment (a tessellated draw, or KSA_MTL_GPUPROF_SPLIT=1): "
                          "its contents are lost");
             }
             [render setColorStoreAction:suspending && !tileOnly ? MTLStoreActionStore : colorStores[i] atIndex:i];
@@ -774,8 +772,7 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
     uint64_t maxVerts;
     if (t.indirect) {
         if (!t.indexed) {
-            static std::atomic<bool> warned{false};
-            if (!warned.exchange(true)) KERR("non-indexed indirect tessellated draws are not supported");
+            KERR_ONCE("non-indexed indirect tessellated draws are not supported");
             return;
         }
         maxVerts = std::min<uint64_t>(cb->indexBytes / idxSize, kmtlTessCap(dev));
@@ -799,12 +796,8 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
     uint64_t scratchSize = levelsOff + align(maxPatches * levelSize);
     id<MTLBuffer> scratch = tessScratch(dev, scratchSize);
     if (!scratch) return;
-    {
-        static std::atomic<int> logged{0};
-        if (g_logLevel >= 1 && logged++ < 12)
-            KLOG(1, "tessellated draw: %s%s, up to %llu vertices / %llu patches, scratch %.1f MB", t.indexed ? "indexed" : "",
-                 t.indirect ? " indirect" : "", (unsigned long long)maxVerts, (unsigned long long)maxPatches, scratchSize / 1048576.0);
-    }
+    KLOG_LIMIT(1, 12, "tessellated draw: %s%s, up to %llu vertices / %llu patches, scratch %.1f MB", t.indexed ? "indexed" : "",
+               t.indirect ? " indirect" : "", (unsigned long long)maxVerts, (unsigned long long)maxPatches, scratchSize / 1048576.0);
     id<MTLComputePipelineState> vps = st.vertex[idxType];
     uint32_t vw = (uint32_t)vps.threadExecutionWidth;
     uint32_t wg = lcm(p->tessOutCP, 32);
@@ -1000,8 +993,7 @@ VKFN(void) vkCmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indexCount, 
     }
     if (!flushGraphics(cb) || !indexCount || !instanceCount || !cb->indexBuffer) return;
     if (cb->graphicsPipeline->triangleFan) {
-        static std::atomic<bool> warned{false};
-        if (!warned.exchange(true)) KERR("indexed triangle fans are not emulated (drawn as lists)");
+        KERR_ONCE("indexed triangle fans are not emulated (drawn as lists)");
     }
     setDrawId(cb, 0);
     forEachView(cb, [&] {
@@ -1502,8 +1494,7 @@ static void clearImage(KCommandBuffer* cb, KImage* img, const VkClearColorValue*
                        const VkImageSubresourceRange& r) {
     const KFormatInfo* fi = kmtlFormat(img->format);
     if (!fi || !fi->renderable || !(img->mtl.usage & MTLTextureUsageRenderTarget)) {
-        static std::atomic<int> warned{0};
-        if (warned++ < 5) KERR("clear of non-renderable image (format %d) skipped", img->format);
+        KERR_LIMIT(5, "clear of non-renderable image (format %d) skipped", img->format);
         return;
     }
     uint32_t levels = r.levelCount == VK_REMAINING_MIP_LEVELS ? img->info.mipLevels - r.baseMipLevel : r.levelCount;

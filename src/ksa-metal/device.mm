@@ -157,8 +157,7 @@ static void signalFence(KFence* f) {
 
 static void checkCommandBufferError(id<MTLCommandBuffer> cb) {
     if (cb.status == MTLCommandBufferStatusError) {
-        static std::atomic<int> reported{0};
-        if (reported++ < 20) KERR("command buffer failed: %s", cb.error.description.UTF8String);
+        KERR_LIMIT(20, "command buffer failed: %s", cb.error.description.UTF8String);
     }
 }
 

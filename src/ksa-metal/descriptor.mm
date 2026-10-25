@@ -222,8 +222,7 @@ static void writeOne(KDescriptorSet* s, const KBinding* b, uint32_t elem, VkDesc
         slots[b->id + elem] = tb ? kmtlBufferViewId(*tb) : 0;
         break;
     default: {
-        static std::atomic<bool> warned{false};
-        if (!warned.exchange(true)) KERR("descriptor type %d not supported", type);
+        KERR_ONCE("descriptor type %d not supported", type);
         break;
     }
     }
