@@ -104,12 +104,7 @@ VKFN(void) vkDestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain, cons
 VKFN(VkResult) vkGetSwapchainImagesKHR(VkDevice, VkSwapchainKHR swapchain, uint32_t* count, VkImage* out) {
     KTRACE_FIRST();
     auto* sc = (KSwapchain*)swapchain;
-    uint32_t n = (uint32_t)sc->images.size();
-    if (!out) { *count = n; return VK_SUCCESS; }
-    uint32_t c = std::min(*count, n);
-    for (uint32_t i = 0; i < c; i++) out[i] = (VkImage)sc->images[i];
-    *count = c;
-    return c < n ? VK_INCOMPLETE : VK_SUCCESS;
+    return kmtlEnumerate((uint32_t)sc->images.size(), count, out, [sc](uint32_t i, VkImage& o) { o = (VkImage)sc->images[i]; });
 }
 
 VKFN(VkResult) vkAcquireNextImageKHR(VkDevice, VkSwapchainKHR swapchain, uint64_t, VkSemaphore, VkFence fence, uint32_t* index) {

@@ -66,11 +66,7 @@ static const VkExtensionProperties kRayQueryExtensions[] = {
 };
 
 static VkResult fillExtensions(const VkExtensionProperties* src, uint32_t n, uint32_t* count, VkExtensionProperties* out) {
-    if (!out) { *count = n; return VK_SUCCESS; }
-    uint32_t c = std::min(*count, n);
-    memcpy(out, src, c * sizeof(*out));
-    *count = c;
-    return c < n ? VK_INCOMPLETE : VK_SUCCESS;
+    return kmtlEnumerate(n, count, out, [src](uint32_t i, VkExtensionProperties& o) { o = src[i]; });
 }
 
 VKFN(VkResult) vkEnumerateInstanceExtensionProperties(const char* layer, uint32_t* count, VkExtensionProperties* props) {
@@ -116,11 +112,8 @@ VKFN(void) vkDestroyInstance(VkInstance instance, const VkAllocationCallbacks*) 
 
 VKFN(VkResult) vkEnumeratePhysicalDevices(VkInstance instance, uint32_t* count, VkPhysicalDevice* out) {
     KTRACE_FIRST();
-    if (!out) { *count = 1; return VK_SUCCESS; }
-    if (*count < 1) return VK_INCOMPLETE;
-    out[0] = (VkPhysicalDevice)((KInstance*)instance)->physical;
-    *count = 1;
-    return VK_SUCCESS;
+    auto* physical = ((KInstance*)instance)->physical;
+    return kmtlEnumerate(1, count, out, [physical](uint32_t, VkPhysicalDevice& o) { o = (VkPhysicalDevice)physical; });
 }
 
 VKFN(VkResult) vkEnumerateDeviceExtensionProperties(VkPhysicalDevice, const char* layer, uint32_t* count, VkExtensionProperties* props) {
@@ -263,7 +256,8 @@ VKFN(void) vkGetPhysicalDeviceProperties(VkPhysicalDevice pd, VkPhysicalDevicePr
     l.nonCoherentAtomSize = 64;
 }
 
-static void fillSubgroup(VkPhysicalDeviceVulkan11Properties* v) {
+// The Vulkan 1.1 and 1.2 properties; the extension structs they absorbed are copied from these
+static void fillVulkan11(VkPhysicalDeviceVulkan11Properties* v) {
     v->subgroupSize = 32;
     v->subgroupSupportedStages = VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     v->subgroupSupportedOperations = VK_SUBGROUP_FEATURE_BASIC_BIT | VK_SUBGROUP_FEATURE_VOTE_BIT |
@@ -277,22 +271,57 @@ static void fillSubgroup(VkPhysicalDeviceVulkan11Properties* v) {
     v->pointClippingBehavior = VK_POINT_CLIPPING_BEHAVIOR_ALL_CLIP_PLANES;
 }
 
+static void fillVulkan12(VkPhysicalDeviceVulkan12Properties* o) {
+    o->driverID = (VkDriverId)0;  // Khronos registers no ID for this driver
+    snprintf(o->driverName, sizeof(o->driverName), "KSA Metal");
+    snprintf(o->driverInfo, sizeof(o->driverInfo), "%s", KMTL_VERSION);
+    o->conformanceVersion = {1, 3, 0, 0};
+    o->maxUpdateAfterBindDescriptorsInAllPools = 1u << 20;
+    o->shaderSampledImageArrayNonUniformIndexingNative = VK_TRUE;
+    o->robustBufferAccessUpdateAfterBind = VK_FALSE;
+    o->quadDivergentImplicitLod = VK_FALSE;
+    o->maxPerStageDescriptorUpdateAfterBindSamplers = 1u << 20;
+    o->maxPerStageDescriptorUpdateAfterBindUniformBuffers = 1u << 20;
+    o->maxPerStageDescriptorUpdateAfterBindStorageBuffers = 1u << 20;
+    o->maxPerStageDescriptorUpdateAfterBindSampledImages = 1u << 20;
+    o->maxPerStageDescriptorUpdateAfterBindStorageImages = 1u << 20;
+    o->maxPerStageDescriptorUpdateAfterBindInputAttachments = 8;
+    o->maxPerStageUpdateAfterBindResources = 1u << 20;
+    o->maxDescriptorSetUpdateAfterBindSamplers = 1u << 20;
+    o->maxDescriptorSetUpdateAfterBindUniformBuffers = 1u << 20;
+    o->maxDescriptorSetUpdateAfterBindUniformBuffersDynamic = 1024;
+    o->maxDescriptorSetUpdateAfterBindStorageBuffers = 1u << 20;
+    o->maxDescriptorSetUpdateAfterBindStorageBuffersDynamic = 1024;
+    o->maxDescriptorSetUpdateAfterBindSampledImages = 1u << 20;
+    o->maxDescriptorSetUpdateAfterBindStorageImages = 1u << 20;
+    o->maxDescriptorSetUpdateAfterBindInputAttachments = 8;
+    o->supportedDepthResolveModes = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT | VK_RESOLVE_MODE_MIN_BIT | VK_RESOLVE_MODE_MAX_BIT;
+    o->supportedStencilResolveModes = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
+    o->independentResolveNone = VK_TRUE;
+    o->independentResolve = VK_TRUE;
+    o->filterMinmaxSingleComponentFormats = VK_FALSE;
+    o->maxTimelineSemaphoreValueDifference = UINT64_MAX;
+    o->framebufferIntegerColorSampleCounts = VK_SAMPLE_COUNT_1_BIT;
+}
+
 VKFN(void) vkGetPhysicalDeviceProperties2(VkPhysicalDevice pd, VkPhysicalDeviceProperties2* p) {
     KTRACE_FIRST();
     vkGetPhysicalDeviceProperties(pd, &p->properties);
+    VkPhysicalDeviceVulkan11Properties v11{};
+    VkPhysicalDeviceVulkan12Properties v12{};
+    fillVulkan11(&v11);
+    fillVulkan12(&v12);
     for (auto* s = (VkBaseOutStructure*)p->pNext; s; s = s->pNext) {
         switch (s->sType) {
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES:
-            fillSubgroup((VkPhysicalDeviceVulkan11Properties*)s);
+            fillVulkan11((VkPhysicalDeviceVulkan11Properties*)s);
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES: {
-            VkPhysicalDeviceVulkan11Properties v{};
-            fillSubgroup(&v);
             auto* o = (VkPhysicalDeviceSubgroupProperties*)s;
-            o->subgroupSize = v.subgroupSize;
-            o->supportedStages = v.subgroupSupportedStages;
-            o->supportedOperations = v.subgroupSupportedOperations;
-            o->quadOperationsInAllStages = VK_FALSE;
+            o->subgroupSize = v11.subgroupSize;
+            o->supportedStages = v11.subgroupSupportedStages;
+            o->supportedOperations = v11.subgroupSupportedOperations;
+            o->quadOperationsInAllStages = v11.subgroupQuadOperationsInAllStages;
             break;
         }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR: {
@@ -309,72 +338,49 @@ VKFN(void) vkGetPhysicalDeviceProperties2(VkPhysicalDevice pd, VkPhysicalDeviceP
         }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_PROPERTIES: {
             auto* o = (VkPhysicalDeviceMultiviewProperties*)s;
-            o->maxMultiviewViewCount = 32;
-            o->maxMultiviewInstanceIndex = 1u << 27;
+            o->maxMultiviewViewCount = v11.maxMultiviewViewCount;
+            o->maxMultiviewInstanceIndex = v11.maxMultiviewInstanceIndex;
             break;
         }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_3_PROPERTIES: {
             auto* o = (VkPhysicalDeviceMaintenance3Properties*)s;
-            o->maxPerSetDescriptors = 1u << 20;
-            o->maxMemoryAllocationSize = 1ull << 34;
+            o->maxPerSetDescriptors = v11.maxPerSetDescriptors;
+            o->maxMemoryAllocationSize = v11.maxMemoryAllocationSize;
             break;
         }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_PROPERTIES:
             ((VkPhysicalDeviceMaintenance4Properties*)s)->maxBufferSize = 1ull << 34;
             break;
-        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES: {
-            auto* o = (VkPhysicalDeviceVulkan12Properties*)s;
-            o->driverID = (VkDriverId)0;  // Khronos registers no ID for this driver
-            snprintf(o->driverName, sizeof(o->driverName), "KSA Metal");
-            snprintf(o->driverInfo, sizeof(o->driverInfo), "%s", KMTL_VERSION);
-            o->conformanceVersion = {1, 3, 0, 0};
-            o->maxUpdateAfterBindDescriptorsInAllPools = 1u << 20;
-            o->shaderSampledImageArrayNonUniformIndexingNative = VK_TRUE;
-            o->robustBufferAccessUpdateAfterBind = VK_FALSE;
-            o->quadDivergentImplicitLod = VK_FALSE;
-            o->maxPerStageDescriptorUpdateAfterBindSamplers = 1u << 20;
-            o->maxPerStageDescriptorUpdateAfterBindUniformBuffers = 1u << 20;
-            o->maxPerStageDescriptorUpdateAfterBindStorageBuffers = 1u << 20;
-            o->maxPerStageDescriptorUpdateAfterBindSampledImages = 1u << 20;
-            o->maxPerStageDescriptorUpdateAfterBindStorageImages = 1u << 20;
-            o->maxPerStageDescriptorUpdateAfterBindInputAttachments = 8;
-            o->maxPerStageUpdateAfterBindResources = 1u << 20;
-            o->maxDescriptorSetUpdateAfterBindSamplers = 1u << 20;
-            o->maxDescriptorSetUpdateAfterBindUniformBuffers = 1u << 20;
-            o->maxDescriptorSetUpdateAfterBindUniformBuffersDynamic = 1024;
-            o->maxDescriptorSetUpdateAfterBindStorageBuffers = 1u << 20;
-            o->maxDescriptorSetUpdateAfterBindStorageBuffersDynamic = 1024;
-            o->maxDescriptorSetUpdateAfterBindSampledImages = 1u << 20;
-            o->maxDescriptorSetUpdateAfterBindStorageImages = 1u << 20;
-            o->maxDescriptorSetUpdateAfterBindInputAttachments = 8;
-            o->supportedDepthResolveModes = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT | VK_RESOLVE_MODE_MIN_BIT | VK_RESOLVE_MODE_MAX_BIT;
-            o->supportedStencilResolveModes = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
-            o->independentResolveNone = VK_TRUE;
-            o->independentResolve = VK_TRUE;
-            o->filterMinmaxSingleComponentFormats = VK_FALSE;
-            o->maxTimelineSemaphoreValueDifference = UINT64_MAX;
-            o->framebufferIntegerColorSampleCounts = VK_SAMPLE_COUNT_1_BIT;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES:
+            fillVulkan12((VkPhysicalDeviceVulkan12Properties*)s);
             break;
-        }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_PROPERTIES: {
             auto* o = (VkPhysicalDeviceDescriptorIndexingProperties*)s;
-            o->maxUpdateAfterBindDescriptorsInAllPools = 1u << 20;
-            o->shaderSampledImageArrayNonUniformIndexingNative = VK_TRUE;
-            o->maxPerStageDescriptorUpdateAfterBindSamplers = 1u << 20;
-            o->maxPerStageDescriptorUpdateAfterBindUniformBuffers = 1u << 20;
-            o->maxPerStageDescriptorUpdateAfterBindStorageBuffers = 1u << 20;
-            o->maxPerStageDescriptorUpdateAfterBindSampledImages = 1u << 20;
-            o->maxPerStageDescriptorUpdateAfterBindStorageImages = 1u << 20;
-            o->maxPerStageDescriptorUpdateAfterBindInputAttachments = 8;
-            o->maxPerStageUpdateAfterBindResources = 1u << 20;
-            o->maxDescriptorSetUpdateAfterBindSamplers = 1u << 20;
-            o->maxDescriptorSetUpdateAfterBindUniformBuffers = 1u << 20;
-            o->maxDescriptorSetUpdateAfterBindUniformBuffersDynamic = 1024;
-            o->maxDescriptorSetUpdateAfterBindStorageBuffers = 1u << 20;
-            o->maxDescriptorSetUpdateAfterBindStorageBuffersDynamic = 1024;
-            o->maxDescriptorSetUpdateAfterBindSampledImages = 1u << 20;
-            o->maxDescriptorSetUpdateAfterBindStorageImages = 1u << 20;
-            o->maxDescriptorSetUpdateAfterBindInputAttachments = 8;
+#define COPY(f) o->f = v12.f
+            COPY(maxUpdateAfterBindDescriptorsInAllPools);
+            COPY(shaderUniformBufferArrayNonUniformIndexingNative);
+            COPY(shaderSampledImageArrayNonUniformIndexingNative);
+            COPY(shaderStorageBufferArrayNonUniformIndexingNative);
+            COPY(shaderStorageImageArrayNonUniformIndexingNative);
+            COPY(shaderInputAttachmentArrayNonUniformIndexingNative);
+            COPY(robustBufferAccessUpdateAfterBind);
+            COPY(quadDivergentImplicitLod);
+            COPY(maxPerStageDescriptorUpdateAfterBindSamplers);
+            COPY(maxPerStageDescriptorUpdateAfterBindUniformBuffers);
+            COPY(maxPerStageDescriptorUpdateAfterBindStorageBuffers);
+            COPY(maxPerStageDescriptorUpdateAfterBindSampledImages);
+            COPY(maxPerStageDescriptorUpdateAfterBindStorageImages);
+            COPY(maxPerStageDescriptorUpdateAfterBindInputAttachments);
+            COPY(maxPerStageUpdateAfterBindResources);
+            COPY(maxDescriptorSetUpdateAfterBindSamplers);
+            COPY(maxDescriptorSetUpdateAfterBindUniformBuffers);
+            COPY(maxDescriptorSetUpdateAfterBindUniformBuffersDynamic);
+            COPY(maxDescriptorSetUpdateAfterBindStorageBuffers);
+            COPY(maxDescriptorSetUpdateAfterBindStorageBuffersDynamic);
+            COPY(maxDescriptorSetUpdateAfterBindSampledImages);
+            COPY(maxDescriptorSetUpdateAfterBindStorageImages);
+            COPY(maxDescriptorSetUpdateAfterBindInputAttachments);
+#undef COPY
             break;
         }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES: {
@@ -391,18 +397,18 @@ VKFN(void) vkGetPhysicalDeviceProperties2(VkPhysicalDevice pd, VkPhysicalDeviceP
         }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES: {
             auto* o = (VkPhysicalDeviceDriverProperties*)s;
-            o->driverID = (VkDriverId)0;
-            snprintf(o->driverName, sizeof(o->driverName), "KSA Metal");
-            snprintf(o->driverInfo, sizeof(o->driverInfo), "%s", KMTL_VERSION);
-            o->conformanceVersion = {1, 3, 0, 0};
+            o->driverID = v12.driverID;
+            memcpy(o->driverName, v12.driverName, sizeof(o->driverName));
+            memcpy(o->driverInfo, v12.driverInfo, sizeof(o->driverInfo));
+            o->conformanceVersion = v12.conformanceVersion;
             break;
         }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_STENCIL_RESOLVE_PROPERTIES: {
             auto* o = (VkPhysicalDeviceDepthStencilResolveProperties*)s;
-            o->supportedDepthResolveModes = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT | VK_RESOLVE_MODE_MIN_BIT | VK_RESOLVE_MODE_MAX_BIT;
-            o->supportedStencilResolveModes = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
-            o->independentResolveNone = VK_TRUE;
-            o->independentResolve = VK_TRUE;
+            o->supportedDepthResolveModes = v12.supportedDepthResolveModes;
+            o->supportedStencilResolveModes = v12.supportedStencilResolveModes;
+            o->independentResolveNone = v12.independentResolveNone;
+            o->independentResolve = v12.independentResolve;
             break;
         }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR: {
@@ -746,30 +752,15 @@ static const VkSurfaceFormatKHR kSurfaceFormats[] = {
 
 VKFN(VkResult) vkGetPhysicalDeviceSurfaceFormatsKHR(VkPhysicalDevice, VkSurfaceKHR, uint32_t* count, VkSurfaceFormatKHR* out) {
     KTRACE_FIRST();
-    const uint32_t n = 2;
-    if (!out) { *count = n; return VK_SUCCESS; }
-    uint32_t c = std::min(*count, n);
-    memcpy(out, kSurfaceFormats, c * sizeof(*out));
-    *count = c;
-    return c < n ? VK_INCOMPLETE : VK_SUCCESS;
+    return kmtlEnumerate(2, count, out, [](uint32_t i, VkSurfaceFormatKHR& o) { o = kSurfaceFormats[i]; });
 }
 
 VKFN(VkResult) vkGetPhysicalDeviceSurfaceFormats2KHR(VkPhysicalDevice, const VkPhysicalDeviceSurfaceInfo2KHR*, uint32_t* count, VkSurfaceFormat2KHR* out) {
-    const uint32_t n = 2;
-    if (!out) { *count = n; return VK_SUCCESS; }
-    uint32_t c = std::min(*count, n);
-    for (uint32_t i = 0; i < c; i++) out[i].surfaceFormat = kSurfaceFormats[i];
-    *count = c;
-    return c < n ? VK_INCOMPLETE : VK_SUCCESS;
+    return kmtlEnumerate(2, count, out, [](uint32_t i, VkSurfaceFormat2KHR& o) { o.surfaceFormat = kSurfaceFormats[i]; });
 }
 
 VKFN(VkResult) vkGetPhysicalDeviceSurfacePresentModesKHR(VkPhysicalDevice, VkSurfaceKHR, uint32_t* count, VkPresentModeKHR* out) {
     KTRACE_FIRST();
     static const VkPresentModeKHR modes[] = {VK_PRESENT_MODE_FIFO_KHR, VK_PRESENT_MODE_IMMEDIATE_KHR, VK_PRESENT_MODE_MAILBOX_KHR};
-    const uint32_t n = 3;
-    if (!out) { *count = n; return VK_SUCCESS; }
-    uint32_t c = std::min(*count, n);
-    memcpy(out, modes, c * sizeof(*out));
-    *count = c;
-    return c < n ? VK_INCOMPLETE : VK_SUCCESS;
+    return kmtlEnumerate(3, count, out, [](uint32_t i, VkPresentModeKHR& o) { o = modes[i]; });
 }
