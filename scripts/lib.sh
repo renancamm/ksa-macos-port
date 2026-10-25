@@ -53,7 +53,7 @@ load_deps() {
     source "${CMAKE_TREE}/deps.sh"
 }
 
-# dotnet_sdk_version: the .NET SDK that builds the benchmark and the game patches, as global.json picks it for this
+# dotnet_sdk_version: the .NET SDK that builds the benchmark and the hooks, as global.json picks it for this
 # repository
 dotnet_sdk_version() {
     (cd "${REPO}" && dotnet --version)

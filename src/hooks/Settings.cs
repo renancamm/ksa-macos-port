@@ -2,7 +2,7 @@ using System;
 using System.Globalization;
 using System.Linq;
 
-namespace KsaPatches;
+namespace KsaMetalHooks;
 
 // The patches' settings, from the environment: the launcher sets these from port-settings.toml (src/launcher/), and a
 // variable set before starting the game wins over the file.

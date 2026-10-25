@@ -5,9 +5,9 @@
 #   DYLD_LIBRARY_PATH      the game folder first, so every library, including KSA Metal as
 #                          libvulkan.1.dylib, comes from the app and never from elsewhere on the Mac
 #   DYLD_INSERT_LIBRARIES  the GLFW shim (src/glfw-shim/glfw_shim.c) and the KTX shim (src/ktx-shim/ktx_shim.c)
-#   DOTNET_STARTUP_HOOKS   the game patches (src/game-patches/), unless KSA_PATCHES=0
+#   DOTNET_STARTUP_HOOKS   KSA Metal Hooks (src/hooks/), unless KSA_HOOKS=0
 # The player's port settings, port-settings.toml in the game's documents folder (a commented copy of
-# Contents/Resources/port-settings.toml is put there when there is none), reach KSA Metal and the game patches as
+# Contents/Resources/port-settings.toml is put there when there is none), reach KSA Metal and its hooks as
 # environment variables; a variable already set when the game starts wins over the file.
 # Output goes to console.log in the game's logs folder (~/Documents/My Games/Kitten Space Agency/logs, next
 # to the game's own logs), or to the terminal when started from one. A StarMap instance
@@ -36,8 +36,8 @@ export DOTNET_ROOT="${CONTENTS}/MacOS"
 export PATH="${CONTENTS}/MacOS:${PATH}"
 export DYLD_LIBRARY_PATH="${RES}"
 export DYLD_INSERT_LIBRARIES="${RES}/libGlfwShim.dylib:${RES}/libKtxShim.dylib"
-if [ "${KSA_PATCHES:-1}" != 0 ] && [ -f "${RES}/GamePatches/KsaPatchesLoader.dll" ]; then
-    export DOTNET_STARTUP_HOOKS="${RES}/GamePatches/KsaPatchesLoader.dll${DOTNET_STARTUP_HOOKS:+:${DOTNET_STARTUP_HOOKS}}"
+if [ "${KSA_HOOKS:-1}" != 0 ] && [ -f "${RES}/Hooks/KsaMetalHooksLoader.dll" ]; then
+    export DOTNET_STARTUP_HOOKS="${RES}/Hooks/KsaMetalHooksLoader.dll${DOTNET_STARTUP_HOOKS:+:${DOTNET_STARTUP_HOOKS}}"
 fi
 
 SETTINGS="${DOCS}/port-settings.toml"

@@ -228,7 +228,7 @@ without modifying GLFW; [`glfw_shim.c`](src/glfw-shim/glfw_shim.c) explains each
 | `Contents/MacOS/KSA` | the app's executable, [`src/launcher/launcher.sh`](src/launcher/launcher.sh): starts `dotnet KSA.dll` (through StarMap when [StarMap](#mods) is in the app) with `DYLD_LIBRARY_PATH` set to the game folder, so every library comes from the app and never from elsewhere on the Mac, and with the GLFW shim loaded; its output goes to `console.log` in the game's logs folder, or to the terminal when started from one |
 | `Contents/MacOS/dotnet`, `host/`, `shared/` | the .NET runtime |
 | `Contents/Resources/*.dylib` | the native libraries, next to the game that loads them |
-| `Contents/Resources/GamePatches/` | the [game patches](#game-patches), with Harmony |
+| `Contents/Resources/Hooks/` | [KSA Metal Hooks](#hooks), with Harmony |
 | `Contents/Resources/port-settings.toml` | the [port settings](#port-settings), the commented copy the app puts in your documents folder |
 | `Contents/Resources/Licenses/` | every component's licence and notices ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)) |
 | `Contents/Resources/AppIcon.icns`, `Contents/Info.plist` | the icon; the game's version, the port's version and commit, and `NSHighResolutionCapable` off, so the game renders one pixel per point and its Resolution setting is the number of pixels it renders |
@@ -245,12 +245,12 @@ build.sh, release.sh      make the port folder; make a release of it
 CMakeLists.txt, cmake/    the native build, and every external source the build uses (dependencies.cmake)
 CMakePresets.json         how CMake is run: Ninja, Release, deps/build/cmake/
 scripts/                  the build's other steps, and lib.sh
-global.json               the .NET SDK version that builds the benchmark and the game patches
+global.json               the .NET SDK version that builds the benchmark and the hooks
 src/port/                 the port folder's commands and lib/, its steps
 src/launcher/             the app's executable
 src/glfw-shim/            the GLFW shim
 src/ktx-shim/             the KTX shim
-src/game-patches/         the game patches and their loader, with their own README
+src/hooks/                KSA Metal Hooks and their loader, with their own README
 src/ksa-metal/            KSA Metal, with its own README
 src/benchmark/            the benchmark: mod, report program, tour and vehicles, with its own README
 third_party/fmod/         FMOD's macOS library, with its licence and notice (not MIT)
@@ -315,12 +315,12 @@ These settings are recent. With frame interpolation, rocket plumes can look ragg
 something looks wrong, set the setting back to its default, and please open an issue. `logs/console.log` shows how
 the game read the file.
 
-### Game patches
+### Hooks
 
-Some changes need the game's C# code. The game patches make them in memory when the game starts, with
+Some changes need the game's C# code. KSA Metal Hooks make them in memory when the game starts, with
 [Harmony](https://github.com/pardeike/Harmony), so `KSA.dll` stays as it is on disk. Each patch finds the code it
 changes by name and by pattern; when a KSA update has moved that code, the patch is left out, `console.log` says so,
-and the game runs as it would without it. [`src/game-patches/`](src/game-patches/) has the details.
+and the game runs as it would without it. [`src/hooks/`](src/hooks/) has the details.
 
 | Patch | What it changes | Image |
 |---|---|---|
@@ -334,7 +334,7 @@ and the game runs as it would without it. [`src/game-patches/`](src/game-patches
 For the render scale, `convert-shaders.sh` also edits three shaders to measure in the window's size rather than the
 smaller view's; without it, they draw as before.
 
-`KSA_PATCHES=0 ~/Applications/"Kitten Space Agency.app"/Contents/MacOS/KSA` starts the game without them.
+`KSA_HOOKS=0 ~/Applications/"Kitten Space Agency.app"/Contents/MacOS/KSA` starts the game without them.
 
 ### KTX shim
 

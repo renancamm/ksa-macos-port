@@ -10,7 +10,7 @@
 # 2. Solid.vert (colour pass) and SolidDepth.vert (depth pre-pass) must compute bit-identical positions, because
 #    the colour pass draws with depth compare EQUAL. Without `invariant gl_Position` Metal's fast math computes
 #    them slightly differently: black stripes and see-through patches on clutter. Fix: declare it invariant.
-# For the game patches' render scale (src/game-patches/), where the shaders' screen size is the render size:
+# For the hooks' render scale (src/hooks/), where the shaders' screen size is the render size:
 # 3. Sizes that mean pixels on the window use the window's size, which the patches put in the camera data's spare
 #    int (0 without render scale: then nothing changes): ground clutter's level of detail (CullInstances.comp) and
 #    the size of star and planet discs (StaticCelestialDistance.vert).

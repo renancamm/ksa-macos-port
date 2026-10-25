@@ -159,8 +159,8 @@ public static class Program
             notes.Add($"KSA Metal switches were set ({switches}): they change what the driver does");
         if (Sys("Mac settings") is { Length: > 0 } mac && mac != "defaults")
             notes.Add($"Mac settings were changed ({mac}): they change what the game draws");
-        if (Sys("Game patches").Contains("skipped"))
-            notes.Add("a game patch was skipped (the game's code changed): see Game patches");
+        if (Sys("Hooks").Contains("skipped"))
+            notes.Add("a hook was skipped (the game's code changed): see Hooks");
         if (Sys("Tools") is { Length: > 0 } tools && tools != "none")
             notes.Add($"measured with {tools}: their own cost is in the numbers");
         var run = KeyValues(Path.Combine(dir, "run.txt")).ToDictionary(kv => kv.key, kv => kv.value);

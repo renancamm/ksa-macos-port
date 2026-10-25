@@ -27,7 +27,7 @@ set(SPIRV-Headers_SOURCE_DIR "${spirv_headers_SOURCE_DIR}")
 FetchContent_MakeAvailable(vulkan_headers spirv_cross spirv_tools glfw_headers dotnet_runtime starmap starmap_license
     harmony_license lib_harmony title_card)
 
-# Harmony for the game patches: the package's .NET 10 assembly
+# Harmony for KSA Metal Hooks: the package's .NET 10 assembly
 set(HARMONY_DIR "${CMAKE_BINARY_DIR}/harmony")
 file(REMOVE_RECURSE "${HARMONY_DIR}")
 file(GLOB harmony_package "${lib_harmony_SOURCE_DIR}/*.nupkg")

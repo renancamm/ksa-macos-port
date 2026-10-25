@@ -179,7 +179,7 @@ would leave the GPU idle whenever a frame takes less than that. KSA Metal also e
 on the GPU, the one before it is on screen, and the GPU is about to need the next frame (predicted from the last
 frames' GPU and CPU times). Frames then start when the GPU can take them, without queueing up.
 
-**MetalFX.** For the port settings, the patched game ([game patches](../game-patches/)) calls entry points that are KSA
+**MetalFX.** For the port settings, the patched game ([KSA Metal Hooks](../hooks/)) calls entry points that are KSA
 Metal's own, exported next to Vulkan's: `vkCmdUpscaleKSA` scales the main view's image into a window-size one before
 the final composite, `vkCmdUpscaleSnapshotKSA` copies the scene before its translucent effects, and `vkCmdMarkUiKSA`
 copies it again after the composite, before the UI. For MetalFX's temporal upscaler, KSA Metal makes the motion
@@ -217,7 +217,7 @@ The complete mapping:
 | Present wait | the drawables' presented handlers advance the present ID; a wait also ends when the GPU is about to need the next frame |
 | Transient attachments | memoryless textures (tile memory only) |
 | Swapchain | own textures, copied into the `CAMetalLayer` drawable at present (upscaled with MetalFX for Retina) |
-| `vkCmdUpscaleKSA`, `vkCmdUpscaleSnapshotKSA`, `vkCmdMarkUiKSA` | KSA Metal's own: MetalFX for the game patches |
+| `vkCmdUpscaleKSA`, `vkCmdUpscaleSnapshotKSA`, `vkCmdMarkUiKSA` | KSA Metal's own: MetalFX for the hooks |
 
 Buffer indices per shader stage: 0-9 descriptor sets, 10 push constants, 11 draw index, 12 buffer sizes, 13 view
 mask, 14 dynamic offsets, 15 texture swizzles, 16-21 tessellation stage buffers, 22 ray tracing launch size, 30 - n

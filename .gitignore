@@ -30,5 +30,7 @@ Content/
 !src/launcher/port-settings.toml
 src/benchmark/*/bin/
 src/benchmark/*/obj/
-src/game-patches/*/bin/
-src/game-patches/*/obj/
+src/hooks/bin/
+src/hooks/obj/
+src/hooks/*/bin/
+src/hooks/*/obj/

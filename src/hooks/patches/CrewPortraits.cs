@@ -2,7 +2,7 @@ using System.Diagnostics;
 using HarmonyLib;
 using KSA;
 
-namespace KsaPatches;
+namespace KsaMetalHooks;
 
 // Crew portraits. The faces in the crew panel are two 128x128 views of their own (the kitten and the vessel's parts
 // around it, 0.4 to 0.8 ms a frame), drawn every frame while the controlled vessel has crew, also when the panel isn't

@@ -3,10 +3,10 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.Loader;
 
-// The game patches' entry point: the launcher names this assembly in DOTNET_STARTUP_HOOKS, so .NET runs Initialize
+// KSA Metal Hooks' entry point: the launcher names this assembly in DOTNET_STARTUP_HOOKS, so .NET runs Initialize
 // before the program it starts (KSA, or StarMap, which loads KSA itself). It references nothing of the game: it waits
-// until KSA.dll is loaded, then loads KsaPatches.dll from its own folder into the same load context and applies it.
-// Harmony is not loaded before that: StarMap loads its own copy at start, and the patches then use that one.
+// until KSA.dll is loaded, then loads KsaMetalHooks.dll from its own folder into the same load context and applies it.
+// Harmony is not loaded before that: StarMap loads its own copy at start, and the hooks then use that one.
 internal class StartupHook
 {
     private static bool _applied;
@@ -27,18 +27,18 @@ internal class StartupHook
         try
         {
             AssemblyLoadContext context = AssemblyLoadContext.GetLoadContext(assembly)!;
-            // KsaPatches.dll's references that the context can't find (Harmony, without StarMap) are in this folder
+            // KsaMetalHooks.dll's references that the context can't find (Harmony, without StarMap) are in this folder
             context.Resolving += (ctx, name) =>
             {
                 string path = Path.Combine(folder, name.Name + ".dll");
                 return File.Exists(path) ? ctx.LoadFromAssemblyPath(path) : null;
             };
-            Assembly patches = context.LoadFromAssemblyPath(Path.Combine(folder, "KsaPatches.dll"));
-            patches.GetType("KsaPatches.Patches", true)!.GetMethod("Apply")!.Invoke(null, null);
+            Assembly hooks = context.LoadFromAssemblyPath(Path.Combine(folder, "KsaMetalHooks.dll"));
+            hooks.GetType("KsaMetalHooks.Hooks", true)!.GetMethod("Apply")!.Invoke(null, null);
         }
         catch (Exception e)
         {
-            Console.WriteLine($"[patches] not applied: {(e as TargetInvocationException)?.InnerException ?? e}");
+            Console.WriteLine($"[hooks] not applied: {(e as TargetInvocationException)?.InnerException ?? e}");
         }
     }
 }

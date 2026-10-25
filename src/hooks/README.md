@@ -1,19 +1,19 @@
-# Game patches
+# KSA Metal Hooks
 
-The game patches change a few parts of KSA's C# code in memory when the game starts, with
+The hooks change a few parts of KSA's C# code in memory when the game starts, with
 [Harmony](https://github.com/pardeike/Harmony). `KSA.dll` stays as it is on disk, and the repository holds only the
 patches' own code.
 
-The main README says what each patch does, in short ([Game patches](../../README.md#game-patches)). This file has the
+The main README says what each patch does, in short ([Hooks](../../README.md#hooks)). This file has the
 detail: how they load, the rule every patch follows, the settings they read, and how to build and test a change.
 
 ## How they load
 
-The launcher names `KsaPatchesLoader.dll` in `DOTNET_STARTUP_HOOKS`, so .NET runs it before the program it starts:
+The launcher names `KsaMetalHooksLoader.dll` in `DOTNET_STARTUP_HOOKS`, so .NET runs it before the program it starts:
 KSA itself, or StarMap, which loads KSA into a load context of its own. The loader ([`loader/Loader.cs`](loader/Loader.cs))
-references nothing of the game. It waits until `KSA.dll` is loaded, then loads `KsaPatches.dll` into the same load
+references nothing of the game. It waits until `KSA.dll` is loaded, then loads `KsaMetalHooks.dll` into the same load
 context and applies it. It loads no Harmony itself: under StarMap, the patches use the copy StarMap has already
-loaded; without StarMap, they find the app's copy next to them, in `Contents/Resources/GamePatches/`.
+loaded; without StarMap, they find the app's copy next to them, in `Contents/Resources/Hooks/`.
 
 ## The rule every patch follows
 
@@ -22,12 +22,12 @@ call that follows a field it knows. When something isn't where it expects it, ty
 patch throws `Skip`. Everything that patch had changed is undone, and `console.log` says so:
 
 ```text
-[patches] terrain cache: on
-[patches] outline skip: on
-[patches] cloud shadows: normal
-[patches] crew portraits: on
-[patches] worker parking: on, 0.25 ms
-[patches] render scale: skipped, the game's code changed (the sun's radius not found)
+[hooks] terrain cache: on
+[hooks] outline skip: on
+[hooks] cloud shadows: normal
+[hooks] crew portraits: on
+[hooks] worker parking: on, 0.25 ms
+[hooks] render scale: skipped, the game's code changed (the sun's radius not found)
 ```
 
 The game then runs as it would without that patch. Nothing here changes how the game saves or what it simulates;
@@ -64,20 +64,20 @@ For finding out which patch causes a problem:
 
 | Variable | Effect |
 |---|---|
-| `KSA_PATCHES=0` | the launcher doesn't load the patches at all |
+| `KSA_HOOKS=0` | the launcher doesn't load the patches at all |
 | `KSA_PATCHES_OFF=<key>,...` | leaves out these patches: `terrain_cache`, `outline_skip`, `cloud_shadows`, `crew_portraits`, `worker_park`, `render_scale` |
 
 ## Build and test
 
 `./build.sh` builds both assemblies against the KSA it is given, like the benchmark mod
-([`scripts/build-game-patches.sh`](../../scripts/build-game-patches.sh)): `KSA.dll` is a reference only. Harmony
+([`scripts/build-hooks.sh`](../../scripts/build-hooks.sh)): `KSA.dll` is a reference only. Harmony
 comes from the `Lib.Harmony` package on nuget.org, pinned in [`cmake/dependencies.cmake`](../../cmake/dependencies.cmake).
 
 The benchmark is the test. `--port` changes a port setting for one run, and the report lists the port settings and
 which patches were on:
 
 ```bash
-KSA_PATCHES=0 ./benchmark.sh --fast                       # without the patches
+KSA_HOOKS=0 ./benchmark.sh --fast                       # without the patches
 ./benchmark.sh --fast --compare <that run>                 # with them: faster, the same screenshots
 ./benchmark.sh --fast --port render_scale=0.5 --set antialiasing=None
 ```

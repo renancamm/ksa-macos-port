@@ -11,7 +11,7 @@ using HarmonyLib;
 using KSA;
 using KSA.Rendering.Lighting;
 
-namespace KsaPatches;
+namespace KsaMetalHooks;
 
 // Render scale (port-settings.toml). The main view renders at render_scale times the window's size, through the door
 // the game's own high-resolution screenshots use (Renderer.ExtentOverride), and its final composite stretches it back

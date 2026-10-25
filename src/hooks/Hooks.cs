@@ -5,12 +5,12 @@ using System.Reflection;
 using System.Reflection.Emit;
 using HarmonyLib;
 
-namespace KsaPatches;
+namespace KsaMetalHooks;
 
-// The game patches: changes to KSA's code made in memory with Harmony when the game starts (KSA.dll stays as it is on
+// KSA Metal Hooks: changes to KSA's code made in memory with Harmony when the game starts (KSA.dll stays as it is on
 // disk). Each patch finds its targets by name and its code by pattern; when a KSA update moved either, it is skipped
 // and the log says so, and the game runs as it would without it. A patch is applied whole or not at all.
-public static class Patches
+public static class Hooks
 {
     public static void Apply()
     {
@@ -44,7 +44,7 @@ public static class Patches
         }
     }
 
-    public static void Log(string message) => Console.WriteLine($"[patches] {message}");
+    public static void Log(string message) => Console.WriteLine($"[hooks] {message}");
 }
 
 // Why a patch can't apply: its target or the code it changes isn't what it expects

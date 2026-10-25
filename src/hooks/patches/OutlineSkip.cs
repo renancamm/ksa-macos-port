@@ -1,7 +1,7 @@
 using HarmonyLib;
 using KSA;
 
-namespace KsaPatches;
+namespace KsaMetalHooks;
 
 // Outline skip. PartSelectedRenderer.Run draws the outline around selected parts, a compute pass over the whole view
 // (0.5 to 1 ms), every frame, also when nothing is selected. Only selected parts mark the image it outlines, so it now

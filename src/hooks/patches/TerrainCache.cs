@@ -8,7 +8,7 @@ using HarmonyLib;
 using KSA;
 using KSA.Rendering.Planet;
 
-namespace KsaPatches;
+namespace KsaMetalHooks;
 
 // Terrain cache. Every frame, PlanetRenderer.GenerateMeshData recomputes the heights of the nearby body's terrain mesh
 // on the GPU: a prepare pass, one pass per terrain modifier (noise, craters, erosion...), then a finalize and a normals

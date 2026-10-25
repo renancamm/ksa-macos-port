@@ -3,7 +3,7 @@ using System.Globalization;
 using HarmonyLib;
 using KSA.Concurrency;
 
-namespace KsaPatches;
+namespace KsaMetalHooks;
 
 // Worker parking. Every frame, Program sets the job pools' park timeout to half the frame time: a worker with nothing
 // to do spins that long before it sleeps until work arrives, so the four workers spend about 1.5 cores spinning. The

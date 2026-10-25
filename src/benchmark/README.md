@@ -179,7 +179,7 @@ the tour from `src/benchmark/benchmark.txt` into the port folder.
 | `--no-shots` | take no screenshots |
 | `--set <key>=<value>` | change a setting of `settings.toml` for the run, on top of the preset (repeat for more; strings need no quotes) |
 | `--settings <file>` | apply the settings in a file of `key = value` lines, on top of the preset and before `--set` |
-| `--port <key>=<value>` | change a [port setting](../../README.md#port-settings) for the run, on top of yours (with a preset, on top of the defaults); the report shows the port settings and which game patches were on |
+| `--port <key>=<value>` | change a [port setting](../../README.md#port-settings) for the run, on top of yours (with a preset, on top of the defaults); the report shows the port settings and what the hooks did |
 | `--compare <run>` | compare with that run (folder or zip) at the end; the script fails when screenshots differ |
 | `--app <path>` | the app to measure (default: `~/Applications/Kitten Space Agency.app`) |
 | `<section or place> ...` | play only these sections, or a section up to the named place (a screenshot's name) |

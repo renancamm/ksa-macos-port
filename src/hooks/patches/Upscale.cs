@@ -12,7 +12,7 @@ using HarmonyLib;
 using KSA;
 using KSA.Rendering;
 
-namespace KsaPatches;
+namespace KsaMetalHooks;
 
 // MetalFX for the render scale (upscaler "metalfx" or "spatial"), and the motion that frame interpolation needs. Before
 // the final composite, KSA Metal's vkCmdUpscaleKSA (src/ksa-metal/upscale.mm) scales the main view's image into a

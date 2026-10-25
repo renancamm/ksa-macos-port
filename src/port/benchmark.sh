@@ -344,7 +344,7 @@ gpu_cores="$(system_profiler SPDisplaysDataType 2> /dev/null | awk -F': ' '/Tota
 displays="$(system_profiler SPDisplaysDataType 2> /dev/null | awk -F': ' '/Resolution:/ { print $2 }' | paste -sd ';' - | sed 's/;/; /g')"
 power="$(pmset -g batt | head -1 | sed -n "s/.*'\(.*\)'.*/\1/p")"
 low_power="$(pmset -g | awk '/lowpowermode/ { print ($2 == 1 ? "on" : "off"); exit }')"
-switches="$(env | grep -E '^KSA_(MTL_|PATCHES)' | sed "s|${HOME}|~|g" | paste -sd ' ' - || true)"
+switches="$(env | grep -E '^KSA_(MTL_|HOOKS)' | sed "s|${HOME}|~|g" | paste -sd ' ' - || true)"
 port_version="$(/usr/libexec/PlistBuddy -c "Print :KSAPortVersion" "${APP}/Contents/Info.plist" 2> /dev/null || true)"
 port_commit="$(/usr/libexec/PlistBuddy -c "Print :KSAPortCommit" "${APP}/Contents/Info.plist" 2> /dev/null || true)"
 tools="$(IFS=,; echo "${TOOLS[*]:-none}" | sed 's/,/, /g')"
@@ -500,11 +500,11 @@ done
 case "${pressure}" in 1) pressure=normal ;; 2) pressure=warning ;; *) pressure=critical ;; esac
 swap_after="$(sysctl -n vm.swapusage | sed -n 's/.*used = \([0-9.]*\)M.*/\1/p')"
 echo "Memory pressure: ${pressure}" >> "${OUT}/run.txt"
-# What the launcher made of the port settings, and which game patches applied (from the first run's log)
+# What the launcher made of the port settings, and what the hooks did (from the first run's log)
 port="$(sed -n 's/^==> port settings: //p' "${OUT}/game.log" 2> /dev/null | head -1)"
-patches="$(sed -n 's/^\[patches\] //p' "${OUT}/game.log" 2> /dev/null | paste -sd ';' - | sed 's/;/; /g')"
+hooks="$(sed -n 's/^\[hooks\] //p' "${OUT}/game.log" 2> /dev/null | paste -sd ';' - | sed 's/;/; /g')"
 echo "port settings: ${port:-?}" >> "${OUT}/system.txt"
-echo "Game patches: ${patches:-none}" >> "${OUT}/system.txt"
+echo "Hooks: ${hooks:-none}" >> "${OUT}/system.txt"
 echo "Swap used: ${swap_before:-?} -> ${swap_after:-?} MB" >> "${OUT}/run.txt"
 
 # The tools' output

@@ -94,7 +94,7 @@ FetchContent_Declare(harmony_license
     URL_HASH SHA256=a5883d0c45eb7e176d3d1631220e7f96e958e37064773d40245ae6db560bbd6d
     DOWNLOAD_NO_EXTRACT TRUE)
 
-# Harmony, which the game patches (src/game-patches/) use to change KSA's code at runtime: the official package on
+# Harmony, which KSA Metal Hooks (src/hooks/) use to change KSA's code at runtime: the official package on
 # nuget.org, the version StarMap includes (its licence: harmony_license above). Its net10.0 build goes into the app.
 set(HARMONY_VERSION 2.4.2)
 FetchContent_Declare(lib_harmony

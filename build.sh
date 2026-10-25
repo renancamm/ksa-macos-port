@@ -8,7 +8,7 @@
 #   second build only compiles what changed.
 #
 # Options:
-#   --ksa <archive | folder | app>  the KSA the benchmark mod and the game patches are built against and the folder
+#   --ksa <archive | folder | app>  the KSA the benchmark and the hooks are built against and the folder
 #                                   is made for (default: the installed app, otherwise the newest ksa_linux_v*.tar.gz
 #                                   or .tar in ~/Downloads)
 #   --install                       then update the installed app with it (port.sh --app)
@@ -52,7 +52,7 @@ if [ -z "${KSA_SOURCE}" ]; then
     fi
 fi
 
-# KSA's assemblies, for the benchmark mod and the game patches: an app's are converted already; an archive's or a folder's are copied
+# KSA's assemblies, for the benchmark and the hooks: an app's are converted already; an archive's or a folder's are copied
 # into deps/build/ksa/ and converted there (lib/convert-dotnet.sh, once the port's scripts are in place)
 KSA_DIR="${BUILD}/ksa"
 CONVERT=1
@@ -98,8 +98,8 @@ load_deps
 [ "${CONVERT}" = 0 ] || bash "${OUT}/lib/convert-dotnet.sh" "${KSA_DIR}" "${DOTNET_RUNTIME}" > /dev/null
 run build-benchmark "${KSA_DIR}"
 
-step "[5/6] Game patches"
-run build-game-patches "${KSA_DIR}"
+step "[5/6] Hooks"
+run build-hooks "${KSA_DIR}"
 
 step "[6/6] The port folder"
 run make-kit payload

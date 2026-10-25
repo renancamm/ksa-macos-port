@@ -1,4 +1,4 @@
-// MetalFX upscaling for the game patches' render scale (src/game-patches/), behind private entry points the patched
+// MetalFX upscaling for the hooks' render scale (src/hooks/), behind private entry points the patched
 // game calls: vkCmdUpscaleKSA between its scene and its final composite, vkCmdUpscaleSnapshotKSA before its
 // translucent effects. KSA Metal makes the motion vectors itself from the depth buffer and the matrices the game
 // passes: the scene's motion through the nearby body's frame, and inside a bounding sphere the motion of the vessel
