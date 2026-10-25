@@ -162,15 +162,19 @@ static GLFWwindow *windowed_window;
 static int windowed_x, windowed_y;
 static struct timespec settings_mtime;
 
-/* GameSettings.SettingsFilePath: <SpecialFolder.Personal>/My Games/Kitten Space Agency */
+/* GameSettings.SettingsFilePath: <SpecialFolder.Personal>/My Games/Kitten Space Agency, or the
+ * folder StarMap moved it to (STARMAP_INSTANCE_PATH, as the benchmark runs the game) */
 static const char *settings_path(void)
 {
     static char path[1024];
     static dispatch_once_t once;
 
     dispatch_once(&once, ^{
+        const char *instance = getenv("STARMAP_INSTANCE_PATH");
         const char *home = getenv("HOME");
-        if (home)
+        if (instance && *instance)
+            snprintf(path, sizeof(path), "%s/settings.toml", instance);
+        else if (home)
             snprintf(path, sizeof(path), "%s/Documents/My Games/Kitten Space Agency/settings.toml", home);
     });
     return path[0] ? path : NULL;
