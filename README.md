@@ -300,9 +300,6 @@ The settings are kept in `port-settings.toml`, next to the game's `settings.toml
 `~/Documents/My Games/Kitten Space Agency`, with a comment on each. The file can be edited instead of the tab, and
 its `[developer]` section holds switches for testing and debugging that the tab doesn't show.
 
-The Image and Performance settings are recent. If something looks wrong, set the setting back to its default and
-please open an issue; `console.log` shows how the game read the file.
-
 ### The hooks
 
 Some of the port's changes need the game's C# code. KSA Metal Hooks make them in memory when the game starts, with
