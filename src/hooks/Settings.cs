@@ -6,8 +6,9 @@ namespace KsaMetalHooks;
 // The patches' settings, from the environment: the loader sets these from port-settings.toml (its table,
 // src/launcher/port-settings.txt, says which setting is which variable), and a variable set before starting the game
 // wins over the file. Unset, each means the table's default.
-//   KSA_UPSCALER=off|metalfx|spatial    MetalFX for the render scale (off: none, and no render scale)
-//   KSA_RENDER_SCALE=<0.25..1>          the 3D view's size, as a fraction of the window
+//   KSA_UPSCALER=off|metalfx|spatial    how the 3D view is scaled up to the display's pixels (off: the game's stretch,
+//                                       filtered, and no render scale)
+//   KSA_RENDER_SCALE=<0.25..2>          the 3D view's size, as a fraction of the window's size in points
 //   KSA_CLOUD_SHADOWS=normal|slow       how fast cloud shadows follow the clouds
 //   KSA_PLUME_SHADOWS=normal|light     the size of the smoke's sun shadow cascades
 //   KSA_CREW_PORTRAITS=always|shown|shown_15  when the crew panel's faces are drawn (the Mac Port tab changes it live)
@@ -20,7 +21,7 @@ public static class Settings
     public static readonly float RenderScale =
         Upscaler is "metalfx" or "spatial" &&
         float.TryParse(Environment.GetEnvironmentVariable("KSA_RENDER_SCALE"), NumberStyles.Float,
-            CultureInfo.InvariantCulture, out float s) && s >= 0.25f && s < 1f ? s : 1f;
+            CultureInfo.InvariantCulture, out float s) && s >= 0.25f && s <= 2f ? s : 1f;
 
     public static readonly bool SlowCloudShadows =
         string.Equals(Environment.GetEnvironmentVariable("KSA_CLOUD_SHADOWS"), "slow", StringComparison.OrdinalIgnoreCase);

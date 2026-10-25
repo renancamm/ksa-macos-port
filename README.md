@@ -236,8 +236,9 @@ without modifying GLFW; [`glfw_shim.c`](src/glfw-shim/glfw_shim.c) explains each
 
 The launcher starts `dotnet KSA.dll`, through StarMap when [StarMap](#mods) is in the app, with the GLFW shim loaded
 and `DYLD_LIBRARY_PATH` set to the game folder, so every library comes from the app and never from elsewhere on the
-Mac. `Info.plist` turns `NSHighResolutionCapable` off, so the game renders one pixel per point and its Resolution
-setting is the number of pixels it renders.
+Mac. `Info.plist` turns `NSHighResolutionCapable` on, so the game draws its interface at the display's full
+resolution; [the hooks](#the-hooks) keep its 3D view at the window's size in points unless the render scale says
+otherwise.
 
 The bundle isn't signed as a whole, because that would replace Microsoft's signature on `dotnet`. `make-app.sh`
 removes the quarantine attribute that a browser download puts on the files, so macOS opens the app as one made on
@@ -294,7 +295,7 @@ another setting is greyed out until that one is on. Each row's tooltip says what
 
 | Section | What's there |
 |---|---|
-| Image | Apple's MetalFX and what needs it, off by default: upscaling, render scale, frame interpolation, Retina |
+| Image | Apple's MetalFX and what needs it, off by default: upscaling, render scale, frame interpolation |
 | Performance | a visible trade for speed, with the game's own as the default: cloud shadows, plume shadows |
 | Optimizations | the same image, faster, on by default; back to the game's own to find out whether one causes a problem |
 | Game features | what the Mac offers the game, with the game's own settings still deciding: tessellation, ray queries, ray tracing |

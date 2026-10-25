@@ -71,7 +71,6 @@ struct KConfig {
     bool constantArgumentBuffers = true;  // KSA_MTL_AB_CONSTANT=0: argument buffers in device memory
     int budgetMb = 0;                     // KSA_MTL_BUDGET_MB: GPU memory budget reported (0: Metal's recommendation)
     bool presentPacing = true;            // KSA_MTL_PRESENT_PACING=0: a present counts only once the display shows it
-    bool retina = false;                  // KSA_MTL_RETINA=1: the game draws in points, presented at the display's scale
     bool fxInterpolate = false;           // KSA_MTL_FX_INTERPOLATE=1: a MetalFX frame between every two the game presents
     // Debugging
     int logLevel = 0;                     // KSA_MTL_LOG (see Logging above)
@@ -429,7 +428,6 @@ struct KPipeline {
 };
 void kmtlWritePNG(id<MTLBuffer> buf, NSUInteger w, NSUInteger h, bool bgra, std::string path);  // swapchain.mm
 // upscale.mm: the present's MetalFX passes
-bool kmtlPresentUpscale(KDevice* dev, id<MTLCommandBuffer> cb, id<MTLTexture> src, id<MTLTexture> dst);
 id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<MTLTexture> color);
 uint64_t kmtlPresentCount();
 int kmtlThrottleFor(const std::string& profName);

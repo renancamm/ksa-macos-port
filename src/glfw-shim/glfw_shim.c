@@ -30,10 +30,6 @@
  *    after a mode change popups would open in the wrong spot, often on another monitor.
  *    After glfwSetWindowMonitor and every glfwPollEvents, report the real position of a
  *    window that went through glfwSetWindowMonitor when it differs from the last one.
- *
- * And one choice: with retina = true in port-settings.toml (KSA_MTL_RETINA=1), the app is marked
- * NSHighResolutionCapable, and the framebuffer size, content scales and framebuffer size callback
- * are reported in points, so the game draws as it does without Retina.
  */
 #include <CoreGraphics/CoreGraphics.h>
 #include <GLFW/glfw3.h>
@@ -354,74 +350,9 @@ static void shim_glfwDestroyWindow(GLFWwindow *window)
     glfwDestroyWindow(window);
 }
 
-/* Retina (KSA_MTL_RETINA=1, which the launcher sets from port-settings.toml along with NSHighResolutionCapable): the
- * game still sees a window in points (framebuffer in points, content scale 1), and KSA Metal presents its image in a
- * drawable at the display's scale, upscaled with MetalFX */
-static int retina_present(void)
-{
-    static int value = -1;
-
-    if (value < 0) {
-        const char *e = getenv("KSA_MTL_RETINA");
-        value = e && atoi(e) != 0;
-    }
-    return value;
-}
-
-static void shim_glfwGetFramebufferSize(GLFWwindow *window, int *width, int *height)
-{
-    if (retina_present())
-        glfwGetWindowSize(window, width, height);
-    else
-        glfwGetFramebufferSize(window, width, height);
-}
-
-static void shim_glfwGetWindowContentScale(GLFWwindow *window, float *x, float *y)
-{
-    glfwGetWindowContentScale(window, x, y);
-    if (retina_present()) {
-        if (x) *x = 1;
-        if (y) *y = 1;
-    }
-}
-
-static void shim_glfwGetMonitorContentScale(GLFWmonitor *monitor, float *x, float *y)
-{
-    glfwGetMonitorContentScale(monitor, x, y);
-    if (retina_present()) {
-        if (x) *x = 1;
-        if (y) *y = 1;
-    }
-}
-
-static GLFWframebuffersizefun game_framebuffer_callback;
-
-static void framebuffer_size_in_points(GLFWwindow *window, int width, int height)
-{
-    glfwGetWindowSize(window, &width, &height);
-    if (game_framebuffer_callback)
-        game_framebuffer_callback(window, width, height);
-}
-
-static GLFWframebuffersizefun shim_glfwSetFramebufferSizeCallback(GLFWwindow *window, GLFWframebuffersizefun callback)
-{
-    GLFWframebuffersizefun previous;
-
-    if (!retina_present())
-        return glfwSetFramebufferSizeCallback(window, callback);
-    previous = game_framebuffer_callback;
-    game_framebuffer_callback = callback;
-    glfwSetFramebufferSizeCallback(window, callback ? framebuffer_size_in_points : NULL);
-    return previous;
-}
-
 DYLD_INTERPOSE(shim_CGDisplayCopyAllDisplayModes, CGDisplayCopyAllDisplayModes)
 DYLD_INTERPOSE(shim_glfwSetInputMode, glfwSetInputMode)
 DYLD_INTERPOSE(shim_glfwSetWindowMonitor, glfwSetWindowMonitor)
 DYLD_INTERPOSE(shim_glfwPollEvents, glfwPollEvents)
 DYLD_INTERPOSE(shim_glfwDestroyWindow, glfwDestroyWindow)
 DYLD_INTERPOSE(shim_glfwSetWindowPosCallback, glfwSetWindowPosCallback)
-DYLD_INTERPOSE(shim_glfwGetFramebufferSize, glfwGetFramebufferSize)
-DYLD_INTERPOSE(shim_glfwGetWindowContentScale, glfwGetWindowContentScale)
-DYLD_INTERPOSE(shim_glfwGetMonitorContentScale, glfwGetMonitorContentScale)
-DYLD_INTERPOSE(shim_glfwSetFramebufferSizeCallback, glfwSetFramebufferSizeCallback)

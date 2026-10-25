@@ -34,7 +34,7 @@ These switches turn a feature off or change a default, to work around a problem 
 | `KSA_MTL_AB_CONSTANT=0` | shaders read their resources from device memory instead of constant memory; a bit slower, try it when a shader fails to compile |
 | `KSA_MTL_UNIFORM_REFS=0` | helper functions get their own copy of each uniform struct they take, as SPIRV-Cross writes it ([Shaders](#from-vulkan-to-metal)); slower in the smoke raymarch, try it when a shader looks wrong |
 | `KSA_MTL_BUDGET_MB=<n>` | the GPU memory budget reported to the game, which sizes its texture streaming from it (default: what Metal recommends for this Mac) |
-| `KSA_MTL_RETINA=1`, `KSA_MTL_FX_INTERPOLATE=1` | Retina output and frame interpolation ([MetalFX](#from-vulkan-to-metal)) |
+| `KSA_MTL_FX_INTERPOLATE=1` | frame interpolation ([MetalFX](#from-vulkan-to-metal)) |
 | `KSA_MTL_PRESENT_PACING=0` | with V-Sync, the game's wait for an earlier frame ends only when the display shows it ([Presentation](#from-vulkan-to-metal)); in a window, frames that take less than about 23 ms on the GPU then run slower |
 
 ## Build
@@ -97,7 +97,7 @@ The debugging variables, used the same way:
 | `KSA_MTL_EXIT_AFTER_SHOTS=1` | quit once the last shot is saved |
 | `KSA_MTL_FRAMES=<file.csv>` | per frame: CPU frame time, GPU busy time, draws, dispatches and allocated memory |
 | `KSA_MTL_FX_DEBUG=1` | the upscaled image shows MetalFX's motion vectors instead (red and green: horizontal and vertical, 32 pixels = full; blue: the followed vessel) |
-| `KSA_MTL_FX_SHOTS=<dir>` | now and then, a PNG of what MetalFX made: the drawable as shown with Retina, an interpolated frame with the frames around it |
+| `KSA_MTL_FX_SHOTS=<dir>` | now and then, a PNG of what MetalFX made: an interpolated frame with the frames around it |
 | `KSA_MTL_LATENCY=<file.csv>` | per frame: when it began (when the game's wait for an earlier frame ended), was presented, was done on the GPU and was shown, how long it waited, and whether pacing ended the wait |
 | `KSA_MTL_STALLS=<ms>` | logs what blocks the game longer than that: waits for fences, drawables and submits, residency set commits (with what they added), command buffers that started late on the GPU, and allocations of 16 MB or more, each with the present it falls in |
 | `KSA_MTL_GPUPROF=<file.csv>` | GPU time of every encoder, for 300 frames from present 2000 (`KSA_MTL_GPUPROF_FRAMES=<first>,<count>` changes that) |
@@ -192,13 +192,13 @@ on the GPU, the one before it is on screen, and the GPU is about to need the nex
 frames' GPU and CPU times). Frames then start when the GPU can take them, without queueing up.
 
 **MetalFX.** For the port settings, the patched game ([KSA Metal Hooks](../hooks/)) calls entry points that are KSA
-Metal's own, exported next to Vulkan's: `vkCmdUpscaleKSA` scales the main view's image into a window-size one before
-the final composite, `vkCmdUpscaleSnapshotKSA` copies the scene before its translucent effects, and `vkCmdMarkUiKSA`
+Metal's own, exported next to Vulkan's: `vkCmdUpscaleKSA` scales the main view's image into one of the swapchain's
+size (the display's pixels) before the final composite (past the temporal upscaler's largest scale, 3x on an M5, it
+upscales as far as it can and the spatial upscaler does the rest), `vkCmdUpscaleSnapshotKSA` copies the scene before its translucent effects, and `vkCmdMarkUiKSA`
 copies it again after the composite, before the UI. For MetalFX's temporal upscaler, KSA Metal makes the motion
 vectors in a kernel of its own, from the depth buffer and the reprojections the game passes, and marks what the
 translucent effects changed as reactive. Between the encoders MetalFX adds and the game's work it puts full event
-barriers. Retina output ends the present with MetalFX's spatial upscaler into a drawable at the display's scale;
-frame interpolation presents a frame MetalFX makes from the last two scenes, their motion and depth, with this
+barriers. Frame interpolation presents a frame MetalFX makes from the last two scenes, their motion and depth, with this
 frame's UI on top, before each real one.
 
 The complete mapping:
@@ -228,7 +228,7 @@ The complete mapping:
 | Timestamps | GPU counter samples at encoder boundaries |
 | Present wait | the drawables' presented handlers advance the present ID; a wait also ends when the GPU is about to need the next frame |
 | Transient attachments | memoryless textures (tile memory only) |
-| Swapchain | own textures, copied into the `CAMetalLayer` drawable at present (upscaled with MetalFX for Retina) |
+| Swapchain | own textures at the display's pixels, copied into the `CAMetalLayer` drawable at present |
 | `vkCmdUpscaleKSA`, `vkCmdUpscaleSnapshotKSA`, `vkCmdMarkUiKSA` | KSA Metal's own: MetalFX for the hooks |
 
 Buffer indices per shader stage: 0-9 descriptor sets, 10 push constants, 11 draw index, 12 buffer sizes, 13 view
@@ -255,7 +255,7 @@ vertex buffer n.
 | `tessspirv.cpp`, `tessspirv.h` | the SPIR-V rewrites behind passthrough and fused tessellation |
 | `spvmodule.h` | a SPIR-V module as a list of instructions, for those rewrites |
 | `swapchain.mm` | swapchain, presentation, screenshots and frame log |
-| `upscale.mm` | MetalFX: upscaling, motion vectors, Retina output, frame interpolation |
+| `upscale.mm` | MetalFX: upscaling, motion vectors, frame interpolation |
 | `profile.mm` | the GPU profiler |
 | `CMakeLists.txt`, `exports.txt` | the build: sources, flags, and the symbols the library exports |
 

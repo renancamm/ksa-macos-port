@@ -3,9 +3,10 @@
 // translucent effects. KSA Metal makes the motion vectors itself from the depth buffer and the matrices the game
 // passes: the scene's motion through the nearby body's frame, and inside a bounding sphere the motion of the vessel
 // the camera follows, through its own frame. What the translucent effects and the bloom changed since the snapshot
-// becomes MetalFX's reactive mask, so that plumes moving with the camera don't smear. The same file has the present's
-// MetalFX passes: Retina (KSA_MTL_RETINA) and frame interpolation (KSA_MTL_FX_INTERPOLATE), for which the game marks
-// where its UI starts (vkCmdMarkUiKSA).
+// becomes MetalFX's reactive mask, so that plumes moving with the camera don't smear. Past the temporal upscaler's
+// largest scale (3x on an M5), it upscales as far as it can and MetalFX's spatial upscaler does the rest. The same
+// file has the present's MetalFX pass: frame interpolation (KSA_MTL_FX_INTERPOLATE), for which the game marks where
+// its UI starts (vkCmdMarkUiKSA).
 #import <MetalFX/MetalFX.h>
 #include "kmtl.h"
 
@@ -77,6 +78,9 @@ struct UpscaleState {
     id<MTLFXTemporalScaler> temporal = nil;
     id<MTLFXSpatialScaler> spatial = nil;
     uint32_t inW = 0, inH = 0, outW = 0, outH = 0;
+    // Past the temporal upscaler's largest scale: its output, which the spatial upscaler scales the rest of the way
+    id<MTLFXSpatialScaler> rest = nil;
+    id<MTLTexture> restTex = nil;
     id<MTLTexture> motionTex = nil;
     id<MTLTexture> reactiveTex = nil;
     id<MTLTexture> snapshotTex = nil;
@@ -116,6 +120,8 @@ static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uin
     g_up.inW = inW; g_up.inH = inH; g_up.outW = outW; g_up.outH = outH;
     g_up.temporal = nil;
     g_up.spatial = nil;
+    g_up.rest = nil;
+    g_up.restTex = nil;
     if (spatial) {
         MTLFXSpatialScalerDescriptor* sd = [MTLFXSpatialScalerDescriptor new];
         sd.colorTextureFormat = MTLPixelFormatRGBA16Float;
@@ -129,7 +135,9 @@ static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uin
         td.depthTextureFormat = MTLPixelFormatDepth32Float;
         td.motionTextureFormat = MTLPixelFormatRG16Float;
         td.outputTextureFormat = MTLPixelFormatRGBA16Float;
-        td.inputWidth = inW; td.inputHeight = inH; td.outputWidth = outW; td.outputHeight = outH;
+        float most = [MTLFXTemporalScalerDescriptor supportedInputContentMaxScaleForDevice:d];
+        uint32_t midW = std::min(outW, (uint32_t)(inW * most)), midH = std::min(outH, (uint32_t)(inH * most));
+        td.inputWidth = inW; td.inputHeight = inH; td.outputWidth = midW; td.outputHeight = midH;
         td.autoExposureEnabled = YES;
         td.requiresSynchronousInitialization = YES;
         td.reactiveMaskTextureEnabled = YES;
@@ -142,8 +150,23 @@ static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uin
         g_up.motionTex = [d newTextureWithDescriptor:md];
         md.pixelFormat = MTLPixelFormatR8Unorm;
         g_up.reactiveTex = [d newTextureWithDescriptor:md];
+        if (g_up.temporal && (midW != outW || midH != outH)) {
+            MTLFXSpatialScalerDescriptor* sd = [MTLFXSpatialScalerDescriptor new];
+            sd.colorTextureFormat = MTLPixelFormatRGBA16Float;
+            sd.outputTextureFormat = MTLPixelFormatRGBA16Float;
+            sd.inputWidth = midW; sd.inputHeight = midH; sd.outputWidth = outW; sd.outputHeight = outH;
+            sd.colorProcessingMode = MTLFXSpatialScalerColorProcessingModeHDR;
+            g_up.rest = [sd newSpatialScalerWithDevice:d];
+            MTLTextureDescriptor* rd = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA16Float
+                                                                                          width:midW height:midH mipmapped:NO];
+            rd.usage = g_up.temporal.outputTextureUsage | MTLTextureUsageShaderRead;
+            rd.storageMode = MTLStorageModePrivate;
+            g_up.restTex = [d newTextureWithDescriptor:rd];
+            if (!g_up.rest || !g_up.restTex) g_up.temporal = nil;
+        }
         if (g_up.temporal)
-            KLOG(0, "upscale: MetalFX temporal %ux%u -> %ux%u", inW, inH, outW, outH);
+            KLOG(0, "upscale: MetalFX temporal %ux%u -> %ux%u%s", inW, inH, midW, midH,
+                 g_up.rest ? [NSString stringWithFormat:@", spatial -> %ux%u", outW, outH].UTF8String : "");
     }
     if (!(spatial ? (id)g_up.spatial : (id)g_up.temporal)) {
         KERR("upscale: MetalFX %s scaler %ux%u -> %ux%u not created", spatial ? "spatial" : "temporal", inW, inH, outW, outH);
@@ -223,7 +246,7 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
         g_up.temporal.colorTexture = color->mtl;
         g_up.temporal.depthTexture = depth->mtl;
         g_up.temporal.motionTexture = g_up.motionTex;
-        g_up.temporal.outputTexture = out->mtl;
+        g_up.temporal.outputTexture = g_up.rest ? g_up.restTex : out->mtl;
         g_up.temporal.inputContentWidth = info->inputWidth;
         g_up.temporal.inputContentHeight = info->inputHeight;
         g_up.temporal.jitterOffsetX = info->jitterX;
@@ -234,6 +257,14 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
         g_up.temporal.reset = (info->flags & kUpscaleReset) != 0;
         g_up.temporal.reactiveMaskTexture = g_up.reactiveTex;
         [g_up.temporal encodeToCommandBuffer:cb->mtl];
+        if (g_up.rest) {
+            fullBarrier(cb);
+            g_up.rest.colorTexture = g_up.restTex;
+            g_up.rest.outputTexture = out->mtl;
+            g_up.rest.inputContentWidth = g_up.restTex.width;
+            g_up.rest.inputContentHeight = g_up.restTex.height;
+            [g_up.rest encodeToCommandBuffer:cb->mtl];
+        }
         g_up.frameDepth = depth->mtl;
         g_up.frameJitter[0] = info->jitterX; g_up.frameJitter[1] = info->jitterY;
         g_up.fovY = info->fovY; g_up.nearPlane = info->nearPlane; g_up.farPlane = info->farPlane; g_up.deltaTime = info->deltaTime;
@@ -298,72 +329,6 @@ VKFN(void) vkCmdMarkUiKSA(VkCommandBuffer commandBuffer) {
     fullBarrier(cb);
     cb->resumeRender();
     g_up.sceneSerial = g_up.frameSerial;
-}
-
-// KSA_MTL_RETINA: the swapchain image (points) upscaled into the drawable (pixels) with MetalFX spatial, between event
-// barriers (the present command buffer's first encoder waited for the queue's chain fence)
-bool kmtlPresentUpscale(KDevice* dev, id<MTLCommandBuffer> cb, id<MTLTexture> src, id<MTLTexture> dst) {
-    static std::mutex m;
-    static id<MTLFXSpatialScaler> scaler = nil;
-    static id<MTLTexture> staging = nil;  // when the drawable can't take MetalFX's writes
-    static id<MTLEvent> event = nil;
-    static uint64_t value = 0;
-    std::lock_guard<std::mutex> lock(m);
-    if (!scaler || scaler.inputWidth != src.width || scaler.inputHeight != src.height || scaler.outputWidth != dst.width ||
-        scaler.outputHeight != dst.height || scaler.colorTextureFormat != src.pixelFormat || scaler.outputTextureFormat != dst.pixelFormat) {
-        MTLFXSpatialScalerDescriptor* sd = [MTLFXSpatialScalerDescriptor new];
-        sd.colorTextureFormat = src.pixelFormat;
-        sd.outputTextureFormat = dst.pixelFormat;
-        sd.inputWidth = src.width; sd.inputHeight = src.height; sd.outputWidth = dst.width; sd.outputHeight = dst.height;
-        sd.colorProcessingMode = MTLFXSpatialScalerColorProcessingModePerceptual;
-        scaler = [sd newSpatialScalerWithDevice:dev->mtl];
-        staging = nil;
-        if (!scaler) {
-            KERR("present upscale: MetalFX spatial %lux%lu -> %lux%lu not created", (unsigned long)src.width,
-                 (unsigned long)src.height, (unsigned long)dst.width, (unsigned long)dst.height);
-            return false;
-        }
-        KLOG(0, "present upscale: MetalFX spatial %lux%lu -> %lux%lu", (unsigned long)src.width, (unsigned long)src.height,
-             (unsigned long)dst.width, (unsigned long)dst.height);
-    }
-    bool direct = (dst.usage & scaler.outputTextureUsage) == scaler.outputTextureUsage && dst.storageMode == MTLStorageModePrivate;
-    if (!direct && !staging) {
-        MTLTextureDescriptor* d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:dst.pixelFormat width:dst.width
-                                                                                   height:dst.height mipmapped:NO];
-        d.usage = scaler.outputTextureUsage | MTLTextureUsageShaderRead;
-        d.storageMode = MTLStorageModePrivate;
-        staging = [dev->mtl newTextureWithDescriptor:d];
-    }
-    if (!event) event = [dev->mtl newEvent];
-    [cb encodeSignalEvent:event value:++value];
-    [cb encodeWaitForEvent:event value:value];
-    scaler.colorTexture = src;
-    scaler.outputTexture = direct ? dst : staging;
-    scaler.inputContentWidth = src.width;
-    scaler.inputContentHeight = src.height;
-    [scaler encodeToCommandBuffer:cb];
-    [cb encodeSignalEvent:event value:++value];
-    [cb encodeWaitForEvent:event value:value];
-    if (!direct) {
-        id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
-        [b copyFromTexture:staging toTexture:dst];
-        [b endEncoding];
-    }
-    // KSA_MTL_FX_SHOTS=<dir>: the drawable as shown, every 600 presents
-    const char* shotDir = kmtlConfig().fxShots;
-    static uint64_t presents = 0;
-    if (shotDir && ++presents % 600 == 0) {
-        NSUInteger w = dst.width, h = dst.height;
-        id<MTLBuffer> buf = [dev->mtl newBufferWithLength:w * h * 4 options:MTLResourceStorageModeShared];
-        id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
-        [b copyFromTexture:dst sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(w, h, 1)
-                  toBuffer:buf destinationOffset:0 destinationBytesPerRow:w * 4 destinationBytesPerImage:w * h * 4];
-        [b endEncoding];
-        bool bgra = dst.pixelFormat == MTLPixelFormatBGRA8Unorm || dst.pixelFormat == MTLPixelFormatBGRA8Unorm_sRGB;
-        std::string path = std::string(shotDir) + "/retina_" + std::to_string(presents) + ".png";
-        [cb addCompletedHandler:^(id<MTLCommandBuffer>) { kmtlWritePNG(buf, w, h, bgra, path); }];
-    }
-    return true;
 }
 
 // KSA_MTL_FX_INTERPOLATE=1: a frame between the last presented one and this one, from the scenes without the UI

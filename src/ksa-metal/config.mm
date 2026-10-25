@@ -30,7 +30,6 @@ const KConfig& kmtlConfig() {
         c.constantArgumentBuffers = envOn("KSA_MTL_AB_CONSTANT", true);
         c.budgetMb = envInt("KSA_MTL_BUDGET_MB", 0);
         c.presentPacing = envOn("KSA_MTL_PRESENT_PACING", true);
-        c.retina = envOn("KSA_MTL_RETINA", false);
         c.fxInterpolate = envOn("KSA_MTL_FX_INTERPOLATE", false);
         // Debugging
         c.logLevel = envInt("KSA_MTL_LOG", 0);

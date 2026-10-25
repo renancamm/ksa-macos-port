@@ -1,10 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
 
 namespace KsaMetalHooks;
 
@@ -135,23 +133,6 @@ public static partial class PortSettings
                 values[key] = value;
         }
         return values;
-    }
-
-    // Retina: marks the app NSHighResolutionCapable or not in its Info.plist (Contents/Resources/../Info.plist). macOS
-    // reads it as the game starts, so the tab writes it when it saves the setting, and the loader when the file says
-    // otherwise. Returns whether it changed it; throws when it can't.
-    public static bool MarkRetina(string resources, bool retina)
-    {
-        var plist = Path.Combine(resources, "..", "Info.plist");
-        var match = Regex.Match(File.ReadAllText(plist), @"<key>NSHighResolutionCapable</key>\s*<(true|false)\s*/>");
-        if (match.Success && match.Groups[1].Value == (retina ? "true" : "false"))
-            return false;
-        using var plutil = Process.Start("/usr/bin/plutil",
-            ["-replace", "NSHighResolutionCapable", "-bool", retina ? "true" : "false", plist])!;
-        plutil.WaitForExit();
-        if (plutil.ExitCode != 0)
-            throw new IOException($"plutil exited with {plutil.ExitCode}");
-        return true;
     }
 
     // Whether a setting's needs are met, with the values value() gives (a need that names the game is checked by

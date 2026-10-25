@@ -14,11 +14,9 @@ using KsaMetalHooks;
 // over the file.
 //
 // It also puts the game's output in console.log in the documents folder's logs (unless it goes to a terminal), copies
-// the commented template there when the player has no port-settings.toml, and marks the app NSHighResolutionCapable
-// when the file's retina says otherwise (the tab marks it when it saves the setting: macOS reads it as the game starts,
-// so a change made here may take effect only from the next start). For the Mac Port tab it sets KSA_PORT_SETTINGS (the
-// file) and KSA_PORT_OUTSIDE (the variables set already), and for Restart KSA_PORT_SET (those it set, which the new
-// game sets again).
+// the commented template there when the player has no port-settings.toml. For the Mac Port tab it sets
+// KSA_PORT_SETTINGS (the file) and KSA_PORT_OUTSIDE (the variables set already), and for Restart KSA_PORT_SET (those
+// it set, which the new game sets again).
 internal static class PortEnvironment
 {
     [DllImport("libc", SetLastError = true)]
@@ -90,17 +88,6 @@ internal static class PortEnvironment
         Set("KSA_PORT_SETTINGS", PortSettings.FilePath);
         Set("KSA_PORT_SET", string.Join(',', set));
         Set("KSA_PORT_OUTSIDE", string.Join(',', outside));
-
-        bool retina = Environment.GetEnvironmentVariable("KSA_MTL_RETINA") is { Length: > 0 } r && r != "0";
-        try
-        {
-            if (PortSettings.MarkRetina(resources, retina))
-                Console.WriteLine($"[WARN] retina = {(retina ? "true" : "false")} reached Info.plist only now: it may take effect from the next start");
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine($"[WARN] could not set NSHighResolutionCapable in Info.plist: retina may not take effect ({e.Message})");
-        }
 
         bool starMap = File.Exists(Path.Combine(AppContext.BaseDirectory, "StarMap.dll"));
         Console.WriteLine($"==> {DateTime.Now.ToString("ddd MMM d HH:mm:ss yyyy", CultureInfo.InvariantCulture)}: starting " +

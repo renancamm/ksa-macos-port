@@ -10,70 +10,75 @@ using Brutal.VulkanApi.Abstractions;
 using Core;
 using HarmonyLib;
 using KSA;
+using KSA.Rendering;
 using KSA.Rendering.Lighting;
+using KSA.Rendering.PostProcessing;
 
 namespace KsaMetalHooks;
 
-// Render scale (port-settings.toml). The main view renders at render_scale times the window's size, through the door
-// the game's own high-resolution screenshots use (Renderer.ExtentOverride), and its final composite scales it back
-// to the window, where the UI is drawn at full size. The cameras keep the window's size (so picking and the UI's
-// world positions stay right), while what the shaders see as the screen size is the render size. The light
-// clustering's tiles and the UI coverage mask follow the render size too. Pixel sizes measured on the window (the sun's glow, star and planet
-// discs, ground clutter's level of detail) are converted: the sun's radius here, the rest by the shader edits
-// convert-shaders.sh makes, from the window's height in the camera data. Upscale.cs scales the view back up with
-// MetalFX (a render scale needs upscaling = "metalfx" or "spatial").
+// Render scale (port-settings.toml), and the window's three sizes on a Retina display. The app is marked
+// NSHighResolutionCapable, so the swapchain has the display's pixels and the game's UI is drawn at them (ImGui scales
+// itself by the framebuffer's scale), while the window, the mouse and the UI's layout are in points. The main view
+// renders at render_scale times the window's size in points, through the door the game's own high-resolution
+// screenshots use (Renderer.ExtentOverride), and its final composite scales it up to the swapchain: with MetalFX
+// (Upscale.cs) or, with upscaling off, with the composite's own stretch, filtered. The cameras keep the window's size
+// in points (so picking and the UI's world positions stay right), while what the shaders see as the screen size is
+// the render size. The light clustering's tiles and the UI coverage mask follow the render size too, and the panels
+// the game places from its main view's size (the Vehicle Editor's, the transfer planner's) the window's. Pixel sizes
+// measured on the window (the sun's glow, star and planet discs, ground clutter's level of detail) are converted:
+// the sun's radius here, the rest by the shader edits convert-shaders.sh makes, from the window's height in the
+// camera data. On a display without Retina at a render scale of 1, the three sizes are one and nothing changes.
 internal static class RenderScale
 {
-    public static bool Scaled;
-    public static int2 Window;  // the swapchain's size, which the main view is scaled from
+    public static bool Scaled;  // the main view renders at another size than the window's in points
+    public static int2 Window;  // the window's size in points: the cameras', the UI's
+    public static int2 Output;  // the swapchain's size in pixels, which the main view is scaled up to
     private static VkExtent2D? _ours;  // the override this patch set (a screenshot's is left alone)
 
     public static string Apply(Harmony harmony)
     {
-        Scaled = Settings.RenderScale < 1f;
-        Upscale.Configure(Scaled);
-        bool metalFx = Upscale.Wanted;
-        if (!Scaled && !metalFx)
-            return "off";
+        Upscale.Configure();
         var renderSize = new HarmonyMethod(typeof(RenderScale), nameof(RenderSizeTranspiler));
-        if (Scaled)
-        {
-            harmony.Patch(Find.Method(typeof(Renderer), nameof(Renderer.Rebuild)),
-                postfix: new HarmonyMethod(typeof(RenderScale), nameof(RebuildPostfix)));
-            harmony.Patch(Find.Method(typeof(Program), "RenderFinalComposite"),
-                prefix: new HarmonyMethod(typeof(RenderScale), nameof(CompositePrefix)),
-                finalizer: new HarmonyMethod(typeof(RenderScale), nameof(CompositeFinalizer)));
-            harmony.Patch(Find.Method(typeof(GameViewport), "SetSize"),
-                postfix: new HarmonyMethod(typeof(RenderScale), nameof(SetSizePostfix)));
-            harmony.Patch(Find.Method(typeof(Program), nameof(Program.SetCameraUbo)), transpiler: renderSize);
-            harmony.Patch(Find.Method(typeof(Program), nameof(Program.UpdateShaderData)), transpiler: renderSize);
-            harmony.Patch(Find.Method(typeof(Program), nameof(Program.UpdateShaderData)),
-                prefix: new HarmonyMethod(typeof(RenderScale), nameof(ShaderDataPrefix)),
-                transpiler: new HarmonyMethod(typeof(RenderScale), nameof(SunRadiusTranspiler)));
-            int lighting = 0;
-            foreach (var method in AccessTools.GetDeclaredMethods(typeof(ClusteredLightSystem)))
-            {
-                if (!PatchProcessor.GetOriginalInstructions(method).Any(IsFramebufferSize))
-                    continue;
-                harmony.Patch(method, transpiler: renderSize);
-                lighting++;
-            }
-            if (lighting == 0)
-                throw new Skip("ClusteredLightSystem no longer reads the camera's framebuffer size");
-            harmony.Patch(Find.Method(typeof(UiCoverageMaskSystem), "BuildSizedResources"),
-                transpiler: new HarmonyMethod(typeof(RenderScale), nameof(MaskExtentTranspiler)));
-            var maskScale = new HarmonyMethod(typeof(RenderScale), nameof(MaskScaleTranspiler));
-            harmony.Patch(Find.Method(typeof(UiCoverageMaskSystem), nameof(UiCoverageMaskSystem.RecordMaskGeneration)),
-                transpiler: maskScale);
-            harmony.Patch(Find.Method(typeof(UiCoverageMaskSystem), "ReplayDrawData"), transpiler: maskScale);
-        }
+        harmony.Patch(Find.Method(typeof(Renderer), nameof(Renderer.Rebuild)),
+            postfix: new HarmonyMethod(typeof(RenderScale), nameof(RebuildPostfix)));
+        harmony.Patch(Find.Method(typeof(Program), "RenderFinalComposite"),
+            prefix: new HarmonyMethod(typeof(RenderScale), nameof(CompositePrefix)),
+            finalizer: new HarmonyMethod(typeof(RenderScale), nameof(CompositeFinalizer)));
+        harmony.Patch(Find.Method(typeof(ScreenspaceRenderer), nameof(ScreenspaceRenderer.AddImage)),
+            prefix: new HarmonyMethod(typeof(RenderScale), nameof(AddImagePrefix)) { priority = Priority.First });
+        harmony.Patch(Find.Method(typeof(Cmaa2Renderer), "CreateResourcesIfNeeded"),
+            prefix: new HarmonyMethod(typeof(RenderScale), nameof(Cmaa2Prefix)),
+            finalizer: new HarmonyMethod(typeof(RenderScale), nameof(Cmaa2Finalizer)));
+        harmony.Patch(Find.Method(typeof(GameViewport), "SetSize"),
+            postfix: new HarmonyMethod(typeof(RenderScale), nameof(SetSizePostfix)));
+        harmony.Patch(Find.Method(typeof(Program), nameof(Program.SetCameraUbo)), transpiler: renderSize);
+        harmony.Patch(Find.Method(typeof(Program), nameof(Program.UpdateShaderData)), transpiler: renderSize);
         harmony.Patch(Find.Method(typeof(Program), nameof(Program.UpdateShaderData)),
+            prefix: new HarmonyMethod(typeof(RenderScale), nameof(ShaderDataPrefix)),
+            transpiler: new HarmonyMethod(typeof(RenderScale), nameof(SunRadiusTranspiler)),
             postfix: new HarmonyMethod(typeof(RenderScale), nameof(ShaderDataPostfix)));
-        if (metalFx)
+        int lighting = 0;
+        foreach (var method in AccessTools.GetDeclaredMethods(typeof(ClusteredLightSystem)))
+        {
+            if (!PatchProcessor.GetOriginalInstructions(method).Any(IsFramebufferSize))
+                continue;
+            harmony.Patch(method, transpiler: renderSize);
+            lighting++;
+        }
+        if (lighting == 0)
+            throw new Skip("ClusteredLightSystem no longer reads the camera's framebuffer size");
+        harmony.Patch(Find.Method(typeof(UiCoverageMaskSystem), "BuildSizedResources"),
+            transpiler: new HarmonyMethod(typeof(RenderScale), nameof(MaskExtentTranspiler)));
+        var maskScale = new HarmonyMethod(typeof(RenderScale), nameof(MaskScaleTranspiler));
+        harmony.Patch(Find.Method(typeof(UiCoverageMaskSystem), nameof(UiCoverageMaskSystem.RecordMaskGeneration)),
+            transpiler: maskScale);
+        harmony.Patch(Find.Method(typeof(UiCoverageMaskSystem), "ReplayDrawData"), transpiler: maskScale);
+        PatchPanels(harmony);
+        if (Upscale.Wanted)
             Upscale.Apply(harmony);
-        string upscaler = Upscale.Spatial ? "MetalFX spatial" : "MetalFX temporal";
         string scale = Settings.RenderScale.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
-        return Scaled ? $"{scale} of the window, {upscaler}" : $"1, {upscaler}";
+        string upscaler = !Upscale.Wanted ? "filtered stretch" : Upscale.Spatial ? "MetalFX spatial" : "MetalFX temporal";
+        return $"{scale} of the window, {upscaler}";
     }
 
     // After every swapchain rebuild (the renderer's first one included): the main view's size, unless a screenshot set
@@ -82,25 +87,61 @@ internal static class RenderScale
     {
         if (__instance.ExtentOverride is { } current && !(_ours is { } ours && current.Width == ours.Width && current.Height == ours.Height))
             return;
-        VkExtent2D window = __instance.SwapchainExtent;
-        Window = new int2(window.Width, window.Height);
-        _ours = new VkExtent2D(Math.Max(1, (int)MathF.Round(window.Width * Settings.RenderScale)),
-            Math.Max(1, (int)MathF.Round(window.Height * Settings.RenderScale)));
+        VkExtent2D output = __instance.SwapchainExtent;
+        Output = new int2(output.Width, output.Height);
+        int2 points = Program.GetWindow() is { } window ? window.Size : int2.Zero;
+        Window = points.X > 0 && points.Y > 0 ? points : Output;
+        var render = new int2(Math.Clamp((int)MathF.Round(Window.X * Settings.RenderScale), 1, Output.X),
+            Math.Clamp((int)MathF.Round(Window.Y * Settings.RenderScale), 1, Output.Y));
+        Scaled = render != Window;
+        _ours = new VkExtent2D(render.X, render.Y);
         __instance.ExtentOverride = _ours;
     }
 
-    // The main view's composite stretches the render size to the window
+    // The main view's composite stretches the render size to the swapchain
     private static void CompositePrefix(int shaderSlot, out int2? __state)
     {
         __state = Program.CompositeViewportSizeOverride;
-        if (__state == null && shaderSlot == Program.MainViewport.ShaderSlot && Window != int2.Zero)
-            Program.CompositeViewportSizeOverride = Window;
+        if (__state == null && shaderSlot == Program.MainViewport.ShaderSlot && Output != int2.Zero)
+            Program.CompositeViewportSizeOverride = Output;
     }
 
     private static Exception? CompositeFinalizer(Exception? __exception, int2? __state)
     {
         Program.CompositeViewportSizeOverride = __state;
         return __exception;
+    }
+
+    private static readonly AccessTools.FieldRef<ScreenspaceRenderer, VkSampler> Sampler =
+        AccessTools.FieldRefAccess<ScreenspaceRenderer, VkSampler>(Find.Field(typeof(ScreenspaceRenderer), "_samplerRef"));
+
+    private static readonly AccessTools.FieldRef<Cmaa2Renderer, RenderTarget?> SceneLdr =
+        AccessTools.FieldRefAccess<Cmaa2Renderer, RenderTarget?>(Find.Field(typeof(Cmaa2Renderer), "_sceneLdrTarget"));
+
+    [ThreadStatic] private static Cmaa2Renderer? _cmaa2;  // the CMAA2 renderer building its passes
+
+    private static void Cmaa2Prefix(Cmaa2Renderer __instance) => _cmaa2 = __instance;
+
+    private static void Cmaa2Finalizer() => _cmaa2 = null;
+
+    // What stretches the main view's image to the swapchain reads it filtered (the game samples it nearest, for the
+    // one-to-one copy it makes): the final composite without MetalFX, and with CMAA2 its final blit, which reads the
+    // anti-aliased image instead (and no MetalFX image). Before Upscale's prefix, which swaps the composite's image for
+    // MetalFX's.
+    private static void AddImagePrefix(ScreenspaceRenderer __instance, VkImageView inImageView)
+    {
+        RenderTarget? main = Program.OffscreenTarget;
+        if (main == null)
+            return;
+        bool composite = inImageView.Equals(main.ColorImage.ImageView);
+        bool cmaa2 = !composite && _cmaa2 != null && SceneLdr(_cmaa2) is { } ldr &&
+            inImageView.Equals(ldr.ColorImage.ImageView) && ldr.Extent.Width == main.Extent.Width &&
+            ldr.Extent.Height == main.Extent.Height;
+        if (!composite && !cmaa2)
+            return;
+        VkExtent2D render = main.Extent;
+        bool stretched = (cmaa2 || !Upscale.Wanted) && (render.Width != Output.X || render.Height != Output.Y);
+        Sampler(__instance) = stretched ? Program.LinearClampedSampler : Program.PointClampedSampler;
     }
 
     // The main view's cameras keep the window's size
@@ -111,6 +152,44 @@ internal static class RenderScale
         __instance.BaseCamera.Resize(Window);
         __instance.MapCamera.Resize(Window);
     }
+
+    // The panels the game places from its main view's size: IViewport.Size -> UiSize(viewport) in every method of
+    // these classes (and their nested ones) that reads it
+    private static readonly Type[] Panels = [typeof(VehicleEditor), typeof(TransferPlanner), typeof(DockingPort)];
+
+    private static void PatchPanels(Harmony harmony)
+    {
+        var size = Find.Getter(typeof(IViewport), nameof(IViewport.Size));
+        var transpiler = new HarmonyMethod(typeof(RenderScale), nameof(UiSizeTranspiler));
+        int patched = 0;
+        foreach (var type in Panels.SelectMany(Nested))
+        {
+            foreach (var method in AccessTools.GetDeclaredMethods(type))
+            {
+                if (method.IsAbstract || method.IsGenericMethodDefinition ||
+                    !PatchProcessor.GetOriginalInstructions(method).Any(c => c.Calls(size)))
+                    continue;
+                harmony.Patch(method, transpiler: transpiler);
+                patched++;
+            }
+        }
+        if (patched == 0)
+            throw new Skip("the Vehicle Editor no longer places its panels from its view's size");
+    }
+
+    private static IEnumerable<Type> Nested(Type type) => new[] { type }.Concat(type.GetNestedTypes(AccessTools.all).SelectMany(Nested));
+
+    private static IEnumerable<CodeInstruction> UiSizeTranspiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var size = Find.Getter(typeof(IViewport), nameof(IViewport.Size));
+        var ours = Find.Method(typeof(RenderScale), nameof(UiSize));
+        foreach (var c in instructions)
+            yield return c.Calls(size) ? new CodeInstruction(OpCodes.Call, ours).MoveLabelsFrom(c).MoveBlocksFrom(c) : c;
+    }
+
+    // The main view's size in the UI's units (the window's points), any other view's own
+    public static int2 UiSize(IViewport viewport) =>
+        Window != int2.Zero && ReferenceEquals(viewport, Program.MainViewport) ? Window : viewport.Size;
 
     // Camera.FramebufferSize, a field: read as a value (ldfld) or by address (ldflda, for .X and .Y)
     private static bool IsFramebufferSize(CodeInstruction c) =>

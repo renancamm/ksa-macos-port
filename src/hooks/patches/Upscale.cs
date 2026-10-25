@@ -15,23 +15,23 @@ using KSA.Rendering;
 namespace KsaMetalHooks;
 
 // MetalFX for the render scale (upscaling "metalfx" or "spatial"), and the motion that frame interpolation needs. Before
-// the final composite, KSA Metal's vkCmdUpscaleKSA (src/ksa-metal/upscale.mm) scales the main view's image into a
-// window-size image, which the composite then reads instead. For MetalFX's temporal upscaler, the projection moves by
-// a different sub-pixel offset every frame (a Halton sequence of 16), and the driver makes the motion vectors from the
-// depth buffer and two reprojections passed here, both computed in double: the scene through the nearby body's
-// rotating frame, and inside its bounding sphere the vessel the camera follows, through its own frame. A copy of the
-// image before the exhausts, particles and glass lets the driver mark what those change as reactive (no smearing).
-// With frame interpolation and a render scale of 1, the temporal upscaler runs at 1:1, for the motion and depth; the
-// final composite then marks where the UI starts, so that MetalFX can draw this frame's UI over the frame it makes.
+// the final composite, KSA Metal's vkCmdUpscaleKSA (src/ksa-metal/upscale.mm) scales the main view's image into an
+// image of the swapchain's size (the display's pixels), which the composite then reads instead. For MetalFX's
+// temporal upscaler, the projection moves by a different sub-pixel offset every frame (a Halton sequence of 16), and
+// the driver makes the motion vectors from the depth buffer and two reprojections passed here, both computed in
+// double: the scene through the nearby body's rotating frame, and inside its bounding sphere the vessel the camera
+// follows, through its own frame. A copy of the image before the exhausts, particles and glass lets the driver mark
+// what those change as reactive (no smearing). With frame interpolation, the final composite then marks where the UI
+// starts, so that MetalFX can draw this frame's UI over the frame it makes.
 internal static class Upscale
 {
     private static readonly bool Interpolate = Environment.GetEnvironmentVariable("KSA_MTL_FX_INTERPOLATE") is "1" or "true";
     public static bool Wanted, Spatial;  // set by Configure
 
-    // Whether MetalFX runs, given the render scale (which needs upscaling)
-    public static void Configure(bool scaled)
+    // Whether MetalFX runs: it scales the main view up to the swapchain (the display's pixels)
+    public static void Configure()
     {
-        Wanted = scaled || Interpolate;
+        Wanted = Settings.Upscaler is "metalfx" or "spatial" || Interpolate;
         Spatial = Settings.Upscaler == "spatial" && !Interpolate;
     }
 

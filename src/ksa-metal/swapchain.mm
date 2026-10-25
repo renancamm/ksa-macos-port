@@ -72,9 +72,7 @@ VKFN(VkResult) vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfo
         layer.device = dev->mtl;
         layer.pixelFormat = pf;
         layer.framebufferOnly = NO;
-        // KSA_MTL_RETINA: the images are in points, the drawable at the display's scale (upscaled at present)
-        CGFloat scale = kmtlConfig().retina ? layer.contentsScale : 1.0;
-        layer.drawableSize = CGSizeMake(ci->imageExtent.width * scale, ci->imageExtent.height * scale);
+        layer.drawableSize = CGSizeMake(ci->imageExtent.width, ci->imageExtent.height);
         layer.maximumDrawableCount = 3;
         layer.displaySyncEnabled = ci->presentMode == VK_PRESENT_MODE_FIFO_KHR || ci->presentMode == VK_PRESENT_MODE_FIFO_RELAXED_KHR;
         layer.opaque = YES;
@@ -197,14 +195,11 @@ VKFN(VkResult) vkAcquireNextImage2KHR(VkDevice device, const VkAcquireNextImageI
 
 static std::atomic<uint64_t> g_displayed{0};  // drawables the display showed, interpolated ones too
 
-// The image into a drawable: copied, or upscaled with MetalFX when the drawable is larger (KSA_MTL_RETINA)
-static bool present(KDevice* dev, id<MTLCommandBuffer> cb, id<MTLTexture> image, id<MTLTexture> drawable) {
-    if (drawable.width != image.width || drawable.height != image.height)
-        return kmtlPresentUpscale(dev, cb, image, drawable);
-    id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
-    [b copyFromTexture:image toTexture:drawable];
-    [b endEncoding];
-    return true;
+// The image into a drawable (of the image's size, but for a resize in flight: then what both have)
+static void present(id<MTLBlitCommandEncoder> b, id<MTLTexture> image, id<MTLTexture> drawable) {
+    NSUInteger w = std::min(drawable.width, image.width), h = std::min(drawable.height, image.height);
+    [b copyFromTexture:image sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(w, h, 1)
+             toTexture:drawable destinationSlice:0 destinationLevel:0 destinationOrigin:MTLOriginMake(0, 0, 0)];
 }
 
 VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
@@ -228,7 +223,10 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
                 [b endEncoding];
                 id<MTLTexture> mid = kmtlPresentInterpolate(q->device, cb, img->mtl);
                 id<CAMetalDrawable> first = mid ? [sc->surface->layer nextDrawable] : nil;
-                if (first && present(q->device, cb, mid, first.texture)) {
+                if (first) {
+                    id<MTLBlitCommandEncoder> copy = [cb blitCommandEncoder];
+                    present(copy, mid, first.texture);
+                    [copy endEncoding];
                     [first addPresentedHandler:^(id<MTLDrawable> d) { if (d.presentedTime > 0) g_displayed++; }];
                     [cb presentDrawable:first];
                 }
@@ -240,18 +238,7 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
                 KStallTimer stall("nextDrawable");
                 drawable = [sc->surface->layer nextDrawable];
             }
-            if (drawable && (drawable.texture.width != img->mtl.width || drawable.texture.height != img->mtl.height)) {
-                [b endEncoding];
-                if (!kmtlPresentUpscale(q->device, cb, img->mtl, drawable.texture)) drawable = nil;
-                b = [cb blitCommandEncoder];
-                [b waitForFence:q->chain];
-            } else if (drawable) {
-                id<MTLTexture> t = drawable.texture;
-                NSUInteger w = std::min(t.width, img->mtl.width), h = std::min(t.height, img->mtl.height);
-                [b copyFromTexture:img->mtl sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0)
-                        sourceSize:MTLSizeMake(w, h, 1) toTexture:t destinationSlice:0 destinationLevel:0
-                 destinationOrigin:MTLOriginMake(0, 0, 0)];
-            }
+            if (drawable) present(b, img->mtl, drawable.texture);
             [b updateFence:q->chain];
             [b endEncoding];
             [cb addCompletedHandler:^(id<MTLCommandBuffer> c) { kmtlNoteGpuTime(c); }];

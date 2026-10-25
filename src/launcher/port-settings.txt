@@ -24,9 +24,8 @@
 
 [image] Image
 upscaling | choice:off=Off/metalfx=MetalFX/spatial=MetalFX spatial | off | KSA_UPSCALER | | restart | | Upscaling | Apple's MetalFX, which the settings below use. MetalFX uses the previous frames too and gives the sharpest image; MetalFX spatial uses only the current one. Off is the game's own, without the settings below.
-render_scale | scale:0.5:1 | 1.0 | KSA_RENDER_SCALE | upscaling!=off | restart | render_scale | Render scale | The 3D view is drawn at this share of the window's size and MetalFX scales it back up: less work for the GPU, a slightly softer image.
+render_scale | scale:0.5:2 | 1.0 | KSA_RENDER_SCALE | upscaling!=off | restart | render_scale | Render scale | The 3D view is drawn at this share of the window's size and MetalFX scales it up to the display. Below 100 %: less work for the GPU, a slightly softer image. Above 100 %, up to the display's full resolution (200 % on a Retina display): a sharper image, much more work for the GPU.
 frame_interpolation | bool | false | KSA_MTL_FX_INTERPOLATE | upscaling=metalfx | restart | render_scale | Frame interpolation | MetalFX makes a frame between every two the game draws: smoother motion, a little more delay. Works best when the game already runs at half the display's refresh rate or more. Rocket plumes can look ragged in the frames it makes.
-retina | bool | false | KSA_MTL_RETINA | upscaling!=off | restart | | Retina | The image at the display's full resolution: the game draws at the window's size, and MetalFX scales it up: a sharper image, more work for the GPU.
 
 [performance] Performance
 cloud_shadows | choice:normal=Normal/slow=Slow | normal | KSA_CLOUD_SHADOWS | | restart | cloud_shadows | Cloud shadows | Slow refreshes the shadows the clouds cast about 4 times less often: a little faster over Earth, and the shadows lag behind moving clouds. Normal is the game's own.

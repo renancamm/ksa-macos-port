@@ -51,9 +51,8 @@ install_port_files() {
 write_info_plist() {
     local contents="$1" version
     version="$(game_version "${contents}/Resources")"
-    # NSHighResolutionCapable false: one rendered pixel per point, so the game's Resolution setting is the
-    # number of pixels it renders, instead of a 2x Retina framebuffer (the hooks' loader turns it on for retina = true in
-    # port-settings.toml, where the GLFW shim keeps the game in points)
+    # NSHighResolutionCapable: the swapchain has the display's pixels, where the game's UI is drawn; the hooks render
+    # the 3D view at the render scale times the window's size in points and scale it up
     cat > "${contents}/Info.plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -71,7 +70,7 @@ write_info_plist() {
     <key>LSMinimumSystemVersion</key><string>${MACOS_MIN}</string>
     <key>LSRequiresNativeExecution</key><true/>
     <key>LSApplicationCategoryType</key><string>public.app-category.simulation-games</string>
-    <key>NSHighResolutionCapable</key><false/>
+    <key>NSHighResolutionCapable</key><true/>
     <key>KSAPortVersion</key><string>$(kit_value version)</string>
     <key>KSAPortCommit</key><string>$(kit_value commit)</string>
 </dict>
