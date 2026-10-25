@@ -40,7 +40,7 @@ kit_payload() {
     mkdir -p "${contents}/Resources"
     ditto "${DOTNET_RUNTIME}" "${contents}/MacOS"
     cp "${REPO}/src/launcher/launcher.sh" "${contents}/MacOS/KSA"
-    # The port settings: their table, and the commented template the launcher copies for the player
+    # The port settings: their table, and the commented template the hooks copy for the player
     cp "${REPO}/src/launcher/port-settings.txt" "${contents}/Resources/"
     bash "${REPO}/scripts/make-port-settings.sh" "${REPO}/src/launcher/port-settings.txt" \
         > "${contents}/Resources/port-settings.toml"
@@ -49,7 +49,7 @@ kit_payload() {
     cp "${REPO}/third_party/fmod/libfmod.dylib" "${contents}/Resources/libfmod.dylib"
     chmod u+w "${contents}/Resources/libfmod.dylib"
     cp "${BUILD}/icon/AppIcon.icns" "${contents}/Resources/"
-    # KSA Metal Hooks, which the launcher loads (src/hooks/), with Harmony
+    # KSA Metal Hooks, which the launcher loads and which apply the port settings (src/hooks/), with Harmony
     mkdir -p "${contents}/Resources/Hooks"
     cp "${BUILD}"/hooks/out/*.dll "${contents}/Resources/Hooks/"
     # The benchmark (src/benchmark/): its director, which the hooks start, the report program, the tour and its vehicles

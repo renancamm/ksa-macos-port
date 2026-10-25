@@ -3,7 +3,7 @@ using System.Globalization;
 
 namespace KsaMetalHooks;
 
-// The patches' settings, from the environment: the launcher sets these from port-settings.toml (its table,
+// The patches' settings, from the environment: the loader sets these from port-settings.toml (its table,
 // src/launcher/port-settings.txt, says which setting is which variable), and a variable set before starting the game
 // wins over the file. Unset, each means the table's default.
 //   KSA_UPSCALER=off|metalfx|spatial    MetalFX for the render scale (off: none, and no render scale)

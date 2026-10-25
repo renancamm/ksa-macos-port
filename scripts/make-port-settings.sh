@@ -1,5 +1,5 @@
 #!/bin/bash
-# Writes the commented template of port-settings.toml, the copy the launcher puts in the player's documents folder,
+# Writes the commented template of port-settings.toml, the copy the hooks put in the player's documents folder,
 # from the table of the port settings (src/launcher/port-settings.txt, which explains its columns).
 #
 # Usage: scripts/make-port-settings.sh <table> > port-settings.toml

@@ -13,10 +13,12 @@ and test a change.
 
 The launcher names `KsaMetalHooksLoader.dll` in `DOTNET_STARTUP_HOOKS`, so .NET runs it before the program it starts:
 KSA itself, or StarMap, which loads KSA into a load context of its own. The loader
-([`loader/Loader.cs`](loader/Loader.cs)) references nothing of the game. It waits until `KSA.dll` is loaded, then
-loads `KsaMetalHooks.dll` into the same load context and applies it. It loads no Harmony itself: under StarMap, the
-hooks use the copy StarMap has already loaded; without StarMap, they find the app's copy next to them, in
-`Contents/Resources/Hooks/`. The benchmark's director, which the hooks start, is in `Contents/Resources/Benchmark/`.
+([`loader/Loader.cs`](loader/Loader.cs)) references nothing of the game. First it applies the port settings
+([Settings](#settings)). Then it waits until `KSA.dll` is loaded, loads `KsaMetalHooks.dll` into the same load context
+and applies it; with the `hooks` setting off it stops after the settings, except for a benchmark run. It loads no
+Harmony itself: under StarMap, the hooks use the copy StarMap has already loaded; without StarMap, they find the app's
+copy next to them, in `Contents/Resources/Hooks/`. The benchmark's director, which the hooks start, is in
+`Contents/Resources/Benchmark/`.
 
 ## The rule every hook follows
 
@@ -60,16 +62,23 @@ The MetalFX entry points are KSA Metal's own ([`../ksa-metal/upscale.mm`](../ksa
 
 | Hook | File | How |
 |---|---|---|
-| Mac Port tab | [`MacPortTab.cs`](MacPortTab.cs), [`PortSettings.cs`](PortSettings.cs) | the settings window's rail gets a ninth tab (its arrays are read-only fields, so the methods that read them read longer copies), whose rows are drawn with the game's own widgets once the content's body has begun. The rows come from the table of the port settings (`Contents/Resources/port-settings.txt`), their values from `port-settings.toml`, and what the game runs with from the environment the launcher set. The tab's pending values go with the game's pending copy of its settings, so the game's pending marks, Apply, Discard, Reset and Close, and its "restart required on apply" popup, all count them. Apply writes the changed lines into the file; live settings take effect at once |
+| Mac Port tab | [`MacPortTab.cs`](MacPortTab.cs), [`PortSettings.cs`](PortSettings.cs) | the settings window's rail gets a ninth tab (its arrays are read-only fields, so the methods that read them read longer copies), whose rows are drawn with the game's own widgets once the content's body has begun. The rows come from the table of the port settings (`Contents/Resources/port-settings.txt`), their values from `port-settings.toml`, and what the game runs with from the environment the loader set. The tab's pending values go with the game's pending copy of its settings, so the game's pending marks, Apply, Discard, Reset and Close, and its "restart required on apply" popup, all count them. Apply writes the changed lines into the file; live settings take effect at once |
 | Restart | [`Restart.cs`](Restart.cs) | the popup's Restart starts the game's own executable again, which in the app is .NET's `dotnet` with no program: the game only quits. A transpiler replaces that call: once the game has quit, the app's launcher starts it again (`KSA_PORT_LAUNCHER`), so the new game reads the port settings as any start does |
 | Documents folder | [`Documents.cs`](Documents.cs) | `STARMAP_INSTANCE_PATH` moves the game's documents folder, as StarMap does, also without StarMap (the benchmark's runs) |
 | Benchmark | [`BenchmarkRun.cs`](BenchmarkRun.cs) | a postfix on `Program.OnFrame` runs the benchmark's director ([`../benchmark/`](../benchmark/)): from the game's first frame when the game starts with `KSA_BENCH_*` set, or from the Mac Port tab. A run in the game that is open saves it (to disk and in memory), sets the world to a new game's through the game's own loading (`Universe.DeserializeSave`), and loads the saved game again at the end; the hooks then write the report with the report program |
 
 ## Settings
 
-The hooks read environment variables, which the launcher sets from `port-settings.toml`
-([The Mac Port tab](../../README.md#the-mac-port-tab)); one set before the game starts wins over the file, and the
-Mac Port tab shows its row as set outside. The table [`../launcher/port-settings.txt`](../launcher/port-settings.txt)
+The hooks, KSA Metal and its shims read environment variables, which the loader sets from `port-settings.toml` when
+the game starts ([`loader/PortEnvironment.cs`](loader/PortEnvironment.cs), with the table and file reading of
+[`PortSettingsTable.cs`](PortSettingsTable.cs), which the hooks share); one set before the game starts wins over the
+file, and the Mac Port tab shows its row as set outside. The loader does this in the game's process because, started
+from the Finder, macOS refuses the launcher (a shell script) the documents folder and lets the game's process in. It
+sets each variable twice, for .NET, which keeps its own copy of the environment, and with `setenv` for KSA Metal and
+the shims, which read theirs when the game first uses them. It also sends the game's output to `console.log` and
+copies the file's template for a new player. macOS reads Retina's `NSHighResolutionCapable` in `Info.plist` as the
+game starts, so the tab writes it when it saves the setting; for a hand-edited file the loader writes it, and it takes
+effect from the next start. The table [`../launcher/port-settings.txt`](../launcher/port-settings.txt)
 lists every setting with its variable; those of the hooks:
 
 | Variable | Setting |

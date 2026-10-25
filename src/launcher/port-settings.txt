@@ -1,8 +1,8 @@
-# The port settings: every setting of port-settings.toml, in the file's order. Three parts read this table: the
-# launcher (launcher.sh), which exports each setting the file changes as the environment variable that KSA Metal, its
-# shims and its hooks read; scripts/make-port-settings.sh, which writes the file's commented template from it; and the
-# Mac Port tab in the game's settings (src/hooks/), which draws its rows from it. A variable already set when the game
-# starts wins over the file.
+# The port settings: every setting of port-settings.toml, in the file's order. Three parts read this table: the hooks'
+# loader (src/hooks/loader/), which sets each setting the file changes as the environment variable that KSA Metal, its
+# shims and its hooks read, when the game starts; scripts/make-port-settings.sh, which writes the file's commented
+# template from it; and the Mac Port tab in the game's settings (src/hooks/), which draws its rows from it. A variable
+# already set when the game starts wins over the file.
 #
 # [<section>] <title>: starts a section of the file and of the tab; [developer]'s settings are in the file only.
 # Then one setting per line:

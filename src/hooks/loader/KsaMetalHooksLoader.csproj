@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
-	<!-- The startup hook (Loader.cs). Built by scripts/build-hooks.sh; references nothing of the game. -->
+	<!-- The startup hook (Loader.cs) and the port settings it applies (PortEnvironment.cs, with the hooks'
+	     PortSettingsTable.cs). Built by scripts/build-hooks.sh; references nothing of the game. -->
 	<PropertyGroup>
 		<TargetFramework>net10.0</TargetFramework>
 		<AssemblyName>KsaMetalHooksLoader</AssemblyName>
@@ -8,4 +9,7 @@
 		<GenerateDependencyFile>false</GenerateDependencyFile>
 		<SatelliteResourceLanguages>en</SatelliteResourceLanguages>
 	</PropertyGroup>
+	<ItemGroup>
+		<Compile Include="../PortSettingsTable.cs" />
+	</ItemGroup>
 </Project>

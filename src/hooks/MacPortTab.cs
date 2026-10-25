@@ -155,6 +155,20 @@ internal static class MacPortTab
         }
         foreach (var s in Shown.Where(s => s.Live && changed.ContainsKey(s.Key)))
             ApplyLive(s, s.Saved);
+        // macOS reads Retina's mark in Info.plist as the game starts: it is set now, for the next start
+        if (PortSettings.Get("retina") is { } retina)
+        {
+            try
+            {
+                PortSettings.MarkRetina(Hooks.Resources, retina.Outside != null
+                    ? retina.Running == "true"
+                    : retina.Saved == "true" && PortSettings.Met(retina, s => s.Saved, _ => true));
+            }
+            catch (Exception e)
+            {
+                Hooks.Log($"Mac Port tab: could not set NSHighResolutionCapable in Info.plist: {e.Message}");
+            }
+        }
         Hooks.Log($"Mac Port tab: saved {string.Join(", ", changed.Select(kv => $"{kv.Key} = {kv.Value}"))}");
     }
 

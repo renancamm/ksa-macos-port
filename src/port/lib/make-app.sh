@@ -13,10 +13,11 @@
 #   Contents/MacOS/dotnet, ...    Microsoft's .NET runtime
 #   Contents/Resources/*.dylib    the native libraries, which the game finds next to it
 #   Contents/Resources/Brutal.Monitor.Subprocess   BRUTAL's crash-dump helper, which the game starts
-#   Contents/Resources/Hooks/     KSA Metal Hooks, which the launcher loads, and Harmony
+#   Contents/Resources/Hooks/     KSA Metal Hooks, which the launcher loads, and Harmony; their loader applies the
+#                                 port settings
 #   Contents/Resources/Benchmark/ the benchmark: its director, which the hooks start, the report program, the tour
-#   Contents/Resources/port-settings.txt   the table of the port settings, which the launcher and the hooks read
-#   Contents/Resources/port-settings.toml  the port settings' template, which the launcher copies for the player
+#   Contents/Resources/port-settings.txt   the table of the port settings, which the hooks read
+#   Contents/Resources/port-settings.toml  the port settings' template, which the hooks copy for the player
 #   Contents/Resources/AppIcon.icns, Licenses/
 # The bundle is not signed as a whole: that would replace Microsoft's signature on dotnet. The quarantine
 # attribute a browser download puts on the files is removed, so macOS opens the app as one made on this Mac.
@@ -51,7 +52,7 @@ write_info_plist() {
     local contents="$1" version
     version="$(game_version "${contents}/Resources")"
     # NSHighResolutionCapable false: one rendered pixel per point, so the game's Resolution setting is the
-    # number of pixels it renders, instead of a 2x Retina framebuffer (the launcher turns it on for retina = true in
+    # number of pixels it renders, instead of a 2x Retina framebuffer (the hooks' loader turns it on for retina = true in
     # port-settings.toml, where the GLFW shim keeps the game in points)
     cat > "${contents}/Info.plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
