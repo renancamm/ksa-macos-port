@@ -81,12 +81,14 @@ from the Finder, macOS refuses the launcher (a shell script) the documents folde
 sets each variable twice, for .NET, which keeps its own copy of the environment, and with `setenv` for KSA Metal and
 the shims, which read theirs when the game first uses them. It also sends the game's output to `console.log` and
 copies the file's template for a new player. The table [`../launcher/port-settings.txt`](../launcher/port-settings.txt)
-lists every setting with its variable; those of the hooks:
+lists every setting with its variable, its values and its default, and the hooks read their settings against it
+([`Settings.cs`](Settings.cs)): a variable that is unset, or holds none of the setting's values, means the default
+(`console.log` says which). Those of the hooks:
 
 | Variable | Setting |
 |---|---|
 | `KSA_UPSCALER=off\|metalfx\|spatial` | `upscaling` |
-| `KSA_RENDER_SCALE=<0.25..2>` | `render_scale`, a fraction of the window's size in points (the file allows 0.5 to 2; it needs `upscaling`) |
+| `KSA_RENDER_SCALE=<0.5..2>` | `render_scale`, a fraction of the window's size in points (it needs `upscaling`) |
 | `KSA_MTL_FX_INTERPOLATE=1` | `frame_interpolation` (KSA Metal reads it too) |
 | `KSA_OVERRIDE_AA=0` | `override_antialiasing`: with MetalFX, the game's anti-aliasing setting applies (but CMAA2) |
 | `KSA_CLOUD_SHADOW_TUNING=off\|slower_refresh` | `cloud_shadow_tuning` |
@@ -108,7 +110,13 @@ To find out which patch causes a problem, turn it off in the Mac Port tab (Optim
 only. Harmony comes from the `Lib.Harmony` package on nuget.org, pinned in
 [`cmake/dependencies.cmake`](../../cmake/dependencies.cmake).
 
-The benchmark is the test. `--port` changes a port setting for one run, and the report lists the port settings and
+The build then runs the tests of the code that needs no game ([`tests/`](tests/)), and stops when one fails: every
+line of the settings table keeps the table's rules (a default among its values, needs that exist, without a loop,
+the kinds the tab draws), the hooks it names and the settings the hooks read exist, and reading and writing
+`port-settings.toml`, the needs, the values read back from the environment and what the loader sets work as they
+should.
+
+For the patches, the benchmark is the test. `--port` changes a port setting for one run, and the report lists the port settings and
 what the hooks did:
 
 ```bash

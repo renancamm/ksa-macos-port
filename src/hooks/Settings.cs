@@ -1,41 +1,55 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 
 namespace KsaMetalHooks;
 
-// The patches' settings, from the environment: the loader sets these from port-settings.toml (its table,
-// src/launcher/port-settings.txt, says which setting is which variable), and a variable set before starting the game
-// wins over the file. Unset, each means the table's default.
-//   KSA_UPSCALER=off|metalfx|spatial    how the 3D view is scaled up to the display's pixels (off: the game's stretch,
-//                                       filtered, and no render scale)
-//   KSA_RENDER_SCALE=<0.25..2>          the 3D view's size, as a fraction of the window's size in points
-//   KSA_CLOUD_SHADOW_TUNING=off|slower_refresh  how fast cloud shadows follow the clouds
-//   KSA_PLUME_SHADOW_TUNING=off|low     the size of the smoke's sun shadow cascades
-//   KSA_CREW_PORTRAITS=always|shown|shown_15  when the crew panel's faces are drawn (the Mac Port tab changes it live)
-//   KSA_HUD_LAYOUT=fit|game             the flight HUD fitted to the display, or the game's (changed live too)
-//   KSA_OVERRIDE_AA=0                   with MetalFX, the game's anti-aliasing setting applies (but CMAA2)
-//   KSA_TERRAIN_CACHE=0, KSA_OUTLINE_SKIP=0, KSA_WORKER_PARKING=0  leave out that patch
-//   KSA_PARK_MS=<ms>                    how long an idle job worker spins before it sleeps (default 0.25)
+// The hooks' settings: what the game runs with. The loader sets each setting port-settings.toml changes as an
+// environment variable, and a variable set before the game starts wins over the file; here each setting's variable is
+// read against the table of the port settings (Contents/Resources/port-settings.txt, which says which variable, which
+// values and which default): unset, or holding none of the setting's values (the log says so), it means the default.
+// A live setting (the table's "live") changes while the game runs: the Mac Port tab sets its value on Apply.
 public static class Settings
 {
-    public static readonly string Upscaler = (Environment.GetEnvironmentVariable("KSA_UPSCALER") ?? "off").ToLowerInvariant();
+    private static readonly Dictionary<string, PortSetting> ByKey = new();
+    // Read every frame
+    private static PortSetting _crewPortraits = null!, _hudLayout = null!;
 
-    public static readonly float RenderScale =
-        Upscaler is "metalfx" or "spatial" &&
-        float.TryParse(Environment.GetEnvironmentVariable("KSA_RENDER_SCALE"), NumberStyles.Float,
-            CultureInfo.InvariantCulture, out float s) && s >= 0.25f && s <= 2f ? s : 1f;
+    // Settings that apply when the game starts, read once
+    public static string Upscaler { get; private set; } = "off";
+    // The 3D view's size, as a fraction of the window's size in points: with an upscaler only
+    public static float RenderScale { get; private set; } = 1f;
 
-    public static readonly bool SlowerCloudShadows =
-        string.Equals(Environment.GetEnvironmentVariable("KSA_CLOUD_SHADOW_TUNING"), "slower_refresh", StringComparison.OrdinalIgnoreCase);
+    // Reads the table, the file and the environment. Throws when the table is missing or wrong, or names none of the
+    // settings read here.
+    public static void Load()
+    {
+        PortSettings.Load(Hooks.Resources, warning => Hooks.Log(warning));
+        ByKey.Clear();
+        foreach (var s in PortSettings.All)
+            ByKey[s.Key] = s;
+        _crewPortraits = Get("crew_portraits");
+        _hudLayout = Get("hud_layout");
+        Upscaler = Value("upscaling");
+        RenderScale = Upscaler is "metalfx" or "spatial" ? (float)Number("render_scale") : 1f;
+    }
 
-    public static readonly bool LowPlumeShadows =
-        string.Equals(Environment.GetEnvironmentVariable("KSA_PLUME_SHADOW_TUNING"), "low", StringComparison.OrdinalIgnoreCase);
+    public static PortSetting Get(string key) =>
+        ByKey.TryGetValue(key, out var s) ? s : throw new KeyNotFoundException($"the port settings' table has no {key}");
 
-    public static string CrewPortraits = Environment.GetEnvironmentVariable("KSA_CREW_PORTRAITS") is { } p && p is "always" or "shown_15"
-        ? p : "shown";
+    // A setting's value as the game runs with it
+    public static string Value(string key) => Get(key).Running;
 
-    public static string HudLayout = Environment.GetEnvironmentVariable("KSA_HUD_LAYOUT") is "game" ? "game" : "fit";
+    public static bool On(string key) => Value(key) == "true";
 
-    // A patch's on/off variable: anything but 0 is on
-    public static bool On(string variable) => Environment.GetEnvironmentVariable(variable) is not "0";
+    public static double Number(string key) => double.Parse(Value(key), CultureInfo.InvariantCulture);
+
+    // A numbers setting's numbers (none while it is unset)
+    public static double[] Numbers(string key) => Value(key) is { Length: > 0 } v ? PortSetting.Numbers(v) ?? [] : [];
+
+    // always, shown or shown_15: when the crew panel's faces are drawn
+    public static string CrewPortraits => _crewPortraits.Running;
+
+    // fit or game: the flight HUD fitted to the display, or the game's
+    public static string HudLayout => _hudLayout.Running;
 }

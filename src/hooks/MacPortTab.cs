@@ -42,7 +42,6 @@ internal static class MacPortTab
 
     public static string Apply(Harmony harmony)
     {
-        PortSettings.Load(Hooks.Resources);
         var gs = typeof(GameSettings);
         _tabType = AccessTools.Inner(gs, "SettingsTab") ?? throw new Skip("GameSettings.SettingsTab not found");
         _openTab = Find.Field(gs, "_openTab");
@@ -158,15 +157,11 @@ internal static class MacPortTab
         Hooks.Log($"Mac Port tab: saved {string.Join(", ", changed.Select(kv => $"{kv.Key} = {kv.Value}"))}");
     }
 
+    // The hooks read a live setting's Running value (Settings) while the game runs
     private static void ApplyLive(PortSetting s, string value)
     {
-        if (s.Outside != null)
-            return;
-        s.Running = value;
-        if (s.Key == "crew_portraits")
-            Settings.CrewPortraits = value;
-        else if (s.Key == "hud_layout")
-            Settings.HudLayout = value;
+        if (s.Outside == null)
+            s.Running = value;
     }
 
     // The settings the tab shows

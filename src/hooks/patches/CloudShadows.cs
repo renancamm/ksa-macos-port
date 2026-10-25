@@ -15,7 +15,7 @@ internal static class CloudShadows
 
     public static string Apply(Harmony harmony)
     {
-        if (!Settings.SlowerCloudShadows)
+        if (Settings.Value("cloud_shadow_tuning") != "slower_refresh")
             return "off";
         harmony.Patch(Find.Method(typeof(CloudShadowVolume), "UpdateVolumeDensity"),
             transpiler: new HarmonyMethod(typeof(CloudShadows), nameof(Transpiler)));

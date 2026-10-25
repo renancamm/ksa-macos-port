@@ -26,12 +26,13 @@ namespace KsaMetalHooks;
 // starts, so that MetalFX can draw this frame's UI over the frame it makes.
 internal static class Upscale
 {
-    private static readonly bool Interpolate = Environment.GetEnvironmentVariable("KSA_MTL_FX_INTERPOLATE") is "1" or "true";
+    private static bool Interpolate;
     public static bool Wanted, Spatial;  // set by Configure
 
     // Whether MetalFX runs: it scales the main view up to the swapchain (the display's pixels)
     public static void Configure()
     {
+        Interpolate = Settings.On("frame_interpolation");
         Wanted = Settings.Upscaler is "metalfx" or "spatial" || Interpolate;
         Spatial = Settings.Upscaler == "spatial" && !Interpolate;
     }
@@ -75,7 +76,7 @@ internal static class Upscale
                 postfix: new HarmonyMethod(typeof(Upscale), nameof(CompositePostfix)));
         harmony.Patch(Find.Method(typeof(Cmaa2Renderer), "CreateResourcesIfNeeded"),
             transpiler: new HarmonyMethod(typeof(Upscale), nameof(NoCmaa2Transpiler)));
-        if (!Spatial && Settings.On("KSA_OVERRIDE_AA"))
+        if (!Spatial && Settings.On("override_antialiasing"))
         {
             var keep = new HarmonyMethod(typeof(Upscale), nameof(KeepSampleCount));
             harmony.Patch(Find.Method(typeof(ScreenshotCapture), nameof(ScreenshotCapture.OnPostRender)), postfix: keep);

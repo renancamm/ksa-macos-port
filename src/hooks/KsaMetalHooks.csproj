@@ -4,7 +4,7 @@
 	       -p:BenchmarkDll=<the benchmark's director> -o <out>
 	     The game's assemblies, Harmony and the director are references only here; the app ships Harmony next to the
 	     hooks and the director in its Benchmark folder.
-	     The loader (loader/) is a project of its own. -->
+	     The loader (loader/) and the tests (tests/) are projects of their own. -->
 	<PropertyGroup>
 		<TargetFramework>net10.0</TargetFramework>
 		<AssemblyName>KsaMetalHooks</AssemblyName>
@@ -16,7 +16,7 @@
 		<SatelliteResourceLanguages>en</SatelliteResourceLanguages>
 	</PropertyGroup>
 	<ItemGroup>
-		<Compile Remove="loader/**" />
+		<Compile Remove="loader/**;tests/**" />
 		<Reference Include="$(KsaDir)/*.dll" Private="false" />
 		<Reference Include="$(HarmonyDll)" Private="false" />
 		<Reference Include="$(BenchmarkDll)" Private="false" />

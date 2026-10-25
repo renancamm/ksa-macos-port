@@ -26,20 +26,21 @@ public static class Hooks
 
     public static void Apply()
     {
+        Settings.Load();
         // Off (KSA_HOOKS=0), they load only for a benchmark run, which they start
-        if (Environment.GetEnvironmentVariable("KSA_HOOKS") == "0")
+        if (!Settings.On("hooks"))
         {
             Log("off, except for the benchmark");
             Run("documents folder", "documents", true, Documents.Apply);
             Run("benchmark", "benchmark", true, BenchmarkRun.Apply);
             return;
         }
-        Run("terrain cache", "terrain_cache", Settings.On("KSA_TERRAIN_CACHE"), TerrainCache.Apply);
-        Run("outline skip", "outline_skip", Settings.On("KSA_OUTLINE_SKIP"), OutlineSkip.Apply);
+        Run("terrain cache", "terrain_cache", Settings.On("terrain_cache"), TerrainCache.Apply);
+        Run("outline skip", "outline_skip", Settings.On("outline_skip"), OutlineSkip.Apply);
         Run("cloud shadow tuning", "cloud_shadow_tuning", true, CloudShadows.Apply);
         Run("plume shadow tuning", "plume_shadow_tuning", true, PlumeShadows.Apply);
         Run("crew portraits", "crew_portraits", true, CrewPortraits.Apply);
-        Run("worker parking", "worker_park", Settings.On("KSA_WORKER_PARKING"), WorkerPark.Apply);
+        Run("worker parking", "worker_park", Settings.On("worker_parking"), WorkerPark.Apply);
         Run("render scale", "render_scale", true, RenderScale.Apply);
         Run("HUD layout", "hud_layout", true, HudLayout.Apply);
         Run("trail caches", "trail_caches", true, TrailCaches.Apply);

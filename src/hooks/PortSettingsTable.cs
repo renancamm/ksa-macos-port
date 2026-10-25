@@ -23,9 +23,11 @@ public sealed class PortSetting
 
     public string Kind => Type.Split(':')[0];
 
+    private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
+
     // How the tab shows a value: a choice's label, a scale in percent
     public string LabelOf(string value) =>
-        Kind == "scale" && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var f)
+        Kind == "scale" && double.TryParse(value, NumberStyles.Float, Inv, out var f)
             ? $"{Math.Round(f * 100)}%"
             : Choices.FirstOrDefault(c => c.Value == value).Label ?? value;
 
@@ -36,16 +38,51 @@ public sealed class PortSetting
             case "text":
                 return true;
             case "int":
-                return long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var i) && i >= Min && i <= Max;
+                return long.TryParse(value, NumberStyles.None, Inv, out var i) && i >= Min && i <= Max;
             case "scale" or "number":
-                return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) && d >= Min && d <= Max;
+                return double.TryParse(value, NumberStyles.Float, Inv, out var d) && d >= Min && d <= Max;
+            case "numbers":
+                return value.Length == 0 || Numbers(value) is { } n && n.Length >= Min && n.Length <= Max;
             default:
                 return Choices.Any(c => c.Value == value);
         }
     }
 
+    // A numbers value's numbers ("4,128,3000"), or null when one of them isn't a number
+    public static double[]? Numbers(string value)
+    {
+        var parts = value.Split(',', StringSplitOptions.TrimEntries);
+        var numbers = new double[parts.Length];
+        for (int i = 0; i < parts.Length; i++)
+        {
+            if (!double.TryParse(parts[i], NumberStyles.Float, Inv, out numbers[i]))
+                return null;
+        }
+        return numbers;
+    }
+
+    // What the game runs with when the setting's variable holds env (null or empty: unset, the default); valid is false
+    // when env isn't one of the setting's values, which then means the default too
+    public string FromEnvironment(string? env, out bool valid)
+    {
+        valid = true;
+        if (string.IsNullOrEmpty(env))
+            return Default;
+        switch (Kind)
+        {
+            case "bool" or "available":
+                // 0 is off, anything else on, but for a variable whose on is a value of its own (KSA_MTL_SYNC=strict)
+                return env == "0" ? "false" : OnValue == "1" || env == OnValue ? "true" : "false";
+            case "text":
+                return env;
+            default:
+                valid = Valid(env);
+                return valid ? env : Default;
+        }
+    }
+
     // The value as port-settings.toml writes it
-    public string Toml(string value) => Kind is "choice" or "text" ? $"\"{value}\"" : value;
+    public string Toml(string value) => Kind is "choice" or "text" or "numbers" ? $"\"{value}\"" : value;
 }
 
 // The table and the file, as both the loader (which sets the environment from them when the game starts) and the Mac
@@ -59,7 +96,14 @@ public static partial class PortSettings
 
     public static PortSetting? Get(string key) => All.FirstOrDefault(s => s.Key == key);
 
-    // Reads the table in the app's Contents/Resources. Throws when it is missing.
+    // The game's documents folder, where port-settings.toml is: STARMAP_INSTANCE_PATH moves it (StarMap, the
+    // benchmark's runs)
+    public static string DocumentsFolder() =>
+        Environment.GetEnvironmentVariable("STARMAP_INSTANCE_PATH") is { Length: > 0 } instance
+            ? instance
+            : Path.Combine(Environment.GetEnvironmentVariable("HOME") ?? "", "Documents", "My Games", "Kitten Space Agency");
+
+    // Reads the table in the app's Contents/Resources. Throws when it is missing or a line isn't a setting.
     public static void LoadTable(string resources)
     {
         All.Clear();
@@ -67,9 +111,10 @@ public static partial class PortSettings
         var table = Path.Combine(resources, "port-settings.txt");
         TemplatePath = Path.Combine(resources, "port-settings.toml");
         string section = "";
-        foreach (var raw in File.ReadAllLines(table))
+        var lines = File.ReadAllLines(table);
+        for (int n = 0; n < lines.Length; n++)
         {
-            var line = raw.Trim();
+            var line = lines[n].Trim();
             if (line.Length == 0 || line[0] == '#')
                 continue;
             if (line[0] == '[')
@@ -81,7 +126,7 @@ public static partial class PortSettings
             }
             var c = line.Split('|').Select(x => x.Trim()).ToArray();
             if (c.Length < 9)
-                continue;
+                throw new FormatException($"{table}, line {n + 1}: {c.Length} columns, not 9");
             var s = new PortSetting
             {
                 Section = section, Key = c[0], Type = c[1], Default = c[2], Variable = c[3].Split('=')[0], Live = c[5] == "live",
@@ -102,7 +147,8 @@ public static partial class PortSettings
                 case "choice":
                     s.Choices = parts[1].Split('/').Select(v => (v[..v.IndexOf('=')], v[(v.IndexOf('=') + 1)..])).ToArray();
                     break;
-                case "scale" or "int" or "number":
+                // numbers: the counts of numbers
+                case "scale" or "int" or "number" or "numbers":
                     s.Min = double.Parse(parts[1], CultureInfo.InvariantCulture);
                     s.Max = double.Parse(parts[2], CultureInfo.InvariantCulture);
                     break;

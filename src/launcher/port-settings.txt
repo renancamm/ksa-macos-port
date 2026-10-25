@@ -11,15 +11,19 @@
 #
 #   type      bool: on or off; available: Available or Off, a feature the Mac offers the game, which the game's own
 #             settings still turn on and off; choice:<value>=<label>/...; scale:<min>:<max>, a fraction shown in
-#             percent; int:<min>:<max>; number:<min>:<max>; text
-#   default   the value a line left out takes, and the one the variable means when it isn't set
+#             percent; int:<min>:<max>; number:<min>:<max>; numbers:<min>:<max>, that many numbers, comma separated,
+#             or none; text
+#   default   the value a line left out takes, and the one the variable means when it isn't set or holds none of the
+#             setting's values
 #   variable  what the setting sets when it isn't at its default: on is 1 and off 0 (VAR=<value>: that, for on), other
 #             types their value. Without one, the setting is the tab's own
 #   needs     the settings it depends on (comma separated): <key> (on, or not empty), <key>=<value>, <key>!=<value>,
 #             game:vsync or game:plume_trail_shadows (the game's own settings, which only the tab checks). While one
 #             isn't met, it keeps its default
-#   applies   live: on Apply, in the running game; restart: when the game starts
-#   hook      the hook that does it (src/hooks/): the tab shows the setting as unavailable when the hook was skipped
+#   applies   live: on Apply, in the running game (the hooks read it while the game runs); restart: when the game
+#             starts
+#   hook      the hook that does it (src/hooks/Hooks.cs): the tab shows the setting as unavailable when the hook was
+#             skipped or failed
 #   label     its row in the tab; help: the row's tooltip and the file's comment
 
 [image] Image
@@ -74,8 +78,8 @@ dump_spv | text | | KSA_MTL_DUMP_SPV | | restart | | | A folder: write every sha
 shader_overrides | text | | KSA_MTL_OVERRIDES | | restart | | | A folder of hand-written Metal source used in place of translated shaders, named as in dump_msl.
 spec | text | | KSA_MTL_SPEC | | restart | | | <hash>:<id>=<value>,...: replace a specialization constant of a shader module.
 throttle | text | | KSA_MTL_THROTTLE | | restart | | | <hash>:<N>,...: a pipeline whose name holds one of these module hashes runs every N-th present (an experiment, to measure what skipping a pass would save).
-trail_caches | text | | KSA_TRAIL_CACHE | | restart | trail_caches | | <large>,<small>,<tiny>[,<segments>]: the atlas budgets in MiB of the smoke's 16, 8 and 4 texel volume caches (the game's: 8,8,8), and the fewest segments a cell needs to get one (33).
-trail_shadows | text | | KSA_TRAIL_SHADOWS | | restart | plume_shadow_tuning | | <cascades>,<resolution>,<metres>: the smoke's sun shadow cascades, which the game draws with its Plume trail shadows setting (the game's: 8,512,20000; plume_shadow_tuning low: 4,128,3000). Wins over plume_shadow_tuning.
+trail_caches | numbers:3:4 | | KSA_TRAIL_CACHE | | restart | trail_caches | | <large>,<small>,<tiny>[,<segments>]: the atlas budgets in MiB of the smoke's 16, 8 and 4 texel volume caches (the game's: 8,8,8), and the fewest segments a cell needs to get one (33).
+trail_shadows | numbers:3:3 | | KSA_TRAIL_SHADOWS | | restart | plume_shadow_tuning | | <cascades>,<resolution>,<metres>: the smoke's sun shadow cascades, which the game draws with its Plume trail shadows setting (the game's: 8,512,20000; plume_shadow_tuning low: 4,128,3000). Wins over plume_shadow_tuning.
 strict_pipelines | bool | false | KSA_MTL_STRICT | | restart | | | Return pipeline errors to the game, instead of skipping the pipeline and continuing.
 strict_sync | bool | false | KSA_MTL_SYNC=strict | | restart | | | Run all GPU work strictly in order: slower, but rules out synchronization bugs.
 precise_math | bool | false | KSA_MTL_SAFE_MATH | | restart | | | Compile shaders without fast math: rules out precision problems.

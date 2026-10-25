@@ -3,7 +3,8 @@
 #
 # The hooks (src/hooks/) are compiled against KSA's assemblies and the benchmark's director, references only: they
 # are built for the KSA version the port folder is made for, and skip what moved in another one. The loader
-# (src/hooks/loader/) references nothing of the game.
+# (src/hooks/loader/) references nothing of the game, nor do the tests of the port settings' code (src/hooks/tests/),
+# which run here.
 #
 # Usage: scripts/build-hooks.sh <folder with KSA's converted assemblies>
 set -eo pipefail
@@ -21,6 +22,10 @@ cd "${REPO}"
 step "Building KSA Metal Hooks against KSA $(game_version "${KSA_DIR}") (Harmony ${HARMONY_VERSION})"
 dotnet_build "${WORK}" "${REPO}/src/hooks/loader/KsaMetalHooksLoader.csproj" "${WORK}/loader" ||
     die "the hooks' loader did not build."
+# The tests of the port settings' code, which needs no game: the table and the code that reads it
+dotnet_build "${WORK}" "${REPO}/src/hooks/tests/KsaMetalHooksTests.csproj" "${WORK}/tests" ||
+    die "the hooks' tests did not build."
+dotnet "${WORK}/tests/KsaMetalHooksTests.dll" "${REPO}" || die "the hooks' tests failed."
 dotnet_build "${WORK}" "${REPO}/src/hooks/KsaMetalHooks.csproj" "${WORK}/hooks" -p:KsaDir="${KSA_DIR}" \
     -p:HarmonyDll="${HARMONY_DLL}" -p:BenchmarkDll="${BENCHMARK_DLL}" ||
     die "the hooks did not build (does this KSA version still match?)."

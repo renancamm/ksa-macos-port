@@ -30,8 +30,7 @@ internal static class PortEnvironment
     public static bool Apply(string resources)
     {
         string home = Environment.GetEnvironmentVariable("HOME") ?? "";
-        string documents = Environment.GetEnvironmentVariable("STARMAP_INSTANCE_PATH") is { Length: > 0 } instance
-            ? instance : Path.Combine(home, "Documents", "My Games", "Kitten Space Agency");
+        string documents = PortSettings.DocumentsFolder();
         if (isatty(1) == 0)
             Output(Path.Combine(documents, "logs", "console.log"));
 
@@ -50,14 +49,31 @@ internal static class PortEnvironment
             }
         }
         var saved = PortSettings.ReadFile(warning => Console.WriteLine($"[WARN] {warning}"));
-        string Value(PortSetting s) => saved.TryGetValue(s.Key, out var v) ? v : s.Default;
+        var plan = Plan(saved, Environment.GetEnvironmentVariable, home);
+        foreach (var (name, value) in plan.Set)
+            Set(name, value);
+        Console.WriteLine($"==> port settings: {(plan.Changed.Count > 0 ? string.Join(", ", plan.Changed) : "defaults")}");
+        Set("KSA_PORT_SETTINGS", PortSettings.FilePath);
+        Set("KSA_PORT_SET", string.Join(',', plan.Set.Select(v => v.Name)));
+        Set("KSA_PORT_OUTSIDE", string.Join(',', plan.Outside));
 
-        // Each setting the file changes, once its needs are met (the game's own settings, which only the tab checks,
-        // count as met; while one isn't, the setting keeps its default)
+        bool starMap = File.Exists(Path.Combine(AppContext.BaseDirectory, "StarMap.dll"));
+        Console.WriteLine($"==> {DateTime.Now.ToString("ddd MMM d HH:mm:ss yyyy", CultureInfo.InvariantCulture)}: starting " +
+                          $"{Path.Combine(resources, "KSA.dll")}{(starMap ? $" through StarMap in {AppContext.BaseDirectory.TrimEnd('/')}" : "")}");
+        return Environment.GetEnvironmentVariable("KSA_HOOKS") != "0";
+    }
+
+    // What the file's values (saved) make of the environment (env reads it): the variables to set, what the log says
+    // of each setting the file changes, and the variables set already, which win over the file. A setting the file
+    // changes is set once its needs are met (the game's own settings, which only the tab checks, count as met); while
+    // one isn't, it keeps its default.
+    public static (List<(string Name, string Value)> Set, List<string> Changed, List<string> Outside) Plan(
+        IReadOnlyDictionary<string, string> saved, Func<string, string?> env, string home)
+    {
+        string Value(PortSetting s) => saved.TryGetValue(s.Key, out var v) ? v : s.Default;
+        var set = new List<(string, string)>();
         var changed = new List<string>();
-        var set = new List<string>();
-        var outside = PortSettings.All.Select(s => s.Variable)
-            .Where(v => v.Length > 0 && Environment.GetEnvironmentVariable(v) != null).Distinct().ToList();
+        var outside = PortSettings.All.Select(s => s.Variable).Where(v => v.Length > 0 && env(v) != null).Distinct().ToList();
         foreach (var s in PortSettings.All)
         {
             var value = Value(s);
@@ -72,27 +88,18 @@ internal static class PortEnvironment
                 continue;
             if (outside.Contains(s.Variable))
             {
-                changed.Add($"{s.Key} = {value} (but {s.Variable}={Environment.GetEnvironmentVariable(s.Variable)} is set)");
+                changed.Add($"{s.Key} = {value} (but {s.Variable}={env(s.Variable)} is set)");
                 continue;
             }
-            Set(s.Variable, s.Kind switch
+            set.Add((s.Variable, s.Kind switch
             {
                 "bool" or "available" => value == "false" ? "0" : s.OnValue,
                 "text" when value.StartsWith('~') => home + value[1..],
                 _ => value
-            });
-            set.Add(s.Variable);
+            }));
             changed.Add($"{s.Key} = {value}");
         }
-        Console.WriteLine($"==> port settings: {(changed.Count > 0 ? string.Join(", ", changed) : "defaults")}");
-        Set("KSA_PORT_SETTINGS", PortSettings.FilePath);
-        Set("KSA_PORT_SET", string.Join(',', set));
-        Set("KSA_PORT_OUTSIDE", string.Join(',', outside));
-
-        bool starMap = File.Exists(Path.Combine(AppContext.BaseDirectory, "StarMap.dll"));
-        Console.WriteLine($"==> {DateTime.Now.ToString("ddd MMM d HH:mm:ss yyyy", CultureInfo.InvariantCulture)}: starting " +
-                          $"{Path.Combine(resources, "KSA.dll")}{(starMap ? $" through StarMap in {AppContext.BaseDirectory.TrimEnd('/')}" : "")}");
-        return Environment.GetEnvironmentVariable("KSA_HOOKS") != "0";
+        return (set, changed, outside);
     }
 
     // Sets a variable for both: .NET code reads its own copy of the environment, KSA Metal and the shims read the

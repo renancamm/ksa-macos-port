@@ -31,6 +31,8 @@ awk -F'|' '
         if (type == "bool" || type == "available") return "true or false"
         if (type == "text") return "a path or text, \"\" for none"
         n = split(type, parts, ":")
+        if (parts[1] == "numbers")
+            return (parts[2] == parts[3] ? parts[2] : parts[2] " to " parts[3]) " numbers, comma separated, \"\" for none"
         if (parts[1] == "choice") {
             n = split(parts[2], choices, "/")
             for (i = 1; i <= n; i++) {
@@ -42,7 +44,7 @@ awk -F'|' '
         return parts[2] " to " parts[3]
     }
     function toml(type, value) {
-        if (type ~ /^(choice|text)/) return "\"" value "\""
+        if (type ~ /^(choice|text|numbers)/) return "\"" value "\""
         return value
     }
     /^\[/ {

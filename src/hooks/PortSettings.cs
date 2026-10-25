@@ -6,40 +6,36 @@ using System.Text.RegularExpressions;
 
 namespace KsaMetalHooks;
 
-// The port settings as the Mac Port tab sees them. The loader reads port-settings.toml when the game starts and sets
-// the environment variables that KSA Metal and the hooks read (PortSettingsTable.cs reads the table and the file); the
-// tab shows the file's values, writes the ones it changes, and knows from the environment what the game runs with.
+// The port settings as the hooks see them. The loader reads port-settings.toml when the game starts and sets the
+// environment variables that KSA Metal and the hooks read (PortSettingsTable.cs reads the table and the file); here
+// each setting gets what the game runs with, from the environment (Settings reads it), and the Mac Port tab shows the
+// file's values and writes the ones it changes.
 public static partial class PortSettings
 {
-    // Reads the table, the file, and the environment. Throws when the table is missing.
-    public static void Load(string resources)
+    // Reads the table, the file, and the environment; warn hears about a variable that holds none of its setting's
+    // values. Throws when the table is missing or a line of it isn't a setting.
+    public static void Load(string resources, Action<string>? warn = null)
     {
         LoadTable(resources);
         FilePath = Environment.GetEnvironmentVariable("KSA_PORT_SETTINGS") is { Length: > 0 } f
-            ? f : Path.Combine(KSA.Constants.DocumentsFolderPath, "port-settings.toml");
+            ? f : Path.Combine(DocumentsFolder(), "port-settings.toml");
         var outside = (Environment.GetEnvironmentVariable("KSA_PORT_OUTSIDE") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries);
         var saved = ReadFile();
         foreach (var s in All)
         {
             s.Saved = saved.TryGetValue(s.Key, out var v) ? v : s.Default;
-            s.Running = s.Variable.Length == 0 ? s.Saved : FromEnvironment(s);
+            if (s.Variable.Length == 0)
+            {
+                s.Running = s.Saved;
+                continue;
+            }
+            var env = Environment.GetEnvironmentVariable(s.Variable);
+            s.Running = s.FromEnvironment(env, out bool valid);
+            if (!valid)
+                warn?.Invoke($"{s.Variable}={env} is none of {s.Key}'s values ({s.Type}): {s.Key} = {s.Default}");
             if (outside.Contains(s.Variable))
-                s.Outside = $"{s.Variable}={Environment.GetEnvironmentVariable(s.Variable)}";
+                s.Outside = $"{s.Variable}={env}";
         }
-    }
-
-    // What the game runs with: the variable's value, read back into the setting's (unset: its default)
-    private static string FromEnvironment(PortSetting s)
-    {
-        var env = Environment.GetEnvironmentVariable(s.Variable);
-        if (string.IsNullOrEmpty(env))
-            return s.Default;
-        return s.Kind switch
-        {
-            "bool" or "available" => env == "0" ? "false" : s.OnValue == "1" || env == s.OnValue ? "true" : "false",
-            "text" => env,
-            _ => s.Valid(env) ? env : s.Default
-        };
     }
 
     // Writes these values into the file: a setting's line is replaced, or added to its section (the file is made from

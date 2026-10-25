@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<!-- The tests of the port settings' code (Tests.cs), which runs without the game: the hooks' PortSettingsTable.cs and
+	     PortSettings.cs, and the loader's PortEnvironment.cs. Built and run by scripts/build-hooks.sh:
+	     dotnet KsaMetalHooksTests.dll <repository> -->
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net10.0</TargetFramework>
+		<AssemblyName>KsaMetalHooksTests</AssemblyName>
+		<ImplicitUsings>disable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<GenerateDependencyFile>false</GenerateDependencyFile>
+		<SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+	</PropertyGroup>
+	<ItemGroup>
+		<Compile Include="../PortSettingsTable.cs" />
+		<Compile Include="../PortSettings.cs" />
+		<Compile Include="../loader/PortEnvironment.cs" />
+	</ItemGroup>
+</Project>
