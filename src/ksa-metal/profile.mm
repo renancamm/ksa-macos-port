@@ -8,7 +8,7 @@
 //                           directive moves the window with ksaMtlProfileFrames)
 //   KSA_MTL_GPUPROF_SPLIT=1 end the encoder after every draw call and dispatch (per-draw attribution; adds a store
 //                           and load of the attachments per draw, so absolute times grow)
-//   KSA_MTL_DUMP_SPV=<dir>  every shader module as <hash>.spv (pipelines are named by these hashes)
+//   KSA_MTL_DUMP_SPV=<dir>  every shader module as <hash>.spv (pipelines are named by these hashes; pipeline.mm)
 //   KSA_MTL_LABELS=1        name every encoder after its pipelines, for Instruments, the Metal HUD and Xcode's
 //                           frame capture (command.mm)
 #include "kmtl.h"
