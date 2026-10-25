@@ -87,6 +87,18 @@ public static class Hooks
             Console.WriteLine(failure);
     }
 
+    // An exception in a hook's code while the game runs, caught where handing the game its own behaviour from then on
+    // is whole (the caller does that): the hook fails as it would when the game starts, once. A hook that changes how
+    // the whole frame is drawn (the render scale) can't hand it back halfway, and lets the exception through.
+    public static void Fail(string key, Exception e)
+    {
+        if (Status.GetValueOrDefault(key)?.State == HookState.Failed)
+            return;
+        Status[key] = new HookStatus(HookState.Failed, $"failed while the game ran ({Describe(e)})");
+        Log($"{Applied.FirstOrDefault(h => h.Key == key).Name ?? key}: {Status[key].Text}");
+        Console.WriteLine(e);
+    }
+
     // The error a failure comes down to: its innermost exception's type and message
     public static string Describe(Exception e)
     {

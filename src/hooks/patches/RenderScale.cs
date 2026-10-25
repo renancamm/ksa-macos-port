@@ -138,12 +138,11 @@ internal static class RenderScale
     // MetalFX's.
     private static void AddImagePrefix(ScreenspaceRenderer __instance, VkImageView inImageView)
     {
-        RenderTarget? main = Program.OffscreenTarget;
-        if (main == null)
+        if (Program.OffscreenTarget is not { ColorImage: { } color } main)
             return;
-        bool composite = inImageView.Equals(main.ColorImage.ImageView);
-        bool cmaa2 = !composite && _cmaa2 != null && _sceneLdr(_cmaa2) is { } ldr &&
-            inImageView.Equals(ldr.ColorImage.ImageView) && ldr.Extent.Width == main.Extent.Width &&
+        bool composite = inImageView.Equals(color.ImageView);
+        bool cmaa2 = !composite && _cmaa2 != null && _sceneLdr(_cmaa2) is { ColorImage: { } ldrColor } ldr &&
+            inImageView.Equals(ldrColor.ImageView) && ldr.Extent.Width == main.Extent.Width &&
             ldr.Extent.Height == main.Extent.Height;
         if (!composite && !cmaa2)
             return;

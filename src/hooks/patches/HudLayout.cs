@@ -120,6 +120,7 @@ internal static class HudLayout
     private static readonly nint ScreenSelector = sel_registerName("screen"), FrameSelector = sel_registerName("frame");
     private static float2 _display;
     private static long _displayRead;
+    private static bool _failed;  // the game's layout, as with "game" (Hooks.Fail)
 
     // The size in points of the display the window is on (the window's size if macOS doesn't say), read again every
     // quarter of a second: when it changes, the panels' sizes change and the game lays each one out again
@@ -146,9 +147,22 @@ internal static class HudLayout
 
     private static bool Fit(out float2 display, out int2 window)
     {
-        display = Display;
-        window = Window;
-        return Settings.HudLayout == "fit" && display.X > 0f && display.Y > 0f && window.Y > 0;
+        display = default;
+        window = default;
+        if (_failed || Settings.HudLayout != "fit")
+            return false;
+        try
+        {
+            display = Display;
+            window = Window;
+        }
+        catch (Exception e)
+        {
+            _failed = true;
+            Hooks.Fail("hud_layout", e);
+            return false;
+        }
+        return display.X > 0f && display.Y > 0f && window.Y > 0;
     }
 
     // The HUD scale, times the display's height over the window's and the share of the 16:9 layout's width the display has

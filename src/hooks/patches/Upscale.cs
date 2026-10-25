@@ -126,8 +126,7 @@ internal static class Upscale
     // The composite reads the upscaled image instead of the main view's
     private static void AddImagePrefix(ref VkImageView inImageView)
     {
-        RenderTarget? target = Program.OffscreenTarget;
-        if (target == null || !inImageView.Equals(target.ColorImage.ImageView))
+        if (Program.OffscreenTarget is not { ColorImage: { } color } || !inImageView.Equals(color.ImageView))
             return;
         Renderer renderer = Program.GetRenderer();
         VkExtent2D size = renderer.SwapchainExtent;
@@ -256,10 +255,10 @@ internal static class Upscale
     // Before the main view's final composite pass begins
     private static unsafe void AaPreparePostfix(CommandBuffer commandBuffer, int shaderSlot)
     {
-        RenderTarget? target = Program.OffscreenTarget;
-        if (_output == null || target == null || shaderSlot != Program.MainViewport.ShaderSlot)
+        if (_output == null || Program.OffscreenTarget is not { ColorImage: { } colorImage, DepthImage: { } depthImage } ||
+            shaderSlot != Program.MainViewport.ShaderSlot)
             return;
-        VkImage color = target.ColorImage.Image, depth = target.DepthImage.Image, output = _output.Image;
+        VkImage color = colorImage.Image, depth = depthImage.Image, output = _output.Image;
         VkExtent2D input = Program.GetRenderer().Extent;
         var info = new VkUpscaleInfoKSA
         {
@@ -303,10 +302,9 @@ internal static class Upscale
 
     private static void Snapshot(CommandBuffer commandBuffer)
     {
-        RenderTarget? target = Program.OffscreenTarget;
-        if (target == null)
+        if (Program.OffscreenTarget is not { ColorImage: { } colorImage })
             return;
-        VkImage color = target.ColorImage.Image;
+        VkImage color = colorImage.Image;
         VkCommandBuffer handle = commandBuffer.Handle;
         vkCmdUpscaleSnapshotKSA(Unsafe.As<VkCommandBuffer, nint>(ref handle), Unsafe.As<VkImage, ulong>(ref color));
     }

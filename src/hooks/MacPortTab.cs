@@ -39,6 +39,8 @@ internal static class MacPortTab
     private static object? _bound;
     private static bool _reset;
     private static readonly Dictionary<string, string> Pending = new();
+    // The tab draws nothing and leaves the game's settings alone (Hooks.Fail)
+    private static bool _failed;
 
     public static string Apply(Harmony harmony)
     {
@@ -121,24 +123,58 @@ internal static class MacPortTab
 
     private static void IsTabChangedPostfix(object[] __args, ref bool __result)
     {
-        if (Convert.ToInt32(__args[0], Inv) != TabValue)
+        if (_failed || Convert.ToInt32(__args[0], Inv) != TabValue)
             return;
-        Sync();
-        __result = Shown.Any(s => Pending[s.Key] != s.Saved);
+        try
+        {
+            Sync();
+            __result = Shown.Any(s => Pending[s.Key] != s.Saved);
+        }
+        catch (Exception e)
+        {
+            Failed(e);
+        }
     }
 
     private static void RestartPostfix(object __instance, ref bool __result)
     {
-        Sync();
-        if (ReferenceEquals(__instance, _bound) && Shown.Any(NeedsRestart))
-            __result = true;
+        if (_failed)
+            return;
+        try
+        {
+            Sync();
+            if (ReferenceEquals(__instance, _bound) && Shown.Any(NeedsRestart))
+                __result = true;
+        }
+        catch (Exception e)
+        {
+            Failed(e);
+        }
+    }
+
+    private static void Failed(Exception e)
+    {
+        _failed = true;
+        Hooks.Fail("mac_port_tab", e);
     }
 
     // Apply, or the restart popup's Restart and Continue, saved the game's pending copy: the tab's values go to the file
     private static void SavePostfix(object __instance)
     {
-        if (!ReferenceEquals(__instance, _bound))
+        if (_failed || !ReferenceEquals(__instance, _bound))
             return;
+        try
+        {
+            Save();
+        }
+        catch (Exception e)
+        {
+            Failed(e);
+        }
+    }
+
+    private static void Save()
+    {
         var changed = Shown.Where(s => Pending[s.Key] != s.Saved).ToDictionary(s => s.Key, s => Pending[s.Key]);
         if (changed.Count == 0)
             return;
@@ -239,10 +275,11 @@ internal static class MacPortTab
         return null;
     }
 
-    // The rows, while the tab is open (called inside the settings' content body)
+    // The rows, while the tab is open (called inside the settings' content body). Not guarded as the postfixes are: an
+    // exception between a row's begin and end would leave ImGui's stacks unbalanced for the rest of the frame.
     private static void Draw()
     {
-        if (Convert.ToInt32(_openTab.GetValue(null), Inv) != TabValue)
+        if (_failed || Convert.ToInt32(_openTab.GetValue(null), Inv) != TabValue)
             return;
         Sync();
         foreach (var (section, title) in PortSettings.Sections)

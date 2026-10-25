@@ -36,6 +36,7 @@ internal static class TerrainCache
     private static System.Reflection.FieldInfo? _buffers;
 
     [ThreadStatic] private static bool _skip, _skipNormals;
+    private static bool _failed;  // the passes run every frame, as without the patch (Hooks.Fail)
 
     public static string Apply(Harmony harmony)
     {
@@ -69,12 +70,30 @@ internal static class TerrainCache
     private static void Prefix(PlanetRenderer __instance, IViewport inViewport, int frameIndex)
     {
         _skip = _skipNormals = false;
+        if (_failed)
+            return;
+        try
+        {
+            Compare(__instance, inViewport, frameIndex);
+        }
+        catch (Exception e)
+        {
+            _skip = _skipNormals = false;
+            _failed = true;
+            Hooks.Fail("terrain_cache", e);
+        }
+    }
+
+    // Whether the frame slot's buffer holds this frame's heights (_skip) and normals (_skipNormals) already
+    private static void Compare(PlanetRenderer __instance, IViewport inViewport, int frameIndex)
+    {
         PlanetViewportData data = __instance.ViewportData(inViewport);
         Celestial? body = data.NearbyCelestial;
-        if (body == null || !body.IsBillboarded() || (uint)frameIndex >= Keys.Length)
+        if (body == null || !body.IsBillboarded() || body.BodyTemplate.MeshCollection is not { } meshes ||
+            (uint)frameIndex >= Keys.Length)
             return;
         object? buffer = (_buffers!.GetValue(__instance) as Array)?.GetValue(frameIndex);
-        int mesh = body.BodyTemplate.MeshCollection.Get(data.MeshLodIndex).Hash.GetHashCode();
+        int mesh = meshes.Get(data.MeshLodIndex).Hash.GetHashCode();
         float4x4 texture = data.MeshPushConst.TextureMatrix;
         texture.M44 = 1f;  // the modifier loop passes its index there
         long now = Environment.TickCount64;

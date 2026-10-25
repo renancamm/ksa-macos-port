@@ -11,6 +11,7 @@
 		<RootNamespace>KsaMetalHooks</RootNamespace>
 		<ImplicitUsings>disable</ImplicitUsings>
 		<Nullable>enable</Nullable>
+		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<GenerateDependencyFile>false</GenerateDependencyFile>
 		<SatelliteResourceLanguages>en</SatelliteResourceLanguages>

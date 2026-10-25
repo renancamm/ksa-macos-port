@@ -41,7 +41,10 @@ changed is undone, and `console.log` says so:
 ```
 
 A hook that throws anything else has a bug of its own: it is undone the same way, and `console.log` says `failed`,
-followed by the error and where it happened. The game then runs as it would without that hook; the Mac Port tab
+followed by the error and where it happened. While the game runs, the code the game calls of the terrain cache, the
+crew portraits, the HUD layout and the Mac Port tab catches its own errors the same way: the hook says `failed while
+the game ran`, once, and hands the game its own behaviour from then on. The render scale changes the whole frame and
+can't hand it back halfway: an error there reaches the game. The game then runs as it would without that hook; the Mac Port tab
 shows the settings it does as unavailable, and a benchmark run fails, so a release can't pass its test with a hook
 skipped or failed. Nothing here changes how the game saves or what it simulates; the patches only change what is
 drawn and how much work drawing it takes.

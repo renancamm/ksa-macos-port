@@ -1,3 +1,4 @@
+using System;
 using System.Diagnostics;
 using HarmonyLib;
 using KSA;
@@ -16,6 +17,7 @@ internal static class CrewPortraits
     private static long _frame, _drawnFrame = -2, _shownSince = -1;
     private static readonly Stopwatch Clock = Stopwatch.StartNew();
     private static double _lastRender = double.NegativeInfinity;
+    private static bool _failed;  // the game draws the portraits as without the patch (Hooks.Fail)
 
     public static string Apply(Harmony harmony)
     {
@@ -34,7 +36,7 @@ internal static class CrewPortraits
     private static void UpdatePostfix()
     {
         _frame++;
-        if (Settings.CrewPortraits == "always")
+        if (_failed || Settings.CrewPortraits == "always")
             return;
         bool shown = _drawnFrame >= _frame - 1;
         if (!shown)
@@ -52,7 +54,15 @@ internal static class CrewPortraits
             _lastRender = Clock.Elapsed.TotalSeconds;
             return;
         }
-        for (int i = 0; i < CrewPortraitPanel.MAX_VISIBLE; i++)
-            Program.GetCrewPortraitViewport(i).SetVisible(false);
+        try
+        {
+            for (int i = 0; i < CrewPortraitPanel.MAX_VISIBLE; i++)
+                Program.GetCrewPortraitViewport(i).SetVisible(false);
+        }
+        catch (Exception e)
+        {
+            _failed = true;
+            Hooks.Fail("crew_portraits", e);
+        }
     }
 }
