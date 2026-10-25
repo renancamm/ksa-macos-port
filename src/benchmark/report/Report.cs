@@ -48,6 +48,9 @@ public static class Program
 
     public static int Main(string[] args)
     {
+        // The numbers it reads and writes are the invariant culture's, whatever the Mac's region. This program is a
+        // process of its own, so it sets that once, here; the director formats each number itself, since in the game
+        // the culture is the player's.
         CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
         CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
         if (args.Length >= 3 && args[0] == "system")
@@ -73,7 +76,7 @@ public static class Program
             system[key] = value;
         // The run's results, and those of its repeats
         var runs = Directory.GetFiles(dir, "results*.json")
-            .Select(f => (file: f, n: Path.GetFileNameWithoutExtension(f) is var name && name.StartsWith("results-") && int.TryParse(name[8..], out var k) ? k : 1))
+            .Select(f => (file: f, n: Path.GetFileNameWithoutExtension(f) is var name && name.StartsWith("results-", StringComparison.Ordinal) && int.TryParse(name[8..], out var k) ? k : 1))
             .OrderBy(r => r.n).Select(r => JsonNode.Parse(File.ReadAllText(r.file)) as JsonObject ?? new JsonObject()).ToList();
         var results = runs.Count > 0 ? runs[0] : new JsonObject();
         var problems = Problems(dir, results);
@@ -469,7 +472,7 @@ public static class Program
     }
 
     private static string Num(JsonNode? node, string format) =>
-        node is JsonValue v && v.TryGetValue<double>(out var d) ? d.ToString(format, CultureInfo.InvariantCulture) : "";
+        node is JsonValue v && v.TryGetValue<double>(out var d) ? d.ToString(format) : "";
 
     private static int Compare(string a, string b)
     {
@@ -682,13 +685,13 @@ public static class Program
         foreach (var part in rows.GroupBy(r => LabelOf(ulong.Parse(r[0]))).Where(g => g.Key != null))
         {
             var frames = part.Select(r => r[0]).Distinct().Count();
-            double cbMs = part.Where(r => r[3] == "cb").Sum(r => double.Parse(r[9], CultureInfo.InvariantCulture)) / frames / 1000;
-            var encoders = part.Where(r => r[3] != "cb" && double.Parse(r[9], CultureInfo.InvariantCulture) >= 0)
+            double cbMs = part.Where(r => r[3] == "cb").Sum(r => double.Parse(r[9])) / frames / 1000;
+            var encoders = part.Where(r => r[3] != "cb" && double.Parse(r[9]) >= 0)
                 .GroupBy(r => (type: r[3], pipelines: r[10]))
                 .Select(g => (g.Key.type, g.Key.pipelines,
-                    us: g.Sum(r => double.Parse(r[9], CultureInfo.InvariantCulture)) / frames,
-                    draws: g.Sum(r => double.Parse(r[4], CultureInfo.InvariantCulture)) / frames,
-                    dispatches: g.Sum(r => double.Parse(r[5], CultureInfo.InvariantCulture)) / frames))
+                    us: g.Sum(r => double.Parse(r[9])) / frames,
+                    draws: g.Sum(r => double.Parse(r[4])) / frames,
+                    dispatches: g.Sum(r => double.Parse(r[5])) / frames))
                 .OrderByDescending(e => e.us).ToList();
             double total = encoders.Sum(e => e.us);
             md.AppendLine();
@@ -805,7 +808,7 @@ public static class Program
             md.AppendLine($"| Encoder | {string.Join(" | ", channels.Select(c => c + " ms"))} |");
             md.AppendLine($"|---|{string.Concat(channels.Select(_ => "---:|"))}");
             foreach (var x in byLabel.Take(15))
-                md.AppendLine($"| {x.label} | {string.Join(" | ", channels.Select(c => (x.per[c] / 1e6 / n).ToString("F2", CultureInfo.InvariantCulture)))} |");
+                md.AppendLine($"| {x.label} | {string.Join(" | ", channels.Select(c => (x.per[c] / 1e6 / n).ToString("F2")))} |");
         }
         File.WriteAllText(Path.Combine(dir, "trace.md"), md.ToString());
         Console.WriteLine(Path.Combine(dir, "trace.md"));
@@ -838,7 +841,7 @@ public static class Program
         if (a is not JsonValue va || b is not JsonValue vb || !va.TryGetValue<double>(out var x) || !vb.TryGetValue<double>(out var y) || x <= 0)
             return "";
         double change = (y - x) / x;
-        string text = change.ToString("+0%;-0%;0%", CultureInfo.InvariantCulture);
+        string text = change.ToString("+0%;-0%;0%");
         bool significant = rangeA is JsonArray ra && rangeB is JsonArray rb
             ? Math.Abs(change) >= SignificantRepeated &&
               ((double)rb[0]! > (double)ra[1]! || (double)rb[1]! < (double)ra[0]!)

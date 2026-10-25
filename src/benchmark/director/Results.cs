@@ -144,13 +144,12 @@ public class Results
     public string? Drawable { get; set; }
     public List<SectionResult> Sections { get; } = new();
 
+    private static readonly JsonSerializerOptions Options =
+        new() { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
     public Results(bool gpuTimes) => GpuTimes = gpuTimes;
 
-    public void Write(string path)
-    {
-        var options = new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-        File.WriteAllText(path, JsonSerializer.Serialize(this, options));
-    }
+    public void Write(string path) => File.WriteAllText(path, JsonSerializer.Serialize(this, Options));
 }
 
 // Every frame of the run, one line each (frames.csv): the raw data the parts' summaries come from, kept so that a
