@@ -64,6 +64,10 @@ static MTLAccelerationStructureDescriptor* describe(const VkAccelerationStructur
             auto* src = (const VkAccelerationStructureInstanceKHR*)((uint8_t*)m->mapped + off);
             id<MTLBuffer> buf = [dev newBufferWithLength:std::max<NSUInteger>(1, count) * sizeof(MTLIndirectAccelerationStructureInstanceDescriptor)
                                                  options:MTLResourceStorageModeShared];
+            if (!buf) {
+                KERR("vkCmdBuildAccelerationStructuresKHR: instance buffer of %u instances failed", count);
+                return nil;
+            }
             auto* dst = (MTLIndirectAccelerationStructureInstanceDescriptor*)buf.contents;
             for (uint32_t i = 0; i < count; i++) {
                 const auto& s = src[i];
@@ -159,8 +163,10 @@ VKFN(VkResult) vkCreateAccelerationStructureKHR(VkDevice device, const VkAcceler
     auto* a = new KAccel();
     a->mtl = [dev->mtl newAccelerationStructureWithSize:std::max<VkDeviceSize>(ci->size, 256)];
     if (!a->mtl) {
+        KERR("vkCreateAccelerationStructureKHR: structure of %llu bytes failed", (unsigned long long)ci->size);
         delete a;
-        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+        // The only memory code Vulkan allows here: its structures live in the app's buffer, Metal's in their own
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
     dev->addResident(a->mtl);
     // The structure's address is its buffer's device address at the offset, as on other drivers: KSA's IVA ray
@@ -222,6 +228,10 @@ VKFN(void) vkCmdBuildAccelerationStructuresKHR(VkCommandBuffer commandBuffer, ui
                                                               (unsigned long)s.accelerationStructureSize, (unsigned long)dst->mtl.size);
         id<MTLBuffer> scratch = [dev->mtl newBufferWithLength:std::max<NSUInteger>(s.buildScratchBufferSize, 256)
                                                       options:MTLResourceStorageModePrivate];
+        if (!scratch) {
+            KERR("vkCmdBuildAccelerationStructuresKHR: scratch buffer of %lu bytes failed", (unsigned long)s.buildScratchBufferSize);
+            continue;
+        }
         [enc buildAccelerationStructure:dst->mtl descriptor:d scratchBuffer:scratch scratchBufferOffset:0];
         if (instances) [enc useResource:instances usage:MTLResourceUsageRead];
     }

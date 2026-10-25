@@ -56,6 +56,30 @@ void KDevice::commitResidency() {
 // ---------------------------------------------------------------------------------------------------------------
 // Device and queue
 
+// A queue and its chain fence, updated once so the first real encoder has something to wait on; null (logged) when
+// Metal makes either one not
+static KQueue* makeQueue(KDevice* dev, uint32_t family, NSUInteger maxBuffers, NSString* label, NSString* chainLabel) {
+    auto* q = new KQueue();
+    q->device = dev;
+    q->family = family;
+    q->mtl = [dev->mtl newCommandQueueWithMaxCommandBufferCount:maxBuffers];
+    q->chain = [dev->mtl newFence];
+    if (!q->mtl || !q->chain) {
+        KERR("vkCreateDevice: %s failed", label.UTF8String);
+        delete q;
+        return nullptr;
+    }
+    q->mtl.label = label;
+    [q->mtl addResidencySet:dev->residency];
+    q->chain.label = chainLabel;
+    id<MTLCommandBuffer> cb = [q->mtl commandBuffer];
+    id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
+    [b updateFence:q->chain];
+    [b endEncoding];
+    [cb commit];
+    return q;
+}
+
 VKFN(VkResult) vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* ci, const VkAllocationCallbacks*, VkDevice* out) {
     KTRACE_FIRST();
     auto* pd = (KPhysicalDevice*)physicalDevice;
@@ -69,39 +93,18 @@ VKFN(VkResult) vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCre
     rd.initialCapacity = 1024;
     dev->residency = [dev->mtl newResidencySetWithDescriptor:rd error:&err];
     if (!dev->residency) {
-        KERR("residency set: %s", err.description.UTF8String);
+        KERR("vkCreateDevice: residency set failed: %s", err.description.UTF8String);
         delete dev;
         return VK_ERROR_INITIALIZATION_FAILED;
     }
-    auto* q = new KQueue();
-    q->device = dev;
-    q->mtl = [dev->mtl newCommandQueueWithMaxCommandBufferCount:256];
-    q->mtl.label = @"KSA Metal queue";
-    [q->mtl addResidencySet:dev->residency];
-    q->chain = [dev->mtl newFence];
-    q->chain.label = @"KSA Metal encoder chain";
-    // Update the chain fence once so the first real encoder has something to wait on
-    id<MTLCommandBuffer> cb = [q->mtl commandBuffer];
-    id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
-    [b updateFence:q->chain];
-    [b endEncoding];
-    [cb commit];
-    dev->queue = q;
+    dev->queue = makeQueue(dev, 0, 256, @"KSA Metal queue", @"KSA Metal encoder chain");
     // A transfer-only queue family: KSA's texture streamer then uploads on its own queue
-    auto* t = new KQueue();
-    t->device = dev;
-    t->family = 1;
-    t->mtl = [dev->mtl newCommandQueueWithMaxCommandBufferCount:64];
-    t->mtl.label = @"KSA Metal transfer queue";
-    [t->mtl addResidencySet:dev->residency];
-    t->chain = [dev->mtl newFence];
-    t->chain.label = @"KSA Metal transfer chain";
-    id<MTLCommandBuffer> tc = [t->mtl commandBuffer];
-    id<MTLBlitCommandEncoder> tb = [tc blitCommandEncoder];
-    [tb updateFence:t->chain];
-    [tb endEncoding];
-    [tc commit];
-    dev->transferQueue = t;
+    dev->transferQueue = dev->queue ? makeQueue(dev, 1, 64, @"KSA Metal transfer queue", @"KSA Metal transfer chain") : nullptr;
+    if (!dev->transferQueue) {
+        delete dev->queue;
+        delete dev;
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
     kmtlInitInternal(dev);
     kmtlShaderPrewarm(dev);
     KLOG(1, "device created");
@@ -652,7 +655,8 @@ static VkResult bindImage(VkImage image, VkDeviceMemory memory, VkDeviceSize off
                  img->format, img->info.samples);
             return VK_SUCCESS;
         }
-        KERR("memoryless texture failed; placing it in memory");
+        KERR("vkBindImageMemory: memoryless attachment %ux%u format %d failed", img->info.extent.width,
+             img->info.extent.height, img->format);
         img->desc = nil;
         return VK_ERROR_OUT_OF_DEVICE_MEMORY;
     }
@@ -712,6 +716,10 @@ KImage* kmtlCreateSwapchainImage(KDevice* dev, VkFormat format, uint32_t w, uint
     if (vkCreateImage((VkDevice)dev, &ci, nullptr, &handle) != VK_SUCCESS) return nullptr;
     auto* img = (KImage*)handle;
     img->mtl = [dev->mtl newTextureWithDescriptor:img->desc];
+    if (!img->mtl) {
+        kmtlDestroyImage(img);
+        return nullptr;
+    }
     img->ownsTexture = true;
     dev->addResident(img->mtl);
     return img;
@@ -737,7 +745,7 @@ VKFN(VkResult) vkCreateImageView(VkDevice device, const VkImageViewCreateInfo* c
     auto* img = (KImage*)ci->image;
     if (!img->mtl) {
         KERR("vkCreateImageView: image %p has no memory bound", img);
-        return VK_ERROR_INITIALIZATION_FAILED;
+        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
     }
     auto* v = new KImageView();
     v->image = img;
@@ -786,7 +794,7 @@ VKFN(VkResult) vkCreateImageView(VkDevice device, const VkImageViewCreateInfo* c
             KERR("vkCreateImageView: view failed (fmt %d type %d levels %u+%u layers %u+%u)", ci->format, ci->viewType,
                  v->baseLevel, v->levelCount, v->baseLayer, v->layerCount);
             delete v;
-            return VK_ERROR_INITIALIZATION_FAILED;
+            return VK_ERROR_OUT_OF_DEVICE_MEMORY;
         }
     }
     *out = (VkImageView)v;
@@ -855,8 +863,9 @@ VKFN(VkResult) vkCreateSampler(VkDevice device, const VkSamplerCreateInfo* ci, c
     auto* s = new KSampler();
     s->mtl = [dev->mtl newSamplerStateWithDescriptor:d];
     if (!s->mtl) {
+        KERR("vkCreateSampler: sampler state failed");
         delete s;
-        return VK_ERROR_INITIALIZATION_FAILED;
+        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
     }
     *out = (VkSampler)s;
     return VK_SUCCESS;
@@ -946,7 +955,11 @@ VKFN(VkResult) vkCreateBufferView(VkDevice, const VkBufferViewCreateInfo* ci, co
     KTRACE_FIRST();
     auto* b = (KBuffer*)ci->buffer;
     const KFormatInfo* fi = kmtlFormat(ci->format);
-    if (!fi || !b->mtl) return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    if (!fi || !b->mtl) {
+        if (!fi) KERR("vkCreateBufferView: unsupported format %d", ci->format);
+        else KERR("vkCreateBufferView: buffer %p has no memory bound", b);
+        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+    }
     VkDeviceSize range = ci->range == VK_WHOLE_SIZE ? b->size - ci->offset : ci->range;
     NSUInteger texels = (NSUInteger)(range / fi->blockBytes);
     MTLTextureDescriptor* d = [MTLTextureDescriptor textureBufferDescriptorWithPixelFormat:fi->mtl width:texels
@@ -954,8 +967,9 @@ VKFN(VkResult) vkCreateBufferView(VkDevice, const VkBufferViewCreateInfo* ci, co
     auto* v = new KBufferView();
     v->mtl = [b->mtl newTextureWithDescriptor:d offset:b->offset + ci->offset bytesPerRow:texels * fi->blockBytes];
     if (!v->mtl) {
+        KERR("vkCreateBufferView: texture buffer of %lu texels format %d failed", (unsigned long)texels, ci->format);
         delete v;
-        return VK_ERROR_INITIALIZATION_FAILED;
+        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
     }
     *out = (VkBufferView)v;
     return VK_SUCCESS;

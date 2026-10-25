@@ -63,23 +63,29 @@ VKFN(VkResult) vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfo
     auto* sc = new KSwapchain();
     sc->surface = (KSurface*)ci->surface;
     sc->extent = ci->imageExtent;
+    uint32_t count = std::max(2u, std::min(3u, ci->minImageCount));
+    for (uint32_t i = 0; i < count; i++) {
+        KImage* img = kmtlCreateSwapchainImage(dev, ci->imageFormat, ci->imageExtent.width, ci->imageExtent.height);
+        if (!img) {
+            KERR("vkCreateSwapchainKHR: image %u of %ux%u format %d failed", i, ci->imageExtent.width,
+                 ci->imageExtent.height, ci->imageFormat);
+            for (auto* made : sc->images) kmtlDestroyImage(made);
+            delete sc;
+            return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+        }
+        img->mtl.label = [NSString stringWithFormat:@"swapchain %u", i];
+        sc->images.push_back(img);
+    }
+    // The layer changes once the images exist: a failed create leaves the old swapchain's layer as it was. CAMetalLayer
+    // drawable properties may be set from any thread; hopping to the main thread could deadlock
     CAMetalLayer* layer = sc->surface->layer;
-    MTLPixelFormat pf = kmtlPixelFormat(ci->imageFormat);
-    // CAMetalLayer drawable properties may be set from any thread; hopping to the main thread could deadlock
     layer.device = dev->mtl;
-    layer.pixelFormat = pf;
+    layer.pixelFormat = kmtlPixelFormat(ci->imageFormat);
     layer.framebufferOnly = NO;
     layer.drawableSize = CGSizeMake(ci->imageExtent.width, ci->imageExtent.height);
     layer.maximumDrawableCount = 3;
     layer.displaySyncEnabled = ci->presentMode == VK_PRESENT_MODE_FIFO_KHR || ci->presentMode == VK_PRESENT_MODE_FIFO_RELAXED_KHR;
     layer.opaque = YES;
-    uint32_t count = std::max(2u, std::min(3u, ci->minImageCount));
-    for (uint32_t i = 0; i < count; i++) {
-        KImage* img = kmtlCreateSwapchainImage(dev, ci->imageFormat, ci->imageExtent.width, ci->imageExtent.height);
-        if (!img) return VK_ERROR_OUT_OF_DEVICE_MEMORY;
-        img->mtl.label = [NSString stringWithFormat:@"swapchain %u", i];
-        sc->images.push_back(img);
-    }
     dev->commitResidency();
     KLOG(1, "swapchain %ux%u format %d present mode %d, %u images", ci->imageExtent.width, ci->imageExtent.height,
          ci->imageFormat, ci->presentMode, count);
