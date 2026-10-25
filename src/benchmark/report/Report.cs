@@ -350,11 +350,12 @@ public static class Program
             foreach (var e in section["errors"] as JsonArray ?? new JsonArray())
                 problems.Add($"{section["name"]}: {e}");
         }
-        // A hook that was skipped (the game's code it changes has moved): the run didn't play the port as it is
+        // A hook that was skipped (the game's code it changes has moved) or failed: the run didn't play the port as it is
         var hooks = KeyValues(Path.Combine(dir, "system.txt")).FirstOrDefault(kv => kv.key == "Hooks").value ?? "";
         foreach (var hook in hooks.Split("; ", StringSplitOptions.RemoveEmptyEntries))
         {
-            if (hook.Split(": ", 2) is [_, var status] && status.StartsWith("skipped", StringComparison.Ordinal))
+            if (hook.Split(": ", 2) is [_, var status] &&
+                (status.StartsWith("skipped", StringComparison.Ordinal) || status.StartsWith("failed", StringComparison.Ordinal)))
                 problems.Add($"the hooks' {hook}");
         }
         // The game's log of each session (game-2.log... for repeats)

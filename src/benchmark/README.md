@@ -157,8 +157,8 @@ view for two seconds and takes the real screenshot. Fast mode plays in the game'
 when the places played are all there, since the other worlds' textures would only take memory.
 
 A run fails when the game crashed or hung, a step of the tour failed, a vehicle broke apart before it should, a
-screenshot is missing, the game's log has errors, one of the hooks was skipped (the game's code it changes has moved),
-or another game ran at the same time; the script then exits with 1.
+screenshot is missing, the game's log has errors, one of the hooks was skipped (the game's code it changes has moved) or
+failed, or another game ran at the same time; the script then exits with 1.
 The director touches a file every second; a game that hasn't touched it for a minute counts as hung and is stopped.
 
 `compare` marks a number as changed when it moved by more than 5%, because two runs on the same Mac differ by a few

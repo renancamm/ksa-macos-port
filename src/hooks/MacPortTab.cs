@@ -213,10 +213,12 @@ internal static class MacPortTab
             note = "set outside";
             return $"{s.Outside} is set where the game was started, and it decides this setting instead of the file.";
         }
-        if (s.Hook.Length > 0 && Hooks.Status.GetValueOrDefault(s.Hook, "").StartsWith("skipped", StringComparison.Ordinal))
+        if (Hooks.Status.GetValueOrDefault(s.Hook) is { Unavailable: true } status)
         {
             note = "unavailable";
-            return "Unavailable with this KSA version: the game's code it changes has moved, so it is left out (logs/console.log says more).";
+            return status.State == HookState.Skipped
+                ? "Unavailable with this KSA version: the game's code it changes has moved, so it is left out (logs/console.log says more)."
+                : "Unavailable: it ran into an error, so it is left out (logs/console.log says why).";
         }
         foreach (var need in s.Needs)
         {

@@ -77,10 +77,11 @@ internal static class Upscale
             transpiler: new HarmonyMethod(typeof(Upscale), nameof(NoCmaa2Transpiler)));
         if (!Spatial && Settings.On("KSA_OVERRIDE_AA"))
         {
-            GameSettings.SampleCountOverride = VkSampleCountFlags._1Bit;
             var keep = new HarmonyMethod(typeof(Upscale), nameof(KeepSampleCount));
             harmony.Patch(Find.Method(typeof(ScreenshotCapture), nameof(ScreenshotCapture.OnPostRender)), postfix: keep);
             harmony.Patch(Find.Method(typeof(ScreenshotCapture), nameof(ScreenshotCapture.Abort)), postfix: keep);
+            // Last: a Skip undoes the patches, not this
+            GameSettings.SampleCountOverride = VkSampleCountFlags._1Bit;
         }
     }
 

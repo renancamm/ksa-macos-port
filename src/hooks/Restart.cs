@@ -17,14 +17,15 @@ namespace KsaMetalHooks;
 // reads the port settings as any start does. The benchmark restarts the game the same way.
 internal static class Restart
 {
-    private static readonly MethodInfo ProcessStart = AccessTools.Method(typeof(Process), nameof(Process.Start), [typeof(string)]);
+    private static MethodInfo _processStart = null!;
 
     public static string Apply(Harmony harmony)
     {
         if (Launcher == null)
             return "off (the game was not started by the app)";
+        _processStart = Find.Method(typeof(Process), nameof(Process.Start), typeof(string));
         var buttons = typeof(RequiresRestartPopup).GetNestedTypes(AccessTools.all).SelectMany(AccessTools.GetDeclaredMethods)
-            .Where(m => !m.IsGenericMethodDefinition && PatchProcessor.GetOriginalInstructions(m).Any(i => i.Calls(ProcessStart)))
+            .Where(m => !m.IsGenericMethodDefinition && PatchProcessor.GetOriginalInstructions(m).Any(i => i.Calls(_processStart)))
             .ToList();
         if (buttons.Count != 1)
             throw new Skip($"the restart button's Process.Start found {buttons.Count} times");
@@ -35,7 +36,7 @@ internal static class Restart
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
         foreach (var i in instructions)
-            yield return i.Calls(ProcessStart) ? new CodeInstruction(i) { operand = AccessTools.Method(typeof(Restart), nameof(StartAgain)) } : i;
+            yield return i.Calls(_processStart) ? new CodeInstruction(i) { operand = AccessTools.Method(typeof(Restart), nameof(StartAgain)) } : i;
     }
 
     // In place of Process.Start(<the game's executable>): the game quits right after

@@ -12,14 +12,13 @@ namespace KsaMetalHooks;
 // and the log says so, and the game runs as it would without it. A patch is applied whole or not at all.
 public static class Hooks
 {
-    // What each hook did, by its key ("on, ...", "off", "skipped, ..."): the Mac Port tab shows a setting whose hook was
-    // skipped as unavailable
-    public static readonly Dictionary<string, string> Status = new();
+    // What each hook did, by its key: the Mac Port tab shows a setting whose hook is unavailable as such
+    public static readonly Dictionary<string, HookStatus> Status = new();
     // The hooks in the order they were applied: name and key
     private static readonly List<(string Name, string Key)> Applied = new();
 
     // What every hook did, as the log said it ("terrain cache: on; ...")
-    public static string Summary => string.Join("; ", Applied.Select(h => $"{h.Name}: {Status[h.Key]}"));
+    public static string Summary => string.Join("; ", Applied.Select(h => $"{h.Name}: {Status[h.Key].Text}"));
 
     // The app's Contents/Resources: the hooks are in its Hooks folder
     public static string Resources => System.IO.Path.GetFullPath(System.IO.Path.Combine(
@@ -51,36 +50,74 @@ public static class Hooks
         Run("benchmark", "benchmark", true, BenchmarkRun.Apply);
     }
 
-    // apply(harmony) patches and returns what it did ("on", "off", ...); throws Skip (or anything) when it can't
+    // apply(harmony) patches and returns what it did ("on", "off", ...); it throws Skip when the game's code isn't what
+    // it expects. Either way the hook's patches are undone, and only those: a hook changes the game's state, when it
+    // does, after its last lookup.
     private static void Run(string name, string key, bool enabled, Func<Harmony, string> apply)
     {
         Applied.Add((name, key));
         if (!enabled)
         {
-            Status[key] = "off";
+            Status[key] = new HookStatus(HookState.Off, "off");
             Log($"{name}: off");
             return;
         }
         var harmony = new Harmony($"io.github.ksa-macos-port.{key}");
+        Exception? failure = null;
         try
         {
-            Status[key] = apply(harmony);
+            Status[key] = new HookStatus(HookState.On, apply(harmony));
         }
         catch (Exception e)
         {
             harmony.UnpatchAll(harmony.Id);
-            while (e.InnerException != null && e is not Skip)
-                e = e.InnerException;
-            Status[key] = $"skipped, the game's code changed ({e.Message})";
+            if (Skip.In(e) is { } skip)
+            {
+                Status[key] = new HookStatus(HookState.Skipped, $"skipped, the game's code changed ({skip.Message})");
+            }
+            else
+            {
+                failure = e;
+                Status[key] = new HookStatus(HookState.Failed, $"failed ({Describe(e)})");
+            }
         }
-        Log($"{name}: {Status[key]}");
+        Log($"{name}: {Status[key].Text}");
+        if (failure != null)
+            Console.WriteLine(failure);
+    }
+
+    // The error a failure comes down to: its innermost exception's type and message
+    public static string Describe(Exception e)
+    {
+        while (e.InnerException != null)
+            e = e.InnerException;
+        return $"{e.GetType().Name}: {e.Message}";
     }
 
     public static void Log(string message) => Console.WriteLine($"[hooks] {message}");
 }
 
+// What a hook did when the game started: on (Text says how), off, skipped (the game's code it changes has moved) or
+// failed (an error of the hook's own). Text is what the log says.
+public enum HookState { On, Off, Skipped, Failed }
+
+public sealed record HookStatus(HookState State, string Text)
+{
+    public bool Unavailable => State is HookState.Skipped or HookState.Failed;
+}
+
 // Why a patch can't apply: its target or the code it changes isn't what it expects
-public class Skip(string message) : Exception(message);
+public class Skip(string message) : Exception(message)
+{
+    // The Skip behind an exception (Harmony and type initializers wrap it), or null
+    public static Skip? In(Exception? e)
+    {
+        for (; e != null; e = e.InnerException)
+            if (e is Skip skip)
+                return skip;
+        return null;
+    }
+}
 
 // Lookups that throw Skip instead of returning null
 public static class Find

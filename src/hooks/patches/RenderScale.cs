@@ -35,8 +35,19 @@ internal static class RenderScale
     public static int2 Output;  // the swapchain's size in pixels, which the main view is scaled up to
     private static VkExtent2D? _ours;  // the override this patch set (a screenshot's is left alone)
 
+    // The game's fields the patch reads and writes, found when it applies (a missing one skips it)
+    private static AccessTools.FieldRef<ScreenspaceRenderer, VkSampler> _sampler = null!;
+    private static AccessTools.FieldRef<Cmaa2Renderer, RenderTarget?> _sceneLdr = null!;
+    private static AccessTools.FieldRef<UboCameraData[]> _cameraData = null!;
+    private static AccessTools.StructFieldRef<UboCameraData, int> _outputHeight = null!;
+
     public static string Apply(Harmony harmony)
     {
+        _sampler = AccessTools.FieldRefAccess<ScreenspaceRenderer, VkSampler>(Find.Field(typeof(ScreenspaceRenderer), "_samplerRef"));
+        _sceneLdr = AccessTools.FieldRefAccess<Cmaa2Renderer, RenderTarget?>(Find.Field(typeof(Cmaa2Renderer), "_sceneLdrTarget"));
+        _cameraData = AccessTools.StaticFieldRefAccess<UboCameraData[]>(Find.Field(typeof(Program), "_cameraData"));
+        // The camera data's spare int: the window's height, for the shader edits (0: not scaled)
+        _outputHeight = AccessTools.StructFieldRefAccess<UboCameraData, int>(Find.Field(typeof(UboCameraData), "_padding2"));
         Upscale.Configure();
         var renderSize = new HarmonyMethod(typeof(RenderScale), nameof(RenderSizeTranspiler));
         harmony.Patch(Find.Method(typeof(Renderer), nameof(Renderer.Rebuild)),
@@ -74,6 +85,7 @@ internal static class RenderScale
             transpiler: maskScale);
         harmony.Patch(Find.Method(typeof(UiCoverageMaskSystem), "ReplayDrawData"), transpiler: maskScale);
         PatchPanels(harmony);
+        // Last: it sets the game's sample count, which a Skip wouldn't undo
         if (Upscale.Wanted)
             Upscale.Apply(harmony);
         string scale = Settings.RenderScale.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
@@ -114,12 +126,6 @@ internal static class RenderScale
         return __exception;
     }
 
-    private static readonly AccessTools.FieldRef<ScreenspaceRenderer, VkSampler> Sampler =
-        AccessTools.FieldRefAccess<ScreenspaceRenderer, VkSampler>(Find.Field(typeof(ScreenspaceRenderer), "_samplerRef"));
-
-    private static readonly AccessTools.FieldRef<Cmaa2Renderer, RenderTarget?> SceneLdr =
-        AccessTools.FieldRefAccess<Cmaa2Renderer, RenderTarget?>(Find.Field(typeof(Cmaa2Renderer), "_sceneLdrTarget"));
-
     [ThreadStatic] private static Cmaa2Renderer? _cmaa2;  // the CMAA2 renderer building its passes
 
     private static void Cmaa2Prefix(Cmaa2Renderer __instance) => _cmaa2 = __instance;
@@ -136,14 +142,14 @@ internal static class RenderScale
         if (main == null)
             return;
         bool composite = inImageView.Equals(main.ColorImage.ImageView);
-        bool cmaa2 = !composite && _cmaa2 != null && SceneLdr(_cmaa2) is { } ldr &&
+        bool cmaa2 = !composite && _cmaa2 != null && _sceneLdr(_cmaa2) is { } ldr &&
             inImageView.Equals(ldr.ColorImage.ImageView) && ldr.Extent.Width == main.Extent.Width &&
             ldr.Extent.Height == main.Extent.Height;
         if (!composite && !cmaa2)
             return;
         VkExtent2D render = main.Extent;
         bool stretched = (cmaa2 || !Upscale.Wanted) && (render.Width != Output.X || render.Height != Output.Y);
-        Sampler(__instance) = stretched ? Program.LinearClampedSampler : Program.PointClampedSampler;
+        _sampler(__instance) = stretched ? Program.LinearClampedSampler : Program.PointClampedSampler;
     }
 
     // The main view's cameras keep the window's size
@@ -298,9 +304,6 @@ internal static class RenderScale
         return ref _maskScale;
     }
 
-    private static readonly AccessTools.FieldRef<UboCameraData[]> CameraData =
-        AccessTools.StaticFieldRefAccess<UboCameraData[]>(Find.Field(typeof(Program), "_cameraData"));
-
     [ThreadStatic] private static bool _mainView;
 
     private static void ShaderDataPrefix(IViewport viewport) => _mainView = viewport.Type == ViewportType.Main;
@@ -317,10 +320,6 @@ internal static class RenderScale
 
     public static float SunRadius(float pixels) => _mainView && Scaled ? pixels * Settings.RenderScale : pixels;
 
-    // The camera data's spare int: the window's height, for the shader edits (0: not scaled)
-    private static readonly AccessTools.StructFieldRef<UboCameraData, int> OutputHeight =
-        AccessTools.StructFieldRefAccess<UboCameraData, int>(Find.Field(typeof(UboCameraData), "_padding2"));
-
     // After the camera data of a view is set: the main view's pixel sizes, and MetalFX's jitter and reprojection
     private static void ShaderDataPostfix(IViewport viewport)
     {
@@ -328,8 +327,8 @@ internal static class RenderScale
             return;
         int slot = viewport.ShaderSlot;
         if (Scaled && Window != int2.Zero)
-            OutputHeight(ref CameraData()[slot]) = Window.Y;
+            _outputHeight(ref _cameraData()[slot]) = Window.Y;
         if (Upscale.Wanted)
-            Upscale.UpdateCamera(viewport, ref CameraData()[slot]);
+            Upscale.UpdateCamera(viewport, ref _cameraData()[slot]);
     }
 }

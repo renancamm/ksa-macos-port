@@ -23,8 +23,9 @@ copy next to them, in `Contents/Resources/Hooks/`. The benchmark's director, whi
 ## The rule every hook follows
 
 A hook finds its targets by name and the code it changes by pattern: an instruction it expects exactly once, or the
-call that follows a field it knows. When something isn't where it expects it, typically after a KSA update, the hook
-throws `Skip`. Everything that hook had changed is undone, and `console.log` says so:
+call that follows a field it knows. It looks everything up before it changes any of the game's state. When
+something isn't where it expects it, typically after a KSA update, the hook throws `Skip`. Everything that hook had
+changed is undone, and `console.log` says so:
 
 ```text
 [hooks] terrain cache: on
@@ -39,9 +40,11 @@ throws `Skip`. Everything that hook had changed is undone, and `console.log` say
 [hooks] benchmark: ready
 ```
 
-The game then runs as it would without that hook; the Mac Port tab shows the settings a skipped patch does as
-unavailable, and a benchmark run fails, so a release can't pass its test with a hook skipped. Nothing here changes
-how the game saves or what it simulates; the patches only change what is drawn and how much work drawing it takes.
+A hook that throws anything else has a bug of its own: it is undone the same way, and `console.log` says `failed`,
+followed by the error and where it happened. The game then runs as it would without that hook; the Mac Port tab
+shows the settings it does as unavailable, and a benchmark run fails, so a release can't pass its test with a hook
+skipped or failed. Nothing here changes how the game saves or what it simulates; the patches only change what is
+drawn and how much work drawing it takes.
 
 ## The patches
 
