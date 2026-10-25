@@ -173,6 +173,10 @@ installed app. The native libraries are a CMake project ([`CMakeLists.txt`](CMak
 built against the installed app's KSA, or another one with `--ksa <archive>`, and the port folder is made for that
 KSA version. Everything the build downloads is declared in [`cmake/dependencies.cmake`](cmake/dependencies.cmake).
 
+Warnings are errors in the native libraries, the hooks and the benchmark, and the build runs the hooks' and the
+benchmark's tests. The scripts run on macOS's own bash 3.2 and are kept clean of ShellCheck's findings
+(`brew install shellcheck`, then `shellcheck -x $(git ls-files '*.sh')`; [`.shellcheckrc`](.shellcheckrc) sets it up).
+
 Releases are made with `release.sh <ksa_linux_vX.tar.gz>`. It builds the port folder from a clean copy of the
 committed sources, zips it, and tests the zip by making an app with it and running the benchmark on that app with a
 fresh install's settings. `release.sh --publish` then tags the commit and uploads the zip as a draft GitHub release.

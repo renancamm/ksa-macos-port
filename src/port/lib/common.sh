@@ -1,3 +1,4 @@
+# shellcheck shell=bash disable=SC2034  # the variables are the commands' and the steps'
 # Shared by the port's commands and the steps in lib/. Source it; it defines no behaviour of its own.
 #
 # Everything here runs on macOS's own bash 3.2 and base tools: the port folder needs nothing else installed.
@@ -57,8 +58,9 @@ game_version() {
 
 # version_newer <a> <b>: true when dotted version a is newer than b
 version_newer() {
-    local IFS=.
-    local a=($1) b=($2) i
+    local IFS=. a b i
+    read -r -a a <<< "$1"
+    read -r -a b <<< "$2"
     for i in 0 1 2 3; do
         [ "${a[i]:-0}" -gt "${b[i]:-0}" ] && return 0
         [ "${a[i]:-0}" -lt "${b[i]:-0}" ] && return 1

@@ -31,7 +31,9 @@ for f in port.sh starmap.sh benchmark.sh payload/app/Contents/MacOS/KSA \
     payload/app/Contents/Resources/Brutal.Monitor.Subprocess; do
     [ -x "${KIT_DIR}/${f}" ] || problem "${f} is not executable"
 done
-grep -q '^version=.' "${KIT_DIR}/VERSION" && grep -q '^ksa=20' "${KIT_DIR}/VERSION" || problem "VERSION is incomplete"
+if ! grep -q '^version=.' "${KIT_DIR}/VERSION" || ! grep -q '^ksa=20' "${KIT_DIR}/VERSION"; then
+    problem "VERSION is incomplete"
+fi
 
 for lib in "${RES}"/*.dylib "${RES}/Brutal.Monitor.Subprocess"; do
     name="$(basename "${lib}")"
@@ -41,7 +43,9 @@ for lib in "${RES}"/*.dylib "${RES}/Brutal.Monitor.Subprocess"; do
     fi
     file -b "${lib}" | grep -q "arm64" || problem "${name} is not arm64"
     minos="$(otool -arch arm64 -l "${lib}" | awk '/LC_BUILD_VERSION/ { found = 1 } found && $1 == "minos" { print $2; exit }')"
-    [ -n "${minos}" ] && ! version_newer "${minos}" "${MACOS_MIN}" || problem "${name} needs macOS ${minos:-?}"
+    if [ -z "${minos}" ] || version_newer "${minos}" "${MACOS_MIN}"; then
+        problem "${name} needs macOS ${minos:-?}"
+    fi
     codesign -v "${lib}" 2> /dev/null || problem "${name} has no valid signature"
     for dep in $(otool -arch arm64 -L "${lib}" | tail -n +2 | awk '{ print $1 }'); do
         case "${dep}" in

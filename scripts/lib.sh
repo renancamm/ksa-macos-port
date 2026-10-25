@@ -1,3 +1,4 @@
+# shellcheck shell=bash disable=SC2034  # the variables are the scripts'
 # Shared by build.sh, release.sh and the scripts in scripts/. Source it; it defines no behaviour of its own.
 #
 # The build runs on the maintainer's Mac and needs the Command Line Tools, cmake, ninja and the .NET 10 SDK. It
@@ -50,6 +51,7 @@ require_build_tools() {
 # load_deps: where CMake put each download, and the versions the port folder records (cmake/dependencies.cmake)
 load_deps() {
     [ -f "${CMAKE_TREE}/deps.sh" ] || die "the build tree has no deps.sh. Run ./build.sh."
+    # shellcheck source=/dev/null  # written by cmake/dependencies.cmake
     source "${CMAKE_TREE}/deps.sh"
 }
 

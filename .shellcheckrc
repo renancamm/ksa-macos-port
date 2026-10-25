@@ -1,0 +1,5 @@
+# shellcheck -x $(git ls-files '*.sh'), from the repository: the scripts source their libraries next to them
+source-path=SCRIPTDIR
+external-sources=true
+# ls -t picks the newest file, ls -d the first folder of a glob, among names the port makes itself
+disable=SC2012

@@ -161,7 +161,7 @@ place() {
     local matches
     matches="$(echo "${SHOTS}" | grep "_$1$" || true)"
     [ -n "${matches}" ] || die "no section or screenshot '$1' in the tour (the app's Benchmark/benchmark.txt)."
-    [ "$(echo "${matches}" | wc -l)" -eq 1 ] || die "more than one screenshot '$1': $(echo ${matches})."
+    [ "$(echo "${matches}" | wc -l)" -eq 1 ] || die "more than one screenshot '$1': ${matches//$'\n'/ }."
     echo "${matches}"
 }
 ONLY=()
@@ -182,10 +182,10 @@ SECTIONS="${ONLY[*]:-all}"
 # Without places: fast mode's short test, or the cinematic tour (the tour's "fast" and "tour" lines)
 if [ "${NAMED}" = 0 ]; then
     if [ -n "${FAST}" ]; then
-        ONLY=($(awk '$1 == "fast" { $1 = ""; print }' "${SCRIPT}"))
+        read -r -a ONLY <<< "$(awk '$1 == "fast" { $1 = ""; print }' "${SCRIPT}")"
         SECTIONS="${ONLY[*]}"
     else
-        ONLY=($(awk '$1 == "tour" { $1 = ""; print }' "${SCRIPT}"))
+        read -r -a ONLY <<< "$(awk '$1 == "tour" { $1 = ""; print }' "${SCRIPT}")"
     fi
 fi
 # Fast mode plays in Earth's small system when its sections need no other celestial than the Moon
@@ -265,9 +265,6 @@ set_setting() {
     grep -q "^$1 = " "${SETTINGS}" || die "settings.toml has no '$1' (does this KSA version still match?)."
     sed -i '' "s|^$1 = .*|$1 = $2|" "${SETTINGS}"
     SET_KEYS="${SET_KEYS}$1 "
-}
-setting() {
-    sed -n "s/^$1 = //p" "${SETTINGS}" | tr -d '"'
 }
 # The game starts straight into a new game of the chosen system, without its system menu, update popup, changelog or
 # name labels, with the camera on the game's test vessel in orbit (a testing start, the one that keeps the system's
@@ -352,7 +349,8 @@ mkdir -p "${OUT}"
 cp "${SETTINGS}" "${OUT}/settings.toml"
 # What the report says about this Mac and the run (the report program asks macOS about the Mac)
 switches="$(env | grep -E '^KSA_(MTL_|HOOKS)' | sed "s|${HOME}|~|g" | paste -sd ' ' - || true)"
-tools="$(IFS=,; echo "${TOOLS[*]:-none}" | sed 's/,/, /g')"
+tools="$(IFS=,; echo "${TOOLS[*]:-none}")"
+tools="${tools//,/, }"
 changed="${SETS[*]:-}${PORTS[*]:+${SETS[*]:+ }port-settings: ${PORTS[*]}}"
 [ -z "${SETTINGS_FILE}" ] || changed="$(basename "${SETTINGS_FILE}")${changed:+ }${changed}"
 starmap=none

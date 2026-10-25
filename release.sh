@@ -83,7 +83,7 @@ KSA_BUILD_NO="${KSA_VERSION##*.}"
 n=0
 for tag in $(git -C "${REPO}" tag -l "v${KSA_BUILD_NO}.*") \
     $(git -C "${REPO}" ls-remote --tags origin "v${KSA_BUILD_NO}.*" 2> /dev/null | sed 's|.*refs/tags/||'); do
-    t="${tag#v${KSA_BUILD_NO}.}"
+    t="${tag#v"${KSA_BUILD_NO}".}"
     [[ "${t}" =~ ^[0-9]+$ ]] && [ "${t}" -gt "${n}" ] && n="${t}"
 done
 VERSION="${KSA_BUILD_NO}.$((n + 1))"
