@@ -189,12 +189,13 @@ puts the tour from `src/benchmark/benchmark.txt` into the app.
 | Option | |
 |---|---|
 | `--preset low`, `--preset medium`, `--preset high` | fixed settings in a 1280x800 window without V-Sync, the same on every Mac (default: your settings) |
+| `--defaults` | the settings of a fresh install instead of yours: the game's own defaults and the port settings' (a preset, `--set` and `--port` go on top) |
 | `--system earth` | Earth and the Moon only (the game's smaller system): skips Mars, Saturn and Jupiter, and needs less memory (default: `sol`; in fast mode `earth` when the places played are all on Earth or the Moon) |
 | `--fast` | the short test (three places on Earth, the `rocket` section), or the sections and places named with the camera jumping between places; measures the views standing still (default: the cinematic tour) |
 | `--no-shots` | take no screenshots |
 | `--set <key>=<value>` | change a setting of `settings.toml` for the run, on top of the preset (repeat for more; strings need no quotes) |
 | `--settings <file>` | apply the settings in a file of `key = value` lines, on top of the preset and before `--set` |
-| `--port <key>=<value>` | change a [port setting](../../README.md#the-mac-port-tab) for the run, on top of yours (with a preset, on top of the defaults); the report shows the port settings and what the hooks did |
+| `--port <key>=<value>` | change a [port setting](../../README.md#the-mac-port-tab) for the run, on top of yours (with a preset or `--defaults`, on top of the defaults); the report shows the port settings and what the hooks did |
 | `--compare <run>` | compare with that run (folder or zip) at the end; the script fails when screenshots differ |
 | `--app <path>` | the app to measure (default: `~/Applications/Kitten Space Agency.app`) |
 | `<section or place> ...` | play only these sections, or a section up to the named place (a screenshot's name) |

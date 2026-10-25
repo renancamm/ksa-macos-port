@@ -174,8 +174,8 @@ built against the installed app's KSA, or another one with `--ksa <archive>`, an
 KSA version. Everything the build downloads is declared in [`cmake/dependencies.cmake`](cmake/dependencies.cmake).
 
 Releases are made with `release.sh <ksa_linux_vX.tar.gz>`. It builds the port folder from a clean copy of the
-committed sources, zips it, and tests the zip by making an app with it and running the benchmark on that app.
-`release.sh --publish` then tags the commit and uploads the zip as a draft GitHub release.
+committed sources, zips it, and tests the zip by making an app with it and running the benchmark on that app with a
+fresh install's settings. `release.sh --publish` then tags the commit and uploads the zip as a draft GitHub release.
 
 ### .NET
 

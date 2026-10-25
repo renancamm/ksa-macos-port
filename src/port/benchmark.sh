@@ -14,6 +14,7 @@
 #
 # Options:
 #   --preset <name>    low, medium or high: fixed settings in a 1280x800 window, the same on every Mac (default: yours)
+#   --defaults         the settings of a fresh install instead of yours: the game's own and the port's defaults
 #   --system <name>    sol (the solar system) or earth (Earth and the Moon only: for Macs with 8 GB of memory)
 #                      (default: sol, or earth in fast mode when the places played are all on Earth or the Moon)
 #   --fast             a short test: three places on Earth, the game paused and the camera jumping between them,
@@ -24,7 +25,7 @@
 #   --settings <file>  change the settings in that file ("key = value" lines, as in settings.toml), on top of the
 #                      preset and before --set
 #   --port <key=value>  change one setting of port-settings.toml for the run (again for more), on top of yours (with
-#                      a preset: on top of the defaults)
+#                      a preset or --defaults: on top of the defaults)
 #   --compare <run>    compare with that run at the end (and fail when screenshots differ)
 #   --app <path>       the app to measure (default: ~/Applications/Kitten Space Agency.app)
 #
@@ -91,6 +92,7 @@ fi
 
 PLACES=()
 PRESET=""
+DEFAULTS=""
 SYSTEM=""
 EXPLORE=""
 FAST=""
@@ -117,6 +119,7 @@ while [ $# -gt 0 ]; do
         --compare) REFERENCE="${2%/}"; shift ;;
         --app) APP="${2%/}"; shift ;;
         --preset) PRESET="$2"; shift ;;
+        --defaults) DEFAULTS=1 ;;
         --system) SYSTEM="$2"; shift ;;
         --repeat) REPEAT="$2"; shift ;;
         --profile) PROFILE=1 ;;
@@ -256,19 +259,23 @@ printf '[[mods]]\nid = "Core"\nenabled = true\n' > "${INSTANCE}/manifest.toml"
 # The run's settings: yours, with the preset on top
 SETTINGS="${INSTANCE}/settings.toml"
 cp "${DOCS}/settings.toml" "${SETTINGS}"
+SET_KEYS=" "
 # set_setting <key> <value>: one line of settings.toml (keys are unique across its sections)
 set_setting() {
     grep -q "^$1 = " "${SETTINGS}" || die "settings.toml has no '$1' (does this KSA version still match?)."
     sed -i '' "s|^$1 = .*|$1 = $2|" "${SETTINGS}"
+    SET_KEYS="${SET_KEYS}$1 "
 }
 setting() {
     sed -n "s/^$1 = //p" "${SETTINGS}" | tr -d '"'
 }
-# The game starts straight into a new game of the chosen system, without its system menu, update popup or name labels,
-# with the camera on the game's test vessel in orbit (a testing start, the one that keeps the system's vehicles)
+# The game starts straight into a new game of the chosen system, without its system menu, update popup, changelog or
+# name labels, with the camera on the game's test vessel in orbit (a testing start, the one that keeps the system's
+# vehicles)
 for kv in selectSystemOnStart=false "lastSystemId=\"${SYSTEM_ID}\"" 'startGameType="Testing"' 'startVehicle="Rocket"' \
-    'startParent="Earth"' 'startSituation="RocketStartingSituation"' checkForUpdates=false celestialNames=false \
-    locationNames=false ${PRESET_SETTINGS[@]+"${PRESET_SETTINGS[@]}"}; do
+    'startParent="Earth"' 'startSituation="RocketStartingSituation"' checkForUpdates=false \
+    displayChangelogOnChange=false celestialNames=false locationNames=false \
+    ${PRESET_SETTINGS[@]+"${PRESET_SETTINGS[@]}"}; do
     set_setting "${kv%%=*}" "${kv#*=}"
 done
 # --settings: its "key = value" lines as they are
@@ -290,10 +297,19 @@ for kv in ${SETS[@]+"${SETS[@]}"}; do
     fi
     set_setting "${kv%%=*}" "${value}"
 done
+# --defaults: only the lines set above, in their sections. The game gives every setting the file leaves out its
+# default, as on a fresh install, and saves the whole file when it starts.
+if [ -n "${DEFAULTS}" ]; then
+    awk -v keep="${SET_KEYS}" '/^\[/ { section = $0; next }
+        $2 == "=" && index(keep, " " $1 " ") { if (section != "") { print (n++ ? "\n" : "") section; section = "" } print }' \
+        "${SETTINGS}" > "${SETTINGS}.new"
+    mv "${SETTINGS}.new" "${SETTINGS}"
+fi
 
-# The run's port settings (the app's port-settings.toml template): yours unless a preset is played, --port on top
+# The run's port settings (the app's port-settings.toml template): yours unless a preset is played or --defaults,
+# --port on top
 PORT_SETTINGS="${INSTANCE}/port-settings.toml"
-if [ -z "${PRESET}" ] && [ -f "${DOCS}/port-settings.toml" ]; then
+if [ -z "${PRESET}${DEFAULTS}" ] && [ -f "${DOCS}/port-settings.toml" ]; then
     cp "${DOCS}/port-settings.toml" "${PORT_SETTINGS}"
 else
     cp "${APP}/Contents/Resources/port-settings.toml" "${PORT_SETTINGS}" 2> /dev/null || : > "${PORT_SETTINGS}"
@@ -341,10 +357,16 @@ changed="${SETS[*]:-}${PORTS[*]:+${SETS[*]:+ }port-settings: ${PORTS[*]}}"
 [ -z "${SETTINGS_FILE}" ] || changed="$(basename "${SETTINGS_FILE}")${changed:+ }${changed}"
 starmap=none
 [ ! -f "${RES}/StarMap/StarMap.dll" ] || starmap="$(cat "${RES}/StarMap/version.txt" 2> /dev/null || echo "in the app")"
-report system "${OUT}" "${APP}" "StarMap=${starmap}" "System=${SYSTEM_ID}" "Sections=${SECTIONS}" \
-    "Mode=$([ -n "${FAST}" ] && echo fast || echo cinematic)$([ -n "${NO_SHOTS}" ] && echo ", no screenshots" || true)" \
-    "Preset=${PRESET:-none, own settings}" "Settings changed=${changed:-none}" "Start=a new game, from benchmark.sh" \
-    "KSA Metal switches=${switches:-none}" "Tools=${tools}" > /dev/null || die "the report program did not run."
+preset="${PRESET:-none, own settings}"
+[ -z "${DEFAULTS}" ] || preset="${PRESET:-none}, a fresh install's settings"
+# system_facts: system.txt, with the window from the run's settings.toml
+system_facts() {
+    report system "${OUT}" "${APP}" "StarMap=${starmap}" "System=${SYSTEM_ID}" "Sections=${SECTIONS}" \
+        "Mode=$([ -n "${FAST}" ] && echo fast || echo cinematic)$([ -n "${NO_SHOTS}" ] && echo ", no screenshots" || true)" \
+        "Preset=${preset}" "Settings changed=${changed:-none}" "Start=a new game, from benchmark.sh" \
+        "KSA Metal switches=${switches:-none}" "Tools=${tools}" > /dev/null
+}
+system_facts || die "the report program did not run."
 # Keeps the display awake while the script runs (the game needs it), and wakes it now: a display that went to sleep
 # makes the game fail at start
 caffeinate -d -i -w $$ &
@@ -468,6 +490,11 @@ play() {
 for n in $(seq 1 "${REPEAT}"); do
     play "${n}"
 done
+# --defaults: the settings as the game saved them, with its defaults filled in
+if [ -n "${DEFAULTS}" ]; then
+    cp "${SETTINGS}" "${OUT}/settings.toml"
+    system_facts || true
+fi
 case "${pressure}" in 1) pressure=normal ;; 2) pressure=warning ;; *) pressure=critical ;; esac
 swap_after="$(sysctl -n vm.swapusage | sed -n 's/.*used = \([0-9.]*\)M.*/\1/p')"
 echo "Memory pressure: ${pressure}" >> "${OUT}/run.txt"

@@ -1,7 +1,8 @@
 #!/bin/bash
 # Makes a release of the port: builds the port folder from a clean copy of the committed sources, zips it and tests
-# the zip by making an app with it and running the benchmark on that app. With --publish, it then tags the commit and
-# uploads the zip as a draft GitHub release, to look over and publish on GitHub.
+# the zip by making an app with it and running the benchmark on that app, with a fresh install's settings. With
+# --publish, it then tags the commit and uploads the zip as a draft GitHub release, to look over and publish on
+# GitHub.
 #
 # Usage: ./release.sh [options] <ksa_linux_vX.tar.gz>   build and test dist/ksa-macos-port-v<version>.zip
 #        ./release.sh --publish                         tag and upload the newest zip in dist/
@@ -102,7 +103,8 @@ rm -f "${ZIP}"
 ditto -c -k --norsrc --keepParent "${WORK}/src/dist/ksa-macos-port" "${ZIP}"
 info "$(basename "${ZIP}"): $(du -h "${ZIP}" | cut -f1 | tr -d ' ')"
 
-# 3. The test: unzip it, make an app with it from the archive, run the benchmark on that app
+# 3. The test: unzip it, make an app with it from the archive, run the benchmark on that app with a fresh install's
+#    settings (yours would test your choices, not the release)
 step "Testing $(basename "${ZIP}")"
 TEST="${WORK}/test"
 mkdir -p "${TEST}"
@@ -111,7 +113,7 @@ TEST_APP="${TEST}/${APP_NAME}.app"
 "${TEST}/ksa-macos-port/port.sh" --app "${TEST_APP}" "${ARCHIVE}"
 [ "$(app_version "${TEST_APP}")" = "${KSA_VERSION}" ] || die "the test app was not made."
 if [ "${GAME_TEST}" = 1 ]; then
-    "${TEST}/ksa-macos-port/benchmark.sh" --app "${TEST_APP}" --fast || die "the benchmark failed on the test app."
+    "${TEST}/ksa-macos-port/benchmark.sh" --app "${TEST_APP}" --fast --defaults || die "the benchmark failed on the test app."
 fi
 rm -rf "${WORK}"
 
