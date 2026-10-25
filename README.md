@@ -295,7 +295,7 @@ another setting is greyed out until that one is on. Each row's tooltip says what
 
 | Section | What's there |
 |---|---|
-| Image | Apple's MetalFX and what needs it, off by default: upscaling, the game's anti-aliasing under it, render scale |
+| Image | Apple's MetalFX and what needs it, off by default: upscaling, render scale, the game's anti-aliasing under it |
 | Interface | the flight HUD fitted to the display, or the game's own layout |
 | Performance | a visible trade for speed, with the game's own as the default: cloud shadows, plume shadows |
 | Optimizations | the same image, faster, on by default; back to the game's own to find out whether one causes a problem |
