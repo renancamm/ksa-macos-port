@@ -205,10 +205,9 @@ void KCommandBuffer::endEncoder() {
             id<MTLTexture> t = passDesc.colorAttachments[i].texture;
             if (!t) continue;
             bool tileOnly = t.storageMode == MTLStorageModeMemoryless;
-            if (suspending && tileOnly) {
+            if (suspending && tileOnly)
                 KERR_ONCE("render pass suspended with a memoryless attachment (a tessellated draw, or KSA_MTL_GPUPROF_SPLIT=1): "
-                         "its contents are lost");
-            }
+                          "its contents are lost");
             [render setColorStoreAction:suspending && !tileOnly ? MTLStoreActionStore : colorStores[i] atIndex:i];
         }
         if (passDesc.depthAttachment.texture) [render setDepthStoreAction:suspending ? MTLStoreActionStore : depthStore];
@@ -992,9 +991,7 @@ VKFN(void) vkCmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indexCount, 
         return;
     }
     if (!flushGraphics(cb) || !indexCount || !instanceCount || !cb->indexBuffer) return;
-    if (cb->graphicsPipeline->triangleFan) {
-        KERR_ONCE("indexed triangle fans are not emulated (drawn as lists)");
-    }
+    if (cb->graphicsPipeline->triangleFan) KERR_ONCE("indexed triangle fans are not emulated (drawn as lists)");
     setDrawId(cb, 0);
     forEachView(cb, [&] {
         [cb->render drawIndexedPrimitives:cb->graphicsPipeline->primitive indexCount:indexCount indexType:cb->indexType
