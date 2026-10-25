@@ -146,7 +146,6 @@ VKFN(VkResult) vkAllocateDescriptorSets(VkDevice, const VkDescriptorSetAllocateI
             p->chunks[chunk].used += size;
         }
         auto* s = new KDescriptorSet();
-        s->pool = p;
         s->layout = l;
         l->retain();
         s->chunk = chunk;

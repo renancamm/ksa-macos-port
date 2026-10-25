@@ -1327,7 +1327,6 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
     if (!async && !(ps = makeState(d))) return nullptr;
 
     auto* p = new KPipeline();
-    p->bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     p->render = ps;
     if (async) {
         // A failure leaves render nil: draws with the pipeline are skipped, as for a failed synchronous creation
@@ -1480,7 +1479,6 @@ KPipeline* kmtlCreateComputeFromStage(KDevice* dev, KPipelineLayout* layout, con
     id<MTLComputePipelineState> ps = nil;
     if (!async && !(ps = build(tr, name))) return nullptr;
     auto* p = new KPipeline();
-    p->bindPoint = VK_PIPELINE_BIND_POINT_COMPUTE;
     p->compute = ps;
     if (async) {
         p->pending = std::make_shared<KPipeline::Pending>();
@@ -1523,11 +1521,7 @@ VKFN(VkResult) vkCreateComputePipelines(VkDevice device, VkPipelineCache, uint32
     }
     if (res != VK_SUCCESS && !kmtlConfig().strictPipelines) {
         for (uint32_t i = 0; i < n; i++)
-            if (!out[i]) {
-                auto* p = new KPipeline();
-                p->bindPoint = VK_PIPELINE_BIND_POINT_COMPUTE;
-                out[i] = (VkPipeline)p;
-            }
+            if (!out[i]) out[i] = (VkPipeline) new KPipeline();  // null pipeline: dispatches with it are skipped
         return VK_SUCCESS;
     }
     return res;

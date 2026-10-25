@@ -154,7 +154,6 @@ struct KInstance : KDispatchable {
 };
 
 struct KPhysicalDevice : KDispatchable {
-    KInstance* instance = nullptr;
     id<MTLDevice> mtl = nil;
 };
 
@@ -214,9 +213,7 @@ struct KDeviceMemory {
 };
 
 struct KBuffer {
-    KDevice* device = nullptr;
     VkDeviceSize size = 0;
-    KDeviceMemory* memory = nullptr;
     VkDeviceSize offset = 0;
     id<MTLBuffer> mtl = nil;  // = memory->whole
     uint64_t gpuAddress() const { return mtl ? mtl.gpuAddress + offset : 0; }
@@ -230,14 +227,12 @@ struct KImage {
     MTLTextureDescriptor* desc = nil;
     MTLSizeAndAlign sizeAlign{};
     id<MTLTexture> mtl = nil;
-    KDeviceMemory* memory = nullptr;
     bool ownsTexture = false;  // swapchain images
     VkFormat format = VK_FORMAT_UNDEFINED;
     MTLPixelFormat pixelFormat = MTLPixelFormatInvalid;
 };
 
 struct KImageView {
-    KDevice* device = nullptr;
     KImage* image = nullptr;
     id<MTLTexture> mtl = nil;
     // For depth/stencil aspect-only views of combined formats the render pass still uses the image
@@ -323,7 +318,6 @@ struct KDescriptorPool {
 };
 
 struct KDescriptorSet {
-    KDescriptorPool* pool = nullptr;
     KSetLayout* layout = nullptr;
     id<MTLBuffer> buffer = nil;  // the pool chunk holding this set
     uint8_t* base = nullptr;     // CPU address of the set
@@ -374,7 +368,6 @@ struct KTessStages {
 };
 
 struct KPipeline {
-    VkPipelineBindPoint bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     // Graphics
     id<MTLRenderPipelineState> render = nil;
     id<MTLDepthStencilState> depthStencil = nil;
@@ -429,7 +422,6 @@ struct KPipeline {
 void kmtlWritePNG(id<MTLBuffer> buf, NSUInteger w, NSUInteger h, bool bgra, std::string path);  // swapchain.mm
 // upscale.mm: the present's MetalFX passes
 id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<MTLTexture> color);
-uint64_t kmtlPresentCount();
 int kmtlThrottleFor(const std::string& profName);
 inline bool kmtlThrottled(const KPipeline* p) {
     if (!p || p->throttle < 0) return false;
@@ -466,7 +458,6 @@ struct KUploadRing {
 struct KCommandBuffer : KDispatchable {
     KDevice* device = nullptr;
     KQueue* queue = nullptr;  // the queue of its pool's family: encoders order against that queue's chain fence
-    KCommandPool* pool = nullptr;
     id<MTLCommandBuffer> mtl = nil;
     id<MTLRenderCommandEncoder> render = nil;
     id<MTLComputeCommandEncoder> compute = nil;
@@ -603,13 +594,10 @@ VkExtent2D kmtlLayerExtent(CAMetalLayer* layer);
 
 struct KSwapchain {
     std::shared_ptr<KPresentState> presentState = std::make_shared<KPresentState>();
-    KDevice* device = nullptr;
     KSurface* surface = nullptr;
     std::vector<KImage*> images;
     uint32_t next = 0;
     VkExtent2D extent{};
-    VkFormat format = VK_FORMAT_B8G8R8A8_UNORM;
-    VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -629,10 +617,6 @@ MTLVertexFormat kmtlVertexFormat(VkFormat f);
 
 // ---------------------------------------------------------------------------------------------------------------
 // Helpers shared between files
-template <typename T, typename H> inline T* K(H h) { return reinterpret_cast<T*>(h); }
-#define KH(T, h) (reinterpret_cast<T*>(h))
-template <typename H, typename T> inline H toHandle(T* p) { return reinterpret_cast<H>(p); }
-
 inline const void* findNext(const void* chain, VkStructureType type) {
     for (auto* p = (const VkBaseInStructure*)chain; p; p = p->pNext)
         if (p->sType == type) return p;
@@ -641,7 +625,6 @@ inline const void* findNext(const void* chain, VkStructureType type) {
 
 KImage* kmtlCreateSwapchainImage(KDevice* dev, VkFormat format, uint32_t w, uint32_t h);
 void kmtlDestroyImage(KImage* img);
-id<MTLTexture> kmtlBindTexture(KImage* img);  // creates the texture once memory is bound
 uint64_t kmtlHash(const void* data, size_t size);
 id<MTLLibrary> kmtlCompileMSL(KDevice* dev, const std::string& msl, std::string* err);
 id<MTLLibrary> kmtlCompileStageMSL(KDevice* dev, const std::string& msl, std::string* err);
@@ -695,6 +678,9 @@ void kmtlProfDumpSpirv(const uint32_t* code, size_t bytes, uint64_t hash);
 void kmtlRegisterMemory(KDeviceMemory* m);
 void kmtlUnregisterMemory(KDeviceMemory* m);
 uint64_t kmtlAccelId(VkAccelerationStructureKHR as);
+
+// Ray tracing pipelines (rtpipeline.mm): the size of a shader group handle, which the device properties report
+uint32_t kmtlRtGroupHandleSize();
 
 // Memory accounting (frame log and budget)
 extern std::atomic<int64_t> g_allocatedBytes;

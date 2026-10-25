@@ -70,7 +70,6 @@ static KPipeline* createRayTracingPipeline(KDevice* dev, const VkRayTracingPipel
     st.module = (VkShaderModule)&km;
     KPipeline* p = kmtlCreateComputeFromStage(dev, (KPipelineLayout*)ci->layout, &st, true);
     if (!p) return nullptr;
-    p->bindPoint = VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR;
     KLOG(1, "ray tracing pipeline: %u groups, %zu miss shaders, closest-hit %s -> compute kernel %lux%lu",
          ci->groupCount, misses.size(), chit >= 0 ? "yes" : "no", (unsigned long)p->workgroup.width, (unsigned long)p->workgroup.height);
     return p;
@@ -89,16 +88,14 @@ VKFN(VkResult) vkCreateRayTracingPipelinesKHR(VkDevice device, VkDeferredOperati
     return res;
 }
 
-VKFN(VkResult) vkGetRayTracingShaderGroupHandlesKHR(VkDevice, VkPipeline pipeline, uint32_t first, uint32_t count, size_t size, void* data) {
+VKFN(VkResult) vkGetRayTracingShaderGroupHandlesKHR(VkDevice, VkPipeline, uint32_t first, uint32_t count, size_t size, void* data) {
     KTRACE_FIRST();
-    auto* p = (KPipeline*)pipeline;
     if (size < (size_t)count * kGroupHandleSize) return VK_ERROR_OUT_OF_HOST_MEMORY;
     memset(data, 0, size);
     for (uint32_t i = 0; i < count; i++) {
         uint32_t h[2] = {0x5452534Bu /* "KSRT" */, first + i};
         memcpy((uint8_t*)data + (size_t)i * kGroupHandleSize, h, sizeof(h));
     }
-    (void)p;
     return VK_SUCCESS;
 }
 

@@ -9,7 +9,6 @@
 
 struct KAccel {
     id<MTLAccelerationStructure> mtl = nil;
-    VkAccelerationStructureTypeKHR type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
     uint64_t address = 0;  // what vkGetAccelerationStructureDeviceAddressKHR hands out
 };
 
@@ -157,7 +156,6 @@ VKFN(VkResult) vkCreateAccelerationStructureKHR(VkDevice device, const VkAcceler
     auto* dev = (KDevice*)device;
     // A standalone structure (KSA's are small); the Vulkan buffer it sits in stays unused
     auto* a = new KAccel();
-    a->type = ci->type;
     a->mtl = [dev->mtl newAccelerationStructureWithSize:std::max<VkDeviceSize>(ci->size, 256)];
     if (!a->mtl) {
         delete a;

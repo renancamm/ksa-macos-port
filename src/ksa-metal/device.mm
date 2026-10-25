@@ -444,7 +444,6 @@ VKFN(void) vkGetDeviceMemoryCommitment(VkDevice, VkDeviceMemory m, VkDeviceSize*
 VKFN(VkResult) vkCreateBuffer(VkDevice device, const VkBufferCreateInfo* ci, const VkAllocationCallbacks*, VkBuffer* out) {
     KTRACE_FIRST();
     auto* b = new KBuffer();
-    b->device = (KDevice*)device;
     b->size = ci->size;
     *out = (VkBuffer)b;
     return VK_SUCCESS;
@@ -489,7 +488,6 @@ VKFN(void) vkGetDeviceBufferMemoryRequirements(VkDevice device, const VkDeviceBu
 static VkResult bindBuffer(VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize offset) {
     auto* b = (KBuffer*)buffer;
     auto* m = (KDeviceMemory*)memory;
-    b->memory = m;
     b->offset = offset;
     b->mtl = m->whole;
     return VK_SUCCESS;
@@ -647,7 +645,6 @@ void kmtlZeroImage(KImage* img);
 static VkResult bindImage(VkImage image, VkDeviceMemory memory, VkDeviceSize offset) {
     auto* img = (KImage*)image;
     auto* m = (KDeviceMemory*)memory;
-    img->memory = m;
     if (memoryless(img->info)) {
         img->desc.storageMode = MTLStorageModeMemoryless;
         img->desc.usage = MTLTextureUsageRenderTarget;
@@ -745,7 +742,6 @@ VKFN(VkResult) vkCreateImageView(VkDevice device, const VkImageViewCreateInfo* c
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     auto* v = new KImageView();
-    v->device = (KDevice*)device;
     v->image = img;
     v->format = ci->format;
     const VkImageSubresourceRange& r = ci->subresourceRange;

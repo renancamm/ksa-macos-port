@@ -414,7 +414,6 @@ VKFN(VkResult) vkAllocateCommandBuffers(VkDevice device, const VkCommandBufferAl
     for (uint32_t i = 0; i < ai->commandBufferCount; i++) {
         auto* cb = new KCommandBuffer();
         cb->device = (KDevice*)device;
-        cb->pool = p;
         cb->queue = p->queue;
         p->buffers.push_back(cb);
         out[i] = (VkCommandBuffer)cb;

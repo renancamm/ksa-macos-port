@@ -61,24 +61,18 @@ VKFN(VkResult) vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfo
     KTRACE_FIRST();
     auto* dev = (KDevice*)device;
     auto* sc = new KSwapchain();
-    sc->device = dev;
     sc->surface = (KSurface*)ci->surface;
     sc->extent = ci->imageExtent;
-    sc->format = ci->imageFormat;
-    sc->presentMode = ci->presentMode;
     CAMetalLayer* layer = sc->surface->layer;
     MTLPixelFormat pf = kmtlPixelFormat(ci->imageFormat);
-    auto configure = ^{
-        layer.device = dev->mtl;
-        layer.pixelFormat = pf;
-        layer.framebufferOnly = NO;
-        layer.drawableSize = CGSizeMake(ci->imageExtent.width, ci->imageExtent.height);
-        layer.maximumDrawableCount = 3;
-        layer.displaySyncEnabled = ci->presentMode == VK_PRESENT_MODE_FIFO_KHR || ci->presentMode == VK_PRESENT_MODE_FIFO_RELAXED_KHR;
-        layer.opaque = YES;
-    };
     // CAMetalLayer drawable properties may be set from any thread; hopping to the main thread could deadlock
-    configure();
+    layer.device = dev->mtl;
+    layer.pixelFormat = pf;
+    layer.framebufferOnly = NO;
+    layer.drawableSize = CGSizeMake(ci->imageExtent.width, ci->imageExtent.height);
+    layer.maximumDrawableCount = 3;
+    layer.displaySyncEnabled = ci->presentMode == VK_PRESENT_MODE_FIFO_KHR || ci->presentMode == VK_PRESENT_MODE_FIFO_RELAXED_KHR;
+    layer.opaque = YES;
     uint32_t count = std::max(2u, std::min(3u, ci->minImageCount));
     for (uint32_t i = 0; i < count; i++) {
         KImage* img = kmtlCreateSwapchainImage(dev, ci->imageFormat, ci->imageExtent.width, ci->imageExtent.height);
@@ -320,9 +314,7 @@ static std::chrono::steady_clock::time_point g_start, g_lastPresent, g_ingameTim
 static std::vector<Shot> g_shots;
 static size_t g_nextShot = 0;
 static ShotUnit g_shotUnit = ShotUnit::Presents;
-static bool g_exitAfterShots = false;
 static double g_exitSeconds = 0;
-static int g_exitAfter = 0;
 static std::atomic<int> g_shotsPending{0};
 // GPU busy time: union of command buffer GPU intervals, in completion order, summed until the next present (so the
 // column lags the CPU interval by the frames in flight)
@@ -487,11 +479,9 @@ static void initInstruments() {
             snprintf(name, sizeof(name), "/shot_%.10g.png", v);
             g_shots.push_back({v, std::string(cfg.shotDir ? cfg.shotDir : ".") + name});
         }
-        g_exitAfterShots = cfg.exitAfterShots;
     }
     std::sort(g_shots.begin(), g_shots.end(), [](const Shot& a, const Shot& b) { return a.at < b.at; });
     g_exitSeconds = cfg.exitAfterSeconds;
-    g_exitAfter = cfg.exitAfter;
 }
 
 static void ensureInstruments() {
@@ -554,7 +544,7 @@ static void takeShot(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb, std::
               toBuffer:buf destinationOffset:0 destinationBytesPerRow:w * 4 destinationBytesPerImage:w * h * 4];
     [b endEncoding];
     g_shotsPending++;
-    bool exitAfter = last && g_exitAfterShots;
+    bool exitAfter = last && kmtlConfig().exitAfterShots;
     [cb addCompletedHandler:^(id<MTLCommandBuffer>) {
         writePNG(buf, w, h, bgra, path);
         if (--g_shotsPending == 0 && exitAfter) exitSoon("KSA_MTL_EXIT_AFTER_SHOTS");
@@ -629,7 +619,7 @@ void kmtlOnPresent(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb) {
     }
     for (const std::string& path : g_shotRequests) takeShot(dev, image, cb, path, false);
     g_shotRequests.clear();
-    if (g_exitAfter && g_presents == (uint64_t)g_exitAfter) exitSoon("KSA_MTL_EXIT_AFTER reached");
+    if (kmtlConfig().exitAfter && g_presents == (uint64_t)kmtlConfig().exitAfter) exitSoon("KSA_MTL_EXIT_AFTER reached");
     if (g_exitSeconds > 0 && std::chrono::duration<double>(now - g_start).count() >= g_exitSeconds) {
         g_exitSeconds = 0;
         exitSoon("KSA_MTL_EXIT_AFTER_S reached");

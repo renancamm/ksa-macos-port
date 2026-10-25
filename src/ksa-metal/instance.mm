@@ -100,7 +100,6 @@ VKFN(VkResult) vkCreateInstance(const VkInstanceCreateInfo* ci, const VkAllocati
     auto* inst = new KInstance();
     if (ci->pApplicationInfo && ci->pApplicationInfo->apiVersion) inst->apiVersion = ci->pApplicationInfo->apiVersion;
     inst->physical = new KPhysicalDevice();
-    inst->physical->instance = inst;
     inst->physical->mtl = dev;
     KLOG(1, "instance created on %s (app api %u.%u)", dev.name.UTF8String, VK_API_VERSION_MAJOR(inst->apiVersion),
          VK_API_VERSION_MINOR(inst->apiVersion));
@@ -298,7 +297,7 @@ VKFN(void) vkGetPhysicalDeviceProperties2(VkPhysicalDevice pd, VkPhysicalDeviceP
         }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR: {
             auto* o = (VkPhysicalDeviceRayTracingPipelinePropertiesKHR*)s;
-            o->shaderGroupHandleSize = 32;
+            o->shaderGroupHandleSize = kmtlRtGroupHandleSize();
             o->maxRayRecursionDepth = 31;  // only ray generation may trace; deeper recursion fails at pipeline creation
             o->maxShaderGroupStride = 4096;
             o->shaderGroupBaseAlignment = 64;
