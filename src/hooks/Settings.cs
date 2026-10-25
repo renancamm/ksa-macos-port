@@ -12,6 +12,7 @@ namespace KsaMetalHooks;
 //   KSA_CLOUD_SHADOWS=normal|slow       how fast cloud shadows follow the clouds
 //   KSA_PLUME_SHADOWS=normal|light     the size of the smoke's sun shadow cascades
 //   KSA_CREW_PORTRAITS=always|shown|shown_15  when the crew panel's faces are drawn (the Mac Port tab changes it live)
+//   KSA_HUD_LAYOUT=fit|game             the flight HUD fitted to the display, or the game's (changed live too)
 //   KSA_TERRAIN_CACHE=0, KSA_OUTLINE_SKIP=0, KSA_WORKER_PARKING=0  leave out that patch
 //   KSA_PARK_MS=<ms>                    how long an idle job worker spins before it sleeps (default 0.25)
 public static class Settings
@@ -31,6 +32,8 @@ public static class Settings
 
     public static string CrewPortraits = Environment.GetEnvironmentVariable("KSA_CREW_PORTRAITS") is { } p && p is "always" or "shown_15"
         ? p : "shown";
+
+    public static string HudLayout = Environment.GetEnvironmentVariable("KSA_HUD_LAYOUT") is "game" ? "game" : "fit";
 
     // A patch's on/off variable: anything but 0 is on
     public static bool On(string variable) => Environment.GetEnvironmentVariable(variable) is not "0";

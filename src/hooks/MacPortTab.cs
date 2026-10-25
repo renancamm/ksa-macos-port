@@ -165,6 +165,8 @@ internal static class MacPortTab
         s.Running = value;
         if (s.Key == "crew_portraits")
             Settings.CrewPortraits = value;
+        else if (s.Key == "hud_layout")
+            Settings.HudLayout = value;
     }
 
     // The settings the tab shows
