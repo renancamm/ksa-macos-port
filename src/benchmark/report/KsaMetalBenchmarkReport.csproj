@@ -7,6 +7,7 @@
 		<RootNamespace>KsaMetalBenchmarkReport</RootNamespace>
 		<ImplicitUsings>disable</ImplicitUsings>
 		<Nullable>enable</Nullable>
+		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 		<SatelliteResourceLanguages>en</SatelliteResourceLanguages>
 		<UseAppHost>false</UseAppHost>
 	</PropertyGroup>
