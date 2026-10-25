@@ -9,6 +9,7 @@
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -627,8 +628,8 @@ MTLVertexFormat kmtlVertexFormat(VkFormat f);
 // n rounded up to a multiple of a, a power of two
 template <typename T> constexpr T kmtlAlignUp(T n, T a) { return (n + a - 1) & ~(a - 1); }
 
-// Vulkan's two-call enumerations: with out null, the count of n; else up to *count items through write(i, out[i]),
-// VK_INCOMPLETE when they didn't all fit
+// Vulkan's two-call enumerations of n items: with out null, *count = n; else up to *count items through
+// write(i, out[i]), VK_INCOMPLETE when they didn't all fit
 template <typename T, typename F> VkResult kmtlEnumerate(uint32_t n, uint32_t* count, T* out, F write) {
     if (!out) { *count = n; return VK_SUCCESS; }
     uint32_t c = std::min(*count, n);
