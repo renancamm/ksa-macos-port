@@ -261,10 +261,10 @@ deps/, dist/              made by the build: downloads and build trees; the port
 
 ## KSA Metal
 
-KSA Metal is the port's Vulkan driver and what grew around it: **hooks** that patch the game's rendering code to make
-drawing cheaper, a **benchmark** that measures how the game runs on a Mac, and the **Mac Port** tab in the game's
-settings, where all of it is set. The game runs with the driver alone; the rest can be turned off, and the defaults
-keep the game's image as it is.
+KSA Metal is how the port draws the game, in three parts: the **driver**, a Vulkan driver written for KSA on top of
+Apple's Metal; the **hooks**, patches to the game's rendering code that make drawing cheaper; and the **benchmark**,
+which measures how the game runs on a Mac. The **Mac Port** tab in the game's settings sets all three. The game runs
+with the driver alone; the rest can be turned off, and the defaults keep the game's image as it is.
 
 ### The driver
 
