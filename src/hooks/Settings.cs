@@ -9,8 +9,8 @@ namespace KsaMetalHooks;
 //   KSA_UPSCALER=off|metalfx|spatial    how the 3D view is scaled up to the display's pixels (off: the game's stretch,
 //                                       filtered, and no render scale)
 //   KSA_RENDER_SCALE=<0.25..2>          the 3D view's size, as a fraction of the window's size in points
-//   KSA_CLOUD_SHADOWS=normal|slow       how fast cloud shadows follow the clouds
-//   KSA_PLUME_SHADOWS=normal|light     the size of the smoke's sun shadow cascades
+//   KSA_CLOUD_SHADOW_TUNING=off|slower_refresh  how fast cloud shadows follow the clouds
+//   KSA_PLUME_SHADOW_TUNING=off|low     the size of the smoke's sun shadow cascades
 //   KSA_CREW_PORTRAITS=always|shown|shown_15  when the crew panel's faces are drawn (the Mac Port tab changes it live)
 //   KSA_HUD_LAYOUT=fit|game             the flight HUD fitted to the display, or the game's (changed live too)
 //   KSA_OVERRIDE_AA=0                   with MetalFX, the game's anti-aliasing setting applies (but CMAA2)
@@ -25,11 +25,11 @@ public static class Settings
         float.TryParse(Environment.GetEnvironmentVariable("KSA_RENDER_SCALE"), NumberStyles.Float,
             CultureInfo.InvariantCulture, out float s) && s >= 0.25f && s <= 2f ? s : 1f;
 
-    public static readonly bool SlowCloudShadows =
-        string.Equals(Environment.GetEnvironmentVariable("KSA_CLOUD_SHADOWS"), "slow", StringComparison.OrdinalIgnoreCase);
+    public static readonly bool SlowerCloudShadows =
+        string.Equals(Environment.GetEnvironmentVariable("KSA_CLOUD_SHADOW_TUNING"), "slower_refresh", StringComparison.OrdinalIgnoreCase);
 
-    public static readonly bool LightPlumeShadows =
-        string.Equals(Environment.GetEnvironmentVariable("KSA_PLUME_SHADOWS"), "light", StringComparison.OrdinalIgnoreCase);
+    public static readonly bool LowPlumeShadows =
+        string.Equals(Environment.GetEnvironmentVariable("KSA_PLUME_SHADOW_TUNING"), "low", StringComparison.OrdinalIgnoreCase);
 
     public static string CrewPortraits = Environment.GetEnvironmentVariable("KSA_CREW_PORTRAITS") is { } p && p is "always" or "shown_15"
         ? p : "shown";

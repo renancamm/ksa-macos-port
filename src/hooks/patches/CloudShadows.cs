@@ -6,7 +6,7 @@ using KSA.Atmosphere.Rendering;
 
 namespace KsaMetalHooks;
 
-// Cloud shadows, "slow" (port-settings.toml). CloudShadowVolume.UpdateVolumeDensity refreshes 24 slices of the cloud
+// Cloud shadow tuning, "slower_refresh" (port-settings.toml). CloudShadowVolume.UpdateVolumeDensity refreshes 24 slices of the cloud
 // shadow volume per frame (8 for ambient light). With 6 (and 2), the volume costs about 1.5 ms less; it converges to
 // the same shadows, but they take about 4 times longer to follow moving clouds.
 internal static class CloudShadows
@@ -15,11 +15,11 @@ internal static class CloudShadows
 
     public static string Apply(Harmony harmony)
     {
-        if (!Settings.SlowCloudShadows)
-            return "normal";
+        if (!Settings.SlowerCloudShadows)
+            return "off";
         harmony.Patch(Find.Method(typeof(CloudShadowVolume), "UpdateVolumeDensity"),
             transpiler: new HarmonyMethod(typeof(CloudShadows), nameof(Transpiler)));
-        return "slow";
+        return "slower refresh";
     }
 
     // fullRebuild ? 256 : 24 and fullRebuild ? 256 : 8: the per-frame counts are the constants just before a
