@@ -59,9 +59,9 @@ public partial class Benchmark
 {
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
-    private bool Directive(string command)
+    private bool Directive(Step step)
     {
-        var a = command.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var a = step.Words;
         switch (a[0])
         {
             case "@measure" when a.Length == 3 && double.TryParse(a[2], NumberStyles.Float, Inv, out var seconds):
@@ -198,7 +198,7 @@ public partial class Benchmark
             case "@sun" when a.Length == 4:
                 return Sun(a);
         }
-        Log($"unknown directive '{command}'");
+        Log($"unknown directive '{step.Command}'");
         return false;
     }
 

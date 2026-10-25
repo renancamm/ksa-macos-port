@@ -69,13 +69,13 @@ public partial class Benchmark
         List<Key>? path = null;
         foreach (var section in _sections)
         {
-            var shots = section.Steps.Where(s => s.Command.StartsWith("@shot ")).Select(s => s.At).ToHashSet();
-            var keys = section.Steps.Where(s => s.Command.StartsWith("@key ")).ToList();
+            var shots = section.Steps.Where(s => s.Words[0] == "@shot").Select(s => s.At).ToHashSet();
+            var keys = section.Steps.Where(s => s.Words[0] == "@key").ToList();
             if (keys.Count == 0)
                 path = null;
             foreach (var step in keys)
             {
-                var key = ParseKey(start + step.At, step.Command, shots.Contains(step.At));
+                var key = ParseKey(start + step.At, step.Words, shots.Contains(step.At));
                 if (key == null)
                 {
                     Log($"bad key at line {step.Line}: '{step.Command}'");
@@ -94,9 +94,8 @@ public partial class Benchmark
             Prepare(p);
     }
 
-    private static Key? ParseKey(double t, string command, bool stop)
+    private static Key? ParseKey(double t, string[] a, bool stop)
     {
-        var a = command.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (a.Length != 7 || Universe.CurrentSystem?.All.TryGet(a[1], out Celestial? body) != true || body == null)
             return null;
         var v = new double[5];

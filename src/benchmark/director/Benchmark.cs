@@ -75,7 +75,11 @@ public partial class Benchmark
     private const double MaxSettleSeconds = 20;
     private const double FastMeasureSeconds = 2.0;
 
-    private record Step(double At, string Command, int Line);
+    // A step: its time in the section, its command and the command's words, and its line in the script
+    private record Step(double At, string Command, int Line)
+    {
+        public string[] Words { get; } = Command.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+    }
 
     private class Section
     {
@@ -84,7 +88,7 @@ public partial class Benchmark
         public readonly List<Step> Steps = new();
         public double Length => Steps.Count > 0 ? Steps.Max(s => s.At) : 0;
         // Only the camera's flight: no vehicles, nothing that needs the game's clock
-        public bool CameraOnly => Steps.All(s => s.Command.Split(' ')[0] is "@key" or "@shot" or "@measure");
+        public bool CameraOnly => Steps.All(s => s.Words[0] is "@key" or "@shot" or "@measure");
     }
 
     private enum Phase { Play, CatchUp, Settle, Measure, Capture, Shoot, Hold }
@@ -211,7 +215,7 @@ public partial class Benchmark
                     continue;
                 }
                 var section = _sections.FirstOrDefault(s => name.StartsWith(s.Name + "_", StringComparison.Ordinal) &&
-                    s.Steps.Any(step => step.Command.Split(' ')[0] == "@shot" && $"{s.Name}_{step.Command.Split(' ')[1]}" == name));
+                    s.Steps.Any(step => step.Words is ["@shot", var shot, ..] && $"{s.Name}_{shot}" == name));
                 if (section == null)
                 {
                     Log($"no section or place '{name}' in the script");
@@ -332,7 +336,7 @@ public partial class Benchmark
                 break;
             _next++;
             _stepAt = _sectionStart + step.At;
-            Run(step.Command);
+            Run(step);
         }
     }
 
@@ -386,7 +390,7 @@ public partial class Benchmark
         var section = _sections[_section];
         for (int i = _next; i < section.Steps.Count; i++)
         {
-            if (section.Steps[i].Command.Split(' ') is ["@shot", var shot, ..] && IsChosen(shot))
+            if (section.Steps[i].Words is ["@shot", var shot, ..] && IsChosen(shot))
                 return _sectionStart + section.Steps[i].At;
         }
         return _sectionStart + section.Length;
@@ -434,7 +438,7 @@ public partial class Benchmark
         {
             if (_only?.GetValueOrDefault(section.Name) is not { } chosen)
                 continue;
-            double end = section.Steps.Where(s => s.Command.Split(' ') is ["@shot", var shot, ..] && chosen.Contains(shot))
+            double end = section.Steps.Where(s => s.Words is ["@shot", var shot, ..] && chosen.Contains(shot))
                 .Select(s => s.At).DefaultIfEmpty(section.Length).Max();
             section.Steps.RemoveAll(s => s.At > end);
             Log(FormattableString.Invariant($"section {section.Name}: {string.Join(", ", chosen)}, until {end:F1} s"));
@@ -443,7 +447,7 @@ public partial class Benchmark
         double start = 0;
         foreach (var section in _sections)
         {
-            _shotTimes.AddRange(section.Steps.Where(s => s.Command.StartsWith("@shot ")).Select(s => start + s.At));
+            _shotTimes.AddRange(section.Steps.Where(s => s.Words[0] == "@shot").Select(s => start + s.At));
             start += section.Length;
         }
         BuildPaths();
@@ -504,31 +508,30 @@ public partial class Benchmark
         _sectionResult = null;
     }
 
-    private void Run(string command)
+    private void Run(Step step)
     {
         bool ok;
         try
         {
-            ok = command.StartsWith('@') ? Directive(command) : Console(command);
+            ok = step.Command.StartsWith('@') ? Directive(step) : Console(step);
         }
         catch (Exception e)
         {
-            Log($"'{command}' threw {e.GetType().Name}: {e.Message}");
+            Log($"'{step.Command}' threw {e.GetType().Name}: {e.Message}");
             ok = false;
         }
         double t = _stepAt - _sectionStart;
-        Log(FormattableString.Invariant($"{_sectionResult?.Name} {t:F1} s: '{command}' -> {(ok ? "ok" : "failed")}"));
+        Log(FormattableString.Invariant($"{_sectionResult?.Name} {t:F1} s: '{step.Command}' -> {(ok ? "ok" : "failed")}"));
         if (!ok)
-            _sectionResult?.Errors.Add(FormattableString.Invariant($"{t:F1} s: '{command}' failed"));
+            _sectionResult?.Errors.Add(FormattableString.Invariant($"{t:F1} s: '{step.Command}' failed"));
     }
 
     // A console command. Those that move the camera elsewhere end the directives' hold on it.
-    private bool Console(string command)
+    private bool Console(Step step)
     {
-        var word = command.Split(' ')[0];
-        if (word is "follow" or "camera" or "control" or "goto" or "altitude" or "lookat" or "moveto")
+        if (step.Words[0] is "follow" or "camera" or "control" or "goto" or "altitude" or "lookat" or "moveto")
             ReleaseCamera();
-        return Program.TerminalInterface.Execute(command);
+        return Program.TerminalInterface.Execute(step.Command);
     }
 
     // Asks the game for a simulation speed (0 pauses it)
