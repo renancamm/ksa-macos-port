@@ -40,7 +40,7 @@ static std::mutex g_profMutex;  // guards the CSV
 static std::mutex g_timestampMutex;
 static std::vector<id<MTLCounterSampleBuffer>> g_timestampPool;
 
-id<MTLCounterSet> kmtlTimestampSet(KDevice* dev) {
+static id<MTLCounterSet> timestampSet(KDevice* dev) {
     static id<MTLCounterSet> set = nil;
     static std::once_flag once;
     std::call_once(once, [dev] {
@@ -59,7 +59,7 @@ id<MTLCounterSampleBuffer> kmtlAcquireTimestamps(KDevice* dev, const char* what)
             return b;
         }
     }
-    id<MTLCounterSet> set = kmtlTimestampSet(dev);
+    id<MTLCounterSet> set = timestampSet(dev);
     MTLCounterSampleBufferDescriptor* d = [MTLCounterSampleBufferDescriptor new];
     d.counterSet = set;
     d.storageMode = MTLStorageModeShared;
@@ -88,7 +88,7 @@ static bool profInit(KDevice* dev) {
             KERR("GPU profiler: no stage-boundary counter sampling");
             return;
         }
-        if (!kmtlTimestampSet(dev)) return;
+        if (!timestampSet(dev)) return;
         unsigned long long first, count;
         if (const char* f = kmtlConfig().gpuprofFrames; f && sscanf(f, "%llu,%llu", &first, &count) == 2) {
             g_profFirst = first;
