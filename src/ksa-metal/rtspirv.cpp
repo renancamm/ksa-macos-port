@@ -3,8 +3,6 @@
 // tested on its own.
 #include "rtspirv.h"
 #include "spvmodule.h"
-#include "spirv-tools/linker.hpp"
-#include "spirv-tools/optimizer.hpp"
 #include <algorithm>
 #include <cstring>
 #include <map>
@@ -379,40 +377,6 @@ static bool transformRaygen(const std::vector<uint32_t>& spirv, const RaygenPlan
     return true;
 }
 
-// After linking: drop linkage, and list every global variable in the entry point's interface (SPIR-V 1.4+)
-static bool finishLinked(std::vector<uint32_t>& words, std::string* err) {
-    Module m;
-    if (!m.parse(words)) { *err = m.err; return false; }
-    m.removeCapability(spv::CapabilityLinkage);
-    m.insts.erase(std::remove_if(m.insts.begin(), m.insts.end(), [](const Inst& i) {
-        return i.op() == spv::OpDecorate && i.w[2] == spv::DecorationLinkageAttributes; }), m.insts.end());
-    std::vector<uint32_t> globals;
-    size_t end = m.firstFunction();
-    for (size_t k = 0; k < end; k++)
-        if (m.insts[k].op() == spv::OpVariable && m.insts[k].w[3] != spv::StorageClassFunction) globals.push_back(m.insts[k].w[2]);
-    for (auto& i : m.insts) {
-        if (i.op() != spv::OpEntryPoint) continue;
-        std::string name = readLiteral(i.w, 3);
-        std::vector<uint32_t> ops = {i.w[1], i.w[2]};
-        auto lit = literal(name);
-        ops.insert(ops.end(), lit.begin(), lit.end());
-        ops.insert(ops.end(), globals.begin(), globals.end());
-        i = makeV(spv::OpEntryPoint, ops);
-        break;
-    }
-    words = m.words();
-    // Dead-code elimination drops what the rewrite left unused, notably pointer types in ray tracing storage
-    // classes (they would need the ray tracing capability)
-    spvtools::Optimizer opt(SPV_ENV_UNIVERSAL_1_6);
-    opt.RegisterPass(spvtools::CreateAggressiveDCEPass());
-    spvtools::OptimizerOptions oo;
-    oo.set_run_validator(false);
-    std::vector<uint32_t> cleaned;
-    if (!opt.Run(words.data(), words.size(), &cleaned, oo)) { *err = "dead-code elimination failed"; return false; }
-    words.swap(cleaned);
-    return true;
-}
-
 }  // namespace
 
 bool kmtlLinkRayTracing(const std::vector<uint32_t>& raygen, const std::vector<uint32_t>* closestHit,
@@ -438,10 +402,12 @@ bool kmtlLinkRayTracing(const std::vector<uint32_t>& raygen, const std::vector<u
     std::vector<std::vector<uint32_t>> inputs = {rg};
     if (plan.chit) inputs.push_back(hit.words);
     for (auto& mc : missCallees) inputs.push_back(mc.words);
-    spvtools::Context ctx(SPV_ENV_UNIVERSAL_1_6);
-    std::string log;
-    ctx.SetMessageConsumer([&](spv_message_level_t, const char*, const spv_position_t&, const char* msg) { log += msg; log += "\n"; });
-    spvtools::LinkerOptions lo;
-    if (spvtools::Link(ctx, inputs, out, lo) != SPV_SUCCESS) { *err = "linking failed: " + log; return false; }
-    return finishLinked(*out, err);
+    // Ray tracing modules are SPIR-V 1.4 or later: the interface lists every global variable
+    Module linked;
+    if (!linkModules(inputs, &linked, err)) return false;
+    setInterface(linked);
+    *out = linked.words();
+    // Dead-code elimination drops what the rewrite left unused, notably pointer types in ray tracing storage classes
+    // (they would need the ray tracing capability)
+    return deadCode(*out, false, err);
 }

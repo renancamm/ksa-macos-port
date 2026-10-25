@@ -9,8 +9,6 @@
 // at the top of main by calling ksa_vs once per control point. SPIRV-Tools links the two.
 #include "tessspirv.h"
 #include "spvmodule.h"
-#include "spirv-tools/linker.hpp"
-#include "spirv-tools/optimizer.hpp"
 
 namespace {
 
@@ -59,14 +57,6 @@ static bool constantValue(const Module& m, uint32_t id, uint32_t* value) {
     return true;
 }
 
-static bool decorated(const Module& m, uint32_t id, spv::Decoration d) {
-    bool found;
-    m.decoration(id, d, &found);
-    if (found) return true;
-    for (auto& i : m.insts) if (i.op() == spv::OpDecorate && i.w[1] == id && i.w[2] == (uint32_t)d) return true;
-    return false;
-}
-
 // Interface decorations a variable loses when it stops being an input or output
 static void removeInterfaceDecorations(Module& m, uint32_t var) {
     for (spv::Decoration d : {spv::DecorationLocation, spv::DecorationComponent, spv::DecorationFlat, spv::DecorationNoPerspective,
@@ -113,42 +103,6 @@ static bool usedInFunctions(const Module& m, uint32_t id) {
         for (size_t w = 1; w < i.w.size(); w++) if (i.w[w] == id) return true;
     }
     return false;
-}
-
-// The entry point's interface: every global variable from SPIR-V 1.4 on, only inputs and outputs before
-static void setInterface(Module& m) {
-    bool all = (m.header[1] >> 16 & 0xFF) > 1 || (m.header[1] >> 8 & 0xFF) >= 4;
-    std::vector<uint32_t> globals;
-    size_t end = m.firstFunction();
-    for (size_t k = 0; k < end; k++) {
-        const Inst& i = m.insts[k];
-        if (i.op() != spv::OpVariable || i.w[3] == spv::StorageClassFunction) continue;
-        if (all || i.w[3] == spv::StorageClassInput || i.w[3] == spv::StorageClassOutput) globals.push_back(i.w[2]);
-    }
-    for (auto& i : m.insts) {
-        if (i.op() != spv::OpEntryPoint) continue;
-        std::string name = readLiteral(i.w, 3);
-        std::vector<uint32_t> ops = {i.w[1], i.w[2]};
-        auto lit = literal(name);
-        ops.insert(ops.end(), lit.begin(), lit.end());
-        ops.insert(ops.end(), globals.begin(), globals.end());
-        i = makeV(spv::OpEntryPoint, ops);
-        break;
-    }
-}
-
-// Dead code out, then interface variables nothing reads any more, then what that left dead
-static bool cleanup(std::vector<uint32_t>& words, std::string* err) {
-    spvtools::Optimizer opt(SPV_ENV_UNIVERSAL_1_6);
-    opt.RegisterPass(spvtools::CreateAggressiveDCEPass());
-    opt.RegisterPass(spvtools::CreateRemoveUnusedInterfaceVariablesPass());
-    opt.RegisterPass(spvtools::CreateAggressiveDCEPass());
-    spvtools::OptimizerOptions oo;
-    oo.set_run_validator(false);
-    std::vector<uint32_t> cleaned;
-    if (!opt.Run(words.data(), words.size(), &cleaned, oo)) { *err = "dead-code elimination failed"; return false; }
-    words.swap(cleaned);
-    return true;
 }
 
 // Deletes an output variable with its stores and access chains, making what was computed only for it dead. False
@@ -371,7 +325,7 @@ bool kmtlFuseTessEvaluation(const std::vector<uint32_t>& vertex, const std::vect
             continue;
         }
         if (builtin) continue;
-        if (decorated(e, var, spv::DecorationPatch)) { *err = "the evaluation shader reads per-patch inputs"; return false; }
+        if (e.decorated(var, spv::DecorationPatch)) { *err = "the evaluation shader reads per-patch inputs"; return false; }
         bool loc;
         uint32_t l = e.decoration(var, spv::DecorationLocation, &loc);
         if (!loc || !arr || arr->op() != spv::OpTypeArray || isBlock(e, t)) { *err = "unexpected evaluation shader input"; return false; }
@@ -493,23 +447,12 @@ bool kmtlFuseTessEvaluation(const std::vector<uint32_t>& vertex, const std::vect
     while (at < e.insts.size() && e.insts[at].op() == spv::OpVariable) at++;
     e.insts.insert(e.insts.begin() + at, prologue.begin(), prologue.end());
 
-    // --- Link, then drop the linkage
-    spvtools::Context ctx(SPV_ENV_UNIVERSAL_1_6);
-    std::string log;
-    ctx.SetMessageConsumer([&](spv_message_level_t, const char*, const spv_position_t&, const char* msg) { log += msg; log += "\n"; });
-    std::vector<uint32_t> linked;
-    if (spvtools::Link(ctx, {e.words(), v.words()}, &linked, spvtools::LinkerOptions()) != SPV_SUCCESS) {
-        *err = "linking failed: " + log;
-        return false;
-    }
+    // --- Link
     Module l;
-    if (!l.parse(linked)) { *err = l.err; return false; }
-    l.removeCapability(spv::CapabilityLinkage);
-    l.insts.erase(std::remove_if(l.insts.begin(), l.insts.end(), [](const Inst& i) {
-        return i.op() == spv::OpDecorate && i.w[2] == spv::DecorationLinkageAttributes; }), l.insts.end());
+    if (!linkModules({e.words(), v.words()}, &l, err)) return false;
     setInterface(l);
     *out = l.words();
-    return cleanup(*out, err);
+    return deadCode(*out, true, err);
 }
 
 bool kmtlStripPassthroughControl(const std::vector<uint32_t>& control, std::vector<uint32_t>* out, std::string* why) {
@@ -552,7 +495,7 @@ bool kmtlStripPassthroughControl(const std::vector<uint32_t>& control, std::vect
         bool builtin, loc;
         uint32_t b = m.decoration(var, spv::DecorationBuiltIn, &builtin);
         if (builtin && (b == spv::BuiltInTessLevelOuter || b == spv::BuiltInTessLevelInner)) continue;
-        if (decorated(m, var, spv::DecorationPatch)) { *why = "it writes per-patch outputs"; return false; }
+        if (m.decorated(var, spv::DecorationPatch)) { *why = "it writes per-patch outputs"; return false; }
         const Inst* arr = m.def(pointee(m, var));
         bool block = arr && arr->op() == spv::OpTypeArray && isPerVertex(m, arr->w[2]);
         uint32_t l = m.decoration(var, spv::DecorationLocation, &loc);
@@ -620,12 +563,12 @@ bool kmtlReduceTessControl(const std::vector<uint32_t>& control, std::vector<uin
         bool builtin;
         uint32_t b = m.decoration(var, spv::DecorationBuiltIn, &builtin);
         if (builtin && (b == spv::BuiltInTessLevelOuter || b == spv::BuiltInTessLevelInner)) continue;
-        if (decorated(m, var, spv::DecorationPatch)) { *err = "the control shader writes per-patch outputs"; return false; }
+        if (m.decorated(var, spv::DecorationPatch)) { *err = "the control shader writes per-patch outputs"; return false; }
         if (!dropOutput(m, var)) { *err = "the control shader reads its outputs"; return false; }
     }
     setInterface(m);
     *out = m.words();
-    if (!cleanup(*out, err)) return false;
+    if (!deadCode(*out, true, err)) return false;
     Module r;
     if (!r.parse(*out)) { *err = r.err; return false; }
     *position = false;
@@ -653,5 +596,5 @@ bool kmtlReduceVertexOutputs(const std::vector<uint32_t>& vertex, const std::vec
     }
     setInterface(m);
     *out = m.words();
-    return cleanup(*out, err);
+    return deadCode(*out, true, err);
 }
