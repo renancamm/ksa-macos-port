@@ -1,4 +1,4 @@
-// What KSA Metal measures for each presented frame, read through its benchmark interface (src/ksa-metal/swapchain.mm:
+// What KSA Metal measures for each presented frame, read through its benchmark interface (src/ksa-metal/instruments.mm:
 // ksaMtlFrameStats, ksaMtlScreenshot, ksaMtlMarker, ksaMtlCapture, ksaMtlCapturing; profile.mm: ksaMtlProfileFrames). The
 // app ships the director with the KSA Metal it was built with, so the driver has all of it. With another Vulkan driver
 // the mod still measures CPU frame times.

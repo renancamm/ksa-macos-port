@@ -1,6 +1,7 @@
 // Frame instruments: the frame log, shots and exits, the benchmark's interface (ksaMtl*), frame captures, signposts,
-// and the display and GPU times measured at each present (swapchain.mm reports them). Vulkan layers cannot run on
-// this driver (it is the loader), so it carries its own.
+// and the display and GPU times measured at each present (swapchain.mm reports what the display showed, command
+// buffers' completion handlers their GPU time). Vulkan layers cannot run on this driver (it is the loader), so it
+// carries its own.
 #include "kmtl.h"
 #import <CoreGraphics/CoreGraphics.h>
 #import <ImageIO/ImageIO.h>

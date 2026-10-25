@@ -689,10 +689,10 @@ void kmtlOnPresent(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb);
 void kmtlCountWork(uint32_t draws, uint32_t dispatches, uint32_t passes);
 void kmtlNoteGpuTime(id<MTLCommandBuffer> cb);  // from completion handlers: GPU busy time for the frame log
 double kmtlTakeFrameGpuTime();  // one frame's GPU busy time in seconds (since the last present completed), reset
-// swapchain.mm: the display showed a drawable at t (presentedTime); timed: a game frame, whose interval since the last
-// one is the frame log's display_ms (interpolated frames only count)
+// From swapchain.mm's presented handlers: the display showed a drawable at t (presentedTime); timed: a game frame,
+// whose interval since the last one is the frame log's display_ms (interpolated frames only count)
 void kmtlNoteShown(double t, bool timed);
-void kmtlPipelineCounts(uint32_t* shaders, uint32_t* pipelines);  // MSL compiled (not from the cache), states made
+void kmtlPipelineCounts(uint32_t* shaders, uint32_t* pipelines);  // pipeline.mm: MSL compiled (not from the cache), states made
 void kmtlReportPipelineTimes();  // pipeline.mm: the pipelines' creation cost, with the first in-game frame
 
 // GPU profiler (profile.mm, KSA_MTL_GPUPROF), and the timestamp sample buffers it shares with the game's timestamp
