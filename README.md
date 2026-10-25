@@ -169,7 +169,7 @@ cd ksa-macos-port
 ```
 
 That makes `dist/ksa-macos-port/`, a port folder like a release's; `./build.sh --install` also puts its files into the
-installed app. The native libraries are a CMake project ([`CMakeLists.txt`](CMakeLists.txt)). The benchmark mod is
+installed app. The native libraries are a CMake project ([`CMakeLists.txt`](CMakeLists.txt)). The benchmark and the hooks are
 built against the installed app's KSA, or another one with `--ksa <archive>`, and the port folder is made for that
 KSA version. Everything the build downloads is declared in [`cmake/dependencies.cmake`](cmake/dependencies.cmake).
 
@@ -229,7 +229,8 @@ without modifying GLFW; [`glfw_shim.c`](src/glfw-shim/glfw_shim.c) explains each
 | `Contents/MacOS/dotnet`, `host/`, `shared/` | the .NET runtime |
 | `Contents/Resources/*.dylib` | the native libraries, next to the game that loads them |
 | `Contents/Resources/Hooks/` | [KSA Metal Hooks](#hooks), with Harmony |
-| `Contents/Resources/port-settings.toml` | the [port settings](#port-settings), the commented copy the app puts in your documents folder |
+| `Contents/Resources/Benchmark/` | the [benchmark](#benchmark): its director, its report program, the tour and its vehicles |
+| `Contents/Resources/port-settings.txt`, `port-settings.toml` | the [port settings](#port-settings): the table of them all, and the commented copy the app puts in your documents folder |
 | `Contents/Resources/Licenses/` | every component's licence and notices ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)) |
 | `Contents/Resources/AppIcon.icns`, `Contents/Info.plist` | the icon; the game's version, the port's version and commit, and `NSHighResolutionCapable` off, so the game renders one pixel per point and its Resolution setting is the number of pixels it renders |
 
@@ -252,7 +253,7 @@ src/glfw-shim/            the GLFW shim
 src/ktx-shim/             the KTX shim
 src/hooks/                KSA Metal Hooks and their loader, with their own README
 src/ksa-metal/            KSA Metal, with its own README
-src/benchmark/            the benchmark: mod, report program, tour and vehicles, with its own README
+src/benchmark/            the benchmark: director, report program, tour and vehicles, with its own README
 third_party/fmod/         FMOD's macOS library, with its licence and notice (not MIT)
 .github/                  the issue templates
 deps/, dist/              made by the build: downloads and build trees; the port folder and release zips
@@ -299,17 +300,24 @@ out. Each of them can be turned off.
 
 ### Port settings
 
-The settings are in `port-settings.toml`, next to the game's own `settings.toml` in
-`~/Documents/My Games/Kitten Space Agency`. The app puts a commented copy there the first time it starts. Edit it in
-any text editor, then quit the game and start it again.
+The port's settings are in the **Mac Port** tab of the game's settings (Esc), and in `port-settings.toml`, next to the
+game's own `settings.toml` in `~/Documents/My Games/Kitten Space Agency` (the app puts a commented copy there the first
+time it starts). The tab works like the game's own: Apply writes the file, and when a setting takes effect only when
+the game starts, the game offers to restart. A setting that needs another one is greyed out until that one is on.
 
-| Setting | Default | What it does |
-|---|---|---|
-| `render_scale` | `1.0` | draws the 3D view at this fraction of the window's size, from `0.5` to `1.0`, and scales it back up: less work for the GPU, a slightly softer image |
-| `upscaler` | `"metalfx"` | how a smaller view is scaled back up: `"metalfx"` (Apple's MetalFX, from the last frames), `"spatial"` (MetalFX, one frame at a time) or `"none"` (stretched) |
-| `retina` | `false` | shows the image at the display's full resolution: the game draws at the window's size and MetalFX scales it up |
-| `frame_interpolation` | `false` | shows a frame made by MetalFX between every two the game draws: smoother motion, a little more delay; works best when the game runs at least at half the display's refresh rate |
-| `cloud_shadows` | `"normal"` | `"slow"` saves about 1.5 ms per frame over Earth; cloud shadows then follow moving clouds about 4 times more slowly |
+| Section | Settings |
+|---|---|
+| Image | `upscaling`: Apple's MetalFX, off by default, which the three others need. `render_scale`: draws the 3D view at 50 to 100% of the window's size and scales it back up, less work for the GPU and a slightly softer image. `frame_interpolation`: a frame made by MetalFX between every two the game draws, smoother motion with a little more delay. `retina`: the image at the display's full resolution |
+| Performance | `cloud_shadows`: `"slow"` saves about 1.5 ms per frame over Earth, and cloud shadows follow moving clouds about 4 times more slowly. `crew_portraits`: the crew panel's faces are drawn only while the panel shows them |
+| Optimizations | the same image, faster: the [hooks](#hooks)' patches and KSA Metal's own ways; on by default, each can be turned off to find a problem |
+| Game features | what the Mac offers the game: tessellation, ray queries, ray tracing. Off hides it from the game; while it's available, the game's own settings decide |
+| Overlay | Apple's Metal Performance HUD |
+| Benchmark | the [benchmark](#benchmark), run from the game |
+
+The file has one more section, `[developer]`: switches for testing and debugging, which the tab doesn't show
+([`src/ksa-metal/README.md`](src/ksa-metal/README.md) explains KSA Metal's). Each setting is an environment variable
+that the launcher sets when the game starts ([`port-settings.txt`](src/launcher/port-settings.txt) says which); a
+variable set where the game is started wins over the file, and the tab shows that setting as set outside.
 
 These settings are recent. With frame interpolation, rocket plumes can look ragged in the frames MetalFX makes. If
 something looks wrong, set the setting back to its default, and please open an issue. `logs/console.log` shows how
@@ -328,13 +336,15 @@ and the game runs as it would without it. [`src/hooks/`](src/hooks/) has the det
 | Outline skip | the outline pass around selected parts runs only while a part is selected | the same |
 | Crew portraits | the crew panel's faces are drawn only while the panel is on screen | the same |
 | Worker parking | the game's idle job workers sleep after 0.25 ms instead of spinning for half a frame | the same |
-| Render scale | `render_scale`, `upscaler`: the 3D view's size, and MetalFX before the final composite; `frame_interpolation` also needs it | changes, by choice |
+| Render scale | `upscaling`, `render_scale`: the 3D view's size, and MetalFX before the final composite; `frame_interpolation` also needs it | changes, by choice |
 | Cloud shadows | `cloud_shadows = "slow"`: fewer cloud shadow slices refreshed per frame | changes in motion, by choice |
 
 For the render scale, `convert-shaders.sh` also edits three shaders to measure in the window's size rather than the
 smaller view's; without it, they draw as before.
 
-`KSA_HOOKS=0 ~/Applications/"Kitten Space Agency.app"/Contents/MacOS/KSA` starts the game without them.
+The hooks also draw the Mac Port tab, start the benchmark's runs, and make the game's Restart button start the app
+again (in the app it starts .NET alone, so the game only quit). `hooks = false` in the file's `[developer]` section
+starts the game without them.
 
 ### KTX shim
 
@@ -351,7 +361,7 @@ loaded, its pixels are mapped from a file instead, and macOS can drop those page
 
 ## Extras
 
-Two optional tools come in the port folder. Each works on the app `port.sh` made.
+Two extras: StarMap, which the port folder adds to the app if you like, and the benchmark, which is in the app.
 
 ### Mods
 
@@ -373,9 +383,10 @@ is updated. Its release is a Windows build, but only two of its files are Window
 
 ### Benchmark
 
-The port's benchmark is a mod that plays a fixed tour of the game in one session (Earth from orbit, flights over its
-ground and sea, other worlds, a kitten in the grass, a rocket launch, a 2,000-part rocket blown up on its pad),
-measures each part and writes a report to compare with another run, and a zip you can share as an issue if you like:
+The port's benchmark plays a fixed tour of the game in one session (Earth from orbit, flights over its ground and sea,
+other worlds, a kitten in the grass, a rocket launch, a 2,000-part rocket blown up on its pad), measures each part and
+writes a report to compare with another run, and a zip you can share as an issue if you like. It is in the app: run it
+from the game's settings (**Mac Port**, **Run benchmark**), or from the port folder:
 
 ```bash
 ./benchmark.sh

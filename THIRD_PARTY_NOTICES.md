@@ -12,7 +12,7 @@ binaries or assets, and none of the licences here apply to the game.
 
 | Component | In the app | Source | Licence | `Licenses/` |
 |---|---|---|---|---|
-| This port: launcher, GLFW shim, KSA Metal, KSA Metal Hooks | `Contents/MacOS/KSA`, `libGlfwShim.dylib`, `libvulkan.1.dylib`, `Hooks/KsaMetalHooks*.dll` | this repository | MIT | `ksa-macos-port/` |
+| This port: launcher, GLFW shim, KSA Metal, KSA Metal Hooks, the benchmark | `Contents/MacOS/KSA`, `libGlfwShim.dylib`, `libvulkan.1.dylib`, `Hooks/KsaMetalHooks*.dll`, `Benchmark/` | this repository | MIT | `ksa-macos-port/` |
 | Harmony, for KSA Metal Hooks | `Hooks/0Harmony.dll` | [pardeike/Harmony](https://github.com/pardeike/Harmony), the `Lib.Harmony` package on [nuget.org](https://www.nuget.org/packages/Lib.Harmony), unmodified | MIT | `harmony/` |
 | BRUTAL native libraries, built by RocketWerkz | `libstb`, `libVulkanEx`, `libvma`, `libglfw.3`, `libgli`, `libimgui`, `libimplot`, `libKtx`, `libshaderc_shared`, `libSPIRV-Tools-shared`, `libRakNetDLL` (`.dylib`); the crash-dump helper `Brutal.Monitor.Subprocess` | the `Ahwoo.BRUTAL.*` packages on [nuget.org](https://www.nuget.org/profiles/Ahwoo), unmodified | BRUTAL License v1.0 (© Ahwoo Limited), and the licences of the components compiled into them (below) | `brutal/` |
 | SPIRV-Cross | compiled into `libvulkan.1.dylib` | [KhronosGroup/SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) | Apache-2.0 (some files MIT or CC-BY-4.0, see its `LICENSES/`) | `spirv-cross/` |
@@ -45,10 +45,8 @@ The BRUTAL libraries contain these components, each listed with its licence text
 BRUTAL's notice, as its licence asks: *This product is built with BRUTAL, a game development framework by Ahwoo
 Limited, used under the BRUTAL License v1.0. www.ahwoo.com/brutal*. It is in `Licenses/brutal/NOTICE.txt`.
 
-## Beside the app
-
-The port folder also holds the benchmark (`payload/benchmark/`): its mod, report program, tour and vehicles are this
-project's, under the MIT License. The mod is compiled against KSA's assemblies but contains none of them.
+The benchmark's director, report program, tour and vehicles (`Benchmark/`) are this project's. The director and the
+hooks are compiled against KSA's assemblies but contain none of them.
 
 ## In this repository
 
