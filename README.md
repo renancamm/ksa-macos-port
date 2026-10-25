@@ -271,33 +271,15 @@ with the driver alone; the rest can be turned off, and the defaults keep the gam
 KSA draws everything through Vulkan, a cross-platform graphics API. macOS doesn't have Vulkan; its GPU API is Metal.
 The driver sits between the two: it implements the Vulkan functions KSA calls, and does the work with Metal.
 
-On other platforms, a Vulkan program loads `libvulkan`, the *loader*, which finds and loads the actual driver for
-the GPU. The driver takes the place of both: the app ships it as `libvulkan.1.dylib`, so BRUTAL, `libVulkanEx` and
-GLFW find their Vulkan functions directly in it. Nothing in the game changes.
+The app ships it as `libvulkan.1.dylib`, in the place of the Vulkan loader and a driver, so nothing in the game
+changes. It implements only the part of Vulkan that KSA uses, about 180 functions for one GPU, which keeps it small
+(about 9,000 lines of Objective-C++) and specific: other Vulkan programs won't run on it. It needs macOS 26 for the
+Metal features it uses.
 
-It implements only the part of Vulkan that KSA uses: about 180 functions and two dozen extensions, one GPU. That
-keeps it small (about 9,000 lines of Objective-C++ in [`src/ksa-metal/`](src/ksa-metal/)) and lets each Vulkan
-concept map onto Metal in the most direct way that works for this game. It is not a general Vulkan driver, and
-other Vulkan programs won't run on it. It needs macOS 26 for the Metal features it uses.
-
-Vulkan and Metal are both explicit, low-level GPU APIs with similar ideas, which is what makes a thin translation
-possible. In short:
-
-- **Memory:** each block of Vulkan device memory is a Metal heap. Buffers are offsets into it, images are textures
-  placed in it.
-- **Shaders:** SPIR-V is translated to Metal's shading language with SPIRV-Cross when a pipeline is created, on
-  worker threads, and the translations are cached on disk.
-- **Descriptors:** each descriptor set is written directly as a Metal argument buffer.
-- **Commands:** Metal commands are encoded while the game records, so submitting is cheap.
-- **Synchronization:** barriers become Metal fences between groups of commands, sorted by stage, so independent
-  work overlaps on the GPU.
-- **Tessellation:** the vertex and control stages run as compute kernels, and Metal's tessellator draws the patches
-  with the evaluation shader, which runs the vertex shader itself where it can.
-- **Ray tracing:** ray queries map onto Metal's. Each ray tracing pipeline is rewritten into one compute kernel.
-- **Presentation:** the swapchain's images are copied into the window's drawable.
-
-The detail is in [`src/ksa-metal/README.md`](src/ksa-metal/README.md): its switches, how to build and test a change,
-how each Vulkan concept maps onto Metal, and what each source file holds.
+Vulkan and Metal are both explicit, low-level GPU APIs with similar ideas, so each Vulkan concept maps onto Metal
+in a direct way: memory, shaders (translated with SPIRV-Cross and cached on disk), descriptors, commands,
+synchronization, tessellation, ray tracing and presentation. [`src/ksa-metal/README.md`](src/ksa-metal/README.md)
+has that mapping, the driver's switches, how to build and test a change, and what each source file holds.
 
 ### The Mac Port tab
 
@@ -314,12 +296,9 @@ another setting is greyed out until that one is on. Each row's tooltip says what
 | Overlay | Apple's Metal Performance HUD over the game |
 | Benchmark | runs the [benchmark](#the-benchmark) |
 
-The settings live in `port-settings.toml`, next to the game's `settings.toml` in
-`~/Documents/My Games/Kitten Space Agency`; the app puts a commented copy there the first time it starts, and the
-file can be edited instead of the tab. Its `[developer]` section holds switches for testing and debugging, which
-the tab doesn't show. Every setting reaches the driver, the hooks and the shims as an environment variable the
-launcher sets ([`port-settings.txt`](src/launcher/port-settings.txt) is the table of them all); a variable set where
-the game is started wins over the file, and the tab shows that row as set outside.
+The settings are kept in `port-settings.toml`, next to the game's `settings.toml` in
+`~/Documents/My Games/Kitten Space Agency`, with a comment on each. The file can be edited instead of the tab, and
+its `[developer]` section holds switches for testing and debugging that the tab doesn't show.
 
 The Image and Performance settings are recent. If something looks wrong, set the setting back to its default and
 please open an issue; `console.log` shows how the game read the file.
@@ -327,38 +306,32 @@ please open an issue; `console.log` shows how the game read the file.
 ### The hooks
 
 Some of the port's changes need the game's C# code. KSA Metal Hooks make them in memory when the game starts, with
-[Harmony](https://github.com/pardeike/Harmony), so `KSA.dll` stays as it is on disk. Each hook finds the code it
-changes by name and by pattern; when a KSA update has moved that code, the hook is left out, `console.log` says so,
-and the game runs as it would without it.
-
-Their patches are the tab's rows that reach into the game. Four keep the image and are on by default: the terrain
-cache, the selection outline skip, worker parking and the crew portraits. Three change it and are off until you
-choose them: render scale, cloud shadows and plume shadows. The hooks also draw the tab itself, start the benchmark
-from it, and make the game's Restart button start the app again. [`src/hooks/`](src/hooks/) says what each one
-changes and how; `hooks = false` in the file's `[developer]` section starts the game without them.
+[Harmony](https://github.com/pardeike/Harmony), so `KSA.dll` stays as it is on disk. Their patches are the tab's
+rows that reach into the game; the hooks also draw the tab itself, start the benchmark from it, and make the game's
+Restart button start the app again. When a KSA update has moved the code a hook changes, the hook is left out, the
+tab shows its row as unavailable, and the game runs as it would without it. [`src/hooks/`](src/hooks/) says what
+each one changes and how.
 
 ### The KTX shim
 
-The game keeps every texture's pixels in memory for the whole session, about 3.5 GB with the solar system, which
-macOS can only compress or swap when memory runs short. The KTX shim, which the launcher loads like the GLFW shim,
-maps a loaded texture's pixels from a file instead, so macOS can drop them and read them back when needed. A texture
-stored uncompressed maps to the game's own file; a compressed one is decompressed once into the cache folder (about
-2 GB; copies unused for 60 days are deleted). It is the tab's **Texture file mapping** row;
-[`ktx_shim.c`](src/ktx-shim/ktx_shim.c) has the details.
+The game keeps every texture's pixels in memory for the whole session, about 3.5 GB with the solar system. The KTX
+shim maps them from files instead once a texture is loaded, so macOS can page them out when memory runs short and
+read them back later. It is the tab's **Texture file mapping** row; [`ktx_shim.c`](src/ktx-shim/ktx_shim.c) has the
+details.
 
 ### The benchmark
 
-The benchmark plays a fixed tour of the game in one session (Earth from orbit, flights over its ground and sea, other
-worlds, a kitten in the grass, a rocket launch, a 2,000-part rocket blown up on its pad), measures each part and
-writes a report to compare with another run, and a zip you can share as an issue if you like. It is in the app: run
-it from the Mac Port tab (**Run benchmark**), or from the port folder:
+The benchmark plays a fixed tour of the game in one session, from Earth's orbit to other worlds, a kitten in the
+grass, a rocket launch and a 2,000-part rocket blown up on its pad. It measures each part and writes a report to
+compare with another run, and a zip you can share as an issue if you like. It is in the app: run it from the Mac
+Port tab (**Run benchmark**), or from the port folder:
 
 ```bash
 ./benchmark.sh
 ```
 
-[`src/benchmark/README.md`](src/benchmark/README.md) explains the tour, its presets and options, how to compare runs,
-and the tools it brings for work on the port (repeats, GPU profiles, Instruments traces, Xcode frame captures).
+[`src/benchmark/README.md`](src/benchmark/README.md) explains the tour, its presets and options, how to compare
+runs, and the tools it brings for work on the port.
 
 ## Extras
 
