@@ -4,7 +4,7 @@ using System.Linq;
 
 namespace KsaPatches;
 
-// The patches' settings, from the environment: the launcher sets these from mac-settings.toml (src/launcher/), and a
+// The patches' settings, from the environment: the launcher sets these from port-settings.toml (src/launcher/), and a
 // variable set before starting the game wins over the file.
 //   KSA_PATCHES_OFF=<key>,...      patches not to apply (their keys in Patches.Apply)
 //   KSA_RENDER_SCALE=<0.25..1>     the 3D view's size, as a fraction of the window

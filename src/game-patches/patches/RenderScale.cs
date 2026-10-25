@@ -13,7 +13,7 @@ using KSA.Rendering.Lighting;
 
 namespace KsaPatches;
 
-// Render scale (mac-settings.toml). The main view renders at render_scale times the window's size, through the door
+// Render scale (port-settings.toml). The main view renders at render_scale times the window's size, through the door
 // the game's own high-resolution screenshots use (Renderer.ExtentOverride), and its final composite stretches it back
 // to the window, where the UI is drawn at full size. The cameras keep the window's size (so picking and the UI's
 // world positions stay right), while what the shaders see as the screen size is the render size. The light

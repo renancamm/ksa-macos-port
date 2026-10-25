@@ -25,9 +25,9 @@ Content/
 # Private working notes and source trees for the native Metal effort: proprietary material, never committed
 .claude-docs/
 
-# The benchmark's mod.toml and vehicle saves, and the Mac settings' template, are ours, and build output stays out
+# The benchmark's mod.toml and vehicle saves, and the port settings' template, are ours, and build output stays out
 !src/benchmark/**/*.toml
-!src/launcher/mac-settings.toml
+!src/launcher/port-settings.toml
 src/benchmark/*/bin/
 src/benchmark/*/obj/
 src/game-patches/*/bin/

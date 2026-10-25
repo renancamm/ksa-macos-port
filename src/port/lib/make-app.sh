@@ -14,7 +14,7 @@
 #   Contents/Resources/*.dylib    the native libraries, which the game finds next to it
 #   Contents/Resources/Brutal.Monitor.Subprocess   BRUTAL's crash-dump helper, which the game starts
 #   Contents/Resources/GamePatches/   the game patches, which the launcher loads, and Harmony
-#   Contents/Resources/mac-settings.toml  the Mac settings' template, which the launcher copies for the player
+#   Contents/Resources/port-settings.toml  the port settings' template, which the launcher copies for the player
 #   Contents/Resources/AppIcon.icns, Licenses/
 # The bundle is not signed as a whole: that would replace Microsoft's signature on dotnet. The quarantine
 # attribute a browser download puts on the files is removed, so macOS opens the app as one made on this Mac.
@@ -37,7 +37,7 @@ install_port_files() {
     rm -rf "${res}/Licenses" "${res}/GamePatches"
     ditto "${SKELETON}/Resources/Licenses" "${res}/Licenses"
     ditto "${SKELETON}/Resources/GamePatches" "${res}/GamePatches"
-    cp "${SKELETON}/Resources/AppIcon.icns" "${SKELETON}/Resources/mac-settings.toml" "${res}/"
+    cp "${SKELETON}/Resources/AppIcon.icns" "${SKELETON}/Resources/port-settings.toml" "${res}/"
     write_info_plist "${contents}"
     xattr -cr "${contents}" 2> /dev/null || true
 }
@@ -48,7 +48,7 @@ write_info_plist() {
     version="$(game_version "${contents}/Resources")"
     # NSHighResolutionCapable false: one rendered pixel per point, so the game's Resolution setting is the
     # number of pixels it renders, instead of a 2x Retina framebuffer (the launcher turns it on for retina = true in
-    # mac-settings.toml, where the GLFW shim keeps the game in points)
+    # port-settings.toml, where the GLFW shim keeps the game in points)
     cat > "${contents}/Info.plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

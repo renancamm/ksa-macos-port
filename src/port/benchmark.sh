@@ -23,7 +23,7 @@
 #   --set <key=value>  change one setting of settings.toml for the run (again for more), on top of the preset
 #   --settings <file>  change the settings in that file ("key = value" lines, as in settings.toml), on top of the
 #                      preset and before --set
-#   --mac <key=value>  change one setting of mac-settings.toml for the run (again for more), on top of yours (with
+#   --port <key=value>  change one setting of port-settings.toml for the run (again for more), on top of yours (with
 #                      a preset: on top of the defaults)
 #   --compare <run>    compare with that run at the end (and fail when screenshots differ)
 #   --app <path>       the app to measure (default: ~/Applications/Kitten Space Agency.app)
@@ -99,7 +99,7 @@ FAST=""
 NO_SHOTS=""
 HOLD=""
 SETS=()
-MACS=()
+PORTS=()
 SETTINGS_FILE=""
 REFERENCE=""
 REPEAT=1
@@ -114,7 +114,7 @@ while [ $# -gt 0 ]; do
         --no-shots) NO_SHOTS=1 ;;
         --hold) HOLD="$2"; shift ;;
         --set) SETS+=("$2"); shift ;;
-        --mac) MACS+=("$2"); shift ;;
+        --port) PORTS+=("$2"); shift ;;
         --settings) SETTINGS_FILE="$2"; shift ;;
         --compare) REFERENCE="${2%/}"; shift ;;
         --app) APP="${2%/}"; shift ;;
@@ -296,20 +296,20 @@ for kv in ${SETS[@]+"${SETS[@]}"}; do
     set_setting "${kv%%=*}" "${value}"
 done
 
-# The run's Mac settings (src/launcher/mac-settings.toml): yours unless a preset is played, --mac on top
-MAC_SETTINGS="${INSTANCE}/mac-settings.toml"
-if [ -z "${PRESET}" ] && [ -f "${DOCS}/mac-settings.toml" ]; then
-    cp "${DOCS}/mac-settings.toml" "${MAC_SETTINGS}"
+# The run's port settings (src/launcher/port-settings.toml): yours unless a preset is played, --port on top
+PORT_SETTINGS="${INSTANCE}/port-settings.toml"
+if [ -z "${PRESET}" ] && [ -f "${DOCS}/port-settings.toml" ]; then
+    cp "${DOCS}/port-settings.toml" "${PORT_SETTINGS}"
 else
-    cp "${APP}/Contents/Resources/mac-settings.toml" "${MAC_SETTINGS}" 2> /dev/null || : > "${MAC_SETTINGS}"
+    cp "${APP}/Contents/Resources/port-settings.toml" "${PORT_SETTINGS}" 2> /dev/null || : > "${PORT_SETTINGS}"
 fi
-for kv in ${MACS[@]+"${MACS[@]}"}; do
-    case "${kv}" in *=*) ;; *) die "--mac needs key=value, not '${kv}'." ;; esac
+for kv in ${PORTS[@]+"${PORTS[@]}"}; do
+    case "${kv}" in *=*) ;; *) die "--port needs key=value, not '${kv}'." ;; esac
     key="${kv%%=*}"
-    if grep -q "^${key} *=" "${MAC_SETTINGS}"; then
-        sed -i '' "s|^${key} *=.*|${key} = ${kv#*=}|" "${MAC_SETTINGS}"
+    if grep -q "^${key} *=" "${PORT_SETTINGS}"; then
+        sed -i '' "s|^${key} *=.*|${key} = ${kv#*=}|" "${PORT_SETTINGS}"
     else
-        echo "${key} = ${kv#*=}" >> "${MAC_SETTINGS}"
+        echo "${key} = ${kv#*=}" >> "${PORT_SETTINGS}"
     fi
 done
 
@@ -348,7 +348,7 @@ switches="$(env | grep -E '^KSA_(MTL_|PATCHES)' | sed "s|${HOME}|~|g" | paste -s
 port_version="$(/usr/libexec/PlistBuddy -c "Print :KSAPortVersion" "${APP}/Contents/Info.plist" 2> /dev/null || true)"
 port_commit="$(/usr/libexec/PlistBuddy -c "Print :KSAPortCommit" "${APP}/Contents/Info.plist" 2> /dev/null || true)"
 tools="$(IFS=,; echo "${TOOLS[*]:-none}" | sed 's/,/, /g')"
-changed="${SETS[*]:-}${MACS[*]:+${SETS[*]:+ }mac-settings: ${MACS[*]}}"
+changed="${SETS[*]:-}${PORTS[*]:+${SETS[*]:+ }port-settings: ${PORTS[*]}}"
 [ -z "${SETTINGS_FILE}" ] || changed="$(basename "${SETTINGS_FILE}")${changed:+ }${changed}"
 {
     echo "Mac: $(sysctl -n hw.model)"
@@ -500,10 +500,10 @@ done
 case "${pressure}" in 1) pressure=normal ;; 2) pressure=warning ;; *) pressure=critical ;; esac
 swap_after="$(sysctl -n vm.swapusage | sed -n 's/.*used = \([0-9.]*\)M.*/\1/p')"
 echo "Memory pressure: ${pressure}" >> "${OUT}/run.txt"
-# What the launcher made of the Mac settings, and which game patches applied (from the first run's log)
-mac="$(sed -n 's/^==> Mac settings: //p' "${OUT}/game.log" 2> /dev/null | head -1)"
+# What the launcher made of the port settings, and which game patches applied (from the first run's log)
+port="$(sed -n 's/^==> port settings: //p' "${OUT}/game.log" 2> /dev/null | head -1)"
 patches="$(sed -n 's/^\[patches\] //p' "${OUT}/game.log" 2> /dev/null | paste -sd ';' - | sed 's/;/; /g')"
-echo "Mac settings: ${mac:-?}" >> "${OUT}/system.txt"
+echo "port settings: ${port:-?}" >> "${OUT}/system.txt"
 echo "Game patches: ${patches:-none}" >> "${OUT}/system.txt"
 echo "Swap used: ${swap_before:-?} -> ${swap_after:-?} MB" >> "${OUT}/run.txt"
 

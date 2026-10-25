@@ -29,7 +29,7 @@ These switches turn a feature off or change a default, to work around a problem 
 | `KSA_MTL_SAFE_MATH=1` | compile shaders without fast math; rules out precision problems |
 | `KSA_MTL_AB_CONSTANT=0` | shaders read their resources from device memory instead of constant memory; a bit slower, try it when a shader fails to compile |
 | `KSA_MTL_BUDGET_MB=<n>` | the GPU memory budget reported to the game, which sizes its texture streaming from it (default: what Metal recommends for this Mac) |
-| `KSA_MTL_RETINA=1`, `KSA_MTL_FX_INTERPOLATE=1` | Retina output and frame interpolation ([MetalFX](#from-vulkan-to-metal)); the launcher sets them from `mac-settings.toml` |
+| `KSA_MTL_RETINA=1`, `KSA_MTL_FX_INTERPOLATE=1` | Retina output and frame interpolation ([MetalFX](#from-vulkan-to-metal)); the launcher sets them from `port-settings.toml` |
 | `KSA_MTL_PRESENT_PACING=0` | with V-Sync, the game's wait for an earlier frame ends only when the display shows it ([Presentation](#from-vulkan-to-metal)); in a window, frames that take less than about 23 ms on the GPU then run slower |
 
 ## Build
@@ -179,7 +179,7 @@ would leave the GPU idle whenever a frame takes less than that. KSA Metal also e
 on the GPU, the one before it is on screen, and the GPU is about to need the next frame (predicted from the last
 frames' GPU and CPU times). Frames then start when the GPU can take them, without queueing up.
 
-**MetalFX.** For the Mac settings, the patched game ([game patches](../game-patches/)) calls entry points that are KSA
+**MetalFX.** For the port settings, the patched game ([game patches](../game-patches/)) calls entry points that are KSA
 Metal's own, exported next to Vulkan's: `vkCmdUpscaleKSA` scales the main view's image into a window-size one before
 the final composite, `vkCmdUpscaleSnapshotKSA` copies the scene before its translucent effects, and `vkCmdMarkUiKSA`
 copies it again after the composite, before the UI. For MetalFX's temporal upscaler, KSA Metal makes the motion

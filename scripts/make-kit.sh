@@ -40,7 +40,7 @@ kit_payload() {
     mkdir -p "${contents}/Resources"
     ditto "${DOTNET_RUNTIME}" "${contents}/MacOS"
     cp "${REPO}/src/launcher/launcher.sh" "${contents}/MacOS/KSA"
-    cp "${REPO}/src/launcher/mac-settings.toml" "${contents}/Resources/"
+    cp "${REPO}/src/launcher/port-settings.toml" "${contents}/Resources/"
     chmod +x "${contents}/MacOS/KSA"
     cp -P "${NATIVES}"/*.dylib "${NATIVES}/Brutal.Monitor.Subprocess" "${contents}/Resources/"
     cp "${REPO}/third_party/fmod/libfmod.dylib" "${contents}/Resources/libfmod.dylib"

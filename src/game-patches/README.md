@@ -48,8 +48,8 @@ The MetalFX entry points are KSA Metal's own ([`../ksa-metal/upscale.mm`](../ksa
 
 ## Settings
 
-The patches read environment variables, which the launcher sets from `mac-settings.toml`
-([Mac settings](../../README.md#mac-settings)); one set before the game starts wins over the file:
+The patches read environment variables, which the launcher sets from `port-settings.toml`
+([port settings](../../README.md#port-settings)); one set before the game starts wins over the file:
 
 | Variable | Setting |
 |---|---|
@@ -73,13 +73,13 @@ For finding out which patch causes a problem:
 ([`scripts/build-game-patches.sh`](../../scripts/build-game-patches.sh)): `KSA.dll` is a reference only. Harmony
 comes from the `Lib.Harmony` package on nuget.org, pinned in [`cmake/dependencies.cmake`](../../cmake/dependencies.cmake).
 
-The benchmark is the test. `--mac` changes a Mac setting for one run, and the report lists the Mac settings and
+The benchmark is the test. `--port` changes a port setting for one run, and the report lists the port settings and
 which patches were on:
 
 ```bash
 KSA_PATCHES=0 ./benchmark.sh --fast                       # without the patches
 ./benchmark.sh --fast --compare <that run>                 # with them: faster, the same screenshots
-./benchmark.sh --fast --mac render_scale=0.5 --set antialiasing=None
+./benchmark.sh --fast --port render_scale=0.5 --set antialiasing=None
 ```
 
 To see the game's code a patch works on, Harmony's `PatchProcessor.GetOriginalInstructions` lists a method's IL.

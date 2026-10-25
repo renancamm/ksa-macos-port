@@ -118,7 +118,7 @@ starts at a fixed game time, so its light and clouds are the same whether or not
 
 The benchmark is a [StarMap](../../README.md#mods) mod. For a run, the game starts through the port folder's copy of
 StarMap and from a documents folder of its own, both under `~/Library/Caches/ksa-macos-port/benchmark/`. That folder
-holds a copy of your settings (with the preset on top, if any) and of your Mac settings (the defaults with a preset),
+holds a copy of your settings (with the preset on top, if any) and of your port settings (the defaults with a preset),
 the tour's vehicles and no mod but the benchmark's, so the app, your saves, settings and mods are never touched. The
 script changes only the settings that start the game straight into the tour (no system menu, the chosen system, the
 game's test vessel in orbit); every quality setting stays yours or the preset's.
@@ -179,7 +179,7 @@ the tour from `src/benchmark/benchmark.txt` into the port folder.
 | `--no-shots` | take no screenshots |
 | `--set <key>=<value>` | change a setting of `settings.toml` for the run, on top of the preset (repeat for more; strings need no quotes) |
 | `--settings <file>` | apply the settings in a file of `key = value` lines, on top of the preset and before `--set` |
-| `--mac <key>=<value>` | change a [Mac setting](../../README.md#mac-settings) for the run, on top of yours (with a preset, on top of the defaults); the report shows the Mac settings and which game patches were on |
+| `--port <key>=<value>` | change a [port setting](../../README.md#port-settings) for the run, on top of yours (with a preset, on top of the defaults); the report shows the port settings and which game patches were on |
 | `--compare <run>` | compare with that run (folder or zip) at the end; the script fails when screenshots differ |
 | `--app <path>` | the app to measure (default: `~/Applications/Kitten Space Agency.app`) |
 | `<section or place> ...` | play only these sections, or a section up to the named place (a screenshot's name) |

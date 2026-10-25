@@ -31,7 +31,7 @@
  *    After glfwSetWindowMonitor and every glfwPollEvents, report the real position of a
  *    window that went through glfwSetWindowMonitor when it differs from the last one.
  *
- * And one choice: with retina = true in mac-settings.toml (KSA_MTL_RETINA=1), the app is marked
+ * And one choice: with retina = true in port-settings.toml (KSA_MTL_RETINA=1), the app is marked
  * NSHighResolutionCapable, and the framebuffer size, content scales and framebuffer size callback
  * are reported in points, so the game draws as it does without Retina.
  */
@@ -350,7 +350,7 @@ static void shim_glfwDestroyWindow(GLFWwindow *window)
     glfwDestroyWindow(window);
 }
 
-/* Retina (KSA_MTL_RETINA=1, which the launcher sets from mac-settings.toml along with NSHighResolutionCapable): the
+/* Retina (KSA_MTL_RETINA=1, which the launcher sets from port-settings.toml along with NSHighResolutionCapable): the
  * game still sees a window in points (framebuffer in points, content scale 1), and KSA Metal presents its image in a
  * drawable at the display's scale, upscaled with MetalFX */
 static int retina_present(void)

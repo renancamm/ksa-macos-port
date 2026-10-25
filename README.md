@@ -229,7 +229,7 @@ without modifying GLFW; [`glfw_shim.c`](src/glfw-shim/glfw_shim.c) explains each
 | `Contents/MacOS/dotnet`, `host/`, `shared/` | the .NET runtime |
 | `Contents/Resources/*.dylib` | the native libraries, next to the game that loads them |
 | `Contents/Resources/GamePatches/` | the [game patches](#game-patches), with Harmony |
-| `Contents/Resources/mac-settings.toml` | the [Mac settings](#mac-settings), the commented copy the app puts in your documents folder |
+| `Contents/Resources/port-settings.toml` | the [port settings](#port-settings), the commented copy the app puts in your documents folder |
 | `Contents/Resources/Licenses/` | every component's licence and notices ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)) |
 | `Contents/Resources/AppIcon.icns`, `Contents/Info.plist` | the icon; the game's version, the port's version and commit, and `NSHighResolutionCapable` off, so the game renders one pixel per point and its Resolution setting is the number of pixels it renders |
 
@@ -297,9 +297,9 @@ The game runs without what follows. Around KSA Metal, a few more changes make dr
 some image quality for speed, patches to the game's rendering code, and a shim that lets macOS page texture memory
 out. Each of them can be turned off.
 
-### Mac settings
+### Port settings
 
-The settings are in `mac-settings.toml`, next to the game's own `settings.toml` in
+The settings are in `port-settings.toml`, next to the game's own `settings.toml` in
 `~/Documents/My Games/Kitten Space Agency`. The app puts a commented copy there the first time it starts. Edit it in
 any text editor, then quit the game and start it again.
 

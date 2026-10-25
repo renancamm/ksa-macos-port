@@ -1,4 +1,4 @@
-# Mac settings for Kitten Space Agency (ksa-macos-port)
+# Port settings for Kitten Space Agency (ksa-macos-port)
 #
 # The game reads these when it starts: quit it and start it again after a change. A line you delete takes its
 # default (the value written here). Delete the file to get this one back. Messages about the file go to
