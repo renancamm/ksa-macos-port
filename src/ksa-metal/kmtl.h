@@ -688,6 +688,9 @@ uint32_t kmtlRtGroupHandleSize();
 KPipeline* kmtlCreateComputeFromStage(KDevice* dev, KPipelineLayout* layout, const VkPipelineShaderStageCreateInfo* stage,
                                       bool rtLaunch);
 
+// The end every vkCreate*Pipelines call shares (pipeline.mm): failed pipelines, KSA_MTL_STRICT
+VkResult kmtlFinishPipelines(uint32_t n, VkPipeline* out);
+
 // Memory accounting (frame log and budget)
 extern std::atomic<int64_t> g_allocatedBytes;
 extern std::atomic<int64_t> g_allocatedByType[3];

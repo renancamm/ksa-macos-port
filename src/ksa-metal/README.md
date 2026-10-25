@@ -84,7 +84,7 @@ The debugging variables, used the same way:
 |---|---|
 | `KSA_MTL_LOG=<0-2>` | log detail: 0 errors only (default), 1 also warnings and the first call of each function, 2 also object creation |
 | `KSA_MTL_LOG_FILE=<file>` | write the log to a file instead of the terminal |
-| `KSA_MTL_STRICT=1` | return pipeline errors to the game, instead of skipping the pipeline and continuing |
+| `KSA_MTL_STRICT=1` | return pipeline errors to the game, instead of skipping the pipeline and continuing (pipelines then compile on the game's thread, so every error can go back) |
 | `KSA_MTL_DUMP_MSL=<dir>` | write every translated shader, and the errors of those that fail to compile |
 | `KSA_MTL_DUMP_SPV=<dir>` | write every shader module the game creates as `<hash>.spv`, and the modules KSA Metal rewrites for tessellation and ray tracing |
 | `KSA_MTL_OVERRIDES=<dir>` | use hand-written Metal source in place of a translated shader: `<dir>/<name>.metal`, named as in `KSA_MTL_DUMP_MSL`; each use keeps its own specialization values |

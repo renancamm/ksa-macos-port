@@ -35,6 +35,8 @@ const KConfig& kmtlConfig() {
         c.logLevel = envInt("KSA_MTL_LOG", 0);
         c.logFile = env("KSA_MTL_LOG_FILE");
         c.strictPipelines = envOn("KSA_MTL_STRICT", false);
+        // A pipeline that fails on a worker has a handle already: strict errors need the game's thread
+        if (c.strictPipelines) c.asyncPipelines = false;
         c.dumpMsl = env("KSA_MTL_DUMP_MSL");
         c.dumpSpv = env("KSA_MTL_DUMP_SPV");
         c.overrides = env("KSA_MTL_OVERRIDES");

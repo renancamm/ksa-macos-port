@@ -76,14 +76,12 @@ static KPipeline* createRayTracingPipeline(KDevice* dev, const VkRayTracingPipel
 VKFN(VkResult) vkCreateRayTracingPipelinesKHR(VkDevice device, VkDeferredOperationKHR, VkPipelineCache, uint32_t n,
                                               const VkRayTracingPipelineCreateInfoKHR* cis, const VkAllocationCallbacks*, VkPipeline* out) {
     KTRACE_FIRST();
-    VkResult res = VK_SUCCESS;
     for (uint32_t i = 0; i < n; i++) {
         @autoreleasepool {
             out[i] = (VkPipeline)createRayTracingPipeline((KDevice*)device, &cis[i]);
-            if (!out[i]) res = VK_ERROR_INITIALIZATION_FAILED;
         }
     }
-    return res;
+    return kmtlFinishPipelines(n, out);
 }
 
 VKFN(VkResult) vkGetRayTracingShaderGroupHandlesKHR(VkDevice, VkPipeline, uint32_t first, uint32_t count, size_t size, void* data) {

@@ -1426,25 +1426,29 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
     return p;
 }
 
+// The end of a vkCreate*Pipelines call whose failed pipelines are null in out (each failure logged where it happened).
+// A failed pipeline does not stop the game: it becomes an empty pipeline (no Metal state), whose draws, dispatches and
+// ray traces are skipped. KSA_MTL_STRICT=1 returns the error instead, the failed handles left null.
+VkResult kmtlFinishPipelines(uint32_t n, VkPipeline* out) {
+    bool failed = false;
+    for (uint32_t i = 0; i < n; i++) failed |= !out[i];
+    if (!failed) return VK_SUCCESS;
+    if (kmtlConfig().strictPipelines) return VK_ERROR_INITIALIZATION_FAILED;
+    for (uint32_t i = 0; i < n; i++)
+        if (!out[i]) out[i] = (VkPipeline) new KPipeline();
+    return VK_SUCCESS;
+}
+
 VKFN(VkResult) vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache, uint32_t n, const VkGraphicsPipelineCreateInfo* cis,
                                          const VkAllocationCallbacks*, VkPipeline* out) {
     KTRACE_FIRST();
     auto* dev = (KDevice*)device;
-    VkResult res = VK_SUCCESS;
     for (uint32_t i = 0; i < n; i++) {
         @autoreleasepool {
-            KPipeline* p = createGraphicsPipeline(dev, &cis[i]);
-            out[i] = (VkPipeline)p;
-            if (!p) res = VK_ERROR_INITIALIZATION_FAILED;
+            out[i] = (VkPipeline)createGraphicsPipeline(dev, &cis[i]);
         }
     }
-    // A failed pipeline is reported but does not stop the game: KSA_MTL_STRICT=1 returns the error instead
-    if (res != VK_SUCCESS && !kmtlConfig().strictPipelines) {
-        for (uint32_t i = 0; i < n; i++)
-            if (!out[i]) out[i] = (VkPipeline) new KPipeline();  // null pipeline: draws with it are skipped
-        return VK_SUCCESS;
-    }
-    return res;
+    return kmtlFinishPipelines(n, out);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1509,20 +1513,12 @@ VKFN(VkResult) vkCreateComputePipelines(VkDevice device, VkPipelineCache, uint32
                                         const VkAllocationCallbacks*, VkPipeline* out) {
     KTRACE_FIRST();
     auto* dev = (KDevice*)device;
-    VkResult res = VK_SUCCESS;
     for (uint32_t i = 0; i < n; i++) {
         @autoreleasepool {
-            KPipeline* p = createComputePipeline(dev, &cis[i]);
-            out[i] = (VkPipeline)p;
-            if (!p) res = VK_ERROR_INITIALIZATION_FAILED;
+            out[i] = (VkPipeline)createComputePipeline(dev, &cis[i]);
         }
     }
-    if (res != VK_SUCCESS && !kmtlConfig().strictPipelines) {
-        for (uint32_t i = 0; i < n; i++)
-            if (!out[i]) out[i] = (VkPipeline) new KPipeline();  // null pipeline: dispatches with it are skipped
-        return VK_SUCCESS;
-    }
-    return res;
+    return kmtlFinishPipelines(n, out);
 }
 
 VKFN(void) vkDestroyPipeline(VkDevice, VkPipeline p, const VkAllocationCallbacks*) {
