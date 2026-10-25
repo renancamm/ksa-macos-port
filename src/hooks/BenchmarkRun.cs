@@ -36,6 +36,7 @@ internal static class BenchmarkRun
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
     private static string _folder = "";
+    private static bool _installed;
     private static Mode _mode;
     private static bool _firstFrame = true, _startRequested;
     private static Benchmark? _run;
@@ -47,7 +48,9 @@ internal static class BenchmarkRun
     private static bool _celestialNames, _locationNames, _drawUi;
     private static double _speed;
     private static long _logStart;
-    private static Task? _systemFacts, _finishing;
+    private static Task? _finishing;
+    // What system.txt says about the run (the report program asks macOS about the Mac after the run, not during it)
+    private static string _system = "", _start = "", _sections = "";
     // macOS's memory pressure during the run (1 normal, 2 warning, 4 critical) and the swap used before it
     private static int _pressure = 1;
     private static double _swapBefore;
@@ -63,6 +66,7 @@ internal static class BenchmarkRun
             return "off (not in the app)";
         harmony.Patch(Find.Method(typeof(Program), "OnFrame", typeof(double), typeof(double)),
             postfix: new HarmonyMethod(typeof(BenchmarkRun), nameof(FramePostfix)));
+        _installed = true;
         if (Environment.GetEnvironmentVariable("KSA_BENCH_OUT") is not { Length: > 0 } output)
             return "ready";
         _out = output;
@@ -73,6 +77,8 @@ internal static class BenchmarkRun
     // Why a run can't start from the tab now, or null
     public static string? CannotStart()
     {
+        if (!_installed)
+            return "The benchmark is not in this app, or its hook was left out (logs/console.log says which).";
         if (_run != null || _startRequested || _finishing is { IsCompleted: false })
             return "A benchmark is running.";
         if (_mode == Mode.Script)
@@ -142,8 +148,12 @@ internal static class BenchmarkRun
         {
             Hooks.Log($"benchmark: {e}");
             _run = null;
+            // The player's game back, or out of the game that started again for the run
             if (_mode == Mode.InGame)
                 PutBack();
+            else if (_mode == Mode.Restarted)
+                Program.Instance.RequestExit(1);
+            _mode = Mode.None;
         }
     }
 
@@ -154,6 +164,9 @@ internal static class BenchmarkRun
             _firstFrame = false;
             if (_mode is Mode.Script or Mode.Restarted)
             {
+                _fast = Environment.GetEnvironmentVariable("KSA_BENCH_FAST") is { Length: > 0 };
+                _system = Universe.CurrentSystem?.Id ?? "?";
+                _start = "a new game, restarted from the game's settings";
                 AddVehicles();
                 _run = Benchmark.Begin(Environment.GetEnvironmentVariable);
                 StartWatching();
@@ -194,11 +207,9 @@ internal static class BenchmarkRun
     private static Dictionary<string, string> Options(string output)
     {
         var script = Path.Combine(_folder, "benchmark.txt");
-        // Fast mode's short test, or every section but the rocket that only fast mode plays
-        var only = _fast
-            ? "earth_earth1 earth_earth4 earth_earth7 rocket"
-            : string.Join(' ', File.ReadLines(script).Select(l => l.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-                .Where(w => w.Length >= 2 && w[0] == "section" && w[1] != "rocket").Select(w => w[1]));
+        // Fast mode's short test, or the cinematic tour: the tour's "fast" and "tour" lines
+        var only = File.ReadLines(script).Select(l => l.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            .Where(w => w.Length >= 2 && w[0] == (_fast ? "fast" : "tour")).Select(w => string.Join(' ', w[1..])).FirstOrDefault() ?? "";
         return new Dictionary<string, string>
         {
             ["KSA_BENCH_SCRIPT"] = script, ["KSA_BENCH_OUT"] = output, ["KSA_BENCH_ONLY"] = only,
@@ -217,23 +228,20 @@ internal static class BenchmarkRun
         return folder;
     }
 
-    // system.txt, written by the report program (it asks macOS about the Mac, which takes a moment). A game started
-    // again for the run says what it runs with in its log, which the report program reads at the end.
-    private static Task SystemFacts(string output, string system, string sections, string start, bool restarted = false)
+    // system.txt's facts about the run, for the report program, which adds the Mac's
+    private static string[] SystemFacts()
     {
-        var facts = new List<string>
-        {
+        var outside = PortSettings.All.Where(s => s.Outside != null).Select(s => s.Outside!.Replace(Home, "~")).ToList();
+        var port = PortSettings.All.Where(s => s.Variable.Length > 0 && s.Running != s.Default).Select(s => $"{s.Key} = {s.Running}").ToList();
+        return
+        [
             $"StarMap={(AppDomain.CurrentDomain.GetAssemblies().Any(a => a.GetName().Name == "StarMap.Core") ? "in the app" : "none")}",
-            $"System={system}", $"Sections={sections}", $"Mode={(_fast ? "fast" : "cinematic")}", "Preset=none, own settings",
-            "Settings changed=none", $"Start={start}",
-            $"KSA Metal switches={(PortSettings.All.Where(s => s.Outside != null).Select(s => s.Outside!.Replace(Home, "~")).ToList() is { Count: > 0 } o ? string.Join(' ', o) : "none")}",
-            "Tools=none"
-        };
-        // What this game runs with: the port settings that aren't at their defaults, and what the hooks did
-        if (!restarted)
-            facts.AddRange([$"port settings={(PortSettings.All.Where(s => s.Variable.Length > 0 && s.Running != s.Default).Select(s => $"{s.Key} = {s.Running}").ToList() is { Count: > 0 } p ? string.Join(", ", p) : "defaults")}",
-            $"Hooks={Hooks.Summary.Replace(Home, "~")}"]);
-        return Task.Run(() => Report(["system", output, App, .. facts]));
+            $"System={_system}", $"Sections={Environment.GetEnvironmentVariable("KSA_BENCH_ONLY") ?? _sections}",
+            $"Mode={(_fast ? "fast" : "cinematic")}", "Preset=none, own settings", "Settings changed=none", $"Start={_start}",
+            $"KSA Metal switches={(outside.Count > 0 ? string.Join(' ', outside) : "none")}", "Tools=none",
+            // What this game ran with: the port settings that aren't at their defaults, and what the hooks did
+            $"port settings={(port.Count > 0 ? string.Join(", ", port) : "defaults")}", $"Hooks={Hooks.Summary.Replace(Home, "~")}"
+        ];
     }
 
     private static string Home => Environment.GetEnvironmentVariable("HOME") ?? "~";
@@ -249,12 +257,15 @@ internal static class BenchmarkRun
         options["KSA_BENCH_START"] = "game";
         GameSettings.Current.Save();
         File.Copy(Path.Combine(Constants.DocumentsFolderPath, "settings.toml"), Path.Combine(_out, "settings.toml"), true);
-        _systemFacts = SystemFacts(_out, Universe.CurrentSystem?.Id ?? "?", options["KSA_BENCH_ONLY"], "in the running game, from its settings");
+        (_system, _sections, _start) = (Universe.CurrentSystem?.Id ?? "?", options["KSA_BENCH_ONLY"], "in the running game, from its settings");
         Console.Out.Flush();
         _logStart = File.Exists(ConsoleLog) ? new FileInfo(ConsoleLog).Length : 0;
         Hooks.Log($"benchmark: playing in this game, into {_out.Replace(Home, "~")}");
 
-        // The player's game: on disk in case the game doesn't survive the run, and in memory to come back
+        // The player's game: on disk in case the game doesn't survive the run, and in memory to come back, with what
+        // the run changes of the settings
+        var ui = GameSettings.Current.Interface;
+        (_celestialNames, _locationNames, _drawUi) = (ui.CelestialNames, ui.LocationNames, Program.DrawUI);
         _saved = UniverseData.Create();
         // The speed the player had: the settings window pauses the game while it is open, and keeps the speed to go back to
         _speed = AccessTools.Field(typeof(Program), "_menuPauseActive")?.GetValue(null) is true &&
@@ -273,8 +284,6 @@ internal static class BenchmarkRun
         Universe.DeserializeSave(fresh);
         Program.OnGameLoaded();
         // The tour's view: no names over celestials and places (as benchmark.sh sets them)
-        var ui = GameSettings.Current.Interface;
-        (_celestialNames, _locationNames, _drawUi) = (ui.CelestialNames, ui.LocationNames, Program.DrawUI);
         (ui.CelestialNames, ui.LocationNames) = (false, false);
         AddVehicles();
         _run = Benchmark.Begin(name => options.GetValueOrDefault(name));
@@ -334,7 +343,6 @@ internal static class BenchmarkRun
         var output = NewRunFolder();
         File.Copy(Path.Combine(instance, "settings.toml"), Path.Combine(output, "settings.toml"));
         var options = Options(output);
-        SystemFacts(output, system, options["KSA_BENCH_ONLY"], "a new game, restarted from the game's settings", restarted: true).Wait();
         options["STARMAP_INSTANCE_PATH"] = instance;
         options["KSA_BENCH_FINISH"] = "1";
         Hooks.Log($"benchmark: the game starts again for it, into {output.Replace(Home, "~")}");
@@ -379,11 +387,12 @@ internal static class BenchmarkRun
             log.Seek(mode == Mode.InGame ? Math.Min(_logStart, log.Length) : 0, SeekOrigin.Begin);
             File.WriteAllText(Path.Combine(_out, "game.log"), new StreamReader(log).ReadToEnd().Replace(Home, "~"));
         }
+        // system.txt now (asking macOS about the Mac takes a moment, which the run doesn't measure), the report after
         var output = _out;
-        var facts = _systemFacts ?? Task.CompletedTask;
-        _finishing = Task.Run(async () =>
+        string[] facts = ["system", output, App, .. SystemFacts()];
+        _finishing = Task.Run(() =>
         {
-            await facts;
+            Report(facts);
             Report(["finish", output]);
         });
         Hooks.Log("benchmark: writing the report");

@@ -112,25 +112,27 @@ if [ -f "${SETTINGS}" ]; then
     done < "${SETTINGS}"
 fi
 
-# Each setting's value once its needs are met (a setting only needs those before it in the table); unmet, its default
+# Each setting's value once its needs are met (needs of the game, the tab checks), its default while one isn't
 on() {
     case "$1" in "" | false | 0 | 0.0) false ;; *) true ;; esac
 }
+# effective <index>: that setting's value, its own needs applied
+effective() {
+    if met "${NEEDS[$1]}"; then echo "${VALUES[$1]}"; else echo "${DEFAULTS[$1]}"; fi
+}
 met() {
-    local need j
+    local need
     for need in ${1//,/ }; do
         case "${need}" in
             game:*) continue ;;
-            *!=*) j="$(index_of "${need%%!=*}")"; [ "${EFFECTIVE[j]}" != "${need#*!=}" ] || return 1 ;;
-            *=*) j="$(index_of "${need%%=*}")"; [ "${EFFECTIVE[j]}" = "${need#*=}" ] || return 1 ;;
-            *) j="$(index_of "${need}")"; on "${EFFECTIVE[j]}" || return 1 ;;
+            *!=*) [ "$(effective "$(index_of "${need%%!=*}")")" != "${need#*!=}" ] || return 1 ;;
+            *=*) [ "$(effective "$(index_of "${need%%=*}")")" = "${need#*=}" ] || return 1 ;;
+            *) on "$(effective "$(index_of "${need}")")" || return 1 ;;
         esac
     done
 }
-EFFECTIVE=()
 CHANGED=() SET=() OUTSIDE=()
 for i in "${!KEYS[@]}"; do
-    EFFECTIVE[i]="${DEFAULTS[i]}"
     var="${VARS[i]%%=*}"
     [ -z "${var}" ] || [ -z "$(eval "echo \"\${${var}+x}\"")" ] || OUTSIDE+=("${var}")
     [ "${VALUES[i]}" != "${DEFAULTS[i]}" ] || continue
@@ -138,7 +140,6 @@ for i in "${!KEYS[@]}"; do
         CHANGED+=("${KEYS[i]} = ${VALUES[i]} (off: needs ${NEEDS[i]})")
         continue
     fi
-    EFFECTIVE[i]="${VALUES[i]}"
     [ -n "${var}" ] || continue
     case "${TYPES[i]}" in
         bool | available)

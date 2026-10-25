@@ -177,8 +177,9 @@ internal static class MacPortTab
         if (ReferenceEquals(temporary, _bound) && Pending.Count > 0)
             return;
         _bound = temporary;
+        // Reset leaves alone what the tab doesn't let the player change: the developer settings, those set outside
         foreach (var s in PortSettings.All)
-            Pending[s.Key] = _reset && s.Section != "developer" ? s.Default : s.Saved;
+            Pending[s.Key] = _reset && s.Section != "developer" && s.Outside == null ? s.Default : s.Saved;
         _reset = false;
     }
 

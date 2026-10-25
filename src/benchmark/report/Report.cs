@@ -166,6 +166,8 @@ public static class Program
     private static int Finish(string dir)
     {
         var system = Path.Combine(dir, "system.txt");
+        // The run started when system.txt was written: crash reports since then are the run's
+        var started = File.GetLastWriteTimeUtc(system);
         var have = KeyValues(system).Select(kv => kv.key).ToHashSet();
         var log = Path.Combine(dir, "game.log");
         var lines = File.Exists(log) ? File.ReadAllLines(log) : [];
@@ -179,12 +181,12 @@ public static class Program
         }
         File.AppendAllLines(system, added);
         int status = Report(dir);
-        Package(dir);
+        Package(dir, started);
         return status;
     }
 
-    // <dir>/<name>.zip: what a shared run holds
-    private static void Package(string dir)
+    // <dir>/<name>.zip: what a shared run holds, with the game's crash reports since the run started
+    private static void Package(string dir, DateTime started)
     {
         var name = Path.GetFileName(Path.GetFullPath(dir).TrimEnd('/'));
         var zip = Path.Combine(dir, name + ".zip");
@@ -205,13 +207,11 @@ public static class Program
                     Run("/usr/bin/sips", "-s", "format", "jpeg", "-s", "formatOptions", "70", "-Z", "1600", file, "--out",
                         Path.Combine(stage, Path.ChangeExtension(f, ".jpg")));
             }
-            // The game's crash reports since the run started
-            var since = File.GetLastWriteTimeUtc(Path.Combine(dir, "system.txt"));
             var reports = Path.Combine(home, "Library", "Logs", "DiagnosticReports");
             var user = Environment.UserName;
             foreach (var crash in Directory.Exists(reports) ? Directory.GetFiles(reports, "*.ips") : [])
             {
-                if (File.GetLastWriteTimeUtc(crash) < since)
+                if (File.GetLastWriteTimeUtc(crash) < started)
                     continue;
                 var text = File.ReadAllText(crash);
                 if (!Regex.IsMatch(text, "\"procName\" *: *\"dotnet\"|KSA\\.dll|StarMap"))

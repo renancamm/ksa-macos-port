@@ -137,7 +137,8 @@ end. The hooks add the tour's vehicles to the game's list of vehicles from the a
 the game.
 
 The tour is a text file, `benchmark.txt`: sections of steps timed in seconds, each a console command or a directive of
-the benchmark's director (`director/Directives.cs` lists them). The camera's flight is given by `@key` steps, places the
+the benchmark's director (`director/Directives.cs` lists them), and two lines, `fast` and `tour`, with what a run plays
+when no places are named. The camera's flight is given by `@key` steps, places the
 camera passes through (`director/Path.cs`); around the vehicles, the camera follows them or stands on the ground
 (`director/Rig.cs`). The director in `director/` plays the steps, moves the camera, measures the parts each section
 marks, and asks KSA Metal for each frame's GPU time and for the screenshots. `./build.sh` compiles it against the KSA

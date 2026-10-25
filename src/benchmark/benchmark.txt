@@ -8,6 +8,10 @@
 #
 # Fast mode (benchmark.sh --fast) plays a short test of its own: three places of Earth's section, the game paused and the
 # camera jumping from one to the next, then the rocket section at the end, which only fast mode plays unless named.
+# What a run plays when no places are named, in fast mode and in the cinematic tour (benchmark.sh and the game's Mac
+# Port tab read these two lines):
+fast earth_earth1 earth_earth4 earth_earth7 rocket
+tour earth moon mars saturn jupiter capsule launch giga
 
 # Earth: from high above South America to orbit, down through the clouds to the sea, the Andes and the coast of
 # Peru, then up over northern Quebec.

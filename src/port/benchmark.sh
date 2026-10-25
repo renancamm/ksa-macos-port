@@ -176,13 +176,13 @@ fi
 # Places named (the tools that take GB at each place need some)
 NAMED=${#ONLY[@]}
 SECTIONS="${ONLY[*]:-all}"
-# Without places: fast mode's short test, or every section but the rocket that only fast mode plays
+# Without places: fast mode's short test, or the cinematic tour (the tour's "fast" and "tour" lines)
 if [ "${NAMED}" = 0 ]; then
     if [ -n "${FAST}" ]; then
-        ONLY=(earth_earth1 earth_earth4 earth_earth7 rocket)
+        ONLY=($(awk '$1 == "fast" { $1 = ""; print }' "${SCRIPT}"))
         SECTIONS="${ONLY[*]}"
     else
-        ONLY=($(awk '$1 == "section" && $2 != "rocket" { print $2 }' "${SCRIPT}"))
+        ONLY=($(awk '$1 == "tour" { $1 = ""; print }' "${SCRIPT}"))
     fi
 fi
 # Fast mode plays in Earth's small system when its sections need no other celestial than the Moon
