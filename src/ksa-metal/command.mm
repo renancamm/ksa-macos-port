@@ -1571,10 +1571,6 @@ void KCommandBuffer::writeTimestamp(KQueryPool* pool, uint32_t query) {
         return;
     }
     endEncoder();
-    if (!device->timestampScratch) {
-        std::lock_guard<std::mutex> lock(device->tessScratchMutex);
-        if (!device->timestampScratch) device->timestampScratch = [device->mtl newBufferWithLength:256 options:MTLResourceStorageModePrivate];
-    }
     MTLBlitPassDescriptor* d = [MTLBlitPassDescriptor blitPassDescriptor];
     d.sampleBufferAttachments[0].sampleBuffer = tsSamples;
     d.sampleBufferAttachments[0].startOfEncoderSampleIndex = tsUsed;

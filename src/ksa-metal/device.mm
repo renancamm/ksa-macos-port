@@ -97,6 +97,12 @@ VKFN(VkResult) vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCre
         delete dev;
         return VK_ERROR_INITIALIZATION_FAILED;
     }
+    dev->timestampScratch = [dev->mtl newBufferWithLength:256 options:MTLResourceStorageModePrivate];
+    if (!dev->timestampScratch) {
+        KERR("vkCreateDevice: timestamp scratch buffer failed");
+        delete dev;
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
     dev->queue = makeQueue(dev, 0, 256, @"KSA Metal queue", @"KSA Metal encoder chain");
     // A transfer-only queue family: KSA's texture streamer then uploads on its own queue
     dev->transferQueue = dev->queue ? makeQueue(dev, 1, 64, @"KSA Metal transfer queue", @"KSA Metal transfer chain") : nullptr;

@@ -197,7 +197,7 @@ struct KDevice : KDispatchable {
     // Tessellation stage outputs: one GPU-only buffer shared by every tessellated draw of every command buffer
     // (all encoders run in queue order through the chain fence), grown to the largest draw
     id<MTLBuffer> tessScratch = nil;
-    id<MTLBuffer> timestampScratch = nil;  // target of the fill in timestamp encoders
+    id<MTLBuffer> timestampScratch = nil;  // target of the fill in timestamp encoders (made with the device)
     std::mutex tessScratchMutex;
 
     void addResident(id<MTLAllocation> a);
