@@ -98,6 +98,7 @@ struct KConfig {
     bool fxDebug = false;                 // KSA_MTL_FX_DEBUG=1: the upscale shows its motion vectors
     const char* fxShots = nullptr;        // KSA_MTL_FX_SHOTS=<dir>: PNGs of what MetalFX made now and then
     const char* throttle = nullptr;       // KSA_MTL_THROTTLE=<hash>:<N>,...: experiment, run a shader every N-th present (0 never)
+    bool uniformRefs = true;              // KSA_MTL_UNIFORM_REFS=0: helpers get copies of uniform structs, as translated
 };
 const KConfig& kmtlConfig();
 
@@ -645,6 +646,7 @@ void kmtlDestroyImage(KImage* img);
 id<MTLTexture> kmtlBindTexture(KImage* img);  // creates the texture once memory is bound
 uint64_t kmtlHash(const void* data, size_t size);
 id<MTLLibrary> kmtlCompileMSL(KDevice* dev, const std::string& msl, std::string* err);
+id<MTLLibrary> kmtlCompileStageMSL(KDevice* dev, const std::string& msl, std::string* err);
 
 // Result of translating one pipeline stage (SPIR-V -> MSL plus reflection); cached on disk by shadercache.mm
 struct KTranslated {

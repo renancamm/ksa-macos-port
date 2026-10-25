@@ -41,6 +41,7 @@ background_compiling | bool | true | KSA_MTL_ASYNC_PIPELINES | | restart | | Bac
 shader_cache | bool | true | KSA_MTL_CACHE | | restart | | Shader cache | Translated shaders are kept on disk, in ~/Library/Caches/ksa-metal, so later starts don't compile them again.
 texture_mapping | bool | true | KSA_KTX_SHIM | | restart | | Texture file mapping | Textures' pixels are mapped from files instead of kept in memory of their own, so macOS can page them out: about 3 GB less memory with the solar system.
 constant_memory | bool | true | KSA_MTL_AB_CONSTANT | | restart | | Constant-memory resources | Shaders read their resources from constant memory, which is a little faster. Off: try it when a shader fails to compile.
+uniform_references | bool | true | KSA_MTL_UNIFORM_REFS | | restart | | Uniform struct references | Shaders read the game's parameter blocks in place instead of copying them for each helper function: the smoke of a big explosion draws 6-9 % faster, with the same image. Off: try it when a shader looks wrong.
 
 [game_features] Game features
 tessellation | available | true | KSA_MTL_TESSELLATION | | restart | | Tessellation | Lets the game tessellate terrain and ocean; its own Terrain Tessellation setting still decides. Off: the game draws them without it.

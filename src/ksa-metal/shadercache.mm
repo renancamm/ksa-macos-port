@@ -148,7 +148,7 @@ void kmtlShaderPrewarm(KDevice* dev) {
                         KTranslated t;
                         if (!kmtlCacheLoad((*keys)[i], &t)) continue;
                         std::string err;
-                        kmtlCompileMSL(dev, t.msl, &err);
+                        kmtlCompileStageMSL(dev, t.msl, &err);
                     }
                 }
             }

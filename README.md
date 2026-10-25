@@ -281,7 +281,8 @@ possible. In short:
 - **Memory:** each block of Vulkan device memory is a Metal heap. Buffers are offsets into it, images are textures
   placed in it.
 - **Shaders:** SPIR-V is translated to Metal's shading language with SPIRV-Cross when a pipeline is created, on
-  worker threads, and the translations are cached on disk.
+  worker threads, and the translations are cached on disk. Helper functions read the game's parameter blocks in
+  place, where SPIRV-Cross would copy them for each call.
 - **Descriptors:** each descriptor set is written directly as a Metal argument buffer.
 - **Commands:** Metal commands are encoded while the game records, so submitting is cheap.
 - **Synchronization:** barriers become Metal fences between groups of commands, sorted by stage, so independent

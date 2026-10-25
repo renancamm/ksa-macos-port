@@ -5,6 +5,7 @@
 #include "spirv_parser.hpp"
 #include <sys/stat.h>
 #include <memory>
+#include <set>
 #include <regex>
 #include <functional>
 #include <thread>
@@ -106,6 +107,175 @@ id<MTLLibrary> kmtlCompileMSL(KDevice* dev, const std::string& msl, std::string*
     entry->done = true;
     entry->cv.notify_all();
     return lib;
+}
+
+// Uniform structs read in place (KSA_MTL_UNIFORM_REFS, on by default). GLSL passes structs by value, and SPIRV-Cross
+// gives every helper that takes a uniform block's struct a copy in a local: "T _N; _N.a = ubo.s.a; ..." field by field,
+// or "T param = p;", at each call, inside raymarch loops too. KSA's trail parameters are 1.2 KB with their arrays, and
+// a copy whose arrays a helper indexes lives on the stack. Here the copies become references to the block (its
+// std140 twin T_1 has the same fields) and the helpers take "constant T_1&". Only copies of an expression rooted in
+// a name declared "constant X& name" are touched; anything this makes invalid (a copy that is written to, a helper
+// also called with a local struct) fails to compile, and kmtlCompileStageMSL then compiles the translation as it was.
+static bool isIdent(char c) { return isalnum((unsigned char)c) || c == '_'; }
+
+// Whether T's block twin is a member of a struct that is read as "constant S&" and never as "device S&" (a storage
+// buffer's struct would need device references instead), or of another struct's twin that is
+static bool inConstantBlock(const std::string& msl, const std::string& t) {
+    bool constant = false;
+    const std::string member = "    " + t + "_1 ";
+    for (size_t at = 0; (at = msl.find(member, at)) != std::string::npos; at += member.size()) {
+        size_t open = msl.rfind("\nstruct ", at);
+        if (open == std::string::npos) continue;
+        size_t b = open + 8, e = msl.find('\n', b);
+        std::string s = msl.substr(b, e - b);
+        if (msl.find("device " + s + "&") != std::string::npos) return false;
+        if (msl.find("constant " + s + "&") != std::string::npos) constant = true;
+        // Nested: a member of another block twin
+        else if (s.size() > 2 && s.compare(s.size() - 2, 2, "_1") == 0 && s != t + "_1" &&
+                 msl.find("\nstruct " + s.substr(0, s.size() - 2) + "\n") != std::string::npos &&
+                 inConstantBlock(msl, s.substr(0, s.size() - 2)))
+            constant = true;
+    }
+    return constant;
+}
+
+static std::string uniformStructRefs(const std::string& msl) {
+    // Structs with a block-layout twin
+    std::vector<std::string> twins;
+    for (size_t at = 0; (at = msl.find("\nstruct ", at)) != std::string::npos; at += 8) {
+        size_t b = at + 8, e = b;
+        while (e < msl.size() && isIdent(msl[e])) e++;
+        if (e - b > 2 && msl.compare(e - 2, 2, "_1") == 0 && msl[e] == '\n') {
+            std::string t = msl.substr(b, e - b - 2);
+            if (msl.find("\nstruct " + t + "\n") != std::string::npos && inConstantBlock(msl, t)) twins.push_back(t);
+        }
+    }
+    if (twins.empty()) return msl;
+    std::string out = msl;
+    for (const std::string& t : twins) {
+        const std::string from = "thread const " + t + "& ", to = "constant " + t + "_1& ";
+        for (size_t at = 0; (at = out.find(from, at)) != std::string::npos; at += to.size()) out.replace(at, from.size(), to);
+    }
+    // Names declared "constant X& name"
+    std::set<std::string> roots;
+    for (size_t at = 0; (at = out.find("constant ", at)) != std::string::npos; at += 9) {
+        if (at > 0 && isIdent(out[at - 1])) continue;
+        size_t amp = out.find("& ", at);
+        if (amp == std::string::npos || out.find_first_of(",;(){}\n", at) < amp) continue;
+        size_t b = amp + 2, e = b;
+        while (e < out.size() && isIdent(out[e])) e++;
+        if (e > b) roots.insert(out.substr(b, e - b));
+    }
+    auto rooted = [&](const std::string& expr) {
+        size_t b = expr.compare(0, 2, "(*") == 0 ? 2 : 0, e = b;
+        while (e < expr.size() && isIdent(expr[e])) e++;
+        if (e == b || !roots.count(expr.substr(b, e - b))) return false;
+        for (char c : expr) if (!isIdent(c) && !strchr(".[]()*", c)) return false;
+        return true;
+    };
+    auto split = [](const std::string& text) {
+        std::vector<std::string> lines;
+        for (size_t b = 0; b <= text.size();) {
+            size_t e = text.find('\n', b);
+            if (e == std::string::npos) e = text.size();
+            lines.push_back(text.substr(b, e - b));
+            b = e + 1;
+        }
+        return lines;
+    };
+    auto join = [](const std::vector<std::string>& lines) {
+        std::string text;
+        for (size_t i = 0; i < lines.size(); i++) { text += lines[i]; if (i + 1 < lines.size()) text += '\n'; }
+        return text;
+    };
+    // The struct a line declares: "<indent>T name..." for a twin T, its name's end in *nameEnd
+    auto declares = [&](const std::string& l, std::string* name, size_t* nameEnd) -> const std::string* {
+        size_t ind = l.find_first_not_of(' ');
+        if (ind == std::string::npos) return nullptr;
+        for (const std::string& t : twins) {
+            if (l.compare(ind, t.size() + 1, t + " ") != 0) continue;
+            size_t nb = ind + t.size() + 1, ne = nb;
+            while (ne < l.size() && isIdent(l[ne])) ne++;
+            if (ne == nb) return nullptr;
+            *name = l.substr(nb, ne - nb);
+            *nameEnd = ne;
+            return &t;
+        }
+        return nullptr;
+    };
+    // Pass 1: "T _N;" then "_N.f = SRC.f;" for every field: _N becomes SRC
+    std::vector<std::string> lines = split(out), kept;
+    std::vector<std::pair<std::string, std::string>> renames;
+    for (size_t i = 0; i < lines.size(); i++) {
+        const std::string& l = lines[i];
+        std::string name;
+        size_t ne;
+        if (declares(l, &name, &ne) && ne == l.size() - 1 && l[ne] == ';') {
+            std::string src;
+            size_t j = i + 1;
+            for (; j < lines.size(); j++) {
+                const std::string& f = lines[j];
+                size_t fi = f.find_first_not_of(' ');
+                if (fi == std::string::npos || f.compare(fi, name.size() + 1, name + ".") != 0) break;
+                size_t eq = f.find(" = ", fi);
+                if (eq == std::string::npos || f.back() != ';') break;
+                std::string field = f.substr(fi + name.size(), eq - fi - name.size());  // ".f" or ".f[2]"
+                std::string rhs = f.substr(eq + 3, f.size() - eq - 4);
+                if (rhs.size() <= field.size() || rhs.compare(rhs.size() - field.size(), field.size(), field) != 0) break;
+                std::string s2 = rhs.substr(0, rhs.size() - field.size());
+                if (!src.empty() && s2 != src) break;
+                src = s2;
+            }
+            if (!src.empty() && j > i + 1 && rooted(src)) {
+                renames.emplace_back(name, src);
+                i = j - 1;
+                continue;
+            }
+        }
+        kept.push_back(l);
+    }
+    std::string joined = join(kept);
+    for (auto& [name, src] : renames) {
+        std::string r;
+        r.reserve(joined.size());
+        for (size_t at = 0;;) {
+            size_t f = joined.find(name, at);
+            if (f == std::string::npos) { r.append(joined, at, std::string::npos); break; }
+            bool whole = (f == 0 || !isIdent(joined[f - 1])) && (f + name.size() >= joined.size() || !isIdent(joined[f + name.size()]));
+            r.append(joined, at, f - at);
+            r += whole ? src : name;
+            at = f + name.size();
+        }
+        joined.swap(r);
+    }
+    // Pass 2: "T x = SRC;" becomes "constant T_1& x = SRC;"
+    lines = split(joined);
+    bool changed = !renames.empty() || out != msl;
+    for (std::string& l : lines) {
+        std::string name;
+        size_t ne;
+        const std::string* t = declares(l, &name, &ne);
+        if (!t || l.compare(ne, 3, " = ") != 0 || l.back() != ';') continue;
+        std::string src = l.substr(ne + 3, l.size() - ne - 4);
+        if (!rooted(src)) continue;
+        l = l.substr(0, l.find_first_not_of(' ')) + "constant " + *t + "_1& " + name + " = " + src + ";";
+        roots.insert(name);
+        changed = true;
+    }
+    return changed ? join(lines) : msl;
+}
+
+// A stage's MSL with its uniform structs read in place, or as translated when that doesn't compile
+id<MTLLibrary> kmtlCompileStageMSL(KDevice* dev, const std::string& msl, std::string* err) {
+    if (kmtlConfig().uniformRefs) {
+        std::string refs = uniformStructRefs(msl);
+        if (refs != msl) {
+            std::string refErr;
+            if (id<MTLLibrary> lib = kmtlCompileMSL(dev, refs, &refErr)) return lib;
+            KLOG(1, "uniform struct references don't compile, the translation as it was instead: %s", refErr.c_str());
+        }
+    }
+    return kmtlCompileMSL(dev, msl, err);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -518,8 +688,8 @@ static id<MTLFunction> compileStage(KDevice* dev, const KTranslated& t, const st
     const KTranslated* tr = &t;
     const char* name = nameStr.c_str();
     std::string err;
-    id<MTLLibrary> lib = kmtlCompileMSL(dev, tr->msl, &err);
-    dumpMSL(name, tr->msl, err);
+    id<MTLLibrary> lib = kmtlCompileStageMSL(dev, tr->msl, &err);
+    dumpMSL(name, kmtlConfig().uniformRefs ? uniformStructRefs(tr->msl) : tr->msl, err);
     if (!lib) {
         KERR("shader %s: MSL compile failed: %s", name, err.c_str());
         return nil;

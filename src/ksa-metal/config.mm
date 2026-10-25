@@ -57,6 +57,7 @@ const KConfig& kmtlConfig() {
         c.fxDebug = envOn("KSA_MTL_FX_DEBUG", false);
         c.fxShots = env("KSA_MTL_FX_SHOTS");
         c.throttle = env("KSA_MTL_THROTTLE");
+        c.uniformRefs = envOn("KSA_MTL_UNIFORM_REFS", true);
         return c;
     }();
     return config;

@@ -31,6 +31,7 @@ These switches turn a feature off or change a default, to work around a problem 
 | `KSA_MTL_SYNC=strict` | run all GPU work strictly in order; slower, but rules out synchronization bugs |
 | `KSA_MTL_SAFE_MATH=1` | compile shaders without fast math; rules out precision problems |
 | `KSA_MTL_AB_CONSTANT=0` | shaders read their resources from device memory instead of constant memory; a bit slower, try it when a shader fails to compile |
+| `KSA_MTL_UNIFORM_REFS=0` | helper functions get their own copy of each uniform struct they take, as SPIRV-Cross writes it ([Shaders](#from-vulkan-to-metal)); slower in the smoke raymarch, try it when a shader looks wrong |
 | `KSA_MTL_BUDGET_MB=<n>` | the GPU memory budget reported to the game, which sizes its texture streaming from it (default: what Metal recommends for this Mac) |
 | `KSA_MTL_RETINA=1`, `KSA_MTL_FX_INTERPOLATE=1` | Retina output and frame interpolation ([MetalFX](#from-vulkan-to-metal)) |
 | `KSA_MTL_PRESENT_PACING=0` | with V-Sync, the game's wait for an earlier frame ends only when the display shows it ([Presentation](#from-vulkan-to-metal)); in a window, frames that take less than about 23 ms on the GPU then run slower |
@@ -137,6 +138,13 @@ when the game creates a pipeline, and Metal compiles the result. Translation and
 - Translations are cached on disk (`~/Library/Caches/ksa-metal`).
 - At startup, the shaders of the previous run are compiled in the background. Metal keeps compiled shaders in a
   system cache, which macOS clears when it updates; the background compile refills it.
+
+GLSL passes structs to functions by value, and SPIRV-Cross keeps that: a helper that takes one of the game's
+parameter blocks gets a copy of it, field by field, at every call. The smoke and explosion raymarch does this for its
+1.2 KB of parameters several times per step, and a copy whose arrays a helper indexes has to live in memory. Before
+compiling, KSA Metal turns those copies into references to the block itself and lets the helpers take the block's
+own type. A shader where that doesn't compile (a copy the shader writes to, a helper also called with a local
+struct) is compiled as translated. The smoke of the giga rocket's explosion draws 6-9 % faster, with the same image.
 
 **Descriptors.** Vulkan shaders find their resources (buffers, textures, samplers) through *descriptor sets*. Metal's
 equivalent is an *argument buffer*: a block of memory holding GPU addresses and resource IDs. KSA Metal writes each
