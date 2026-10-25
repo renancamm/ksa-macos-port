@@ -1,6 +1,7 @@
 // What KSA Metal measures for each presented frame, read through its benchmark interface (src/ksa-metal/swapchain.mm:
-// ksaMtlFrameStats, ksaMtlScreenshot, ksaMtlMarker, ksaMtlCapture, ksaMtlCapturing; profile.mm: ksaMtlProfileFrames). With another
-// Vulkan driver the mod still measures CPU frame times.
+// ksaMtlFrameStats, ksaMtlScreenshot, ksaMtlMarker, ksaMtlCapture, ksaMtlCapturing; profile.mm: ksaMtlProfileFrames). The
+// app ships the director with the KSA Metal it was built with, so the driver has all of it. With another Vulkan driver
+// the mod still measures CPU frame times.
 using System;
 using System.Runtime.InteropServices;
 
@@ -13,7 +14,6 @@ public struct FrameStats
     public double CpuMs, GpuMs;
     public uint Draws, Dispatches, Passes, Submits;
     public long AllocatedMb;
-    // Since KSA Metal of 2026-10-23 (zero from an older one, see DriverStats.Full)
     public int ThermalState;
     public uint ShadersCompiled, PipelinesCreated, DrawableWidth, DrawableHeight, Reserved;
     public long FootprintMb;
@@ -46,77 +46,36 @@ public static unsafe class DriverStats
     [return: MarshalAs(UnmanagedType.U1)]
     private static extern bool CapturingNative();
 
-    // The bytes of FrameStats the driver fills: all of them, or only the fields an older KSA Metal knew
-    private static readonly uint Filled = Probe();
-    public static readonly bool Available = Filled > 0;
-    // Whether the fields after AllocatedMb (thermal state, shaders compiled, footprint, ...) are the driver's
-    public static readonly bool Full = Filled == sizeof(FrameStats);
+    // Whether the game's driver is KSA Metal, filling every field of FrameStats
+    public static readonly bool Available = Probe();
 
     // Begins or ends a signpost interval named after a measured part, for Instruments traces
     public static void Marker(string name, bool begin)
     {
-        try
-        {
-            if (Available)
-                MarkerNative(name, begin);
-        }
-        catch (EntryPointNotFoundException)
-        {
-        }
+        if (Available)
+            MarkerNative(name, begin);
     }
 
     // An Xcode GPU frame capture of the next frames into path (.gputrace); false when it can't (the game needs
-    // MTL_CAPTURE_ENABLED=1, or an older KSA Metal)
-    public static bool Capture(string path, uint frames)
-    {
-        try
-        {
-            return Available && CaptureNative(path, frames);
-        }
-        catch (EntryPointNotFoundException)
-        {
-            return false;
-        }
-    }
+    // MTL_CAPTURE_ENABLED=1)
+    public static bool Capture(string path, uint frames) => Available && CaptureNative(path, frames);
 
     // Until the capture's file is written
-    public static bool Capturing()
-    {
-        try
-        {
-            return Available && CapturingNative();
-        }
-        catch (EntryPointNotFoundException)
-        {
-            return false;
-        }
-    }
+    public static bool Capturing() => Available && CapturingNative();
 
     // The driver's GPU profiler (KSA_MTL_GPUPROF) for the next frames; false when it is off
-    public static bool ProfileFrames(string label, uint count)
-    {
-        try
-        {
-            return Available && ProfileFramesNative(label, count);
-        }
-        catch (EntryPointNotFoundException)
-        {
-            return false;
-        }
-    }
+    public static bool ProfileFrames(string label, uint count) => Available && ProfileFramesNative(label, count);
 
-    private static uint Probe()
+    private static bool Probe()
     {
         try
         {
             FrameStats s;
-            uint n = FrameStatsNative(&s, (uint)sizeof(FrameStats));
-            // An older KSA Metal fills up to AllocatedMb
-            return n >= (uint)Marshal.OffsetOf<FrameStats>(nameof(FrameStats.ThermalState)) ? n : 0;
+            return FrameStatsNative(&s, (uint)sizeof(FrameStats)) == sizeof(FrameStats);
         }
         catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException)
         {
-            return 0;
+            return false;
         }
     }
 

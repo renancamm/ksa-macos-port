@@ -18,7 +18,7 @@ public class Window
     private readonly List<double> _gpuMs = new();
     private readonly List<double> _draws = new();
     private long _memoryPeakMb, _footprintPeakMb;
-    private int _thermalMax = -1;
+    private int _thermalMax;
     private uint _shadersFirst, _shadersLast, _pipelinesFirst, _pipelinesLast;
     private ulong _lastPresent;
 
@@ -44,14 +44,11 @@ public class Window
             _gpuMs.Add(d.GpuMs);
             _draws.Add(d.Draws);
             _memoryPeakMb = Math.Max(_memoryPeakMb, d.AllocatedMb);
-            if (DriverStats.Full)
-            {
-                _footprintPeakMb = Math.Max(_footprintPeakMb, d.FootprintMb);
-                _thermalMax = Math.Max(_thermalMax, d.ThermalState);
-                if (_gpuMs.Count == 1)
-                    (_shadersFirst, _pipelinesFirst) = (d.ShadersCompiled, d.PipelinesCreated);
-                (_shadersLast, _pipelinesLast) = (d.ShadersCompiled, d.PipelinesCreated);
-            }
+            _footprintPeakMb = Math.Max(_footprintPeakMb, d.FootprintMb);
+            _thermalMax = Math.Max(_thermalMax, d.ThermalState);
+            if (_gpuMs.Count == 1)
+                (_shadersFirst, _pipelinesFirst) = (d.ShadersCompiled, d.PipelinesCreated);
+            (_shadersLast, _pipelinesLast) = (d.ShadersCompiled, d.PipelinesCreated);
         }
     }
 
@@ -75,10 +72,10 @@ public class Window
             GpuMsP95 = gpu.Length > 0 ? Round(Percentile(gpu, 95)) : null,
             DrawsMedian = _draws.Count > 0 ? Percentile(_draws.OrderBy(x => x).ToArray(), 50) : null,
             GpuMemoryPeakMb = gpu.Length > 0 ? _memoryPeakMb : null,
-            FootprintPeakMb = _thermalMax >= 0 ? _footprintPeakMb : null,
-            ThermalMax = _thermalMax >= 0 ? _thermalMax : null,
-            ShadersCompiled = _thermalMax >= 0 ? (int)(_shadersLast - _shadersFirst) : null,
-            PipelinesCreated = _thermalMax >= 0 ? (int)(_pipelinesLast - _pipelinesFirst) : null,
+            FootprintPeakMb = gpu.Length > 0 ? _footprintPeakMb : null,
+            ThermalMax = gpu.Length > 0 ? _thermalMax : null,
+            ShadersCompiled = gpu.Length > 0 ? (int)(_shadersLast - _shadersFirst) : null,
+            PipelinesCreated = gpu.Length > 0 ? (int)(_pipelinesLast - _pipelinesFirst) : null,
         };
     }
 
@@ -172,10 +169,8 @@ public class FrameLog : IDisposable
         var line = FormattableString.Invariant($"{_since.Elapsed.TotalSeconds:F4},{script:F3},{section},{part},{phase},{frameMs:F3}");
         if (driver is { } d)
         {
-            line += FormattableString.Invariant($",{d.Present},{d.GpuMs:F3},{d.CpuMs:F3},{d.Draws},{d.Passes},{d.AllocatedMb}");
-            line += DriverStats.Full
-                ? FormattableString.Invariant($",{d.FootprintMb},{d.ThermalState},{d.ShadersCompiled},{d.PipelinesCreated},{d.DisplayMs:F3}")
-                : ",,,,,";
+            line += FormattableString.Invariant(
+                $",{d.Present},{d.GpuMs:F3},{d.CpuMs:F3},{d.Draws},{d.Passes},{d.AllocatedMb},{d.FootprintMb},{d.ThermalState},{d.ShadersCompiled},{d.PipelinesCreated},{d.DisplayMs:F3}");
         }
         else
             line += ",,,,,,,,,,,";
