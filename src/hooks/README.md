@@ -40,8 +40,8 @@ throws `Skip`. Everything that hook had changed is undone, and `console.log` say
 ```
 
 The game then runs as it would without that hook; the Mac Port tab shows the settings a skipped patch does as
-unavailable. Nothing here changes how the game saves or what it simulates; the patches only change what is drawn and
-how much work drawing it takes.
+unavailable, and a benchmark run fails, so a release can't pass its test with a hook skipped. Nothing here changes
+how the game saves or what it simulates; the patches only change what is drawn and how much work drawing it takes.
 
 ## The patches
 

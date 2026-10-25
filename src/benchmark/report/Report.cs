@@ -301,8 +301,6 @@ public static class Program
             notes.Add($"port settings were changed ({port}): they change what the game draws or how");
         if (Sys("Start") is { Length: > 0 } start && start.StartsWith("in the running game", StringComparison.Ordinal))
             notes.Add("played in a running game, after what was played before: its numbers compare best with runs started the same way");
-        if (Sys("Hooks").Contains("skipped"))
-            notes.Add("a hook was skipped (the game's code changed): see Hooks");
         if (Sys("Tools") is { Length: > 0 } tools && tools != "none")
             notes.Add($"measured with {tools}: their own cost is in the numbers");
         var run = KeyValues(Path.Combine(dir, "run.txt")).ToDictionary(kv => kv.key, kv => kv.value);
@@ -351,6 +349,13 @@ public static class Program
         {
             foreach (var e in section["errors"] as JsonArray ?? new JsonArray())
                 problems.Add($"{section["name"]}: {e}");
+        }
+        // A hook that was skipped (the game's code it changes has moved): the run didn't play the port as it is
+        var hooks = KeyValues(Path.Combine(dir, "system.txt")).FirstOrDefault(kv => kv.key == "Hooks").value ?? "";
+        foreach (var hook in hooks.Split("; ", StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (hook.Split(": ", 2) is [_, var status] && status.StartsWith("skipped", StringComparison.Ordinal))
+                problems.Add($"the hooks' {hook}");
         }
         // The game's log of each session (game-2.log... for repeats)
         foreach (var log in Directory.GetFiles(dir, "game*.log").OrderBy(f => f.Length).ThenBy(f => f, StringComparer.Ordinal))
