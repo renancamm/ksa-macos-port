@@ -72,8 +72,12 @@ internal static class Upscale
             harmony.Patch(Find.Method(typeof(Program), "RenderGame"),
                 transpiler: new HarmonyMethod(typeof(Upscale), nameof(SnapshotTranspiler)));
         if (Interpolate)
+        {
             harmony.Patch(Find.Method(typeof(Program), "RenderFinalComposite"),
                 postfix: new HarmonyMethod(typeof(Upscale), nameof(CompositePostfix)));
+            harmony.Patch(Find.Method(typeof(UiCoverageMaskSystem), nameof(UiCoverageMaskSystem.RecordMaskGeneration)),
+                transpiler: new HarmonyMethod(typeof(Upscale), nameof(NoUiCullingTranspiler)));
+        }
         harmony.Patch(Find.Method(typeof(Cmaa2Renderer), "CreateResourcesIfNeeded"),
             transpiler: new HarmonyMethod(typeof(Upscale), nameof(NoCmaa2Transpiler)));
         if (!Spatial && Settings.On("override_antialiasing"))
@@ -100,6 +104,19 @@ internal static class Upscale
         var code = instructions.ToList();
         var enabled = Find.Method(typeof(GameSettings), nameof(GameSettings.IsCmaa2Enabled));
         int at = Find.Once(code, c => c.Calls(enabled), "CMAA2's switch");
+        code[at] = new CodeInstruction(OpCodes.Ldc_I4_0).MoveLabelsFrom(code[at]).MoveBlocksFrom(code[at]);
+        return code;
+    }
+
+    // Frame interpolation: UiCoverageMaskSystem.RecordMaskGeneration: GameSettings.UiPixelCulling() -> false. With UI
+    // pixel culling (the game's default) the scene is left black in 8x8 tiles under opaque UI, and in the frames MetalFX
+    // makes, the HUD's labels smeared over that black (and it can warp the tiles out from under the HUD); so the scene
+    // is drawn under the UI too
+    private static IEnumerable<CodeInstruction> NoUiCullingTranspiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var code = instructions.ToList();
+        var culling = Find.Method(typeof(GameSettings), nameof(GameSettings.UiPixelCulling));
+        int at = Find.Once(code, c => c.Calls(culling), "UI pixel culling's switch");
         code[at] = new CodeInstruction(OpCodes.Ldc_I4_0).MoveLabelsFrom(code[at]).MoveBlocksFrom(code[at]);
         return code;
     }
