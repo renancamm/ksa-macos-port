@@ -41,9 +41,9 @@
 #include <sys/stat.h>
 
 #define DYLD_INTERPOSE(replacement, replacee) \
-    __attribute__((used)) static struct { const void* a; const void* b; } \
+    __attribute__((used)) static struct { const void* replacement; const void* replacee; } \
     interpose_##replacee __attribute__((section("__DATA,__interpose"))) = \
-        { (const void*)&replacement, (const void*)&replacee };
+    { (const void*)&replacement, (const void*)&replacee };
 
 static int calledFromGlfw(const void* returnAddress) {
     Dl_info info;
