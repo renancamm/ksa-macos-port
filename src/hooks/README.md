@@ -30,8 +30,8 @@ changed is undone, and `console.log` says so:
 ```text
 [hooks] terrain cache: on
 [hooks] outline skip: on
-[hooks] shadow search: on
 [hooks] cloud shadow tuning: off
+[hooks] shadow search: off
 [hooks] crew portraits: on, when shown
 [hooks] worker parking: on, 0.25 ms
 [hooks] loading pace: on
@@ -57,7 +57,7 @@ drawn and how much work drawing it takes.
 |---|---|---|
 | Terrain cache | [`TerrainCache.cs`](patches/TerrainCache.cs) | a prefix on `PlanetRenderer.GenerateMeshData` compares the inputs of the terrain's height passes (body, mesh level of detail, snapped texture rotation, height buffer) with those the frame slot's buffer was last computed for; a transpiler routes the two dispatches of those passes through a check that skips them when nothing changed. They run every 2 s anyway, for the streamed heightmap. The normals pass is skipped too while the mesh's rotation has turned less than 1e-4 rad (its normals don't depend on where the camera is) |
 | Outline skip | [`OutlineSkip.cs`](patches/OutlineSkip.cs) | `Part.Selected`'s setter counts the selected parts; `PartSelectedRenderer.Run` returns early while there are none (only selected parts mark the image it outlines) |
-| Shadow search limit | [`ShadowSearch.cs`](patches/ShadowSearch.cs) | with the game's soft shadows (PCSS), each pixel searches the shadow cascades for blockers as far as the widest penumbra the sun casts, 1 m: hundreds of texels in the cascades near the camera, 16 taps that miss the GPU's caches. A prefix on `CascadedShadowMap.UploadCascades` puts a limit of 32 texels in the cascades' spare `_pad1`, which the shader edit of `convert-shaders.sh` reads (0: the game's search). On an M5 the cockpit draws in 25 ms instead of 44. A penumbra is about 1/200 of its caster's height, so in the three nearest cascades a shadow cast from more than about 8, 30 or 85 m above can get a sharper edge; none of the views tried showed a change |
+| PCSS shadow search limit | [`ShadowSearch.cs`](patches/ShadowSearch.cs) | with `shadow_search` on and the game's soft shadows (PCSS), each pixel searches the shadow cascades for blockers as far as the widest penumbra the sun casts, 1 m: hundreds of texels in the cascades near the camera, 16 taps that miss the GPU's caches. A prefix on `CascadedShadowMap.UploadCascades` puts a limit of 32 texels in the cascades' spare `_pad1`, which the shader edit of `convert-shaders.sh` reads (0: the game's search). On an M5 the cockpit draws in 25 ms instead of 44. A penumbra is about 1/200 of its caster's height, so in the three nearest cascades a shadow cast from more than about 8, 30 or 85 m above can get a sharper edge; none of the views tried showed a change |
 | Cloud shadow tuning | [`CloudShadows.cs`](patches/CloudShadows.cs) | with `cloud_shadow_tuning = "slower_refresh"`: the slices `CloudShadowVolume.UpdateVolumeDensity` refreshes per frame, 24 and 8, become 6 and 2 |
 | Crew portraits | [`CrewPortraits.cs`](patches/CrewPortraits.cs) | the faces in the crew panel are views of their own, drawn every frame while the vessel has crew; after `CrewPortraitPanel.Update`, their views are hidden for the frame unless the panel was drawn in the previous one (the panel keeps their last image). With `crew_portraits = "shown_15"`, a drawn panel is refreshed at most 15 times a second; with `"always"`, the patch leaves the views alone. The setting changes while the game runs |
 | Worker parking | [`WorkerPark.cs`](patches/WorkerPark.cs) | the game sets its job pools' park timeout to half the frame time every frame, so idle workers spin about 1.5 cores between jobs; `DynamicWorkerPool.SetParkTimeout` is capped at 0.25 ms, after which a worker sleeps until work arrives. |
@@ -100,7 +100,8 @@ holds none of the setting's values, means the default (`console.log` says which)
 | `KSA_PLUME_SHADOW_TUNING=off\|low` | `plume_shadow_tuning` |
 | `KSA_CREW_PORTRAITS=always\|shown\|shown_15` | `crew_portraits` |
 | `KSA_HUD_LAYOUT=fit\|game` | `hud_layout` |
-| `KSA_TERRAIN_CACHE=0`, `KSA_OUTLINE_SKIP=0`, `KSA_SHADOW_SEARCH=0`, `KSA_WORKER_PARKING=0`, `KSA_LOADING_PACE=0` | `terrain_cache`, `outline_skip`, `shadow_search`, `worker_parking`, `loading_pace`: leave out that patch |
+| `KSA_SHADOW_SEARCH=1` | `shadow_search` |
+| `KSA_TERRAIN_CACHE=0`, `KSA_OUTLINE_SKIP=0`, `KSA_WORKER_PARKING=0`, `KSA_LOADING_PACE=0` | `terrain_cache`, `outline_skip`, `worker_parking`, `loading_pace`: leave out that patch |
 | `KSA_PARK_MS=<ms>` | `worker_park_ms`: how long an idle job worker spins before it sleeps (0.25) |
 | `KSA_TRAIL_CACHE=<large>,<small>,<tiny>[,<segments>]` | `trail_caches`: the smoke's volume cache budgets in MiB (developer setting; unset: the game's) |
 | `KSA_TRAIL_SHADOWS=<cascades>,<resolution>,<metres>` | `trail_shadows`: the smoke's sun shadow cascades (developer setting; wins over `plume_shadow_tuning`; unset: the game's) |
