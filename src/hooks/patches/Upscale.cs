@@ -12,18 +12,19 @@ using HarmonyLib;
 using KSA;
 using KSA.Rendering;
 using KSA.Rendering.PostProcessing;
+using KSA.Rendering.Raytracing;
 
 namespace KsaMetalHooks;
 
-// MetalFX for the render scale (upscaling "metalfx" or "spatial"), and the motion that frame interpolation needs. Before
-// the final composite, KSA Metal's vkCmdUpscaleKSA (src/ksa-metal/upscale.mm) scales the main view's image into an
-// image of the swapchain's size (the display's pixels), which the composite then reads instead. For MetalFX's
-// temporal upscaler, the projection moves by a different sub-pixel offset every frame (a Halton sequence of 16), and
-// the driver makes the motion vectors from the depth buffer and two reprojections passed here, both computed in
-// double: the scene through the nearby body's rotating frame, and inside its bounding sphere the vessel the camera
-// follows, through its own frame. A copy of the image before the exhausts, particles and glass lets the driver mark
-// what those change as reactive (no smearing). With frame interpolation, the final composite then marks where the UI
-// starts, so that MetalFX can draw this frame's UI over the frame it makes.
+// MetalFX for the render scale (upscaling "metalfx" or "spatial"), and the motion that frame interpolation needs.
+// Before the final composite, KSA Metal's vkCmdUpscaleKSA (src/ksa-metal/upscale.mm) scales the main view's image into
+// an image of the swapchain's size (the display's pixels), which the composite then reads instead. For MetalFX's
+// temporal upscaler, the projection moves by a different sub-pixel offset every frame (a Halton sequence of 16), the
+// cockpit's ray tracing's too, and the driver makes the motion vectors from the depth buffer and two reprojections
+// passed here, both computed in double: the scene through the nearby body's rotating frame, and inside its bounding
+// sphere the vessel the camera follows, through its own frame. A copy of the image before the exhausts, particles and
+// glass lets the driver mark what those change as reactive (no smearing). With frame interpolation, the final composite
+// then marks where the UI starts, so that MetalFX can draw this frame's UI over the frame it makes.
 internal static class Upscale
 {
     private static bool Interpolate;
@@ -69,8 +70,12 @@ internal static class Upscale
         harmony.Patch(Find.Method(typeof(Program), "RenderAaPreparePasses"),
             postfix: new HarmonyMethod(typeof(Upscale), nameof(AaPreparePostfix)));
         if (!Spatial)
+        {
             harmony.Patch(Find.Method(typeof(Program), "RenderGame"),
                 transpiler: new HarmonyMethod(typeof(Upscale), nameof(SnapshotTranspiler)));
+            harmony.Patch(Find.Method(typeof(RaytracingRenderer), nameof(RaytracingRenderer.RunRaytracePass)),
+                transpiler: new HarmonyMethod(typeof(Upscale), nameof(RayTracingTranspiler)));
+        }
         if (Interpolate)
         {
             harmony.Patch(Find.Method(typeof(Program), "RenderFinalComposite"),
@@ -133,7 +138,7 @@ internal static class Upscale
     private static RenderImage? _output;
     private static bool _reset = true, _havePrevious;
     private static int _frame;
-    private static float2 _jitter;
+    private static float2 _jitter, _jitterClip;
     private static float4x4 _egoFromClip, _scene, _object, _previousViewProjection;
     private static float4 _sphere;
     private static float _fovY = 1f, _deltaTime;
@@ -209,11 +214,12 @@ internal static class Upscale
             jy = Halton(i, 3) - 0.5f;
         }
         _jitter = new float2(jx, jy);
+        _jitterClip = new float2(2f * jx / size.X, 2f * jy / size.Y);
         float4x4 p = camera.MVP.projection;
         _fovY = 2f * MathF.Atan(1f / MathF.Abs(p.M22));
         _deltaTime = data.DeltaTime;
-        p.M31 -= 2f * jx / size.X;
-        p.M32 -= 2f * jy / size.Y;
+        p.M31 -= _jitterClip.X;
+        p.M32 -= _jitterClip.Y;
         float4x4 viewProjection = camera.MVP.view * p;
         float4x4.Invert(p, out var inverseProjection);
         data.Projection = p;
@@ -315,6 +321,35 @@ internal static class Upscale
         var loadCommandBuffer = new CodeInstruction(code[at - 1].opcode, code[at - 1].operand).MoveLabelsFrom(code[at - 1]);
         code.InsertRange(at - 1, new[] { loadCommandBuffer, new CodeInstruction(OpCodes.Call, Find.Method(typeof(Upscale), nameof(Snapshot))) });
         return code;
+    }
+
+    // RaytracingRenderer.RunRaytracePass (the cockpit's ray tracing): camera.MVP.projection -> the jittered one. The
+    // ray tracing finds each pixel's surface from the prepass depth through the inverse of this projection; without the
+    // jitter the prepass was drawn with, each point lands up to half a pixel off its surface, in front or behind,
+    // differently every frame, and the shadow rays from behind a surface hit it: the cockpit's ray-traced lighting
+    // flickers, most on walls farther away or seen at an angle
+    private static IEnumerable<CodeInstruction> RayTracingTranspiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var code = instructions.ToList();
+        var projection = Find.Field(typeof(ViewProjection), nameof(ViewProjection.projection));
+        int at = Find.Once(code, c => c.LoadsField(projection), "the ray tracing's projection");
+        code.InsertRange(at + 1, new[]
+        {
+            new CodeInstruction(OpCodes.Ldarg_2),
+            new CodeInstruction(OpCodes.Call, Find.Method(typeof(Upscale), nameof(Jittered)))
+        });
+        return code;
+    }
+
+    // The main view's projection with this frame's jitter, as UpdateCamera gives the camera data
+    private static float4x4 Jittered(float4x4 projection, IViewport viewport)
+    {
+        if (viewport.Type == ViewportType.Main)
+        {
+            projection.M31 -= _jitterClip.X;
+            projection.M32 -= _jitterClip.Y;
+        }
+        return projection;
     }
 
     private static void Snapshot(CommandBuffer commandBuffer)
