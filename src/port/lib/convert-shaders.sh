@@ -18,6 +18,10 @@
 # 4. LightFineClusterCompact.comp: a tile whose depth range comes out inverted makes `maxBin - minBin + 1u` wrap
 #    to about 4 billion iterations, a GPU hang. Fix: skip such a tile.
 #
+# For the hooks' shadow search limit (src/hooks/):
+# 5. CascadedShadows.glsl: the soft shadows' blocker search ends at the limit in texels the patch puts in the cascades'
+#    spare _pad1 (0 without it: the game's search, as far as the widest penumbra).
+#
 # Each fix prints [FIXED], [OK] (already fixed) or [WARN] (the code around it changed in this KSA version:
 # either RocketWerkz fixed the bug, or this script needs an update).
 #
@@ -99,3 +103,6 @@ fix Star.frag replace \
 fix Lighting/LightFineClusterCompact.comp replace "    uint binCount = maxBin - minBin + 1u;" \
     "    if (maxBin < minBin) return;  // macOS port: an inverted depth range would loop for billions of bins\n    uint binCount = maxBin - minBin + 1u;" \
     "skipped tiles with an inverted depth range"
+fix Lighting/CascadedShadows.glsl replace "    float searchRadiusTexels = maxPenumbraWorld / texelWorldSize;" \
+    "    float searchRadiusTexels = maxPenumbraWorld / texelWorldSize;\n    if (shadowUbo._pad1 > 0.0) searchRadiusTexels = min(searchRadiusTexels, shadowUbo._pad1);  // macOS port: the hooks' shadow search limit" \
+    "limited the soft shadows' search where the hooks ask"
