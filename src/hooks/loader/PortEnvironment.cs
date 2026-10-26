@@ -8,10 +8,8 @@ using KsaMetalHooks;
 
 // The player's port settings, port-settings.toml in the game's documents folder, become the environment variables that
 // KSA Metal, its shims and the hooks read: the table (Contents/Resources/port-settings.txt) says which setting is which
-// variable. It runs in the game's process, before the game, so that macOS lets it into the documents folder as it
-// lets the game (the launcher, a shell script, is refused there when the app starts from the Finder). KSA Metal and the
-// shims read their variables when the game first uses them, later. A variable already set when the game starts wins
-// over the file.
+// variable. It runs in the game's process, before the game; KSA Metal and the shims read their variables when the game
+// first uses them, later. A variable already set when the game starts wins over the file.
 //
 // It also puts the game's output in console.log in the documents folder's logs (unless it goes to a terminal), copies
 // the commented template there when the player has no port-settings.toml. For the Mac Port tab it sets

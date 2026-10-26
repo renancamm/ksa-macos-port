@@ -111,7 +111,7 @@ So the app is made of three kinds of pieces:
   ([.NET](#net)), then get small changes: two bytes in `KSA.dll`'s header, and bug fixes in its shader sources
   ([Shader fixes](#shader-fixes)).
 - **Built by this project:** the GLFW shim ([`src/glfw-shim/`](src/glfw-shim/)), KSA Metal's driver
-  ([`src/ksa-metal/`](src/ksa-metal/)), the launcher ([`src/launcher/launcher.sh`](src/launcher/launcher.sh)) and the
+  ([`src/ksa-metal/`](src/ksa-metal/)), the launcher ([`src/launcher/`](src/launcher/)) and the
   app bundle around everything ([Building the port](#building-the-port)).
 
 ### The steps
@@ -229,7 +229,7 @@ without modifying GLFW; [`glfw_shim.c`](src/glfw-shim/glfw_shim.c) explains each
 
 | In the app | What |
 |---|---|
-| `Contents/MacOS/KSA` | the launcher, [`launcher.sh`](src/launcher/launcher.sh) |
+| `Contents/MacOS/KSA` | the launcher, [`launcher.c`](src/launcher/launcher.c) |
 | `Contents/MacOS/dotnet`, `host/`, `shared/` | the .NET runtime |
 | `Contents/Resources/*.dylib` | the native libraries, next to the game that loads them |
 | `Contents/Resources/Hooks/` | [KSA Metal Hooks](#the-hooks), with Harmony |
@@ -238,11 +238,11 @@ without modifying GLFW; [`glfw_shim.c`](src/glfw-shim/glfw_shim.c) explains each
 | `Contents/Resources/Licenses/` | every component's licence and notices ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)) |
 | `Contents/Resources/AppIcon.icns`, `Contents/Info.plist` | the icon; the game's and the port's versions |
 
-The launcher starts `dotnet KSA.dll`, through StarMap when [StarMap](#mods) is in the app, with the GLFW shim loaded
-and `DYLD_LIBRARY_PATH` set to the game folder, so every library comes from the app and never from elsewhere on the
-Mac. `Info.plist` turns `NSHighResolutionCapable` on, so the game draws its interface at the display's full
-resolution; [the hooks](#the-hooks) keep its 3D view at the window's size in points unless the render scale says
-otherwise.
+The launcher starts `dotnet KSA.dll`, through StarMap when [StarMap](#mods) is in the app, with the GLFW shim loaded and
+`DYLD_LIBRARY_PATH` set to the game folder, so every library comes from the app and never from elsewhere on the Mac. It
+is a small program of the app, so macOS treats the game as the app, Game Mode included. `Info.plist` turns
+`NSHighResolutionCapable` on, so the game draws its interface at the display's full resolution; [the hooks](#the-hooks)
+keep its 3D view at the window's size in points unless the render scale says otherwise.
 
 The bundle isn't signed as a whole, because that would replace Microsoft's signature on `dotnet`. `make-app.sh`
 removes the quarantine attribute that a browser download puts on the files, so macOS opens the app as one made on

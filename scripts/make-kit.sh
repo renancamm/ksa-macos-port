@@ -28,23 +28,23 @@ kit_scripts() {
 kit_payload() {
     local contents="${OUT}/payload/app/Contents" licenses
     [ -f "${OUT}/VERSION" ] || die "run scripts/make-kit.sh scripts first."
-    [ -f "${NATIVES}/libvulkan.1.dylib" ] && [ -x "${DOTNET_RUNTIME}/dotnet" ] && [ -f "${BUILD}/icon/AppIcon.icns" ] &&
+    [ -f "${NATIVES}/libvulkan.1.dylib" ] && [ -x "${NATIVES}/KSA" ] && [ -x "${DOTNET_RUNTIME}/dotnet" ] &&
+        [ -f "${BUILD}/icon/AppIcon.icns" ] &&
         [ -f "${BUILD}/benchmark/director/KsaMetalBenchmark.dll" ] && [ -f "${BUILD}/hooks/out/KsaMetalHooks.dll" ] ||
         die "the pieces of the port are not all built. Run ./build.sh."
     [ -f "${STARMAP}/StarMap.dll" ] && [ -f "${STARMAP}/StarMap.Core.dll" ] || die "the StarMap archive has an unexpected layout."
     step "Assembling ${OUT#"${REPO}/"}"
     rm -rf "${OUT}/payload"
 
-    # The app without the game: launcher and .NET runtime (ditto keeps Microsoft's signatures), libraries and
-    # BRUTAL's crash-dump helper, icon
+    # The app without the game: launcher (src/launcher/launcher.c) and .NET runtime (ditto keeps Microsoft's
+    # signatures), libraries and BRUTAL's crash-dump helper, icon
     mkdir -p "${contents}/Resources"
     ditto "${DOTNET_RUNTIME}" "${contents}/MacOS"
-    cp "${REPO}/src/launcher/launcher.sh" "${contents}/MacOS/KSA"
+    cp "${NATIVES}/KSA" "${contents}/MacOS/KSA"
     # The port settings: their table, and the commented template the hooks copy for the player
     cp "${REPO}/src/launcher/port-settings.txt" "${contents}/Resources/"
     bash "${REPO}/scripts/make-port-settings.sh" "${REPO}/src/launcher/port-settings.txt" \
         > "${contents}/Resources/port-settings.toml"
-    chmod +x "${contents}/MacOS/KSA"
     cp -P "${NATIVES}"/*.dylib "${NATIVES}/Brutal.Monitor.Subprocess" "${contents}/Resources/"
     cp "${REPO}/third_party/fmod/libfmod.dylib" "${contents}/Resources/libfmod.dylib"
     chmod u+w "${contents}/Resources/libfmod.dylib"

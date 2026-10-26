@@ -80,17 +80,15 @@ The MetalFX entry points are KSA Metal's own ([`../ksa-metal/upscale.mm`](../ksa
 
 ## Settings
 
-The hooks, KSA Metal and its shims read environment variables, which the loader sets from `port-settings.toml` when
-the game starts ([`loader/PortEnvironment.cs`](loader/PortEnvironment.cs), with the table and file reading of
+The hooks, KSA Metal and its shims read environment variables, which the loader sets from `port-settings.toml` when the
+game starts ([`loader/PortEnvironment.cs`](loader/PortEnvironment.cs), with the table and file reading of
 [`PortSettingsTable.cs`](PortSettingsTable.cs), which the hooks share); one set before the game starts wins over the
-file, and the Mac Port tab shows its row as set outside. The loader does this in the game's process because, started
-from the Finder, macOS refuses the launcher (a shell script) the documents folder and lets the game's process in. It
-sets each variable twice, for .NET, which keeps its own copy of the environment, and with `setenv` for KSA Metal and
-the shims, which read theirs when the game first uses them. It also sends the game's output to `console.log` and
-copies the file's template for a new player. The table [`../launcher/port-settings.txt`](../launcher/port-settings.txt)
-lists every setting with its variable, its values and its default, and the hooks read their settings against it
-([`Settings.cs`](Settings.cs)): a variable that is unset, or holds none of the setting's values, means the default
-(`console.log` says which). Those of the hooks:
+file, and the Mac Port tab shows its row as set outside. The loader sets each variable twice, for .NET, which keeps its
+own copy of the environment, and with `setenv` for KSA Metal and the shims, which read theirs when the game first uses
+them. It also sends the game's output to `console.log` and copies the file's template for a new player. The table
+[`../launcher/port-settings.txt`](../launcher/port-settings.txt) lists every setting with its variable, its values and
+its default, and the hooks read their settings against it ([`Settings.cs`](Settings.cs)): a variable that is unset, or
+holds none of the setting's values, means the default (`console.log` says which). Those of the hooks:
 
 | Variable | Setting |
 |---|---|

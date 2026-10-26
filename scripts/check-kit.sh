@@ -1,8 +1,8 @@
 #!/bin/bash
-# Audits the port folder after a build: the commands and VERSION are there; every library in the app, and BRUTAL's
-# crash-dump helper, is arm64, runs on MACOS_MIN, has a valid signature and depends only on macOS and the app's
-# libraries; StarMap is marked ARM64; every component has its licence; and nothing of the game is in it. Needs otool
-# (Command Line Tools).
+# Audits the port folder after a build: the commands and VERSION are there; every library in the app, the launcher and
+# BRUTAL's crash-dump helper are arm64, run on MACOS_MIN, have a valid signature and depend only on macOS and the
+# app's libraries, and the launcher's signature requires the app's identifier; StarMap is marked ARM64; every
+# component has its licence; and nothing of the game is in it. Needs otool (Command Line Tools).
 #
 # Usage: scripts/check-kit.sh [port folder]   (default: dist/ksa-macos-port)
 set -eo pipefail
@@ -35,7 +35,8 @@ if ! grep -q '^version=.' "${KIT_DIR}/VERSION" || ! grep -q '^ksa=20' "${KIT_DIR
     problem "VERSION is incomplete"
 fi
 
-for lib in "${RES}"/*.dylib "${RES}/Brutal.Monitor.Subprocess"; do
+LAUNCHER="${KIT_DIR}/payload/app/Contents/MacOS/KSA"
+for lib in "${RES}"/*.dylib "${RES}/Brutal.Monitor.Subprocess" "${LAUNCHER}"; do
     name="$(basename "${lib}")"
     if [ -L "${lib}" ]; then
         [ -e "${lib}" ] || problem "${name} is a broken link"
@@ -55,6 +56,11 @@ for lib in "${RES}"/*.dylib "${RES}/Brutal.Monitor.Subprocess"; do
         esac
     done
 done
+
+# macOS keeps the player's permissions for the launcher's requirement, which must stay the same from one build to the
+# next
+codesign -d -r- "${LAUNCHER}" 2> /dev/null | grep -qx "designated => identifier \"${BUNDLE_ID}\"" ||
+    problem "the launcher's signature doesn't require only the app's identifier"
 
 # StarMap.dll must carry the ARM64 mark (0xAA64) after its PE header signature
 pe=$(od -An -tu4 -j 60 -N 4 "${KIT_DIR}/payload/starmap/StarMap.dll" | tr -d ' ')
@@ -77,6 +83,6 @@ hidden="$(find "${KIT_DIR}" -path '*/Contents/MacOS' -prune -o -name '.*' -print
 [ -z "${hidden}" ] || problem "hidden file in the folder: ${hidden#"${KIT_DIR}/"}"
 
 [ "${problems}" = 0 ] || die "${problems} problem(s) in ${KIT_DIR}"
-info "All $(ls "${RES}"/*.dylib | wc -l | tr -d ' ') libraries and the crash-dump helper are arm64, macOS ${MACOS_MIN}+," \
-    "signed and self-contained;" \
+info "All $(ls "${RES}"/*.dylib | wc -l | tr -d ' ') libraries, the launcher and the crash-dump helper are arm64," \
+    "macOS ${MACOS_MIN}+, signed and self-contained;" \
     "licences complete; no game files."

@@ -1,5 +1,6 @@
-# The native part of the port: KSA Metal and the GLFW shim, built from src/ with the dependencies declared in
-# cmake/dependencies.cmake. build.sh runs it; on its own: cmake --preset default && cmake --build --preset default
+# The native part of the port: KSA Metal, the GLFW and KTX shims and the launcher, built from src/ with the
+# dependencies declared in cmake/dependencies.cmake. build.sh runs it; on its own: cmake --preset default &&
+# cmake --build --preset default
 #
 # Configuring also downloads everything else the port folder bundles (the .NET runtime, StarMap, BRUTAL's libraries)
 # and writes deps.sh into the build tree, which tells build.sh's other steps where each download is.
@@ -10,11 +11,15 @@ cmake_minimum_required(VERSION 3.30)
 file(STRINGS src/port/lib/common.sh macos_min REGEX "^MACOS_MIN=")
 string(REGEX REPLACE "^MACOS_MIN=\"(.*)\"$" "\\1" MACOS_MIN "${macos_min}")
 set(CMAKE_OSX_DEPLOYMENT_TARGET "${MACOS_MIN}")
+# The app's identifier, which the launcher's signature names (src/launcher/)
+file(STRINGS src/port/lib/common.sh bundle_id REGEX "^BUNDLE_ID=")
+string(REGEX REPLACE "^BUNDLE_ID=\"(.*)\"$" "\\1" BUNDLE_ID "${bundle_id}")
 set(CMAKE_OSX_ARCHITECTURES arm64)
 
 project(ksa-macos-port LANGUAGES C CXX OBJCXX)
 
-# Where the libraries for the app go: the two built here, BRUTAL's, and licences/ of everything compiled into them
+# Where the app's libraries and the launcher go: those built here, BRUTAL's, and licences/ of everything compiled into
+# them
 set(KSA_NATIVES_DIR "${CMAKE_SOURCE_DIR}/deps/build/natives" CACHE PATH "Output folder for the app's libraries")
 
 include(FetchContent)
@@ -102,6 +107,7 @@ endforeach()
 add_subdirectory(src/ksa-metal)
 add_subdirectory(src/glfw-shim)
 add_subdirectory(src/ktx-shim)
+add_subdirectory(src/launcher)
 
 # For build.sh's other steps: where each download is, and the versions the port folder records
 set(brutal_list "")
