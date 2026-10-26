@@ -134,8 +134,8 @@ void kmtlShaderPrewarm(KDevice* dev) {
         pos = nl + 1;
     }
     if (keys->empty()) return;
-    // Leave two cores to the game's loading threads
-    unsigned workers = std::max(1u, std::thread::hardware_concurrency() > 2 ? std::thread::hardware_concurrency() - 2 : 1u);
+    // Threads of their own, beside the pipeline workers: the game's first pipelines don't queue behind the prewarm
+    unsigned workers = kmtlWorkerCount();
     auto next = std::make_shared<std::atomic<size_t>>(0);
     auto done = std::make_shared<std::atomic<unsigned>>(0);
     auto t0 = std::chrono::steady_clock::now();

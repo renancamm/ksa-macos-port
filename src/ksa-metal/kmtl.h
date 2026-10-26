@@ -675,6 +675,9 @@ void kmtlCacheStore(uint64_t key, const KTranslated& tr);
 void kmtlCacheNoteUsed(uint64_t key);
 void kmtlCacheFlushRecent();
 void kmtlShaderPrewarm(KDevice* dev);
+// pipeline.mm: how many threads compile shaders at once, in the pipeline workers and in the prewarm: all cores but two,
+// which stay the game's
+unsigned kmtlWorkerCount();
 
 // Internal shaders (fills, image blits, the prep kernel of indirect tessellated draws)
 void kmtlInitInternal(KDevice* dev);
