@@ -717,14 +717,14 @@ static id<MTLFunction> compileStage(KDevice* dev, const KTranslated& t, const st
     return fn;
 }
 
-// Asynchronous pipeline creation (KSA_MTL_ASYNC_PIPELINES=0 turns it off): KSA creates its pipelines one at a time,
-// so on a cold shader cache the MSL compiles run serially; workers compile them in parallel instead, and the first
-// bind of a pipeline waits for its compile
 unsigned kmtlWorkerCount() {
     unsigned cores = std::thread::hardware_concurrency();
     return cores > 2 ? cores - 2 : 1;
 }
 
+// Asynchronous pipeline creation (KSA_MTL_ASYNC_PIPELINES=0 turns it off): KSA creates its pipelines one at a time,
+// so on a cold shader cache the MSL compiles run serially; workers compile them in parallel instead, and the first
+// bind of a pipeline waits for its compile
 static void runPipelineJob(std::function<void()> job) {
     static dispatch_queue_t queue = dispatch_queue_create("ksa-metal.pipelines", DISPATCH_QUEUE_CONCURRENT);
     static dispatch_semaphore_t slots = dispatch_semaphore_create(kmtlWorkerCount());
