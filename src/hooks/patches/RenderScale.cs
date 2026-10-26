@@ -162,7 +162,8 @@ internal static class RenderScale
 
     // The panels the game places from its main view's size: IViewport.Size -> UiSize(viewport) in every method of
     // these classes (and their nested ones) that reads it
-    private static readonly Type[] Panels = [typeof(VehicleEditor), typeof(TransferPlanner), typeof(DockingPort)];
+    private static readonly Type[] Panels =
+        [typeof(VehicleEditor), typeof(VehicleEditingSpace), typeof(TransferPlanner), typeof(DockingPort)];
 
     private static void PatchPanels(Harmony harmony)
     {
