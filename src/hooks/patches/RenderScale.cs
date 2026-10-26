@@ -24,10 +24,11 @@ namespace KsaMetalHooks;
 // (Upscale.cs) or, with upscaling off, with the composite's own stretch, filtered. The cameras keep the window's size
 // in points (so picking and the UI's world positions stay right), while what the shaders see as the screen size is
 // the render size. The light clustering's tiles and the UI coverage mask follow the render size too, and the panels
-// the game places from its main view's size (the Vehicle Editor's, the transfer planner's) the window's. Pixel sizes
-// measured on the window (the sun's glow, star and planet discs, ground clutter's level of detail) are converted:
-// the sun's radius here, the rest by the shader edits convert-shaders.sh makes, from the window's height in the
-// camera data. On a display without Retina at a render scale of 1, the three sizes are one and nothing changes.
+// the game places from its main view's size (the Vehicle Editor's, the transfer planner's, the docking overlay's, the
+// celestial info window) the window's. Pixel sizes measured on the window (the sun's glow, star and planet discs,
+// ground clutter's level of detail) are converted: the sun's radius here, the rest by the shader edits
+// convert-shaders.sh makes, from the window's height in the camera data. On a display without Retina at a render scale
+// of 1, the three sizes are one and nothing changes.
 internal static class RenderScale
 {
     public static bool Scaled;  // the main view renders at another size than the window's in points
@@ -183,6 +184,12 @@ internal static class RenderScale
         }
         if (patched == 0)
             throw new Skip("the Vehicle Editor no longer places its panels from its view's size");
+        // The celestial info window (View > Celestial Info) opens at its view's right edge, from IViewport.Width. Only
+        // where the game still reads it: a miss leaves the window where the game puts it, not worth a Skip
+        var celestial = AccessTools.Method(typeof(Astronomical), nameof(Astronomical.DrawCelestialWindow));
+        var width = AccessTools.PropertyGetter(typeof(IViewport), nameof(IViewport.Width));
+        if (celestial != null && width != null && PatchProcessor.GetOriginalInstructions(celestial).Any(c => c.Calls(width)))
+            harmony.Patch(celestial, transpiler: new HarmonyMethod(typeof(RenderScale), nameof(UiWidthTranspiler)));
     }
 
     private static IEnumerable<Type> Nested(Type type) => new[] { type }.Concat(type.GetNestedTypes(AccessTools.all).SelectMany(Nested));
@@ -198,6 +205,18 @@ internal static class RenderScale
     // The main view's size in the UI's units (the window's points), any other view's own
     public static int2 UiSize(IViewport viewport) =>
         Window != int2.Zero && ReferenceEquals(viewport, Program.MainViewport) ? Window : viewport.Size;
+
+    // IViewport.Width -> UiWidth(viewport)
+    private static IEnumerable<CodeInstruction> UiWidthTranspiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var width = Find.Getter(typeof(IViewport), nameof(IViewport.Width));
+        var ours = Find.Method(typeof(RenderScale), nameof(UiWidth));
+        foreach (var c in instructions)
+            yield return c.Calls(width) ? new CodeInstruction(OpCodes.Call, ours).MoveLabelsFrom(c).MoveBlocksFrom(c) : c;
+    }
+
+    // The same, its width
+    public static int UiWidth(IViewport viewport) => UiSize(viewport).X;
 
     // Camera.FramebufferSize, a field: read as a value (ldfld) or by address (ldflda, for .X and .Y)
     private static bool IsFramebufferSize(CodeInstruction c) =>
