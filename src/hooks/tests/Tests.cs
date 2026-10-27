@@ -17,10 +17,13 @@ internal static class Tests
     private static readonly List<string> Failures = new();
 
     // The game's own settings a need can name: those MacPortTab.Game reads
-    private static readonly string[] GameNeeds = ["vsync", "plume_trail_shadows"];
+    private static readonly string[] GameNeeds = ["vsync", "plume_trail_shadows", "pcss"];
 
     // The kinds of setting the Mac Port tab draws (MacPortTab.DrawRow); the others are the file's only ([developer])
     private static readonly string[] TabKinds = ["bool", "available", "choice", "scale"];
+
+    // The characters a dropdown's control shows before it cuts a value off
+    private const int ValueWidth = 18;
 
     private static int Main(string[] args)
     {
@@ -82,7 +85,7 @@ internal static class Tests
 
     // Each line of the table: its key and variable are its own, its default is one of its values, its needs name
     // settings that exist (or the game's that the tab checks) with values they take, without a loop, the tab draws its
-    // kind, and its help can be read back
+    // kind and its values fit, and its help can be read back. Each of the tab's sections has a caption.
     private static void TableRules()
     {
         var all = PortSettings.All;
@@ -92,6 +95,8 @@ internal static class Tests
         foreach (var variable in all.Where(s => s.Variable.Length > 0).GroupBy(s => s.Variable).Where(g => g.Count() > 1))
             Check(false, $"{variable.Key} is the variable of {string.Join(" and ", variable.Select(s => s.Key))}");
         var sections = PortSettings.Sections.Select(s => s.Key).ToHashSet();
+        foreach (var (key, _, caption) in PortSettings.Sections.Where(s => s.Key != "developer"))
+            Check(caption.Length > 0, $"section {key} has no caption");
         foreach (var s in all)
         {
             Check(s.Valid(s.Default), $"{s.Key}'s default '{s.Default}' is none of its values ({s.Type})");
@@ -101,6 +106,8 @@ internal static class Tests
             {
                 Check(TabKinds.Contains(s.Kind), $"{s.Key}'s kind, {s.Kind}, isn't one the Mac Port tab draws");
                 Check(s.Label.Length > 0, $"{s.Key} has no label for its row in the tab");
+                foreach (var (_, label) in s.Choices.Where(c => c.Label.Length > ValueWidth))
+                    Check(false, $"{s.Key}'s value '{label}' is longer than the tab's {ValueWidth} characters");
             }
             foreach (var need in s.Needs)
             {

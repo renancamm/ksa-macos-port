@@ -14,8 +14,9 @@ public sealed class PortSetting
     public string Section = "", Key = "", Type = "", Default = "", Variable = "", OnValue = "1", Hook = "", Label = "", Help = "";
     public string[] Needs = [];
     public bool Live;
-    // A choice's values and their labels (bool: on and off, available: Available and Off)
+    // A choice's values and their labels (bool: on and off, available: Available and Off), and what some of them mean
     public (string Value, string Label)[] Choices = [];
+    public readonly Dictionary<string, string> OptionHelp = new();
     public double Min, Max;
     // In the file; what the game started with, from the environment the loader set; the variable set outside that
     // decides it instead (name=value)
@@ -92,8 +93,8 @@ public sealed class PortSetting
 public static partial class PortSettings
 {
     public static readonly List<PortSetting> All = new();
-    // The sections, in the table's order: key and title
-    public static readonly List<(string Key, string Title)> Sections = new();
+    // The sections, in the table's order: key, title and the line under it
+    public static readonly List<(string Key, string Title, string Caption)> Sections = new();
     public static string FilePath = "", TemplatePath = "";
 
     public static PortSetting? Get(string key) => All.FirstOrDefault(s => s.Key == key);
@@ -123,10 +124,20 @@ public static partial class PortSettings
             {
                 int end = line.IndexOf(']');
                 section = line[1..end];
-                Sections.Add((section, line[(end + 1)..].Trim()));
+                var title = line[(end + 1)..].Split('|', 2);
+                Sections.Add((section, title[0].Trim(), title.Length > 1 ? title[1].Trim() : ""));
                 continue;
             }
             var c = line.Split('|').Select(x => x.Trim()).ToArray();
+            // An indented line: what one of the values of the setting above means
+            if (char.IsWhiteSpace(lines[n][0]))
+            {
+                if (All.Count == 0 || All[^1].Section != section || c.Length != 2 ||
+                    All[^1].Choices.All(o => o.Value != c[0]))
+                    throw new FormatException($"{table}, line {n + 1}: not a value of the setting above");
+                All[^1].OptionHelp[c[0]] = c[1];
+                continue;
+            }
             if (c.Length < 9)
                 throw new FormatException($"{table}, line {n + 1}: {c.Length} columns, not 9");
             var s = new PortSetting

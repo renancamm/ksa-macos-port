@@ -300,13 +300,12 @@ another setting is greyed out until that one is on. Each row's tooltip says what
 | Section | What's there |
 |---|---|
 | Presets | Performance, Balanced and Quality: the game's graphics settings and the port's, chosen together for this Mac's memory and chip (an M1 or M2 gets no ray tracing in the cockpit). USE makes them pending changes, here and in the game's own tabs, for Apply to keep |
-| Image | Apple's MetalFX and what needs it, off by default: upscaling, render scale, the game's anti-aliasing under it |
+| Image | Apple's MetalFX and what needs it, off by default: upscaling, render scale, MetalFX's anti-aliasing in place of the game's |
 | Interface | the flight HUD fitted to the display, or the game's own layout |
-| Extra performance | a visible trade for speed, with the game's own as the default: cloud shadow tuning, plume shadow tuning, PCSS shadow search limit |
+| Extra Performance | a visible trade for speed, with the game's own as the default: cloud shadow updates, plume shadow quality, simpler PCSS shadows |
 | Optimizations | the same image, faster, on by default; back to the game's own to find out whether one causes a problem |
-| Game features | what the Mac offers the game, with the game's own settings still deciding: tessellation, ray queries, ray tracing |
-| Overlay | Apple's Metal Performance HUD over the game |
-| Benchmark | the [benchmark](#the-benchmark), fast or the full tour, from this game or a fresh one |
+| GPU Features | what the Mac's GPU offers the game, with the game's own settings still deciding: tessellation, ray queries, ray tracing |
+| Measure | Apple's Metal Performance HUD over the game, and the [benchmark](#the-benchmark), fast or the full tour, in this game or a new one |
 
 The settings are kept in `port-settings.toml`, next to the game's `settings.toml` in
 `~/Documents/My Games/Kitten Space Agency`, with a comment on each. The file can be edited instead of the tab, and
@@ -325,7 +324,7 @@ each one changes and how.
 
 The game keeps every texture's pixels in memory for the whole session. The KTX shim maps them from files instead once
 a texture is loaded, so macOS can page them out when memory runs short and read them back later. It is the tab's
-**Texture file mapping** row; [`ktx_shim.c`](src/ktx-shim/ktx_shim.c) has the details.
+**Texture File Mapping** row; [`ktx_shim.c`](src/ktx-shim/ktx_shim.c) has the details.
 
 ### The benchmark
 

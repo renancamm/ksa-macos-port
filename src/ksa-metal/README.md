@@ -12,7 +12,7 @@ switches, how to build and test a change, how each Vulkan concept maps onto Meta
 KSA Metal takes its settings from environment variables, which the hooks' loader sets from the port settings
 ([The Mac Port tab](../../README.md#the-mac-port-tab)): each variable below has a setting in `port-settings.toml`
 ([`../launcher/port-settings.txt`](../launcher/port-settings.txt) says which), the switches in the tab's Optimizations
-and Game features sections, the debugging variables in the file's `[developer]` section. A variable can also be set
+and GPU Features sections, the debugging variables in the file's `[developer]` section. A variable can also be set
 where the app's executable starts, from Terminal, where its output stays visible; it then wins over the file:
 
 ```bash

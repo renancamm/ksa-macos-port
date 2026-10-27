@@ -64,7 +64,7 @@ internal static class Presets
         new("Quality",
             "The game's own image at the window's full size, with its anti-aliasing, soft shadows and ray tracing in " +
             "the cockpit where the Mac has it. Only what costs much and barely shows is set lower: the shadow maps' " +
-            "sizes, the Milky Way, and the PCSS shadow search limit.",
+            "sizes, the Milky Way, and the soft shadows close to the camera.",
             mac => Game(mac, filter: "Pcss", cascades: 2048, terrain: 4096, milkyWay: "Medium", clouds: "High",
                 effects: "High", godrays: true, clutterShadows: true, plumeShadows: true, rayTracing: mac.RayTracing),
             mac => Port(upscaling: "off", scale: "1.0", tuning: false, plumeShadows: true)),

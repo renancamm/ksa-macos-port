@@ -8,6 +8,7 @@ using Brutal.ImGuiApi;
 using Brutal.Numerics;
 using HarmonyLib;
 using KSA;
+using KSA.Rendering.Lighting;
 
 namespace KsaMetalHooks;
 
@@ -225,6 +226,7 @@ internal static class MacPortTab
         {
             "vsync" => game?.Vsync ?? true,
             "plume_trail_shadows" => game?.Graphics is not { } g || g.PlumeTrails && g.PlumeTrailShadows,
+            "pcss" => game?.Graphics is not { } g || g.CascadedShadowMapFilter == CascadedShadowSystem.Filter.Pcss,
             _ => true
         };
     }
@@ -258,13 +260,18 @@ internal static class MacPortTab
                 continue;
             if (need == "game:vsync")
             {
-                note = "needs V-Sync";
-                return "Needs the game's V-Sync (Display).";
+                note = "needs Vsync";
+                return "Needs the game's Vsync (Display).";
             }
             if (need == "game:plume_trail_shadows")
             {
                 note = "needs Plume trail shadows";
                 return "Needs the game's Plume trails and Plume trail shadows (Graphics).";
+            }
+            if (need == "game:pcss")
+            {
+                note = "needs Pcss";
+                return "Needs the game's Cascaded Shadow Filter on Pcss (Graphics).";
             }
             int ne = need.IndexOf("!=", StringComparison.Ordinal), eq = need.IndexOf('=');
             var other = PortSettings.Get(ne > 0 ? need[..ne] : eq > 0 ? need[..eq] : need);
@@ -283,16 +290,29 @@ internal static class MacPortTab
             return;
         Sync();
         DrawPresets();
-        foreach (var (section, title) in PortSettings.Sections)
+        foreach (var (section, title, caption) in PortSettings.Sections)
         {
             if (section == "developer")
                 continue;
             ConsoleWidgets.RegionHeader(title);
+            Caption(caption);
             foreach (var s in PortSettings.All.Where(s => s.Section == section))
                 DrawRow(s);
-            if (section == "benchmark")
+            if (section == "measure")
                 DrawBenchmark();
         }
+    }
+
+    // The muted line under a section's title, in the game's small font (TextWrapped takes a printf format too)
+    private static void Caption(string text)
+    {
+        if (text.Length == 0)
+            return;
+        ConsoleStyle.PushSignatureFont();
+        ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.TextMuted);
+        ImGui.TextWrapped(text.Replace("%", "%%"));
+        ImGui.PopStyleColor();
+        ConsoleStyle.PopFont();
     }
 
     private static void DrawRow(PortSetting s)
@@ -337,6 +357,8 @@ internal static class MacPortTab
                         bool selected = choice == value;
                         if (ImGui.Selectable(label, selected, ImGuiSelectableFlags.None, (float2?)null))
                             Pending[s.Key] = choice;
+                        if (s.OptionHelp.TryGetValue(choice, out var meaning) && ImGui.IsItemHovered())
+                            Tooltip(meaning);
                         if (selected)
                             ImGui.SetItemDefaultFocus();
                     }
@@ -350,9 +372,11 @@ internal static class MacPortTab
         if (hovered)
         {
             var tip = s.Help;
+            if (s.OptionHelp.TryGetValue(value, out var meaning))
+                tip += $"\n\n{s.LabelOf(value)}: {meaning}";
             if (reason is { Length: > 0 })
                 tip += "\n\n" + reason;
-            if (!s.Live && s.Section != "benchmark")
+            if (!s.Live)
                 tip += "\n\nTakes effect when the game starts.";
             Tooltip(tip);
         }
@@ -402,6 +426,7 @@ internal static class MacPortTab
     private static void DrawPresets()
     {
         ConsoleWidgets.RegionHeader("Presets");
+        Caption("The game's graphics and these settings, chosen together for this Mac.");
         var unavailable = Hooks.Status.GetValueOrDefault("presets") is { Unavailable: true } status
             ? status.State == HookState.Skipped
                 ? "Unavailable with this KSA version: the game's settings it sets have moved (logs/console.log says more)."
@@ -434,20 +459,21 @@ internal static class MacPortTab
             ConsoleStyle.PopDisabled();
             if (hovered)
                 Tooltip(unavailable ?? preset.Help + "\n\n" + forMac +
-                    "USE sets these as pending changes, here and in the game's own tabs: Apply keeps them, Discard drops them.");
+                    "USE makes these pending changes, here and in the game's tabs; Apply keeps them.");
         }
     }
 
-    // The benchmark section's button, and what the last run left
+    // The Measure section's benchmark button, and what the last run left
     private static void DrawBenchmark()
     {
         var temporary = _temporary.GetValue(null);
         bool changes = temporary != null && (bool)_hasAnyTabChanged.Invoke(null, [temporary])!;
-        var why = changes ? "Apply or discard the changes first." : BenchmarkRun.CannotStart();
+        string note = "apply first";
+        var why = changes ? "Apply or discard the changes first." : BenchmarkRun.CannotStart(out note);
         ConsoleStyle.PushDisabled(why != null);
         ConsoleWidgets.BeginRow("");
         if (why != null)
-            Note("", changes ? "apply first" : "not now");
+            Note("", note);
         if (ConsoleWidgets.PrimaryButton("RUN BENCHMARK") && why == null)
             BenchmarkRun.StartFromTab(PortSettings.Get("benchmark_mode")?.Saved == "full", PortSettings.Get("benchmark_restart")?.Saved == "true");
         bool hovered = ConsoleWidgets.RowHovered;

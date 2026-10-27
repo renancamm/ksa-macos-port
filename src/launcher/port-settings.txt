@@ -4,8 +4,9 @@
 # template from it; and the Mac Port tab in the game's settings (src/hooks/), which draws its rows from it. A variable
 # already set when the game starts wins over the file.
 #
-# [<section>] <title>: starts a section of the file and of the tab; [developer]'s settings are in the file only.
-# Then one setting per line:
+# [<section>] <title> | <caption>: starts a section of the file and of the tab, the caption being the line under its
+# title (and the file's comment); [developer]'s settings are in the file only. Then one setting per line; a choice can
+# be followed by indented lines "<value> | <help>", what its values mean (the dropdown's tooltips):
 #
 #   key | type | default | variable | needs | applies | hook | label | help
 #
@@ -18,51 +19,64 @@
 #   variable  what the setting sets when it isn't at its default: on is 1 and off 0 (VAR=<value>: that, for on), other
 #             types their value. Without one, the setting is the tab's own
 #   needs     the settings it depends on (comma separated): <key> (on, or not empty), <key>=<value>, <key>!=<value>,
-#             game:vsync or game:plume_trail_shadows (the game's own settings, which only the tab checks). While one
-#             isn't met, it keeps its default
+#             game:vsync, game:plume_trail_shadows or game:pcss (the game's own settings, which only the tab checks).
+#             While one isn't met, it keeps its default
 #   applies   live: on Apply, in the running game (the hooks read it while the game runs); restart: when the game
 #             starts
 #   hook      the hook that does it (src/hooks/Hooks.cs): the tab shows the setting as unavailable when the hook was
 #             skipped or failed
-#   label     its row in the tab; help: the row's tooltip and the file's comment
+#   label     its row in the tab; help: the row's tooltip and the file's comment, which the values' help follows
 
-[image] Image
-upscaling | choice:off=Off/metalfx=MetalFX/spatial=MetalFX spatial | off | KSA_UPSCALER | | restart | | Upscaling | Apple's MetalFX draws the 3D view at the render scale below and scales it up to the display. MetalFX builds each image from the previous ones too: the sharpest, even at a low render scale, and it smooths edges itself; things that move fast can look a little soft. MetalFX spatial scales each image on its own: nothing trails behind in motion, but the image is softer below 100 %, and the game's anti-aliasing stays on. Off is the game's own, without the settings below.
-render_scale | scale:0.5:2 | 1.0 | KSA_RENDER_SCALE | upscaling!=off | restart | render_scale | Render scale | The 3D view is drawn at this share of the window's size and MetalFX scales it up to the display. Below 100 %: less work for the GPU, a slightly softer image. Above 100 %, up to the display's full resolution (200 % on a Retina display): a sharper image, much more work for the GPU.
-override_antialiasing | bool | true | KSA_OVERRIDE_AA | upscaling=metalfx | restart | render_scale | Override anti-aliasing | Turns off the game's own Anti-aliasing setting (Graphics) while MetalFX is on: MetalFX smooths edges itself, so the game's anti-aliasing only costs frame rate and leaves dark specks on the planet. Off: the game's setting applies, except CMAA2, which stays off with either kind of MetalFX because it can't work with it.
+[image] Image | MetalFX draws the 3D view at another size and scales it to the display.
+upscaling | choice:off=Off/metalfx=MetalFX/spatial=MetalFX Spatial | off | KSA_UPSCALER | | restart | | Upscaling | Draws the 3D view at the Render Scale below and scales it up to the display with Apple's MetalFX.
+    off | The game's own. The 3D view is drawn at the window's size.
+    metalfx | Builds each image from the ones before it: the sharpest, even at a low Render Scale, and it smooths edges itself. Things that move fast can look a little soft.
+    spatial | Scales each image on its own: nothing trails behind in motion, but the image is softer below 100 %. The game's anti-aliasing stays on.
+render_scale | scale:0.5:2 | 1.0 | KSA_RENDER_SCALE | upscaling!=off | restart | render_scale | Render Scale | The size the 3D view is drawn at, as a share of the window's, before MetalFX scales it up. Lower is faster and a little softer. Above 100 %, up to 200 % on a Retina display, is sharper and much more work for the GPU.
+override_antialiasing | bool | true | KSA_OVERRIDE_AA | upscaling=metalfx | restart | render_scale | Skip Game Anti-Aliasing | While MetalFX is on, the game's Anti-Aliasing (Display) is turned off: MetalFX smooths edges itself, so the game's would only cost frame rate and leave dark specks on the planet. Off: the game's setting applies, except CMAA2, which stays off because it can't work with MetalFX.
 
-[interface] Interface
-hud_layout | choice:fit=Fit to the display/game=The game's | fit | KSA_HUD_LAYOUT | | live | hud_layout | HUD layout | The flight HUD sized for the display. Fit to the display gives it the same size in a window as in fullscreen, shrinks it on a display narrower than 16:9, such as a MacBook's, so its panels don't overlap, and scales the text in the resources, staging and crew panels with the panels, so it fits; in a small window the panels can overlap, which a lower HUD Scale (Interface) fixes. The game's own sizes the HUD from the window and keeps that text at one size, which overflows its panels in smaller windows.
+[interface] Interface | How the flight HUD fits this display.
+hud_layout | choice:fit=Fit to Display/game=Scale with Window | fit | KSA_HUD_LAYOUT | | live | hud_layout | HUD Layout | How the flight HUD is sized.
+    fit | The same size in a window as in fullscreen, smaller on a display narrower than 16:9 such as a MacBook's, and the panels' text scaled to fit them. If panels overlap in a small window, lower HUD Scale (Interface).
+    game | The game's own. Sized from the window, with the panels' text at one size, which overflows them in smaller windows.
 
-[performance] Extra performance
-cloud_shadow_tuning | choice:off=Off/slower_refresh=Slower refresh | off | KSA_CLOUD_SHADOW_TUNING | | restart | cloud_shadow_tuning | Cloud shadow tuning | Slower refresh updates the shadows the clouds cast about 4 times less often: a little faster over Earth, and the shadows lag behind moving clouds. Off is the game's own.
-plume_shadow_tuning | choice:off=Off/low=Low | off | KSA_PLUME_SHADOW_TUNING | game:plume_trail_shadows | restart | plume_shadow_tuning | Plume shadow tuning | With the game's Plume trail shadows, rocket smoke casts shadows from the sun. Low draws them with less detail and only within 3 km: the smoke of a big rocket draws about 10-20 % faster, and its shadows on the ground are coarser. Off is the game's own.
-shadow_search | bool | false | KSA_SHADOW_SEARCH | | restart | shadow_search | PCSS shadow search limit | With the game's Cascaded Shadow Filter on Pcss, each point near the camera looks for what shades it only a short way around, instead of a whole metre: the cockpit draws nearly twice as fast. A shadow close to the camera, cast from high above it, can get a sharper edge than the game draws. Off is the game's own.
-[optimizations] Optimizations
-terrain_cache | bool | true | KSA_TERRAIN_CACHE | | restart | terrain_cache | Terrain cache | The terrain's shape and shading are worked out again only when something about them changed, instead of every frame: a higher frame rate, the same image. Off: try it when terrain looks wrong.
-outline_skip | bool | true | KSA_OUTLINE_SKIP | | restart | outline_skip | Selection outline skip | The outline around selected parts is drawn only while a part is selected: a higher frame rate, the same image. Off: try it when a selected part has no outline.
-crew_portraits | choice:always=Every frame/shown=When shown/shown_15=When shown, 15 a second | shown | KSA_CREW_PORTRAITS | | live | crew_portraits | Crew portraits | The crew panel's portraits are small views the game draws every frame while the vessel has crew, even with the panel closed. When shown draws them only while the panel is open: the same image. 15 a second: also at most that often, so the faces move less smoothly. Every frame is the game's own.
-worker_parking | bool | true | KSA_WORKER_PARKING | | restart | worker_park | Worker parking | The game's idle background workers rest while they wait for work instead of keeping the CPU busy: the same frames, about a core and a half less CPU time. Off: try it when the game stutters.
-loading_pace | bool | true | KSA_LOADING_PACE | | restart | loading_pace | Loading screen pace | While the game loads, its loading screen is drawn at most 30 times a second instead of after every step, and each drawing waited for the display: the game loads about 2 seconds faster. Off: try it when the loading screen looks stuck.
-fused_tessellation | bool | true | KSA_MTL_TESS_FUSE | tessellation | restart | | Fused tessellation | Terrain and ocean take less work for the GPU to tessellate: a higher frame rate over terrain, the same image. Off: try it when terrain or ocean look wrong.
-vsync_pacing | bool | true | KSA_MTL_PRESENT_PACING | game:vsync | restart | | V-Sync pacing | With V-Sync, a frame starts as soon as the GPU is ready for it, not only when the display has shown the one before: a higher frame rate in a window. Off: try it when the frame rate is uneven with V-Sync.
-background_compiling | bool | true | KSA_MTL_ASYNC_PIPELINES | | restart | | Background shader compiling | Shaders are compiled in the background, so the game doesn't stop for each one. Off: the game waits for each one; try it when something appears late or not at all.
-shader_cache | bool | true | KSA_MTL_CACHE | | restart | | Shader cache | Translated shaders are kept on disk, in ~/Library/Caches/ksa-metal, so later starts don't translate them again. Off: every start translates them; try it when something is drawn wrong.
-texture_mapping | bool | true | KSA_KTX_SHIM | | restart | | Texture file mapping | Textures' pixels are read from files instead of held in memory of their own, so macOS can let go of them when memory runs short and read them back later: about 3 GB less memory with the solar system. Off: try it when a texture looks wrong.
-constant_memory | bool | true | KSA_MTL_AB_CONSTANT | | restart | | Constant-memory resources | Shaders read the textures and data they draw with through a faster kind of memory: a little faster, the same image. Off: try it when something is missing or drawn wrong.
-uniform_references | bool | true | KSA_MTL_UNIFORM_REFS | | restart | | Uniform struct references | Shaders read the game's parameters in place instead of copying them over and over: the smoke of a big explosion draws about 7-9 % faster, with the same image. Off: try it when something looks wrong.
+[performance] Extra Performance | Faster, with a small change to the image. The default is the game's own.
+cloud_shadow_tuning | choice:off=Normal/slower_refresh=Slower | off | KSA_CLOUD_SHADOW_TUNING | | restart | cloud_shadow_tuning | Cloud Shadow Updates | How often the shadows that clouds cast on the ground are updated.
+    off | The game's own.
+    slower_refresh | About 4 times less often: a little faster over Earth, and the shadows lag behind moving clouds.
+plume_shadow_tuning | choice:off=High/low=Low | off | KSA_PLUME_SHADOW_TUNING | game:plume_trail_shadows | restart | plume_shadow_tuning | Plume Shadow Quality | The shadows that rocket smoke casts from the sun, with the game's Plume trail shadows (Graphics).
+    off | The game's own.
+    low | Less detail, and only within 3 km: the smoke of a big rocket draws about 10-20 % faster, and its shadows on the ground are coarser.
+shadow_search | bool | false | KSA_SHADOW_SEARCH | game:pcss | restart | shadow_search | Simpler PCSS Shadows | With the game's Cascaded Shadow Filter on Pcss (Graphics), soft shadows close to the camera look a shorter way for what casts them: the cockpit draws nearly twice as fast. A shadow cast from high above can get a sharper edge. Off is the game's own.
 
-[game_features] Game features
-tessellation | available | true | KSA_MTL_TESSELLATION | | restart | | Tessellation | Lets the game tessellate terrain and ocean; its own Terrain Tessellation setting still decides. Off: the game draws them without it.
-ray_queries | available | true | KSA_MTL_RAYQUERY | | restart | | Ray queries | Lets the game place ground clutter with ray queries, and use ray tracing. Off: the game places clutter without them.
-ray_tracing | available | true | KSA_MTL_RTPIPELINE | ray_queries | restart | | Ray tracing | Lets the game use ray tracing in the cockpit (IVA); its own IVA Ray Tracing setting still decides. Off: unavailable to the game.
+[optimizations] Optimizations | The same image, faster. Leave them on; turn one off to find a problem.
+terrain_cache | bool | true | KSA_TERRAIN_CACHE | | restart | terrain_cache | Terrain Cache | The terrain's shape and shading are worked out again only when something about them changed, instead of every frame: a higher frame rate, the same image. Off: try it when terrain looks wrong.
+outline_skip | bool | true | KSA_OUTLINE_SKIP | | restart | outline_skip | Skip Unused Outlines | The outline around selected parts is drawn only while a part is selected: a higher frame rate, the same image. Off: try it when a selected part has no outline.
+crew_portraits | choice:always=Every Frame/shown=When Shown/shown_15=Shown, 15 FPS | shown | KSA_CREW_PORTRAITS | | live | crew_portraits | Crew Portraits | The crew panel's portraits are small views the game draws every frame while the vessel has crew, even with the panel closed.
+    always | The game's own.
+    shown | Drawn only while the crew panel is open: the same image.
+    shown_15 | Drawn only while the crew panel is open, and at most 15 times a second: the faces move less smoothly.
+worker_parking | bool | true | KSA_WORKER_PARKING | | restart | worker_park | Idle Thread Sleep | The game's background threads sleep while they wait for work instead of keeping the CPU busy: the same frames, about a core and a half less CPU time. Off: try it when the game stutters.
+loading_pace | bool | true | KSA_LOADING_PACE | | restart | loading_pace | Loading Screen FPS Cap | While the game loads, its loading screen is drawn at most 30 times a second instead of after every step: the game loads about 2 seconds faster. Off: try it when the loading screen looks stuck.
+fused_tessellation | bool | true | KSA_MTL_TESS_FUSE | tessellation | restart | | Fused Tessellation | Terrain and ocean are tessellated in one combined step, without a round trip through memory: a higher frame rate over terrain, the same image. Off: try it when terrain or ocean look wrong.
+vsync_pacing | bool | true | KSA_MTL_PRESENT_PACING | game:vsync | restart | | Vsync Pacing | With Vsync, a frame starts as soon as the GPU is ready for it, not only once the display has shown the one before: a higher frame rate in a window. Off: try it when the frame rate is uneven with Vsync.
+background_compiling | bool | true | KSA_MTL_ASYNC_PIPELINES | | restart | | Background Shader Compiling | Shaders are compiled in the background, so the game doesn't stop for each one. Off: the game waits for each one; try it when something appears late or not at all.
+shader_cache | bool | true | KSA_MTL_CACHE | | restart | | Shader Cache | Translated shaders are kept on disk, in ~/Library/Caches/ksa-metal, so later starts don't translate them again. Off: every start translates them; try it when something is drawn wrong.
+texture_mapping | bool | true | KSA_KTX_SHIM | | restart | | Texture File Mapping | Textures' pixels are read from files instead of held in memory of their own, so macOS can let go of them when memory runs short and read them back later: about 3 GB less memory with the solar system. Off: try it when a texture looks wrong.
+constant_memory | bool | true | KSA_MTL_AB_CONSTANT | | restart | | Shader Constant Memory | Shaders read the textures and data they draw with through a faster kind of memory: a little faster, the same image. Off: try it when something is missing or drawn wrong.
+uniform_references | bool | true | KSA_MTL_UNIFORM_REFS | | restart | | In-Place Shader Parameters | Shaders read the game's parameters where they are instead of copying them over and over: the smoke of a big explosion draws about 7-9 % faster, with the same image. Off: try it when something looks wrong.
 
-[overlay] Overlay
-performance_overlay | bool | false | MTL_HUD_ENABLED | | restart | | Performance overlay | Apple's Metal Performance HUD in a corner of the window: frame rate, frame and GPU times, and memory.
+[game_features] GPU Features | What this Mac's GPU offers the game. The game's own settings still decide.
+tessellation | available | true | KSA_MTL_TESSELLATION | | restart | | Tessellation | Lets the game tessellate terrain and ocean; its own Tessellation setting (Graphics, Terrain) still decides. Off: the game draws them without it.
+ray_queries | available | true | KSA_MTL_RAYQUERY | | restart | | Ray Queries | Lets the game place ground clutter with ray queries, and use ray tracing. Off: the game places clutter without them.
+ray_tracing | available | true | KSA_MTL_RTPIPELINE | ray_queries | restart | | Ray Tracing | Lets the game use ray tracing in the cockpit (IVA); its own IVA Ray Tracing setting (Graphics) still decides. Off: unavailable to the game.
 
-[benchmark] Benchmark
-benchmark_mode | choice:fast=Fast, 1 minute/full=Full tour, 8 minutes | fast | | | live | | Benchmark | Fast: three places on Earth with the game paused, then a rocket's launch and explosion. The full tour flies from Earth to Jupiter, with a kitten in the grass, a launch and a 2,000-part rocket.
-benchmark_restart | bool | false | | | live | | Fresh game | Off: the benchmark plays in this game, and your game comes back when it ends. On: your game is saved as Before the benchmark, and the game starts again for it, with a new game and none of your mods, the way benchmark.sh in the port folder runs it; when it ends, the game quits and the report's folder opens.
+[measure] Measure | See the frame rate live, or run a fixed tour that writes a report.
+performance_overlay | bool | false | MTL_HUD_ENABLED | | restart | | Performance Overlay | Apple's Metal Performance HUD in a corner of the window: frame rate, frame and GPU times, and memory.
+benchmark_mode | choice:fast=Fast, 1 Minute/full=Full, 8 Minutes | fast | | | live | | Benchmark | Which tour RUN BENCHMARK plays.
+    fast | Three places on Earth with the game paused, then a rocket's launch and explosion.
+    full | From Earth to Jupiter, with a kitten in the grass, a launch and a 2,000-part rocket.
+benchmark_restart | bool | false | | | live | | Run in a New Game | On: your game is saved as Before the benchmark, and the game starts again with a new game and none of your mods, as benchmark.sh runs it; at the end, the game quits and the report's folder opens. Off: it plays in this game, which comes back at the end.
 
 [developer] Developer
 hooks | bool | true | KSA_HOOKS | | restart | | | KSA Metal Hooks, which also draw the Mac Port tab. Off: the game starts without them.

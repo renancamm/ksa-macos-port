@@ -47,9 +47,22 @@ awk -F'|' '
         if (type ~ /^(choice|text|numbers)/) return "\"" value "\""
         return value
     }
+    # A setting is written once the lines with what its values mean have been read
+    function flush() {
+        if (key == "") return
+        print ""
+        comment(key " (" values(type) "): " help)
+        printf "%s%s = %s\n", (section == "developer" ? "# " : ""), key, toml(type, def)
+        key = ""
+    }
     /^\[/ {
+        flush()
         section = substr($0, 2, index($0, "]") - 2)
         printf "\n[%s]\n", section
+        if (index($0, "|") > 0) {
+            print ""
+            comment(trim(substr($0, index($0, "|") + 1)))
+        }
         if (section == "developer") {
             print ""
             comment("For work on the port, and for testing a problem: the driver'"'"'s README in the port'"'"'s repository " \
@@ -58,10 +71,13 @@ awk -F'|' '
         next
     }
     /^[ \t]*(#|$)/ { next }
-    {
-        key = trim($1); type = trim($2); def = trim($3); help = trim($9)
-        print ""
-        comment(key " (" values(type) "): " help)
-        printf "%s%s = %s\n", (section == "developer" ? "# " : ""), key, toml(type, def)
+    /^[ \t]/ {
+        help = help " \"" trim($1) "\": " trim($2)
+        next
     }
+    {
+        flush()
+        key = trim($1); type = trim($2); def = trim($3); help = trim($9)
+    }
+    END { flush() }
 ' "$1"
