@@ -34,6 +34,12 @@
 #    also from surfaces turned away from that light, whose light is zero. Fix: trace it only where the light isn't
 #    zero (the ray's result only ever multiplies that light).
 #
+# For the hooks' Milky Way bake (src/hooks/):
+# 8. MilkyWay.frag works out the Milky Way's dust clouds for every pixel of the band, from the view direction alone:
+#    about 90 noise lookups each. The edit moves them into a function, which reads them from the strip the hooks fill
+#    once instead when the hooks bind it in the noise texture's place (it isn't square), and writes
+#    MilkyWayBake.comp, the compute shader that fills the strip with that same function.
+#
 # Each fix prints [FIXED], [OK] (already fixed) or [WARN] (the code around it changed in this KSA version:
 # either RocketWerkz fixed the bug, or this script needs an update).
 #
@@ -170,3 +176,93 @@ if grep -qs PORT_SKIP_UNLIT_SHADOWS "${SHADERS}/Raytracing/raygen.rgen"; then
         "        if(lightData.color.w > 0.5 && (!PORT_SKIP_UNLIT_SHADOWS || any(notEqual(light, vec3(0.0))))){  // macOS port: no shadow ray where there is no light" \
         "traced shadow rays only where there is light"
 fi
+
+# 8. MilkyWay.frag: the clouds' function, and MilkyWayBake.comp made from it. The bake writes the clouds for each
+# texel of a strip that spans the band, the longitude -PI..PI across and sampleDir.y -BAND_HEIGHT..BAND_HEIGHT down
+# (texel centres), with the directions the fragment shader would see there.
+perl - "${SHADERS}/MilkyWay.frag" "${SHADERS}/MilkyWayBake.comp" << 'PERL'
+use strict;
+use warnings;
+my ($path, $bake) = @ARGV;
+sub status { printf "    [%s] %s: %s\n", $_[0], $_[1], $_[2]; }
+sub warned { status("WARN", "MilkyWay.frag", "the code changed in this KSA version, skipped: $_[0]. Please open an issue."); unlink $bake; exit 0 }
+open(my $in, '<:raw', $path) or do { status("WARN", "MilkyWay.frag", "not found"); exit 0 };
+my $text = do { local $/; <$in> };
+close($in);
+my $nl = $text =~ /\r\n/ ? "\r\n" : "\n";
+# The lookup, the part of the edit that is the port's own: a file edited by another version of this script says so
+my $lookup = join($nl,
+    "float portMilkyWayCloudsAt(vec2 cloudUV, vec3 sampleDir)",
+    "{",
+    "    ivec2 size = textureSize(milkyWayNoise, 0);",
+    "    if (size.x == size.y)",
+    "        return portMilkyWayClouds(cloudUV, sampleDir);",
+    "    vec2 strip = vec2(cloudUV.x / (2.0 * PI) + 0.5, cloudUV.y / (2.0 * BAND_HEIGHT) + 0.5);",
+    "    strip.y = clamp(strip.y, 0.5 / float(size.y), 1.0 - 0.5 / float(size.y));",
+    "    return textureLod(milkyWayNoise, strip, 0.0).r;",
+    "}");
+if ($text =~ /portMilkyWayCloudsAt/ && index($text, $lookup) < 0) {
+    status("WARN", "MilkyWay.frag", "edited by another version of the port, skipped: the Milky Way's clouds in a function. Port the game again from its archive.");
+    unlink $bake;
+    exit 0;
+}
+if ($text !~ /portMilkyWayCloudsAt/) {
+    my $count = () = $text =~ /^void main\(\)/mg;
+    $count == 1 or warned("the Milky Way's clouds in a function");
+    $text =~ s{(^    vec2 cloudUV = vec2\(fastAtan2\(-sampleDir\.x, sampleDir\.z\), sampleDir\.y\);\r?\n)(.*?^        cloudsFinal = mix\(0\.0, mix\(seamClouds, cloudsFinal, seamMask\), seamMask\);\r?\n    \}\r?\n)}
+              {$1$nl    float cloudsFinal = portMilkyWayCloudsAt(cloudUV, sampleDir);  // macOS port: the clouds' function$nl}ms
+        or warned("the Milky Way's clouds in a function");
+    my $body = $2;
+    # The rest of main must not need what moved into the function
+    my ($rest) = $text =~ /^void main\(\)(.*)/ms;
+    $rest =~ /\b(?:cloudsLowA|cloudsLowB|cloudsHigh|seamClouds|seamThresh|seamMask|SEED_\w+)\b/ and warned("the Milky Way's clouds in a function");
+    my $function = join($nl,
+        "// macOS port: the clouds depend on the view direction alone. The hooks' Milky Way bake fills a strip with them",
+        "// once (MilkyWayBake.comp, made from this file) and binds it in milkyWayNoise's place: it isn't square.",
+        "float portMilkyWayClouds(vec2 cloudUV, vec3 sampleDir)",
+        "{") . $body . join($nl,
+        "    return cloudsFinal;",
+        "}",
+        "",
+        $lookup, "", "");
+    $text =~ s/^(void main\(\))/$function$1/m;
+    open(my $out, '>:raw', $path) or die "cannot write $path: $!";
+    print $out $text;
+    close($out);
+    status("FIXED", "MilkyWay.frag", "put the clouds in a function the hooks' bake shares");
+} else {
+    status("OK", "MilkyWay.frag", "already puts the clouds in a function the hooks' bake shares");
+}
+# The bake: this file without its inputs, outputs and main, the cubemap's binding replaced by the strip's
+my $comp = $text;
+($comp =~ s/^layout\s*\(location\s*=\s*0\)\s*(?:in|out)\s[^\n]*\n//mg) == 2 or warned("the bake's inputs and outputs");
+$comp =~ s{^layout\s*\(set\s*=\s*1,\s*binding\s*=\s*0\)\s*uniform\s+samplerCube\s+milkyWay;}
+          {layout (set = 1, binding = 0, r16f) uniform writeonly image2D portMilkyWayStrip;${nl}layout (local_size_x = 8, local_size_y = 8) in;}m
+    or warned("the bake's bindings");
+$comp =~ /^layout\s*\(set\s*=\s*1,\s*binding\s*=\s*1\)\s*uniform\s+sampler2D\s+milkyWayNoise;/m or warned("the bake's bindings");
+$comp =~ s/^void main\(\).*//ms;
+$comp =~ s/^(#version[^\n]*\n)/$1\/\/ macOS port: made from MilkyWay.frag by the port, for the hooks' Milky Way bake$nl/
+    or warned("the bake's version line");
+$comp .= join($nl,
+    "void main()",
+    "{",
+    "    ivec2 size = imageSize(portMilkyWayStrip);",
+    "    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);",
+    "    if (any(greaterThanEqual(texel, size)))",
+    "        return;",
+    "    vec2 cloudUV = vec2(((float(texel.x) + 0.5) / float(size.x) - 0.5) * 2.0 * PI,",
+    "                        ((float(texel.y) + 0.5) / float(size.y) - 0.5) * 2.0 * BAND_HEIGHT);",
+    "    float across = sqrt(1.0 - cloudUV.y * cloudUV.y);",
+    "    vec3 sampleDir = vec3(-sin(cloudUV.x) * across, cloudUV.y, cos(cloudUV.x) * across);",
+    "    imageStore(portMilkyWayStrip, texel, vec4(portMilkyWayClouds(cloudUV, sampleDir)));",
+    "}", "");
+if (open(my $old, '<:raw', $bake)) {
+    my $same = do { local $/; <$old> } eq $comp;
+    close($old);
+    if ($same) { status("OK", "MilkyWayBake.comp", "already made the Milky Way bake's shader"); exit 0 }
+}
+open(my $out, '>:raw', $bake) or die "cannot write $bake: $!";
+print $out $comp;
+close($out);
+status("FIXED", "MilkyWayBake.comp", "made the Milky Way bake's shader");
+PERL

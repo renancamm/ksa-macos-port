@@ -304,7 +304,7 @@ another setting is greyed out until that one is on. Each row's tooltip says what
 | Presets | Performance, Balanced and Quality: the game's graphics settings and the port's, chosen together for this Mac |
 | Image | Apple's MetalFX and what needs it, off by default: upscaling, render scale, MetalFX's anti-aliasing in place of the game's |
 | Interface | the flight HUD fitted to the display, or the game's own layout |
-| Extra Performance | a visible trade for speed, with the game's own as the default: cloud shadow updates, plume shadow quality, simpler PCSS shadows |
+| Extra Performance | a visible trade for speed, with the game's own as the default: cloud shadow updates, plume shadow quality, simpler PCSS shadows, a baked Milky Way |
 | Optimizations | the same image, faster, on by default; back to the game's own to find out whether one causes a problem |
 | GPU Features | what the Mac's GPU offers the game, with the game's own settings still deciding: tessellation, ray queries, ray tracing |
 | Measure | Apple's Metal Performance HUD over the game, and the [benchmark](#the-benchmark), fast or the full tour, in this game or a new one |
