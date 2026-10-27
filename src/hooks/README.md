@@ -38,6 +38,7 @@ changed is undone, and `console.log` says so:
 [hooks] render scale: skipped, the game's code changed (the sun's radius not found)
 [hooks] documents folder: off
 [hooks] restart: on
+[hooks] presets: on, Apple M5, 16 GB
 [hooks] Mac Port tab: on
 [hooks] benchmark: ready
 ```
@@ -73,6 +74,7 @@ The MetalFX entry points are KSA Metal's own ([`../ksa-metal/upscale.mm`](../ksa
 
 | Hook | File | How |
 |---|---|---|
+| Presets | [`Presets.cs`](Presets.cs) | the tab's Performance, Balanced and Quality: each gives every game setting any of them sets (fields of `GameSettings` and `GameSettings.Graphics`, found by name when the game starts, each value checked against its type) and its port settings. The Mac's memory (`hw.memsize`; 8 GB or less: shadow maps and textures at most 2048) and chip (`machdep.cpu.brand_string`; M1 and M2: no `IVARayTracing`) decide some of them. USE sets them on the game's pending copy of its settings and as the tab's pending values, so the game's pending marks, Apply, Discard and restart popup handle them as any change |
 | Mac Port tab | [`MacPortTab.cs`](MacPortTab.cs), [`PortSettings.cs`](PortSettings.cs) | the settings window's rail gets a ninth tab (its arrays are read-only fields, so the methods that read them read longer copies), whose rows are drawn with the game's own widgets once the content's body has begun. The rows come from the table of the port settings (`Contents/Resources/port-settings.txt`), their values from `port-settings.toml`, and what the game runs with from the environment the loader set. The tab's pending values go with the game's pending copy of its settings, so the game's pending marks, Apply, Discard, Reset and Close, and its "restart required on apply" popup, all count them. Apply writes the changed lines into the file; live settings take effect at once |
 | Restart | [`Restart.cs`](Restart.cs) | the popup's Restart starts the game's own executable again, which in the app is .NET's `dotnet` with no program: the game only quits. A transpiler replaces that call: it starts the app again through macOS (`open -n`, which hands the app its own environment: the game's, without what the port settings set, and `KSA_PORT_WAIT`, the game's process id), and the new launcher waits until this game has quit. A process the game started itself would not survive: when the app was started from the Finder, macOS ends what a quitting app leaves running. The new game reads the port settings as any start does |
 | Documents folder | [`Documents.cs`](Documents.cs) | `STARMAP_INSTANCE_PATH` moves the game's documents folder, as StarMap does, also without StarMap (the benchmark's runs) |

@@ -282,6 +282,7 @@ internal static class MacPortTab
         if (_failed || Convert.ToInt32(_openTab.GetValue(null), Inv) != TabValue)
             return;
         Sync();
+        DrawPresets();
         foreach (var (section, title) in PortSettings.Sections)
         {
             if (section == "developer")
@@ -390,6 +391,45 @@ internal static class MacPortTab
             lines.Add(line);
         }
         return string.Join('\n', lines);
+    }
+
+    // The presets: a row each, its USE making its values the pending changes here and in the game's tabs
+    private static void DrawPresets()
+    {
+        ConsoleWidgets.RegionHeader("Presets");
+        var unavailable = Hooks.Status.GetValueOrDefault("presets") is { Unavailable: true } status
+            ? status.State == HookState.Skipped
+                ? "Unavailable with this KSA version: the game's settings it sets have moved (logs/console.log says more)."
+                : "Unavailable: it ran into an error (logs/console.log says why)."
+            : null;
+        var pending = _temporary.GetValue(null) as GameSettings;
+        var mac = Presets.ThisMac;
+        var forMac = (mac.SmallMemory ? $"For this Mac's {mac.MemoryGb} GB of memory, the shadow maps and textures are at most 2048 pixels wide. " : "") +
+            (mac.RayTracing ? "" : "The M1 and M2 have no ray tracing hardware, so the cockpit is drawn without it. ");
+        foreach (var preset in Presets.All)
+        {
+            string note = "";
+            if (unavailable != null)
+                note = "unavailable";
+            else if (Presets.Matches(preset, GameSettings.Current, key => PortSettings.Get(key)!.Saved))
+                note = "in use";
+            else if (pending != null && Presets.Matches(preset, pending, key => Value(PortSettings.Get(key)!)))
+                note = "pending";
+            ConsoleStyle.PushDisabled(unavailable != null || pending == null);
+            ConsoleWidgets.BeginRow(preset.Name);
+            if (note.Length > 0)
+                Note(preset.Name, note);
+            if (ConsoleWidgets.Button("USE", "MacPort_preset_" + preset.Name, float2.Zero) && unavailable == null && pending != null)
+            {
+                Presets.Use(preset, pending, Pending);
+                Hooks.Log($"Mac Port tab: {preset.Name} preset pending");
+            }
+            if (ConsoleWidgets.RowHovered)
+                ConsoleWidgets.Tooltip(Wrap(unavailable ?? preset.Help + "\n\n" + forMac +
+                    "USE sets these as pending changes, here and in the game's own tabs: Apply keeps them, Discard drops them."));
+            ConsoleWidgets.EndRow();
+            ConsoleStyle.PopDisabled();
+        }
     }
 
     // The benchmark section's button, and what the last run left

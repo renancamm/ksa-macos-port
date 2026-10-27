@@ -299,9 +299,10 @@ another setting is greyed out until that one is on. Each row's tooltip says what
 
 | Section | What's there |
 |---|---|
+| Presets | Performance, Balanced and Quality: the game's graphics settings and the port's, chosen together for this Mac's memory and chip (an M1 or M2 gets no ray tracing in the cockpit). USE makes them pending changes, here and in the game's own tabs, for Apply to keep |
 | Image | Apple's MetalFX and what needs it, off by default: upscaling, render scale, the game's anti-aliasing under it |
 | Interface | the flight HUD fitted to the display, or the game's own layout |
-| Performance | a visible trade for speed, with the game's own as the default: cloud shadow tuning, plume shadow tuning, PCSS shadow search limit |
+| Extra performance | a visible trade for speed, with the game's own as the default: cloud shadow tuning, plume shadow tuning, PCSS shadow search limit |
 | Optimizations | the same image, faster, on by default; back to the game's own to find out whether one causes a problem |
 | Game features | what the Mac offers the game, with the game's own settings still deciding: tessellation, ray queries, ray tracing |
 | Overlay | Apple's Metal Performance HUD over the game |
