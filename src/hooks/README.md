@@ -30,6 +30,7 @@ changed is undone, and `console.log` says so:
 ```text
 [hooks] terrain cache: on
 [hooks] outline skip: on
+[hooks] ocean blending: on
 [hooks] cloud shadow tuning: off
 [hooks] shadow search: off
 [hooks] crew portraits: on, when shown
@@ -45,7 +46,7 @@ changed is undone, and `console.log` says so:
 
 A hook that throws anything else has a bug of its own: it is undone the same way, and `console.log` says `failed`,
 followed by the error and where it happened. While the game runs, the code the game calls of the terrain cache, the
-crew portraits, the HUD layout and the Mac Port tab catches its own errors the same way: the hook says `failed while
+ocean blending, the crew portraits, the HUD layout and the Mac Port tab catches its own errors the same way: the hook says `failed while
 the game ran`, once, and hands the game its own behaviour from then on. The render scale changes the whole frame and
 can't hand it back halfway: an error there reaches the game. The game then runs as it would without that hook; the Mac Port tab
 shows the settings it does as unavailable, and a benchmark run fails, so a release can't pass its test with a hook
@@ -58,6 +59,7 @@ drawn and how much work drawing it takes.
 |---|---|---|
 | Terrain cache | [`TerrainCache.cs`](patches/TerrainCache.cs) | a prefix on `PlanetRenderer.GenerateMeshData` compares the inputs of the terrain's height passes (body, mesh level of detail, snapped texture rotation, height buffer) with those the frame slot's buffer was last computed for; a transpiler routes the two dispatches of those passes through a check that skips them when nothing changed. They run every 2 s anyway, for the streamed heightmap. The normals pass is skipped too while the mesh's rotation has turned less than 1e-4 rad (its normals don't depend on where the camera is) |
 | Outline skip | [`OutlineSkip.cs`](patches/OutlineSkip.cs) | `Part.Selected`'s setter counts the selected parts; `PartSelectedRenderer.Run` returns early while there are none (only selected parts mark the image it outlines) |
+| Ocean blending | [`OceanBlending.cs`](patches/OceanBlending.cs) | the ocean blends into the image behind it with its alpha, which its shader writes as 0 unless the shore filter fades the ocean out, above 10 km only. Postfixes on `OceanRenderer.Build` and `DestroyFrameResources` make and free twins of the two solid ocean pipelines without blending (the game's own `CreateOceanPipeline`); a prefix on `PerformRendering` checks the camera's altitude over the ocean, and a transpiler routes its two pipeline loads to the twins below 9 km. Same image; at sea level with MSAA about 10 % less GPU time on an M5 (no read of what is behind, hidden-surface removal for the overlapping waves). It checks the shader lines it rests on and skips when they changed |
 | PCSS shadow search limit | [`ShadowSearch.cs`](patches/ShadowSearch.cs) | with `shadow_search` on and the game's soft shadows (PCSS), each pixel searches the shadow cascades for blockers as far as the widest penumbra the sun casts, 1 m: hundreds of texels in the cascades near the camera, 16 taps that miss the GPU's caches. A prefix on `CascadedShadowMap.UploadCascades` puts a limit of 32 texels in the cascades' spare `_pad1`, which the shader edit of `convert-shaders.sh` reads (0: the game's search). On an M5 the cockpit draws in 25 ms instead of 44. A penumbra is about 1/200 of its caster's height, so in the three nearest cascades a shadow cast from more than about 8, 30 or 85 m above can get a sharper edge; none of the views tried showed a change |
 | Cloud shadow tuning | [`CloudShadows.cs`](patches/CloudShadows.cs) | with `cloud_shadow_tuning = "slower_refresh"`: the slices `CloudShadowVolume.UpdateVolumeDensity` refreshes per frame, 24 and 8, become 6 and 2 |
 | Crew portraits | [`CrewPortraits.cs`](patches/CrewPortraits.cs) | the faces in the crew panel are views of their own, drawn every frame while the vessel has crew; after `CrewPortraitPanel.Update`, their views are hidden for the frame unless the panel was drawn in the previous one (the panel keeps their last image). With `crew_portraits = "shown_15"`, a drawn panel is refreshed at most 15 times a second; with `"always"`, the patch leaves the views alone. The setting changes while the game runs |
@@ -103,7 +105,7 @@ holds none of the setting's values, means the default (`console.log` says which)
 | `KSA_CREW_PORTRAITS=always\|shown\|shown_15` | `crew_portraits` |
 | `KSA_HUD_LAYOUT=fit\|game` | `hud_layout` |
 | `KSA_SHADOW_SEARCH=1` | `shadow_search` |
-| `KSA_TERRAIN_CACHE=0`, `KSA_OUTLINE_SKIP=0`, `KSA_WORKER_PARKING=0`, `KSA_LOADING_PACE=0` | `terrain_cache`, `outline_skip`, `worker_parking`, `loading_pace`: leave out that patch |
+| `KSA_TERRAIN_CACHE=0`, `KSA_OUTLINE_SKIP=0`, `KSA_OCEAN_BLENDING=0`, `KSA_WORKER_PARKING=0`, `KSA_LOADING_PACE=0` | `terrain_cache`, `outline_skip`, `ocean_blending`, `worker_parking`, `loading_pace`: leave out that patch |
 | `KSA_PARK_MS=<ms>` | `worker_park_ms`: how long an idle job worker spins before it sleeps (0.25) |
 | `KSA_TRAIL_CACHE=<large>,<small>,<tiny>[,<segments>]` | `trail_caches`: the smoke's volume cache budgets in MiB (developer setting; unset: the game's) |
 | `KSA_TRAIL_SHADOWS=<cascades>,<resolution>,<metres>` | `trail_shadows`: the smoke's sun shadow cascades (developer setting; wins over `plume_shadow_tuning`; unset: the game's) |

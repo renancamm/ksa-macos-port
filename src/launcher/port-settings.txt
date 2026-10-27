@@ -52,6 +52,7 @@ shadow_search | bool | false | KSA_SHADOW_SEARCH | game:pcss | restart | shadow_
 [optimizations] Optimizations | The same image, faster. Leave them on; turn one off to find a problem.
 terrain_cache | bool | true | KSA_TERRAIN_CACHE | | restart | terrain_cache | Terrain Cache | The terrain's shape and shading are worked out again only when something about them changed, instead of every frame: a higher frame rate, the same image. Off: try it when terrain looks wrong.
 outline_skip | bool | true | KSA_OUTLINE_SKIP | | restart | outline_skip | Skip Unused Outlines | The outline around selected parts is drawn only while a part is selected: a higher frame rate, the same image. Off: try it when a selected part has no outline.
+ocean_blending | bool | true | KSA_OCEAN_BLENDING | | restart | ocean_blending | Skip Unused Ocean Blending | Near the ocean's surface (below 9 km), the ocean is drawn without a step only views from higher up need: a higher frame rate, the same image. Off: try it when the ocean looks wrong.
 crew_portraits | choice:always=Every Frame/shown=When Shown/shown_15=Shown, 15 FPS | shown | KSA_CREW_PORTRAITS | | live | crew_portraits | Crew Portraits | The crew panel's portraits are small views the game draws every frame while the vessel has crew, even with the panel closed.
     always | The game's own.
     shown | Drawn only while the crew panel is open: the same image.
