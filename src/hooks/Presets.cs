@@ -57,14 +57,15 @@ internal static class Presets
             mac => Port(upscaling: "metalfx", scale: "0.5", tuning: true, plumeShadows: false)),
         new("Balanced",
             "Fast, and little of it shows: MetalFX draws the 3D view at three quarters of the window's size, with " +
-            "simpler shadow filtering, clouds and smoke a step lower, and ray tracing in the cockpit where the Mac has it.",
+            "simpler shadow filtering, clouds and smoke a step lower, and lighter ray tracing in the cockpit where the Mac " +
+            "has it.",
             mac => Game(mac, filter: "Pcf", cascades: 2048, terrain: 4096, milkyWay: "Medium", clouds: "Medium",
                 effects: "Medium", godrays: true, clutterShadows: true, plumeShadows: true, rayTracing: mac.RayTracing),
             mac => Port(upscaling: "metalfx", scale: "0.75", tuning: true, plumeShadows: true)),
         new("Quality",
             "The game's own image at the window's full size, with its anti-aliasing, soft shadows and ray tracing in " +
-            "the cockpit where the Mac has it. Only what costs much and barely shows is set lower: the shadow maps' " +
-            "sizes, the Milky Way, and the soft shadows close to the camera.",
+            "the cockpit where the Mac has it. Only what costs much and barely shows is lower: shadow map sizes, the " +
+            "Milky Way, soft shadows near the camera, cockpit ray tracing.",
             mac => Game(mac, filter: "Pcss", cascades: 2048, terrain: 4096, milkyWay: "Medium", clouds: "High",
                 effects: "High", godrays: true, clutterShadows: true, plumeShadows: true, rayTracing: mac.RayTracing),
             mac => Port(upscaling: "off", scale: "1.0", tuning: false, plumeShadows: true)),
@@ -97,6 +98,12 @@ internal static class Presets
             ["OceanSimQuality"] = small,
             ["KittenFurQuality"] = small,
             ["IVARayTracing"] = Text(rayTracing),
+            // IVA ray tracing at 50 % reflection and shadow resolution, 1 reflection bounce (the game's: 100/100/4): the
+            // cockpit's GPU time -20 % (Balanced) / -23 % (Quality), 3.6-5.6 % of pixels change by more than 2 of 255,
+            // sparkles on chrome a little blockier. Performance traces no rays: set there too, for the rule above
+            ["RaytracedOpaqueReflectionResolutionScale"] = "50",
+            ["RaytracedShadowResolutionScale"] = "50",
+            ["RaytracedReflectionBounces"] = "1",
         };
         // 8 GB: the textures at most 2048 pixels wide too
         if (mac.SmallMemory)
@@ -183,6 +190,8 @@ internal static class Presets
             return bool.TryParse(value, out var b) ? b : null;
         if (type == typeof(ushort))
             return ushort.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var u) ? u : null;
+        if (type == typeof(int))
+            return int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var i) ? i : null;
         return null;
     }
 
