@@ -17,8 +17,8 @@ namespace KsaMetalHooks;
 // ever changes a setting.
 //
 // Every preset gives every setting any preset sets, so a preset after another leaves nothing of the first, except
-// the port rows the tab can't change (set outside, their hook unavailable) and those that do nothing with the
-// preset's other values (the render scale without upscaling): those keep their values. The game's fields are found
+// the port rows the tab can't change (set outside, their hook unavailable) and the render scale without upscaling,
+// which does nothing then: those keep their values. The game's fields are found
 // by name when the game starts: a field that moved leaves the presets out (skipped).
 internal static class Presets
 {
@@ -54,21 +54,21 @@ internal static class Presets
             "image is softer and plainer.",
             mac => Game(mac, filter: "Pcf", cascades: 2048, terrain: 2048, milkyWay: "Low", clouds: "Low", effects: "Low",
                 godrays: false, clutterShadows: false, plumeShadows: false, rayTracing: false),
-            mac => Port(upscaling: "metalfx", scale: "0.5", tuning: true, plumeShadows: false)),
+            mac => Port(upscaling: "metalfx", scale: "0.5", tuning: true)),
         new("Balanced",
             "Fast, and little of it shows: MetalFX draws the 3D view at three quarters of the window's size, with " +
             "simpler shadow filtering, clouds and smoke a step lower, and lighter ray tracing in the cockpit where the Mac " +
             "has it.",
             mac => Game(mac, filter: "Pcf", cascades: 2048, terrain: 4096, milkyWay: "Medium", clouds: "Medium",
                 effects: "Medium", godrays: true, clutterShadows: true, plumeShadows: true, rayTracing: mac.RayTracing),
-            mac => Port(upscaling: "metalfx", scale: "0.75", tuning: true, plumeShadows: true)),
+            mac => Port(upscaling: "metalfx", scale: "0.75", tuning: true)),
         new("Quality",
             "The game's own image at the window's full size, with its anti-aliasing, soft shadows and ray tracing in " +
             "the cockpit where the Mac has it. Only what costs much and barely shows is lower: shadow map sizes, the " +
             "Milky Way, soft shadows near the camera, cockpit ray tracing.",
             mac => Game(mac, filter: "Pcss", cascades: 2048, terrain: 4096, milkyWay: "Medium", clouds: "High",
                 effects: "High", godrays: true, clutterShadows: true, plumeShadows: true, rayTracing: mac.RayTracing),
-            mac => Port(upscaling: "off", scale: "1.0", tuning: false, plumeShadows: true)),
+            mac => Port(upscaling: "off", scale: "1.0", tuning: false)),
     ];
 
     // The game's settings, by field name: GameSettings' own (anti-aliasing: the game's, which MetalFX turns off), the
@@ -111,14 +111,18 @@ internal static class Presets
         return game;
     }
 
-    private static Dictionary<string, string> Port(string upscaling, string scale, bool tuning, bool plumeShadows) => new()
+    // The Extra Performance rows (tuning) are on in Performance and Balanced, whose changes to the image are small; the
+    // plume shadows' in Performance too, which turns the game's plume shadows off: they are faster when a player turns
+    // those on. The Milky Way bake changes sky pixels by at most 1 of 255; Quality keeps the game's own image
+    private static Dictionary<string, string> Port(string upscaling, string scale, bool tuning) => new()
     {
         ["upscaling"] = upscaling,
         ["render_scale"] = scale,
         ["override_antialiasing"] = "true",
         ["cloud_shadow_tuning"] = tuning ? "slower_refresh" : "off",
-        ["plume_shadow_tuning"] = tuning && plumeShadows ? "low" : "off",
+        ["plume_shadow_tuning"] = tuning ? "low" : "off",
         ["shadow_search"] = "true",
+        ["milky_way_bake"] = Text(tuning),
     };
 
     private static string Text(int value) => value.ToString(CultureInfo.InvariantCulture);
