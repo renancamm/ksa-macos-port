@@ -12,9 +12,9 @@ using KSA;
 namespace KsaMetalHooks;
 
 // The Mac Port tab's presets: Performance, Balanced and Quality, each a set of the game's own graphics settings and of
-// port settings, made for this Mac's memory and chip. USE in the tab makes them pending changes, in the game's tabs
-// and in this one, as if the player had set each row; the game's Apply keeps them, Discard drops them. Nothing else
-// ever changes a setting.
+// port settings, made for this Mac's memory and chip, and Game Defaults, the defaults of the same settings. A preset's
+// button in the tab makes them pending changes, in the game's tabs and in this one, as if the player had set each row;
+// the game's Apply keeps them, Discard drops them. Nothing else ever changes a setting.
 //
 // Every preset gives every setting any preset sets, so a preset after another leaves nothing of the first, except
 // the port rows the tab can't change (set outside, their hook unavailable) and the render scale without upscaling,
@@ -23,7 +23,7 @@ namespace KsaMetalHooks;
 //
 // In Fullscreen, every preset also sets the Resolution to the size the screen's desktop has (Displays), so the render
 // scale alone decides the 3D view's size and the display keeps its mode. Windowed, the Resolution is the window's size,
-// and Borderless doesn't use it: those keep it. USE reads the Mode as it is then: a Mode set to Fullscreen after it
+// and Borderless doesn't use it: those keep it. The button reads the Mode as it is then: a Mode set to Fullscreen after it
 // keeps the Resolution, and unless that is the desktop's size the tab then shows no preset in use. An error reading
 // the display makes the presets unavailable, as any (Hooks.Fail), without taking the tab with them.
 internal static class Presets
@@ -75,7 +75,26 @@ internal static class Presets
             mac => Game(mac, filter: "Pcss", cascades: 2048, terrain: 4096, milkyWay: "Medium", clouds: "High",
                 effects: "High", godrays: true, clutterShadows: true, plumeShadows: true, rayTracing: mac.RayTracing),
             mac => Port(upscaling: "off", scale: "1.0", tuning: false)),
+        new("Game Defaults",
+            "The game's own image: its default graphics for every setting the other presets change, and the Image and " +
+            "Extra Performance rows at their defaults, without MetalFX. Everything else, such as the Field of View or " +
+            "the Optimizations, stays as it is.",
+            mac =>
+            {
+                var defaults = new GameSettings();
+                return Defaults(Game(mac, "Pcf", 2048, 2048, "Low", "Low", "Low", false, false, false, false),
+                    name => Text(Field(name).GetValue(Owner(Field(name), defaults))));
+            },
+            mac => Defaults(Port("off", "1.0", false), key => Settings.Get(key).Default)),
     ];
+
+    // Not made for this Mac: the game's defaults are the same on every Mac
+    public static Preset GameDefaults => All[^1];
+
+    // The settings another preset sets, at their defaults: the game's are a new GameSettings' (the game's Reset), the
+    // port's the table's
+    private static Dictionary<string, string> Defaults(Dictionary<string, string> settings, Func<string, string> value) =>
+        settings.Keys.ToDictionary(key => key, value);
 
     // The game's settings, by field name: GameSettings' own (anti-aliasing: the game's, which MetalFX turns off), the
     // rest in GameSettings.Graphics
@@ -133,6 +152,7 @@ internal static class Presets
 
     private static string Text(int value) => value.ToString(CultureInfo.InvariantCulture);
     private static string Text(bool value) => value ? "true" : "false";
+    private static string Text(object? value) => value is bool b ? Text(b) : Convert.ToString(value, CultureInfo.InvariantCulture) ?? "";
 
     public static Mac ThisMac { get; private set; } = new("", 0, true);
     private static readonly Dictionary<string, FieldInfo> Fields = new();
@@ -155,8 +175,7 @@ internal static class Presets
     {
         foreach (var (name, value) in preset.Game)
         {
-            if (!Fields.TryGetValue(name, out var field))
-                Fields[name] = field = AccessTools.Field(typeof(GameSettings.GraphicsSettings), name) ?? Find.Field(typeof(GameSettings), name);
+            var field = Field(name);
             if (Parse(field, value) == null)
                 throw new Skip($"{field.DeclaringType!.Name}.{name} has no value {value}");
         }
@@ -165,11 +184,18 @@ internal static class Presets
                 throw new InvalidOperationException($"{key} has no value {value}");
     }
 
+    private static FieldInfo Field(string name)
+    {
+        if (!Fields.TryGetValue(name, out var field))
+            Fields[name] = field = AccessTools.Field(typeof(GameSettings.GraphicsSettings), name) ?? Find.Field(typeof(GameSettings), name);
+        return field;
+    }
+
     // A port setting the tab can change: not set outside, its hook not skipped or failed
     private static bool Settable(string key) =>
         Settings.Get(key) is var s && s.Outside == null && Hooks.Status.GetValueOrDefault(s.Hook) is not { Unavailable: true };
 
-    // USE: the preset's values become the pending changes of the game's copy of its settings and of the tab
+    // A preset's button: its values become the pending changes of the game's copy of its settings and of the tab
     public static void Use(Preset preset, GameSettings pending, IDictionary<string, string> port)
     {
         foreach (var (name, value) in preset.Game)
