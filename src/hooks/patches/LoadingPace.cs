@@ -6,7 +6,7 @@ namespace KsaMetalHooks;
 
 // Loading screen pace. While the game loads, Loading.OnFrame draws the loading screen after every step it reports
 // (Loading.Task, and the main thread's waits for parallel loading), and each frame waits for the display (the previous
-// present, then a drawable): with V-Sync, steps shorter than a refresh wait for one each. Frames on the main thread are
+// present, then a drawable): with Vsync, steps shorter than a refresh wait for one each. Frames on the main thread are
 // now drawn at most every 33 ms, and a call in between returns at once, so the steps run on: on an M5 the game loads
 // about 2 s faster. A new label (Loading.State) is always drawn. Other threads' calls are left to the game, which
 // ignores them, so they never take the main thread's turn.

@@ -48,7 +48,7 @@ set -eo pipefail
 source "$(dirname "$0")/lib/common.sh"
 
 # Presets: fixed settings, the same on every Mac, so reports compare. Without one, your own settings are used.
-# All run in a 1280x800 window without V-Sync (frame times are then the game's, not the display's).
+# All run in a 1280x800 window without Vsync (frame times are then the game's, not the display's).
 PRESET_COMMON=('mode="Windowed"' width=1280 height=800 vsync=false fpslimit=240)
 PRESET_LOW=('antialiasing="Disabled"' 'cloudUpscale="Low"' 'exhaustUpscale="Low"' ambientOcclusion=false
     terrainTessellation=false groundClutter=false 'kittenFurQuality="Low"' plumeTrailShadows=false

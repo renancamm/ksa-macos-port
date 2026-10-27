@@ -37,7 +37,7 @@ These switches turn a feature off or change a default, to work around a problem 
 | `KSA_MTL_UNLIT_SHADOW_SKIP=0` | the port's shader edits that skip shadows where there is no light ([Shaders](#from-vulkan-to-metal)) look them up everywhere, as the game does; slower, try it when a shadow looks wrong |
 | `KSA_MTL_BUDGET_MB=<n>` | the GPU memory budget reported to the game, which sizes its texture streaming from it (default: what Metal recommends for this Mac) |
 | `KSA_MTL_FX_INTERPOLATE=1` | frame interpolation ([MetalFX](#from-vulkan-to-metal)) |
-| `KSA_MTL_PRESENT_PACING=0` | with V-Sync, the game's wait for an earlier frame ends only when the display shows it ([Presentation](#from-vulkan-to-metal)); in a window, frames that take less than about 23 ms on the GPU then run slower |
+| `KSA_MTL_PRESENT_PACING=0` | with Vsync, the game's wait for an earlier frame ends only when the display shows it ([Presentation](#from-vulkan-to-metal)); in a window, frames that take less than about 23 ms on the GPU then run slower |
 
 ## Build
 
@@ -204,7 +204,7 @@ any hit). Before compiling, KSA Metal turns each of them into one call of Metal'
 acceleration structure faster, with the same image. A kernel where that doesn't compile is compiled as translated.
 
 **Presentation.** The swapchain's images are KSA Metal's own textures. When the game presents one, it is copied into
-the window's `CAMetalLayer` drawable. With V-Sync, KSA waits for the frame before last to be presented before it
+the window's `CAMetalLayer` drawable. With Vsync, KSA waits for the frame before last to be presented before it
 reads input. In a window, macOS shows a frame about 21 ms after the GPU finishes it, so waiting for the display
 would leave the GPU idle whenever a frame takes less than that. KSA Metal also ends the wait once that frame is done
 on the GPU, the one before it is on screen, and the GPU is about to need the next frame (predicted from the last

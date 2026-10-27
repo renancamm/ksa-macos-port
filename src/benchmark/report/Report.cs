@@ -152,7 +152,7 @@ public static class Program
         foreach (var (key, value) in given.Where(f => !RunFacts.Any(r => r.Key == f.Key)))
             lines.Add($"{key}: {value}");
         lines.Add($"Window: {Setting("width")} x {Setting("height")}, {Setting("mode")}, on {Setting("screenName")}");
-        lines.Add($"V-Sync: {Setting("vsync")}, FPS limit {Setting("fpslimit")}");
+        lines.Add($"Vsync: {Setting("vsync")}, FPS limit {Setting("fpslimit")}");
         lines.Add($"Anti-aliasing: {Setting("antialiasing")}");
         File.WriteAllLines(Path.Combine(dir, "system.txt"), lines);
         return 0;

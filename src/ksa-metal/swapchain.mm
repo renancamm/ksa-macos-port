@@ -116,7 +116,7 @@ VKFN(VkResult) vkAcquireNextImageKHR(VkDevice, VkSwapchainKHR swapchain, uint64_
     return outdated(sc) ? VK_SUBOPTIMAL_KHR : VK_SUCCESS;
 }
 
-// Present pacing. With V-Sync the game waits for the present before last before it reads input. If a present counted
+// Present pacing. With Vsync the game waits for the present before last before it reads input. If a present counted
 // only once the display showed it, that wait would also cover the window server's delay (about 21 ms in a window, 10
 // in fullscreen) and leave the GPU idle whenever a frame takes less than that delay plus the CPU's part. So a present
 // also counts once its GPU work has ended, the present before it was shown, and the GPU is about to need the next

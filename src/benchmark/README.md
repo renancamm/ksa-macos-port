@@ -194,7 +194,7 @@ puts the tour from `src/benchmark/benchmark.txt` into the app.
 
 | Option | |
 |---|---|
-| `--preset low`, `--preset medium`, `--preset high` | fixed settings in a 1280x800 window without V-Sync, the same on every Mac (default: your settings) |
+| `--preset low`, `--preset medium`, `--preset high` | fixed settings in a 1280x800 window without Vsync, the same on every Mac (default: your settings) |
 | `--defaults` | the settings of a fresh install instead of yours: the game's own defaults and the port settings' (a preset, `--set` and `--port` go on top) |
 | `--system earth` | Earth and the Moon only (the game's smaller system): skips Mars, Saturn and Jupiter, and needs less memory (default: `sol`; in fast mode `earth` when the places played are all on Earth or the Moon) |
 | `--fast` | the short test (three places on Earth, the `rocket` section), or the sections and places named with the camera jumping between places; measures the views standing still (default: the cinematic tour) |
