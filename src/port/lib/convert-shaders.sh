@@ -26,7 +26,10 @@
 # 6. The terrain's (Planet.frag), the vessels' and the kitten's shaders (seven in Mesh/, and Spline.frag) multiply
 #    the sun's light by the cascaded shadows for every pixel, also where that light is already zero (surfaces turned
 #    away from the sun): the soft shadows' 32 taps for nothing, about half of a cockpit's frame. Fix: look the shadow
-#    up only where the light isn't zero (zero times a shadow, at most 1, is zero).
+#    up only where the light isn't zero (zero times a shadow, at most 1, is zero). The ground clutter's Solid.frag
+#    multiplies the cascaded shadows with the planet's, the terrain's, the clouds' and the trails' shadows, for its
+#    light and the grass's glow from behind: it looks the cascaded shadows up only where those let sunlight through
+#    (at night, or in a mountain's shadow, nowhere).
 # 7. The cockpit's ray tracing (Raytracing/raygen.rgen) traces a shadow ray towards each light that casts shadows,
 #    also from surfaces turned away from that light, whose light is zero. Fix: trace it only where the light isn't
 #    zero (the ray's result only ever multiplies that light).
@@ -157,6 +160,10 @@ if grep -qs PORT_SKIP_UNLIT_SHADOWS "${SHADERS}/Lighting/CascadedShadows.glsl"; 
         "    float cascadeShadowFactor = GetCascadedShadow(inWorldPosition.xyz, worldNormal, dotNL, -(global.camera.view * inWorldPosition).z);" \
         "    float cascadeShadowFactor = 1.0;\n    if (!PORT_SKIP_UNLIT_SHADOWS || any(notEqual(lightColor, vec3(0.0))))  ${note}\n        cascadeShadowFactor = GetCascadedShadow(inWorldPosition.xyz, worldNormal, dotNL, -(global.camera.view * inWorldPosition).z);" \
         "looked the shadows up only where there is sunlight"
+    fix Planet/GroundClutter/Solid.frag replace \
+        "        float cascadeShadowFactor = GetCascadedShadow(inWorldPosition.xyz, meshWorldNormal, dotNL, viewDepth);\n        float cloudShadows = GetCloudShadows(inWorldPosition.xyz, planetPos(), directionToSun);\n        float trailShadows = GetTrailShadowTransmittance(inWorldPosition.xyz);" \
+        "        float cloudShadows = GetCloudShadows(inWorldPosition.xyz, planetPos(), directionToSun);\n        float trailShadows = GetTrailShadowTransmittance(inWorldPosition.xyz);\n        float cascadeShadowFactor = 1.0;\n        if (!PORT_SKIP_UNLIT_SHADOWS || shadowFactor * cloudShadows * sunShadowFactor * trailShadows != 0.0)  ${note}\n            cascadeShadowFactor = GetCascadedShadow(inWorldPosition.xyz, meshWorldNormal, dotNL, viewDepth);" \
+        "looked the grass's shadows up only where its other shadows let sunlight through"
 fi
 if grep -qs PORT_SKIP_UNLIT_SHADOWS "${SHADERS}/Raytracing/raygen.rgen"; then
     fix Raytracing/raygen.rgen replace "        if(lightData.color.w > 0.5){" \

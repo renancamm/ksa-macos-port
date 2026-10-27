@@ -34,7 +34,7 @@ These switches turn a feature off or change a default, to work around a problem 
 | `KSA_MTL_AB_CONSTANT=0` | shaders read their resources from device memory instead of constant memory; a bit slower, try it when a shader fails to compile |
 | `KSA_MTL_UNIFORM_REFS=0` | helper functions get their own copy of each uniform struct they take, as SPIRV-Cross writes it ([Shaders](#from-vulkan-to-metal)); slower in the smoke raymarch, try it when a shader looks wrong |
 | `KSA_MTL_RT_INTERSECTOR=0` | the cockpit's ray tracing finds each hit with a ray query, as SPIRV-Cross writes it, instead of Metal's intersector ([Ray tracing](#from-vulkan-to-metal)); slower in the cockpit, try it when the cockpit looks wrong |
-| `KSA_MTL_UNLIT_SHADOW_SKIP=0` | the port's shader edits that skip shadows on surfaces turned away from the light ([Shaders](#from-vulkan-to-metal)) look them up everywhere, as the game does; slower, try it when a shadow looks wrong |
+| `KSA_MTL_UNLIT_SHADOW_SKIP=0` | the port's shader edits that skip shadows where there is no light ([Shaders](#from-vulkan-to-metal)) look them up everywhere, as the game does; slower, try it when a shadow looks wrong |
 | `KSA_MTL_BUDGET_MB=<n>` | the GPU memory budget reported to the game, which sizes its texture streaming from it (default: what Metal recommends for this Mac) |
 | `KSA_MTL_FX_INTERPOLATE=1` | frame interpolation ([MetalFX](#from-vulkan-to-metal)) |
 | `KSA_MTL_PRESENT_PACING=0` | with V-Sync, the game's wait for an earlier frame ends only when the display shows it ([Presentation](#from-vulkan-to-metal)); in a window, frames that take less than about 23 ms on the GPU then run slower |
@@ -150,15 +150,17 @@ compiling, KSA Metal turns those copies into references to the block itself and 
 own type. A shader where that doesn't compile (a copy the shader writes to, a helper also called with a local
 struct) is compiled as translated.
 
-At port time, `src/port/lib/convert-shaders.sh` also edits the game's GLSL for speed, twice with the same idea. The
-terrain's, the vessels' and the kitten's shaders multiply the sun's light by its soft shadows (32 shadow-map taps a
-pixel) also where that light is already zero, on every surface turned away from the sun; the cockpit's ray tracing
-likewise traces a shadow ray towards a light from surfaces it doesn't light. Both look the shadow up only where
-there is light, with the same image. On an M5 at the game's own settings the soft shadows' edit takes the cockpit's
-GPU time from 44 ms to 24; with IVA Ray Tracing on, the shadow rays' edit takes it from 36 ms to 34.5. Both test a
-specialization constant the script declares, `PORT_SKIP_UNLIT_SHADOWS` (id 900, true by default), which the driver
-sets to false in every shader with `KSA_MTL_UNLIT_SHADOW_SKIP=0`: the game's code again, without porting the game
-anew.
+At port time, `src/port/lib/convert-shaders.sh` also edits the game's GLSL for speed, three times with the same idea.
+The terrain's, the vessels' and the kitten's shaders multiply the sun's light by its soft shadows (32 shadow-map taps
+a pixel) also where that light is already zero, on every surface turned away from the sun; the cockpit's ray tracing
+likewise traces a shadow ray towards a light from surfaces it doesn't light. The grass multiplies its soft shadows
+with the planet's, the terrain's, the clouds' and the trails' shadows, so at night or in a mountain's shadow they
+count for nothing. Each edit looks the shadow up only where there is light, with the same image. On an M5 at the
+game's own settings the soft shadows' edit takes the cockpit's GPU time from 44 ms to 24, and the grass's edit takes a
+view of grass at night from 33.5 ms to 28; with IVA Ray Tracing on, the shadow rays' edit takes the cockpit from 36 ms
+to 34.5. All of them test a specialization constant the script declares, `PORT_SKIP_UNLIT_SHADOWS` (id 900, true by
+default), which the driver sets to false in every shader with `KSA_MTL_UNLIT_SHADOW_SKIP=0`: the game's code again,
+without porting the game anew.
 
 **Descriptors.** Vulkan shaders find their resources (buffers, textures, samplers) through *descriptor sets*. Metal's
 equivalent is an *argument buffer*: a block of memory holding GPU addresses and resource IDs. KSA Metal writes each
