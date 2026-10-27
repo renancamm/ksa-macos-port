@@ -27,6 +27,9 @@
 #    the sun's light by the cascaded shadows for every pixel, also where that light is already zero (surfaces turned
 #    away from the sun): the soft shadows' 32 taps for nothing, about half of a cockpit's frame. Fix: look the shadow
 #    up only where the light isn't zero (zero times a shadow, at most 1, is zero).
+# 7. The cockpit's ray tracing (Raytracing/raygen.rgen) traces a shadow ray towards each light that casts shadows,
+#    also from surfaces turned away from that light, whose light is zero. Fix: trace it only where the light isn't
+#    zero (the ray's result only ever multiplies that light).
 #
 # Each fix prints [FIXED], [OK] (already fixed) or [WARN] (the code around it changed in this KSA version:
 # either RocketWerkz fixed the bug, or this script needs an update).
@@ -139,3 +142,6 @@ fix Planet/Planet.frag replace \
     "    float cascadeShadowFactor = GetCascadedShadow(inWorldPosition.xyz, worldNormal, dotNL, -(global.camera.view * inWorldPosition).z);" \
     "    float cascadeShadowFactor = 1.0;\n    if (any(notEqual(lightColor, vec3(0.0))))  ${note}\n        cascadeShadowFactor = GetCascadedShadow(inWorldPosition.xyz, worldNormal, dotNL, -(global.camera.view * inWorldPosition).z);" \
     "looked the shadows up only where there is sunlight"
+fix Raytracing/raygen.rgen replace "        if(lightData.color.w > 0.5){" \
+    "        if(lightData.color.w > 0.5 && any(notEqual(light, vec3(0.0)))){  // macOS port: no shadow ray where there is no light" \
+    "traced shadow rays only where there is light"
