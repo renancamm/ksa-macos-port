@@ -344,17 +344,18 @@ internal static class MacPortTab
                 }
                 break;
         }
-        if (ConsoleWidgets.RowHovered)
+        bool hovered = ConsoleWidgets.RowHovered;
+        ConsoleWidgets.EndRow();
+        ConsoleStyle.PopDisabled();
+        if (hovered)
         {
             var tip = s.Help;
             if (reason is { Length: > 0 })
                 tip += "\n\n" + reason;
             if (!s.Live && s.Section != "benchmark")
                 tip += "\n\nTakes effect when the game starts.";
-            ConsoleWidgets.Tooltip(Wrap(tip));
+            Tooltip(tip);
         }
-        ConsoleWidgets.EndRow();
-        ConsoleStyle.PopDisabled();
     }
 
     // A short note in front of the row's control, where a pending row shows what it was
@@ -371,6 +372,10 @@ internal static class MacPortTab
             ImGui.GetWindowDrawList().AddText(in pos, ConsoleStyle.ApplyAlpha(ConsoleStyle.TextMutedU32), note);
         ConsoleStyle.PopFont();
     }
+
+    // A row's tooltip, drawn after its row ends (a greyed-out row would fade it). The game's Tooltip is a printf format
+    // to ImGui: a % is doubled, or "10-20 % faster" prints a number
+    private static void Tooltip(string text) => ConsoleWidgets.Tooltip(Wrap(text).Replace("%", "%%"));
 
     // Tooltips are as wide as their longest line
     private static string Wrap(string text, int width = 72)
@@ -424,11 +429,12 @@ internal static class MacPortTab
                 Presets.Use(preset, pending, Pending);
                 Hooks.Log($"Mac Port tab: {preset.Name} preset pending");
             }
-            if (ConsoleWidgets.RowHovered)
-                ConsoleWidgets.Tooltip(Wrap(unavailable ?? preset.Help + "\n\n" + forMac +
-                    "USE sets these as pending changes, here and in the game's own tabs: Apply keeps them, Discard drops them."));
+            bool hovered = ConsoleWidgets.RowHovered;
             ConsoleWidgets.EndRow();
             ConsoleStyle.PopDisabled();
+            if (hovered)
+                Tooltip(unavailable ?? preset.Help + "\n\n" + forMac +
+                    "USE sets these as pending changes, here and in the game's own tabs: Apply keeps them, Discard drops them.");
         }
     }
 
@@ -444,18 +450,20 @@ internal static class MacPortTab
             Note("", changes ? "apply first" : "not now");
         if (ConsoleWidgets.PrimaryButton("RUN BENCHMARK") && why == null)
             BenchmarkRun.StartFromTab(PortSettings.Get("benchmark_mode")?.Saved == "full", PortSettings.Get("benchmark_restart")?.Saved == "true");
-        if (ConsoleWidgets.RowHovered)
-            ConsoleWidgets.Tooltip(Wrap(why ?? "Plays the benchmark with the settings above, and writes its report to the benchmarks folder in the game's documents folder. Leave the mouse and keyboard alone until it is done; Esc stops it."));
+        bool hovered = ConsoleWidgets.RowHovered;
         ConsoleWidgets.EndRow();
         ConsoleStyle.PopDisabled();
+        if (hovered)
+            Tooltip(why ?? "Plays the benchmark with the settings above, and writes its report to the benchmarks folder in the game's documents folder. Leave the mouse and keyboard alone until it is done; Esc stops it.");
         if (BenchmarkRun.Last is { } last)
         {
             ConsoleWidgets.BeginRow("Last run");
             if (ConsoleWidgets.Button(last.Passed ? "SHOW REPORT" : "SHOW REPORT (PROBLEMS)"))
                 BenchmarkRun.Show(last.Folder);
-            if (ConsoleWidgets.RowHovered)
-                ConsoleWidgets.Tooltip(Wrap(last.Summary));
+            bool lastHovered = ConsoleWidgets.RowHovered;
             ConsoleWidgets.EndRow();
+            if (lastHovered)
+                Tooltip(last.Summary);
         }
     }
 }
