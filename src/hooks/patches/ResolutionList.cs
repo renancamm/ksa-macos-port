@@ -2,8 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Reflection.Emit;
-using System.Runtime.InteropServices;
-using Brutal.GlfwApi.Cocoa;
 using Brutal.ImGuiApi;
 using Brutal.Numerics;
 using HarmonyLib;
@@ -16,19 +14,18 @@ namespace KsaMetalHooks;
 // On a Retina display the list now shows each size in pixels with "Retina" (3024 x 1964 Retina), the numbers a player
 // knows from the display's specifications; the game still matches and saves the sizes in points. The GLFW shim lists
 // only the kind of mode the display had when the game first asked (HiDPI on a Retina display), so every size there is
-// drawn at twice its points; the pixels per point are read once per display too. Other displays keep the game's list.
+// drawn at twice its points: the pixels per point are its desktop mode's (Displays). Other displays keep the game's list.
 internal static class ResolutionList
 {
     private static FieldInfo _populatedScreen = null!;
     private static int _combos;
-    // Pixels per point by display (CGDirectDisplayID), from its mode when first read
-    private static readonly Dictionary<uint, int> Scales = new();
     private static readonly Dictionary<(int Width, int Height, int Scale), string> Labels = new();
     private static bool _failed;  // the game's list (Hooks.Fail)
 
     public static string Apply(Harmony harmony)
     {
         _populatedScreen = Find.Field(typeof(GameSettings), "_populatedScreenIndex");
+        Displays.Read();
         _combos = 0;
         harmony.Patch(Find.Method(typeof(GameSettings), nameof(GameSettings.OnDrawUi)),
             transpiler: new HarmonyMethod(typeof(ResolutionList), nameof(DrawTranspiler)));
@@ -95,24 +92,7 @@ internal static class ResolutionList
             return 1;
         try
         {
-            var monitor = GameSettings.GetMonitor((int)_populatedScreen.GetValue(null)!);
-            uint display = monitor.IsNull() ? 0 : monitor.GetCocoaMonitor();
-            if (display == 0)
-                return 1;
-            if (!Scales.TryGetValue(display, out int scale))
-            {
-                scale = 1;
-                nint mode = CGDisplayCopyDisplayMode(display);
-                if (mode != 0)
-                {
-                    nuint points = CGDisplayModeGetWidth(mode);
-                    if (points > 0)
-                        scale = (int)(CGDisplayModeGetPixelWidth(mode) / points);
-                    CGDisplayModeRelease(mode);
-                }
-                Scales[display] = scale;
-            }
-            return scale;
+            return Displays.Desktop(GameSettings.GetMonitor((int)_populatedScreen.GetValue(null)!))?.Scale ?? 1;
         }
         catch (Exception e)
         {
@@ -121,18 +101,4 @@ internal static class ResolutionList
             return 1;
         }
     }
-
-    private const string CoreGraphics = "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics";
-
-    [DllImport(CoreGraphics)]
-    private static extern nint CGDisplayCopyDisplayMode(uint display);
-
-    [DllImport(CoreGraphics)]
-    private static extern nuint CGDisplayModeGetWidth(nint mode);
-
-    [DllImport(CoreGraphics)]
-    private static extern nuint CGDisplayModeGetPixelWidth(nint mode);
-
-    [DllImport(CoreGraphics)]
-    private static extern void CGDisplayModeRelease(nint mode);
 }

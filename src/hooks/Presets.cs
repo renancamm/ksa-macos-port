@@ -20,6 +20,12 @@ namespace KsaMetalHooks;
 // the port rows the tab can't change (set outside, their hook unavailable) and the render scale without upscaling,
 // which does nothing then: those keep their values. The game's fields are found
 // by name when the game starts: a field that moved leaves the presets out (skipped).
+//
+// In Fullscreen, every preset also sets the Resolution to the size the screen's desktop has (Displays), so the render
+// scale alone decides the 3D view's size and the display keeps its mode. Windowed, the Resolution is the window's size,
+// and Borderless doesn't use it: those keep it. USE reads the Mode as it is then: a Mode set to Fullscreen after it
+// keeps the Resolution, and unless that is the desktop's size the tab then shows no preset in use. An error reading
+// the display makes the presets unavailable, as any (Hooks.Fail), without taking the tab with them.
 internal static class Presets
 {
     public sealed class Preset(string name, string help, Func<Mac, Dictionary<string, string>> game,
@@ -133,6 +139,7 @@ internal static class Presets
 
     public static string Apply(Harmony harmony)
     {
+        Displays.Read();
         ThisMac = Detect();
         foreach (var preset in All)
         {
@@ -170,12 +177,39 @@ internal static class Presets
             Fields[name].SetValue(Owner(Fields[name], pending), Parse(Fields[name], value));
         foreach (var (key, value) in preset.Port.Where(kv => Settable(kv.Key)))
             port[key] = value;
+        if (FullscreenSize(pending) is { Width: > 0 } size)
+        {
+            pending.ScreenWidth = size.Width;
+            pending.ScreenHeight = size.Height;
+        }
     }
 
     // Whether these settings are the preset's
     public static bool Matches(Preset preset, GameSettings game, Func<string, string> port) =>
         preset.Game.All(kv => Equals(Fields[kv.Key].GetValue(Owner(Fields[kv.Key], game)), Parse(Fields[kv.Key], kv.Value))) &&
-        preset.Port.Where(kv => Settable(kv.Key)).All(kv => Same(Settings.Get(kv.Key), port(kv.Key), kv.Value));
+        preset.Port.Where(kv => Settable(kv.Key)).All(kv => Same(Settings.Get(kv.Key), port(kv.Key), kv.Value)) &&
+        (FullscreenSize(game) is not { Width: > 0 } size || (game.ScreenWidth == size.Width && game.ScreenHeight == size.Height));
+
+    private static bool _displayFailed;
+
+    // In Fullscreen, the size the screen's desktop has; 0 x 0 otherwise, or when macOS doesn't say
+    private static (int Width, int Height) FullscreenSize(GameSettings game)
+    {
+        if (_displayFailed || game.ScreenDisplayMode != GameSettings.DisplayMode.Fullscreen)
+            return default;
+        try
+        {
+            return Displays.Desktop(GameSettings.GetMonitor(game.ScreenIndex, game.ScreenName)) is { } desktop
+                ? (desktop.Width, desktop.Height)
+                : default;
+        }
+        catch (Exception e)
+        {
+            _displayFailed = true;
+            Hooks.Fail("presets", e);
+            return default;
+        }
+    }
 
     // A scale's values are numbers ("1" and "1.0" are the same)
     private static bool Same(PortSetting s, string a, string b) =>
