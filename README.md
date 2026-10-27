@@ -124,7 +124,7 @@ folder's `lib/` and puts it into a copy of that app; in this repository they are
 |---|---|---|
 | Convert | `convert-cleanup.sh` | removes the Linux binaries and the Windows installer files |
 | | `convert-dotnet.sh` | makes the .NET files run on the macOS runtime (with `mark-arm64.sh`) |
-| | `convert-shaders.sh` | fixes bugs in the game's shaders |
+| | `convert-shaders.sh` | fixes and edits the game's shaders |
 | App | `make-app.sh` | builds the app around the converted game, or puts the port's files into one |
 
 To update an app, `port.sh` runs the same steps on it again, without the extraction.
@@ -200,7 +200,8 @@ launcher needs: DYLD environment variables, unsigned libraries and JIT.
 ### Shader fixes
 
 KSA compiles its GLSL shaders from `Content/` at startup, so fixes can go straight into the shader sources.
-`convert-shaders.sh` applies these, to files under `Content/Core/Shaders/`; its header explains each one:
+`convert-shaders.sh` applies these, to files under `Content/Core/Shaders/`; its header explains each one. It also
+edits shaders for the hooks and the driver, which their READMEs explain.
 
 | Shader | Bug | Fix |
 |---|---|---|
@@ -239,10 +240,11 @@ without modifying GLFW; [`glfw_shim.c`](src/glfw-shim/glfw_shim.c) explains each
 | `Contents/Resources/AppIcon.icns`, `Contents/Info.plist` | the icon; the game's and the port's versions |
 
 The launcher starts `dotnet KSA.dll`, through StarMap when [StarMap](#mods) is in the app, with the GLFW shim loaded and
-`DYLD_LIBRARY_PATH` set to the game folder, so every library comes from the app and never from elsewhere on the Mac. It
-is a small program of the app, so macOS treats the game as the app, Game Mode included. `Info.plist` turns
-`NSHighResolutionCapable` on, so the game draws its interface at the display's full resolution; [the hooks](#the-hooks)
-keep its 3D view at the window's size in points unless the render scale says otherwise.
+`DYLD_LIBRARY_PATH` set to the game folder, so every library comes from the app and never from elsewhere on the Mac. The
+launcher is the app's own executable and hands its process over to `dotnet`, so macOS treats the game as the app, Game
+Mode included. `Info.plist` turns `NSHighResolutionCapable` on, so the game draws its interface at the display's full
+resolution; [the hooks](#the-hooks) keep its 3D view at the window's size in points unless the render scale says
+otherwise.
 
 The bundle isn't signed as a whole, because that would replace Microsoft's signature on `dotnet`. `make-app.sh`
 removes the quarantine attribute that a browser download puts on the files, so macOS opens the app as one made on
@@ -299,7 +301,7 @@ another setting is greyed out until that one is on. Each row's tooltip says what
 
 | Section | What's there |
 |---|---|
-| Presets | Performance, Balanced and Quality: the game's graphics settings and the port's, chosen together for this Mac's memory and chip (an M1 or M2 gets no ray tracing in the cockpit). USE makes them pending changes, here and in the game's own tabs, for Apply to keep |
+| Presets | Performance, Balanced and Quality: the game's graphics settings and the port's, chosen together for this Mac |
 | Image | Apple's MetalFX and what needs it, off by default: upscaling, render scale, MetalFX's anti-aliasing in place of the game's |
 | Interface | the flight HUD fitted to the display, or the game's own layout |
 | Extra Performance | a visible trade for speed, with the game's own as the default: cloud shadow updates, plume shadow quality, simpler PCSS shadows |
@@ -331,7 +333,7 @@ a texture is loaded, so macOS can page them out when memory runs short and read 
 The benchmark plays a fixed tour of the game in one session, from Earth's orbit to other worlds, a kitten in the
 grass, a rocket launch and a 2,000-part rocket blown up on its pad. It measures each part and writes a report to
 compare with another run, and a zip you can share as an issue if you like. It is in the app: run it from the Mac
-Port tab (**Run benchmark**), or from the port folder:
+Port tab (**RUN BENCHMARK**), or from the port folder:
 
 ```bash
 ./benchmark.sh

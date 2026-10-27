@@ -19,7 +19,7 @@ namespace KsaMetalHooks;
 // - benchmark.sh in the port folder starts the game with KSA_BENCH_* set, in a documents folder of its own
 //   (STARMAP_INSTANCE_PATH): the director begins with the game's first frame and quits the game at the end, and the
 //   script writes the report.
-// - The Mac Port tab's Run benchmark, in the running game: the player's game is saved (to disk, in case the game
+// - The Mac Port tab's RUN BENCHMARK, in the running game: the player's game is saved (to disk, in case the game
 //   doesn't survive the run, and in memory), the world becomes a new game's (its clock at the start, no vehicles), the
 //   tour plays, and the player's game comes back; Esc stops it. The hooks write the report.
 // - The same with "Run in a New Game": the player's game is saved, the game starts again for it the way benchmark.sh

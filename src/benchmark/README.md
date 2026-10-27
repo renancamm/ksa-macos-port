@@ -11,7 +11,7 @@ against another run's.
 
 ## Run it
 
-In the game, open the settings (Esc), then **Mac Port**, and press **Run benchmark** at the bottom: the fast test or
+In the game, open the settings (Esc), then **Mac Port**, and press **RUN BENCHMARK** at the bottom: the fast test or
 the full tour, with your own settings. It plays in the game you have open. Your game is saved first, the tour plays in
 a new game's world, and your game comes back when it ends; Esc stops it. With **Run in a New Game** on, your game is
 saved as "Before the benchmark" and the game starts again for it instead, the way `./benchmark.sh` plays it, and quits
