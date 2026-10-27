@@ -47,6 +47,7 @@ public static class Hooks
         Run("loading pace", "loading_pace", Settings.On("loading_pace"), LoadingPace.Apply);
         Run("render scale", "render_scale", true, RenderScale.Apply);
         Run("HUD layout", "hud_layout", true, HudLayout.Apply);
+        Run("resolution list", "resolution_list", true, ResolutionList.Apply);
         Run("trail caches", "trail_caches", true, TrailCaches.Apply);
         // The port's own parts of the game
         Run("documents folder", "documents", true, Documents.Apply);
