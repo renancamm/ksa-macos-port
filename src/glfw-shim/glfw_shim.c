@@ -16,7 +16,8 @@
  *    Keep the desktop's kind of mode (HiDPI or 1x) and shape, no more pixels than the
  *    display has, plus the desktop's own size. GLFW switches Fullscreen to the first mode
  *    of the chosen size, so it can't pick a 1x mode on a HiDPI desktop either. The desktop
- *    is the mode the display had when GLFW first asked, as the switches change the current one.
+ *    is the display's current mode, or, while GLFW has it switched for Fullscreen, the mode
+ *    it had before (CGDisplaySetDisplayMode is watched for that). The hooks ask for it too.
  * 2. glfwSetInputMode: KSA checks glfwRawMouseMotionSupported() before it turns raw mouse
  *    motion on, but not before it turns it off, and GLFW's Cocoa backend reports a
  *    PlatformError ("Raw mouse motion is not supported on this system") after every
@@ -75,30 +76,80 @@ static int sameShape(CGDisplayModeRef a, CGDisplayModeRef b) {
 
 #define MAX_DISPLAYS 16
 
-// Each display's mode when GLFW first asked for its modes (see 1.)
+// Each display GLFW has switched to another mode, with the mode it had before (see 1.)
 static struct { CGDirectDisplayID display; CGDisplayModeRef mode; } g_desktops[MAX_DISPLAYS];
 
-static CGDisplayModeRef desktopMode(CGDirectDisplayID display) {
+static int sameMode(CGDisplayModeRef a, CGDisplayModeRef b) {
+    return CGDisplayModeGetIODisplayModeID(a) == CGDisplayModeGetIODisplayModeID(b) &&
+           CGDisplayModeGetWidth(a) == CGDisplayModeGetWidth(b) &&
+           CGDisplayModeGetHeight(a) == CGDisplayModeGetHeight(b) &&
+           CGDisplayModeGetPixelWidth(a) == CGDisplayModeGetPixelWidth(b);
+}
+
+// A display's desktop mode, retained: the one it had before GLFW switched it, or its current one
+static CGDisplayModeRef copyDesktopMode(CGDirectDisplayID display) {
     for (int i = 0; i < MAX_DISPLAYS; i++) {
+        if (g_desktops[i].mode && g_desktops[i].display == display)
+            return CGDisplayModeRetain(g_desktops[i].mode);
+    }
+    return CGDisplayCopyDisplayMode(display);
+}
+
+// GLFW switches a display for Fullscreen and back with this call only: keep the mode it had before (see 1.)
+static CGError shim_CGDisplaySetDisplayMode(CGDirectDisplayID display, CGDisplayModeRef mode, CFDictionaryRef options) {
+    int slot = -1;
+    CGError result;
+
+    if (!calledFromGlfw(__builtin_return_address(0)))
+        return CGDisplaySetDisplayMode(display, mode, options);
+    for (int i = 0; i < MAX_DISPLAYS && slot < 0; i++) {
+        if (g_desktops[i].mode && g_desktops[i].display == display)
+            slot = i;
+    }
+    for (int i = 0; i < MAX_DISPLAYS && slot < 0; i++) {
         if (!g_desktops[i].mode) {
             g_desktops[i].display = display;
             g_desktops[i].mode = CGDisplayCopyDisplayMode(display);
-            return g_desktops[i].mode;
+            slot = i;
         }
-        if (g_desktops[i].display == display)
-            return g_desktops[i].mode;
     }
-    return NULL;
+    result = CGDisplaySetDisplayMode(display, mode, options);
+    // Back on the desktop mode: the display is no longer switched
+    if (result == kCGErrorSuccess && slot >= 0 && mode && g_desktops[slot].mode &&
+        sameMode(mode, g_desktops[slot].mode)) {
+        CGDisplayModeRelease(g_desktops[slot].mode);
+        g_desktops[slot].mode = NULL;
+    }
+    return result;
+}
+
+// For the hooks (src/hooks/Displays.cs), which label and size Fullscreen from the same mode the list is made from:
+// a display's desktop mode in points and pixels. 0 when macOS doesn't say.
+__attribute__((visibility("default")))
+int glfwShimDesktopMode(CGDirectDisplayID display, int* width, int* height, int* pixelWidth, int* pixelHeight) {
+    CGDisplayModeRef desktop = copyDesktopMode(display);
+
+    if (!desktop)
+        return 0;
+    *width = (int)CGDisplayModeGetWidth(desktop);
+    *height = (int)CGDisplayModeGetHeight(desktop);
+    *pixelWidth = (int)CGDisplayModeGetPixelWidth(desktop);
+    *pixelHeight = (int)CGDisplayModeGetPixelHeight(desktop);
+    CGDisplayModeRelease(desktop);
+    return *width > 0 && *height > 0;
 }
 
 // The modes a player picks from (see 1.): takes all and returns them filtered
 static CFArrayRef playerModes(CGDirectDisplayID display, CFArrayRef all) {
-    CGDisplayModeRef desktop = desktopMode(display);
+    CGDisplayModeRef desktop;
     size_t maxWidth = 0, maxHeight = 0;
     CFMutableArrayRef modes;
     CFIndex count;
 
-    if (!all || !desktop)
+    if (!all)
+        return all;
+    desktop = copyDesktopMode(display);
+    if (!desktop)
         return all;
     count = CFArrayGetCount(all);
     // The display's own pixels: its native modes', or the desktop's when none says so
@@ -123,6 +174,7 @@ static CFArrayRef playerModes(CGDirectDisplayID display, CFArrayRef all) {
         if (isHiDpi(mode) == isHiDpi(desktop) && (desktopSize || (fits && sameShape(mode, desktop))))
             CFArrayAppendValue(modes, mode);
     }
+    CGDisplayModeRelease(desktop);
     CFRelease(all);
     return modes;
 }
@@ -411,6 +463,7 @@ static void shim_glfwDestroyWindow(GLFWwindow* window) {
 }
 
 DYLD_INTERPOSE(shim_CGDisplayCopyAllDisplayModes, CGDisplayCopyAllDisplayModes)
+DYLD_INTERPOSE(shim_CGDisplaySetDisplayMode, CGDisplaySetDisplayMode)
 DYLD_INTERPOSE(shim_glfwSetInputMode, glfwSetInputMode)
 DYLD_INTERPOSE(shim_glfwSetWindowMonitor, glfwSetWindowMonitor)
 DYLD_INTERPOSE(shim_glfwPollEvents, glfwPollEvents)

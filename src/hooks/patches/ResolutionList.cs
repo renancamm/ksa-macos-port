@@ -13,8 +13,8 @@ namespace KsaMetalHooks;
 // windows: on a 14" MacBook Pro 1512 x 982 is the whole display, drawn with 3024 x 1964 pixels, and nothing says so.
 // On a Retina display the list now shows each size in pixels with "Retina" (3024 x 1964 Retina), the numbers a player
 // knows from the display's specifications; the game still matches and saves the sizes in points. The GLFW shim lists
-// only the kind of mode the display had when the game first asked (HiDPI on a Retina display), so every size there is
-// drawn at twice its points: the pixels per point are its desktop mode's (Displays). Other displays keep the game's list.
+// only the kind of mode the display's desktop has (HiDPI on a Retina display), so every size there is drawn at twice
+// its points: the pixels per point are its desktop mode's (Displays). Other displays keep the game's list.
 internal static class ResolutionList
 {
     private static FieldInfo _populatedScreen = null!;
@@ -25,7 +25,6 @@ internal static class ResolutionList
     public static string Apply(Harmony harmony)
     {
         _populatedScreen = Find.Field(typeof(GameSettings), "_populatedScreenIndex");
-        Displays.Read();
         _combos = 0;
         harmony.Patch(Find.Method(typeof(GameSettings), nameof(GameSettings.OnDrawUi)),
             transpiler: new HarmonyMethod(typeof(ResolutionList), nameof(DrawTranspiler)));

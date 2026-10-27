@@ -139,7 +139,6 @@ internal static class Presets
 
     public static string Apply(Harmony harmony)
     {
-        Displays.Read();
         ThisMac = Detect();
         foreach (var preset in All)
         {
