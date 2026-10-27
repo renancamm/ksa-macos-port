@@ -690,13 +690,22 @@ static bool prepareStage(const VkPipelineShaderStageCreateInfo* st, spv::Executi
     return true;
 }
 
-// MSL compile and function of a prepared stage: thread-safe, so asynchronous pipeline creation runs it on workers
-static id<MTLFunction> compileStage(KDevice* dev, const KTranslated& t, const std::string& nameStr) {
+// MSL compile and function of a prepared stage: thread-safe, so asynchronous pipeline creation runs it on workers. A
+// ray tracing kernel traces with intersectors (KSA_MTL_RT_INTERSECTOR), or as translated when that doesn't compile
+static id<MTLFunction> compileStage(KDevice* dev, const KTranslated& t, const std::string& nameStr, bool rtLaunch = false) {
     const KTranslated* tr = &t;
     const char* name = nameStr.c_str();
-    std::string err;
-    id<MTLLibrary> lib = kmtlCompileStageMSL(dev, tr->msl, &err);
-    dumpMSL(name, kmtlConfig().uniformRefs ? uniformStructRefs(tr->msl) : tr->msl, err);
+    std::string err, msl = tr->msl;
+    id<MTLLibrary> lib = nil;
+    if (rtLaunch && kmtlConfig().rtIntersector) {
+        std::string rt = kmtlRtIntersectors(msl), rtErr;
+        if (rt != msl) {
+            if ((lib = kmtlCompileStageMSL(dev, rt, &rtErr))) msl = rt;
+            else KLOG(1, "ray tracing kernel with intersectors doesn't compile, the translation as it was instead: %s", rtErr.c_str());
+        }
+    }
+    if (!lib) lib = kmtlCompileStageMSL(dev, msl, &err);
+    dumpMSL(name, kmtlConfig().uniformRefs ? uniformStructRefs(msl) : msl, err);
     if (!lib) {
         KERR("shader %s: MSL compile failed: %s", name, err.c_str());
         return nil;
@@ -1476,8 +1485,8 @@ KPipeline* kmtlCreateComputeFromStage(KDevice* dev, KPipelineLayout* layout, con
     std::string name;
     if (!prepareStage(stage, spv::ExecutionModelGLCompute, layout, cso, &tr, &name)) return nullptr;
     uint64_t csHash = ((KShaderModule*)stage->module)->hash;
-    auto build = [dev, csHash](const KTranslated& t, const std::string& n) -> id<MTLComputePipelineState> {
-        id<MTLFunction> fn = compileStage(dev, t, n);
+    auto build = [dev, csHash, rtLaunch](const KTranslated& t, const std::string& n) -> id<MTLComputePipelineState> {
+        id<MTLFunction> fn = compileStage(dev, t, n, rtLaunch);
         if (!fn) return nil;
         MTLComputePipelineDescriptor* d = [MTLComputePipelineDescriptor new];
         d.computeFunction = fn;

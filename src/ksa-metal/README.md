@@ -33,6 +33,7 @@ These switches turn a feature off or change a default, to work around a problem 
 | `KSA_MTL_SAFE_MATH=1` | compile shaders without fast math; rules out precision problems |
 | `KSA_MTL_AB_CONSTANT=0` | shaders read their resources from device memory instead of constant memory; a bit slower, try it when a shader fails to compile |
 | `KSA_MTL_UNIFORM_REFS=0` | helper functions get their own copy of each uniform struct they take, as SPIRV-Cross writes it ([Shaders](#from-vulkan-to-metal)); slower in the smoke raymarch, try it when a shader looks wrong |
+| `KSA_MTL_RT_INTERSECTOR=0` | the cockpit's ray tracing finds each hit with a ray query, as SPIRV-Cross writes it, instead of Metal's intersector ([Ray tracing](#from-vulkan-to-metal)); slower in the cockpit, try it when the cockpit looks wrong |
 | `KSA_MTL_BUDGET_MB=<n>` | the GPU memory budget reported to the game, which sizes its texture streaming from it (default: what Metal recommends for this Mac) |
 | `KSA_MTL_FX_INTERPOLATE=1` | frame interpolation ([MetalFX](#from-vulkan-to-metal)) |
 | `KSA_MTL_PRESENT_PACING=0` | with V-Sync, the game's wait for an earlier frame ends only when the display shows it ([Presentation](#from-vulkan-to-metal)); in a window, frames that take less than about 23 ms on the GPU then run slower |
@@ -184,6 +185,10 @@ KSA Metal rewrites each one into a single compute kernel: every "trace ray" in t
 ray query, and the hit and miss shaders become functions called from it. The rewrite works on SPIR-V, using
 [SPIRV-Tools](https://github.com/KhronosGroup/SPIRV-Tools) to link the shaders together
 ([`rtspirv.cpp`](rtspirv.cpp)).
+
+KSA's instances are opaque, so each of those ray queries stops only at the closest hit (or, for a shadow ray, at
+any hit). Before compiling, KSA Metal turns each of them into one call of Metal's *intersector*, which searches the
+acceleration structure faster, with the same image. A kernel where that doesn't compile is compiled as translated.
 
 **Presentation.** The swapchain's images are KSA Metal's own textures. When the game presents one, it is copied into
 the window's `CAMetalLayer` drawable. With V-Sync, KSA waits for the frame before last to be presented before it

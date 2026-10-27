@@ -103,6 +103,7 @@ struct KConfig {
     const char* fxShots = nullptr;        // KSA_MTL_FX_SHOTS=<dir>: PNGs of what MetalFX made now and then
     const char* throttle = nullptr;       // KSA_MTL_THROTTLE=<hash>:<N>,...: experiment, run a shader every N-th present (0 never)
     bool uniformRefs = true;              // KSA_MTL_UNIFORM_REFS=0: helpers get copies of uniform structs, as translated
+    bool rtIntersector = true;            // KSA_MTL_RT_INTERSECTOR=0: ray tracing kernels trace with ray queries, as translated
 };
 const KConfig& kmtlConfig();
 
@@ -722,6 +723,9 @@ uint64_t kmtlAccelId(VkAccelerationStructureKHR as);
 uint32_t kmtlRtGroupHandleSize();
 KPipeline* kmtlCreateComputeFromStage(KDevice* dev, KPipelineLayout* layout, const VkPipelineShaderStageCreateInfo* stage,
                                       bool rtLaunch);
+// A ray tracing kernel's MSL with its traces as intersector calls (rtpipeline.mm), or unchanged when a trace doesn't
+// have the expected shape
+std::string kmtlRtIntersectors(const std::string& msl);
 
 // The end every vkCreate*Pipelines call shares (pipeline.mm): failed pipelines, KSA_MTL_STRICT
 VkResult kmtlFinishPipelines(uint32_t n, VkPipeline* out);
