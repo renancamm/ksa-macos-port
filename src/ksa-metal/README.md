@@ -149,6 +149,12 @@ compiling, KSA Metal turns those copies into references to the block itself and 
 own type. A shader where that doesn't compile (a copy the shader writes to, a helper also called with a local
 struct) is compiled as translated.
 
+At port time, `src/port/lib/convert-shaders.sh` also edits one thing in the game's GLSL for speed: the terrain's,
+the vessels' and the kitten's shaders multiply the sun's light by its soft shadows (32 shadow-map taps a pixel) also
+where that light is already zero, on every surface turned away from the sun. The shadow is now looked up only where
+there is light, with the same image; in the cockpit at the game's own settings that takes the frame on an M5 from
+44 ms to 24.
+
 **Descriptors.** Vulkan shaders find their resources (buffers, textures, samplers) through *descriptor sets*. Metal's
 equivalent is an *argument buffer*: a block of memory holding GPU addresses and resource IDs. KSA Metal writes each
 descriptor set directly as an argument buffer, where every binding owns consecutive 8-byte slots, and tells
