@@ -297,7 +297,11 @@ internal static class MacPortTab
             ConsoleWidgets.RegionHeader(title);
             Caption(caption);
             foreach (var s in PortSettings.All.Where(s => s.Section == section))
+            {
                 DrawRow(s);
+                if (s.Key == "render_scale")
+                    DrawRenderSize();
+            }
             if (section == "measure")
                 DrawBenchmark();
         }
@@ -313,6 +317,21 @@ internal static class MacPortTab
         ImGui.TextWrapped(text.Replace("%", "%%"));
         ImGui.PopStyleColor();
         ConsoleStyle.PopFont();
+    }
+
+    // Under Render Scale, in a caption's font: the 3D view's size in pixels in this window with the upscaling and
+    // render scale the rows show, pending ones too (after a restart for those), and the window's pixels it is shown on.
+    // The arithmetic is RenderScale's: the render scale only with an upscaler, in single precision
+    private static void DrawRenderSize()
+    {
+        if (RenderScale.Window.X <= 0 || RenderScale.Window.Y <= 0 || RenderScale.Output.X <= 0 || RenderScale.Output.Y <= 0)
+            return;
+        string Shown(string key) => PortSettings.Get(key) is { } s ? s.Outside != null ? s.Running : Value(s) : "";
+        float scale = Shown("upscaling") is "metalfx" or "spatial" &&
+            double.TryParse(Shown("render_scale"), NumberStyles.Float, Inv, out var shown) ? (float)shown : 1f;
+        int width = Math.Clamp((int)MathF.Round(RenderScale.Window.X * scale), 1, RenderScale.Output.X);
+        int height = Math.Clamp((int)MathF.Round(RenderScale.Window.Y * scale), 1, RenderScale.Output.Y);
+        Caption($"The 3D view: {width} x {height} pixels, shown on {RenderScale.Output.X} x {RenderScale.Output.Y}.");
     }
 
     private static void DrawRow(PortSetting s)
