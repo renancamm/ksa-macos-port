@@ -382,6 +382,21 @@ static ParsedIR sizeRuntimeArrays(const std::vector<uint32_t>& spirv, KPipelineL
     return ir;
 }
 
+// PORT_SKIP_UNLIT_SHADOWS, the specialization constant of src/port/lib/convert-shaders.sh's shadow edits
+static const uint32_t kUnlitShadowSkipConstant = 900;
+
+// Whether the module declares a specialization constant with this id (OpDecorate <id> SpecId <specId>)
+static bool hasSpecId(const KShaderModule* mod, uint32_t specId) {
+    const std::vector<uint32_t>& w = mod->spirv;
+    for (size_t i = 5, n; i < w.size(); i += n) {
+        n = w[i] >> 16;
+        if (n == 0 || i + n > w.size()) break;
+        if ((w[i] & 0xFFFF) == spv::OpDecorate && n == 4 && w[i + 2] == spv::DecorationSpecId && w[i + 3] == specId)
+            return true;
+    }
+    return false;
+}
+
 static bool translate(KShaderModule* mod, const char* entryName, spv::ExecutionModel model, KPipelineLayout* layout,
                       const VkSpecializationInfo* spec, const KStageOptions& so, KTranslated* out, std::string* err) {
     uint32_t fragOutputMask = so.fragMask, viewMask = so.viewMask;
@@ -541,6 +556,12 @@ static bool translate(KShaderModule* mod, const char* entryName, spv::ExecutionM
             }
         }
 
+        // KSA_MTL_UNLIT_SHADOW_SKIP=0: the shader edits of src/port/lib/convert-shaders.sh that skip shadows where
+        // there is no light read this constant (PORT_SKIP_UNLIT_SHADOWS, true in the source)
+        if (!kmtlConfig().unlitShadowSkip)
+            for (auto& sc : c.get_specialization_constants())
+                if (sc.constant_id == kUnlitShadowSkipConstant) c.get_constant(sc.id).m.c[0].r[0].u32 = 0;
+
         out->msl = c.compile();
         if (viewMask) {
             // "layer = gl_ViewIndex - spvViewMask[0];" -> "layer = gl_ViewIndex;" and drop the fragment re-offset
@@ -640,6 +661,7 @@ static uint64_t translationKey(KShaderModule* mod, const char* entry, spv::Execu
         (uint32_t)mod->hash, (uint32_t)(mod->hash >> 32), so.rtLaunch, (uint32_t)kmtlConfig().constantArgumentBuffers,
         so.tessFusedInput};
     if (const char* presets = kmtlConfig().spec) k.push_back((uint32_t)kmtlHash(presets, strlen(presets)));
+    if (!kmtlConfig().unlitShadowSkip && hasSpecId(mod, kUnlitShadowSkipConstant)) k.push_back(kUnlitShadowSkipConstant);
     for (const char* c = entry; *c; c++) k.push_back((uint8_t)*c);
     if (layout) {
         for (KSetLayout* sl : layout->sets) {

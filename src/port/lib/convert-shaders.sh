@@ -22,7 +22,7 @@
 # 5. CascadedShadows.glsl: the soft shadows' blocker search ends at the limit in texels the patch puts in the cascades'
 #    spare _pad1 (0 without it: the game's search, as far as the widest penumbra).
 #
-# For speed, with the same image:
+# For speed, with the same image (the tab's Skip Shadows on Unlit Sides, which KSA Metal can turn off):
 # 6. The terrain's (Planet.frag), the vessels' and the kitten's shaders (seven in Mesh/, and Spline.frag) multiply
 #    the sun's light by the cascaded shadows for every pixel, also where that light is already zero (surfaces turned
 #    away from the sun): the soft shadows' 32 taps for nothing, about half of a cockpit's frame. Fix: look the shadow
@@ -115,33 +115,51 @@ fix Lighting/LightFineClusterCompact.comp replace "    uint binCount = maxBin - 
 fix Lighting/CascadedShadows.glsl replace "    float searchRadiusTexels = maxPenumbraWorld / texelWorldSize;" \
     "    float searchRadiusTexels = maxPenumbraWorld / texelWorldSize;\n    if (shadowUbo._pad1 > 0.0) searchRadiusTexels = min(searchRadiusTexels, shadowUbo._pad1);  // macOS port: the hooks' shadow search limit" \
     "limited the soft shadows' search where the hooks ask"
-note="// macOS port: no shadow where there is no light"
-for shader in Mesh/Fur.frag Mesh/ModelPbr.frag; do
-    fix "${shader}" replace "    sunlight *= GetCascadedShadow(inWorldPos, N, dotNL, viewDepth);" \
-        "    if (any(notEqual(sunlight, vec3(0.0))))  ${note}\n        sunlight *= GetCascadedShadow(inWorldPos, N, dotNL, viewDepth);" \
+# 6 and 7 read PORT_SKIP_UNLIT_SHADOWS, a specialization constant (id 900) that KSA Metal sets to false when
+# KSA_MTL_UNLIT_SHADOW_SKIP is 0. A shader whose declaration was skipped keeps the game's code: it wouldn't compile.
+# declare_switch <file> <line>: declares it after <line>, once (the check is the name, so a reworded declaration can't
+# be added twice)
+declare_switch() {
+    if grep -qs PORT_SKIP_UNLIT_SHADOWS "${SHADERS}/$1"; then
+        echo "    [OK] ${1##*/}: already declares the switch for shadows where there is no light"
+    else
+        fix "$1" replace "$2" "$2\nlayout(constant_id = 900) const bool PORT_SKIP_UNLIT_SHADOWS = true;  // macOS port" \
+            "declared the switch for shadows where there is no light"
+    fi
+}
+declare_switch Lighting/CascadedShadows.glsl "#define CASCADED_SHADOWS_GLSL"
+declare_switch Raytracing/raygen.rgen "layout(location = 1) rayPayloadEXT RayPayload rayPayload;"
+if grep -qs PORT_SKIP_UNLIT_SHADOWS "${SHADERS}/Lighting/CascadedShadows.glsl"; then
+    note="// macOS port: no shadow where there is no light"
+    for shader in Mesh/Fur.frag Mesh/ModelPbr.frag; do
+        fix "${shader}" replace "    sunlight *= GetCascadedShadow(inWorldPos, N, dotNL, viewDepth);" \
+            "    if (!PORT_SKIP_UNLIT_SHADOWS || any(notEqual(sunlight, vec3(0.0))))  ${note}\n        sunlight *= GetCascadedShadow(inWorldPos, N, dotNL, viewDepth);" \
+            "looked the shadows up only where there is sunlight"
+    done
+    fix Mesh/ModelTranslucent.frag replace "        sunlight *= GetCascadedShadow(inWorldPos, N, dotNL, viewDepth);" \
+        "        if (!PORT_SKIP_UNLIT_SHADOWS || any(notEqual(sunlight, vec3(0.0))))  ${note}\n            sunlight *= GetCascadedShadow(inWorldPos, N, dotNL, viewDepth);" \
         "looked the shadows up only where there is sunlight"
-done
-fix Mesh/ModelTranslucent.frag replace "        sunlight *= GetCascadedShadow(inWorldPos, N, dotNL, viewDepth);" \
-    "        if (any(notEqual(sunlight, vec3(0.0))))  ${note}\n            sunlight *= GetCascadedShadow(inWorldPos, N, dotNL, viewDepth);" \
-    "looked the shadows up only where there is sunlight"
-for shader in Mesh/MeshGlassIndirect.frag Mesh/MeshGlassIndirectRaytraced.frag; do
-    fix "${shader}" replace "        sunlight *= GetCascadedShadow(inWorldPosition, N, dotNL, viewDepth);" \
-        "        if (any(notEqual(sunlight, vec3(0.0))))  ${note}\n            sunlight *= GetCascadedShadow(inWorldPosition, N, dotNL, viewDepth);" \
+    for shader in Mesh/MeshGlassIndirect.frag Mesh/MeshGlassIndirectRaytraced.frag; do
+        fix "${shader}" replace "        sunlight *= GetCascadedShadow(inWorldPosition, N, dotNL, viewDepth);" \
+            "        if (!PORT_SKIP_UNLIT_SHADOWS || any(notEqual(sunlight, vec3(0.0))))  ${note}\n            sunlight *= GetCascadedShadow(inWorldPosition, N, dotNL, viewDepth);" \
+            "looked the shadows up only where there is sunlight"
+    done
+    for shader in Mesh/MeshIndirect.frag Spline.frag; do
+        fix "${shader}" replace "        lightColor *= GetCascadedShadow(inWorldPosition, N, dotNL, viewDepth);" \
+            "        if (!PORT_SKIP_UNLIT_SHADOWS || any(notEqual(lightColor, vec3(0.0))))  ${note}\n            lightColor *= GetCascadedShadow(inWorldPosition, N, dotNL, viewDepth);" \
+            "looked the shadows up only where there is sunlight"
+    done
+    fix Mesh/StaticObject.frag replace \
+        "        lightColor *= getSunShadowFiltered(terrainShadowUbo, inWorldPosition, geometricNormal)\n                    * GetCascadedShadow(inWorldPosition, geometricNormal, dotNL, viewDepth)" \
+        "        float cascadeShadow = 1.0;\n        if (!PORT_SKIP_UNLIT_SHADOWS || any(notEqual(lightColor, vec3(0.0))))  ${note}\n            cascadeShadow = GetCascadedShadow(inWorldPosition, geometricNormal, dotNL, viewDepth);\n        lightColor *= getSunShadowFiltered(terrainShadowUbo, inWorldPosition, geometricNormal)\n                    * cascadeShadow" \
         "looked the shadows up only where there is sunlight"
-done
-for shader in Mesh/MeshIndirect.frag Spline.frag; do
-    fix "${shader}" replace "        lightColor *= GetCascadedShadow(inWorldPosition, N, dotNL, viewDepth);" \
-        "        if (any(notEqual(lightColor, vec3(0.0))))  ${note}\n            lightColor *= GetCascadedShadow(inWorldPosition, N, dotNL, viewDepth);" \
+    fix Planet/Planet.frag replace \
+        "    float cascadeShadowFactor = GetCascadedShadow(inWorldPosition.xyz, worldNormal, dotNL, -(global.camera.view * inWorldPosition).z);" \
+        "    float cascadeShadowFactor = 1.0;\n    if (!PORT_SKIP_UNLIT_SHADOWS || any(notEqual(lightColor, vec3(0.0))))  ${note}\n        cascadeShadowFactor = GetCascadedShadow(inWorldPosition.xyz, worldNormal, dotNL, -(global.camera.view * inWorldPosition).z);" \
         "looked the shadows up only where there is sunlight"
-done
-fix Mesh/StaticObject.frag replace \
-    "        lightColor *= getSunShadowFiltered(terrainShadowUbo, inWorldPosition, geometricNormal)\n                    * GetCascadedShadow(inWorldPosition, geometricNormal, dotNL, viewDepth)" \
-    "        float cascadeShadow = 1.0;\n        if (any(notEqual(lightColor, vec3(0.0))))  ${note}\n            cascadeShadow = GetCascadedShadow(inWorldPosition, geometricNormal, dotNL, viewDepth);\n        lightColor *= getSunShadowFiltered(terrainShadowUbo, inWorldPosition, geometricNormal)\n                    * cascadeShadow" \
-    "looked the shadows up only where there is sunlight"
-fix Planet/Planet.frag replace \
-    "    float cascadeShadowFactor = GetCascadedShadow(inWorldPosition.xyz, worldNormal, dotNL, -(global.camera.view * inWorldPosition).z);" \
-    "    float cascadeShadowFactor = 1.0;\n    if (any(notEqual(lightColor, vec3(0.0))))  ${note}\n        cascadeShadowFactor = GetCascadedShadow(inWorldPosition.xyz, worldNormal, dotNL, -(global.camera.view * inWorldPosition).z);" \
-    "looked the shadows up only where there is sunlight"
-fix Raytracing/raygen.rgen replace "        if(lightData.color.w > 0.5){" \
-    "        if(lightData.color.w > 0.5 && any(notEqual(light, vec3(0.0)))){  // macOS port: no shadow ray where there is no light" \
-    "traced shadow rays only where there is light"
+fi
+if grep -qs PORT_SKIP_UNLIT_SHADOWS "${SHADERS}/Raytracing/raygen.rgen"; then
+    fix Raytracing/raygen.rgen replace "        if(lightData.color.w > 0.5){" \
+        "        if(lightData.color.w > 0.5 && (!PORT_SKIP_UNLIT_SHADOWS || any(notEqual(light, vec3(0.0))))){  // macOS port: no shadow ray where there is no light" \
+        "traced shadow rays only where there is light"
+fi

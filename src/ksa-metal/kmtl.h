@@ -104,6 +104,7 @@ struct KConfig {
     const char* throttle = nullptr;       // KSA_MTL_THROTTLE=<hash>:<N>,...: experiment, run a shader every N-th present (0 never)
     bool uniformRefs = true;              // KSA_MTL_UNIFORM_REFS=0: helpers get copies of uniform structs, as translated
     bool rtIntersector = true;            // KSA_MTL_RT_INTERSECTOR=0: ray tracing kernels trace with ray queries, as translated
+    bool unlitShadowSkip = true;          // KSA_MTL_UNLIT_SHADOW_SKIP=0: the port's shader edits look up shadows also where unlit
 };
 const KConfig& kmtlConfig();
 
