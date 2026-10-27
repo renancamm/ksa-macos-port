@@ -280,7 +280,7 @@ if [ -n "${SETTINGS_FILE}" ]; then
     while IFS= read -r line || [ -n "${line}" ]; do
         case "${line}" in "" | \#* | \[*) continue ;; esac
         key="$(echo "${line%%=*}" | tr -d ' \t')"
-        value="$(echo "${line#*=}" | sed 's/^[ \t]*//; s/[ \t]*$//')"
+        value="$(echo "${line#*=}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
         [ -n "${key}" ] && [ "${key}" != "${line}" ] || die "${SETTINGS_FILE}: not a 'key = value' line: ${line}"
         set_setting "${key}" "${value}"
     done < "${SETTINGS_FILE}"
