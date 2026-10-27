@@ -10,7 +10,13 @@
  * 1. CGDisplayCopyAllDisplayModes: GLFW passes no options, so macOS leaves out the
  *    scaled HiDPI modes and the game's resolution list on a MacBook display holds only the
  *    desktop mode and the modes from 1920x1200 up. Ask for them with
- *    kCGDisplayShowDuplicateLowResolutionModes in GLFW's calls.
+ *    kCGDisplayShowDuplicateLowResolutionModes in GLFW's calls. That brings every mode of
+ *    the display, though: HiDPI and 1x modes (on a 14" MacBook Pro, 3024x1964 is a 1x mode
+ *    with a tiny UI), every shape, and HiDPI modes with more pixels than the display has.
+ *    Keep the desktop's kind of mode (HiDPI or 1x) and shape, no more pixels than the
+ *    display has, plus the desktop's own size. GLFW switches Fullscreen to the first mode
+ *    of the chosen size, so it can't pick a 1x mode on a HiDPI desktop either. The desktop
+ *    is the mode the display had when GLFW first asked, as the switches change the current one.
  * 2. glfwSetInputMode: KSA checks glfwRawMouseMotionSupported() before it turns raw mouse
  *    motion on, but not before it turns it off, and GLFW's Cocoa backend reports a
  *    PlatformError ("Raw mouse motion is not supported on this system") after every
@@ -33,8 +39,10 @@
  */
 #include <CoreGraphics/CoreGraphics.h>
 #include <GLFW/glfw3.h>
+#include <IOKit/graphics/IOGraphicsTypes.h>
 #include <dispatch/dispatch.h>
 #include <dlfcn.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -50,6 +58,75 @@ static int calledFromGlfw(const void* returnAddress) {
     return dladdr(returnAddress, &info) && info.dli_fname && strstr(info.dli_fname, "libglfw");
 }
 
+static size_t maxSize(size_t a, size_t b) {
+    return a > b ? a : b;
+}
+
+static int isHiDpi(CGDisplayModeRef mode) {
+    return CGDisplayModeGetPixelWidth(mode) > CGDisplayModeGetWidth(mode);
+}
+
+// Whether two modes have the same width:height (scaled sizes are rounded to whole points)
+static int sameShape(CGDisplayModeRef a, CGDisplayModeRef b) {
+    double shapeA = (double)CGDisplayModeGetWidth(a) / CGDisplayModeGetHeight(a);
+    double shapeB = (double)CGDisplayModeGetWidth(b) / CGDisplayModeGetHeight(b);
+    return fabs(shapeA - shapeB) < 0.005 * shapeB;
+}
+
+#define MAX_DISPLAYS 16
+
+// Each display's mode when GLFW first asked for its modes (see 1.)
+static struct { CGDirectDisplayID display; CGDisplayModeRef mode; } g_desktops[MAX_DISPLAYS];
+
+static CGDisplayModeRef desktopMode(CGDirectDisplayID display) {
+    for (int i = 0; i < MAX_DISPLAYS; i++) {
+        if (!g_desktops[i].mode) {
+            g_desktops[i].display = display;
+            g_desktops[i].mode = CGDisplayCopyDisplayMode(display);
+            return g_desktops[i].mode;
+        }
+        if (g_desktops[i].display == display)
+            return g_desktops[i].mode;
+    }
+    return NULL;
+}
+
+// The modes a player picks from (see 1.): takes all and returns them filtered
+static CFArrayRef playerModes(CGDirectDisplayID display, CFArrayRef all) {
+    CGDisplayModeRef desktop = desktopMode(display);
+    size_t maxWidth = 0, maxHeight = 0;
+    CFMutableArrayRef modes;
+    CFIndex count;
+
+    if (!all || !desktop)
+        return all;
+    count = CFArrayGetCount(all);
+    // The display's own pixels: its native modes', or the desktop's when none says so
+    for (CFIndex i = 0; i < count; i++) {
+        CGDisplayModeRef mode = (CGDisplayModeRef)CFArrayGetValueAtIndex(all, i);
+        if (CGDisplayModeGetIOFlags(mode) & kDisplayModeNativeFlag) {
+            maxWidth = maxSize(maxWidth, CGDisplayModeGetPixelWidth(mode));
+            maxHeight = maxSize(maxHeight, CGDisplayModeGetPixelHeight(mode));
+        }
+    }
+    if (maxWidth == 0) {
+        maxWidth = CGDisplayModeGetPixelWidth(desktop);
+        maxHeight = CGDisplayModeGetPixelHeight(desktop);
+    }
+
+    modes = CFArrayCreateMutable(NULL, count, &kCFTypeArrayCallBacks);
+    for (CFIndex i = 0; i < count; i++) {
+        CGDisplayModeRef mode = (CGDisplayModeRef)CFArrayGetValueAtIndex(all, i);
+        int desktopSize = CGDisplayModeGetWidth(mode) == CGDisplayModeGetWidth(desktop) &&
+                          CGDisplayModeGetHeight(mode) == CGDisplayModeGetHeight(desktop);
+        int fits = CGDisplayModeGetPixelWidth(mode) <= maxWidth && CGDisplayModeGetPixelHeight(mode) <= maxHeight;
+        if (isHiDpi(mode) == isHiDpi(desktop) && (desktopSize || (fits && sameShape(mode, desktop))))
+            CFArrayAppendValue(modes, mode);
+    }
+    CFRelease(all);
+    return modes;
+}
+
 static CFArrayRef shim_CGDisplayCopyAllDisplayModes(CGDirectDisplayID display, CFDictionaryRef options) {
     static CFDictionaryRef withLowResModes;
     static dispatch_once_t once;
@@ -61,7 +138,7 @@ static CFArrayRef shim_CGDisplayCopyAllDisplayModes(CGDirectDisplayID display, C
             withLowResModes = CFDictionaryCreate(NULL, keys, values, 1,
                 &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
         });
-        options = withLowResModes;
+        return playerModes(display, CGDisplayCopyAllDisplayModes(display, withLowResModes));
     }
     return CGDisplayCopyAllDisplayModes(display, options);
 }
