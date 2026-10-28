@@ -22,8 +22,8 @@
 #                      paused and jumping, vehicles played as written); measures the views standing still
 #   --no-shots         take no screenshots
 #   --set <key=value>  change one setting of settings.toml for the run (again for more), on top of the preset
-#   --settings <file>  change the settings in that file ("key = value" lines, as in settings.toml), on top of the
-#                      preset and before --set
+#   --settings <file>  change the settings in that file ("key = value" lines, as in settings.toml; a bare word
+#                      needs no quotes), on top of the preset and before --set
 #   --port <key=value>  change one setting of port-settings.toml for the run (again for more), on top of yours (with
 #                      a preset or --defaults: on top of the defaults)
 #   --compare <run>    compare with that run at the end (and fail when screenshots differ)
@@ -263,8 +263,18 @@ SET_KEYS=" "
 # set_setting <key> <value>: one line of settings.toml (keys are unique across its sections)
 set_setting() {
     grep -q "^$1 = " "${SETTINGS}" || die "settings.toml has no '$1' (does this KSA version still match?)."
-    sed -i '' "s|^$1 = .*|$1 = $2|" "${SETTINGS}"
+    local value
+    value="$(printf '%s' "$2" | sed 's/[|&\\]/\\&/g')"
+    sed -i '' "s|^$1 = .*|$1 = ${value}|" "${SETTINGS}"
     SET_KEYS="${SET_KEYS}$1 "
+}
+# toml_value <value>: a bare word is a string, quoted as TOML wants it (Pcf -> "Pcf"); anything else as written
+toml_value() {
+    if [[ "$1" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ && "$1" != true && "$1" != false && "$1" != inf && "$1" != nan ]]; then
+        echo "\"$1\""
+    else
+        echo "$1"
+    fi
 }
 # The game starts straight into a new game of the chosen system, without its system menu, update popup, changelog or
 # name labels, with the camera on the game's test vessel in orbit (a testing start, the one that keeps the system's
@@ -275,24 +285,20 @@ for kv in selectSystemOnStart=false "lastSystemId=\"${SYSTEM_ID}\"" 'startGameTy
     ${PRESET_SETTINGS[@]+"${PRESET_SETTINGS[@]}"}; do
     set_setting "${kv%%=*}" "${kv#*=}"
 done
-# --settings: its "key = value" lines as they are
+# --settings: its "key = value" lines
 if [ -n "${SETTINGS_FILE}" ]; then
     while IFS= read -r line || [ -n "${line}" ]; do
         case "${line}" in "" | \#* | \[*) continue ;; esac
         key="$(echo "${line%%=*}" | tr -d ' \t')"
         value="$(echo "${line#*=}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
         [ -n "${key}" ] && [ "${key}" != "${line}" ] || die "${SETTINGS_FILE}: not a 'key = value' line: ${line}"
-        set_setting "${key}" "${value}"
+        set_setting "${key}" "$(toml_value "${value}")"
     done < "${SETTINGS_FILE}"
 fi
-# --set: a value that is neither a number, true/false nor quoted is a string (TOML wants it quoted)
+# --set
 for kv in ${SETS[@]+"${SETS[@]}"}; do
     case "${kv}" in *=*) ;; *) die "--set needs key=value, not '${kv}'." ;; esac
-    value="${kv#*=}"
-    if ! [[ "${value}" =~ ^-?[0-9.]+$ || "${value}" == true || "${value}" == false || "${value}" == \"* ]]; then
-        value="\"${value}\""
-    fi
-    set_setting "${kv%%=*}" "${value}"
+    set_setting "${kv%%=*}" "$(toml_value "${kv#*=}")"
 done
 # --defaults: only the lines set above, in their sections. The game gives every setting the file leaves out its
 # default, as on a fresh install, and saves the whole file when it starts.
