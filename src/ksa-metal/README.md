@@ -35,6 +35,7 @@ These switches turn a feature off or change a default, to work around a problem 
 | `KSA_MTL_UNIFORM_REFS=0` | helper functions get their own copy of each uniform struct they take, as SPIRV-Cross writes it ([Shaders](#from-vulkan-to-metal)); slower in the smoke raymarch, try it when a shader looks wrong |
 | `KSA_MTL_RT_INTERSECTOR=0` | the cockpit's ray tracing finds each hit with a ray query, as SPIRV-Cross writes it, instead of Metal's intersector ([Ray tracing](#from-vulkan-to-metal)); slower in the cockpit, try it when the cockpit looks wrong |
 | `KSA_MTL_UNLIT_SHADOW_SKIP=0` | the port's shader edits that skip shadows where there is no light ([Shaders](#from-vulkan-to-metal)) look them up everywhere, as the game does; slower, try it when a shadow looks wrong |
+| `KSA_MTL_EARLY_FRAGMENT_TESTS=0` | no second state that tests depth first for pipelines whose fragment shader stores to an image ([Shaders](#from-vulkan-to-metal)): the hooks' Skip Hidden Vessel Parts has nothing to switch to |
 | `KSA_MTL_BUDGET_MB=<n>` | the GPU memory budget reported to the game, which sizes its texture streaming from it (default: what Metal recommends for this Mac) |
 | `KSA_MTL_FX_INTERPOLATE=1` | frame interpolation ([MetalFX](#from-vulkan-to-metal)) |
 | `KSA_MTL_PRESENT_PACING=0` | with Vsync, the game's wait for an earlier frame ends only when the display shows it ([Presentation](#from-vulkan-to-metal)); in a window, frames that take less than about 23 ms on the GPU then run slower |
@@ -110,8 +111,8 @@ The debugging variables, used the same way:
 Metal's own tools work too: `MTL_HUD_ENABLED=1` shows Apple's performance overlay, and `MTL_DEBUG_LAYER=1` and
 `MTL_SHADER_VALIDATION=1` check API use and catch out-of-bounds memory access in shaders (slow).
 
-The benchmark's mod talks to KSA Metal through the only functions it exports besides Vulkan's, in `instruments.mm` and
-`profile.mm`:
+The benchmark's mod and the hooks talk to KSA Metal through the only functions it exports besides Vulkan's, in
+`instruments.mm`, `profile.mm` and `pipeline.mm`:
 
 | Function | |
 |---|---|
@@ -120,8 +121,9 @@ The benchmark's mod talks to KSA Metal through the only functions it exports bes
 | `ksaMtlMarker` | begins or ends a signpost interval, one per measured part, under Points of Interest in Instruments |
 | `ksaMtlCapture`, `ksaMtlCapturing` | an Xcode GPU frame capture of the next frames (with `MTL_CAPTURE_ENABLED=1`), and whether it is still being written |
 | `ksaMtlProfileFrames` | the GPU profiler (`KSA_MTL_GPUPROF`) on the next frames, under a label |
+| `ksaMtlEarlyFragmentTests` | whether draws use the pipelines' states that test depth first (below); the hooks' Skip Hidden Vessel Parts sets it at the start of a frame |
 
-The benchmark's `--profile`, `--trace`, `--capture` and `--hud` use them.
+The benchmark's `--profile`, `--trace`, `--capture` and `--hud` use the first five.
 
 ## From Vulkan to Metal
 
@@ -149,6 +151,13 @@ parameter blocks gets a copy of it, field by field, at every call. The smoke and
 compiling, KSA Metal turns those copies into references to the block itself and lets the helpers take the block's
 own type. A shader where that doesn't compile (a copy the shader writes to, a helper also called with a local
 struct) is compiled as translated.
+
+A fragment shader that stores to an image runs before the depth test, as Vulkan and Metal require for its stores, so
+every hidden fragment of its draws is shaded and the GPU's hidden surface removal can't skip it. The vessels' shaders
+store only for selected parts, into the mask the selection outline is drawn from. KSA Metal gives each pipeline whose
+fragment shader stores only to that mask (and doesn't discard or write depth) a second state that tests depth first, and draws with it
+while `ksaMtlEarlyFragmentTests` says so: the hooks do while no part is selected, when the stores never run, so the
+image is the same. On an M5 at the game's own settings it takes the cockpit's GPU time from 23.9 ms to 21.2.
 
 At port time, `src/port/lib/convert-shaders.sh` also edits the game's GLSL for speed, three times with the same idea.
 The terrain's, the vessels' and the kitten's shaders multiply the sun's light by its soft shadows (32 shadow-map taps

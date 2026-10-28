@@ -598,7 +598,7 @@ static bool flushGraphics(KCommandBuffer* cb) {
     id<MTLRenderCommandEncoder> enc = cb->render;
     if (!enc || !p || !p->render) return false;
     if (cb->encodedPipeline != p) {
-        [enc setRenderPipelineState:p->render];
+        [enc setRenderPipelineState:p->renderEarly && kmtlEarlyFragmentTests() ? p->renderEarly : p->render];
         [enc setDepthStencilState:p->depthStencil];
         [enc setCullMode:p->cull];
         [enc setFrontFacingWinding:p->winding];

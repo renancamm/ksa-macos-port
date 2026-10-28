@@ -105,8 +105,11 @@ struct KConfig {
     bool uniformRefs = true;              // KSA_MTL_UNIFORM_REFS=0: helpers get copies of uniform structs, as translated
     bool rtIntersector = true;            // KSA_MTL_RT_INTERSECTOR=0: ray tracing kernels trace with ray queries, as translated
     bool unlitShadowSkip = true;          // KSA_MTL_UNLIT_SHADOW_SKIP=0: the port's shader edits look up shadows also where unlit
+    bool earlyFragmentTests = true;       // KSA_MTL_EARLY_FRAGMENT_TESTS=0: no early-test states for fragment shaders that store
 };
 const KConfig& kmtlConfig();
+// Whether draws bind the early-test states of pipelines that have one (ksaMtlEarlyFragmentTests, pipeline.mm)
+bool kmtlEarlyFragmentTests();
 
 uint64_t kmtlPresentCount();  // instruments.mm
 // KSA_MTL_STALLS: a scope that logs when it took longer than the threshold
@@ -386,6 +389,7 @@ struct KPipeline {
     bool tess = false;
     KTessStages tessPlain, tessFused;
     id<MTLRenderPipelineState> renderFused = nil;
+    id<MTLRenderPipelineState> renderEarly = nil;  // its fragment function tests depth first (kmtlEarlyFragmentTests)
     uint32_t tessInCP = 3, tessOutCP = 3;
     bool tessQuads = false;
     bool tessPassthrough = false;  // control stage writes only tessellation factors; evaluation reads the vertex outputs

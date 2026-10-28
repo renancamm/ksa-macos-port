@@ -63,6 +63,7 @@ const KConfig& kmtlConfig() {
         c.uniformRefs = envOn("KSA_MTL_UNIFORM_REFS", true);
         c.rtIntersector = envOn("KSA_MTL_RT_INTERSECTOR", true);
         c.unlitShadowSkip = envOn("KSA_MTL_UNLIT_SHADOW_SKIP", true);
+        c.earlyFragmentTests = envOn("KSA_MTL_EARLY_FRAGMENT_TESTS", true);
         return c;
     }();
     return config;

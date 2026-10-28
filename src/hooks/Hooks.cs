@@ -38,6 +38,7 @@ public static class Hooks
         Run("terrain cache", "terrain_cache", Settings.On("terrain_cache"), TerrainCache.Apply);
         Run("outline skip", "outline_skip", Settings.On("outline_skip"), OutlineSkip.Apply);
         Run("overlay skip", "overlay_skip", Settings.On("overlay_skip"), OverlaySkip.Apply);
+        Run("hidden parts skip", "hidden_parts_skip", Settings.On("hidden_parts_skip"), HiddenPartsSkip.Apply);
         Run("ocean blending", "ocean_blending", Settings.On("ocean_blending"), OceanBlending.Apply);
         Run("cloud shadow tuning", "cloud_shadow_tuning", true, CloudShadows.Apply);
         Run("plume shadow tuning", "plume_shadow_tuning", true, PlumeShadows.Apply);

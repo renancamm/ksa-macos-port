@@ -712,12 +712,52 @@ static bool prepareStage(const VkPipelineShaderStageCreateInfo* st, spv::Executi
     return true;
 }
 
+// Early fragment tests (KSA_MTL_EARLY_FRAGMENT_TESTS, on by default). A fragment shader that stores to an image runs
+// before the depth test, as Vulkan and Metal require for its stores, so every hidden fragment of its draws is shaded and
+// the GPU's hidden surface removal can't skip them. KSA's vessel shaders store only for selected parts, into the mask
+// the selection outline is drawn from (selectedMap). Such a pipeline also gets a state whose fragment function tests
+// depth first, which draws bind while the hooks say no part is selected; with nothing selected the stores never run, so
+// the image is the same. Only for shaders whose every store is to that mask, without atomics, writable buffers,
+// discard or outputs besides colour (depth, sample mask, stencil); the pipeline checks alpha to coverage.
+static std::atomic<bool> g_earlyFragmentTests{false};
+
+KMTL_EXPORT void ksaMtlEarlyFragmentTests(bool on) { g_earlyFragmentTests.store(on, std::memory_order_relaxed); }
+
+bool kmtlEarlyFragmentTests() { return g_earlyFragmentTests.load(std::memory_order_relaxed); }
+
+static size_t countOf(const std::string& text, const char* what) {
+    size_t n = 0, len = strlen(what);
+    for (size_t at = 0; (at = text.find(what, at)) != std::string::npos; at += len) n++;
+    return n;
+}
+
+static bool storesFromFragment(const std::string& msl) {
+    size_t stores = countOf(msl, ".write(");
+    // Writable buffers: a "device " that isn't "const device ", but for spvUnsafeArray's own accessor
+    for (size_t at = 0; (at = msl.find("device ", at)) != std::string::npos; at += 7) {
+        bool constant = at >= 6 && msl.compare(at - 6, 6, "const ") == 0;
+        if (!constant && msl.compare(at + 7, 14, "T& operator []") != 0) return false;
+    }
+    return msl.find("\nfragment ") != std::string::npos && stores > 0 && stores == countOf(msl, "selectedMap.write(") &&
+           msl.find("atomic_") == std::string::npos && msl.find("discard_fragment") == std::string::npos &&
+           msl.find("[[depth(") == std::string::npos && msl.find("[[sample_mask]]") == std::string::npos &&
+           msl.find("[[stencil]]") == std::string::npos && msl.find("early_fragment_tests") == std::string::npos;
+}
+
 // MSL compile and function of a prepared stage: thread-safe, so asynchronous pipeline creation runs it on workers. A
-// ray tracing kernel traces with intersectors (KSA_MTL_RT_INTERSECTOR), or as translated when that doesn't compile
-static id<MTLFunction> compileStage(KDevice* dev, const KTranslated& t, const std::string& nameStr, bool rtLaunch = false) {
+// ray tracing kernel traces with intersectors (KSA_MTL_RT_INTERSECTOR), or as translated when that doesn't compile;
+// earlyTests: a fragment function with early fragment tests (storesFromFragment)
+static id<MTLFunction> compileStage(KDevice* dev, const KTranslated& t, const std::string& nameStr, bool rtLaunch = false,
+                                    bool earlyTests = false) {
     const KTranslated* tr = &t;
-    const char* name = nameStr.c_str();
+    const std::string dumpName = earlyTests ? nameStr + "_early" : nameStr;
+    const char* name = dumpName.c_str();
     std::string err, msl = tr->msl;
+    if (earlyTests) {
+        size_t at = msl.find("\nfragment ");
+        if (at == std::string::npos) return nil;
+        msl.insert(at + 1, "[[early_fragment_tests]] ");
+    }
     id<MTLLibrary> lib = nil;
     if (rtLaunch && kmtlConfig().rtIntersector) {
         std::string rt = kmtlRtIntersectors(msl), rtErr;
@@ -1369,8 +1409,17 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
     id<MTLRenderPipelineState> ps = nil;
     if (!async && !(ps = makeState(d))) return nullptr;
 
+    bool early = fs && !tess && kmtlConfig().earlyFragmentTests && !(ms && ms->alphaToCoverageEnable) &&
+                 storesFromFragment(ftr.msl);
     auto* p = new KPipeline();
     p->render = ps;
+    if (!async && early) {
+        if (id<MTLFunction> fe = compileStage(dev, ftr, fname, false, true)) {
+            d.fragmentFunction = fe;
+            p->renderEarly = makeState(d);
+            d.fragmentFunction = ffn;
+        }
+    }
     if (async) {
         // A failure leaves render nil: draws with the pipeline are skipped, as for a failed synchronous creation
         p->pending = std::make_shared<KPipeline::Pending>();
@@ -1381,14 +1430,20 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
         runPipelineJob([=] {
             id<MTLFunction> v = compileStage(dev, vt, vn);
             id<MTLFunction> f = hasFs ? compileStage(dev, ft, fn) : nil;
-            id<MTLRenderPipelineState> state = nil;
+            id<MTLRenderPipelineState> state = nil, earlyState = nil;
             if (v && (f || !hasFs)) {
                 d.vertexFunction = v;
                 d.fragmentFunction = f;
                 state = makeState(d);
+                id<MTLFunction> fe = state && early ? compileStage(dev, ft, fn, false, true) : nil;
+                if (fe) {
+                    d.fragmentFunction = fe;
+                    earlyState = makeState(d);
+                }
             }
             std::lock_guard<std::mutex> lock(pending->m);
             p->render = state;
+            p->renderEarly = earlyState;
             pending->done.store(true, std::memory_order_release);
             pending->cv.notify_all();
         });
