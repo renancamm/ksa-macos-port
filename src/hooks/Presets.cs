@@ -60,17 +60,18 @@ internal static class Presets
         // branches against the sky, are rougher
         new("Performance",
             "The fastest the game gets on this Mac: MetalFX Spatial draws the 3D view at half the window's size with the " +
-            "game's Anti-Aliasing off; shadows, clouds, smoke, the sky and effects are drawn the simple way, without " +
+            "game's Anti-Aliasing off; shadows, clouds, smoke and effects are drawn the simple way, without " +
             "cockpit ray tracing. Softer and plainer, with rougher edges.",
-            mac => Game(mac, antiAliasing: "Disabled", filter: "Pcf", cascades: 2048, terrain: 2048, milkyWay: "Low",
-                clouds: "Low", effects: "Low", godrays: false, clutterShadows: false, plumeShadows: false, rayTracing: false),
+            mac => Game(mac, antiAliasing: "Disabled", filter: "Pcf", cascades: 2048, terrain: 2048,
+                milkyWay: "High", clouds: "Low", cloudShadows: "Medium", effects: "Low", godrays: false,
+                clutterShadows: false, plumeShadows: false, rayTracing: false),
             mac => Port(upscaling: "spatial", scale: "0.5", tuning: true)),
         new("Balanced",
             "Fast, and little of it shows: MetalFX Temporal draws the 3D view at three quarters of the window's size, " +
             "with simpler shadow filtering, clouds and smoke a step lower, and lighter ray tracing in the cockpit where " +
             "the Mac has it.",
             mac => Game(mac, antiAliasing: "MultisampleX2", filter: "Pcf", cascades: 2048, terrain: 4096,
-                milkyWay: "Medium", clouds: "Medium", effects: "Medium", godrays: true, clutterShadows: true,
+                milkyWay: "High", clouds: "Medium", cloudShadows: "Medium", effects: "Medium", godrays: true, clutterShadows: true,
                 plumeShadows: true, rayTracing: mac.RayTracing),
             mac => Port(upscaling: "metalfx", scale: "0.75", tuning: true)),
         new("Quality",
@@ -78,7 +79,7 @@ internal static class Presets
             "the cockpit where the Mac has it. Only what costs much and barely shows is lower: shadow map sizes, the " +
             "Milky Way, soft shadows near the camera, cockpit ray tracing.",
             mac => Game(mac, antiAliasing: "MultisampleX2", filter: "Pcss", cascades: 2048, terrain: 4096,
-                milkyWay: "Medium", clouds: "High", effects: "High", godrays: true, clutterShadows: true,
+                milkyWay: "Medium", clouds: "High", cloudShadows: "High", effects: "High", godrays: true, clutterShadows: true,
                 plumeShadows: true, rayTracing: mac.RayTracing),
             mac => Port(upscaling: "off", scale: "1.0", tuning: false)),
         new("Game Defaults",
@@ -88,7 +89,7 @@ internal static class Presets
             mac =>
             {
                 var defaults = new GameSettings();
-                return Defaults(Game(mac, "Disabled", "Pcf", 2048, 2048, "Low", "Low", "Low", false, false, false, false),
+                return Defaults(Game(mac, "Disabled", "Pcf", 2048, 2048, "Low", "Low", "Low", "Low", false, false, false, false),
                     name => Text(Field(name).GetValue(Owner(Field(name), defaults))));
             },
             mac => Defaults(Port("off", "1.0", false), key => Settings.Get(key).Default)),
@@ -105,8 +106,12 @@ internal static class Presets
     // The game's settings, by field name: GameSettings' own (anti-aliasing: the game's, which MetalFX Temporal turns
     // off), the rest in GameSettings.Graphics
     private static Dictionary<string, string> Game(Mac mac, string antiAliasing, string filter, int cascades, int terrain,
-        string milkyWay, string clouds, string effects, bool godrays, bool clutterShadows, bool plumeShadows, bool rayTracing)
+        string milkyWay, string clouds, string cloudShadows, string effects, bool godrays, bool clutterShadows,
+        bool plumeShadows, bool rayTracing)
     {
+        // With the Milky Way bake (Performance and Balanced), Milky Way High costs what Low and Medium do (M5, fast run:
+        // every view within 0.1 ms). Cloud Shadows Low costs what Medium does, so no preset goes below Medium.
+        //
         // Ambient occlusion, the ocean and fur cost little (0-3 %): lower in Performance only
         string small = effects == "Low" ? "Low" : "High";
         var game = new Dictionary<string, string>
@@ -117,7 +122,7 @@ internal static class Presets
             ["TerrainShadowMapSize"] = Text(mac.SmallMemory ? Math.Min(terrain, 2048) : terrain),
             ["MilkyWayQuality"] = milkyWay,
             ["CloudUpscaling"] = clouds,
-            ["CloudShadows"] = clouds,
+            ["CloudShadows"] = cloudShadows,
             ["Godrays"] = Text(godrays),
             ["GroundClutterShadowCasting"] = Text(clutterShadows),
             ["PlumeTrailShadows"] = Text(plumeShadows),
