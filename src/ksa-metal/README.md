@@ -167,14 +167,16 @@ with the planet's, the terrain's, the clouds' and the trails' shadows, so at nig
 count for nothing. The terrain also looks up its own sun shadow, the clouds' and the trails' shadows where its light
 is zero, and the ocean its cloud shadows at night; and where the terrain lies in the planet's own shadow with no lamps
 around, its whole colour is zero, so it is drawn black without its textures; those take derivatives, so the edit skips
-them only where a whole 2x2 quad of pixels is unlit. Each edit looks the shadow up only where there is light (the
-other shadows per 2x2 quad), with the same image. On an M5 at the game's own settings the soft shadows' edit takes the
-cockpit's GPU time from 44 ms to 24, and the grass's edit takes a view of grass at night from 33.5 ms to 28; with IVA
-Ray Tracing on, the shadow rays' edit takes the cockpit from 36 ms to 34.5; the terrain's, in a view across the
-terminator, from 22.9 ms to 22.0, the ocean's, at sea at night, from 20.5 ms to 19.9, and a view of the night side
-from orbit from 11.9 ms to 10.7. All of them test a specialization constant the script declares,
-`PORT_SKIP_UNLIT_SHADOWS` (id 900, true by default), which the driver sets to false in every shader with
-`KSA_MTL_UNLIT_SHADOW_SKIP=0`: the game's code again, without porting the game anew.
+them only where a whole 2x2 quad of pixels is unlit. The godrays' march through the air, which the clouds run too,
+looks up the terrain's, the trails' and the clouds' shadows at every step, also where no sunlight reaches it. Each
+edit looks the shadow up only where there is light (the other shadows per 2x2 quad), with the same image. On an M5 at
+the game's own settings the soft shadows' edit takes the cockpit's GPU time from 44 ms to 24, and the grass's edit
+takes a view of grass at night from 33.5 ms to 28; with IVA Ray Tracing on, the shadow rays' edit takes the cockpit
+from 36 ms to 34.5; the terrain's, in a view across the terminator, from 22.9 ms to 22.0, the ocean's, at sea at
+night, from 20.5 ms to 19.9, and a view of the night side from orbit from 11.9 ms to 10.7; the godrays', at sea at
+night, from 19.9 ms to 18.8. All of them test a specialization constant the script declares, `PORT_SKIP_UNLIT_SHADOWS`
+(id 900, true by default), which the driver sets to false in every shader with `KSA_MTL_UNLIT_SHADOW_SKIP=0`: the
+game's code again, without porting the game anew.
 
 Two more edits skip work that changes nothing, with the same image. The clouds' noise blends three lookups of a 3D
 texture at every sample, weighted by where the sample lies in a triangle grid, and near a triangle's edges and corners
