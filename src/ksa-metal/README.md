@@ -162,9 +162,9 @@ image is the same. On an M5 at the game's own settings it takes the cockpit's GP
 At port time, `src/port/lib/convert-shaders.sh` also edits the game's GLSL for speed, three times with the same idea.
 The terrain's, the vessels' and the kitten's shaders multiply the sun's light by its soft shadows (32 shadow-map taps
 a pixel) also where that light is already zero, on every surface turned away from the sun; the cockpit's ray tracing
-likewise traces a shadow ray towards a light from surfaces it doesn't light. The grass multiplies its soft shadows
-with the planet's, the terrain's, the clouds' and the trails' shadows, so at night or in a mountain's shadow they
-count for nothing. The terrain also looks up its own sun shadow, the clouds' and the trails' shadows where its light
+likewise traces a shadow ray towards a light from surfaces it doesn't light. The grass and the buildings multiply all
+their shadows with the planet's own, so at night they count for nothing, and the grass's soft shadows also in a
+mountain's shadow. The terrain also looks up its own sun shadow, the clouds' and the trails' shadows where its light
 is zero, and the ocean its cloud shadows at night; and where the terrain lies in the planet's own shadow with no lamps
 around, its whole colour is zero, so it is drawn black without its textures; those take derivatives, so the edit skips
 them only where a whole 2x2 quad of pixels is unlit. The godrays' march through the air, which the clouds run too,
@@ -174,7 +174,8 @@ the game's own settings the soft shadows' edit takes the cockpit's GPU time from
 takes a view of grass at night from 33.5 ms to 28; with IVA Ray Tracing on, the shadow rays' edit takes the cockpit
 from 36 ms to 34.5; the terrain's, in a view across the terminator, from 22.9 ms to 22.0, the ocean's, at sea at
 night, from 20.5 ms to 19.9, and a view of the night side from orbit from 11.9 ms to 10.7; the godrays', at sea at
-night, from 19.9 ms to 18.8. All of them test a specialization constant the script declares, `PORT_SKIP_UNLIT_SHADOWS`
+night, from 19.9 ms to 18.8; the grass's and the buildings' other shadows at night, a view of grass from 26.5 ms to
+24.9 and one of the launch pad from 23.3 ms to 22.4. All of them test a specialization constant the script declares, `PORT_SKIP_UNLIT_SHADOWS`
 (id 900, true by default), which the driver sets to false in every shader with `KSA_MTL_UNLIT_SHADOW_SKIP=0`: the
 game's code again, without porting the game anew.
 
