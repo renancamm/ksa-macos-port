@@ -7,8 +7,8 @@ driver written for KSA on top of Apple's Metal, and a few things around it.
 This project is unofficial and not affiliated with RocketWerkz. It contains no game files: you need your own copy of
 KSA's Linux version.
 
-**Status:** the game runs with all of its graphics settings available, including terrain tessellation, ground clutter
-and ray tracing. Expect rough edges.
+**Status:** the game runs with its graphics settings, including terrain tessellation, ground clutter and ray
+tracing. Expect rough edges.
 
 Bug reports are welcome as GitHub issues; attach the files in `~/Documents/My Games/Kitten Space Agency/logs`.
 Benchmark reports from your Mac are welcome too ([The benchmark](#the-benchmark)).
@@ -175,7 +175,7 @@ KSA version. Everything the build downloads is declared in [`cmake/dependencies.
 
 Warnings are errors in the native libraries, the hooks and the benchmark, and the build runs the hooks' and the
 benchmark's tests. The scripts run on macOS's own bash 3.2 and are kept clean of ShellCheck's findings
-(`brew install shellcheck`, then `shellcheck -x $(git ls-files '*.sh')`; [`.shellcheckrc`](.shellcheckrc) sets it up).
+([`.shellcheckrc`](.shellcheckrc)).
 
 Releases are made with `release.sh <ksa_linux_vX.tar.gz>`. It builds the port folder from a clean copy of the
 committed sources, zips it, and tests the zip by making an app with it and running the benchmark on that app with a
@@ -218,7 +218,7 @@ without modifying GLFW; [`glfw_shim.c`](src/glfw-shim/glfw_shim.c) explains each
 
 | Call | Problem | Fix |
 |---|---|---|
-| `CGDisplayCopyAllDisplayModes`, `CGDisplaySetDisplayMode` | GLFW asks macOS for display modes without the scaled HiDPI ones, so the resolution list on a MacBook display lacks modes like 1352x878 and 1512x982 | asks for them, and lists only modes of the desktop's kind and shape that fit the display, also while Fullscreen has switched the display |
+| `CGDisplayCopyAllDisplayModes` | GLFW asks macOS for display modes without the scaled HiDPI ones, so the resolution list on a MacBook display lacks sizes like 1352x878 and 1147x745 | asks for them, and keeps those of the desktop's kind and shape |
 | `glfwSetWindowMonitor` | in Fullscreen the game always asks for the desktop's size, so the Resolution setting does nothing there | uses the Resolution from `settings.toml`, and sizes the window again when it leaves Fullscreen |
 | `glfwSetWindowMonitor`, `glfwPollEvents` | GLFW's macOS backend doesn't report the window's new position after a display mode change, so dropdowns open in the wrong spot | reports it |
 | `glfwSetInputMode` | the game turns raw mouse motion off without checking whether it is supported, and GLFW logs an error after every right-drag | skips those calls |
@@ -243,8 +243,7 @@ The launcher starts `dotnet KSA.dll`, through StarMap when [StarMap](#mods) is i
 `DYLD_LIBRARY_PATH` set to the game folder, so every library comes from the app and never from elsewhere on the Mac. The
 launcher is the app's own executable and hands its process over to `dotnet`, so macOS treats the game as the app, Game
 Mode included. `Info.plist` turns `NSHighResolutionCapable` on, so the game draws its interface at the display's full
-resolution; [the hooks](#the-hooks) keep its 3D view at the window's size in points unless the render scale says
-otherwise.
+resolution.
 
 The bundle isn't signed as a whole, because that would replace Microsoft's signature on `dotnet`. `make-app.sh`
 removes the quarantine attribute that a browser download puts on the files, so macOS opens the app as one made on
@@ -296,8 +295,7 @@ to build and test a change, and what each source file holds.
 ### The Mac Port tab
 
 The port's own settings are in the game's settings (Esc), in the **Mac Port** tab. It works like the game's other
-tabs: Apply saves, the game offers to restart when a setting takes effect only at startup, and a row that needs
-another setting is greyed out until that one is on. Each row's tooltip says what it changes and what it costs.
+tabs; each row's tooltip says what it changes and what it costs.
 
 | Section | What's there |
 |---|---|
@@ -305,9 +303,9 @@ another setting is greyed out until that one is on. Each row's tooltip says what
 | Image | Apple's MetalFX and what needs it, off by default: upscaling, render scale, MetalFX's anti-aliasing in place of the game's |
 | Interface | the flight HUD fitted to the display, or the game's own layout |
 | Extra Performance | a visible trade for speed, with the game's own as the default: cloud shadow updates, plume shadow quality, simpler PCSS shadows, a baked Milky Way |
-| Optimizations | the same image, faster, on by default; back to the game's own to find out whether one causes a problem |
+| Optimizations | the same image, faster, on by default |
 | GPU Features | what the Mac's GPU offers the game, with the game's own settings still deciding: tessellation, ray queries, ray tracing |
-| Measure | Apple's Metal Performance HUD over the game, and the [benchmark](#the-benchmark), fast or the full tour, in this game or a new one |
+| Measure | Apple's Metal Performance HUD over the game, and the [benchmark](#the-benchmark) |
 
 The settings are kept in `port-settings.toml`, next to the game's `settings.toml` in
 `~/Documents/My Games/Kitten Space Agency`, with a comment on each. The file can be edited instead of the tab, and
