@@ -33,7 +33,8 @@
 #    likewise only multiply light that can be zero: the sun's on the terrain (Planet.frag), and the planets' shadow on
 #    the ocean's colour (Water/Ocean.frag, cloud shadows). They take derivatives, so they are skipped only where a
 #    whole 2x2 quad of pixels has no light (quad operations, which KSA Metal supports): on the night side, on slopes
-#    turned from the sun and in an eclipse.
+#    turned from the sun and in an eclipse. Where the terrain is in the planet's own shadow with no forward lights
+#    (vessels' lamps), every term of its colour is zero: such quads are drawn black without their textures.
 # 7. The cockpit's ray tracing (Raytracing/raygen.rgen) traces a shadow ray towards each light that casts shadows,
 #    also from surfaces turned away from that light, whose light is zero. Fix: trace it only where the light isn't
 #    zero (the ray's result only ever multiplies that light).
@@ -193,6 +194,10 @@ if grep -qs PORT_SKIP_UNLIT_SHADOWS "${SHADERS}/Lighting/CascadedShadows.glsl"; 
             "    float sunShadowFactor = getSunShadowFiltered(terrainShadowUbo, inWorldPosition.xyz, sphereWorldNormal);\n    float cloudShadows = GetCloudShadows(inWorldPosition.xyz, global.lighting.planetPosition.xyz, directionToSun);\n    float trailShadows = GetTrailShadowTransmittance(inWorldPosition.xyz);" \
             "    // macOS port: the terrain's, the clouds' and the trails' shadows only multiply the sun's light, also where it is\n    // zero; they take derivatives, so they are skipped only where the whole 2x2 quad has none\n    uint portLit = (!PORT_SKIP_UNLIT_SHADOWS || (any(notEqual(lightColor, vec3(0.0))) && selfShadowFactor > 0.0)) ? 1u : 0u;\n    portLit |= subgroupQuadSwapHorizontal(portLit);  // every lane swaps: no branch before the swaps\n    portLit |= subgroupQuadSwapVertical(portLit);\n    float sunShadowFactor = 1.0, cloudShadows = 1.0, trailShadows = 1.0;\n    if (portLit != 0u)\n    {\n        sunShadowFactor = getSunShadowFiltered(terrainShadowUbo, inWorldPosition.xyz, sphereWorldNormal);\n        cloudShadows = GetCloudShadows(inWorldPosition.xyz, global.lighting.planetPosition.xyz, directionToSun);\n        trailShadows = GetTrailShadowTransmittance(inWorldPosition.xyz);\n    }" \
             "looked the terrain's other shadows up only where there is sunlight"
+        fix Planet/Planet.frag replace \
+            "    if (IsTerrainOccludedByOcean(sphereVector))\n    {\n        outColor = vec4(vec3(0.0), 1.0);\n        return;\n    }\n" \
+            "    // macOS port: in the planet's own shadow (at night), with no forward lights, every term of the colour below is\n    // multiplied by zero, so it is black, as under the ocean: the textures and lighting are skipped, per 2x2 quad (they\n    // take derivatives); the swaps come before any return\n    bool portOcean = IsTerrainOccludedByOcean(sphereVector);\n    uint portBlack = (portOcean || (PORT_SKIP_UNLIT_SHADOWS && global.lighting.forwardLightCount == 0 &&\n        getSelfCelestialShadow(inWorldPosition.xyz, global.lighting.sunPosition, sphereWorldNormal, uboPlanet.celestialIndex) == 0.0)) ? 1u : 0u;\n    portBlack &= subgroupQuadSwapHorizontal(portBlack);\n    portBlack &= subgroupQuadSwapVertical(portBlack);\n    if (portOcean || portBlack != 0u)\n    {\n        outColor = vec4(vec3(0.0), 1.0);\n        return;\n    }\n" \
+            "drew the terrain black without its textures where it is in the planet's shadow and unlit"
     fi
     fix Planet/GroundClutter/Solid.frag replace \
         "        float cascadeShadowFactor = GetCascadedShadow(inWorldPosition.xyz, meshWorldNormal, dotNL, viewDepth);\n        float cloudShadows = GetCloudShadows(inWorldPosition.xyz, planetPos(), directionToSun);\n        float trailShadows = GetTrailShadowTransmittance(inWorldPosition.xyz);" \
