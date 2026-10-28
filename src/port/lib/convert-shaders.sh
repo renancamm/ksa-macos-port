@@ -30,7 +30,7 @@
 #    multiplies the cascaded shadows with the planet's, the terrain's, the clouds' and the trails' shadows, for its
 #    light and the grass's glow from behind: it looks the cascaded shadows up only where those let sunlight through
 #    (at night, or in a mountain's shadow, nowhere). The terrain's own sun shadow, the clouds' and the trails' shadows
-#    likewise only multiply light that can be zero: the sun's on the terrain (Planet.frag), and the planet's shadow on
+#    likewise only multiply light that can be zero: the sun's on the terrain (Planet.frag), and the planets' shadow on
 #    the ocean's colour (Water/Ocean.frag, cloud shadows). They take derivatives, so they are skipped only where a
 #    whole 2x2 quad of pixels has no light (quad operations, which KSA Metal supports): on the night side, on slopes
 #    turned from the sun and in an eclipse.
@@ -188,10 +188,12 @@ if grep -qs PORT_SKIP_UNLIT_SHADOWS "${SHADERS}/Lighting/CascadedShadows.glsl"; 
     fix Planet/Planet.frag replace "#version 450\n" \
         "#version 450\n#extension GL_KHR_shader_subgroup_quad : require  // macOS port: the shadows' skip below decides per 2x2 quad\n" \
         "enabled the quad operations for the shadows' skip"
-    fix Planet/Planet.frag replace \
-        "    float sunShadowFactor = getSunShadowFiltered(terrainShadowUbo, inWorldPosition.xyz, sphereWorldNormal);\n    float cloudShadows = GetCloudShadows(inWorldPosition.xyz, global.lighting.planetPosition.xyz, directionToSun);\n    float trailShadows = GetTrailShadowTransmittance(inWorldPosition.xyz);" \
-        "    // macOS port: the terrain's, the clouds' and the trails' shadows only multiply the sun's light, also where it is\n    // zero; they take derivatives, so they are skipped only where the whole 2x2 quad has none\n    uint portLit = (!PORT_SKIP_UNLIT_SHADOWS || (any(notEqual(lightColor, vec3(0.0))) && selfShadowFactor > 0.0)) ? 1u : 0u;\n    portLit |= subgroupQuadSwapHorizontal(portLit);  // every lane swaps: no branch before the swaps\n    portLit |= subgroupQuadSwapVertical(portLit);\n    float sunShadowFactor = 1.0, cloudShadows = 1.0, trailShadows = 1.0;\n    if (portLit != 0u)\n    {\n        sunShadowFactor = getSunShadowFiltered(terrainShadowUbo, inWorldPosition.xyz, sphereWorldNormal);\n        cloudShadows = GetCloudShadows(inWorldPosition.xyz, global.lighting.planetPosition.xyz, directionToSun);\n        trailShadows = GetTrailShadowTransmittance(inWorldPosition.xyz);\n    }" \
-        "looked the terrain's other shadows up only where there is sunlight"
+    if grep -qs GL_KHR_shader_subgroup_quad "${SHADERS}/Planet/Planet.frag"; then
+        fix Planet/Planet.frag replace \
+            "    float sunShadowFactor = getSunShadowFiltered(terrainShadowUbo, inWorldPosition.xyz, sphereWorldNormal);\n    float cloudShadows = GetCloudShadows(inWorldPosition.xyz, global.lighting.planetPosition.xyz, directionToSun);\n    float trailShadows = GetTrailShadowTransmittance(inWorldPosition.xyz);" \
+            "    // macOS port: the terrain's, the clouds' and the trails' shadows only multiply the sun's light, also where it is\n    // zero; they take derivatives, so they are skipped only where the whole 2x2 quad has none\n    uint portLit = (!PORT_SKIP_UNLIT_SHADOWS || (any(notEqual(lightColor, vec3(0.0))) && selfShadowFactor > 0.0)) ? 1u : 0u;\n    portLit |= subgroupQuadSwapHorizontal(portLit);  // every lane swaps: no branch before the swaps\n    portLit |= subgroupQuadSwapVertical(portLit);\n    float sunShadowFactor = 1.0, cloudShadows = 1.0, trailShadows = 1.0;\n    if (portLit != 0u)\n    {\n        sunShadowFactor = getSunShadowFiltered(terrainShadowUbo, inWorldPosition.xyz, sphereWorldNormal);\n        cloudShadows = GetCloudShadows(inWorldPosition.xyz, global.lighting.planetPosition.xyz, directionToSun);\n        trailShadows = GetTrailShadowTransmittance(inWorldPosition.xyz);\n    }" \
+            "looked the terrain's other shadows up only where there is sunlight"
+    fi
     fix Planet/GroundClutter/Solid.frag replace \
         "        float cascadeShadowFactor = GetCascadedShadow(inWorldPosition.xyz, meshWorldNormal, dotNL, viewDepth);\n        float cloudShadows = GetCloudShadows(inWorldPosition.xyz, planetPos(), directionToSun);\n        float trailShadows = GetTrailShadowTransmittance(inWorldPosition.xyz);" \
         "        float cloudShadows = GetCloudShadows(inWorldPosition.xyz, planetPos(), directionToSun);\n        float trailShadows = GetTrailShadowTransmittance(inWorldPosition.xyz);\n        float cascadeShadowFactor = 1.0;\n        if (!PORT_SKIP_UNLIT_SHADOWS || shadowFactor * cloudShadows * sunShadowFactor * trailShadows != 0.0)  ${note}\n            cascadeShadowFactor = GetCascadedShadow(inWorldPosition.xyz, meshWorldNormal, dotNL, viewDepth);" \
@@ -202,13 +204,17 @@ if grep -qs "constant_id = 900" "${SHADERS}/Water/Ocean.frag"; then
     fix Water/Ocean.frag replace "#version 450\n" \
         "#version 450\n#extension GL_KHR_shader_subgroup_quad : require  // macOS port: the cloud shadows' skip below decides per 2x2 quad\n" \
         "enabled the quad operations for the cloud shadows' skip"
-    fix Water/Ocean.frag replace \
-        "    float cloudShadow = GetCloudShadows(inOceanWorldPosition.xyz, global.lighting.planetPosition.xyz, L);" \
-        "    // macOS port: the cloud shadows only reach the ocean's own colour, which the planets' shadow multiplies at the\n    // end, also where it is zero (at night); they take derivatives, so they are skipped only where a whole 2x2 quad is in it\n    float portCelestialShadow = getCelestialShadow(inOceanWorldPosition.xyz, global.lighting.sunPosition);\n    uint portLit = (!PORT_SKIP_UNLIT_SHADOWS || portCelestialShadow != 0.0) ? 1u : 0u;\n    portLit |= subgroupQuadSwapHorizontal(portLit);  // every lane swaps: no branch before the swaps\n    portLit |= subgroupQuadSwapVertical(portLit);\n    float cloudShadow = 1.0;\n    if (portLit != 0u)\n        cloudShadow = GetCloudShadows(inOceanWorldPosition.xyz, global.lighting.planetPosition.xyz, L);" \
-        "looked the ocean's cloud shadows up only where the planets' shadow lets sunlight through"
-    fix Water/Ocean.frag replace "    oceanColor *= getCelestialShadow(inOceanWorldPosition.xyz, global.lighting.sunPosition);" \
-        "    oceanColor *= portCelestialShadow;  // macOS port: worked out above" \
-        "reused the planets' shadow worked out for the cloud shadows' skip"
+    if grep -qs GL_KHR_shader_subgroup_quad "${SHADERS}/Water/Ocean.frag"; then
+        fix Water/Ocean.frag replace \
+            "    float cloudShadow = GetCloudShadows(inOceanWorldPosition.xyz, global.lighting.planetPosition.xyz, L);" \
+            "    // macOS port: the cloud shadows only reach the ocean's own colour, which the planets' shadow multiplies at the\n    // end, also where it is zero (at night); they take derivatives, so they are skipped only where a whole 2x2 quad is in it\n    float portCelestialShadow = getCelestialShadow(inOceanWorldPosition.xyz, global.lighting.sunPosition);\n    uint portLit = (!PORT_SKIP_UNLIT_SHADOWS || portCelestialShadow != 0.0) ? 1u : 0u;\n    portLit |= subgroupQuadSwapHorizontal(portLit);  // every lane swaps: no branch before the swaps\n    portLit |= subgroupQuadSwapVertical(portLit);\n    float cloudShadow = 1.0;\n    if (portLit != 0u)\n        cloudShadow = GetCloudShadows(inOceanWorldPosition.xyz, global.lighting.planetPosition.xyz, L);" \
+            "looked the ocean's cloud shadows up only where the planets' shadow lets sunlight through"
+        if grep -qs "float portCelestialShadow" "${SHADERS}/Water/Ocean.frag"; then
+            fix Water/Ocean.frag replace "    oceanColor *= getCelestialShadow(inOceanWorldPosition.xyz, global.lighting.sunPosition);" \
+                "    oceanColor *= portCelestialShadow;  // macOS port: worked out above" \
+                "reused the planets' shadow worked out for the cloud shadows' skip"
+        fi
+    fi
 fi
 if grep -qs PORT_SKIP_UNLIT_SHADOWS "${SHADERS}/Raytracing/raygen.rgen"; then
     fix Raytracing/raygen.rgen replace "        if(lightData.color.w > 0.5){" \
