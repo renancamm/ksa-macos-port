@@ -171,6 +171,11 @@ to 34.5. All of them test a specialization constant the script declares, `PORT_S
 default), which the driver sets to false in every shader with `KSA_MTL_UNLIT_SHADOW_SKIP=0`: the game's code again,
 without porting the game anew.
 
+One more edit skips work that adds zero: the clouds' noise blends three lookups of a 3D texture at every sample,
+weighted by where the sample lies in a triangle grid, and near a triangle's edges and corners one or two of the
+weights are zero. The edit skips those lookups, with the same image; on an M5 at the game's own settings it takes
+about 5 % off views over the sea and of the rocket's liftoff.
+
 **Descriptors.** Vulkan shaders find their resources (buffers, textures, samplers) through *descriptor sets*. Metal's
 equivalent is an *argument buffer*: a block of memory holding GPU addresses and resource IDs. KSA Metal writes each
 descriptor set directly as an argument buffer, where every binding owns consecutive 8-byte slots, and tells

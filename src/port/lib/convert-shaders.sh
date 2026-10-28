@@ -40,6 +40,12 @@
 #    once instead when the hooks bind it in the noise texture's place (it isn't square), and writes
 #    MilkyWayBake.comp, the compute shader that fills the strip with that same function.
 #
+# For speed, with the same image:
+# 9. The clouds' noise (Clouds/CloudAntiTiling.glsl) blends three lookups of a 3D noise texture at every sample of the
+#    clouds (the raymarch, the shadow volume, the clouds' shadows on the ground), weighted by where the sample lies in
+#    a triangle grid; near a triangle's edges one weight is zero, near its corners two, and the lookup is still made
+#    and added times zero. Fix: skip a lookup whose weight is zero.
+#
 # Each fix prints [FIXED], [OK] (already fixed) or [WARN] (the code around it changed in this KSA version:
 # either RocketWerkz fixed the bug, or this script needs an update).
 #
@@ -124,6 +130,15 @@ fix Lighting/LightFineClusterCompact.comp replace "    uint binCount = maxBin - 
 fix Lighting/CascadedShadows.glsl replace "    float searchRadiusTexels = maxPenumbraWorld / texelWorldSize;" \
     "    float searchRadiusTexels = maxPenumbraWorld / texelWorldSize;\n    if (shadowUbo._pad1 > 0.0) searchRadiusTexels = min(searchRadiusTexels, shadowUbo._pad1);  // macOS port: the hooks' shadow search limit" \
     "limited the soft shadows' search where the hooks ask"
+note="// macOS port: a lookup with no weight adds nothing"
+fix Clouds/CloudAntiTiling.glsl replace \
+    "        vec3 uv = uvw + FastHash(uvec3(vertices[i], vertices[i].y));\n        float noise0 =" \
+    "        if (vertexWeights[i] == 0.0) continue;  ${note}\n        vec3 uv = uvw + FastHash(uvec3(vertices[i], vertices[i].y));\n        float noise0 =" \
+    "skipped the clouds' noise lookups with no weight"
+fix Clouds/CloudAntiTiling.glsl replace \
+    "        vec3 hash = FastHash(uvec3(vertices[i], vertices[i].y));\n\n        // Randomize flowmap phase" \
+    "        if (vertexWeights[i] == 0.0) continue;  ${note}\n        vec3 hash = FastHash(uvec3(vertices[i], vertices[i].y));\n\n        // Randomize flowmap phase" \
+    "skipped the clouds' flowing noise lookups with no weight"
 # 6 and 7 read PORT_SKIP_UNLIT_SHADOWS, a specialization constant (id 900) that KSA Metal sets to false when
 # KSA_MTL_UNLIT_SHADOW_SKIP is 0. A shader whose declaration was skipped keeps the game's code: it wouldn't compile.
 # declare_switch <file> <line>: declares it after <line>, once (the check is the name, so a reworded declaration can't
