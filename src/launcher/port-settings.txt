@@ -28,10 +28,10 @@
 #   label     its row in the tab; help: the row's tooltip and the file's comment, which the values' help follows
 
 [image] Image | MetalFX draws the 3D view at another size and scales it to the display.
-upscaling | choice:off=Off/metalfx=MetalFX/spatial=MetalFX Spatial | off | KSA_UPSCALER | | restart | | Upscaling | Draws the 3D view at the Render Scale below and scales it up to the display with Apple's MetalFX.
+upscaling | choice:off=Off/metalfx=MetalFX Temporal/spatial=MetalFX Spatial | off | KSA_UPSCALER | | restart | | Upscaling | Draws the 3D view at the Render Scale below and scales it up to the display with Apple's MetalFX.
     off | The game's own. The 3D view is drawn at the window's size.
     metalfx | Builds each image from the ones before it: the sharpest, even at a low Render Scale, and it smooths edges itself. Things that move fast can look a little soft.
-    spatial | Scales each image on its own: nothing trails behind in motion, but the image is softer below 100 %. The game's anti-aliasing stays on.
+    spatial | Scales each image on its own: nothing trails behind in motion, but the image is softer below 100 %. The game's Anti-Aliasing (Display) applies.
 render_scale | scale:0.5:2 | 1.0 | KSA_RENDER_SCALE | upscaling!=off | restart | render_scale | Render Scale | The size the 3D view is drawn at, as a share of the window's, before MetalFX scales it up. Lower is faster and a little softer. Above 100 %, up to 200 % on a Retina display, is sharper and much more work for the GPU.
 override_antialiasing | bool | true | KSA_OVERRIDE_AA | upscaling=metalfx | restart | render_scale | Skip Game Anti-Aliasing | While MetalFX is on, the game's Anti-Aliasing (Display) is turned off: MetalFX smooths edges itself, so the game's would only cost frame rate and leave dark specks on the planet. Off: the game's setting applies, except CMAA2, which stays off because it can't work with MetalFX.
 

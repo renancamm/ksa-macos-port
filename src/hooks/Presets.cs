@@ -54,26 +54,32 @@ internal static class Presets
 
     public static readonly Preset[] All =
     [
+        // MetalFX spatial at half size, without anti-aliasing: temporal there is past its largest scale on a Retina or
+        // HiDPI display (4x a side, 3x on an M5) and left 4-pixel blocks on moving things (the rocket, the sea), and the
+        // spatial upscaler without the game's MSAA costs 1.3-1.9 ms less a frame (M5, fast run). Thin edges, such as
+        // branches against the sky, are rougher
         new("Performance",
-            "The fastest the game gets on this Mac: MetalFX draws the 3D view at half the window's size, and shadows, " +
-            "clouds, smoke, the sky and effects are drawn the simple way, without ray tracing in the cockpit. The " +
-            "image is softer and plainer.",
-            mac => Game(mac, filter: "Pcf", cascades: 2048, terrain: 2048, milkyWay: "Low", clouds: "Low", effects: "Low",
-                godrays: false, clutterShadows: false, plumeShadows: false, rayTracing: false),
-            mac => Port(upscaling: "metalfx", scale: "0.5", tuning: true)),
+            "The fastest the game gets on this Mac: MetalFX Spatial draws the 3D view at half the window's size with the " +
+            "game's Anti-Aliasing off; shadows, clouds, smoke, the sky and effects are drawn the simple way, without " +
+            "cockpit ray tracing. Softer and plainer, with rougher edges.",
+            mac => Game(mac, antiAliasing: "Disabled", filter: "Pcf", cascades: 2048, terrain: 2048, milkyWay: "Low",
+                clouds: "Low", effects: "Low", godrays: false, clutterShadows: false, plumeShadows: false, rayTracing: false),
+            mac => Port(upscaling: "spatial", scale: "0.5", tuning: true)),
         new("Balanced",
-            "Fast, and little of it shows: MetalFX draws the 3D view at three quarters of the window's size, with " +
-            "simpler shadow filtering, clouds and smoke a step lower, and lighter ray tracing in the cockpit where the Mac " +
-            "has it.",
-            mac => Game(mac, filter: "Pcf", cascades: 2048, terrain: 4096, milkyWay: "Medium", clouds: "Medium",
-                effects: "Medium", godrays: true, clutterShadows: true, plumeShadows: true, rayTracing: mac.RayTracing),
+            "Fast, and little of it shows: MetalFX Temporal draws the 3D view at three quarters of the window's size, " +
+            "with simpler shadow filtering, clouds and smoke a step lower, and lighter ray tracing in the cockpit where " +
+            "the Mac has it.",
+            mac => Game(mac, antiAliasing: "MultisampleX2", filter: "Pcf", cascades: 2048, terrain: 4096,
+                milkyWay: "Medium", clouds: "Medium", effects: "Medium", godrays: true, clutterShadows: true,
+                plumeShadows: true, rayTracing: mac.RayTracing),
             mac => Port(upscaling: "metalfx", scale: "0.75", tuning: true)),
         new("Quality",
             "The game's own image at the window's full size, with its anti-aliasing, soft shadows and ray tracing in " +
             "the cockpit where the Mac has it. Only what costs much and barely shows is lower: shadow map sizes, the " +
             "Milky Way, soft shadows near the camera, cockpit ray tracing.",
-            mac => Game(mac, filter: "Pcss", cascades: 2048, terrain: 4096, milkyWay: "Medium", clouds: "High",
-                effects: "High", godrays: true, clutterShadows: true, plumeShadows: true, rayTracing: mac.RayTracing),
+            mac => Game(mac, antiAliasing: "MultisampleX2", filter: "Pcss", cascades: 2048, terrain: 4096,
+                milkyWay: "Medium", clouds: "High", effects: "High", godrays: true, clutterShadows: true,
+                plumeShadows: true, rayTracing: mac.RayTracing),
             mac => Port(upscaling: "off", scale: "1.0", tuning: false)),
         new("Game Defaults",
             "The game's own image: its default graphics for every setting the other presets change, and the Image and " +
@@ -82,7 +88,7 @@ internal static class Presets
             mac =>
             {
                 var defaults = new GameSettings();
-                return Defaults(Game(mac, "Pcf", 2048, 2048, "Low", "Low", "Low", false, false, false, false),
+                return Defaults(Game(mac, "Disabled", "Pcf", 2048, 2048, "Low", "Low", "Low", false, false, false, false),
                     name => Text(Field(name).GetValue(Owner(Field(name), defaults))));
             },
             mac => Defaults(Port("off", "1.0", false), key => Settings.Get(key).Default)),
@@ -96,16 +102,16 @@ internal static class Presets
     private static Dictionary<string, string> Defaults(Dictionary<string, string> settings, Func<string, string> value) =>
         settings.Keys.ToDictionary(key => key, value);
 
-    // The game's settings, by field name: GameSettings' own (anti-aliasing: the game's, which MetalFX turns off), the
-    // rest in GameSettings.Graphics
-    private static Dictionary<string, string> Game(Mac mac, string filter, int cascades, int terrain, string milkyWay,
-        string clouds, string effects, bool godrays, bool clutterShadows, bool plumeShadows, bool rayTracing)
+    // The game's settings, by field name: GameSettings' own (anti-aliasing: the game's, which MetalFX Temporal turns
+    // off), the rest in GameSettings.Graphics
+    private static Dictionary<string, string> Game(Mac mac, string antiAliasing, string filter, int cascades, int terrain,
+        string milkyWay, string clouds, string effects, bool godrays, bool clutterShadows, bool plumeShadows, bool rayTracing)
     {
         // Ambient occlusion, the ocean and fur cost little (0-3 %): lower in Performance only
         string small = effects == "Low" ? "Low" : "High";
         var game = new Dictionary<string, string>
         {
-            ["AntiAliasingMethod"] = "MultisampleX2",
+            ["AntiAliasingMethod"] = antiAliasing,
             ["CascadedShadowMapFilter"] = filter,
             ["CascadedShadowMapSize"] = Text(cascades),
             ["TerrainShadowMapSize"] = Text(mac.SmallMemory ? Math.Min(terrain, 2048) : terrain),
