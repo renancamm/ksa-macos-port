@@ -65,7 +65,7 @@ internal static class Presets
             mac => Game(mac, antiAliasing: "Disabled", filter: "Pcf", cascades: 2048, terrain: 2048,
                 milkyWay: "High", clouds: "Low", cloudShadows: "Medium", effects: "Low", godrays: false,
                 clutterShadows: false, plumeShadows: false, rayTracing: false),
-            mac => Port(upscaling: "spatial", scale: "0.5", tuning: true)),
+            mac => Port(upscaling: "spatial", scale: "0.5", tuning: true, milkyWayBake: true)),
         new("Balanced",
             "Fast, and little of it shows: MetalFX Temporal draws the 3D view at three quarters of the window's size, " +
             "with simpler shadow filtering, clouds and smoke a step lower, and lighter ray tracing in the cockpit where " +
@@ -73,15 +73,15 @@ internal static class Presets
             mac => Game(mac, antiAliasing: "MultisampleX2", filter: "Pcf", cascades: 2048, terrain: 4096,
                 milkyWay: "High", clouds: "Medium", cloudShadows: "Medium", effects: "Medium", godrays: true, clutterShadows: true,
                 plumeShadows: true, rayTracing: mac.RayTracing),
-            mac => Port(upscaling: "metalfx", scale: "0.75", tuning: true)),
+            mac => Port(upscaling: "metalfx", scale: "0.75", tuning: true, milkyWayBake: true)),
         new("Quality",
             "The game's own image at the window's full size, with its anti-aliasing, soft shadows and ray tracing in " +
-            "the cockpit where the Mac has it. Only what costs much and barely shows is lower: shadow map sizes, the " +
-            "Milky Way, soft shadows near the camera, cockpit ray tracing.",
+            "the cockpit where the Mac has it. Only what costs much and barely shows is lower or baked: shadow map " +
+            "sizes, soft shadows near the camera, cockpit ray tracing, the Milky Way.",
             mac => Game(mac, antiAliasing: "MultisampleX2", filter: "Pcss", cascades: 2048, terrain: 4096,
-                milkyWay: "Medium", clouds: "High", cloudShadows: "High", effects: "High", godrays: true, clutterShadows: true,
+                milkyWay: "High", clouds: "High", cloudShadows: "High", effects: "High", godrays: true, clutterShadows: true,
                 plumeShadows: true, rayTracing: mac.RayTracing),
-            mac => Port(upscaling: "off", scale: "1.0", tuning: false)),
+            mac => Port(upscaling: "off", scale: "1.0", tuning: false, milkyWayBake: true)),
         new("Game Defaults",
             "The game's own image: its default graphics for every setting the other presets change, and the Image and " +
             "Extra Performance rows at their defaults, without MetalFX. Everything else, such as the Field of View or " +
@@ -92,7 +92,7 @@ internal static class Presets
                 return Defaults(Game(mac, "Disabled", "Pcf", 2048, 2048, "Low", "Low", "Low", "Low", false, false, false, false),
                     name => Text(Field(name).GetValue(Owner(Field(name), defaults))));
             },
-            mac => Defaults(Port("off", "1.0", false), key => Settings.Get(key).Default)),
+            mac => Defaults(Port("off", "1.0", false, false), key => Settings.Get(key).Default)),
     ];
 
     // Not made for this Mac: the game's defaults are the same on every Mac
@@ -109,8 +109,8 @@ internal static class Presets
         string milkyWay, string clouds, string cloudShadows, string effects, bool godrays, bool clutterShadows,
         bool plumeShadows, bool rayTracing)
     {
-        // With the Milky Way bake (Performance and Balanced), Milky Way High costs what Low and Medium do (M5, fast run:
-        // every view within 0.1 ms). Cloud Shadows Low costs what Medium does, so no preset goes below Medium.
+        // With the Milky Way bake (Performance, Balanced and Quality), Milky Way High costs what Low and Medium do (M5,
+        // fast run: every view within 0.1 ms). Cloud Shadows Low costs what Medium does, so no preset goes below Medium.
         //
         // Ambient occlusion, the ocean and fur cost little (0-3 %): lower in Performance only
         string small = effects == "Low" ? "Low" : "High";
@@ -149,8 +149,9 @@ internal static class Presets
 
     // The Extra Performance rows (tuning) are on in Performance and Balanced, whose changes to the image are small; the
     // plume shadows' in Performance too, which turns the game's plume shadows off: they are faster when a player turns
-    // those on. The Milky Way bake changes sky pixels by at most 1 of 255; Quality keeps the game's own image
-    private static Dictionary<string, string> Port(string upscaling, string scale, bool tuning) => new()
+    // those on. The Milky Way bake, on in Performance, Balanced and Quality, changes sky pixels by at most 1 of 255 and
+    // gives Quality the game's Milky Way High at no cost; otherwise Quality keeps the game's own image
+    private static Dictionary<string, string> Port(string upscaling, string scale, bool tuning, bool milkyWayBake) => new()
     {
         ["upscaling"] = upscaling,
         ["render_scale"] = scale,
@@ -158,7 +159,7 @@ internal static class Presets
         ["cloud_shadow_tuning"] = tuning ? "slower_refresh" : "off",
         ["plume_shadow_tuning"] = tuning ? "low" : "off",
         ["shadow_search"] = "true",
-        ["milky_way_bake"] = Text(tuning),
+        ["milky_way_bake"] = Text(milkyWayBake),
     };
 
     private static string Text(int value) => value.ToString(CultureInfo.InvariantCulture);
