@@ -31,7 +31,6 @@ changed is undone, and `console.log` says so:
 [hooks] terrain cache: on
 [hooks] outline skip: on
 [hooks] overlay skip: on
-[hooks] hidden parts skip: on
 [hooks] ocean blending: on
 [hooks] cloud shadow tuning: off
 [hooks] shadow search: off
@@ -39,6 +38,7 @@ changed is undone, and `console.log` says so:
 [hooks] worker parking: on, 0.25 ms
 [hooks] loading pace: on
 [hooks] render scale: skipped, the game's code changed (the sun's radius not found)
+[hooks] hidden parts skip: on
 [hooks] documents folder: off
 [hooks] restart: on
 [hooks] presets: on, Apple M5, 16 GB
