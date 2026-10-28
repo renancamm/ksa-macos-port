@@ -17,7 +17,8 @@
  *    display has, plus the desktop's own size. GLFW switches Fullscreen to the first mode
  *    of the chosen size, so it can't pick a 1x mode on a HiDPI desktop either. The desktop
  *    is the display's current mode, or, while GLFW has it switched for Fullscreen, the mode
- *    it had before (CGDisplaySetDisplayMode is watched for that). The hooks ask for it too.
+ *    it had before (CGDisplaySetDisplayMode is watched for that). The hooks ask for it too,
+ *    and for the display's own pixels, to mark the native size in the list.
  * 2. glfwSetInputMode: KSA checks glfwRawMouseMotionSupported() before it turns raw mouse
  *    motion on, but not before it turns it off, and GLFW's Cocoa backend reports a
  *    PlatformError ("Raw mouse motion is not supported on this system") after every
@@ -139,10 +140,52 @@ int glfwShimDesktopMode(CGDirectDisplayID display, int* width, int* height, int*
     return *width > 0 && *height > 0;
 }
 
+// The options that bring every mode of a display, HiDPI and 1x (see 1.)
+static CFDictionaryRef allModesOptions(void) {
+    static CFDictionaryRef options;
+    static dispatch_once_t once;
+
+    dispatch_once(&once, ^{
+        const void* keys[] = { kCGDisplayShowDuplicateLowResolutionModes };
+        const void* values[] = { kCFBooleanTrue };
+        options = CFDictionaryCreate(NULL, keys, values, 1,
+            &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    });
+    return options;
+}
+
+// The display's own pixels: the largest of its native modes', 0 x 0 when none says so
+static void nativePixels(CFArrayRef all, size_t* width, size_t* height) {
+    *width = *height = 0;
+    for (CFIndex i = 0; i < CFArrayGetCount(all); i++) {
+        CGDisplayModeRef mode = (CGDisplayModeRef)CFArrayGetValueAtIndex(all, i);
+        if (CGDisplayModeGetIOFlags(mode) & kDisplayModeNativeFlag) {
+            *width = maxSize(*width, CGDisplayModeGetPixelWidth(mode));
+            *height = maxSize(*height, CGDisplayModeGetPixelHeight(mode));
+        }
+    }
+}
+
+// For the hooks (src/hooks/Displays.cs), which mark the size that fills the display's own pixels. 0 when no mode
+// says which are native.
+__attribute__((visibility("default")))
+int glfwShimNativePixels(CGDirectDisplayID display, int* width, int* height) {
+    CFArrayRef all = CGDisplayCopyAllDisplayModes(display, allModesOptions());
+    size_t nativeWidth, nativeHeight;
+
+    if (!all)
+        return 0;
+    nativePixels(all, &nativeWidth, &nativeHeight);
+    CFRelease(all);
+    *width = (int)nativeWidth;
+    *height = (int)nativeHeight;
+    return nativeWidth > 0 && nativeHeight > 0;
+}
+
 // The modes a player picks from (see 1.): takes all and returns them filtered
 static CFArrayRef playerModes(CGDirectDisplayID display, CFArrayRef all) {
     CGDisplayModeRef desktop;
-    size_t maxWidth = 0, maxHeight = 0;
+    size_t maxWidth, maxHeight;
     CFMutableArrayRef modes;
     CFIndex count;
 
@@ -152,14 +195,8 @@ static CFArrayRef playerModes(CGDirectDisplayID display, CFArrayRef all) {
     if (!desktop)
         return all;
     count = CFArrayGetCount(all);
-    // The display's own pixels: its native modes', or the desktop's when none says so
-    for (CFIndex i = 0; i < count; i++) {
-        CGDisplayModeRef mode = (CGDisplayModeRef)CFArrayGetValueAtIndex(all, i);
-        if (CGDisplayModeGetIOFlags(mode) & kDisplayModeNativeFlag) {
-            maxWidth = maxSize(maxWidth, CGDisplayModeGetPixelWidth(mode));
-            maxHeight = maxSize(maxHeight, CGDisplayModeGetPixelHeight(mode));
-        }
-    }
+    // No more pixels than the display has: its native modes', or the desktop's when none says so
+    nativePixels(all, &maxWidth, &maxHeight);
     if (maxWidth == 0) {
         maxWidth = CGDisplayModeGetPixelWidth(desktop);
         maxHeight = CGDisplayModeGetPixelHeight(desktop);
@@ -180,18 +217,8 @@ static CFArrayRef playerModes(CGDirectDisplayID display, CFArrayRef all) {
 }
 
 static CFArrayRef shim_CGDisplayCopyAllDisplayModes(CGDirectDisplayID display, CFDictionaryRef options) {
-    static CFDictionaryRef withLowResModes;
-    static dispatch_once_t once;
-
-    if (options == NULL && calledFromGlfw(__builtin_return_address(0))) {
-        dispatch_once(&once, ^{
-            const void* keys[] = { kCGDisplayShowDuplicateLowResolutionModes };
-            const void* values[] = { kCFBooleanTrue };
-            withLowResModes = CFDictionaryCreate(NULL, keys, values, 1,
-                &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-        });
-        return playerModes(display, CGDisplayCopyAllDisplayModes(display, withLowResModes));
-    }
+    if (options == NULL && calledFromGlfw(__builtin_return_address(0)))
+        return playerModes(display, CGDisplayCopyAllDisplayModes(display, allModesOptions()));
     return CGDisplayCopyAllDisplayModes(display, options);
 }
 
