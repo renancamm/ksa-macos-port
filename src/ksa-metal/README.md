@@ -176,10 +176,12 @@ from orbit from 11.9 ms to 10.7. All of them test a specialization constant the 
 `PORT_SKIP_UNLIT_SHADOWS` (id 900, true by default), which the driver sets to false in every shader with
 `KSA_MTL_UNLIT_SHADOW_SKIP=0`: the game's code again, without porting the game anew.
 
-One more edit skips work that adds zero: the clouds' noise blends three lookups of a 3D texture at every sample,
-weighted by where the sample lies in a triangle grid, and near a triangle's edges and corners one or two of the
-weights are zero. The edit skips those lookups, with the same image; on an M5 at the game's own settings it takes
-about 5 % off views over the sea and of the rocket's liftoff.
+Two more edits skip work that changes nothing, with the same image. The clouds' noise blends three lookups of a 3D
+texture at every sample, weighted by where the sample lies in a triangle grid, and near a triangle's edges and corners
+one or two of the weights are zero: the first edit skips those lookups. On an M5 at the game's own settings it takes
+about 5 % off views over the sea and of the rocket's liftoff. The second skips that noise deep inside a cloud, where
+the step that carves the cloud's edges with it gives its largest value whatever the noise is; the samples the clouds'
+lighting takes towards the sun often lie there. It takes another 4-7 % off the same views.
 
 **Descriptors.** Vulkan shaders find their resources (buffers, textures, samplers) through *descriptor sets*. Metal's
 equivalent is an *argument buffer*: a block of memory holding GPU addresses and resource IDs. KSA Metal writes each

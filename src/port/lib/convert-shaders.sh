@@ -50,6 +50,11 @@
 #    clouds (the raymarch, the shadow volume, the clouds' shadows on the ground), weighted by where the sample lies in
 #    a triangle grid; near a triangle's edges one weight is zero, near its corners two, and the lookup is still made
 #    and added times zero. Fix: skip a lookup whose weight is zero.
+# 10. The clouds' density (Clouds/CloudFunctions.glsl) erodes the cloud's shape with that noise and clamps the result
+#    to 1; deep inside a cloud the result is 1 whatever the noise (0..1), and the noise is still looked up: often at
+#    the samples of the raymarch's light rays, also at its own and the shadow volume's. Fix: look the noise up only
+#    where it can change the result. The erosion's other output, the noise profile, only reaches an unused variable
+#    (Clouds/ScatteringFunctions.glsl); the edit is made only while that file reads as it does here.
 #
 # Each fix prints [FIXED], [OK] (already fixed) or [WARN] (the code around it changed in this KSA version:
 # either RocketWerkz fixed the bug, or this script needs an update).
@@ -144,6 +149,17 @@ fix Clouds/CloudAntiTiling.glsl replace \
     "        vec3 hash = FastHash(uvec3(vertices[i], vertices[i].y));\n\n        // Randomize flowmap phase" \
     "        if (vertexWeights[i] == 0.0) continue;  ${note}\n        vec3 hash = FastHash(uvec3(vertices[i], vertices[i].y));\n\n        // Randomize flowmap phase" \
     "skipped the clouds' flowing noise lookups with no weight"
+scattering="${SHADERS}/Clouds/ScatteringFunctions.glsl"
+if grep -qsF "    highDetail = highDetail * erosionMaxDepth + (1.0 - erosionMaxDepth);" "${scattering}" &&
+    grep -qsF "    return clamp(erodedValue / (1.0 - edgeSharpness), 0.0, 1.0);" "${scattering}" &&
+    grep -qsF "    return Remap(dimensionalProfile, 0.0, 1.0, MULTIPLE_SCATTERING_EDGE_EFFECT_MIN_VALUE, 1.0);" "${scattering}"; then
+    fix Clouds/CloudFunctions.glsl replace \
+        "    float noiseSample = SampleInterpolatedCloudTypeNoise(noiseSampler, cloudSpacePosition, innerCloudRadius,\n        currentCloudTypeIndex, nextCloudTypeIndex, cloudTypeInterpolationFraction, interpolatedMipLevels,\n        currentNoiseScale, nextNoiseScale, currentNoiseOffset, nextNoiseOffset, minMaxInvNoiseScales, flowValue);\n\n    // Density, sharpness, multipleScatteringBrightness\n    vec3 interpolatedCloudProperties = mix(uboCloudLayer.cloudTypesData[currentCloudTypeIndex].xzw,\n        uboCloudLayer.cloudTypesData[nextCloudTypeIndex].xzw, cloudTypeInterpolationFraction);\n    \n    float cloudShape = ApplyErosion(noiseSample, dimensionalProfile, CLOUD_EROSION_MAX_DEPTH, interpolatedCloudProperties.y, noiseProfile);" \
+        "    // Density, sharpness, multipleScatteringBrightness\n    vec3 interpolatedCloudProperties = mix(uboCloudLayer.cloudTypesData[currentCloudTypeIndex].xzw,\n        uboCloudLayer.cloudTypesData[nextCloudTypeIndex].xzw, cloudTypeInterpolationFraction);\n\n    // macOS port: deep inside a cloud the erosion below is 1 for any noise (0..1, the noise only adds; 1.001: a\n    // margin for rounding): no lookup there. Its noise profile only reaches GetMultipleScatteringEdgeEffect's unused depth\n    float noiseSample = 0.0;\n    float sharpness = interpolatedCloudProperties.y;\n    if (!(sharpness < 1.0 && dimensionalProfile - CLOUD_EROSION_MAX_DEPTH >= 1.001 * (1.0 - sharpness)))\n    {\n        noiseSample = SampleInterpolatedCloudTypeNoise(noiseSampler, cloudSpacePosition, innerCloudRadius,\n            currentCloudTypeIndex, nextCloudTypeIndex, cloudTypeInterpolationFraction, interpolatedMipLevels,\n            currentNoiseScale, nextNoiseScale, currentNoiseOffset, nextNoiseOffset, minMaxInvNoiseScales, flowValue);\n    }\n    \n    float cloudShape = ApplyErosion(noiseSample, dimensionalProfile, CLOUD_EROSION_MAX_DEPTH, interpolatedCloudProperties.y, noiseProfile);" \
+        "skipped the clouds' noise where it can't change their density"
+else
+    echo "    [WARN] CloudFunctions.glsl: the clouds' erosion changed in this KSA version, skipped: the noise where it can't change their density. Please open an issue."
+fi
 # 6 and 7 read PORT_SKIP_UNLIT_SHADOWS, a specialization constant (id 900) that KSA Metal sets to false when
 # KSA_MTL_UNLIT_SHADOW_SKIP is 0. A shader whose declaration was skipped keeps the game's code: it wouldn't compile.
 # declare_switch <file> <line>: declares it after <line>, once (the check is the name, so a reworded declaration can't
