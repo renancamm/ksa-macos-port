@@ -29,7 +29,10 @@
 #    up only where the light isn't zero (zero times a shadow, at most 1, is zero). The ground clutter's Solid.frag
 #    multiplies the cascaded shadows with the planet's, the terrain's, the clouds' and the trails' shadows, for its
 #    light and the grass's glow from behind: it looks the cascaded shadows up only where those let sunlight through
-#    (at night, or in a mountain's shadow, nowhere).
+#    (at night, or in a mountain's shadow, nowhere). Planet.frag's own sun shadow, cloud and trail shadows likewise
+#    only multiply the sun's light; they take derivatives, so they are skipped only where a whole 2x2 quad of pixels
+#    has no light (quad operations, which KSA Metal supports): on the night side, slopes turned from the sun and in
+#    an eclipse.
 # 7. The cockpit's ray tracing (Raytracing/raygen.rgen) traces a shadow ray towards each light that casts shadows,
 #    also from surfaces turned away from that light, whose light is zero. Fix: trace it only where the light isn't
 #    zero (the ray's result only ever multiplies that light).
@@ -181,6 +184,13 @@ if grep -qs PORT_SKIP_UNLIT_SHADOWS "${SHADERS}/Lighting/CascadedShadows.glsl"; 
         "    float cascadeShadowFactor = GetCascadedShadow(inWorldPosition.xyz, worldNormal, dotNL, -(global.camera.view * inWorldPosition).z);" \
         "    float cascadeShadowFactor = 1.0;\n    if (!PORT_SKIP_UNLIT_SHADOWS || any(notEqual(lightColor, vec3(0.0))))  ${note}\n        cascadeShadowFactor = GetCascadedShadow(inWorldPosition.xyz, worldNormal, dotNL, -(global.camera.view * inWorldPosition).z);" \
         "looked the shadows up only where there is sunlight"
+    fix Planet/Planet.frag replace "#version 450\n" \
+        "#version 450\n#extension GL_KHR_shader_subgroup_quad : require  // macOS port: the shadows' skip below decides per 2x2 quad\n" \
+        "enabled the quad operations for the shadows' skip"
+    fix Planet/Planet.frag replace \
+        "    float sunShadowFactor = getSunShadowFiltered(terrainShadowUbo, inWorldPosition.xyz, sphereWorldNormal);\n    float cloudShadows = GetCloudShadows(inWorldPosition.xyz, global.lighting.planetPosition.xyz, directionToSun);\n    float trailShadows = GetTrailShadowTransmittance(inWorldPosition.xyz);" \
+        "    // macOS port: the terrain's, the clouds' and the trails' shadows only multiply the sun's light, also where it is\n    // zero; they take derivatives, so they are skipped only where the whole 2x2 quad has none\n    uint portLit = (!PORT_SKIP_UNLIT_SHADOWS || (any(notEqual(lightColor, vec3(0.0))) && selfShadowFactor > 0.0)) ? 1u : 0u;\n    portLit |= subgroupQuadSwapHorizontal(portLit);  // every lane swaps: no branch before the swaps\n    portLit |= subgroupQuadSwapVertical(portLit);\n    float sunShadowFactor = 1.0, cloudShadows = 1.0, trailShadows = 1.0;\n    if (portLit != 0u)\n    {\n        sunShadowFactor = getSunShadowFiltered(terrainShadowUbo, inWorldPosition.xyz, sphereWorldNormal);\n        cloudShadows = GetCloudShadows(inWorldPosition.xyz, global.lighting.planetPosition.xyz, directionToSun);\n        trailShadows = GetTrailShadowTransmittance(inWorldPosition.xyz);\n    }" \
+        "looked the terrain's other shadows up only where there is sunlight"
     fix Planet/GroundClutter/Solid.frag replace \
         "        float cascadeShadowFactor = GetCascadedShadow(inWorldPosition.xyz, meshWorldNormal, dotNL, viewDepth);\n        float cloudShadows = GetCloudShadows(inWorldPosition.xyz, planetPos(), directionToSun);\n        float trailShadows = GetTrailShadowTransmittance(inWorldPosition.xyz);" \
         "        float cloudShadows = GetCloudShadows(inWorldPosition.xyz, planetPos(), directionToSun);\n        float trailShadows = GetTrailShadowTransmittance(inWorldPosition.xyz);\n        float cascadeShadowFactor = 1.0;\n        if (!PORT_SKIP_UNLIT_SHADOWS || shadowFactor * cloudShadows * sunShadowFactor * trailShadows != 0.0)  ${note}\n            cascadeShadowFactor = GetCascadedShadow(inWorldPosition.xyz, meshWorldNormal, dotNL, viewDepth);" \
