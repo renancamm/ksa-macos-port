@@ -13,6 +13,7 @@ static const VkExtensionProperties kInstanceExtensions[] = {
     {VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME, VK_KHR_PORTABILITY_ENUMERATION_SPEC_VERSION},
     {VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_SPEC_VERSION},
     {VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME, VK_KHR_GET_SURFACE_CAPABILITIES_2_SPEC_VERSION},
+    {VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME, VK_EXT_SWAPCHAIN_COLOR_SPACE_SPEC_VERSION},
 };
 
 static const VkExtensionProperties kDeviceExtensions[] = {
@@ -32,6 +33,7 @@ static const VkExtensionProperties kDeviceExtensions[] = {
     {VK_KHR_BIND_MEMORY_2_EXTENSION_NAME, VK_KHR_BIND_MEMORY_2_SPEC_VERSION},
     {VK_KHR_PRESENT_ID_EXTENSION_NAME, VK_KHR_PRESENT_ID_SPEC_VERSION},
     {VK_KHR_PRESENT_WAIT_EXTENSION_NAME, VK_KHR_PRESENT_WAIT_SPEC_VERSION},
+    {VK_EXT_HDR_METADATA_EXTENSION_NAME, VK_EXT_HDR_METADATA_SPEC_VERSION},
 };
 
 // Ray query (acceleration structures and ray queries; KSA_MTL_RAYQUERY=0 hides them, the game then uses its software
@@ -683,6 +685,8 @@ VKFN(VkResult) vkCreateMetalSurfaceEXT(VkInstance, const VkMetalSurfaceCreateInf
 }
 
 VKFN(void) vkDestroySurfaceKHR(VkInstance, VkSurfaceKHR surface, const VkAllocationCallbacks*) {
+    if (!surface) return;
+    kmtlSetHdr((KSurface*)surface, false);
     delete (KSurface*)surface;
 }
 
@@ -722,18 +726,27 @@ VKFN(VkResult) vkGetPhysicalDeviceSurfaceCapabilities2KHR(VkPhysicalDevice pd, c
     return vkGetPhysicalDeviceSurfaceCapabilitiesKHR(pd, info->surface, &c->surfaceCapabilities);
 }
 
+// HDR10 (PQ in Rec.2020) last, and only on a display with EDR: swapchain.mm shows it with EDR, mapping the game's paper
+// white to the display's SDR white. Not scRGB: its 1.0 is 80 nits to the game and SDR white to macOS
 static const VkSurfaceFormatKHR kSurfaceFormats[] = {
     {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
     {VK_FORMAT_B8G8R8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
+    {VK_FORMAT_A2B10G10R10_UNORM_PACK32, VK_COLOR_SPACE_HDR10_ST2084_EXT},
 };
 
-VKFN(VkResult) vkGetPhysicalDeviceSurfaceFormatsKHR(VkPhysicalDevice, VkSurfaceKHR, uint32_t* count, VkSurfaceFormatKHR* out) {
-    KTRACE_FIRST();
-    return kmtlEnumerate(2, count, out, [](uint32_t i, VkSurfaceFormatKHR& o) { o = kSurfaceFormats[i]; });
+static uint32_t surfaceFormatCount(VkSurfaceKHR surface) {
+    bool hdr = kmtlConfig().hdr && surface && kmtlEdrAvailable(((KSurface*)surface)->layer);
+    return uint32_t(std::size(kSurfaceFormats)) - (hdr ? 0 : 1);
 }
 
-VKFN(VkResult) vkGetPhysicalDeviceSurfaceFormats2KHR(VkPhysicalDevice, const VkPhysicalDeviceSurfaceInfo2KHR*, uint32_t* count, VkSurfaceFormat2KHR* out) {
-    return kmtlEnumerate(2, count, out, [](uint32_t i, VkSurfaceFormat2KHR& o) { o.surfaceFormat = kSurfaceFormats[i]; });
+VKFN(VkResult) vkGetPhysicalDeviceSurfaceFormatsKHR(VkPhysicalDevice, VkSurfaceKHR surface, uint32_t* count, VkSurfaceFormatKHR* out) {
+    KTRACE_FIRST();
+    return kmtlEnumerate(surfaceFormatCount(surface), count, out, [](uint32_t i, VkSurfaceFormatKHR& o) { o = kSurfaceFormats[i]; });
+}
+
+VKFN(VkResult) vkGetPhysicalDeviceSurfaceFormats2KHR(VkPhysicalDevice, const VkPhysicalDeviceSurfaceInfo2KHR* info, uint32_t* count, VkSurfaceFormat2KHR* out) {
+    return kmtlEnumerate(surfaceFormatCount(info->surface), count, out,
+                         [](uint32_t i, VkSurfaceFormat2KHR& o) { o.surfaceFormat = kSurfaceFormats[i]; });
 }
 
 VKFN(VkResult) vkGetPhysicalDeviceSurfacePresentModesKHR(VkPhysicalDevice, VkSurfaceKHR, uint32_t* count, VkPresentModeKHR* out) {

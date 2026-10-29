@@ -78,6 +78,7 @@ struct KConfig {
     int budgetMb = 0;                     // KSA_MTL_BUDGET_MB: GPU memory budget reported (0: Metal's recommendation)
     bool presentPacing = true;            // KSA_MTL_PRESENT_PACING=0: a present counts only once the display shows it
     bool fxInterpolate = false;           // KSA_MTL_FX_INTERPOLATE=1: a MetalFX frame between every two the game presents
+    bool hdr = true;                      // KSA_MTL_HDR=0: no HDR output offered (the game's HDR rows stay hidden)
     // Debugging
     int logLevel = 0;                     // KSA_MTL_LOG (see Logging above)
     const char* logFile = nullptr;        // KSA_MTL_LOG_FILE
@@ -589,7 +590,15 @@ struct KCommandBuffer : KDispatchable {
 // Surface and swapchain
 struct KSurface {
     CAMetalLayer* layer = nil;
+    bool hdr = false;                         // the layer shows HDR10 with EDR (swapchain.mm)
+    CGColorSpaceRef sdrColorspace = nullptr;  // the layer's colour space before, given back for SDR
 };
+
+// HDR output (swapchain.mm): whether the display the layer's window is on can show more than SDR white; the surface's
+// layer set up for HDR10 or given back its SDR state
+bool kmtlEdrAvailable(CAMetalLayer* layer);
+void kmtlSetHdr(KSurface* surface, bool hdr);
+float kmtlHdrPaperWhite();
 
 // Present ids of a swapchain, waited on by vkWaitForPresentKHR, and the recent presents its pacing looks at
 // (swapchain.mm). Shared with the presents' handlers, which may run after the swapchain is destroyed

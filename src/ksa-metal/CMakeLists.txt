@@ -30,7 +30,7 @@ target_compile_options(ksa-metal PRIVATE ${KSA_MTL_OPT} -g -Wall -Werror $<$<COM
 target_link_libraries(ksa-metal PRIVATE
     Vulkan::Headers spirv-cross-msl spirv-cross-glsl spirv-cross-core SPIRV-Tools-link SPIRV-Tools-opt SPIRV-Tools-static
     "-framework Metal" "-framework MetalFX" "-framework QuartzCore" "-framework Foundation" "-framework CoreGraphics" "-framework ImageIO"
-    "-framework UniformTypeIdentifiers")
+    "-framework UniformTypeIdentifiers" "-framework AppKit" "-framework CoreImage")
 target_link_options(ksa-metal PRIVATE -fobjc-arc "LINKER:-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/exports.txt")
 set_property(TARGET ksa-metal APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/exports.txt")
 if(NOT KSA_MTL_DEBUG_MAP)

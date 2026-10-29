@@ -39,6 +39,7 @@ These switches turn a feature off or change a default, to work around a problem 
 | `KSA_MTL_EARLY_FRAGMENT_TESTS=0` | no second state that tests depth first for pipelines whose fragment shader stores to an image ([Shaders](#from-vulkan-to-metal)): the hooks' Skip Hidden Vessel Parts has nothing to switch to |
 | `KSA_MTL_BUDGET_MB=<n>` | the GPU memory budget reported to the game, which sizes its texture streaming from it (default: what Metal recommends for this Mac) |
 | `KSA_MTL_FX_INTERPOLATE=1` | frame interpolation ([MetalFX](#from-vulkan-to-metal)) |
+| `KSA_MTL_HDR=0` | offer the game no HDR output ([Presentation](#from-vulkan-to-metal)): its HDR settings (Display) stay hidden |
 | `KSA_MTL_PRESENT_PACING=0` | with Vsync, the game's wait for an earlier frame ends only when the display shows it ([Presentation](#from-vulkan-to-metal)); in a window, frames that take less than about 23 ms on the GPU then run slower |
 
 ## Build
@@ -113,7 +114,7 @@ Metal's own tools work too: `MTL_HUD_ENABLED=1` shows Apple's performance overla
 `MTL_SHADER_VALIDATION=1` check API use and catch out-of-bounds memory access in shaders (slow).
 
 The benchmark's mod and the hooks talk to KSA Metal through the only functions it exports besides Vulkan's, in
-`instruments.mm`, `profile.mm` and `pipeline.mm`:
+`instruments.mm`, `profile.mm`, `pipeline.mm` and `swapchain.mm`:
 
 | Function | |
 |---|---|
@@ -123,6 +124,7 @@ The benchmark's mod and the hooks talk to KSA Metal through the only functions i
 | `ksaMtlCapture`, `ksaMtlCapturing` | an Xcode GPU frame capture of the next frames (with `MTL_CAPTURE_ENABLED=1`), and whether it is still being written |
 | `ksaMtlProfileFrames` | the GPU profiler (`KSA_MTL_GPUPROF`) on the next frames, under a label |
 | `ksaMtlEarlyFragmentTests` | whether draws use the pipelines' states that test depth first (below); the hooks' Skip Hidden Vessel Parts sets it at the start of a frame |
+| `ksaMtlHdrNits` | the game's HDR Paper White and HDR Peak Brightness in nits, which HDR output maps to the display (below); the hooks pass them when the game applies its Display settings |
 
 The benchmark's `--profile`, `--trace`, `--capture` and `--hud` use the first five.
 
@@ -235,6 +237,16 @@ would leave the GPU idle whenever a frame takes less than that. KSA Metal also e
 on the GPU, the one before it is on screen, and the GPU is about to need the next frame (predicted from the last
 frames' GPU and CPU times). Frames then start when the GPU can take them, without queueing up.
 
+**HDR.** On a display with EDR (brighter than SDR white), the surface also offers HDR10: `A2B10G10R10` in PQ with
+Rec. 2020 primaries, which holds the game's absolute nits, and the game then shows its HDR settings (Display). Not
+scRGB: the game's 1.0 there is 80 nits, macOS's is SDR white. With an HDR10 swapchain the layer takes the PQ colour
+space, EDR, and HDR10 metadata whose optical output scale is the game's HDR Paper White: macOS shows that brightness
+at SDR white, as bright as other windows, and fits the highlights up to HDR Peak Brightness into what the display has
+above it. Paper White then no longer changes how bright the UI is, only how far highlights reach above it. The hooks
+pass both in at every Apply ([`Hdr.cs`](../hooks/Hdr.cs)); `vkSetHdrMetadataEXT` also sets the peak. Screenshots of
+HDR frames are SDR PNGs, paper white at white and brighter highlights clipped. In the benchmark's places, HDR output
+takes about 1-5 % more GPU time (M5, one run each).
+
 **MetalFX.** For the port settings, the patched game ([KSA Metal Hooks](../hooks/)) calls entry points that are KSA
 Metal's own, exported next to Vulkan's: `vkCmdUpscaleKSA` scales the main view's image into one of the swapchain's
 size (the display's pixels) before the final composite (past the temporal upscaler's largest scale, 3x on an M5, it
@@ -273,6 +285,7 @@ The complete mapping:
 | Present wait | the drawables' presented handlers advance the present ID; a wait also ends when the GPU is about to need the next frame |
 | Transient attachments | memoryless textures (tile memory only) |
 | Swapchain | own textures at the display's pixels, copied into the `CAMetalLayer` drawable at present |
+| HDR10 colour space, `vkSetHdrMetadataEXT` | the layer in PQ with EDR and `CAEDRMetadata`, the game's paper white at SDR white |
 | `vkCmdUpscaleKSA`, `vkCmdUpscaleSnapshotKSA`, `vkCmdMarkUiKSA` | KSA Metal's own: MetalFX for the hooks |
 
 Buffer indices per shader stage: 0-9 descriptor sets, 10 push constants, 11 draw index, 12 buffer sizes, 13 view
@@ -298,7 +311,7 @@ vertex buffer n.
 | `rtpipeline.mm`, `rtspirv.cpp`, `rtspirv.h` | ray tracing pipelines rewritten as compute kernels |
 | `tessspirv.cpp`, `tessspirv.h` | the SPIR-V rewrites behind passthrough and fused tessellation |
 | `spvmodule.h` | a SPIR-V module as a list of instructions, for those rewrites |
-| `swapchain.mm` | swapchain and presentation: pacing, frame interpolation at present, latency |
+| `swapchain.mm` | swapchain and presentation: pacing, HDR, frame interpolation at present, latency |
 | `instruments.mm` | what is measured at each present: frame log, screenshots, exits, the benchmark's interface, frame captures, signposts |
 | `upscale.mm` | MetalFX: upscaling, motion vectors, frame interpolation |
 | `profile.mm` | the GPU profiler |

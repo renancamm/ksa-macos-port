@@ -4,6 +4,7 @@
 // carries its own.
 #include "kmtl.h"
 #import <CoreGraphics/CoreGraphics.h>
+#import <CoreImage/CoreImage.h>
 #import <ImageIO/ImageIO.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #include <chrono>
@@ -262,9 +263,46 @@ static void writePNG(id<MTLBuffer> buf, NSUInteger w, NSUInteger h, bool bgra, c
     KLOG(0, "screenshot %s: %s", ok ? "written" : "FAILED", path.c_str());
 }
 
+// An HDR10 image (PQ in Rec.2020, swapchain.mm) as an SDR PNG: CoreImage converts it to sRGB with the game's paper
+// white at white, as macOS shows it; highlights above it clip
+static void writeHdrPNG(id<MTLTexture> tex, const std::string& path) {
+    constexpr double kPqReferenceNits = 203;  // 1.0 of CoreImage's PQ colour space (BT.2408's reference white)
+    static CIContext* context = [CIContext contextWithMTLDevice:tex.device];
+    CGColorSpaceRef pq = CGColorSpaceCreateWithName(kCGColorSpaceITUR_2100_PQ);
+    CGColorSpaceRef srgb = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CIImage* image = [CIImage imageWithMTLTexture:tex options:@{kCIImageColorSpace: (__bridge id)pq}];
+    image = [image imageByApplyingOrientation:kCGImagePropertyOrientationDownMirrored];  // Metal's rows start at the top
+    image = [image imageByApplyingFilter:@"CIExposureAdjust"
+                     withInputParameters:@{kCIInputEVKey: @(log2(kPqReferenceNits / kmtlHdrPaperWhite()))}];
+    image = [image imageBySettingAlphaOneInExtent:image.extent];  // opaque, as writePNG's
+    NSURL* url = [NSURL fileURLWithPath:@(path.c_str())];
+    NSError* err = nil;
+    bool ok = [context writePNGRepresentationOfImage:image toURL:url format:kCIFormatRGBA8 colorSpace:srgb options:@{}
+                                               error:&err];
+    CGColorSpaceRelease(pq);
+    CGColorSpaceRelease(srgb);
+    if (ok) KLOG(0, "screenshot written: %s", path.c_str());
+    else KLOG(0, "screenshot FAILED: %s (%s)", path.c_str(), err.localizedDescription.UTF8String);
+}
+
 // The path is taken by value: the completion block keeps its own copy (a captured reference would outlive requests)
 void kmtlSavePNG(id<MTLCommandBuffer> cb, id<MTLTexture> tex, id<MTLFence> after, std::string path, void (^done)(void)) {
     NSUInteger w = tex.width, h = tex.height;
+    if (tex.pixelFormat == MTLPixelFormatRGB10A2Unorm) {
+        MTLTextureDescriptor* d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:tex.pixelFormat width:w
+                                                                                    height:h mipmapped:NO];
+        d.storageMode = MTLStorageModePrivate;
+        id<MTLTexture> copy = [tex.device newTextureWithDescriptor:d];
+        id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
+        if (after) [b waitForFence:after];
+        [b copyFromTexture:tex toTexture:copy];
+        [b endEncoding];
+        [cb addCompletedHandler:^(id<MTLCommandBuffer>) {
+            writeHdrPNG(copy, path);
+            if (done) done();
+        }];
+        return;
+    }
     id<MTLBuffer> buf = [tex.device newBufferWithLength:w * h * 4 options:MTLResourceStorageModeShared];
     bool bgra = tex.pixelFormat == MTLPixelFormatBGRA8Unorm || tex.pixelFormat == MTLPixelFormatBGRA8Unorm_sRGB;
     id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];

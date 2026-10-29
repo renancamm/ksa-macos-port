@@ -73,10 +73,11 @@ uncompressed_textures | bool | true | KSA_MTL_UNCOMPRESSED_TEXTURES | | restart 
 ray_hits | bool | true | KSA_MTL_RT_INTERSECTOR | ray_tracing | restart | | IVA Ray Search | With IVA Ray Tracing (Graphics) on, the cockpit's rays find what they hit through a faster kind of ray search: the cockpit draws about 6 % faster, with the same image. Off: try it when the cockpit looks wrong.
 unlit_shadow_skip | bool | true | KSA_MTL_UNLIT_SHADOW_SKIP | | restart | | Skip Shadows on Unlit Sides | Shadows are worked out only where light reaches (terrain, vessels and kittens facing the light, sunlit grass and buildings, the sunlit sea, godrays, the cockpit's ray tracing): the cockpit draws about 45 % faster, grass at night about 8-16 %, with the same image. Off: try it when a shadow looks wrong.
 
-[game_features] GPU Features | What this Mac's GPU offers the game. The game's own settings still decide.
+[game_features] GPU Features | What this Mac offers the game. The game's own settings still decide.
 tessellation | available | true | KSA_MTL_TESSELLATION | | restart | | Tessellation | Lets the game tessellate terrain and ocean; its own Tessellation setting (Graphics, Terrain) still decides. Off: the game draws them without it.
 ray_queries | available | true | KSA_MTL_RAYQUERY | | restart | | Ray Queries | Lets the game place ground clutter with ray queries, and use ray tracing. Off: the game places clutter without them.
 ray_tracing | available | true | KSA_MTL_RTPIPELINE | ray_queries | restart | | Ray Tracing | Lets the game use ray tracing in the cockpit (IVA); its own IVA Ray Tracing setting (Graphics) still decides. Off: unavailable to the game.
+hdr_output | available | true | KSA_MTL_HDR | | restart | | HDR Output | Lets the game show HDR on a display that has it; its own HDR (Experimental) setting (Display) still decides. The game's white then matches other windows; HDR Paper White and HDR Peak Brightness set how far highlights reach above it. Off: unavailable to the game.
 
 [measure] Measure | See the frame rate live, or run a fixed tour that writes a report.
 performance_overlay | bool | false | MTL_HUD_ENABLED | | restart | | Performance Overlay | Apple's Metal Performance HUD in a corner of the window: frame rate, frame and GPU times, and memory.

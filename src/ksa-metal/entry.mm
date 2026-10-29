@@ -204,6 +204,7 @@ static const KEntry kEntries[] = {
     D(vkGetAccelerationStructureDeviceAddressKHR),
     D(vkCmdBuildAccelerationStructuresKHR),
     D(vkCreateSwapchainKHR),
+    D(vkSetHdrMetadataEXT),
     D(vkDestroySwapchainKHR),
     D(vkGetSwapchainImagesKHR),
     D(vkAcquireNextImageKHR),

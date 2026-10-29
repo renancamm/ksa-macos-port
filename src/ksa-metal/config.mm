@@ -34,6 +34,7 @@ const KConfig& kmtlConfig() {
         c.budgetMb = envInt("KSA_MTL_BUDGET_MB", 0);
         c.presentPacing = envOn("KSA_MTL_PRESENT_PACING", true);
         c.fxInterpolate = envOn("KSA_MTL_FX_INTERPOLATE", false);
+        c.hdr = envOn("KSA_MTL_HDR", true);
         // Debugging
         c.logLevel = envInt("KSA_MTL_LOG", 0);
         c.logFile = env("KSA_MTL_LOG_FILE");

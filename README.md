@@ -304,7 +304,7 @@ tabs; each row's tooltip says what it changes and what it costs.
 | Interface | the flight HUD fitted to the display, or the game's own layout |
 | Extra Performance | a visible trade for speed, with the game's own as the default: cloud shadow updates, plume shadow quality, simpler PCSS shadows, a baked Milky Way |
 | Optimizations | the same image, faster, on by default |
-| GPU Features | what the Mac's GPU offers the game, with the game's own settings still deciding: tessellation, ray queries, ray tracing |
+| GPU Features | what the Mac's GPU and display offer the game, with the game's own settings still deciding: tessellation, ray queries, ray tracing, HDR output |
 | Measure | Apple's Metal Performance HUD over the game, and the [benchmark](#the-benchmark) |
 
 The settings are kept in `port-settings.toml`, next to the game's `settings.toml` in

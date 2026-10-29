@@ -57,6 +57,7 @@ public static class Hooks
         // The port's own parts of the game
         Run("documents folder", "documents", true, Documents.Apply);
         Run("restart", "restart", true, Restart.Apply);
+        Run("HDR brightness", "hdr", true, Hdr.Apply);
         Run("presets", "presets", true, Presets.Apply);
         Run("Mac Port tab", "mac_port_tab", true, MacPortTab.Apply);
         Run("benchmark", "benchmark", true, BenchmarkRun.Apply);
