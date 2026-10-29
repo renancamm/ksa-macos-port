@@ -679,15 +679,21 @@ public partial class Benchmark
                 if (_fast && !Holding)
                 {
                     _phase = Phase.Measure;
-                    _still = new Window(_shotName, double.NaN);
-                    Opened(_still);
-                    _phaseEnds = wall + FastMeasureSeconds;
                     return;
                 }
                 CaptureThenShoot(wall);
                 return;
             case Phase.Measure:
-                _still!.Add(dt * 1000, DriverStats.Read());
+                // The window opens a frame after the view settled: that frame read and compared the last probe on this
+                // thread (about 150 ms at 6 MP), and its time is the dt of the frame after it
+                if (_still == null)
+                {
+                    _still = new Window(_shotName, double.NaN);
+                    Opened(_still);
+                    _phaseEnds = wall + FastMeasureSeconds;
+                    return;
+                }
+                _still.Add(dt * 1000, DriverStats.Read());
                 if (wall < _phaseEnds)
                     return;
                 DriverStats.Marker(_still.Name, false);
