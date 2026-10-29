@@ -605,8 +605,25 @@ public partial class Benchmark
         var fields = new (string Name, object Value)[]
         {
             ("_noiseScroll", default(Brutal.Numerics.double3)), ("_volumetricsFlowMapPhase", 0.0),
-            ("_twoDimensionalFlowMapPhase", 0.0), ("_detailTextureFrameInitialized", false)
+            ("_twoDimensionalFlowMapPhase", 0.0)
         };
+        // The detail texture's frame: whether it has one, its origin and its offset. Origin and offset at zero are a new
+        // layer's: its first frame starts the detail texture where the camera is. KSA 2026.10.25 keeps the frame per view
+        // instead of once per layer, and also keeps where the noise was at the start of each frame.
+        var scrollAtStart = typeof(CloudLayerRenderData).GetField("_noiseScrollAtFrameStart", Private);
+        var views = typeof(CloudLayerRenderData).GetField("_viewportData", Private);
+        var viewType = views?.FieldType.GetElementType();
+        var detailFrame = new (FieldInfo? Layer, FieldInfo? View, object Value)[]
+        {
+            (typeof(CloudLayerRenderData).GetField("_detailTextureFrameInitialized", Private),
+                viewType?.GetField("DetailTextureFrameInitialized"), false),
+            (typeof(CloudLayerRenderData).GetField("_detailTextureFrameOrigin", Private),
+                viewType?.GetField("DetailTextureFrameOrigin"), default(Brutal.Numerics.double3)),
+            (typeof(CloudLayerRenderData).GetField("_detailTextureFrameUVOffset", Private),
+                viewType?.GetField("DetailTextureFrameUVOffset"), default(Brutal.Numerics.double2))
+        };
+        if (detailFrame.Any(f => f.Layer == null && f.View == null))
+            Log("@time: the clouds have no detail texture frame to reset");
         foreach (var layers in clouds._planetToCloudRenderData.Values)
         {
             foreach (var layer in layers)
@@ -617,6 +634,19 @@ public partial class Benchmark
                         field.SetValue(layer, value);
                     else
                         Log($"@time: the clouds have no {name}");
+                }
+                scrollAtStart?.SetValue(layer, default(Brutal.Numerics.double3));
+                var viewData = views?.GetValue(layer) as Array;
+                foreach (var (layerField, viewField, value) in detailFrame)
+                {
+                    layerField?.SetValue(layer, value);
+                    if (viewField == null || viewData == null)
+                        continue;
+                    foreach (var view in viewData)
+                    {
+                        if (view != null)
+                            viewField.SetValue(view, value);
+                    }
                 }
             }
         }
