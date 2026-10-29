@@ -2,7 +2,7 @@
 #
 # The launcher loads the shim with DYLD_INSERT_LIBRARIES. It replaces libktx's create and destroy calls so that the
 # pixels KSA keeps of each texture are mapped from a file instead of held in memory of their own (see the comment at
-# the top of ktx_shim.c). It links RocketWerkz's libktx from the Ahwoo.BRUTAL.Ktx package.
+# the top of ktx_shim.c). It links RocketWerkz's libktx from the Ahwoo.BRUTAL.Ktx.Native package.
 set(CMAKE_C_FLAGS_RELEASE "")
 
 add_library(brutal-ktx SHARED IMPORTED)

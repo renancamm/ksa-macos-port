@@ -35,8 +35,8 @@ FetchContent_MakeAvailable(vulkan_headers spirv_cross spirv_tools glfw_headers d
 # Harmony for KSA Metal Hooks: the package's .NET 10 assembly
 set(HARMONY_DIR "${CMAKE_BINARY_DIR}/harmony")
 file(REMOVE_RECURSE "${HARMONY_DIR}")
-file(GLOB harmony_package "${lib_harmony_SOURCE_DIR}/*.nupkg")
-file(ARCHIVE_EXTRACT INPUT "${harmony_package}" DESTINATION "${HARMONY_DIR}" PATTERNS "lib/net10.0/0Harmony.dll")
+# By its name: the download folder keeps the package of an earlier version when the version changes
+file(ARCHIVE_EXTRACT INPUT "${lib_harmony_SOURCE_DIR}/lib.harmony.${HARMONY_VERSION}.nupkg" DESTINATION "${HARMONY_DIR}" PATTERNS "lib/net10.0/0Harmony.dll")
 
 # BRUTAL's native libraries: RocketWerkz's macOS builds, unmodified, from each package's runtimes/osx-arm64/native/,
 # with BRUTAL's licence, notice and the packages' third-party notices. The one file there that is not a library,
@@ -52,12 +52,14 @@ file(MAKE_DIRECTORY "${KSA_NATIVES_DIR}/licenses/brutal")
 foreach(entry IN LISTS BRUTAL_PACKAGES)
     string(REGEX MATCHALL "[^ ]+" fields "${entry}")
     list(GET fields 0 id)
+    list(GET fields 1 version)
     string(TOLOWER "${id}" lower)
     string(REPLACE "." "_" name "${lower}")
     FetchContent_MakeAvailable(${name})
     set(unpacked "${CMAKE_BINARY_DIR}/brutal/${name}")
     file(REMOVE_RECURSE "${unpacked}")
-    file(GLOB package "${${name}_SOURCE_DIR}/*.nupkg")
+    # By its name: the download folder keeps the package of an earlier version when the version changes
+    set(package "${${name}_SOURCE_DIR}/${lower}.${version}.nupkg")
     file(ARCHIVE_EXTRACT INPUT "${package}" DESTINATION "${unpacked}"
         PATTERNS "runtimes/osx-arm64/native/*" "*.txt") # every pattern must match: not all packages have LICENSES/
     file(GLOB natives LIST_DIRECTORIES false "${unpacked}/runtimes/osx-arm64/native/*")

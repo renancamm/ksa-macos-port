@@ -2,7 +2,7 @@
 #
 # The launcher loads the shim with DYLD_INSERT_LIBRARIES. It replaces a few GLFW and CoreGraphics calls to fix
 # resolution lists, Fullscreen resolution, window positions and raw mouse errors (see the comment at the top of
-# glfw_shim.c). It links RocketWerkz's GLFW from the Ahwoo.BRUTAL.Glfw package, with the headers of the fork commit
+# glfw_shim.c). It links RocketWerkz's GLFW from the Ahwoo.BRUTAL.Glfw.Native package, with the headers of the fork commit
 # that library is built from.
 set(CMAKE_C_FLAGS_RELEASE "")
 

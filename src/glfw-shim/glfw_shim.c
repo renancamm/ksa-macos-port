@@ -1,6 +1,6 @@
 /*
  * libGlfwShim.dylib - fixes a few things in how the GLFW that KSA ships (RocketWerkz's fork of GLFW
- * 3.5.1, from the Ahwoo.BRUTAL.Glfw package) and the game work together on macOS. The app's launcher
+ * 3.5.1, from the Ahwoo.BRUTAL.Glfw.Native package) and the game work together on macOS. The app's launcher
  * loads it with DYLD_INSERT_LIBRARIES, and it replaces a few calls through dyld interposing, so GLFW
  * itself stays unmodified.
  *

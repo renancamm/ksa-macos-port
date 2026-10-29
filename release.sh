@@ -6,7 +6,7 @@
 #
 # Usage: ./release.sh [options] <ksa_linux_vX.tar.gz>   build and test dist/ksa-macos-port-v<version>.zip
 #        ./release.sh --publish                         tag and upload the newest zip in dist/
-#   The version is <KSA build>.<n>: the build number of the KSA the release is made for (5638 for 2026.10.19.5638)
+#   The version is <KSA build>.<n>: the build number of the KSA the release is made for (5707 for 2026.10.25.5707)
 #   and the n-th release of the port for it, counted from the v<KSA build>.* tags. Publishing needs gh, signed in,
 #   and the commit pushed to GitHub.
 #

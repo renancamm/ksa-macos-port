@@ -24,8 +24,8 @@ Benchmark reports from your Mac are welcome too ([The benchmark](#the-benchmark)
 Making the app takes one command and about a minute. You need:
 
 - A Mac with Apple Silicon (M1 or later) and **macOS 26** or later.
-- The **Linux version of KSA** from [ksa.ahwoo.com](https://ksa.ahwoo.com), version 2026.10.19 or later. It is a
-  file like `ksa_linux_v2026.10.19.5638.tar.gz`; leave it in your Downloads folder.
+- The **Linux version of KSA** from [ksa.ahwoo.com](https://ksa.ahwoo.com), version 2026.10.25 or later. It is a
+  file like `ksa_linux_v2026.10.25.5707.tar.gz`; leave it in your Downloads folder.
 
 ### Install
 
@@ -131,27 +131,27 @@ To update an app, `port.sh` runs the same steps on it again, without the extract
 
 ### BRUTAL's native libraries
 
-RocketWerkz publishes BRUTAL as NuGet packages (`Ahwoo.BRUTAL.*`). The packages that wrap native code carry
-RocketWerkz's builds for Windows, Linux and macOS on Apple Silicon. The port takes the macOS builds of the eleven it
-needs, unmodified:
+RocketWerkz publishes BRUTAL as NuGet packages (`Ahwoo.BRUTAL.*`). The native libraries are in packages of their
+own (`Ahwoo.BRUTAL.<name>.Native`; Monitor.Host carries its program itself), with RocketWerkz's builds for Windows,
+Linux and macOS on Apple Silicon. The port takes the macOS builds of the eleven it needs, unmodified:
 
 | Package | Library | Used for |
 |---|---|---|
-| Ahwoo.BRUTAL.Stb | `libstb.dylib` | loading and writing images |
-| Ahwoo.BRUTAL.Vulkan | `libVulkanEx.dylib` | batched Vulkan helpers |
-| Ahwoo.BRUTAL.Vulkan.Vma | `libvma.dylib` | GPU memory (Vulkan Memory Allocator) |
-| Ahwoo.BRUTAL.Glfw | `libglfw.3.dylib` | the window and input (GLFW 3.5.1 fork) |
-| Ahwoo.BRUTAL.Gli | `libgli.dylib` | texture formats |
-| Ahwoo.BRUTAL.ImGui | `libimgui.dylib` | the user interface |
-| Ahwoo.BRUTAL.ImPlot | `libimplot.dylib` | the profiler's plots |
-| Ahwoo.BRUTAL.Ktx | `libKtx.dylib` | KTX2 textures |
-| Ahwoo.BRUTAL.ShaderC | `libshaderc_shared.dylib`, `libSPIRV-Tools-shared.dylib` | compiling GLSL shaders at startup |
-| Ahwoo.BRUTAL.RakNet | `libRakNetDLL.dylib` | networking (RakNet) |
+| Ahwoo.BRUTAL.Stb.Native | `libstb.dylib` | loading and writing images |
+| Ahwoo.BRUTAL.Vulkan.Native | `libVulkanEx.dylib` | batched Vulkan helpers |
+| Ahwoo.BRUTAL.Vulkan.Vma.Native | `libvma.dylib` | GPU memory (Vulkan Memory Allocator) |
+| Ahwoo.BRUTAL.Glfw.Native | `libglfw.3.dylib` | the window and input (GLFW 3.5.1 fork) |
+| Ahwoo.BRUTAL.Gli.Native | `libgli.dylib` | texture formats |
+| Ahwoo.BRUTAL.ImGui.Native | `libimgui.dylib` | the user interface |
+| Ahwoo.BRUTAL.ImPlot.Native | `libimplot.dylib` | the profiler's plots |
+| Ahwoo.BRUTAL.Ktx.Native | `libKtx.dylib` | KTX2 textures |
+| Ahwoo.BRUTAL.ShaderC.Native | `libshaderc_shared.dylib`, `libSPIRV-Tools-shared.dylib` | compiling GLSL shaders at startup |
+| Ahwoo.BRUTAL.RakNet.Native | `libRakNetDLL.dylib` | networking (RakNet) |
 | Ahwoo.BRUTAL.Monitor.Host | `Brutal.Monitor.Subprocess`, a program | crash dumps |
 
 These are the same versions KSA ships for Linux: the Linux libraries in the game's archive are identical to the
 Linux builds in these packages. `convert-dotnet.sh` compares each package version with the matching game assembly
-(`Ahwoo.BRUTAL.Glfw` with `Brutal.Glfw.dll`). It stops when the game is older than the packages, because older
+(`Ahwoo.BRUTAL.Glfw.Native` with `Brutal.Glfw.dll`). It stops when the game is older than the packages, because older
 bindings don't match the newer libraries, and warns when the game is newer.
 
 ### Building the port
