@@ -21,7 +21,8 @@
 #                      then a rocket's launch and explosion (with sections or places: those, the camera's flight
 #                      paused and jumping, vehicles played as written); measures the views standing still
 #   --no-shots         take no screenshots
-#   --set <key=value>  change one setting of settings.toml for the run (again for more), on top of the preset
+#   --set <key=value>  change one setting of settings.toml for the run (again for more), on top of the preset;
+#                      <section>.<key>=<value> adds it to that section when the file has no such key
 #   --settings <file>  change the settings in that file ("key = value" lines, as in settings.toml; a bare word
 #                      needs no quotes), on top of the preset and before --set
 #   --port <key=value>  change one setting of port-settings.toml for the run (again for more), on top of yours (with
@@ -260,13 +261,26 @@ printf '[[mods]]\nid = "Core"\nenabled = true\n' > "${INSTANCE}/manifest.toml"
 SETTINGS="${INSTANCE}/settings.toml"
 cp "${DOCS}/settings.toml" "${SETTINGS}"
 SET_KEYS=" "
-# set_setting <key> <value>: one line of settings.toml (keys are unique across its sections)
+# set_setting <key> <value>: one line of settings.toml (keys are unique across its sections). As <section>.<key>, the
+# key in that section, added when the file lacks it (one a newer KSA added; the section must be there)
 set_setting() {
-    grep -q "^$1 = " "${SETTINGS}" || die "settings.toml has no '$1' (does this KSA version still match?)."
-    local value
+    local key="${1##*.}" section="" value
+    [ "${key}" = "$1" ] || section="${1%.*}"
     value="$(printf '%s' "$2" | sed 's/[|&\\]/\\&/g')"
-    sed -i '' "s|^$1 = .*|$1 = ${value}|" "${SETTINGS}"
-    SET_KEYS="${SET_KEYS}$1 "
+    if [ -z "${section}" ]; then
+        grep -q "^${key} = " "${SETTINGS}" || die "settings.toml has no '${key}' (does this KSA version still match?)."
+        sed -i '' "s|^${key} = .*|${key} = ${value}|" "${SETTINGS}"
+    elif awk -v header="[${section}]" -v line="${key} = " '$0 == header { inside = 1; next } /^\[/ { inside = 0 }
+            inside && index($0, line) == 1 { found = 1 } END { exit !found }' "${SETTINGS}"; then
+        sed -i '' "/^\[${section}\]$/,/^\[/s|^${key} = .*|${key} = ${value}|" "${SETTINGS}"
+    else
+        grep -q "^\[${section}\]$" "${SETTINGS}" || die "settings.toml has no [${section}] section."
+        info "settings.toml has no ${key} in [${section}]: added"
+        sed -i '' "/^\[${section}\]$/a\\
+${key} = ${value}
+" "${SETTINGS}"
+    fi
+    SET_KEYS="${SET_KEYS}${key} "
 }
 # toml_value <value>: a bare word is a string, quoted as TOML wants it (Pcf -> "Pcf"); anything else as written
 toml_value() {

@@ -199,7 +199,7 @@ puts the tour from `src/benchmark/benchmark.txt` into the app.
 | `--system earth` | Earth and the Moon only (the game's smaller system): skips Mars, Saturn and Jupiter, and needs less memory (default: `sol`; in fast mode `earth` when the places played are all on Earth or the Moon) |
 | `--fast` | the short test (three places on Earth, the `rocket` section), or the sections and places named with the camera jumping between places; measures the views standing still (default: the cinematic tour) |
 | `--no-shots` | take no screenshots |
-| `--set <key>=<value>` | change a setting of `settings.toml` for the run, on top of the preset (repeat for more; strings need no quotes) |
+| `--set <key>=<value>` | change a setting of `settings.toml` for the run, on top of the preset (repeat for more; strings need no quotes); as `<section>.<key>=<value>` it adds a key your file lacks to that section, such as one a newer KSA added (`display.hdr=true`) |
 | `--settings <file>` | apply the settings in a file of `key = value` lines, on top of the preset and before `--set` |
 | `--port <key>=<value>` | change a [port setting](../../README.md#the-mac-port-tab) for the run, on top of yours (with a preset or `--defaults`, on top of the defaults); the report shows the port settings and what the hooks did |
 | `--compare <run>` | compare with that run (folder or zip) at the end; the script fails when screenshots differ |
