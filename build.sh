@@ -59,7 +59,7 @@ CONVERT=1
 rm -rf "${KSA_DIR}"
 mkdir -p "${KSA_DIR}"
 if [ -f "${KSA_SOURCE}/Contents/Resources/KSA.dll" ]; then
-    KSA_DIR="${KSA_SOURCE}/Contents/Resources"
+    KSA_DIR="$(CDPATH='' cd -- "${KSA_SOURCE}/Contents/Resources" && pwd)"  # absolute: MSBuild reads a relative one from the project
     CONVERT=0
 elif [ -f "${KSA_SOURCE}/KSA.dll" ]; then
     cp "${KSA_SOURCE}"/*.dll "${KSA_DIR}/"
