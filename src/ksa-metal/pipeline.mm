@@ -698,6 +698,12 @@ static bool prepareStage(const VkPipelineShaderStageCreateInfo* st, spv::Executi
     char name[64];
     snprintf(name, sizeof(name), "%016llx_%c%d", (unsigned long long)mod->hash, stageChar(model, so.tess), (int)so.indexType);
     *outName = name;
+    // More sets than maxBoundDescriptorSets: the last ones would take the push constants' buffer index. KSA skips a
+    // pipeline that fails to build (2026.10.25), and the driver draws nothing with it otherwise.
+    if (layout && layout->sets.size() > kMaxSets) {
+        KERR("shader %s: the pipeline layout has %zu descriptor sets, more than %u", name, layout->sets.size(), (unsigned)kMaxSets);
+        return false;
+    }
     uint64_t key = translationKey(mod, st->pName, model, layout, st->pSpecializationInfo, so);
     if (!kmtlCacheLoad(key, tr)) {
         if (!translate(mod, st->pName, model, layout, st->pSpecializationInfo, so, tr, &err)) {

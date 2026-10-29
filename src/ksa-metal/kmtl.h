@@ -128,7 +128,7 @@ struct KStallTimer {
 // ---------------------------------------------------------------------------------------------------------------
 // Buffer indices per stage (vertex buffers count down from 30, so the low indices stay free for sets and push constants)
 enum : uint32_t {
-    kMaxSets = 16,
+    kMaxSets = 10,  // set n -> buffer index n, below the push constants (maxBoundDescriptorSets)
     kPushConstantBufferIndex = 10,
     kDrawIdBufferIndex = 11,
     kBufferSizeBufferIndex = 12,
@@ -148,6 +148,7 @@ enum : uint32_t {
     kVertexBufferTop = 30,  // binding n -> buffer index 30 - n
     kMaxPushConstants = 4096,
 };
+static_assert(kMaxSets <= kPushConstantBufferIndex, "a set's buffer index would be the push constants'");
 inline uint32_t vertexBufferIndex(uint32_t binding) { return kVertexBufferTop - binding; }
 
 struct KDevice;
