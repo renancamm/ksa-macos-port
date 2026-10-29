@@ -34,6 +34,10 @@
 //                                MainEngineThrottleUp (held until release; the throttle rises by 0.7 a second of the
 //                                Mac's clock, not the game's, to full)
 //   @explode                     destroy the vehicle the way a crash does
+//   @face <yaw> <pitch> <elev>   turn the vehicle so that the cockpit's view from its first crewed seat at that yaw
+//                                and pitch (as @look has them) looks elev degrees above the level (below when
+//                                negative), keeping its heading: a capsule in orbit looking down at the celestial
+//                                through its window. The game turns it a frame later
 //   @kitten <lat> <lon> <name>   put a kitten of the benchmark's (Hunter's looks) out on EVA, standing on the ground
 //                                of the home celestial there (the game stands it there a frame later); it becomes the
 //                                vehicle
@@ -42,10 +46,11 @@
 //                                @place put the camera somewhere
 //   @helmet on|off               the helmet of the kitten on EVA (off shows its fur, as in the cockpit)
 //   @spin <x> <y> <z>            set the vehicle's rotation rates (rad/s), stabilization off
-//   @fly <alt> <speed>           put the vehicle that high above the sea ("km" for kilometres), straight over where it
+//   @fly <alt> <speed>|orbit     put the vehicle that high above the sea ("km" for kilometres), straight over where it
 //                                stands, climbing at that speed (m/s over the ground), as if it had flown up there: a
-//                                rocket high in the sky without the minutes of its climb. It keeps its attitude; the
-//                                game moves it a frame later
+//                                rocket high in the sky without the minutes of its climb. With "orbit", on a circular
+//                                orbit there instead, going east. It keeps its attitude; the game moves it a frame
+//                                later
 //
 // Camera (see Camera.cs and Path.cs). Moves take [<seconds>] on the script's clock and ease in and out; a value "-"
 // keeps the current one and "~<x>" adds x to it.
@@ -246,6 +251,8 @@ public partial class Benchmark
             case "@kitten" when a.Length == 4 && double.TryParse(a[1], NumberStyles.Float, Inv, out var kittenLat) &&
                 double.TryParse(a[2], NumberStyles.Float, Inv, out var kittenLon):
                 return PlaceKitten(kittenLat, kittenLon, a[3]);
+            case "@face" when a.Length == 4:
+                return Face(a);
             case "@fly" when a.Length == 3:
                 return Fly(a);
             case "@spin" when a.Length == 4:
@@ -385,17 +392,26 @@ public partial class Benchmark
         return true;
     }
 
-    // @fly <alt> <speed>: the vehicle on the trajectory of a vertical climb through that point, the ground's turning
-    // included, through the game's own teleport (InputEvents.TeleportInputData, as its debug window does)
+    // @fly <alt> <speed>|orbit: the vehicle on the trajectory of a vertical climb through that point, the ground's
+    // turning included, or on a circular orbit through it going east, through the game's own teleport
+    // (InputEvents.TeleportInputData, as its debug window does)
     private bool Fly(string[] a)
     {
+        double speed = 0;
+        bool orbiting = a[2] == "orbit";
         if (Target is not { Parent: Celestial body } v || !TryValue(a[1], 0, 1, out var altitude) ||
-            !double.TryParse(a[2], NumberStyles.Float, Inv, out var speed))
+            !orbiting && !double.TryParse(a[2], NumberStyles.Float, Inv, out speed))
             return false;
         var upCce = double3.Normalize(v.GetPositionEcl() - body.GetPositionEcl());
         var upCci = upCce.Transform(body.GetCci2Cce().Inverse());
         var positionCci = upCci * (body.MeanRadius + altitude);
-        var velocityCci = double3.Cross(((IParentBody)body).GetAngularVelocityCci(), positionCci) + upCci * speed;
+        var spin = ((IParentBody)body).GetAngularVelocityCci();
+        // Over a pole there is no east to go
+        if (orbiting && double3.Cross(spin, upCci).Length() < 1e-9 * spin.Length())
+            return false;
+        var velocityCci = orbiting
+            ? double3.Normalize(double3.Cross(spin, upCci)) * Math.Sqrt(((IParentBody)body).Mu / positionCci.Length())
+            : double3.Cross(spin, positionCci) + upCci * speed;
         var orbit = KSA.Orbit.CreateFromStateCci(body, Universe.GetNextSimStep().NextTime, positionCci, velocityCci,
             new Random(1).RandomColor());
         InputEvents.TeleportInputBuffer.Add(new InputEvents.TeleportInputData { Vehicle = v, Orbit = orbit });
@@ -453,6 +469,46 @@ public partial class Benchmark
         eva.UpdatePerFrameData();
         eva.TeleportToLocation(body, lat, lon);
         _vehicle = eva;
+        return true;
+    }
+
+    // @face <yaw> <pitch> <elev>: the vehicle turned about the axis square to the seat's view and the one it should
+    // look along, through the game's teleport (attitude only)
+    private bool Face(string[] a)
+    {
+        if (Target is not { Parent: Celestial body } v || !TryValue(a[1], 0, 1, out var yaw) ||
+            !TryValue(a[2], 0, 1, out var pitch) || !TryValue(a[3], 0, 1, out var elevation))
+            return false;
+        IVASeat? seat = null;
+        foreach (var s in v.Parts.Modules.Get<IVASeat>())
+        {
+            if (s.AssignedKittenHash != KeyHash.Zero)
+            {
+                seat = s;
+                break;
+            }
+        }
+        if (seat == null)
+        {
+            Log("@face: no kitten seated");
+            return false;
+        }
+        var (view, _) = SeatView(v, seat, new double2(yaw, pitch));
+        var up = double3.Normalize(v.GetPositionEcl() - body.GetPositionEcl());
+        var level = view - up * double3.Dot(view, up);
+        if (level.Length() < 1e-6)
+            return false;
+        double e = elevation * Math.PI / 180;
+        var wanted = double3.Normalize(level) * Math.Cos(e) + up * Math.Sin(e);
+        var axis = double3.Cross(view, wanted);
+        if (axis.Length() < 1e-9)
+            return true;
+        double angle = Math.Acos(Math.Clamp(double3.Dot(view, wanted), -1, 1));
+        var turn = doubleQuat.CreateFromAxisAngle(double3.Normalize(axis), angle);
+        InputEvents.TeleportInputBuffer.Add(new InputEvents.TeleportInputData
+        {
+            Vehicle = v, Body2Cce = doubleQuat.Concatenate(v.Body2Cce, turn), BodyRates = double3.Zero
+        });
         return true;
     }
 
