@@ -238,3 +238,89 @@ section rocket
 13.5 @chase - 50 150 2
 15 @explode
 18 @shot explosion 60
+
+# Lineup: everything of the vehicle sections at one moment of the game, then one view after the other with the game
+# paused. Each view has a vehicle of its own, placed and started so that its moment comes at the same game time: a
+# rocket rising from LC-39A, one high over the coast from Vandenberg, one blown up over Māhia, the capsule's cockpit
+# on ELA-4 and its kitten out on the grass in the Amazon. The clouds start from the same place every run (@time), and
+# each ignition, step and blast waits for the game's clock (@sync), so it happens at the same game time on every Mac.
+# A kitten walks the way the camera looks: the camera keeps its place beside it while it walks. It plays alone or
+# after the flight's places (its @time needs the game's clock still near its start).
+section lineup
+0 @time 10
+0 @launch benchmark-srb at VSFB LC-4 as topdown
+0 @launch benchmark-srb at Māhia LC-1A as blast
+0 @launch benchmark-srb at CCSFS LC-39A as liftoff
+0 @launch benchmark-capsule at GSC ELA-4 as cockpit
+0 @launch -3.1 -60 benchmark-capsule as lander
+0.3 @control lander
+0.3 @crew Benchy
+0.3 @control cockpit
+0.3 @crew Pixel
+0.4 @sync
+0.4 @control topdown
+0.4 @input MainEngineThrottleUp press
+0.7 @sync
+0.7 @input MainEngineStartup press
+0.8 @input MainEngineStartup release
+0.9 @stage 1
+1.9 @sync
+1.9 @input MainEngineThrottleUp release
+1.9 @control blast
+1.9 @input MainEngineThrottleUp press
+2.2 @sync
+2.2 @input MainEngineStartup press
+2.3 @input MainEngineStartup release
+2.4 @stage 1
+3.4 @sync
+3.4 @input MainEngineThrottleUp release
+3.5 @warp 8 2
+8 @warp 1 1.5
+10.5 @sync
+10.5 @control lander
+10.5 @eva
+12.5 @sync
+12.5 @input TranslateUp press
+12.7 @input TranslateUp release
+13 @chase -100 12 3.5 2
+15 @sync
+15 @input TranslateBackward press
+15 @input TranslateRight press
+20 @sync
+20 @input TranslateBackward release
+20 @input TranslateRight release
+20.5 @sync
+20.5 @helmet off
+20.5 @control liftoff
+20.5 @input MainEngineThrottleUp press
+20.8 @sync
+20.8 @input MainEngineStartup press
+20.9 @input MainEngineStartup release
+21 @stage 1
+22 @sync
+22 @input MainEngineThrottleUp release
+23 @sync
+23 @control blast
+23 @chase 0 30 150
+23 @explode
+26 @warp 0
+26 @shot explosion 60
+26.5 @control liftoff
+26.5 @watch 240 300 2 70
+26.5 @shot liftoff 50
+27 @control topdown
+27 @chase 215 75 45
+27 @aim 10
+27 @shot topdown 50
+27.5 @control cockpit
+27.5 @camera iva
+27.5 @look -55 5
+27.5 @shot cockpit
+28 @control Benchy
+28 @chase -100 12 3.5
+28 @shot kitten
+28.5 @chase -50 30 4.5
+28.5 @shot shadow
+29 @aim 0.3
+29 @chase -165 5 0.9
+29 @shot fur 50

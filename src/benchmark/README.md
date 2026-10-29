@@ -119,6 +119,7 @@ shaders' hashes, how many other pipelines it ran) instead of an anonymous encode
 | `launch` | a rocket with solid boosters lifting off from LC-39A, seen from the ground, then from alongside as it climbs through the clouds, faster in between, and close to its engines up high | plumes, smoke trails, clouds, part physics |
 | `giga` | a rocket of about 2,000 parts on its pad, lifting off, blown up whole, its fire and smoke, the camera turning around it all along | part physics on the CPU, many draw calls, lights, explosions and smoke |
 | `rocket` | fast mode's rocket: the `launch` rocket lifting off, seen from the ground, then from above its nose over the clouds, then blown up there; only fast mode plays it, unless you name it | plumes, smoke trails, clouds, an explosion |
+| `lineup` | the vehicles at one moment, the game paused and the camera going from one to the next: a rocket lifting off from LC-39A, one high over the coast from Vandenberg, one blown up over Māhia, a capsule's cockpit on ELA-4, a kitten in the grass, its shadow and its face; plays only when you name it, alone or after places of the flight | plumes, smoke trails, clouds, an explosion, ray tracing in the cockpit, fur, grass and shadows |
 
 The camera flies from one world to the next without a cut and eases to a stop for each screenshot. The vehicles of
 the last three sections are all placed when the tour returns to Earth, the tour's only cut. Each of those sections
