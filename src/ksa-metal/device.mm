@@ -565,10 +565,19 @@ static MTLTextureDescriptor* textureDescriptor(const VkImageCreateInfo* ci, MTLP
     d.usage = u;
     d.storageMode = MTLStorageModePrivate;
     d.hazardTrackingMode = MTLHazardTrackingModeUntracked;
-    // 3D images without lossless compression: KSA's volumes (cloud and smoke noise, the clouds' shadow volume) are
-    // read at scattered positions, and a compressed texture fetches a whole block for each read. Same contents; on an
-    // M5 the clouds draw about 4 % faster, and scattered reads of a 128^3 R8 volume run 2.6x faster.
-    if (ci->imageType == VK_IMAGE_TYPE_3D && kmtlConfig().uncompressedVolumes) d.allowGPUOptimizedContents = NO;
+    // Tiling textures without lossless compression: 3D images (KSA's cloud and smoke noise, the clouds' shadow volume)
+    // and square power-of-two storage images of 64 to 256 (the ocean's FFT waves at each ocean simulation quality, the
+    // Milky Way's noise) are textures the game makes on the GPU and repeats across the world, read at scattered
+    // positions, where a compressed texture fetches a whole block for each read. Screen-sized targets, read in step
+    // with their pixels, keep it (without it: +1 ms), and so does depth (+3-9 ms).
+    // Same contents; on an M5 the clouds and the sea draw about 5-7 % faster, and scattered reads of a 128^3 R8
+    // volume run 2.6x faster.
+    if (kmtlConfig().uncompressedTiles) {
+        uint32_t w = ci->extent.width;
+        bool square = ci->imageType == VK_IMAGE_TYPE_2D && (vu & VK_IMAGE_USAGE_STORAGE_BIT) && w == ci->extent.height &&
+                      w >= 64 && w <= 256 && !(w & (w - 1));
+        if (ci->imageType == VK_IMAGE_TYPE_3D || square) d.allowGPUOptimizedContents = NO;
+    }
     return d;
 }
 

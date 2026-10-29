@@ -74,7 +74,7 @@ struct KConfig {
     bool strictSync = false;              // KSA_MTL_SYNC=strict: all GPU work in submission order
     bool safeMath = false;                // KSA_MTL_SAFE_MATH=1: shaders without fast math
     bool constantArgumentBuffers = true;  // KSA_MTL_AB_CONSTANT=0: argument buffers in device memory
-    bool uncompressedVolumes = true;      // KSA_MTL_UNCOMPRESSED_VOLUMES=0: 3D images lossless-compressed, as Metal does
+    bool uncompressedTiles = true;        // KSA_MTL_UNCOMPRESSED_TILES=0: tiling textures lossless-compressed, as Metal does
     int budgetMb = 0;                     // KSA_MTL_BUDGET_MB: GPU memory budget reported (0: Metal's recommendation)
     bool presentPacing = true;            // KSA_MTL_PRESENT_PACING=0: a present counts only once the display shows it
     bool fxInterpolate = false;           // KSA_MTL_FX_INTERPOLATE=1: a MetalFX frame between every two the game presents

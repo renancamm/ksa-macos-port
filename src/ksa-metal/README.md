@@ -33,7 +33,7 @@ These switches turn a feature off or change a default, to work around a problem 
 | `KSA_MTL_SAFE_MATH=1` | compile shaders without fast math; rules out precision problems |
 | `KSA_MTL_AB_CONSTANT=0` | shaders read their resources from device memory instead of constant memory; a bit slower, try it when a shader fails to compile |
 | `KSA_MTL_UNIFORM_REFS=0` | helper functions get their own copy of each uniform struct they take, as SPIRV-Cross writes it ([Shaders](#from-vulkan-to-metal)); slower in the smoke raymarch, try it when a shader looks wrong |
-| `KSA_MTL_UNCOMPRESSED_VOLUMES=0` | 3D images (the clouds' and the smoke's noise and volumes) are lossless-compressed, as Metal does by default; about 4 % slower over clouds, try it when clouds or smoke look wrong |
+| `KSA_MTL_UNCOMPRESSED_TILES=0` | tiling textures (3D images such as the clouds' and the smoke's noise, and square power-of-two storage images of 64 to 256 such as the ocean's waves) are lossless-compressed, as Metal does by default; about 5-7 % slower over clouds and the sea, try it when clouds, smoke or the sea look wrong |
 | `KSA_MTL_RT_INTERSECTOR=0` | the cockpit's ray tracing finds each hit with a ray query, as SPIRV-Cross writes it, instead of Metal's intersector ([Ray tracing](#from-vulkan-to-metal)); slower in the cockpit, try it when the cockpit looks wrong |
 | `KSA_MTL_UNLIT_SHADOW_SKIP=0` | the port's shader edits that skip shadows where there is no light ([Shaders](#from-vulkan-to-metal)) look them up everywhere, as the game does; slower, try it when a shadow looks wrong |
 | `KSA_MTL_EARLY_FRAGMENT_TESTS=0` | no second state that tests depth first for pipelines whose fragment shader stores to an image ([Shaders](#from-vulkan-to-metal)): the hooks' Skip Hidden Vessel Parts has nothing to switch to |
@@ -253,7 +253,7 @@ The complete mapping:
 | Queues | family 0 does everything, family 1 only transfers (KSA streams textures on it); one `MTLCommandQueue` each |
 | `VkDeviceMemory` | placement `MTLHeap` plus a whole-heap `MTLBuffer` (type 0 private, types 1-2 shared and mapped); all heaps in one `MTLResidencySet` |
 | `VkBuffer` | an offset into the whole-heap buffer |
-| `VkImage` | `MTLTexture` placed in the heap; 3D ones without lossless compression (`KSA_MTL_UNCOMPRESSED_VOLUMES`) |
+| `VkImage` | `MTLTexture` placed in the heap; tiling ones (3D, square power-of-two storage up to 256) without lossless compression (`KSA_MTL_UNCOMPRESSED_TILES`) |
 | Descriptor set | Metal 3 argument buffer: each binding owns consecutive 8-byte slots (GPU address or resource ID); a trailing slot points at a table of buffer sizes |
 | Dynamic offsets | the set is copied into a per-command-buffer ring with the offsets added |
 | Push constants | `set*Bytes` at buffer index 10 |
