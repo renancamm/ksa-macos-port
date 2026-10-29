@@ -34,6 +34,9 @@
 //                                MainEngineThrottleUp (held until release; the throttle rises by 0.7 a second of the
 //                                Mac's clock, not the game's, to full)
 //   @explode                     destroy the vehicle the way a crash does
+//   @kitten <lat> <lon> <name>   put a kitten of the benchmark's (Hunter's looks) out on EVA, standing on the ground
+//                                of the home celestial there (the game stands it there a frame later); it becomes the
+//                                vehicle
 //   @eva                         send the first kitten aboard the vehicle out on EVA (the crew panel's EVA button); the
 //                                kitten becomes the vehicle and the controlled one, and the camera follows it, unless
 //                                @place put the camera somewhere
@@ -240,6 +243,9 @@ public partial class Benchmark
                 avatar.Attachments.Helmet.Enabled = a[1] == "on";
                 return true;
             }
+            case "@kitten" when a.Length == 4 && double.TryParse(a[1], NumberStyles.Float, Inv, out var kittenLat) &&
+                double.TryParse(a[2], NumberStyles.Float, Inv, out var kittenLon):
+                return PlaceKitten(kittenLat, kittenLon, a[3]);
             case "@fly" when a.Length == 3:
                 return Fly(a);
             case "@spin" when a.Length == 4:
@@ -393,6 +399,60 @@ public partial class Benchmark
         var orbit = KSA.Orbit.CreateFromStateCci(body, Universe.GetNextSimStep().NextTime, positionCci, velocityCci,
             new Random(1).RandomColor());
         InputEvents.TeleportInputBuffer.Add(new InputEvents.TeleportInputData { Vehicle = v, Orbit = orbit });
+        return true;
+    }
+
+    // @kitten: a kitten on EVA made as the game's EVA makes one (EVADoor.CreateKittenEva and SpawnEva: a backpack part
+    // for its body, its roster entry moved to "EVA"), standing on the ground as @launch puts a vehicle there
+    private bool PlaceKitten(double lat, double lon, string name)
+    {
+        if (Universe.CurrentSystem is not { HomeBody: Celestial body } system)
+            return false;
+        if (system.All.TryGet(name, out Astronomical? there) && there is Vehicle placed)
+        {
+            Log($"@kitten: '{name}' is there already");
+            _vehicle = placed;
+            return true;
+        }
+        // The game keeps its part templates and a tree's resource managers to itself
+        const BindingFlags Internal = BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance;
+        var parts = typeof(ModLibrary).GetField("AllParts", Internal)?.GetValue(null)
+            as SerializedCollection<PartTemplate>;
+        var recreate = typeof(PartTree).GetMethod("RecreateResourceManagers", Internal, Type.EmptyTypes);
+        if (parts?.Find(KeyHash.Make("KittenBackPackPart")) is not { } backpack || recreate == null)
+        {
+            Log("@kitten: no backpack part to make a kitten with");
+            return false;
+        }
+        var root = new Part(backpack.Id, backpack);
+        var tree = root.CreateOwnTree();
+        tree.ReinitializeDerivedValues();
+        recreate.Invoke(tree, null);
+        if (tree.ReconfigureTanks())
+            recreate.Invoke(tree, null);
+        tree.RefillConsumables();
+        var kitten = Universe.KittenRoster.Find(name);
+        if (kitten == null)
+        {
+            kitten = new KittenRosterEntryData(name, "HunterKitten");
+            Universe.KittenRoster.Kittens.Add(kitten);
+        }
+        kitten.TransferToVehicle("EVA");
+        // A kitten's parts have no geometry to stand it on: it is made on the ground with a metre's box, then the
+        // game's own teleport (Vehicle.TeleportToLocation, from its debug window) stands it there by its body's box, a
+        // frame later
+        var box = new double3(0.5, 0.5, 0.5);
+        var state = Vehicle.GetInitialKinematicStateForLocation(body, Universe.GetNextSimStep().NextTime, lat, lon,
+            -box, box, double3.Zero, new Random(1).RandomColor());
+        var eva = new KittenEva(system: system, characterId: kitten.Character, body2Cce: state.Body2Cce,
+            bodyRates: state.BodyRates, parent: state.Orbit.Parent!, id: name, root: root, orbit: state.Orbit);
+        // SpawnEva also calls UpdateAfterPartTreeModification here (the constructor set the vehicle up before the
+        // kitten's character was there: its distant glint). Left out: with it the kitten settles a little differently
+        // every run (kitten view 2-8 % changed between runs, 0.1 % without)
+        state.Orbit.Parent!.Children.Add(eva);
+        eva.UpdatePerFrameData();
+        eva.TeleportToLocation(body, lat, lon);
+        _vehicle = eva;
         return true;
     }
 
