@@ -39,8 +39,15 @@ public partial class Benchmark
         }
         if (_rotateRadPerSecond != 0 && view != null)
             view.Azimuth += _rotateRadPerSecond * dt;
+        // A later flight takes the camera from @place too (@place releases the flight it was on)
         if (UpdatePath())
+        {
             EndRig();
+            Unplace();
+        }
+        // @place's camera stays where it is, whatever else turns to the vehicles meanwhile
+        if (_placed is { } placed)
+            Apply(placed.Body, Resolve(placed.Body, placed.C, placed.Floor));
         UpdateRig(dt);
         if (_lookMove is { } l)
         {

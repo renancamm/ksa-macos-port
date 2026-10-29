@@ -82,7 +82,7 @@ hdr_output | available | true | KSA_MTL_HDR | | restart | | HDR Output | Lets th
 [measure] Measure | See the frame rate live, or run a fixed tour that writes a report.
 performance_overlay | bool | false | MTL_HUD_ENABLED | | restart | | Performance Overlay | Apple's Metal Performance HUD in a corner of the window: frame rate, frame and GPU times, and memory.
 benchmark_mode | choice:fast=Fast, 1 Minute/full=Full, 8 Minutes | fast | | | live | | Benchmark | Which tour RUN BENCHMARK plays.
-    fast | Three places on Earth with the game paused, then a rocket's launch and explosion.
+    fast | Three places on Earth, then rockets, a cockpit and a kitten, all with the game paused.
     full | From Earth to Jupiter, with a kitten in the grass, a launch and a 2,000-part rocket.
 benchmark_restart | bool | false | | | live | | Run in a New Game | On: your game is saved as Before the benchmark, and the game starts again with a new game and none of your mods, as benchmark.sh runs it; at the end, the game quits and the report's folder opens. Off: it plays in this game, which comes back at the end.
 

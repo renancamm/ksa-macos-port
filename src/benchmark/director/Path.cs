@@ -59,6 +59,10 @@ public partial class Benchmark
     private readonly List<List<Key>> _paths = new();
     // The flight the camera is on (or stays at the end of), and the last one a camera command released it from
     private List<Key>? _flight, _released;
+    // @place's place, where the camera stays until a camera command moves it, and the game's limit on how small an
+    // explosion may look from the camera before it is left out, which @place lifts meanwhile
+    private Key? _placed;
+    private float? _explosionCull;
     // The camera's up in the frame before, which the next frame's up carries on from
     private static double3? _lastUp;
 
@@ -207,7 +211,26 @@ public partial class Benchmark
     private void ReleaseCamera()
     {
         _released = _flight;
+        Unplace();
         EndRig();
+    }
+
+    // The game leaves out an explosion that looks smaller from the camera than a quarter of a degree or so
+    // (ExplosionSystem.PerceptualCullRadians): from @place's camera, far from the vehicles, it would leave out all of
+    // them, so @place lets every explosion in until the camera moves on
+    private void Place(Key key)
+    {
+        _placed = key;
+        _explosionCull ??= ExplosionSystem.PerceptualCullRadians;
+        ExplosionSystem.PerceptualCullRadians = 0;
+    }
+
+    private void Unplace()
+    {
+        _placed = null;
+        if (_explosionCull is { } cull)
+            ExplosionSystem.PerceptualCullRadians = cull;
+        _explosionCull = null;
     }
 
     private static double[] Curve(Key a, Key b, double s)

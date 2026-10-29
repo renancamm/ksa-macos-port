@@ -126,8 +126,9 @@ public partial class Benchmark
     // The simulation speed the script asks for: @warp moves it from one speed to another over some seconds
     private double _warpFrom = 1, _warpTo = 1, _warpStart, _warpSeconds;
     private double _speedSent = double.NaN;
-    // The checkpoints' times on the script's clock, and the time of the step running
-    private readonly List<double> _shotTimes = new();
+    // The times of the checkpoints and @sync steps on the script's clock, where the simulation eases to a stop, and the
+    // time of the step running
+    private readonly List<double> _stopTimes = new();
     private double _stepAt;
     private Phase _phase = Phase.Play;
     private After _after;
@@ -308,8 +309,10 @@ public partial class Benchmark
             double speed = SpeedAt(_scriptTime);
             // The game keeps a little under the speed it is asked for (about 12% here), which adds up to hours over a
             // time-lapse, and takes a new speed a frame late, so a fast warp easing down overshoots by minutes: while
-            // the script warps, it asks for more as the game falls behind and for less as it gets ahead
-            if (speed > 2)
+            // the script warps, it asks for more as the game falls behind and for less as it gets ahead. Coming out of
+            // a warp the game can end up ahead (tens of milliseconds at the speed of the frame before): below a warp
+            // it only asks for less, until the game is back in step
+            if (speed > 2 || speed > 0 && Universe.GetElapsedSeconds() > _gameTarget)
                 speed = Math.Max(speed + (_gameTarget - Universe.GetElapsedSeconds()) / WarpCatchUp, 0);
             SetSpeed(speed);
             if (!_fast)
@@ -361,7 +364,8 @@ public partial class Benchmark
             $"{wall:F4},{_scriptTime:F4},{_phase},{(camera.Following as Astronomical)?.Id},{p.X:F1},{p.Y:F1},{p.Z:F1},{f.X:F7},{f.Y:F7},{f.Z:F7},{u.X:F7},{u.Y:F7},{u.Z:F7},{over}"));
     }
 
-    // The simulation speed the script asks for at a time of its clock: @warp's, eased to a stop around checkpoints
+    // The simulation speed the script asks for at a time of its clock: @warp's, eased to a stop around checkpoints and
+    // @sync steps (arriving at full speed, the game would run a frame past them)
     private double SpeedAt(double t)
     {
         double warp = _warpTo;
@@ -373,9 +377,9 @@ public partial class Benchmark
                 ? Math.Exp(Math.Log(_warpFrom) + (Math.Log(_warpTo) - Math.Log(_warpFrom)) * u)
                 : _warpFrom + (_warpTo - _warpFrom) * u;
         }
-        foreach (double shot in _shotTimes)
+        foreach (double stop in _stopTimes)
         {
-            double away = Math.Abs(t - shot);
+            double away = Math.Abs(t - stop);
             if (away < ShotEase)
                 warp *= Smooth(away / ShotEase);
         }
@@ -466,7 +470,9 @@ public partial class Benchmark
         double start = 0;
         foreach (var section in _sections)
         {
-            _shotTimes.AddRange(section.Steps.Where(s => s.Words[0] == "@shot").Select(s => start + s.At));
+            // Each time once: views one after the other at one time ease to it once
+            _stopTimes.AddRange(section.Steps.Where(s => s.Words[0] is "@shot" or "@sync").Select(s => start + s.At)
+                .Distinct());
             start += section.Length;
         }
         BuildPaths();
@@ -488,7 +494,8 @@ public partial class Benchmark
             _results!.Completed = true;
             _results.Write(Path.Combine(_outDir, _resultsFile));
             Log(FormattableString.Invariant($"done after {_wall.Elapsed.TotalSeconds:F1} s"));
-            // The camera's field of view as it was
+            // The camera's field of view and the game's explosions as they were
+            Unplace();
             EndRig();
             Done = true;
             if (_option("KSA_BENCH_END") != "stay")
@@ -512,6 +519,7 @@ public partial class Benchmark
         _frames?.Dispose();
         _results?.Write(Path.Combine(_outDir, _resultsFile));
         Log($"stopped: {why}");
+        Unplace();
         EndRig();
         Done = true;
     }

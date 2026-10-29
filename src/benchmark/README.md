@@ -54,10 +54,11 @@ of a run folder.
 ### Two ways to play it
 
 By default the tour is cinematic: the camera flies the whole way and the parts are measured as it goes. `--fast` is a
-short test instead: three places on Earth (from space, the sea close up, the Andes), the game paused and the camera
-jumping from one to the next, then a rocket lifting off, seen from above its nose over the clouds, and blown up. It
-measures each view standing still. A run takes about a minute and gives screenshots that match from one run to the
-next, so it is the quick way to check a change:
+short test instead: the camera waits over Earth while three rockets, two capsules and a kitten are set up around
+the world, then the game pauses and the camera jumps from view to view: Earth from space, the sea close up, the
+Andes, a rocket blown up over the sea, one lifting off and one high over the coast, a cockpit, and a kitten climbing
+out of a capsule in tall grass. It measures each view standing still. A run takes about a minute and gives
+screenshots that match from one run to the next, so it is the quick way to check a change:
 
 ```bash
 ./benchmark.sh --fast
@@ -118,8 +119,7 @@ shaders' hashes, how many other pipelines it ran) instead of an anonymous encode
 | `capsule` | a capsule's cockpit while a day goes by in twenty seconds, then a kitten climbing out of another capsule in tall grass, its long shadow, its face | ray tracing in the cockpit (when your settings have it on), fur, grass and shadows |
 | `launch` | a rocket with solid boosters lifting off from LC-39A, seen from the ground, then from alongside as it climbs through the clouds, faster in between, and close to its engines up high | plumes, smoke trails, clouds, part physics |
 | `giga` | a rocket of about 2,000 parts on its pad, lifting off, blown up whole, its fire and smoke, the camera turning around it all along | part physics on the CPU, many draw calls, lights, explosions and smoke |
-| `rocket` | fast mode's rocket: the `launch` rocket lifting off, seen from the ground, then from above its nose over the clouds, then blown up there; only fast mode plays it, unless you name it | plumes, smoke trails, clouds, an explosion |
-| `lineup` | the vehicles at one moment, the game paused and the camera going from one to the next: a rocket lifting off from LC-39A, one high over the coast from Vandenberg, one blown up over Māhia, a capsule's cockpit on ELA-4, a kitten in the grass, its shadow and its face; plays only when you name it, alone or after places of the flight | plumes, smoke trails, clouds, an explosion, ray tracing in the cockpit, fur, grass and shadows |
+| `lineup` | fast mode's test: Earth from space, the sea close up and the Andes, then the vehicles at one moment, the game paused: a rocket blown up over Māhia, one lifting off from LC-39A, one high over the coast from Vandenberg, a capsule's cockpit on ELA-4, a kitten climbing out of a capsule in the grass, its shadow and its fur; set up with the camera waiting over Earth, it plays alone or after places of the flight | atmosphere, clouds, the ocean and terrain; plumes, smoke trails, an explosion, ray tracing in the cockpit, fur, grass and shadows |
 
 The camera flies from one world to the next without a cut and eases to a stop for each screenshot. The vehicles of
 the last three sections are all placed when the tour returns to Earth, the tour's only cut. Each of those sections
@@ -155,7 +155,7 @@ Each screenshot is a checkpoint. The game runs its simulation as fast as the Mac
 little behind the tour. At a checkpoint the tour waits for the game to reach the moment it should be at, pauses it
 there and takes the screenshot, so the screenshots show the same moments, in the same light, on every Mac. `@sync`
 waits the same way without a screenshot, so the step after it (an ignition, a kitten's first step) comes at the same
-game time on every Mac, to within about a frame.
+game time on every Mac.
 
 In fast mode the game stays paused through the flight between the worlds, and the tour's clock jumps from one
 screenshot to the next, so the light and the clouds there are those of the game's start. The sections with vehicles
@@ -202,7 +202,7 @@ puts the tour from `src/benchmark/benchmark.txt` into the app.
 | `--preset low`, `--preset medium`, `--preset high` | fixed settings in a 1280x800 window without Vsync, the same on every Mac (default: your settings) |
 | `--defaults` | the settings of a fresh install instead of yours: the game's own defaults and the port settings' (a preset, `--set` and `--port` go on top) |
 | `--system earth` | Earth and the Moon only (the game's smaller system): skips Mars, Saturn and Jupiter, and needs less memory (default: `sol`; in fast mode `earth` when the places played are all on Earth or the Moon) |
-| `--fast` | the short test (three places on Earth, the `rocket` section), or the sections and places named with the camera jumping between places; measures the views standing still (default: the cinematic tour) |
+| `--fast` | the short test (the `lineup` section), or the sections and places named with the camera jumping between places; measures the views standing still (default: the cinematic tour) |
 | `--no-shots` | take no screenshots |
 | `--set <key>=<value>` | change a setting of `settings.toml` for the run, on top of the preset (repeat for more; strings need no quotes); as `<section>.<key>=<value>` it adds a key your file lacks to that section, such as one a newer KSA added (`display.hdr=true`) |
 | `--settings <file>` | apply the settings in a file of `key = value` lines, on top of the preset and before `--set` |

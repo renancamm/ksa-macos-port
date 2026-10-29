@@ -1,6 +1,7 @@
-// The vehicle camera: the free camera keeping the controlled vehicle in view, either going along with it (@chase) or
-// standing on the ground (@watch). It aims at the vehicle's center, raised by @aim. Once the vehicle breaks up or blows
-// up (it is no longer the controlled one), it goes on aiming at the place where the vehicle was.
+// The vehicle camera: the free camera keeping the vehicle the steps act on (Directives.cs) in view, either going
+// along with it (@chase) or standing on the ground (@watch). It aims at the vehicle's center, raised by @aim. Once the
+// vehicle breaks up or blows up, it goes on aiming at the place where the vehicle was (for a vehicle @explode blew up
+// before the camera came, the place where it blew up).
 //
 // Every change is a move over some seconds of the script's clock, eased in and out. Between two chase views the
 // camera turns, climbs and pulls back around the vehicle (the distance by the same factor every second); between a
@@ -23,10 +24,13 @@ public partial class Benchmark
     // the vehicle in metres (0 keeps the field of view)
     private record GroundView(double Lat, double Lon, double Height, double Frame);
 
-    private class Rig(Celestial body, Vehicle target, double3 anchorCcf)
+    private class Rig(Celestial body, Vehicle target, double3 anchorCcf, bool controlled)
     {
         public readonly Celestial Body = body;
         public readonly Vehicle Target = target;
+        // Whether the vehicle was the controlled one when the rig started: a vehicle the game breaks up hands control
+        // to a piece of it
+        public readonly bool Controlled = controlled;
         // The vehicle's center over the celestial (in its fixed frame), held once it broke up
         public double3 AnchorCcf = anchorCcf;
         public double AimUp;
@@ -113,21 +117,27 @@ public partial class Benchmark
         return a.Length <= index || double.TryParse(a[index], NumberStyles.Float, Inv, out seconds);
     }
 
-    // The rig on the controlled vehicle, started when the camera is elsewhere
+    // The rig on the vehicle the steps act on (or the place where it blew up), started when the camera is elsewhere
     private bool TryRig(out Rig rig)
     {
         rig = _rig!;
         if (_rig != null)
             return true;
-        if (Program.ControlledVehicle is not { } v || v.Parent is not Celestial body)
+        Celestial? body = null;
+        double3 anchor = default;
+        if (Target is { } v && v.IsDisposed && _blown.TryGetValue(v.Id, out var blown))
+            (body, anchor) = (blown.Body, blown.PlaceCcf);
+        else if (Target is { Parent: Celestial c } w)
+            (body, anchor) = (c, ToCcf(c, w.GetPositionEcl()));
+        if (body == null || Target is not { } target)
         {
-            Log("the vehicle camera needs a controlled vehicle on or near a celestial");
+            Log("the vehicle camera needs a vehicle on or near a celestial");
             return false;
         }
         ReleaseCamera();
         _look = null;
         _lookMove = null;
-        rig = _rig = new Rig(body, v, ToCcf(body, v.GetPositionEcl()));
+        rig = _rig = new Rig(body, target, anchor, target == Program.ControlledVehicle);
         _lastUp = null;
         if (Program.GetHoveredCamera() is { } camera)
             _fieldOfView ??= camera.GetFieldOfView();
@@ -163,7 +173,7 @@ public partial class Benchmark
     {
         if (_rig is not { } rig)
             return;
-        bool whole = !rig.Target.IsDisposed && Program.ControlledVehicle == rig.Target;
+        bool whole = !rig.Target.IsDisposed && (!rig.Controlled || Program.ControlledVehicle == rig.Target);
         if (whole)
             rig.AnchorCcf = ToCcf(rig.Body, rig.Target.GetPositionEcl());
         // The camera follows a fast vehicle itself: the game draws the camera relative to the vehicle's place at the

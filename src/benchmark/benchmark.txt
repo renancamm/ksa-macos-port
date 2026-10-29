@@ -1,16 +1,15 @@
-# The benchmark: one session of the game, in sections. See mod/Benchmark.cs for the format and mod/Directives.cs for
-# the @ directives; other commands are the game's console commands.
+# The benchmark: one session of the game, in sections. See director/Benchmark.cs for the format and
+# director/Directives.cs for the @ directives; other commands are the game's console commands.
 #
-# The tour of the worlds is one flight of the camera (mod/Path.cs): it passes through each @key at its time, turning,
-# climbing and turning again as it goes, from Earth to Jupiter without a cut. Every @shot is a checkpoint: the camera
-# and the simulation ease to a stop, the game catches up with the script's game time and the screenshot is taken, so
-# the screenshots show the same moments on every Mac. benchmark.sh --explore captures keys from the game.
+# The tour of the worlds is one flight of the camera (director/Path.cs): it passes through each @key at its time,
+# turning, climbing and turning again as it goes, from Earth to Jupiter without a cut. Every @shot is a checkpoint: the
+# camera and the simulation ease to a stop, the game catches up with the script's game time and the screenshot is
+# taken, so the screenshots show the same moments on every Mac. benchmark.sh --explore captures keys from the game.
 #
-# Fast mode (benchmark.sh --fast) plays a short test of its own: three places of Earth's section, the game paused and the
-# camera jumping from one to the next, then the rocket section at the end, which only fast mode plays unless named.
-# What a run plays when no places are named, in fast mode and in the cinematic tour (benchmark.sh and the game's Mac
-# Port tab read these two lines):
-fast earth_earth1 earth_earth4 earth_earth7 rocket
+# Fast mode (benchmark.sh --fast) plays a short test of its own, the lineup section (the last below): everything set up
+# at one moment of the game, then the views with the game paused. What a run plays when no places are named, in fast
+# mode and in the cinematic tour (benchmark.sh and the game's Mac Port tab read these two lines):
+fast lineup
 tour earth moon mars saturn jupiter capsule launch giga
 
 # Earth: from high above South America to orbit, down through the clouds to the sea, the Andes and the coast of
@@ -217,110 +216,72 @@ section giga
 21 @measure smoke 9
 30.5 @shot smoke 30
 
-# Fast mode's rocket: the launch section's rocket lifting off from LC-39A, seen from the ground, then from above its
-# nose looking down along its plumes over the coast, then blown up high in the sky; faster in between. It starts at the
-# game's start time (fast mode's flight over Earth keeps the game paused), so it has the light of the launch section.
-section rocket
-0 @launch benchmark-srb at CCSFS LC-39A
-0.1 @control benchmark-srb
-0.1 @watch 240 300 2 70
-0.5 @input MainEngineThrottleUp press
-0.8 @input MainEngineStartup press
-0.9 @input MainEngineStartup release
-1 @stage 1
-2 @input MainEngineThrottleUp release
-6 @shot liftoff 50
-6.5 @chase 215 75 45 2
-6.5 @aim 10 2
-6.5 @warp 8 2
-13 @shot topdown 50
-13 @warp 1
-13.5 @chase - 50 150 2
-15 @explode
-18 @shot explosion 60
-
-# Lineup: everything of the vehicle sections at one moment of the game, then one view after the other with the game
-# paused. Each view has a vehicle of its own, placed and started so that its moment comes at the same game time: a
-# rocket rising from LC-39A, one high over the coast from Vandenberg, one blown up over Māhia, the capsule's cockpit
-# on ELA-4 and its kitten out on the grass in the Amazon. The clouds start from the same place every run (@time), and
-# each ignition, step and blast waits for the game's clock (@sync), so it happens at the same game time on every Mac.
-# A kitten walks the way the camera looks: the camera keeps its place beside it while it walks. It plays alone or
-# after the flight's places (its @time needs the game's clock still near its start).
+# Lineup, fast mode's test: three of Earth's places and the vehicles' views at one moment of the game, the game paused.
+# The camera stays on the first place while everything is set up: each view has a vehicle of its own, placed and
+# started so that its moment comes at the same game time: a rocket rising from LC-39A, one high over the coast from
+# Vandenberg, one blown up over Māhia, a capsule's cockpit on ELA-4, and a kitten climbing out of another capsule in the
+# Amazon. A vehicle's throttle starts at full, so a rocket starts with its engines and the staging key alone. Then the
+# game pauses and the camera goes from view to view. The clouds start from the same place every run (@time), and each
+# start and blast waits for the game's clock (@sync), so it happens at the same game time on every Mac. It plays alone
+# or after the flight's places (its @time needs the game's clock still at its start).
 section lineup
-0 @time 10
+0 @place Earth -30.756801 -68.506039 10912km 0 -88.1
+0 @time 0
 0 @launch benchmark-srb at VSFB LC-4 as topdown
 0 @launch benchmark-srb at Māhia LC-1A as blast
 0 @launch benchmark-srb at CCSFS LC-39A as liftoff
 0 @launch benchmark-capsule at GSC ELA-4 as cockpit
 0 @launch -3.1 -60 benchmark-capsule as lander
-0.3 @control lander
+0.3 @vehicle lander
 0.3 @crew Benchy
-0.3 @control cockpit
+0.3 @vehicle cockpit
 0.3 @crew Pixel
-0.4 @sync
-0.4 @control topdown
-0.4 @input MainEngineThrottleUp press
-0.7 @sync
-0.7 @input MainEngineStartup press
-0.8 @input MainEngineStartup release
-0.9 @stage 1
-1.9 @sync
-1.9 @input MainEngineThrottleUp release
-1.9 @control blast
-1.9 @input MainEngineThrottleUp press
-2.2 @sync
-2.2 @input MainEngineStartup press
-2.3 @input MainEngineStartup release
-2.4 @stage 1
-3.4 @sync
-3.4 @input MainEngineThrottleUp release
-3.5 @warp 8 2
-8 @warp 1 1.5
-10.5 @sync
-10.5 @control lander
-10.5 @eva
-12.5 @sync
-12.5 @input TranslateUp press
-12.7 @input TranslateUp release
-13 @chase -100 12 3.5 2
-15 @sync
-15 @input TranslateBackward press
-15 @input TranslateRight press
-20 @sync
-20 @input TranslateBackward release
-20 @input TranslateRight release
-20.5 @sync
-20.5 @helmet off
-20.5 @control liftoff
-20.5 @input MainEngineThrottleUp press
-20.8 @sync
-20.8 @input MainEngineStartup press
-20.9 @input MainEngineStartup release
-21 @stage 1
-22 @sync
-22 @input MainEngineThrottleUp release
-23 @sync
-23 @control blast
-23 @chase 0 30 150
-23 @explode
-26 @warp 0
-26 @shot explosion 60
-26.5 @control liftoff
-26.5 @watch 240 300 2 70
-26.5 @shot liftoff 50
-27 @control topdown
-27 @chase 215 75 45
-27 @aim 10
-27 @shot topdown 50
-27.5 @control cockpit
-27.5 @camera iva
-27.5 @look -55 5
-27.5 @shot cockpit
-28 @control Benchy
-28 @chase -100 12 3.5
-28 @shot kitten
-28.5 @chase -50 30 4.5
-28.5 @shot shadow
-29 @aim 0.3
-29 @chase -165 5 0.9
-29 @shot fur 50
+0.4 @vehicle topdown
+0.4 @fly 6500 365
+0.4 @vehicle blast
+0.4 @fly 6500 365
+0.5 @sync
+0.5 @vehicle lander
+0.5 @eva
+0.5 @vehicle topdown
+0.5 @input MainEngineStartup press
+0.5 @stage
+0.5 @vehicle blast
+0.5 @input MainEngineStartup press
+0.5 @stage
+0.5 @vehicle liftoff
+0.5 @input MainEngineStartup press
+0.5 @stage
+0.5 @warp 2 0.5
+2.5 @sync
+2.5 @vehicle blast
+2.5 @explode
+4.5 @warp 0
+4.5 @shot space
+4.5 @place Earth 0.600314 -35.167166 9 266.4 -6.8
+4.5 @shot sea 70
+4.5 @place Earth -11.524500 -73.790276 3772 295.9 -7.1
+4.5 @shot andes
+4.5 @vehicle blast
+4.5 @chase 0 30 150
+4.5 @shot explosion 60
+4.5 @control liftoff
+4.5 @watch 240 300 2 70
+4.5 @shot liftoff 50
+4.5 @control topdown
+4.5 @chase 215 75 45
+4.5 @aim 10
+4.5 @shot topdown 50
+4.5 @control cockpit
+4.5 @camera iva
+4.5 @look -55 5
+4.5 @shot cockpit
+4.5 @control Benchy
+4.5 @helmet off
+4.5 @chase -100 12 3.5
+4.5 @shot kitten
+4.5 @chase -50 30 4.5
+4.5 @shot shadow
+4.5 @aim 0.3
+4.5 @chase -40 25 1.1
+4.5 @shot fur 50
