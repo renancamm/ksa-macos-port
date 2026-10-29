@@ -565,6 +565,10 @@ static MTLTextureDescriptor* textureDescriptor(const VkImageCreateInfo* ci, MTLP
     d.usage = u;
     d.storageMode = MTLStorageModePrivate;
     d.hazardTrackingMode = MTLHazardTrackingModeUntracked;
+    // 3D images without lossless compression: KSA's volumes (cloud and smoke noise, the clouds' shadow volume) are
+    // read at scattered positions, and a compressed texture fetches a whole block for each read. Same contents; on an
+    // M5 the clouds draw about 4 % faster, and scattered reads of a 128^3 R8 volume run 2.6x faster.
+    if (ci->imageType == VK_IMAGE_TYPE_3D && kmtlConfig().uncompressedVolumes) d.allowGPUOptimizedContents = NO;
     return d;
 }
 
