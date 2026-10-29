@@ -60,7 +60,7 @@ public partial class Benchmark
     // How close a checkpoint gets to the game time it waits for (game seconds), how far ahead of it the game may be
     // (the clock only goes forward), and how long it lets the world settle (terrain and textures streaming in) before
     // its screenshot
-    private const double Tolerance = 0.02;
+    private const double Tolerance = 0.002;
     private const double AheadLimit = 0.5;
     private const double SettleSeconds = 1.0;
     private const int SettleFrames = 10;
@@ -93,8 +93,9 @@ public partial class Benchmark
 
     private enum Phase { Play, CatchUp, Settle, Measure, Capture, Shoot, Hold }
 
-    // What a catch-up of the game's clock leads to: a checkpoint's screenshot, or the end of a jump of @time
-    private enum After { Shot, Time }
+    // What a catch-up of the game's clock leads to: a checkpoint's screenshot, the end of a jump of @time, or the end of
+    // a @sync
+    private enum After { Shot, Time, Sync }
 
     private readonly List<Section> _sections = new();
     private readonly Stopwatch _wall = new();
@@ -300,9 +301,9 @@ public partial class Benchmark
         }
         else
         {
+            _gameTarget += GameSeconds(_scriptTime, _scriptTime + dt);
             _scriptTime += dt;
             double speed = SpeedAt(_scriptTime);
-            _gameTarget += speed * dt;
             // The game keeps a little under the speed it is asked for (about 12% here), which adds up to hours over a
             // time-lapse, and takes a new speed a frame late, so a fast warp easing down overshoots by minutes: while
             // the script warps, it asks for more as the game falls behind and for less as it gets ahead
@@ -379,6 +380,18 @@ public partial class Benchmark
         return warp;
     }
 
+    // The game seconds the script asks for between two times of its clock: the speed summed in steps of a millisecond
+    // or less (Simpson's rule), so the script's game time is the same at the same moment of its clock, whatever the
+    // frame times on the way
+    private double GameSeconds(double from, double to)
+    {
+        int n = 2 * Math.Max(1, (int)Math.Ceiling((to - from) / 0.002));
+        double h = (to - from) / n, sum = SpeedAt(from) + SpeedAt(to);
+        for (int i = 1; i < n; i++)
+            sum += SpeedAt(from + i * h) * (i % 2 == 1 ? 4 : 2);
+        return sum * h / 3;
+    }
+
     // Whether the game stays paused: fast mode, in a section of the camera's flight alone (or before the first section)
     private bool Paused => _fast && (_section < 0 || _sections[_section].CameraOnly);
 
@@ -396,12 +409,16 @@ public partial class Benchmark
         return _sectionStart + section.Length;
     }
 
+    // The new speed starts at the step's time: the game time this frame already added after it, at the old speed, is
+    // made up at the new one
     private void Warp(double speed, double seconds)
     {
-        _warpFrom = SpeedAt(_scriptTime);
+        double after = GameSeconds(_stepAt, _scriptTime);
+        _warpFrom = SpeedAt(_stepAt);
         _warpTo = speed;
-        _warpStart = _scriptTime;
+        _warpStart = _stepAt;
         _warpSeconds = seconds;
+        _gameTarget += GameSeconds(_stepAt, _scriptTime) - after;
     }
 
     private void Start()
@@ -547,11 +564,27 @@ public partial class Benchmark
     // settle and takes the screenshot
     private void StartCheckpoint(string shot)
     {
-        // Back to the checkpoint's own time (this frame went a little past it), so the camera stands exactly where the
-        // script puts it then
+        BackToStep();
+        _shotName = shot;
+        _after = After.Shot;
+        _phase = Phase.CatchUp;
+    }
+
+    // @sync: like a checkpoint, without the screenshot
+    private void Sync()
+    {
+        BackToStep();
+        _after = After.Sync;
+        _phase = Phase.CatchUp;
+    }
+
+    // Back to the step's own time (this frame went a little past it), so that the game's clock catches up with the game
+    // time of that moment, and the camera stands exactly where the script puts it then
+    private void BackToStep()
+    {
         double over = _scriptTime - _stepAt;
+        _gameTarget -= GameSeconds(_stepAt, _scriptTime);
         _scriptTime = _stepAt;
-        _gameTarget -= SpeedAt(_stepAt) * over;
         if (Program.MainViewport.OrbitController.View is { } view)
             view.Azimuth -= _rotateRadPerSecond * over;
         if (_rig != null)
@@ -559,9 +592,6 @@ public partial class Benchmark
         UpdateCamera(0);
         if (_window != null && _scriptTime >= _window.EndsAt)
             CloseWindow();
-        _shotName = shot;
-        _after = After.Shot;
-        _phase = Phase.CatchUp;
     }
 
     // Whether the run stops for good at this checkpoint
@@ -577,6 +607,7 @@ public partial class Benchmark
     // the sections before it played or not
     private bool SkipTo(double seconds)
     {
+        BackToStep();
         double target = _gameStart + seconds;
         if (_gameTarget > target + Tolerance)
         {
@@ -673,7 +704,7 @@ public partial class Benchmark
                     // Fast while far behind (at least the scripted speed), then half of what is left every frame
                     double warp = Math.Max(_warpTo, 1);
                     // A jump of @time covers half of what is left every quarter of a second or so
-                    double pace = _after == After.Shot ? 2 : 0.25;
+                    double pace = _after == After.Time ? 0.25 : 2;
                     SetSpeed(left > warp * frame * 2 ? Math.Max(warp, left / pace) : left / (2 * frame));
                     return;
                 }
@@ -682,9 +713,10 @@ public partial class Benchmark
                 if (-behind > AheadLimit)
                     _sectionResult?.Errors.Add(FormattableString.Invariant(
                         $"{_scriptTime - _sectionStart:F1} s: the game's clock is {-behind:F1} s ahead of the script's"));
-                if (_after == After.Time)
+                if (_after != After.Shot)
                 {
-                    ResetClouds();
+                    if (_after == After.Time)
+                        ResetClouds();
                     Resume();
                     return;
                 }
@@ -865,7 +897,7 @@ public partial class Benchmark
     private void Resume()
     {
         Log(FormattableString.Invariant(
-            $"{(_after == After.Time ? "@time" : "checkpoint " + _shotName)}: game time {Universe.GetElapsedSeconds() - _gameStart:F3} s (script {_gameTarget - _gameStart:F3} s)"));
+            $"{_after switch { After.Time => "@time", After.Sync => "@sync", _ => "checkpoint " + _shotName }}: game time {Universe.GetElapsedSeconds() - _gameStart:F3} s (script {_gameTarget - _gameStart:F3} s)"));
         SetSpeed(Paused ? 0 : SpeedAt(_scriptTime));
         _phase = Phase.Play;
     }

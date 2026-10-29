@@ -10,6 +10,10 @@
 //                                the seconds
 //   @time <seconds>              move the game's clock forward to that many seconds since the start (the clouds drift
 //                                with it), so a section looks the same whether the sections before it played or not
+//   @sync                        a checkpoint without a screenshot: the game's clock catches up with the script's and
+//                                the steps after it act at the same game time on every Mac, to within about a frame
+//                                (the simulation doesn't ease to a stop there: a kitten walks differently in the slow
+//                                frames)
 //   @gpuprof <name> <frames>     profile the next frames with KSA Metal's GPU profiler (needs KSA_MTL_GPUPROF=<csv>)
 //
 // Vehicles and kittens
@@ -95,6 +99,9 @@ public partial class Benchmark
             }
             case "@time" when a.Length == 2 && double.TryParse(a[1], NumberStyles.Float, Inv, out var time):
                 return SkipTo(time);
+            case "@sync" when a.Length == 1:
+                Sync();
+                return true;
             case "@key" when a.Length == 7:
                 // The camera's flight (Path.cs) is laid out before the run; the step only marks the key's time
                 return true;

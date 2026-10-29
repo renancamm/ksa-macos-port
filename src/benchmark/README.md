@@ -152,7 +152,9 @@ director writes.
 
 Each screenshot is a checkpoint. The game runs its simulation as fast as the Mac allows, so a slower Mac falls a
 little behind the tour. At a checkpoint the tour waits for the game to reach the moment it should be at, pauses it
-there and takes the screenshot, so the screenshots show the same moments, in the same light, on every Mac.
+there and takes the screenshot, so the screenshots show the same moments, in the same light, on every Mac. `@sync`
+waits the same way without a screenshot, so the step after it (an ignition, a kitten's first step) comes at the same
+game time on every Mac, to within about a frame.
 
 In fast mode the game stays paused through the flight between the worlds, and the tour's clock jumps from one
 screenshot to the next, so the light and the clouds there are those of the game's start. The sections with vehicles
