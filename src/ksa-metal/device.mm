@@ -565,18 +565,22 @@ static MTLTextureDescriptor* textureDescriptor(const VkImageCreateInfo* ci, MTLP
     d.usage = u;
     d.storageMode = MTLStorageModePrivate;
     d.hazardTrackingMode = MTLHazardTrackingModeUntracked;
-    // Tiling textures without lossless compression: 3D images (KSA's cloud and smoke noise, the clouds' shadow volume)
-    // and square power-of-two storage images of 64 to 256 (the ocean's FFT waves at each ocean simulation quality, the
-    // Milky Way's noise) are textures the game makes on the GPU and repeats across the world, read at scattered
-    // positions, where a compressed texture fetches a whole block for each read. Screen-sized targets, read in step
-    // with their pixels, keep it (without it: +1 ms), and so does depth (+3-9 ms).
-    // Same contents; on an M5 the clouds and the sea draw about 5-7 % faster, and scattered reads of a 128^3 R8
-    // volume run 2.6x faster.
-    if (kmtlConfig().uncompressedTiles) {
+    // Textures read at scattered positions without lossless compression, where a compressed texture fetches a whole
+    // block for each read: the ones the game only uploads and samples (the terrain's height maps, lookup maps; block
+    // formats have no lossless compression anyway), 3D images (cloud and smoke noise, the clouds' shadow volume), and
+    // square power-of-two storage images of 64 to 256 (the ocean's FFT waves at each ocean simulation quality, the Milky
+    // Way's noise), which the game makes on the GPU and repeats across the world. Screen-sized targets, read in step
+    // with their pixels, keep it (without it: +1 ms), and so does depth (+3-9 ms). Same contents; on an M5 the terrain
+    // draws about 2-4 % faster, over clouds and the sea up to 10 %, and scattered reads of a 128^3 R8 volume run 2.6x
+    // faster.
+    if (kmtlConfig().uncompressedTextures) {
         uint32_t w = ci->extent.width;
-        bool square = ci->imageType == VK_IMAGE_TYPE_2D && (vu & VK_IMAGE_USAGE_STORAGE_BIT) && w == ci->extent.height &&
-                      w >= 64 && w <= 256 && !(w & (w - 1));
-        if (ci->imageType == VK_IMAGE_TYPE_3D || square) d.allowGPUOptimizedContents = NO;
+        bool uploaded = (vu & VK_IMAGE_USAGE_TRANSFER_DST_BIT) && (vu & VK_IMAGE_USAGE_SAMPLED_BIT) &&
+                        !(vu & (VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT));
+        bool tile = ci->imageType == VK_IMAGE_TYPE_2D && (vu & VK_IMAGE_USAGE_STORAGE_BIT) && w == ci->extent.height &&
+                    w >= 64 && w <= 256 && !(w & (w - 1));
+        if (uploaded || tile || ci->imageType == VK_IMAGE_TYPE_3D) d.allowGPUOptimizedContents = NO;
     }
     return d;
 }

@@ -30,7 +30,7 @@ const KConfig& kmtlConfig() {
         c.strictSync = sync && !strcmp(sync, "strict");
         c.safeMath = envOn("KSA_MTL_SAFE_MATH", false);
         c.constantArgumentBuffers = envOn("KSA_MTL_AB_CONSTANT", true);
-        c.uncompressedTiles = envOn("KSA_MTL_UNCOMPRESSED_TILES", true);
+        c.uncompressedTextures = envOn("KSA_MTL_UNCOMPRESSED_TEXTURES", true);
         c.budgetMb = envInt("KSA_MTL_BUDGET_MB", 0);
         c.presentPacing = envOn("KSA_MTL_PRESENT_PACING", true);
         c.fxInterpolate = envOn("KSA_MTL_FX_INTERPOLATE", false);
