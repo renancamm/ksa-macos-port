@@ -504,24 +504,38 @@ internal static class MacPortTab
             $"In use: {inUse.Name}.");
     }
 
-    // The Measure section's benchmark button, and what the last run left
+    // The benchmark's tours: one button each, side by side as the presets are
+    private static readonly (bool Full, string Label, string Help)[] Tours =
+    [
+        (false, "RUN FAST BENCHMARK", "About 1 minute: a kitten in orbit, Earth from space down to the grass, then rockets and a cockpit, all with the game paused."),
+        (true, "RUN FULL BENCHMARK", "About 8 minutes: from Earth to Jupiter, with a kitten in the grass, a launch and a 2,000-part rocket."),
+    ];
+
+    // The Measure section's benchmark buttons, a line under them with what each tour plays or why neither can start,
+    // and what the last run left
     private static void DrawBenchmark()
     {
         var temporary = _temporary.GetValue(null);
         bool changes = temporary != null && (bool)_hasAnyTabChanged.Invoke(null, [temporary])!;
-        string note = "apply first";
-        var why = changes ? "Apply or discard the changes first." : BenchmarkRun.CannotStart(out note);
+        var why = changes ? "Apply or discard the changes first." : BenchmarkRun.CannotStart();
+        float gap = ImGui.GetStyle().ItemSpacing.X;
+        var size = new float2((ConsoleStyle.ContentAvailWidth() - gap) / 2f, ConsoleWidgets.ButtonHeight);
+        string? hovered = null;
+        ImGui.Dummy(new float2(0f, 4f * ConsoleStyle.EffectiveInterfaceScale));
         ConsoleStyle.PushDisabled(why != null);
-        ConsoleWidgets.BeginRow("");
-        if (why != null)
-            Note("", note);
-        if (ConsoleWidgets.PrimaryButton("RUN BENCHMARK") && why == null)
-            BenchmarkRun.StartFromTab(PortSettings.Get("benchmark_mode")?.Saved == "full", PortSettings.Get("benchmark_restart")?.Saved == "true");
-        bool hovered = ConsoleWidgets.RowHovered;
-        ConsoleWidgets.EndRow();
+        foreach (var (full, label, help) in Tours)
+        {
+            if (full)
+                ImGui.SameLine();
+            if (ConsoleWidgets.PrimaryButton(label, "MacPort_" + label, size) && why == null)
+                BenchmarkRun.StartFromTab(full, PortSettings.Get("benchmark_restart")?.Saved == "true");
+            if (ImGui.IsItemHovered())
+                hovered = help;
+        }
         ConsoleStyle.PopDisabled();
-        if (hovered)
-            Tooltip(why ?? "Plays the benchmark with the settings above, and writes its report to the benchmarks folder in the game's documents folder. Leave the mouse and keyboard alone until it is done; Esc stops it.");
+        if (hovered != null)
+            Tooltip(why ?? hovered + "\n\nIt plays with the settings above, and writes its report to the benchmarks folder in the game's documents folder. Leave the mouse and keyboard alone until it is done; Esc stops it.");
+        Caption(why ?? "Fast: about 1 minute around Earth, paused. Full: about 8 minutes, from Earth to Jupiter.");
         if (BenchmarkRun.Last is { } last)
         {
             ConsoleWidgets.BeginRow("Last run");

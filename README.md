@@ -331,7 +331,7 @@ a texture is loaded, so macOS can page them out when memory runs short and read 
 The benchmark plays a fixed tour of the game in one session, from Earth's orbit to other worlds, a kitten in the
 grass, a rocket launch and a 2,000-part rocket blown up on its pad. It measures each part and writes a report to
 compare with another run, and a zip you can share as an issue if you like. It is in the app: run it from the Mac
-Port tab (**RUN BENCHMARK**), or from the port folder:
+Port tab (**RUN FAST BENCHMARK** or **RUN FULL BENCHMARK**), or from the port folder:
 
 ```bash
 ./benchmark.sh

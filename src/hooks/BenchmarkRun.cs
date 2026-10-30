@@ -19,9 +19,9 @@ namespace KsaMetalHooks;
 // - benchmark.sh in the port folder starts the game with KSA_BENCH_* set, in a documents folder of its own
 //   (STARMAP_INSTANCE_PATH): the director begins with the game's first frame and quits the game at the end, and the
 //   script writes the report.
-// - The Mac Port tab's RUN BENCHMARK, in the running game: the player's game is saved (to disk, in case the game
-//   doesn't survive the run, and in memory), the world becomes a new game's (its clock at the start, no vehicles), the
-//   tour plays, and the player's game comes back; Esc stops it. The hooks write the report.
+// - The Mac Port tab's RUN FAST BENCHMARK and RUN FULL BENCHMARK, in the running game: the player's game is saved (to
+//   disk, in case the game doesn't survive the run, and in memory), the world becomes a new game's (its clock at the
+//   start, no vehicles), the tour plays, and the player's game comes back; Esc stops it. The hooks write the report.
 // - The same with "Run in a New Game": the player's game is saved, the game starts again for it the way benchmark.sh
 //   starts it (a documents folder of its own with a copy of the settings, a new game, none of the player's mods), and
 //   at the end the hooks write the report, open its folder and quit the game.
@@ -67,28 +67,22 @@ internal static class BenchmarkRun
         return _mode == Mode.Restarted ? "a run starts with the game, restarted from its settings" : "a run starts with the game";
     }
 
-    // Why a run can't start from the tab now, or null; note: the same in a few words, beside the button
-    public static string? CannotStart(out string note)
-    {
-        (note, var why) = Obstacle();
-        return why;
-    }
-
-    private static (string Note, string? Why) Obstacle()
+    // Why a run can't start from the tab now, or null
+    public static string? CannotStart()
     {
         if (!_installed)
-            return ("unavailable", "The benchmark is not in this app, or this KSA version moved the game's code it needs (logs/console.log says which).");
+            return "The benchmark is not in this app, or this KSA version moved the game's code it needs (logs/console.log says which).";
         if (_run != null || _startRequested || _finishing is { IsCompleted: false })
-            return ("running", "A benchmark is running.");
+            return "A benchmark is running.";
         if (_mode == Mode.Script)
-            return ("benchmark.sh run", "This game is a benchmark.sh run.");
+            return "This game is a benchmark.sh run.";
         if (Program.EditorFlag)
-            return ("in the editor", "Leave the vehicle editor first.");
+            return "Leave the vehicle editor first.";
         if (Universe.CurrentSystem == null)
-            return ("no game", "No game is loaded.");
+            return "No game is loaded.";
         if (PortSettings.Get("benchmark_restart")?.Saved == "true" && Restart.Launcher == null)
-            return ("can't restart", "The game was not started by the app, so it can't start itself again.");
-        return ("", null);
+            return "The game was not started by the app, so it can't start itself again.";
+        return null;
     }
 
     public static void StartFromTab(bool full, bool restart)

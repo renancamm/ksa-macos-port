@@ -326,7 +326,7 @@ internal static class Tests
         plan = Plan(new()
         {
             ["upscaling"] = "metalfx", ["render_scale"] = "0.5", ["terrain_cache"] = "false", ["strict_sync"] = "true",
-            ["log_file"] = "~/ksa.log", ["hud_layout"] = "fit", ["benchmark_mode"] = "full",
+            ["log_file"] = "~/ksa.log", ["hud_layout"] = "fit", ["benchmark_restart"] = "true",
         });
         var set = plan.Set.ToDictionary(v => v.Name, v => v.Value);
         Equal("metalfx", set.GetValueOrDefault("KSA_UPSCALER"), "a choice");
