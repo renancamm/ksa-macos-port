@@ -38,7 +38,9 @@
 //                                yaw and pitch (as @look has them) looks elev degrees above the level (below when
 //                                negative), keeping its heading: a capsule in orbit looking down at the celestial
 //                                through its window; with "sun", at the sun: its light comes in through a window
-//                                there and lies on the cabin's other side. The game turns it a frame later
+//                                there and lies on the cabin's other side. "sun <yaw> <pitch>" also turns it about
+//                                the sun's direction until the celestial's center is at that yaw and pitch from the
+//                                seat: the whole of its attitude. The game turns it a frame later
 //   @kitten <lat> <lon> <name>   put a kitten of the benchmark's (Hunter's looks) out on EVA, standing on the ground
 //                                of the home celestial there (the game stands it there a frame later); it becomes the
 //                                vehicle
@@ -71,6 +73,7 @@
 //                                that many metres tall at the vehicle
 //   @aim <metres> [s]            aim the vehicle camera that far above the vehicle's center
 //   @look <yaw> <pitch> [s]      turn the cockpit camera from its seat's forward view, in degrees
+//   @fov <degrees>               the camera's field of view, until the camera moves on (the game's comes back then)
 //   @sun <celestial> <lat> <lon> log where the sun stands over that point (to plan the light of a key)
 using System;
 using System.Collections.Generic;
@@ -252,7 +255,7 @@ public partial class Benchmark
             case "@kitten" when a.Length == 4 && double.TryParse(a[1], NumberStyles.Float, Inv, out var kittenLat) &&
                 double.TryParse(a[2], NumberStyles.Float, Inv, out var kittenLon):
                 return PlaceKitten(kittenLat, kittenLon, a[3]);
-            case "@face" when a.Length == 4:
+            case "@face" when a.Length == 4 || a.Length == 6 && a[3] == "sun":
                 return Face(a);
             case "@fly" when a.Length == 3:
                 return Fly(a);
@@ -279,6 +282,14 @@ public partial class Benchmark
                 return StartWatch(a);
             case "@aim" when a.Length is 2 or 3:
                 return StartAim(a);
+            case "@fov" when a.Length == 2 && double.TryParse(a[1], NumberStyles.Float, Inv, out var fov) && fov > 0:
+            {
+                if (Program.GetHoveredCamera() is not { } camera)
+                    return false;
+                _fieldOfView ??= camera.GetFieldOfView();
+                camera.SetFieldOfView((float)fov);
+                return true;
+            }
             case "@look" when a.Length is 3 or 4:
                 return LookIva(a);
             case "@sun" when a.Length == 4:
@@ -507,16 +518,35 @@ public partial class Benchmark
         double e = elevation * Math.PI / 180;
         var wanted = atSun ? double3.Normalize(sun!.GetPositionEcl() - v.GetPositionEcl())
             : double3.Normalize(level) * Math.Cos(e) + up * Math.Sin(e);
-        var axis = double3.Cross(view, wanted);
-        if (axis.Length() < 1e-9)
-            return true;
-        double angle = Math.Acos(Math.Clamp(double3.Dot(view, wanted), -1, 1));
-        var turn = doubleQuat.CreateFromAxisAngle(double3.Normalize(axis), angle);
+        var turn = Turn(view, wanted);
+        // With a second direction, where the celestial's center is from the seat: then turned about the sun's
+        // direction until that one is there too
+        if (a.Length == 6)
+        {
+            if (!TryValue(a[4], 0, 1, out var downYaw) || !TryValue(a[5], 0, 1, out var downPitch))
+                return false;
+            var (seen, _) = SeatView(v, seat, new double2(downYaw, downPitch));
+            var down = double3.Transform(seen, turn);
+            var across = down - wanted * double3.Dot(down, wanted);
+            var target = -up - wanted * double3.Dot(-up, wanted);
+            if (across.Length() > 1e-9 && target.Length() > 1e-9)
+                turn = doubleQuat.Concatenate(turn, Turn(double3.Normalize(across), double3.Normalize(target)));
+        }
         InputEvents.TeleportInputBuffer.Add(new InputEvents.TeleportInputData
         {
             Vehicle = v, Body2Cce = doubleQuat.Concatenate(v.Body2Cce, turn), BodyRates = double3.Zero
         });
         return true;
+    }
+
+    // The turn that takes the unit vector from onto the unit vector to, about the axis square to both
+    private static doubleQuat Turn(double3 from, double3 to)
+    {
+        var axis = double3.Cross(from, to);
+        if (axis.Length() < 1e-9)
+            return doubleQuat.Identity;
+        double angle = Math.Acos(Math.Clamp(double3.Dot(from, to), -1, 1));
+        return doubleQuat.CreateFromAxisAngle(double3.Normalize(axis), angle);
     }
 
     // @eva with the camera held by @place: the game's EVA (EVADoor.PerformEvaForSeat), with the map's camera to follow

@@ -220,12 +220,13 @@ section giga
 # The camera stays on the first place while everything is set up: each view has a vehicle of its own, placed and
 # started so that its moment comes at the same game time: the giga rocket blown up whole as it lights its 200 boosters
 # on its pad at Starbase, a rocket rising from LC-39A, one high over the coast from Vandenberg (put in the air with
-# @fly, so it skips its climb), a capsule's cockpit in orbit with the sun coming in through its window onto the cabin's
-# far side (@fly, @face), and a kitten standing in the grass by another capsule in the Amazon. A vehicle's throttle
-# starts at full, so a rocket starts with its engines and the staging key alone. Then the game pauses and the camera
-# goes from view to view. The clouds start from the same place every run (@time), and each start and blast waits for
-# the game's clock (@sync), so it happens at the same game time on every Mac. It plays alone or after the flight's
-# places (its @time needs the game's clock still at its start).
+# @fly, so it skips its climb), a capsule's cockpit in orbit, the sun coming in through one window onto its ceiling
+# and Earth in the other (@fly, @face, @fov; the patch of sunlight needs IVA ray tracing on), and a kitten standing in
+# the grass by another capsule in the Amazon. A vehicle's throttle starts at full, so a rocket starts with its engines
+# and the staging key alone. Then the game pauses and the camera goes from view to view. The clouds start from the
+# same place every run (@time), and each start and blast waits for the game's clock (@sync), so it happens at the
+# same game time on every Mac. It plays alone or after the flight's places (its @time needs the game's clock still at
+# its start).
 section lineup
 0 @place Earth -30.756801 -68.506039 10912km 0 -88.1
 0 @time 0
@@ -240,7 +241,7 @@ section lineup
 0.4 @fly 6500 365
 0.4 @vehicle cockpit
 0.4 @fly 200km orbit
-0.4 @face -58 12 sun
+0.4 @face -32.6 -0.8 sun 78.7 0.3
 0.5 @sync
 0.5 @kitten -3.10003 -60.00003 Benchy
 0.5 @vehicle topdown
@@ -274,7 +275,8 @@ section lineup
 4.5 @shot topdown 50
 4.5 @control cockpit
 4.5 @camera iva
-4.5 @look 165 0
+4.5 @look -10 15
+4.5 @fov 110
 4.5 @shot cockpit
 4.5 @control Benchy
 4.5 @helmet off
