@@ -54,10 +54,10 @@ of a run folder.
 ### Two ways to play it
 
 By default the tour is cinematic: the camera flies the whole way and the parts are measured as it goes. `--fast` is a
-short test instead: the camera waits over Earth while three rockets, two capsules and a kitten are set up around
+short test instead: the camera waits over Earth while three rockets, a capsule and a kitten are set up around
 the world, then the game pauses and the camera jumps from view to view: Earth from space, the sea close up, the
 Andes, the 2,000-part rocket blown up on its pad, a rocket lifting off and one high over the coast, a cockpit in
-orbit, and a kitten in tall grass. It measures each view standing still. A run takes about a minute and gives
+orbit, and a kitten floating beside it. It measures each view standing still. A run takes about a minute and gives
 screenshots that match from one run to the next, so it is the quick way to check a change:
 
 ```bash
@@ -119,7 +119,7 @@ shaders' hashes, how many other pipelines it ran) instead of an anonymous encode
 | `capsule` | a capsule's cockpit while a day goes by in twenty seconds, then a kitten climbing out of another capsule in tall grass, its long shadow, its face | ray tracing in the cockpit (when your settings have it on), fur, grass and shadows |
 | `launch` | a rocket with solid boosters lifting off from LC-39A, seen from the ground, then from alongside as it climbs through the clouds, faster in between, and close to its engines up high | plumes, smoke trails, clouds, part physics |
 | `giga` | a rocket of about 2,000 parts on its pad, lifting off, blown up whole, its fire and smoke, the camera turning around it all along | part physics on the CPU, many draw calls, lights, explosions and smoke |
-| `lineup` | fast mode's test: Earth from space, the sea close up and the Andes, then the vehicles at one moment, the game paused: the giga rocket blown up whole in the smoke of its boosters on its pad at Starbase, a rocket lifting off from LC-39A, one high over the coast from Vandenberg, a capsule's cockpit in orbit looking down at Earth, and the face of a kitten in the grass by a capsule; set up with the camera waiting over Earth, it plays alone or after places of the flight | atmosphere, clouds, the ocean and terrain; plumes, smoke trails, an explosion and smoke, part physics on the CPU, many draw calls, ray tracing in the cockpit, fur, grass and shadows |
+| `lineup` | fast mode's test: Earth from space, the sea close up and the Andes, then the vehicles at one moment, the game paused: the giga rocket blown up whole in the smoke of its boosters on its pad at Starbase, a rocket lifting off from LC-39A, one high over the coast from Vandenberg, a capsule's cockpit in orbit with sunlight on its wall (with IVA Ray Tracing on) and Earth in its window, and a kitten in its helmet floating in orbit, looking into the camera; set up with the camera waiting over Earth, it plays alone or after places of the flight | atmosphere, clouds, the ocean and terrain; plumes, smoke trails, an explosion and smoke, part physics on the CPU, many draw calls, ray tracing in the cockpit, the kitten |
 
 The camera flies from one world to the next without a cut and eases to a stop for each screenshot. The vehicles of
 the last three sections are all placed when the tour returns to Earth, the tour's only cut. Each of those sections

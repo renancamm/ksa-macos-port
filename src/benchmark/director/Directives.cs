@@ -20,9 +20,9 @@
 // them takes control of a vehicle or moves the camera, except as said.
 //   @launch <save> at <pad>      put a saved vehicle (Documents/.../Vehicles) on a launch pad of the home celestial
 //                                (e.g. CCSFS LC-39A), as the launch menu does; it becomes the controlled vehicle and the
-//                                camera follows it, unless @place put the camera somewhere. @launch <lat> <lon> <save>
-//                                puts it anywhere on the surface. With "as <id>" at the end the vehicle is called that
-//                                (two of one save). A vehicle that is there already stays as it is.
+//                                camera follows it, unless @place or @front holds the camera. @launch <lat> <lon>
+//                                <save> puts it anywhere on the surface. With "as <id>" at the end the vehicle is
+//                                called that (two of one save). A vehicle that is there already stays as it is.
 //   @vehicle <id>                choose that vehicle for the vehicle steps, or the vehicle camera: a vehicle @explode
 //                                blew up too (the camera then aims at the place where it blew up)
 //   @control <id>                make that vehicle the controlled one, the camera following it (at once, unlike the
@@ -43,10 +43,11 @@
 //                                seat: the whole of its attitude. The game turns it a frame later
 //   @kitten <lat> <lon> <name>   put a kitten of the benchmark's (Hunter's looks) out on EVA, standing on the ground
 //                                of the home celestial there (the game stands it there a frame later); it becomes the
-//                                vehicle
+//                                vehicle. Only with the game stopped (the start, a @sync, @time or a checkpoint): the
+//                                game can't take a new kitten while its physics step runs
 //   @eva                         send the first kitten aboard the vehicle out on EVA (the crew panel's EVA button); the
 //                                kitten becomes the vehicle and the controlled one, and the camera follows it, unless
-//                                @place put the camera somewhere
+//                                @place or @front holds the camera
 //   @helmet on|off               the helmet of the kitten on EVA (off shows its fur, as in the cockpit)
 //   @spin <x> <y> <z>            set the vehicle's rotation rates (rad/s), stabilization off
 //   @fly <alt> <speed>|orbit     put the vehicle that high above the sea ("km" for kilometres), straight over where it
@@ -71,6 +72,9 @@
 //   @watch <az> <dist> <height> [<frame>] [s]  the vehicle camera standing on the ground dist metres from the vehicle
 //                                towards az, height metres above the ground; with frame, it zooms so that the view is
 //                                that many metres tall at the vehicle
+//   @front <axis> <dist> <up> [<aim>]  the camera dist metres out along the vehicle's own x, y or z axis ("-x" the
+//                                other way), looking back at it, another of its axes up in the view (a kitten: face
+//                                x, head -z): upright whatever the horizon does; aim metres along up from its center
 //   @aim <metres> [s]            aim the vehicle camera that far above the vehicle's center
 //   @look <yaw> <pitch> [s]      turn the cockpit camera from its seat's forward view, in degrees
 //   @fov <degrees>               the camera's field of view, until the camera moves on (the game's comes back then)
@@ -140,7 +144,7 @@ public partial class Benchmark
             case "@gpuprof" when a.Length == 3 && uint.TryParse(a[2], out var frames):
                 return DriverStats.ProfileFrames($"{_sectionResult?.Name}/{a[1]}", frames);
             case "@launch" when a.Length >= 4:
-                if (_placed == null)
+                if (!Held)
                     ReleaseCamera();
                 return Launch(a);
             case "@vehicle" when a.Length == 2:
@@ -231,7 +235,7 @@ public partial class Benchmark
                 {
                     if (seat.AssignedKittenHash == KeyHash.Zero)
                         continue;
-                    if (_placed != null)
+                    if (Held)
                         return EvaInPlace(v, seat);
                     // The game makes the kitten the controlled vehicle a frame later: the steps act on it from then
                     _vehicle = null;
@@ -276,6 +280,8 @@ public partial class Benchmark
             case "@rotate" when a.Length == 2 && double.TryParse(a[1], NumberStyles.Float, Inv, out var degrees):
                 _rotateRadPerSecond = degrees * Math.PI / 180;
                 return true;
+            case "@front" when a.Length is 4 or 5:
+                return StartFront(a);
             case "@chase" when a.Length is 4 or 5:
                 return StartChase(a);
             case "@watch" when a.Length is >= 4 and <= 6:
@@ -332,7 +338,7 @@ public partial class Benchmark
 
     // @launch <save> at <pad>: a launch pad of the home celestial (its landmarks in Astronomicals.xml), as the launch menu
     // does; @launch <lat> <lon> <save>: anywhere on it. The vehicle is made here as the game's own CreateVehicleData
-    // makes it, without that taking control of it and the camera when @place holds the camera.
+    // makes it, without that taking control of it and the camera when @place or @front holds the camera.
     private bool Launch(string[] a)
     {
         if (Universe.CurrentSystem?.HomeBody is not Celestial body)
@@ -395,7 +401,7 @@ public partial class Benchmark
         state.Orbit.Parent!.Children.Add(vehicle);
         vehicle.UpdatePerFrameData();
         _vehicle = vehicle;
-        if (_placed == null)
+        if (!Held)
         {
             Program.ControlledVehicle = vehicle;
             Program.MainViewport.MapCamera.SetFollow(vehicle, tidalLocking: false, changeControl: true, alert: false);
@@ -549,8 +555,8 @@ public partial class Benchmark
         return doubleQuat.CreateFromAxisAngle(double3.Normalize(axis), angle);
     }
 
-    // @eva with the camera held by @place: the game's EVA (EVADoor.PerformEvaForSeat), with the map's camera to follow
-    // the kitten in place of the main view's, so the camera stays where it is. The game makes the kitten a frame later,
+    // @eva with the camera held by @place or @front: the game's EVA (EVADoor.PerformEvaForSeat), with the map's camera
+    // to follow the kitten in place of the main view's, so the camera stays where it is. The game makes the kitten a frame later,
     // where it applies the crew panel's buttons, and makes it the controlled vehicle: the steps act on it from then.
     private bool EvaInPlace(Vehicle vehicle, IVASeat seat)
     {

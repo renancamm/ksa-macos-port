@@ -495,7 +495,7 @@ public partial class Benchmark
             _results.Write(Path.Combine(_outDir, _resultsFile));
             Log(FormattableString.Invariant($"done after {_wall.Elapsed.TotalSeconds:F1} s"));
             // The camera's field of view and the game's explosions as they were
-            Unplace();
+            Unhold();
             EndRig();
             Done = true;
             if (_option("KSA_BENCH_END") != "stay")
@@ -519,7 +519,7 @@ public partial class Benchmark
         _frames?.Dispose();
         _results?.Write(Path.Combine(_outDir, _resultsFile));
         Log($"stopped: {why}");
-        Unplace();
+        Unhold();
         EndRig();
         Done = true;
     }

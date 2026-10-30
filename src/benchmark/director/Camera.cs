@@ -43,11 +43,13 @@ public partial class Benchmark
         if (UpdatePath())
         {
             EndRig();
-            Unplace();
+            Unhold();
         }
         // @place's camera stays where it is, whatever else turns to the vehicles meanwhile
         if (_placed is { } placed)
             Apply(placed.Body, Resolve(placed.Body, placed.C, placed.Floor));
+        if (_front is { } front)
+            FrontView(front);
         UpdateRig(dt);
         if (_lookMove is { } l)
         {
@@ -58,6 +60,47 @@ public partial class Benchmark
         }
         if (_look is { } look)
             Look(look);
+    }
+
+    // @front <axis> <dist> <up> [<aim>]: the free camera dist metres out along one of the vehicle's own axes (x, y or
+    // z, "-" for the other way), looking back at it, with another of its axes up in the view (a kitten's head is -z,
+    // its face +x), aim metres along that axis from its center: the vehicle upright in the view whatever the horizon
+    // does, as in space. It holds the camera as @place does
+    private record Front(Vehicle Vehicle, double3 AxisBody, double3 UpBody, double Distance, double Aim);
+    private Front? _front;
+
+    private static double3? BodyAxis(string s) =>
+        (s.StartsWith('-') ? -1 : 1) * s.TrimStart('-') switch
+        {
+            "x" => new double3(1, 0, 0), "y" => new double3(0, 1, 0), "z" => new double3(0, 0, 1), _ => (double3?)null
+        };
+
+    private bool StartFront(string[] a)
+    {
+        double aim = 0;
+        if (Target is not { Parent: Celestial } v || BodyAxis(a[1]) is not { } axis || BodyAxis(a[3]) is not { } up ||
+            Math.Abs(double3.Dot(axis, up)) > 0.5 || !TryValue(a[2], 0, 1, out var dist) ||
+            a.Length == 5 && !TryValue(a[4], 0, 1, out aim))
+            return false;
+        ReleaseCamera();
+        _look = null;
+        _lookMove = null;
+        _lastUp = null;
+        _front = new Front(v, axis, up, dist, aim);
+        Hold();
+        UpdateCamera(0);
+        return true;
+    }
+
+    private static void FrontView(Front f)
+    {
+        if (f.Vehicle.IsDisposed || f.Vehicle.Parent is not Celestial body)
+            return;
+        var axis = double3.Normalize(f.AxisBody.Transform(f.Vehicle.Body2Cce));
+        var up = double3.Normalize(f.UpBody.Transform(f.Vehicle.Body2Cce));
+        var aim = f.Vehicle.GetPositionEcl() + up * f.Aim;
+        var position = aim + axis * f.Distance;
+        Apply(body, (position, aim - position, up), RigClearance, f.Vehicle);
     }
 
     // How far along a move is (0 to 1), eased in and out

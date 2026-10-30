@@ -211,23 +211,32 @@ public partial class Benchmark
     private void ReleaseCamera()
     {
         _released = _flight;
-        Unplace();
+        Unhold();
         EndRig();
     }
 
-    // The game leaves out an explosion that looks smaller from the camera than a quarter of a degree or so
-    // (ExplosionSystem.PerceptualCullRadians): from @place's camera, far from the vehicles, it would leave out all of
-    // them, so @place lets every explosion in until the camera moves on
+    // Whether @place or @front holds the camera: vehicles made, started and blown up meanwhile leave it where it is
+    private bool Held => _placed != null || _front != null;
+
     private void Place(Key key)
     {
         _placed = key;
+        Hold();
+    }
+
+    // The game leaves out an explosion that looks smaller from the camera than a quarter of a degree or so
+    // (ExplosionSystem.PerceptualCullRadians): from a held camera, far from the vehicles, it would leave out all of
+    // them, so a held camera lets every explosion in until the camera moves on
+    private void Hold()
+    {
         _explosionCull ??= ExplosionSystem.PerceptualCullRadians;
         ExplosionSystem.PerceptualCullRadians = 0;
     }
 
-    private void Unplace()
+    private void Unhold()
     {
         _placed = null;
+        _front = null;
         if (_explosionCull is { } cull)
             ExplosionSystem.PerceptualCullRadians = cull;
         _explosionCull = null;
