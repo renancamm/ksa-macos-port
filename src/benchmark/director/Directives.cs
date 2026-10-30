@@ -556,8 +556,9 @@ public partial class Benchmark
     }
 
     // @eva with the camera held by @place or @front: the game's EVA (EVADoor.PerformEvaForSeat), with the map's camera
-    // to follow the kitten in place of the main view's, so the camera stays where it is. The game makes the kitten a frame later,
-    // where it applies the crew panel's buttons, and makes it the controlled vehicle: the steps act on it from then.
+    // to follow the kitten in place of the main view's, so the camera stays where it is. The game makes the kitten a
+    // frame later, where it applies the crew panel's buttons, and makes it the controlled vehicle: the steps act on it
+    // from then.
     private bool EvaInPlace(Vehicle vehicle, IVASeat seat)
     {
         if (Universe.KittenRoster.Find(seat.AssignedKittenHash) is not { } kitten)
