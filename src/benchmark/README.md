@@ -159,12 +159,12 @@ game time on every Mac.
 
 In fast mode the game stays paused through the flight between the worlds, and the tour's clock jumps from one
 screenshot to the next, so the light and the clouds there are those of the game's start. The sections with vehicles
-play as written, as in the cinematic tour. At a checkpoint the director takes a screenshot every half second until two
-in a row match, which means the ground and textures that stream in after a jump have settled; then it measures the
-view for two seconds and takes the real screenshot. The sea's waves take the wind of the place at once (the game eases
-them over several seconds), and at each checkpoint the clouds' detail starts afresh where the camera is, so a place of
-the flight looks the same whatever was played before it. Fast mode plays in the game's smaller system (Earth and the
-Moon) when the places played are all there, since the other worlds' textures would only take memory.
+play as written, as in the cinematic tour. At a checkpoint the director takes a screenshot every quarter of a second
+until two in a row match, which means the ground and textures that stream in after a jump have settled; then it
+measures the view for a second and takes the real screenshot. The sea's waves take the wind of the place at once (the
+game eases them over several seconds), and at each checkpoint the clouds' detail starts afresh where the camera is, so
+a place of the flight looks the same whatever was played before it. Fast mode plays in the game's smaller system
+(Earth and the Moon) when the places played are all there, since the other worlds' textures would only take memory.
 
 A run fails when the game crashed or hung, a step of the tour failed, a vehicle broke apart before it should, a
 screenshot is missing, the game's log has errors, one of the hooks was skipped (the game's code it changes has moved) or

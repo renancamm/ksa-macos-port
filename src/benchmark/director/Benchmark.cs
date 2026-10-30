@@ -70,10 +70,10 @@ public partial class Benchmark
     private const double WarpCatchUp = 0.5;
     // Fast mode: how often it looks whether the view still changes (seconds), how much of it may change between two
     // looks to count as still (percent of its blocks, see Images.cs), the longest it waits, and how long it measures
-    private const double ProbeEvery = 0.5;
+    private const double ProbeEvery = 0.25;
     private const double StillPercent = 0.5;
     private const double MaxSettleSeconds = 20;
-    private const double FastMeasureSeconds = 2.0;
+    private const double FastMeasureSeconds = 1.0;
 
     // A step: its time in the section, its command and the command's words, and its line in the script
     private record Step(double At, string Command, int Line)
@@ -895,8 +895,9 @@ public partial class Benchmark
         _phaseFrames = 0;
     }
 
-    // Fast mode: whether the view has stopped changing, from probe screenshots half a second apart (the game is paused, so
-    // what still changes is terrain and textures streaming in). Without KSA Metal's screenshots it waits a few seconds.
+    // Fast mode: whether the view has stopped changing, from probe screenshots a quarter of a second apart (the game is
+    // paused, so what still changes is terrain and textures streaming in). Without KSA Metal's screenshots it waits a
+    // few seconds.
     private bool Settled(double wall)
     {
         if (!DriverStats.Available)

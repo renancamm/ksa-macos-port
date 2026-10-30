@@ -254,29 +254,29 @@ section lineup
 0.5 @input MainEngineStartup press
 0.5 @stage
 0.5 @warp 2 0.5
-2.5 @sync
-2.5 @vehicle giga
-2.5 @explode
-4.5 @warp 0
-4.5 @shot kitten
-4.5 @place Earth -30.756801 -68.506039 10912km 0 -88.1
-4.5 @shot space
-4.5 @place Earth 0.600314 -35.167166 9 266.4 -6.8
-4.5 @shot sea 70
-4.5 @place Earth -11.524500 -73.790276 3772 295.9 -7.1
-4.5 @shot andes
-4.5 @vehicle giga
-4.5 @chase 0 15 200
-4.5 @shot explosion 60
-4.5 @control liftoff
-4.5 @watch 240 300 2 70
-4.5 @shot liftoff 50
-4.5 @control topdown
-4.5 @chase 215 75 45
-4.5 @aim 10
-4.5 @shot topdown 50
-4.5 @control cockpit
-4.5 @camera iva
-4.5 @look 35 25
-4.5 @fov 95
-4.5 @shot cockpit
+1.5 @sync
+1.5 @vehicle giga
+1.5 @explode
+3 @warp 0
+3 @shot kitten
+3 @place Earth -30.756801 -68.506039 10912km 0 -88.1
+3 @shot space
+3 @place Earth 0.600314 -35.167166 9 266.4 -6.8
+3 @shot sea 70
+3 @place Earth -11.524500 -73.790276 3772 295.9 -7.1
+3 @shot andes
+3 @vehicle giga
+3 @chase 0 15 200
+3 @shot explosion 60
+3 @control liftoff
+3 @watch 240 300 2 70
+3 @shot liftoff 50
+3 @control topdown
+3 @chase 215 75 45
+3 @aim 10
+3 @shot topdown 50
+3 @control cockpit
+3 @camera iva
+3 @look 35 25
+3 @fov 95
+3 @shot cockpit
