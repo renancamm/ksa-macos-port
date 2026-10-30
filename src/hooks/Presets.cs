@@ -61,11 +61,11 @@ internal static class Presets
         new("Performance",
             "The fastest the game gets on this Mac: MetalFX Spatial draws the 3D view at half the window's size with the " +
             "game's Anti-Aliasing off; shadows, clouds, smoke and effects are drawn the simple way, without " +
-            "cockpit ray tracing. Softer and plainer, with rougher edges.",
+            "cockpit ray tracing. Softer and plainer, with rougher edges, and lighter physics for tumbling pieces.",
             mac => Game(mac, antiAliasing: "Disabled", filter: "Pcf", cascades: 2048, terrain: 2048,
                 milkyWay: "High", clouds: "Low", cloudShadows: "Medium", effects: "Low", godrays: false,
                 clutterShadows: false, plumeShadows: false, rayTracing: false),
-            mac => Port(upscaling: "spatial", scale: "0.5", tuning: true, milkyWayBake: true)),
+            mac => Port(upscaling: "spatial", scale: "0.5", tuning: true, milkyWayBake: true, tumblingPhysics: true)),
         new("Balanced",
             "Fast, and little of it shows: MetalFX Temporal draws the 3D view at three quarters of the window's size, " +
             "with simpler shadow filtering, clouds and smoke a step lower, and lighter ray tracing in the cockpit where " +
@@ -73,7 +73,7 @@ internal static class Presets
             mac => Game(mac, antiAliasing: "MultisampleX2", filter: "Pcf", cascades: 2048, terrain: 4096,
                 milkyWay: "High", clouds: "Medium", cloudShadows: "Medium", effects: "Medium", godrays: true, clutterShadows: true,
                 plumeShadows: true, rayTracing: mac.RayTracing),
-            mac => Port(upscaling: "metalfx", scale: "0.75", tuning: true, milkyWayBake: true)),
+            mac => Port(upscaling: "metalfx", scale: "0.75", tuning: true, milkyWayBake: true, tumblingPhysics: false)),
         new("Quality",
             "The game's own image at the window's full size, with its anti-aliasing, soft shadows and ray tracing in " +
             "the cockpit where the Mac has it. Only what costs much and barely shows is lower or baked: shadow map " +
@@ -81,7 +81,7 @@ internal static class Presets
             mac => Game(mac, antiAliasing: "MultisampleX2", filter: "Pcss", cascades: 2048, terrain: 4096,
                 milkyWay: "High", clouds: "High", cloudShadows: "High", effects: "High", godrays: true, clutterShadows: true,
                 plumeShadows: true, rayTracing: mac.RayTracing),
-            mac => Port(upscaling: "off", scale: "1.0", tuning: false, milkyWayBake: true)),
+            mac => Port(upscaling: "off", scale: "1.0", tuning: false, milkyWayBake: true, tumblingPhysics: false)),
         new("Game Defaults",
             "The game's own image: its default graphics for every setting the other presets change, and the Image and " +
             "Extra Performance rows at their defaults, without MetalFX. Everything else, such as the Field of View or " +
@@ -92,7 +92,7 @@ internal static class Presets
                 return Defaults(Game(mac, "Disabled", "Pcf", 2048, 2048, "Low", "Low", "Low", "Low", false, false, false, false),
                     name => Text(Field(name).GetValue(Owner(Field(name), defaults))));
             },
-            mac => Defaults(Port("off", "1.0", false, false), key => Settings.Get(key).Default)),
+            mac => Defaults(Port("off", "1.0", false, false, false), key => Settings.Get(key).Default)),
     ];
 
     // Not made for this Mac: the game's defaults are the same on every Mac
@@ -150,8 +150,9 @@ internal static class Presets
     // The Extra Performance rows (tuning) are on in Performance and Balanced, whose changes to the image are small; the
     // plume shadows' in Performance too, which turns the game's plume shadows off: they are faster when a player turns
     // those on. The Milky Way bake, on in Performance, Balanced and Quality, changes sky pixels by at most 1 of 255 and
-    // gives Quality the game's Milky Way High at no cost; otherwise Quality keeps the game's own image
-    private static Dictionary<string, string> Port(string upscaling, string scale, bool tuning, bool milkyWayBake) => new()
+    // gives Quality the game's Milky Way High at no cost; otherwise Quality keeps the game's own image. The tumbling
+    // physics, which changes the physics and not the image, is on in Performance only
+    private static Dictionary<string, string> Port(string upscaling, string scale, bool tuning, bool milkyWayBake, bool tumblingPhysics) => new()
     {
         ["upscaling"] = upscaling,
         ["render_scale"] = scale,
@@ -160,6 +161,7 @@ internal static class Presets
         ["plume_shadow_tuning"] = tuning ? "low" : "off",
         ["shadow_search"] = "true",
         ["milky_way_bake"] = Text(milkyWayBake),
+        ["tumbling_physics"] = Text(tumblingPhysics),
     };
 
     private static string Text(int value) => value.ToString(CultureInfo.InvariantCulture);

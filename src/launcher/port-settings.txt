@@ -40,7 +40,7 @@ hud_layout | choice:fit=Fit to Display/game=Scale with Window | fit | KSA_HUD_LA
     fit | The same size in a window as in fullscreen, smaller on a display narrower than 16:9 such as a MacBook's, and the panels' text scaled to fit them. If panels overlap in a small window, lower HUD Scale (Interface).
     game | The game's own. Sized from the window, with the panels' text at one size, which overflows them in smaller windows.
 
-[performance] Extra Performance | Faster, with a small change to the image. The default is the game's own.
+[performance] Extra Performance | Faster, with a small change. The default is the game's own.
 cloud_shadow_tuning | choice:off=Normal/slower_refresh=Slower | off | KSA_CLOUD_SHADOW_TUNING | | restart | cloud_shadow_tuning | Cloud Shadow Updates | How often the shadows that clouds cast on the ground are updated.
     off | The game's own.
     slower_refresh | About 4 times less often: a little faster over Earth, and the shadows lag behind moving clouds.
@@ -49,6 +49,7 @@ plume_shadow_tuning | choice:off=High/low=Low | off | KSA_PLUME_SHADOW_TUNING | 
     low | Less detail, and only within 3 km: the smoke of a big rocket draws about 10-20 % faster, and its shadows on the ground are coarser.
 shadow_search | bool | false | KSA_SHADOW_SEARCH | game:pcss | restart | shadow_search | Simpler PCSS Shadows | With the game's Cascaded Shadow Filter on Pcss (Graphics), soft shadows close to the camera look a shorter way for what casts them: about 9 % faster in grass. A shadow cast from high above can get a sharper edge. Off is the game's own.
 milky_way_bake | bool | false | KSA_MILKY_WAY_BAKE | | restart | milky_way_bake | Baked Milky Way | The Milky Way's dust clouds are drawn from a picture made once when the game starts: faster with much sky in view, and Milky Way Quality (Graphics) up to High costs no more than Low. Their finest grain is softer. Off is the game's own.
+tumbling_physics | bool | false | KSA_TUMBLING_PHYSICS | | restart | tumbling_physics | Lighter Tumbling Physics | Pieces that tumble, such as boosters falling back after staging, take longer physics steps and spin at most about 30 turns a second: time warp slows down less while they fall. Anything spinning faster behaves differently. Off is the game's own.
 
 [optimizations] Optimizations | The same image, faster. Leave them on; turn one off to find a problem.
 terrain_cache | bool | true | KSA_TERRAIN_CACHE | | restart | terrain_cache | Terrain Cache | The terrain's shape and shading are worked out again only when something about them changed, instead of every frame: a higher frame rate, the same image. Off: try it when terrain looks wrong.

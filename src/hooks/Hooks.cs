@@ -45,6 +45,7 @@ public static class Hooks
         Run("Milky Way bake", "milky_way_bake", Settings.On("milky_way_bake"), MilkyWayBake.Apply);
         Run("crew portraits", "crew_portraits", true, CrewPortraits.Apply);
         Run("worker parking", "worker_park", Settings.On("worker_parking"), WorkerPark.Apply);
+        Run("tumbling physics", "tumbling_physics", Settings.On("tumbling_physics"), TumblingPhysics.Apply);
         Run("loading pace", "loading_pace", Settings.On("loading_pace"), LoadingPace.Apply);
         Run("render scale", "render_scale", true, RenderScale.Apply);
         Run("HUD layout", "hud_layout", true, HudLayout.Apply);
