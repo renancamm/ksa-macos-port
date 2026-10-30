@@ -43,8 +43,10 @@
 //                                seat: the whole of its attitude. The game turns it a frame later
 //   @kitten <lat> <lon> <name>   put a kitten of the benchmark's (Hunter's looks) out on EVA, standing on the ground
 //                                of the home celestial there (the game stands it there a frame later); it becomes the
-//                                vehicle. Only with the game stopped (the start, a @sync, @time or a checkpoint): the
-//                                game can't take a new kitten while its physics step runs
+//                                vehicle. "@kitten <lat> <lon> <name> <alt> orbit" makes it on a circular orbit that
+//                                high over there instead (as @fly has it), so its first frame is already up there.
+//                                Only with the game stopped (the start, a @sync, @time or a checkpoint): the game
+//                                can't take a new kitten while its physics step runs
 //   @eva                         send the first kitten aboard the vehicle out on EVA (the crew panel's EVA button); the
 //                                kitten becomes the vehicle and the controlled one, and the camera follows it, unless
 //                                @place or @front holds the camera
@@ -74,7 +76,9 @@
 //                                that many metres tall at the vehicle
 //   @front <axis> <dist> <up> [<aim>]  the camera dist metres out along the vehicle's own x, y or z axis ("-x" the
 //                                other way), looking back at it, another of its axes up in the view (a kitten: face
-//                                x, head -z): upright whatever the horizon does; aim metres along up from its center
+//                                x, head -z): upright whatever the horizon does; aim metres along up from its center.
+//                                "@front ... <aim> <from> <seconds>" comes in from that far out over that many seconds
+//                                of the game's clock
 //   @aim <metres> [s]            aim the vehicle camera that far above the vehicle's center
 //   @look <yaw> <pitch> [s]      turn the cockpit camera from its seat's forward view, in degrees
 //   @fov <degrees>               the camera's field of view, until the camera moves on (the game's comes back then)
@@ -256,9 +260,18 @@ public partial class Benchmark
                 avatar.Attachments.Helmet.Enabled = a[1] == "on";
                 return true;
             }
-            case "@kitten" when a.Length == 4 && double.TryParse(a[1], NumberStyles.Float, Inv, out var kittenLat) &&
-                double.TryParse(a[2], NumberStyles.Float, Inv, out var kittenLon):
-                return PlaceKitten(kittenLat, kittenLon, a[3]);
+            case "@kitten" when a.Length is 4 or 6 && double.TryParse(a[1], NumberStyles.Float, Inv, out var kittenLat)
+                && double.TryParse(a[2], NumberStyles.Float, Inv, out var kittenLon):
+            {
+                double? orbit = null;
+                if (a.Length == 6)
+                {
+                    if (a[5] != "orbit" || !TryValue(a[4], 0, 1, out var alt))
+                        return false;
+                    orbit = alt;
+                }
+                return PlaceKitten(kittenLat, kittenLon, a[3], orbit);
+            }
             case "@face" when a.Length == 4 || a.Length == 6 && a[3] == "sun":
                 return Face(a);
             case "@fly" when a.Length == 3:
@@ -280,7 +293,7 @@ public partial class Benchmark
             case "@rotate" when a.Length == 2 && double.TryParse(a[1], NumberStyles.Float, Inv, out var degrees):
                 _rotateRadPerSecond = degrees * Math.PI / 180;
                 return true;
-            case "@front" when a.Length is 4 or 5:
+            case "@front" when a.Length is 4 or 5 or 7:
                 return StartFront(a);
             case "@chase" when a.Length is 4 or 5:
                 return StartChase(a);
@@ -421,24 +434,32 @@ public partial class Benchmark
             !orbiting && !double.TryParse(a[2], NumberStyles.Float, Inv, out speed))
             return false;
         var upCce = double3.Normalize(v.GetPositionEcl() - body.GetPositionEcl());
-        var upCci = upCce.Transform(body.GetCci2Cce().Inverse());
-        var positionCci = upCci * (body.MeanRadius + altitude);
-        var spin = ((IParentBody)body).GetAngularVelocityCci();
-        // Over a pole there is no east to go
-        if (orbiting && double3.Cross(spin, upCci).Length() < 1e-9 * spin.Length())
+        if (FlightOver(body, upCce, altitude, orbiting ? null : speed) is not { } orbit)
             return false;
-        var velocityCci = orbiting
-            ? double3.Normalize(double3.Cross(spin, upCci)) * Math.Sqrt(((IParentBody)body).Mu / positionCci.Length())
-            : double3.Cross(spin, positionCci) + upCci * speed;
-        var orbit = KSA.Orbit.CreateFromStateCci(body, Universe.GetNextSimStep().NextTime, positionCci, velocityCci,
-            new Random(1).RandomColor());
         InputEvents.TeleportInputBuffer.Add(new InputEvents.TeleportInputData { Vehicle = v, Orbit = orbit });
         return true;
     }
 
+    // The trajectory through the point that high over the direction up (CCE): a vertical climb at that speed, the
+    // ground's turning included, or with no speed a circular orbit going east (none over a pole)
+    private static Orbit? FlightOver(Celestial body, double3 upCce, double altitude, double? climb)
+    {
+        var upCci = upCce.Transform(body.GetCci2Cce().Inverse());
+        var positionCci = upCci * (body.MeanRadius + altitude);
+        var spin = ((IParentBody)body).GetAngularVelocityCci();
+        if (climb == null && double3.Cross(spin, upCci).Length() < 1e-9 * spin.Length())
+            return null;
+        var velocityCci = climb is { } speed
+            ? double3.Cross(spin, positionCci) + upCci * speed
+            : double3.Normalize(double3.Cross(spin, upCci)) * Math.Sqrt(((IParentBody)body).Mu / positionCci.Length());
+        return KSA.Orbit.CreateFromStateCci(body, Universe.GetNextSimStep().NextTime, positionCci, velocityCci,
+            new Random(1).RandomColor());
+    }
+
     // @kitten: a kitten on EVA made as the game's EVA makes one (EVADoor.CreateKittenEva and SpawnEva: a backpack part
-    // for its body, its roster entry moved to "EVA"), standing on the ground as @launch puts a vehicle there
-    private bool PlaceKitten(double lat, double lon, string name)
+    // for its body, its roster entry moved to "EVA"), standing on the ground as @launch puts a vehicle there, or with
+    // an altitude made on that orbit at once (its first frame is already there)
+    private bool PlaceKitten(double lat, double lon, string name, double? orbitAltitude)
     {
         if (Universe.CurrentSystem is not { HomeBody: Celestial body } system)
             return false;
@@ -478,14 +499,23 @@ public partial class Benchmark
         var box = new double3(0.5, 0.5, 0.5);
         var state = Vehicle.GetInitialKinematicStateForLocation(body, Universe.GetNextSimStep().NextTime, lat, lon,
             -box, box, double3.Zero, new Random(1).RandomColor());
+        var orbit = state.Orbit;
+        if (orbitAltitude is { } alt)
+        {
+            var upCce = body.GetDirCcfFromLatLon(lat, lon).Transform(body.GetCcf2Cce());
+            if (FlightOver(body, upCce, alt, null) is not { } up)
+                return false;
+            orbit = up;
+        }
         var eva = new KittenEva(system: system, characterId: kitten.Character, body2Cce: state.Body2Cce,
-            bodyRates: state.BodyRates, parent: state.Orbit.Parent!, id: name, root: root, orbit: state.Orbit);
+            bodyRates: state.BodyRates, parent: state.Orbit.Parent!, id: name, root: root, orbit: orbit);
         // SpawnEva also calls UpdateAfterPartTreeModification here (the constructor set the vehicle up before the
         // kitten's character was there: its distant glint). Left out: with it the kitten settles a little differently
         // every run (kitten view 2-8 % changed between runs, 0.1 % without)
         state.Orbit.Parent!.Children.Add(eva);
         eva.UpdatePerFrameData();
-        eva.TeleportToLocation(body, lat, lon);
+        if (orbitAltitude == null)
+            eva.TeleportToLocation(body, lat, lon);
         _vehicle = eva;
         return true;
     }

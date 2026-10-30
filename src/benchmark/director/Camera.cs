@@ -65,8 +65,10 @@ public partial class Benchmark
     // @front <axis> <dist> <up> [<aim>]: the free camera dist metres out along one of the vehicle's own axes (x, y or
     // z, "-" for the other way), looking back at it, with another of its axes up in the view (a kitten's head is -z,
     // its face +x), aim metres along that axis from its center: the vehicle upright in the view whatever the horizon
-    // does, as in space. It holds the camera as @place does
-    private record Front(Vehicle Vehicle, double3 AxisBody, double3 UpBody, double Distance, double Aim);
+    // does, as in space. It holds the camera as @place does. With <from> <seconds> it comes in from that far out over
+    // that many seconds of the game's clock (the distance by the same factor every second)
+    private record Front(Vehicle Vehicle, double3 AxisBody, double3 UpBody, double Distance, double Aim, double From,
+        double GameStart, double GameSeconds);
     private Front? _front;
 
     private static double3? BodyAxis(string s) =>
@@ -77,16 +79,19 @@ public partial class Benchmark
 
     private bool StartFront(string[] a)
     {
-        double aim = 0;
+        double aim = 0, from = 0, seconds = 0;
         if (Target is not { Parent: Celestial } v || BodyAxis(a[1]) is not { } axis || BodyAxis(a[3]) is not { } up ||
             Math.Abs(double3.Dot(axis, up)) > 0.5 || !TryValue(a[2], 0, 1, out var dist) ||
-            a.Length == 5 && !TryValue(a[4], 0, 1, out aim))
+            a.Length >= 5 && !TryValue(a[4], 0, 1, out aim) ||
+            a.Length == 7 && (!TryValue(a[5], 0, 1, out from) || !TryValue(a[6], 0, 1, out seconds)))
             return false;
+        if (a.Length != 7)
+            from = dist;
         ReleaseCamera();
         _look = null;
         _lookMove = null;
         _lastUp = null;
-        _front = new Front(v, axis, up, dist, aim);
+        _front = new Front(v, axis, up, dist, aim, from, Universe.GetElapsedSeconds(), seconds);
         Hold();
         UpdateCamera(0);
         return true;
@@ -99,7 +104,10 @@ public partial class Benchmark
         var axis = double3.Normalize(f.AxisBody.Transform(f.Vehicle.Body2Cce));
         var up = double3.Normalize(f.UpBody.Transform(f.Vehicle.Body2Cce));
         var aim = f.Vehicle.GetPositionEcl() + up * f.Aim;
-        var position = aim + axis * f.Distance;
+        // The zoom goes by the game's clock, which runs on while the script's waits for it: smooth however fast the Mac
+        double u = f.GameSeconds > 0
+            ? Smooth(Math.Clamp((Universe.GetElapsedSeconds() - f.GameStart) / f.GameSeconds, 0, 1)) : 1;
+        var position = aim + axis * Math.Exp(Math.Log(f.From) + (Math.Log(f.Distance) - Math.Log(f.From)) * u);
         Apply(body, (position, aim - position, up), RigClearance, f.Vehicle);
     }
 

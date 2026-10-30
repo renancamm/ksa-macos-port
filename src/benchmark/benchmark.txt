@@ -217,21 +217,20 @@ section giga
 30.5 @shot smoke 30
 
 # Lineup, fast mode's test: the vehicles' views and six of Earth's places at one moment of the game, the game paused.
-# The camera stays on a kitten in its helmet floating in orbit, looking into it with Earth going by behind, while
-# everything is set up (@kitten, @fly; @front holds the camera on it): each view has a vehicle of its own, placed and
-# started so that its moment comes at the same game time: the giga rocket blown up whole as it lights its 200 boosters
-# on its pad at Starbase, a rocket rising from LC-39A, one high over the coast from Vandenberg (put in the air with
-# @fly, so it skips its climb), and a capsule's cockpit in orbit by the kitten, the sun coming in through one window
-# onto its wall and Earth in the other (@fly, @face, @fov; the patch of sunlight needs IVA ray tracing on). A vehicle's
-# throttle starts at full, so a rocket starts with its engines and the staging key alone. Then the game pauses and the
-# camera goes from view to view. The clouds start from the same place every run (@time), and each start and blast
-# waits for the game's clock (@sync), so it happens at the same game time on every Mac. It plays alone or after the
-# flight's places (its @time needs the game's clock still at its start).
+# The camera comes in from 40 m to a kitten in its helmet floating in orbit, its eyes on the camera, Earth going by
+# behind, while everything is set up (@kitten, @front holds the camera on it, zooming by the game's clock): each view
+# has a vehicle of its own, placed and started so that its moment comes at the same game time: the giga rocket blown
+# up whole as it lights its 200 boosters on its pad at Starbase, a rocket rising from LC-39A, one high over the coast
+# from Vandenberg (put in the air with @fly, so it skips its climb), and a capsule's cockpit in orbit by the kitten, the
+# sun coming in through one window onto its wall and Earth in the other (@fly, @face, @fov; the patch of sunlight needs
+# IVA ray tracing on). A vehicle's throttle starts at full, so a rocket starts with its engines and the staging key
+# alone. Then the game pauses and the camera goes from view to view. The clouds start from the same place every run
+# (@time), and each start and blast waits for the game's clock (@sync), so it happens at the same game time on every
+# Mac. It plays alone or after the flight's places (its @time needs the game's clock still at its start).
 section lineup
+0 @kitten 5.26474 -52.79218 Benchy 200km orbit
+0 @front x 1 -z 0.3 40 2
 0 @time 0
-0 @kitten 5.26474 -52.79218 Benchy
-0 @fly 200km orbit
-0 @front x 1 -z 0.3
 0 @launch benchmark-giga at Starbase OLM A as giga
 0 @launch benchmark-srb at VSFB LC-4 as topdown
 0 @launch benchmark-srb at CCSFS LC-39A as liftoff
