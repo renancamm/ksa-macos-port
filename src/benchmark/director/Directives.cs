@@ -34,10 +34,11 @@
 //                                MainEngineThrottleUp (held until release; the throttle rises by 0.7 a second of the
 //                                Mac's clock, not the game's, to full)
 //   @explode                     destroy the vehicle the way a crash does
-//   @face <yaw> <pitch> <elev>   turn the vehicle so that the cockpit's view from its first crewed seat at that yaw
-//                                and pitch (as @look has them) looks elev degrees above the level (below when
+//   @face <yaw> <pitch> <elev>|sun  turn the vehicle so that the cockpit's view from its first crewed seat at that
+//                                yaw and pitch (as @look has them) looks elev degrees above the level (below when
 //                                negative), keeping its heading: a capsule in orbit looking down at the celestial
-//                                through its window. The game turns it a frame later
+//                                through its window; with "sun", at the sun: its light comes in through a window
+//                                there and lies on the cabin's other side. The game turns it a frame later
 //   @kitten <lat> <lon> <name>   put a kitten of the benchmark's (Hunter's looks) out on EVA, standing on the ground
 //                                of the home celestial there (the game stands it there a frame later); it becomes the
 //                                vehicle
@@ -472,12 +473,17 @@ public partial class Benchmark
         return true;
     }
 
-    // @face <yaw> <pitch> <elev>: the vehicle turned about the axis square to the seat's view and the one it should
+    // @face <yaw> <pitch> <elev>|sun: the vehicle turned about the axis square to the seat's view and the one it should
     // look along, through the game's teleport (attitude only)
     private bool Face(string[] a)
     {
+        double elevation = 0;
+        bool atSun = a[3] == "sun";
         if (Target is not { Parent: Celestial body } v || !TryValue(a[1], 0, 1, out var yaw) ||
-            !TryValue(a[2], 0, 1, out var pitch) || !TryValue(a[3], 0, 1, out var elevation))
+            !TryValue(a[2], 0, 1, out var pitch) || !atSun && !TryValue(a[3], 0, 1, out elevation))
+            return false;
+        var sun = Universe.CurrentSystem?.GetWorldSun();
+        if (atSun && sun == null)
             return false;
         IVASeat? seat = null;
         foreach (var s in v.Parts.Modules.Get<IVASeat>())
@@ -499,7 +505,8 @@ public partial class Benchmark
         if (level.Length() < 1e-6)
             return false;
         double e = elevation * Math.PI / 180;
-        var wanted = double3.Normalize(level) * Math.Cos(e) + up * Math.Sin(e);
+        var wanted = atSun ? double3.Normalize(sun!.GetPositionEcl() - v.GetPositionEcl())
+            : double3.Normalize(level) * Math.Cos(e) + up * Math.Sin(e);
         var axis = double3.Cross(view, wanted);
         if (axis.Length() < 1e-9)
             return true;
