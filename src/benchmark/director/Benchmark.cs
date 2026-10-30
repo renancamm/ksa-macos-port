@@ -737,6 +737,30 @@ public partial class Benchmark
         }
     }
 
+    // Fast mode: kittens on EVA with their eyes open. The game blinks a kitten after a random 1 to 6 s of the Mac's
+    // clock (CatEyeAnim, seeded from the clock, paused too), so a view of its face caught it blinking in some runs: its
+    // blink is put past its end, with no next one
+    private static void OpenEyes()
+    {
+        const BindingFlags Private = BindingFlags.NonPublic | BindingFlags.Instance;
+        if (Universe.CurrentSystem is not { } system)
+            return;
+        foreach (var kitten in system.All.OfType<KittenEva>())
+        {
+            var renderable = typeof(KittenEva).GetField("_renderable", Private)?.GetValue(kitten);
+            var eyes = renderable?.GetType().GetField("_catEyeAnim", Private)?.GetValue(renderable);
+            var blinkT = eyes?.GetType().GetField("_blinkT", Private);
+            var next = eyes?.GetType().GetField("_nextBlinkTime", Private);
+            if (blinkT == null || next == null)
+            {
+                Log("the kittens have no blink to stop");
+                return;
+            }
+            blinkT.SetValue(eyes, 1e6f);
+            next.SetValue(eyes, float.MaxValue);
+        }
+    }
+
     private void Checkpoint(double wall, double dt)
     {
         switch (_phase)
@@ -785,6 +809,7 @@ public partial class Benchmark
                 {
                     ResetClouds(detailOnly: true);
                     ResetSeaFrame();
+                    OpenEyes();
                 }
                 _phase = Phase.Settle;
                 _settleStart = wall;

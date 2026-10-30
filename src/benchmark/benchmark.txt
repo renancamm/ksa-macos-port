@@ -33,7 +33,7 @@ section earth
 47 @key Earth -10.619303 -72.830249 353 249.4 6.9
 47 @shot earth6
 47.5 @measure earth7 7
-55 @key Earth -11.524500 -73.790276 3772 295.9 -7.1
+55 @key Earth -11.524500 -73.790276 +8 295.9 -7.1
 55 @shot earth7
 55.5 @measure earth8 9
 65 @key Earth -16.373333 -73.301128 160 295.5 -5.0
@@ -263,7 +263,7 @@ section lineup
 3 @shot space
 3 @place Earth 0.600314 -35.167166 9 266.4 -6.8
 3 @shot sea 70
-3 @place Earth -11.524500 -73.790276 3772 295.9 -7.1
+3 @place Earth -11.524500 -73.790276 +8 295.9 -7.1
 3 @shot andes
 3 @vehicle giga
 3 @chase 0 15 200
