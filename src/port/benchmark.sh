@@ -17,7 +17,7 @@
 #   --defaults         the settings of a fresh install instead of yours: the game's own and the port's defaults
 #   --system <name>    sol (the solar system) or earth (Earth and the Moon only: for Macs with 8 GB of memory)
 #                      (default: sol, or earth in fast mode when the places played are all on Earth or the Moon)
-#   --fast             a short test: three places on Earth, then rockets, a cockpit and a kitten set up at one
+#   --fast             a short test: six places on Earth, then rockets, a cockpit and a kitten set up at one
 #                      moment, all seen with the game paused (with sections or places: those, the camera's flight
 #                      paused and jumping, vehicles played as written); measures the views standing still
 #   --no-shots         take no screenshots
