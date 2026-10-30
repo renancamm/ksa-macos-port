@@ -14,6 +14,8 @@ namespace KsaMetalHooks;
 // physics bubble. With the square root that takes 523 rad/s, but the square root alone allows steps long enough for
 // falling pieces to pass through the ground (about 0.2 s at 2.5 rad/s: 5 landings of 12), so it gives at most 1/60 s,
 // the game's own step at normal speed. The game's value stays where it is longer: below about 4 rad/s nothing changes.
+// It also stays for a vehicle touching the ground or water: a contact's jolt reaches the g-load that breaks a vehicle
+// through its step, and a longer step averages it away (the giga rocket stayed whole on its pad at 50 rad/s).
 // And KinematicStates.ClampVelocities caps a spin at 5236 rad/s, which a piece of a breaking booster can reach, and then
 // each step costs more than ten times as much. The cap becomes 200 rad/s, above any tumble measured on its own (about
 // 170). The three methods are marked for inlining, so a patch on them wouldn't reach their callers: the callers call
@@ -62,7 +64,9 @@ internal static class TumblingPhysics
         return code;
     }
 
-    private static float SpinStep(float gameStep) => (float)Math.Max(gameStep, Math.Min(Math.Sqrt(gameStep), LongestStep));
+    private static float SpinStep(float gameStep, Situation situation) => situation.HasAnyContact()
+        ? gameStep
+        : (float)Math.Max(gameStep, Math.Min(Math.Sqrt(gameStep), LongestStep));
 
     // ComputeTimestep with SpinStep after (pi/6)^2 / w^2: "ldc Arc, dup, mul, ldloc, div"
     [HarmonyReversePatch(HarmonyReversePatchType.Original)]
@@ -75,7 +79,10 @@ internal static class TumblingPhysics
             int arc = Find.Once(code, c => c.opcode == OpCodes.Ldc_R4 && c.operand is float f && f == Arc, "the spin arc");
             if (arc + 4 >= code.Count || code[arc + 1].opcode != OpCodes.Dup || code[arc + 2].opcode != OpCodes.Mul || code[arc + 4].opcode != OpCodes.Div)
                 throw new Skip("the spin limit's code changed");
-            code.Insert(arc + 5, new CodeInstruction(OpCodes.Call, Find.Method(typeof(TumblingPhysics), nameof(SpinStep))));
+            code.InsertRange(arc + 5, [
+                new CodeInstruction(OpCodes.Ldarg_0),
+                new CodeInstruction(OpCodes.Ldfld, Find.Field(typeof(VehicleProperties), nameof(VehicleProperties.Situation))),
+                new CodeInstruction(OpCodes.Call, Find.Method(typeof(TumblingPhysics), nameof(SpinStep)))]);
             return code;
         }
         _ = Transpiler(null!);
