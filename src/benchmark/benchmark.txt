@@ -275,8 +275,8 @@ section lineup
 4.5 @shot topdown 50
 4.5 @control cockpit
 4.5 @camera iva
-4.5 @look -10 15
-4.5 @fov 110
+4.5 @look 35 25
+4.5 @fov 95
 4.5 @shot cockpit
 4.5 @control Benchy
 4.5 @helmet off
