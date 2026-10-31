@@ -60,7 +60,7 @@ static bool outdated(KSwapchain* sc) {
 // hooks pass both in (ksaMtlHdrNits) whenever the game applies its Display settings.
 static std::mutex g_hdrMutex;
 static float g_hdrPaperWhite = 200, g_hdrPeak = 1000, g_hdrMin = 0;  // the game's defaults, until it or the hooks say
-static CAMetalLayer* g_hdrLayer = nil;  // the HDR layer, which the metadata goes to: KSA has one window
+static CAMetalLayer* g_hdrLayer = nil;  // the HDR layer, which the metadata goes to: KSA has one HDR window
 
 bool kmtlEdrAvailable(CAMetalLayer* layer) {
     // The display of the window the layer is in (AppKit calls: the game makes surfaces and swapchains on its main
@@ -155,7 +155,8 @@ VKFN(VkResult) vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfo
     layer.drawableSize = CGSizeMake(ci->imageExtent.width, ci->imageExtent.height);
     layer.maximumDrawableCount = 3;
     layer.displaySyncEnabled = ci->presentMode == VK_PRESENT_MODE_FIFO_KHR || ci->presentMode == VK_PRESENT_MODE_FIFO_RELAXED_KHR;
-    layer.opaque = YES;
+    // The game's extra windows (detached gauges, pop-outs) ask for a see-through one and clear it to alpha 0
+    layer.opaque = ci->compositeAlpha == VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     kmtlSetHdr(sc->surface, ci->imageColorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT);
     dev->commitResidency();
     KLOG(1, "swapchain %ux%u format %d colour space %d present mode %d, %u images", ci->imageExtent.width,
