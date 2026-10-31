@@ -264,8 +264,10 @@ internal static class Tests
         Is("terrain_cache", "0", "false");
         Is("terrain_cache", "1", "true");
         Is("strict_sync", "strict", "true");
-        Is("strict_sync", "1", "false");
+        Is("strict_sync", "1", "false", valid: false);
         Is("fit_hud_to_display", "0", "false");
+        Is("fit_hud_to_display", "game", "true", valid: false);
+        Is("fewer_cloud_shadow_updates", "off", "false", valid: false);
         Is("upscaling", "Metalfx", "off", valid: false);
         Is("render_scale", "0.75", "0.75");
         Is("render_scale", "0.3", "1.0", valid: false);

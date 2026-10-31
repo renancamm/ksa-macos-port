@@ -73,8 +73,11 @@ public sealed class PortSetting
         switch (Kind)
         {
             case "bool":
-                // 0 is off, anything else on, but for a variable whose on is a value of its own (KSA_MTL_SYNC=strict)
-                return env == "0" ? "false" : OnValue == "1" || env == OnValue ? "true" : "false";
+                // 0 is off, and on is 1 or a value of the variable's own (KSA_MTL_SYNC=strict)
+                if (env == "0" || env == OnValue)
+                    return env == "0" ? "false" : "true";
+                valid = false;
+                return Default;
             case "text":
                 return env;
             default:

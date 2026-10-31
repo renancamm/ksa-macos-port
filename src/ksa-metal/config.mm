@@ -14,7 +14,11 @@ static int envInt(const char* name, int def) {
     const char* v = env(name);
     return v ? atoi(v) : def;
 }
-static bool envOn(const char* name, bool def) { return envInt(name, def) != 0; }
+// 0 is off and 1 on; anything else means the default, as the port settings' table reads it
+static bool envOn(const char* name, bool def) {
+    const char* v = env(name);
+    return v && !strcmp(v, "0") ? false : v && !strcmp(v, "1") ? true : def;
+}
 
 const KConfig& kmtlConfig() {
     static const KConfig config = [] {

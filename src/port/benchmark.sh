@@ -334,6 +334,9 @@ fi
 for kv in ${PORTS[@]+"${PORTS[@]}"}; do
     case "${kv}" in *=*) ;; *) die "--port needs key=value, not '${kv}'." ;; esac
     key="${kv%%=*}"
+    # A key the game doesn't know would run an unchanged game that looks like an A/B test
+    TABLE="${APP}/Contents/Resources/port-settings.txt"
+    [ ! -f "${TABLE}" ] || grep -q "^${key} |" "${TABLE}" || die "--port: there is no setting '${key}' in port-settings.toml."
     if grep -q "^${key} *=" "${PORT_SETTINGS}"; then
         sed -i '' "s|^${key} *=.*|${key} = ${kv#*=}|" "${PORT_SETTINGS}"
     else
