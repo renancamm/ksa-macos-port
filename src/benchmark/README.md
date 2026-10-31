@@ -14,7 +14,7 @@ against another run's.
 In the game, open the settings (Esc), then **Mac Port**, and press **RUN FAST BENCHMARK** (about 1 minute) or
 **RUN FULL BENCHMARK** (the full tour, about 8 minutes) at the bottom, with your own settings. It plays in the game you
 have open. Your game is saved first, the tour plays in a new game's world, and your game comes back when it ends; Esc
-stops it. With **Run in a New Game** on, your game is saved as "Before the benchmark" and the game starts again for it
+stops it. With **Restart for a Clean Run** on, your game is saved as "Before the benchmark" and the game starts again for it
 instead, the way `./benchmark.sh` plays it, and quits at the end with the report's folder open.
 **Show report** under the buttons finds the last report in the Finder.
 
@@ -133,7 +133,7 @@ of `./benchmark.sh`, the game starts from a documents folder of its own,
 top, if any) and of your port settings (the defaults with a preset), and no mods, so your saves, settings and mods are
 never touched. The script changes only the settings that start the game straight into the tour (no system menu, the
 chosen system, the game's test vessel in orbit); every quality setting stays yours or the preset's. A run from the
-game with **Run in a New Game** starts the same way. A run in the game you have open keeps its system: the hooks
+game with **Restart for a Clean Run** starts the same way. A run in the game you have open keeps its system: the hooks
 save your game, set the world to a new game's (the clock at its start, no vehicles), and load your game again at the
 end. The hooks add the tour's vehicles to the game's list of vehicles from the app, and write the report of a run from
 the game.

@@ -275,7 +275,7 @@ internal static class MacPortTab
             }
             int ne = need.IndexOf("!=", StringComparison.Ordinal), eq = need.IndexOf('=');
             var other = PortSettings.Get(ne > 0 ? need[..ne] : eq > 0 ? need[..eq] : need);
-            var what = other == null ? need : ne < 0 && eq > 0 ? $"{other.Label}: {other.LabelOf(need[(eq + 1)..])}" : other.Label;
+            var what = other == null ? need : ne < 0 && eq > 0 ? $"{other.Label} {other.LabelOf(need[(eq + 1)..])}" : other.Label;
             note = $"needs {what}";
             return $"Needs {what}.";
         }
@@ -301,7 +301,7 @@ internal static class MacPortTab
                 if (s.Key == "render_scale")
                     DrawRenderSize();
             }
-            if (section == "measure")
+            if (section == "benchmark")
                 DrawBenchmark();
         }
     }
@@ -456,7 +456,7 @@ internal static class MacPortTab
     // line under them with the preset in use. The one the pending changes make is drawn as the game's Apply is then
     private static void DrawPresets()
     {
-        SectionHeader("Presets", "The game's graphics and these settings, chosen together for this Mac.");
+        SectionHeader("Presets", "The game's graphics and these settings, changed together.");
         var unavailable = Hooks.Status.GetValueOrDefault("presets") is { Unavailable: true } status
             ? status.State == HookState.Skipped
                 ? "Unavailable with this KSA version: the game's settings it sets have moved (logs/console.log says more)."
@@ -511,7 +511,7 @@ internal static class MacPortTab
         (true, "RUN FULL BENCHMARK", "About 8 minutes: from Earth to Jupiter, with a kitten in the grass, a launch and a 2,000-part rocket."),
     ];
 
-    // The Measure section's benchmark buttons, a line under them with what each tour plays or why neither can start,
+    // The Benchmark section's buttons, a line under them with what each tour plays or why neither can start,
     // and what the last run left
     private static void DrawBenchmark()
     {
@@ -528,7 +528,7 @@ internal static class MacPortTab
             if (full)
                 ImGui.SameLine();
             if (ConsoleWidgets.PrimaryButton(label, "MacPort_" + label, size) && why == null)
-                BenchmarkRun.StartFromTab(full, PortSettings.Get("benchmark_restart")?.Saved == "true");
+                BenchmarkRun.StartFromTab(full, PortSettings.Get("restart_for_a_clean_run")?.Saved == "true");
             if (ImGui.IsItemHovered())
                 hovered = help;
         }

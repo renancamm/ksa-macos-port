@@ -91,7 +91,7 @@ internal static class PortEnvironment
             }
             set.Add((s.Variable, s.Kind switch
             {
-                "bool" or "available" => value == "false" ? "0" : s.OnValue,
+                "bool" => value == "false" ? "0" : s.OnValue,
                 "text" when value.StartsWith('~') => home + value[1..],
                 _ => value
             }));

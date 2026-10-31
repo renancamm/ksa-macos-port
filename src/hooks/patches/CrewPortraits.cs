@@ -9,9 +9,9 @@ namespace KsaMetalHooks;
 // around it, 0.4 to 0.8 ms a frame), drawn every frame while the controlled vessel has crew, also when the panel isn't
 // on screen (UI hidden, map view). After CrewPortraitPanel.Update has chosen the portraits, the patch hides a
 // portrait's view for this frame unless the panel was drawn in the previous one, the way the game hides it when
-// portraits are off; the panel keeps showing the view's last image. With crew_portraits = "shown_15", a drawn panel is
-// also refreshed at most 15 times a second, and with "always" the game draws them as it does without the patch. The
-// Mac Port tab changes the setting while the game runs.
+// portraits are off; the panel keeps showing the view's last image (skip_hidden_crew_portraits). With
+// crew_portraits_at_15_fps, the portraits are also refreshed at most 15 times a second. With both off, the game draws
+// them as it does without the patch. The Mac Port tab changes the settings while the game runs.
 internal static class CrewPortraits
 {
     private static long _frame, _drawnFrame = -2, _shownSince = -1;
@@ -26,7 +26,7 @@ internal static class CrewPortraits
         Find.Method(typeof(Program), nameof(Program.GetCrewPortraitViewport));
         harmony.Patch(update, postfix: new HarmonyMethod(typeof(CrewPortraits), nameof(UpdatePostfix)));
         harmony.Patch(draw, postfix: new HarmonyMethod(typeof(CrewPortraits), nameof(DrawPostfix)));
-        return Settings.CrewPortraits switch { "always" => "on, every frame", "shown_15" => "on, when shown, 15 a second", _ => "on, when shown" };
+        return $"on, {(Settings.SkipHiddenCrewPortraits ? "when shown" : "every frame")}{(Settings.CrewPortraitsAt15Fps ? ", 15 a second" : "")}";
     }
 
     private static void DrawPostfix() => _drawnFrame = _frame;
@@ -36,15 +36,16 @@ internal static class CrewPortraits
     private static void UpdatePostfix()
     {
         _frame++;
-        if (_failed || Settings.CrewPortraits == "always")
+        bool skip = Settings.SkipHiddenCrewPortraits, slow = Settings.CrewPortraitsAt15Fps;
+        if (_failed || !skip && !slow)
             return;
         bool shown = _drawnFrame >= _frame - 1;
         if (!shown)
             _shownSince = -1;
         else if (_shownSince < 0)
             _shownSince = _frame;
-        bool render = shown;
-        if (render && Settings.CrewPortraits == "shown_15" && _frame > _shownSince + 1)
+        bool render = shown || !skip;
+        if (render && slow && _frame > _shownSince + 1)
         {
             double now = Clock.Elapsed.TotalSeconds;
             render = now - _lastRender >= 1.0 / ShownFps;

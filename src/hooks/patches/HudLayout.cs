@@ -19,7 +19,7 @@ namespace KsaMetalHooks;
 // (resources, staging, crew, burn) has a fixed size (20 points times the HUD scale). So a window shrinks the HUD with
 // it, on a display narrower than 16:9 the panels overlap, and in a window shorter than the game's layout (1440 high)
 // the text overflows them: a MacBook's display is 16:10 and about 1000 points high.
-// With hud_layout = "fit", the HUD's sizes belong to the display the window is on (NSWindow.screen, the one holding most
+// With fit_hud_to_display, the HUD's sizes belong to the display the window is on (NSWindow.screen, the one holding most
 // of it), and its positions to the window: every read of the HUD scale in the panels' classes takes it times the
 // display's height / the window's (sizes, not offsets, go through it there) and times min(1, the display's aspect /
 // (16/9)); inside the panels, fractions are of the display's height; the hosted panels' scale (their fonts and spacing)
@@ -54,7 +54,7 @@ internal static class HudLayout
             throw new Skip($"ImGauge's window offset found {_offsets} times");
         harmony.Patch(Find.Method(typeof(ConsoleStyle), nameof(ConsoleStyle.BeginGaugeHostScope)),
             prefix: new HarmonyMethod(typeof(HudLayout), nameof(HostScopePrefix)));
-        return Settings.HudLayout == "fit" ? "fit to the display" : "game's";
+        return Settings.FitHudToDisplay ? "fit to the display" : "game's";
     }
 
     // Patches the methods of these classes (and their nested ones) that call one of these
@@ -161,7 +161,7 @@ internal static class HudLayout
     {
         display = default;
         window = default;
-        if (_failed || Settings.HudLayout != "fit")
+        if (_failed || !Settings.FitHudToDisplay)
             return false;
         try
         {

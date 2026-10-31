@@ -5,7 +5,7 @@ using KSA;
 
 namespace KsaMetalHooks;
 
-// Plume shadow tuning, "low" (port-settings.toml): with the game's Plume trail shadows on, the game draws the smoke's
+// Plume shadow tuning, lighter_plume_shadows (port-settings.toml): with the game's Plume trail shadows on, the game draws the smoke's
 // density as seen from the sun into 8 shadow cascades of 512^2 out to 20 km, which the raymarch reads beside its own
 // self-shadow samples and which cast the smoke's shadows on the ground. Low makes them 4 of 128^2 out to 3 km: the
 // giga rocket's smoke draws about 20 % faster on an M5, its ground shadows are coarser and end 3 km from the camera.
@@ -17,7 +17,7 @@ internal static class PlumeShadows
 
     public static string Apply(Harmony harmony)
     {
-        bool low = Settings.Value("plume_shadow_tuning") == "low";
+        bool low = Settings.On("lighter_plume_shadows");
         _shadows = Settings.Numbers("trail_shadows");
         if (_shadows.Length == 0 && low)
             _shadows = [4, 128, 3000];

@@ -28,7 +28,7 @@ awk -F'|' '
     }
     # The values a type takes, as the comment shows them
     function values(type,    n, parts, choices, i, eq, out) {
-        if (type == "bool" || type == "available") return "true or false"
+        if (type == "bool") return "true or false"
         if (type == "text") return "a path or text, \"\" for none"
         n = split(type, parts, ":")
         if (parts[1] == "numbers")

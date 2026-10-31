@@ -13,7 +13,7 @@ public static class Settings
 {
     private static readonly Dictionary<string, PortSetting> ByKey = new();
     // Read every frame
-    private static PortSetting _crewPortraits = null!, _hudLayout = null!;
+    private static PortSetting _skipHiddenCrewPortraits = null!, _crewPortraitsAt15Fps = null!, _fitHudToDisplay = null!;
 
     // Settings that apply when the game starts, read once
     public static string Upscaler { get; private set; } = "off";
@@ -28,8 +28,9 @@ public static class Settings
         ByKey.Clear();
         foreach (var s in PortSettings.All)
             ByKey[s.Key] = s;
-        _crewPortraits = Get("crew_portraits");
-        _hudLayout = Get("hud_layout");
+        _skipHiddenCrewPortraits = Get("skip_hidden_crew_portraits");
+        _crewPortraitsAt15Fps = Get("crew_portraits_at_15_fps");
+        _fitHudToDisplay = Get("fit_hud_to_display");
         Upscaler = Value("upscaling");
         RenderScale = Upscaler is "metalfx" or "spatial" ? (float)Number("render_scale") : 1f;
     }
@@ -47,9 +48,10 @@ public static class Settings
     // A numbers setting's numbers (none while it is unset)
     public static double[] Numbers(string key) => Value(key) is { Length: > 0 } v ? PortSetting.Numbers(v) ?? [] : [];
 
-    // always, shown or shown_15: when the crew panel's faces are drawn
-    public static string CrewPortraits => _crewPortraits.Running;
+    // When the crew panel's faces are drawn: only while the panel is shown, and at most 15 times a second
+    public static bool SkipHiddenCrewPortraits => _skipHiddenCrewPortraits.Running == "true";
+    public static bool CrewPortraitsAt15Fps => _crewPortraitsAt15Fps.Running == "true";
 
-    // fit or game: the flight HUD fitted to the display, or the game's
-    public static string HudLayout => _hudLayout.Running;
+    // The flight HUD fitted to the display, or the game's
+    public static bool FitHudToDisplay => _fitHudToDisplay.Running == "true";
 }

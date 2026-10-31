@@ -20,7 +20,7 @@ internal static class Tests
     private static readonly string[] GameNeeds = ["vsync", "plume_trail_shadows", "pcss"];
 
     // The kinds of setting the Mac Port tab draws (MacPortTab.DrawRow); the others are the file's only ([developer])
-    private static readonly string[] TabKinds = ["bool", "available", "choice", "scale"];
+    private static readonly string[] TabKinds = ["bool", "choice", "scale"];
 
     // The characters a dropdown's control shows before it cuts a value off
     private const int ValueWidth = 18;
@@ -186,7 +186,7 @@ internal static class Tests
         File.WriteAllLines(PortSettings.FilePath,
         [
             "# Port settings", "", "[image]", "upscaling = \"metalfx\"   # a comment", "render_scale = 0.75",
-            "override_antialiasing = false", "unknown_setting = 1", "hud_layout = \"sideways\"", "trail_shadows = \"4,128\"",
+            "skip_game_anti_aliasing = false", "unknown_setting = 1", "fit_hud_to_display = \"sideways\"", "trail_shadows = \"4,128\"",
             "trail_caches = \"0, 0, 16\"", "log_file = \"~/a#b \\\"q\\\".log\"  # a comment", "shot_dir = '/tmp/x#y'",
             "dump_msl = /tmp/msl # a comment",
         ]);
@@ -194,12 +194,12 @@ internal static class Tests
         var values = PortSettings.ReadFile(warnings.Add);
         Equal("metalfx", values.GetValueOrDefault("upscaling"), "upscaling");
         Equal("0.75", values.GetValueOrDefault("render_scale"), "render_scale");
-        Equal("false", values.GetValueOrDefault("override_antialiasing"), "override_antialiasing");
+        Equal("false", values.GetValueOrDefault("skip_game_anti_aliasing"), "skip_game_anti_aliasing");
         Equal("0, 0, 16", values.GetValueOrDefault("trail_caches"), "trail_caches");
         Equal("~/a#b \"q\".log", values.GetValueOrDefault("log_file"), "a string with # and an escaped quote");
         Equal("/tmp/x#y", values.GetValueOrDefault("shot_dir"), "a string in single quotes");
         Equal("/tmp/msl", values.GetValueOrDefault("dump_msl"), "a value without quotes, before a comment");
-        Check(!values.ContainsKey("hud_layout") && !values.ContainsKey("trail_shadows"), "an invalid value was read");
+        Check(!values.ContainsKey("fit_hud_to_display") && !values.ContainsKey("trail_shadows"), "an invalid value was read");
         Equal(3, warnings.Count, "warnings");
         Check(warnings.Any(w => w.Contains("unknown_setting")), "no warning for the unknown setting");
     }
@@ -209,22 +209,22 @@ internal static class Tests
         PortSettings.FilePath = Path.Combine(_scratch, "port-settings.toml");
         PortSettings.TemplatePath = Path.Combine(_scratch, "template.toml");
         File.WriteAllLines(PortSettings.TemplatePath,
-            ["# Port settings", "", "[image]", "", "# upscaling: help", "upscaling = \"off\"", "", "[interface]", "hud_layout = \"fit\"", ""]);
+            ["# Port settings", "", "[image]", "", "# upscaling: help", "upscaling = \"off\"", "", "[interface]", "fit_hud_to_display = true", ""]);
         PortSettings.Save(new Dictionary<string, string>
         {
-            ["upscaling"] = "metalfx", ["render_scale"] = "0.5", ["crew_portraits"] = "shown_15", ["trail_shadows"] = "4,128,3000",
+            ["upscaling"] = "metalfx", ["render_scale"] = "0.5", ["skip_hidden_crew_portraits"] = "false", ["trail_shadows"] = "4,128,3000",
             ["log_file"] = "~/logs #1/\"ksa\" \\ metal.log",
         });
         var lines = File.ReadAllLines(PortSettings.FilePath);
         Equal("upscaling = \"metalfx\"", lines[5], "the changed line");
         Equal("render_scale = 0.5", lines[6], "the line added to its section, before its blank lines");
         Equal("# upscaling: help", lines[4], "the comment kept");
-        Check(lines.Contains("[optimizations]") && Array.IndexOf(lines, "crew_portraits = \"shown_15\"") > Array.IndexOf(lines, "[optimizations]"),
+        Check(lines.Contains("[optimizations]") && Array.IndexOf(lines, "skip_hidden_crew_portraits = false") > Array.IndexOf(lines, "[optimizations]"),
             "the setting of a section the file lacks, in a new section");
         Check(lines.Contains("trail_shadows = \"4,128,3000\""), "numbers written as a string");
         Equal("metalfx", Setting("upscaling").Saved, "the saved value");
         var values = PortSettings.ReadFile();
-        Equal("shown_15", values.GetValueOrDefault("crew_portraits"), "read back");
+        Equal("false", values.GetValueOrDefault("skip_hidden_crew_portraits"), "read back");
         Equal("4,128,3000", values.GetValueOrDefault("trail_shadows"), "numbers read back");
         Equal("~/logs #1/\"ksa\" \\ metal.log", values.GetValueOrDefault("log_file"), "a string with #, quotes and a backslash read back");
     }
@@ -235,19 +235,19 @@ internal static class Tests
         string Value(PortSetting s) => values.TryGetValue(s.Key, out var v) ? v : s.Default;
         bool Met(string key, bool game = true) => PortSettings.Met(Setting(key), Value, _ => game);
         Check(!Met("render_scale"), "render_scale without upscaling");
-        Check(!Met("override_antialiasing"), "override_antialiasing without upscaling");
+        Check(!Met("skip_game_anti_aliasing"), "skip_game_anti_aliasing without upscaling");
         values["upscaling"] = "spatial";
         Check(Met("render_scale"), "render_scale with spatial upscaling");
         Check(!Met("frame_interpolation"), "frame_interpolation with spatial upscaling");
         values["upscaling"] = "metalfx";
-        Check(Met("frame_interpolation") && Met("override_antialiasing"), "frame_interpolation with MetalFX");
+        Check(Met("frame_interpolation") && Met("skip_game_anti_aliasing"), "frame_interpolation with MetalFX");
         Check(Met("ray_tracing"), "ray_tracing with ray queries");
         values["ray_queries"] = "false";
         Check(!Met("ray_tracing"), "ray_tracing without ray queries");
         Check(!Met("gpu_profile_frames"), "gpu_profile_frames without gpu_profile");
         values["gpu_profile"] = "~/profile.csv";
         Check(Met("gpu_profile_frames"), "gpu_profile_frames with gpu_profile");
-        Check(!Met("plume_shadow_tuning", game: false), "plume_shadow_tuning without the game's plume trail shadows");
+        Check(!Met("lighter_plume_shadows", game: false), "lighter_plume_shadows without the game's plume trail shadows");
         values["tessellation"] = "false";
         Check(!Met("fused_tessellation"), "fused_tessellation without tessellation");
     }
@@ -265,8 +265,8 @@ internal static class Tests
         Is("terrain_cache", "1", "true");
         Is("strict_sync", "strict", "true");
         Is("strict_sync", "1", "false");
-        Is("hud_layout", "game", "game");
-        Is("hud_layout", "Game", "fit", valid: false);
+        Is("fit_hud_to_display", "0", "false");
+        Is("upscaling", "Metalfx", "off", valid: false);
         Is("render_scale", "0.75", "0.75");
         Is("render_scale", "0.3", "1.0", valid: false);
         Is("worker_park_ms", "abc", "0.25", valid: false);
@@ -282,11 +282,11 @@ internal static class Tests
     private static void HooksLoad()
     {
         var file = Path.Combine(_scratch, "port-settings.toml");
-        File.WriteAllLines(file, ["[interface]", "hud_layout = \"game\"", "[image]", "upscaling = \"metalfx\""]);
+        File.WriteAllLines(file, ["[interface]", "fit_hud_to_display = false", "[image]", "upscaling = \"metalfx\""]);
         var variables = new Dictionary<string, string?>
         {
-            ["KSA_PORT_SETTINGS"] = file, ["KSA_PORT_OUTSIDE"] = "KSA_CREW_PORTRAITS", ["KSA_CREW_PORTRAITS"] = "Always",
-            ["KSA_HUD_LAYOUT"] = "game", ["KSA_UPSCALER"] = "metalfx", ["KSA_TERRAIN_CACHE"] = "0",
+            ["KSA_PORT_SETTINGS"] = file, ["KSA_PORT_OUTSIDE"] = "KSA_RENDER_SCALE", ["KSA_RENDER_SCALE"] = "Always",
+            ["KSA_HUD_LAYOUT"] = "0", ["KSA_UPSCALER"] = "metalfx", ["KSA_TERRAIN_CACHE"] = "0",
         };
         var before = variables.Keys.ToDictionary(k => k, Environment.GetEnvironmentVariable);
         foreach (var (name, value) in variables)
@@ -296,12 +296,12 @@ internal static class Tests
             var warnings = new List<string>();
             PortSettings.Load(Path.Combine(_repo, "src", "launcher"), warnings.Add);
             Equal(file, PortSettings.FilePath, "the file");
-            Equal("game", Setting("hud_layout").Saved, "saved");
-            Equal("game", Setting("hud_layout").Running, "running");
+            Equal("false", Setting("fit_hud_to_display").Saved, "saved");
+            Equal("false", Setting("fit_hud_to_display").Running, "running");
             Equal("false", Setting("terrain_cache").Running, "a switch off");
-            Equal("shown", Setting("crew_portraits").Running, "an invalid variable: the default");
-            Equal("KSA_CREW_PORTRAITS=Always", Setting("crew_portraits").Outside, "set outside");
-            Equal(null, Setting("hud_layout").Outside, "set from the file");
+            Equal("1.0", Setting("render_scale").Running, "an invalid variable: the default");
+            Equal("KSA_RENDER_SCALE=Always", Setting("render_scale").Outside, "set outside");
+            Equal(null, Setting("fit_hud_to_display").Outside, "set from the file");
             Equal(1, warnings.Count, "warnings");
         }
         finally
@@ -326,7 +326,7 @@ internal static class Tests
         plan = Plan(new()
         {
             ["upscaling"] = "metalfx", ["render_scale"] = "0.5", ["terrain_cache"] = "false", ["strict_sync"] = "true",
-            ["log_file"] = "~/ksa.log", ["hud_layout"] = "fit", ["benchmark_restart"] = "true",
+            ["log_file"] = "~/ksa.log", ["fit_hud_to_display"] = "true", ["restart_for_a_clean_run"] = "true",
         });
         var set = plan.Set.ToDictionary(v => v.Name, v => v.Value);
         Equal("metalfx", set.GetValueOrDefault("KSA_UPSCALER"), "a choice");

@@ -36,18 +36,18 @@ public static class Hooks
             return;
         }
         Run("terrain cache", "terrain_cache", Settings.On("terrain_cache"), TerrainCache.Apply);
-        Run("outline skip", "outline_skip", Settings.On("outline_skip"), OutlineSkip.Apply);
-        Run("overlay skip", "overlay_skip", Settings.On("overlay_skip"), OverlaySkip.Apply);
-        Run("ocean blending", "ocean_blending", Settings.On("ocean_blending"), OceanBlending.Apply);
+        Run("outline skip", "outline_skip", Settings.On("skip_unused_outlines"), OutlineSkip.Apply);
+        Run("overlay skip", "overlay_skip", Settings.On("skip_unused_overlays"), OverlaySkip.Apply);
+        Run("ocean blending", "ocean_blending", Settings.On("skip_unused_ocean_blending"), OceanBlending.Apply);
         Run("cloud shadow tuning", "cloud_shadow_tuning", true, CloudShadows.Apply);
         Run("plume shadow tuning", "plume_shadow_tuning", true, PlumeShadows.Apply);
-        Run("shadow search", "shadow_search", Settings.On("shadow_search"), ShadowSearch.Apply);
-        Run("Milky Way bake", "milky_way_bake", Settings.On("milky_way_bake"), MilkyWayBake.Apply);
+        Run("shadow search", "shadow_search", Settings.On("simpler_pcss_shadows"), ShadowSearch.Apply);
+        Run("Milky Way bake", "milky_way_bake", Settings.On("baked_milky_way"), MilkyWayBake.Apply);
         Run("crew portraits", "crew_portraits", true, CrewPortraits.Apply);
-        Run("worker parking", "worker_park", Settings.On("worker_parking"), WorkerPark.Apply);
-        Run("faded smoke", "faded_smoke", Settings.On("faded_smoke"), FadedSmoke.Apply);
-        Run("tumbling physics", "tumbling_physics", Settings.On("tumbling_physics"), TumblingPhysics.Apply);
-        Run("loading pace", "loading_pace", Settings.On("loading_pace"), LoadingPace.Apply);
+        Run("worker parking", "worker_park", Settings.On("idle_thread_sleep"), WorkerPark.Apply);
+        Run("faded smoke", "faded_smoke", Settings.On("clear_faded_smoke"), FadedSmoke.Apply);
+        Run("tumbling physics", "tumbling_physics", Settings.On("lighter_tumbling_physics"), TumblingPhysics.Apply);
+        Run("loading pace", "loading_pace", Settings.On("loading_screen_fps_cap"), LoadingPace.Apply);
         Run("render scale", "render_scale", true, RenderScale.Apply);
         Run("HUD layout", "hud_layout", true, HudLayout.Apply);
         Run("resolution list", "resolution_list", true, ResolutionList.Apply);
@@ -56,7 +56,7 @@ public static class Hooks
         // After every hook that patches a method Program.RenderGame or RenderEditor call: patching those two compiles
         // them again, and the JIT can inline a small method they call (RenderAaPreparePasses) as it is then, so a patch
         // made on it later never runs from them (MetalFX Spatial drew nothing)
-        Run("hidden parts skip", "hidden_parts_skip", Settings.On("hidden_parts_skip"), HiddenPartsSkip.Apply);
+        Run("hidden parts skip", "hidden_parts_skip", Settings.On("skip_hidden_vessel_parts"), HiddenPartsSkip.Apply);
         // The port's own parts of the game
         Run("documents folder", "documents", true, Documents.Apply);
         Run("restart", "restart", true, Restart.Apply);

@@ -85,7 +85,7 @@ internal static class Upscale
         }
         harmony.Patch(Find.Method(typeof(Cmaa2Renderer), "CreateResourcesIfNeeded"),
             transpiler: new HarmonyMethod(typeof(Upscale), nameof(NoCmaa2Transpiler)));
-        if (!Spatial && Settings.On("override_antialiasing"))
+        if (!Spatial && Settings.On("skip_game_anti_aliasing"))
         {
             var keep = new HarmonyMethod(typeof(Upscale), nameof(KeepSampleCount));
             harmony.Patch(Find.Method(typeof(ScreenshotCapture), nameof(ScreenshotCapture.OnPostRender)), postfix: keep);
@@ -96,7 +96,7 @@ internal static class Upscale
     }
 
     // The game's anti-aliasing. The temporal upscaler smooths edges itself: the game's MSAA under it would cost 1-3 ms
-    // more on an M5 and leave dark specks on Earth's views, so with override_antialiasing (on by default) the game runs
+    // more on an M5 and leave dark specks on Earth's views, so with skip_game_anti_aliasing (on by default) the game runs
     // with one sample (GameSettings.SampleCountOverride, the door its high-resolution screenshots use, which also turns
     // CMAA2 off; a screenshot resets it, so it is set again after one). The spatial upscaler wants smoothed edges: MSAA
     // stays. CMAA2 is off with either: it would smooth a copy of MetalFX's image shrunk back to the render size, and

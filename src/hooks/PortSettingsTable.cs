@@ -14,7 +14,7 @@ public sealed class PortSetting
     public string Section = "", Key = "", Type = "", Default = "", Variable = "", OnValue = "1", Hook = "", Label = "", Help = "";
     public string[] Needs = [];
     public bool Live;
-    // A choice's values and their labels (bool: on and off, available: Available and Off), and what some of them mean
+    // A choice's values and their labels (bool: on and off), and what some of them mean
     public (string Value, string Label)[] Choices = [];
     public readonly Dictionary<string, string> OptionHelp = new();
     public double Min, Max;
@@ -72,7 +72,7 @@ public sealed class PortSetting
             return Default;
         switch (Kind)
         {
-            case "bool" or "available":
+            case "bool":
                 // 0 is off, anything else on, but for a variable whose on is a value of its own (KSA_MTL_SYNC=strict)
                 return env == "0" ? "false" : OnValue == "1" || env == OnValue ? "true" : "false";
             case "text":
@@ -153,9 +153,6 @@ public static partial class PortSettings
             {
                 case "bool":
                     s.Choices = [("true", "On"), ("false", "Off")];
-                    break;
-                case "available":
-                    s.Choices = [("true", "Available"), ("false", "Off")];
                     break;
                 case "choice":
                     s.Choices = parts[1].Split('/').Select(v => (v[..v.IndexOf('=')], v[(v.IndexOf('=') + 1)..])).ToArray();

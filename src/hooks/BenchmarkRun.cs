@@ -22,7 +22,7 @@ namespace KsaMetalHooks;
 // - The Mac Port tab's RUN FAST BENCHMARK and RUN FULL BENCHMARK, in the running game: the player's game is saved (to
 //   disk, in case the game doesn't survive the run, and in memory), the world becomes a new game's (its clock at the
 //   start, no vehicles), the tour plays, and the player's game comes back; Esc stops it. The hooks write the report.
-// - The same with "Run in a New Game": the player's game is saved, the game starts again for it the way benchmark.sh
+// - The same with "Restart for a Clean Run": the player's game is saved, the game starts again for it the way benchmark.sh
 //   starts it (a documents folder of its own with a copy of the settings, a new game, none of the player's mods), and
 //   at the end the hooks write the report, open its folder and quit the game.
 // The benchmark's vehicles are added to the game's vehicle saves from the app (Contents/Resources/Benchmark/vehicles).
@@ -80,7 +80,7 @@ internal static class BenchmarkRun
             return "Leave the vehicle editor first.";
         if (Universe.CurrentSystem == null)
             return "No game is loaded.";
-        if (PortSettings.Get("benchmark_restart")?.Saved == "true" && Restart.Launcher == null)
+        if (PortSettings.Get("restart_for_a_clean_run")?.Saved == "true" && Restart.Launcher == null)
             return "The game was not started by the app, so it can't start itself again.";
         return null;
     }
@@ -332,7 +332,7 @@ internal static class BenchmarkRun
         }
     }
 
-    // With "Run in a New Game": the player's game saved, the run's documents folder and its settings, then the game
+    // With "Restart for a Clean Run": the player's game saved, the run's documents folder and its settings, then the game
     // starts again with the director's options
     private static void RestartForRun()
     {
