@@ -53,16 +53,22 @@ internal static class MacPortTab
         _labels = Find.Field(gs, "_navRailLabels");
         _pendingFlags = Find.Field(gs, "_navRailPendingFlags");
         _hasAnyTabChanged = Find.Method(gs, "HasAnyTabChanged");
-        // The rail with one tab more: the game's arrays are read-only fields, so the code that reads them reads these
+        // The rail with this tab first, so the window opens on it: the game's arrays are read-only fields, so the code
+        // that reads them reads these
         var order = (Array)_order.GetValue(null)!;
         _railOrder = Array.CreateInstance(_tabType, order.Length + 1);
-        Array.Copy(order, _railOrder, order.Length);
-        _railOrder.SetValue(Enum.ToObject(_tabType, TabValue), order.Length);
-        RailLabels = [.. (string[])_labels.GetValue(null)!, Label];
+        _railOrder.SetValue(Enum.ToObject(_tabType, TabValue), 0);
+        Array.Copy(order, 0, _railOrder, 1, order.Length);
+        RailLabels = [Label, .. (string[])_labels.GetValue(null)!];
         RailPending = new bool[order.Length + 1];
         var rail = new HarmonyMethod(typeof(MacPortTab), nameof(RailTranspiler));
         foreach (var name in new[] { "RefreshNavRailPendingFlags", "HasAnyTabChanged", "DrawFooter" })
             harmony.Patch(Find.Method(gs, name), transpiler: rail);
+        var railWidth = AccessTools.Method(typeof(ConsoleWidgets), nameof(ConsoleWidgets.NavRailWidth));
+        _navRail = railWidth == null ? null : AccessTools.Method(typeof(ConsoleWidgets), nameof(ConsoleWidgets.NavRail),
+            [typeof(ReadOnlySpan<char>), typeof(ReadOnlySpan<string>), typeof(int).MakeByRefType(), typeof(ReadOnlySpan<bool>), typeof(float), typeof(float).MakeByRefType()]);
+        if (_navRail != null)
+            harmony.Patch(railWidth, prefix: new HarmonyMethod(typeof(MacPortTab), nameof(RailWidthPrefix)));
         harmony.Patch(Find.Method(gs, nameof(GameSettings.OnDrawUi)), transpiler: new HarmonyMethod(typeof(MacPortTab), nameof(DrawUiTranspiler)));
         harmony.Patch(Find.Method(gs, "DrawFooter"), transpiler: new HarmonyMethod(typeof(MacPortTab), nameof(ResetTranspiler)));
         harmony.Patch(Find.Method(gs, "IsTabChanged"), postfix: new HarmonyMethod(typeof(MacPortTab), nameof(IsTabChangedPostfix)));
@@ -98,16 +104,55 @@ internal static class MacPortTab
 
     private static object RailOrder() => _railOrder;
 
-    // OnDrawUi: the rail's arrays, and the tab's rows once the content's body has begun (the game's own tabs draw
-    // nothing while this one is open)
+    // OnDrawUi: the rail's arrays, the rail in its two groups (without the call, one group: the tab still works), and
+    // the tab's rows once the content's body has begun (the game's own tabs draw nothing while this one is open)
     private static IEnumerable<CodeInstruction> DrawUiTranspiler(IEnumerable<CodeInstruction> instructions, MethodBase original)
     {
         var code = RailTranspiler(instructions, original).ToList();
+        var rails = _navRail == null ? [] : code.Where(i => i.Calls(_navRail)).ToList();
+        foreach (var rail in rails)
+            rail.operand = AccessTools.Method(typeof(MacPortTab), nameof(Rail));
+        if (rails.Count == 0)
+            Hooks.Log("Mac Port tab: the settings' rail moved, so the tab stays in one group with the game's");
         int name = Find.Once(code, i => i.Is(OpCodes.Ldstr, "SettingsContent"), "the settings' content body");
         var beginBody = AccessTools.GetDeclaredMethods(typeof(ConsoleStyle)).Where(m => m.Name == nameof(ConsoleStyle.BeginBody)).ToList();
         int call = Find.Next(code, i => beginBody.Any(i.Calls), "the content body's BeginBody", name);
         code.Insert(call + 1, new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(MacPortTab), nameof(Draw))));
         return code;
+    }
+
+    // The rail's width while Rail draws it in groups, each of which would otherwise be as wide as its own labels
+    private static float _railWidth;
+    private static MethodInfo? _navRail;
+
+    private static bool RailWidthPrefix(ref float __result)
+    {
+        if (_railWidth <= 0f)
+            return true;
+        __result = _railWidth;
+        return false;
+    }
+
+    // ConsoleWidgets.NavRail, with this tab in a group of its own above the game's
+    private static bool Rail(ReadOnlySpan<char> id, ReadOnlySpan<string> items, ref int active, ReadOnlySpan<bool> pending, float dividerHeight, out float height)
+    {
+        float s = ConsoleStyle.EffectiveInterfaceScale, gap = 6f * s;
+        float width = ConsoleWidgets.NavRailWidth(items);
+        float item = ConsoleWidgets.NavRailItemHeight();
+        var at = ImGui.GetCursorScreenPos();
+        float rule = at.Y + item + gap;
+        float rest = rule + gap;
+        _railWidth = width;
+        int first = active == 0 ? 0 : -1, others = active - 1;
+        bool clicked = ConsoleWidgets.NavRail(id, items[..1], ref first, pending[..1], rest - at.Y, out _);
+        ImGui.GetWindowDrawList().AddLine(new float2(at.X, rule), new float2(at.X + width - ConsoleWidgets.NavRailTextInsetPx, rule),
+            ConsoleStyle.ApplyAlpha(ConsoleStyle.HairlineU32), ConsoleStyle.WindowBorderThicknessPx);
+        ImGui.SetCursorScreenPos(new float2(at.X, rest));
+        bool clickedOther = ConsoleWidgets.NavRail("MacPortRail", items[1..], ref others, pending[1..], Math.Max(0f, at.Y + dividerHeight - rest), out _);
+        _railWidth = 0f;
+        active = clicked ? 0 : clickedOther ? others + 1 : active;
+        height = rest - at.Y + item * (items.Length - 1);
+        return clicked || clickedOther;
     }
 
     // DrawFooter's Reset makes the game's pending copy from its defaults: the tab's start from the defaults too
@@ -289,6 +334,7 @@ internal static class MacPortTab
         if (_failed || Convert.ToInt32(_openTab.GetValue(null), Inv) != TabValue)
             return;
         Sync();
+        DrawTitle();
         DrawPresets();
         foreach (var (section, title, caption) in PortSettings.Sections)
         {
@@ -306,23 +352,108 @@ internal static class MacPortTab
         }
     }
 
-    // A section's title and caption, with more room around them than the game's own tabs have, whose titles have no
-    // caption: a gap above the title (the first section's sits at the top) and one under the caption
-    private static void SectionHeader(string title, string caption)
+    // Moves down by this much: an item's spacing is part of it
+    private static void Gap(float height) => ImGui.Dummy(new float2(0f, Math.Max(0f, height - ImGui.GetStyle().ItemSpacing.Y)));
+
+    // The wordmark, plain ASCII that needs a font whose characters are all one width (the player can choose another: the
+    // words alone then), with the port's version and what the tab is for on the right, as far as the width allows
+    private const string Description = "Mac-only settings that improve\ncompatibility and performance.";
+    private static readonly string[] Wordmark =
+    [
+        @" __  __   _   ___   ___  ___  ___ _____",
+        @"|  \/  | /_\ / __| | _ \/ _ \| _ \_   _|",
+        @"| |\/| |/ _ \ (__  |  _/ (_) |   / | |",
+        @"|_|  |_/_/ \_\___| |_|  \___/|_|_\ |_|",
+    ];
+
+    private static string? _version;
+
+    // "PORT v5707.1", or "PORT dev 1a2b3c4" for a development build: from the VERSION file the build puts in the app
+    private static string PortVersion()
     {
-        float s = ConsoleStyle.EffectiveInterfaceScale;
-        if (title != "Presets")
-            ImGui.Dummy(new float2(0f, 12f * s));
-        ConsoleWidgets.RegionHeader(title);
-        Caption(caption);
-        ImGui.Dummy(new float2(0f, 4f * s));
+        if (_version != null)
+            return _version;
+        _version = "";
+        try
+        {
+            var lines = System.IO.File.ReadAllLines(System.IO.Path.Combine(Hooks.Resources, "VERSION"));
+            string Field(string name) => lines.FirstOrDefault(l => l.StartsWith(name + "=", StringComparison.Ordinal))?[(name.Length + 1)..] ?? "";
+            string version = Field("version"), commit = Field("commit");
+            _version = version == "dev" ? $"PORT dev {commit}" : version.Length > 0 ? $"PORT v{version}" : "";
+        }
+        catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException)
+        {
+            Hooks.Log($"Mac Port tab: no version to show: {e.Message}");
+        }
+        return _version;
+    }
+
+    private static void DrawTitle()
+    {
+        float s = ConsoleStyle.EffectiveInterfaceScale, inset = ConsoleWidgets.RowLabelInsetPx;
+        var at = ImGui.GetCursorScreenPos();
+        float right = at.X + ConsoleStyle.ContentAvailWidth();
+        var draw = ImGui.GetWindowDrawList();
+        ConsoleStyle.PushLabelFont(13f / 15f);
+        float line = MathF.Round(ImGui.GetFontSize() * 15f / 13f);
+        bool mono = ImGui.CalcTextSize("i").X == ImGui.CalcTextSize("M").X;
+        float height = 6f * s + line * Wordmark.Length;
+        float left = at.X + inset;
+        if (mono)
+        {
+            for (int i = 0; i < Wordmark.Length; i++)
+                draw.AddText(new float2(at.X + inset, at.Y + 6f * s + line * i), ConsoleStyle.ApplyAlpha(ConsoleStyle.TextPrimaryU32), Wordmark[i]);
+            left += ImGui.CalcTextSize(Wordmark[1]).X;
+        }
+        ConsoleStyle.PopFont();
+        if (!mono)
+        {
+            ConsoleStyle.PushNavRailFont();
+            draw.AddText(new float2(at.X + inset, at.Y + (height - ImGui.GetFontSize()) * 0.5f), ConsoleStyle.ApplyAlpha(ConsoleStyle.TextPrimaryU32), Label);
+            left += ImGui.CalcTextSize(Label).X;
+            ConsoleStyle.PopFont();
+        }
+        ConsoleStyle.PushSignatureFont();
+        float small = ImGui.GetFontSize();
+        var version = PortVersion();
+        float versionWidth = ImGui.CalcTextSize(version).X;
+        if (right - versionWidth > left + 12f * s)
+            draw.AddText(new float2(right - versionWidth, at.Y), ConsoleStyle.ApplyAlpha(ConsoleStyle.TextLabelU32), version);
+        var description = Description.Split('\n');
+        float rowHeight = MathF.Round(small * 4f / 3f);
+        if (right - description.Max(d => ImGui.CalcTextSize(d).X) > left + 20f * s)
+            for (int i = 0; i < description.Length; i++)
+                draw.AddText(new float2(right - ImGui.CalcTextSize(description[i]).X, at.Y + height - rowHeight * (description.Length - i)),
+                    ConsoleStyle.ApplyAlpha(ConsoleStyle.TextMutedU32), description[i]);
+        ConsoleStyle.PopFont();
+        Gap(height + 22f * s);
+    }
+
+    // A section's rule, title and caption on the rows' label edge, with a wide gap above (the first one follows the
+    // tab's title) and a smaller one under
+    private static void SectionHeader(string title, string caption, bool first = false)
+    {
+        float s = ConsoleStyle.EffectiveInterfaceScale, inset = ConsoleWidgets.RowLabelInsetPx;
+        if (!first)
+            Gap(36f * s);
+        var at = ImGui.GetCursorScreenPos();
+        ImGui.GetWindowDrawList().AddLine(new float2(at.X + inset, at.Y), new float2(at.X + ConsoleStyle.ContentAvailWidth(), at.Y),
+            ConsoleStyle.ApplyAlpha(ConsoleStyle.HairlineU32), ConsoleStyle.WindowBorderThicknessPx);
+        ImGui.SetCursorScreenPos(new float2(at.X + inset, at.Y + 12f * s));
+        ConsoleStyle.PushLabelFont();
+        ImGui.TextColored(in ConsoleStyle.TextPrimary, title.ToUpperInvariant().Replace("%", "%%"));
+        ConsoleStyle.PopFont();
+        Caption(caption, inset);
+        Gap(10f * s);
     }
 
     // The muted line under a section's title, in the game's small font (TextWrapped takes a printf format too)
-    private static void Caption(string text)
+    private static void Caption(string text, float inset = 0f)
     {
         if (text.Length == 0)
             return;
+        if (inset > 0f)
+            ImGui.SetCursorScreenPos(ImGui.GetCursorScreenPos() + new float2(inset, 0f));
         ConsoleStyle.PushSignatureFont();
         ImGui.PushStyleColor(ImGuiCol.Text, in ConsoleStyle.TextMuted);
         ImGui.TextWrapped(text.Replace("%", "%%"));
@@ -456,7 +587,7 @@ internal static class MacPortTab
     // line under them with the preset in use. The one the pending changes make is drawn as the game's Apply is then
     private static void DrawPresets()
     {
-        SectionHeader("Presets", "The game's graphics and these settings, changed together.");
+        SectionHeader("Presets", "The game's graphics and these settings, changed together.", first: true);
         var unavailable = Hooks.Status.GetValueOrDefault("presets") is { Unavailable: true } status
             ? status.State == HookState.Skipped
                 ? "Unavailable with this KSA version: the game's settings it sets have moved (logs/console.log says more)."

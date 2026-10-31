@@ -43,6 +43,8 @@ kit_payload() {
     cp "${NATIVES}/KSA" "${contents}/MacOS/KSA"
     # The port settings: their table, and the commented template the hooks copy for the player
     cp "${REPO}/src/launcher/port-settings.txt" "${contents}/Resources/"
+    # What the tab's title says: the port's version
+    cp "${OUT}/VERSION" "${contents}/Resources/VERSION"
     bash "${REPO}/scripts/make-port-settings.sh" "${REPO}/src/launcher/port-settings.txt" \
         > "${contents}/Resources/port-settings.toml"
     cp -P "${NATIVES}"/*.dylib "${NATIVES}/Brutal.Monitor.Subprocess" "${contents}/Resources/"

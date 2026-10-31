@@ -236,6 +236,7 @@ without modifying GLFW; [`glfw_shim.c`](src/glfw-shim/glfw_shim.c) explains each
 | `Contents/Resources/Hooks/` | [KSA Metal Hooks](#the-hooks), with Harmony |
 | `Contents/Resources/Benchmark/` | the [benchmark](#the-benchmark), with its tour and vehicles |
 | `Contents/Resources/port-settings.txt`, `port-settings.toml` | the [port settings](#the-mac-port-tab)' table and the file's template |
+| `Contents/Resources/VERSION` | the port's version, for the tab's title |
 | `Contents/Resources/Licenses/` | every component's licence and notices ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)) |
 | `Contents/Resources/AppIcon.icns`, `Contents/Info.plist` | the icon; the game's and the port's versions |
 

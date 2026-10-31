@@ -18,6 +18,7 @@
 #   Contents/Resources/Benchmark/ the benchmark: its director, which the hooks start, the report program, the tour
 #   Contents/Resources/port-settings.txt   the table of the port settings, which the hooks read
 #   Contents/Resources/port-settings.toml  the port settings' template, which the hooks copy for the player
+#   Contents/Resources/VERSION    the port's version, which the Mac Port tab's title shows
 #   Contents/Resources/AppIcon.icns, Licenses/
 # The bundle is not signed as a whole: that would replace Microsoft's signature on dotnet. The quarantine
 # attribute a browser download puts on the files is removed, so macOS opens the app as one made on this Mac.
@@ -42,7 +43,7 @@ install_port_files() {
     ditto "${SKELETON}/Resources/Hooks" "${res}/Hooks"
     ditto "${SKELETON}/Resources/Benchmark" "${res}/Benchmark"
     cp "${SKELETON}/Resources/AppIcon.icns" "${SKELETON}/Resources/port-settings.txt" \
-        "${SKELETON}/Resources/port-settings.toml" "${res}/"
+        "${SKELETON}/Resources/port-settings.toml" "${SKELETON}/Resources/VERSION" "${res}/"
     write_info_plist "${contents}"
     xattr -cr "${contents}" 2> /dev/null || true
 }
