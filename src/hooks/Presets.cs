@@ -68,15 +68,15 @@ internal static class Presets
                 milkyWay: "High", clouds: "Low", cloudShadows: "Medium", effects: "Low", godrays: false,
                 clutterShadows: false, plumeShadows: false, rayTracing: false),
             mac => Port(upscaling: "spatial", scale: "0.5", tuning: true, milkyWayBake: true, performanceOnly: true)),
-        new("Balanced", "Fast, and little of it shows.",
-            "Fast, and little of it shows: MetalFX Temporal draws the 3D view at three quarters of the window's size, " +
+        new("Balanced", "Faster, with little visible change.",
+            "Faster, with little visible change: MetalFX Temporal draws the 3D view at three quarters of the window's size, " +
             "with simpler shadow filtering, clouds and smoke a step lower, and lighter ray tracing in the cockpit where " +
             "the Mac has it.",
             mac => Game(mac, antiAliasing: "MultisampleX2", filter: "Pcf", cascades: 2048, terrain: 4096,
                 milkyWay: "High", clouds: "Medium", cloudShadows: "Medium", effects: "Medium", godrays: true, clutterShadows: true,
                 plumeShadows: true, rayTracing: mac.RayTracing),
             mac => Port(upscaling: "metalfx", scale: "0.75", tuning: true, milkyWayBake: true, performanceOnly: false)),
-        new("Quality", "Full size. Trims what barely shows.",
+        new("Quality", "Window size. Trims what barely shows.",
             "The game's own image at the window's full size, with its anti-aliasing, soft shadows and ray tracing in " +
             "the cockpit where the Mac has it. Only what costs much and barely shows is lower or baked: shadow map " +
             "sizes, soft shadows near the camera, cockpit ray tracing, the Milky Way.",
@@ -220,7 +220,7 @@ internal static class Presets
         int terrain = int.Parse(game["TerrainShadowMapSize"], CultureInfo.InvariantCulture);
         return
         [
-            ("3D View", $"{Math.Round(scale * 100)} %"),
+            ("Render Scale", $"{Math.Round(scale * 100)} %"),
             ("MetalFX", Settings.Get("upscaling").LabelOf(upscaling)),
             ("MSAA", upscaling == "metalfx" && port["skip_game_anti_aliasing"] == "true" ? "Off" : game["AntiAliasingMethod"] switch
             {

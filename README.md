@@ -301,7 +301,7 @@ tabs; each row's tooltip says what it changes and what it costs.
 | Section | What's there |
 |---|---|
 | Presets | Performance, Balanced and Quality: the game's graphics settings and the port's, changed together; Game Defaults sets them back |
-| Image | Apple's MetalFX and what needs it, off by default: the MetalFX choice, how the 3D view's size compares with the display's, render scale, MetalFX's anti-aliasing in place of the game's |
+| Image | Apple's MetalFX and what needs it, off by default: the MetalFX choice, how the 3D view's size compares with the window's pixels, render scale, MetalFX's anti-aliasing in place of the game's |
 | Extra Performance | a small trade for speed, with the game's own as the default: fewer cloud shadow updates, lighter plume shadows, simpler PCSS shadows, a baked Milky Way, lighter tumbling physics |
 | Optimizations | the same image, faster, on by default |
 | GPU Features | what the Mac's GPU and display offer the game, with the game's own settings still deciding: tessellation, ray queries, ray tracing, HDR output |

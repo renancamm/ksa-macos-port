@@ -280,10 +280,11 @@ internal static class MacPortTab
     // What a setting would run with: its value once its needs are met, its default otherwise
     private static string Effective(PortSetting s, string value) => PortSettings.Met(s, Value, Game) ? value : s.Default;
 
+    // A switch still waiting for another setting does nothing yet, whichever way it is set
     private static bool NeedsRestart(PortSetting s) =>
-        !s.Live && s.Outside == null && Pending[s.Key] != s.Saved && Effective(s, Pending[s.Key]) != s.Running;
+        !s.Live && s.Outside == null && Pending[s.Key] != s.Saved && PortSettings.Met(s, Value, Game) && Pending[s.Key] != s.Running;
 
-    // Why a setting can't change now, or null
+    // Why a setting can't change now (with a note beside it), or what it waits for (the tooltip says), or null
     private static string? Reason(PortSetting s, out string note)
     {
         note = "";
@@ -305,24 +306,14 @@ internal static class MacPortTab
             if (PortSettings.Met(one, Value, Game))
                 continue;
             if (need == "game:vsync")
-            {
-                note = "needs Vsync";
                 return "Needs the game's Vsync (Display).";
-            }
             if (need == "game:plume_trail_shadows")
-            {
-                note = "needs Plume trail shadows";
                 return "Needs the game's Plume trails and Plume trail shadows (Graphics).";
-            }
             if (need == "game:pcss")
-            {
-                note = "needs Pcss";
                 return "Needs the game's Cascaded Shadow Filter on Pcss (Graphics).";
-            }
             int ne = need.IndexOf("!=", StringComparison.Ordinal), eq = need.IndexOf('=');
             var other = PortSettings.Get(ne > 0 ? need[..ne] : eq > 0 ? need[..eq] : need);
             var what = other == null ? need : ne < 0 && eq > 0 ? $"{other.Label} {other.LabelOf(need[(eq + 1)..])}" : other.Label;
-            note = $"needs {what}";
             return $"Needs {what}.";
         }
         return null;
@@ -573,18 +564,23 @@ internal static class MacPortTab
         DashedLine(draw, new float2(full, fullTop), new float2(full, boxEnd.Y), muted);
         ConsoleStyle.PushLabelFont(10f / 15f);
         var hundred = ImGui.CalcTextSize("100 %");
-        draw.AddText(new float2(full - hundred.X - 3f * s, fullTop + 2f * s), muted, "100 %");
+        var hundredAt = new float2(full - hundred.X - 3f * s, fullTop + 2f * s);
+        // On the panel's colour, as the drawn box, grey or gold, can lie behind it
+        draw.AddRectFilled(hundredAt - new float2(2f * s, 0f), hundredAt + hundred + new float2(2f * s, 0f), ConsoleStyle.ApplyAlpha(ConsoleStyle.InsetU32));
+        draw.AddText(in hundredAt, muted, "100 %");
         ConsoleStyle.PopFont();
-        // What it is shown on
+        // What it is shown on: the drawn box's grey, fainter, as only its size matters
         var shown = new float2(at.X + width - padX - boxWidth, box.Y);
-        draw.AddRectFilled(in shown, shown + new float2(boxWidth, boxHeight), fill);
+        var shownEnd = shown + new float2(boxWidth, boxHeight);
+        draw.AddRectFilled(in shown, in shownEnd, ConsoleStyle.ApplyAlpha(ConsoleStyle.ApplyAlpha(ConsoleStyle.ActiveToolU32, 0.18f)));
+        draw.AddRect(in shown, in shownEnd, fill, 0f, ImDrawFlags.None, ConsoleStyle.WindowBorderThicknessPx);
         // The boxes' captions, and how one becomes the other between them
         float text = boxEnd.Y + 8f * s;
         uint primary = ConsoleStyle.ApplyAlpha(ConsoleStyle.TextPrimaryU32), label = ConsoleStyle.ApplyAlpha(ConsoleStyle.TextLabelU32);
         float x = (float)RenderScale.Output.X / now.Width;
         float mostTemporal = TemporalMax();
-        var note = $"{Math.Round(100.0 * now.Width * now.Height / (RenderScale.Output.X * RenderScale.Output.Y))} % of the display's pixels are drawn." +
-            (mode == "metalfx" && mostTemporal > 0f && x > mostTemporal + 0.001f ? $" Past Temporal's largest scale (x {mostTemporal.ToString("0.#", Inv)}), Spatial does the rest." : "");
+        var note = $"{Math.Round(100.0 * now.Width * now.Height / (RenderScale.Output.X * RenderScale.Output.Y))} % of the window's pixels." +
+            (mode == "metalfx" && mostTemporal > 0f && x > mostTemporal + 0.001f ? $" Past Temporal's largest scale (x{mostTemporal.ToString("0.#", Inv)}), Spatial does the rest." : "");
         float midLeft = boxEnd.X + gap, midRight = shown.X - gap, mid = (midLeft + midRight) * 0.5f;
         ConsoleStyle.PushSignatureFont();
         draw.AddText(new float2(box.X, text), muted, "DRAWN");
@@ -601,23 +597,24 @@ internal static class MacPortTab
         ConsoleStyle.PopFont();
         ConsoleStyle.PushNavRailFont();
         float large = ImGui.GetFontSize();
-        var factor = $"x {x.ToString("0.#", Inv)}";
+        var factor = $"x{x.ToString("0.#", Inv)}";
         float factorWidth = ImGui.CalcTextSize(factor).X;
         ConsoleStyle.PopFont();
-        float content = small + 6f * s + 9f * s + 6f * s + large + 6f * s + captionLine * noteLines.Count;
+        float space = 6f * s, arrowHeight = 9f * s;
+        float content = small + space + arrowHeight + space + large + space + captionLine * noteLines.Count;
         float y = box.Y + MathF.Max(0f, (boxHeight - content) * 0.5f);
         ConsoleStyle.PushSignatureFont();
         draw.AddText(new float2(mid - ImGui.CalcTextSize(how).X * 0.5f, y), label, how);
         ConsoleStyle.PopFont();
-        y += small + 6f * s;
+        y += small + space;
         float arrow = y + 4f * s;
         draw.AddLine(new float2(midLeft, arrow), new float2(midRight - 6f * s, arrow), muted, ConsoleStyle.WindowBorderThicknessPx);
         draw.AddTriangleFilled(new float2(midRight, arrow), new float2(midRight - 8f * s, arrow - 4f * s), new float2(midRight - 8f * s, arrow + 4f * s), muted);
-        y += 9f * s + 6f * s;
+        y += arrowHeight + space;
         ConsoleStyle.PushNavRailFont();
         draw.AddText(new float2(mid - factorWidth * 0.5f, y), primary, factor);
         ConsoleStyle.PopFont();
-        y += large + 6f * s;
+        y += large + space;
         ConsoleStyle.PushSignatureFont();
         foreach (var line in noteLines)
         {
@@ -628,7 +625,7 @@ internal static class MacPortTab
         bool hovered = ImGui.IsWindowHovered() && ImGui.IsMouseHoveringRect(in at, in panelEnd);
         Gap(height + 10f * s);
         if (hovered)
-            Tooltip("Both boxes are drawn to one scale. Render Scale is a share of the window's size: on a Retina display, 100 % is half the display's pixels on each side, and 200 % matches them.");
+            Tooltip("Both boxes are drawn to one scale. Render Scale is a share of the window's size: on a Retina display, 100 % is half the window's pixels on each side, and 200 % matches them. On any other display, 100 % already matches them, and more changes nothing.");
     }
 
     // A row's segmented control: as wide as its labels need, right-aligned, from the left edge SegmentedWidth leaves.
@@ -694,7 +691,9 @@ internal static class MacPortTab
             note = "after a restart";
             reason = "";
         }
-        ConsoleStyle.PushDisabled(reason is { Length: > 0 });
+        // A switch waiting for another setting can still be set, and its name says what it is about. Greyed out: what
+        // can't change (it has a note), and any other control that does nothing yet
+        ConsoleStyle.PushDisabled(reason is { Length: > 0 } && (note.Length > 0 || s.Kind != "bool"));
         if (pending)
             ConsoleWidgets.BeginPendingRow(s.Label, s.Kind == "choice" ? "" : s.LabelOf(s.Saved));
         else
@@ -703,7 +702,11 @@ internal static class MacPortTab
         if (s.Kind == "choice")
         {
             var column = ImGui.GetCursorScreenPos();
-            ImGui.SetCursorScreenPos(new float2(column.X + ConsoleWidgets.RowControlWidth - SegmentedWidth(s), column.Y));
+            ConsoleStyle.PushLabelFont();
+            float labelEnd = ConsoleWidgets.RowMin.X + ConsoleWidgets.RowLabelInsetPx + ImGui.CalcTextSize(s.Label).X;
+            ConsoleStyle.PopFont();
+            // Past the row's right edge rather than over its label, with a very large interface scale
+            ImGui.SetCursorScreenPos(new float2(MathF.Max(column.X + ConsoleWidgets.RowControlWidth - SegmentedWidth(s), labelEnd + ConsoleWidgets.GhostControlGapPx), column.Y));
             if (pending)
                 Note(s.Label, "was " + s.LabelOf(s.Saved));
         }
@@ -791,7 +794,7 @@ internal static class MacPortTab
     // The one in use has a soft fill, and the one the pending changes make is gold, as the game's Apply is then
     private static void DrawPresets()
     {
-        SectionHeader("Presets", "The game's graphics and these settings, changed together.", first: true);
+        SectionHeader("Presets", "Sets the game's graphics and these settings together.", first: true);
         var unavailable = Hooks.Status.GetValueOrDefault("presets") is { Unavailable: true } status
             ? status.State == HookState.Skipped
                 ? "Unavailable with this KSA version: the game's settings it sets have moved (logs/console.log says more)."
@@ -848,7 +851,8 @@ internal static class MacPortTab
         float nameHeight = ImGui.GetFontSize();
         ConsoleStyle.PopFont();
         int rows = values[0].Length;
-        float height = pad + nameHeight + 7f * s + noteLine * noteLines + 7f * s + 7f * s + rowLine * rows + pad;
+        float space = 7f * s, rule = pad + nameHeight + space + noteLine * noteLines + space;
+        float height = rule + space + rowLine * rows + pad;
         var draw = ImGui.GetWindowDrawList();
         bool enabled = ImGui.GetStyle().Alpha >= 1f;
         Presets.Preset? hovered = null;
@@ -887,17 +891,17 @@ internal static class MacPortTab
             ConsoleStyle.PushLabelFont();
             draw.AddText(new float2(left, y), Colour(use ? ConsoleStyle.TextPrimaryU32 : ConsoleStyle.TextLabelU32), preset.Name.ToUpperInvariant());
             ConsoleStyle.PopFont();
-            y += nameHeight + 7f * s;
+            y += nameHeight + space;
             ConsoleStyle.PushSignatureFont();
             foreach (var line in notes[i])
             {
                 draw.AddText(new float2(left, y), Colour(use ? ConsoleStyle.TextLabelU32 : ConsoleStyle.TextMutedU32), line);
                 y += noteLine;
             }
-            y = pos.Y + pad + nameHeight + 7f * s + noteLine * noteLines + 7f * s;
+            y = pos.Y + rule;
             draw.AddLine(new float2(left, y), new float2(right, y),
                 next ? ConsoleStyle.ApplyAlpha(ConsoleStyle.ApplyAlpha(ConsoleStyle.PanelU32, 0.45f)) : ConsoleStyle.ApplyAlpha(ConsoleStyle.HairlineU32), ConsoleStyle.WindowBorderThicknessPx);
-            y += 7f * s;
+            y += space;
             foreach (var (label, value) in values[i])
             {
                 draw.AddText(new float2(left, y), Colour(use ? ConsoleStyle.TextLabelU32 : ConsoleStyle.TextMutedU32), label);
@@ -944,7 +948,7 @@ internal static class MacPortTab
         uint hairline = ConsoleStyle.ApplyAlpha(ConsoleStyle.HairlineU32), muted = ConsoleStyle.ApplyAlpha(ConsoleStyle.TextMutedU32), label = ConsoleStyle.ApplyAlpha(ConsoleStyle.TextLabelU32);
         float y = ImGui.GetCursorScreenPos().Y;
         ConsoleStyle.PushSignatureFont();
-        draw.AddText(new float2(x, y), muted, "Run");
+        draw.AddText(new float2(x, y), muted, "Tour");
         draw.AddText(new float2(what, y), muted, "What It Plays");
         draw.AddText(new float2(time, y), muted, "Time");
         ConsoleStyle.PopFont();
