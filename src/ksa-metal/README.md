@@ -286,7 +286,7 @@ The complete mapping:
 | Transient attachments | memoryless textures (tile memory only) |
 | Swapchain | own textures at the display's pixels, copied into the `CAMetalLayer` drawable at present |
 | HDR10 colour space, `vkSetHdrMetadataEXT` | the layer in PQ with EDR and `CAEDRMetadata`, the game's paper white at SDR white |
-| `vkCmdUpscaleKSA`, `vkCmdUpscaleSnapshotKSA`, `vkCmdMarkUiKSA` | KSA Metal's own: MetalFX for the hooks |
+| `vkCmdUpscaleKSA`, `vkCmdUpscaleSnapshotKSA`, `vkCmdMarkUiKSA`, `vkGetUpscaleMaxScaleKSA` | KSA Metal's own: MetalFX for the hooks |
 
 Buffer indices per shader stage: 0-9 descriptor sets, 10 push constants, 11 draw index, 12 buffer sizes, 13 view
 mask, 14 dynamic offsets, 15 texture swizzles, 16-21 tessellation stage buffers, 22 ray tracing launch size, 30 - n

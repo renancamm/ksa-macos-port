@@ -13,7 +13,7 @@ namespace KsaMetalHooks;
 
 // The Mac Port tab's presets: Performance, Balanced and Quality, each a set of the game's own graphics settings and of
 // port settings, made for this Mac's memory and chip, and Game Defaults, the defaults of the same settings. A preset's
-// button in the tab makes them pending changes, in the game's tabs and in this one, as if the player had set each row;
+// card in the tab makes them pending changes, in the game's tabs and in this one, as if the player had set each row;
 // the game's Apply keeps them, Discard drops them. Nothing else ever changes a setting.
 //
 // Every preset gives every setting any preset sets, so a preset after another leaves nothing of the first, except
@@ -23,15 +23,17 @@ namespace KsaMetalHooks;
 //
 // In Fullscreen, every preset also sets the Resolution to the size the screen's desktop has (Displays), so the render
 // scale alone decides the 3D view's size and the display keeps its mode. Windowed, the Resolution is the window's size,
-// and Borderless doesn't use it: those keep it. The button reads the Mode as it is then: a Mode set to Fullscreen after it
+// and Borderless doesn't use it: those keep it. The card reads the Mode as it is then: a Mode set to Fullscreen after it
 // keeps the Resolution, and unless that is the desktop's size the tab then shows no preset in use. An error reading
 // the display makes the presets unavailable, as any (Hooks.Fail), without taking the tab with them.
 internal static class Presets
 {
-    public sealed class Preset(string name, string help, Func<Mac, Dictionary<string, string>> game,
+    public sealed class Preset(string name, string shortHelp, string help, Func<Mac, Dictionary<string, string>> game,
         Func<Mac, Dictionary<string, string>> port)
     {
         public string Name => name;
+        // What its card says, and its tooltip
+        public string Short => shortHelp;
         public string Help => help;
         // The values for this Mac, from when the game starts: game fields by name, port settings by key
         public Dictionary<string, string> Game { get; private set; } = new();
@@ -58,7 +60,7 @@ internal static class Presets
         // HiDPI display (4x a side, 3x on an M5) and left 4-pixel blocks on moving things (the rocket, the sea), and the
         // spatial upscaler without the game's MSAA costs 1.3-1.9 ms less a frame (M5, fast run). Thin edges, such as
         // branches against the sky, are rougher
-        new("Performance",
+        new("Performance", "Fastest. Softer, with rougher edges.",
             "The fastest the game gets: MetalFX Spatial draws the 3D view at half the window's size with the " +
             "game's Anti-Aliasing off; shadows, clouds, smoke and effects are drawn the simple way, without " +
             "cockpit ray tracing. Softer and plainer, with rougher edges, slower crew portraits, and lighter physics for tumbling pieces.",
@@ -66,7 +68,7 @@ internal static class Presets
                 milkyWay: "High", clouds: "Low", cloudShadows: "Medium", effects: "Low", godrays: false,
                 clutterShadows: false, plumeShadows: false, rayTracing: false),
             mac => Port(upscaling: "spatial", scale: "0.5", tuning: true, milkyWayBake: true, performanceOnly: true)),
-        new("Balanced",
+        new("Balanced", "Fast, and little of it shows.",
             "Fast, and little of it shows: MetalFX Temporal draws the 3D view at three quarters of the window's size, " +
             "with simpler shadow filtering, clouds and smoke a step lower, and lighter ray tracing in the cockpit where " +
             "the Mac has it.",
@@ -74,7 +76,7 @@ internal static class Presets
                 milkyWay: "High", clouds: "Medium", cloudShadows: "Medium", effects: "Medium", godrays: true, clutterShadows: true,
                 plumeShadows: true, rayTracing: mac.RayTracing),
             mac => Port(upscaling: "metalfx", scale: "0.75", tuning: true, milkyWayBake: true, performanceOnly: false)),
-        new("Quality",
+        new("Quality", "Full size. Trims what barely shows.",
             "The game's own image at the window's full size, with its anti-aliasing, soft shadows and ray tracing in " +
             "the cockpit where the Mac has it. Only what costs much and barely shows is lower or baked: shadow map " +
             "sizes, soft shadows near the camera, cockpit ray tracing, the Milky Way.",
@@ -82,7 +84,7 @@ internal static class Presets
                 milkyWay: "High", clouds: "High", cloudShadows: "High", effects: "High", godrays: true, clutterShadows: true,
                 plumeShadows: true, rayTracing: mac.RayTracing),
             mac => Port(upscaling: "off", scale: "1.0", tuning: false, milkyWayBake: true, performanceOnly: false)),
-        new("Game Defaults",
+        new("Game Defaults", "The game's own graphics settings.",
             "The game's own image: its default graphics for every setting the other presets change, and the Image and " +
             "Extra Performance rows at their defaults, without MetalFX. Everything else, such as the Field of View or " +
             "the Optimizations, stays as it is.",
@@ -206,11 +208,45 @@ internal static class Presets
         return field;
     }
 
+    // What a preset's card shows, from its values for this Mac. Shadows are one word for the filter and the terrain's
+    // shadow map, which go up in steps together: the simple filter at 2048 or 4096, the soft one up to 4096 or at 8192.
+    // MSAA is what is drawn: with MetalFX Temporal and Skip Game Anti-Aliasing, the game's setting is turned off
+    public static (string Label, string Value)[] Summary(Preset preset)
+    {
+        var (game, port) = (preset.Game, preset.Port);
+        var upscaling = port["upscaling"];
+        var scale = port.TryGetValue("render_scale", out var value) ? double.Parse(value, CultureInfo.InvariantCulture) : 1.0;
+        bool soft = game["CascadedShadowMapFilter"] == "Pcss";
+        int terrain = int.Parse(game["TerrainShadowMapSize"], CultureInfo.InvariantCulture);
+        return
+        [
+            ("3D View", $"{Math.Round(scale * 100)} %"),
+            ("MetalFX", Settings.Get("upscaling").LabelOf(upscaling)),
+            ("MSAA", upscaling == "metalfx" && port["skip_game_anti_aliasing"] == "true" ? "Off" : game["AntiAliasingMethod"] switch
+            {
+                "MultisampleX2" => "x2",
+                "MultisampleX4" => "x4",
+                "MultisampleX8" => "x8",
+                _ => "Off",
+            }),
+            ("Shadows", soft ? terrain >= 8192 ? "Very High" : "High" : terrain >= 4096 ? "Medium" : "Low"),
+            ("Clouds", game["CloudUpscaling"]),
+            ("Effects", game["ExhaustUpscaling"]),
+            ("Ray Trace", game["IVARayTracing"] != "true" ? "Off" : game["RaytracedOpaqueReflectionResolutionScale"] == "100" ? "On" : "Lighter"),
+        ];
+    }
+
+    // How many of a preset's settings have another value here
+    public static int Differences(Preset preset, GameSettings game, Func<string, string> port) =>
+        preset.Game.Count(kv => !Equals(Fields[kv.Key].GetValue(Owner(Fields[kv.Key], game)), Parse(Fields[kv.Key], kv.Value))) +
+        preset.Port.Where(kv => Settable(kv.Key)).Count(kv => !Same(Settings.Get(kv.Key), port(kv.Key), kv.Value)) +
+        (FullscreenSize(game) is { Width: > 0 } size && (game.ScreenWidth != size.Width || game.ScreenHeight != size.Height) ? 1 : 0);
+
     // A port setting the tab can change: not set outside, its hook not skipped or failed
     private static bool Settable(string key) =>
         Settings.Get(key) is var s && s.Outside == null && Hooks.Status.GetValueOrDefault(s.Hook) is not { Unavailable: true };
 
-    // A preset's button: its values become the pending changes of the game's copy of its settings and of the tab
+    // A preset's card: its values become the pending changes of the game's copy of its settings and of the tab
     public static void Use(Preset preset, GameSettings pending, IDictionary<string, string> port)
     {
         foreach (var (name, value) in preset.Game)

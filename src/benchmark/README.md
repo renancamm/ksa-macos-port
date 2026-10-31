@@ -11,8 +11,8 @@ against another run's.
 
 ## Run it
 
-In the game, open the settings (Esc), then **Mac Port**, and press **RUN FAST BENCHMARK** (about 1 minute) or
-**RUN FULL BENCHMARK** (the full tour, about 8 minutes) at the bottom, with your own settings. It plays in the game you
+In the game, open the settings (Esc), then **Mac Port**, and press **RUN** on the Fast row (about 1 minute) or
+the Full row (the full tour, about 8 minutes) at the bottom, with your own settings. It plays in the game you
 have open. Your game is saved first, the tour plays in a new game's world, and your game comes back when it ends; Esc
 stops it. With **Restart for a Clean Run** on, your game is saved as "Before the benchmark" and the game starts again for it
 instead, the way `./benchmark.sh` plays it, and quits at the end with the report's folder open.

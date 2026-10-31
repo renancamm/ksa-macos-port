@@ -300,13 +300,13 @@ tabs; each row's tooltip says what it changes and what it costs.
 
 | Section | What's there |
 |---|---|
-| Presets | Performance, Balanced and Quality: the game's graphics settings and the port's, chosen together for this Mac; Game Defaults sets them back |
-| Image | Apple's MetalFX and what needs it, off by default: upscaling, render scale, MetalFX's anti-aliasing in place of the game's |
-| Interface | the flight HUD fitted to the display, or the game's own layout |
-| Extra Performance | a small trade for speed, with the game's own as the default: cloud shadow updates, plume shadow quality, simpler PCSS shadows, a baked Milky Way, lighter tumbling physics |
+| Presets | Performance, Balanced and Quality: the game's graphics settings and the port's, changed together; Game Defaults sets them back |
+| Image | Apple's MetalFX and what needs it, off by default: the MetalFX choice, how the 3D view's size compares with the display's, render scale, MetalFX's anti-aliasing in place of the game's |
+| Extra Performance | a small trade for speed, with the game's own as the default: fewer cloud shadow updates, lighter plume shadows, simpler PCSS shadows, a baked Milky Way, lighter tumbling physics |
 | Optimizations | the same image, faster, on by default |
 | GPU Features | what the Mac's GPU and display offer the game, with the game's own settings still deciding: tessellation, ray queries, ray tracing, HDR output |
-| Measure | Apple's Metal Performance HUD over the game, and the [benchmark](#the-benchmark) |
+| Interface | the flight HUD fitted to the display, and Apple's Metal Performance HUD over the game |
+| Benchmark | the [benchmark](#the-benchmark)'s two tours and the last run's report |
 
 The settings are kept in `port-settings.toml`, next to the game's `settings.toml` in
 `~/Documents/My Games/Kitten Space Agency`, with a comment on each. The file can be edited instead of the tab, and
@@ -332,7 +332,7 @@ a texture is loaded, so macOS can page them out when memory runs short and read 
 The benchmark plays a fixed tour of the game in one session, from Earth's orbit to other worlds, a kitten in the
 grass, a rocket launch and a 2,000-part rocket blown up on its pad. It measures each part and writes a report to
 compare with another run, and a zip you can share as an issue if you like. It is in the app: run it from the Mac
-Port tab (**RUN FAST BENCHMARK** or **RUN FULL BENCHMARK**), or from the port folder:
+Port tab (**RUN** on its Fast or Full row), or from the port folder:
 
 ```bash
 ./benchmark.sh

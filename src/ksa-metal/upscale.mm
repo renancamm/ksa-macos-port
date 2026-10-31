@@ -304,6 +304,14 @@ VKFN(void) vkCmdUpscaleSnapshotKSA(VkCommandBuffer commandBuffer, VkImage image)
     cb->fxSnapshot = true;
 }
 
+// How far the temporal scaler scales on this Mac, past which the spatial one does the rest: for the Mac Port tab
+VKFN(float) vkGetUpscaleMaxScaleKSA(void) {
+    @autoreleasepool {
+        id<MTLDevice> d = MTLCreateSystemDefaultDevice();
+        return d ? [MTLFXTemporalScalerDescriptor supportedInputContentMaxScaleForDevice:d] : 0.0f;
+    }
+}
+
 // For frame interpolation: the game calls it inside its final pass, between the composited scene and the UI. The pass
 // is suspended (its attachments stored), the colour attachment copied, and the pass resumed.
 VKFN(void) vkCmdMarkUiKSA(VkCommandBuffer commandBuffer) {

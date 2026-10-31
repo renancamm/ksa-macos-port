@@ -22,7 +22,7 @@ internal static class Tests
     // The kinds of setting the Mac Port tab draws (MacPortTab.DrawRow); the others are the file's only ([developer])
     private static readonly string[] TabKinds = ["bool", "choice", "scale"];
 
-    // The characters a dropdown's control shows before it cuts a value off
+    // The characters a value can have before a control runs out of room for it
     private const int ValueWidth = 18;
 
     private static int Main(string[] args)

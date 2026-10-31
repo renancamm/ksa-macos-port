@@ -6,7 +6,7 @@
 #
 # [<section>] <title> | <caption>: starts a section of the file and of the tab, the caption being the line under its
 # title (and the file's comment); [developer]'s settings are in the file only. Then one setting per line; a choice can
-# be followed by indented lines "<value> | <help>", what its values mean (the dropdown's tooltips):
+# be followed by indented lines "<value> | <help>", what its values mean (their tooltips):
 #
 #   key | type | default | variable | needs | applies | hook | label | help
 #

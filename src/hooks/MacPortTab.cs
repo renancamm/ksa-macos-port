@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Runtime.InteropServices;
 using Brutal.ImGuiApi;
 using Brutal.Numerics;
 using HarmonyLib;
@@ -344,8 +345,8 @@ internal static class MacPortTab
             foreach (var s in PortSettings.All.Where(s => s.Section == section))
             {
                 DrawRow(s);
-                if (s.Key == "render_scale")
-                    DrawRenderSize();
+                if (s.Key == "upscaling")
+                    DrawRenderBoxes();
             }
             if (section == "benchmark")
                 DrawBenchmark();
@@ -395,7 +396,7 @@ internal static class MacPortTab
         float right = at.X + ConsoleStyle.ContentAvailWidth();
         var draw = ImGui.GetWindowDrawList();
         ConsoleStyle.PushLabelFont(13f / 15f);
-        float line = MathF.Round(ImGui.GetFontSize() * 15f / 13f);
+        float line = MathF.Round(ImGui.GetFontSize() * 0.87f);
         bool mono = ImGui.CalcTextSize("i").X == ImGui.CalcTextSize("M").X;
         float height = 6f * s + line * Wordmark.Length;
         float left = at.X + inset;
@@ -420,7 +421,7 @@ internal static class MacPortTab
         if (right - versionWidth > left + 12f * s)
             draw.AddText(new float2(right - versionWidth, at.Y), ConsoleStyle.ApplyAlpha(ConsoleStyle.TextLabelU32), version);
         var description = Description.Split('\n');
-        float rowHeight = MathF.Round(small * 4f / 3f);
+        float rowHeight = MathF.Round(small);
         if (right - description.Max(d => ImGui.CalcTextSize(d).X) > left + 20f * s)
             for (int i = 0; i < description.Length; i++)
                 draw.AddText(new float2(right - ImGui.CalcTextSize(description[i]).X, at.Y + height - rowHeight * (description.Length - i)),
@@ -461,19 +462,226 @@ internal static class MacPortTab
         ConsoleStyle.PopFont();
     }
 
-    // Under Render Scale, in a caption's font: the 3D view's size in pixels in this window with the upscaling and
-    // render scale the rows show, pending ones too (after a restart for those), and the window's pixels it is shown on.
-    // The arithmetic is RenderScale's: the render scale only with an upscaler, in single precision
-    private static void DrawRenderSize()
+    // How far MetalFX Temporal scales on this Mac, past which Spatial does the rest (0: not known)
+    [DllImport("libvulkan.1.dylib")]
+    private static extern float vkGetUpscaleMaxScaleKSA();
+
+    private static float? _temporalMax;
+
+    private static float TemporalMax()
+    {
+        if (_temporalMax == null)
+        {
+            try
+            {
+                _temporalMax = vkGetUpscaleMaxScaleKSA();
+            }
+            catch (Exception e) when (e is EntryPointNotFoundException or DllNotFoundException)
+            {
+                _temporalMax = 0f;
+            }
+        }
+        return _temporalMax.Value;
+    }
+
+    // The 3D view's size in pixels with these upscaling and render scale values. The arithmetic is RenderScale's: the
+    // render scale only with an upscaler, in single precision
+    private static (int Width, int Height) ViewSize(string upscaling, string renderScale)
+    {
+        float scale = upscaling is "metalfx" or "spatial" && double.TryParse(renderScale, NumberStyles.Float, Inv, out var shown) ? (float)shown : 1f;
+        return (Math.Clamp((int)MathF.Round(RenderScale.Window.X * scale), 1, RenderScale.Output.X),
+            Math.Clamp((int)MathF.Round(RenderScale.Window.Y * scale), 1, RenderScale.Output.Y));
+    }
+
+    // Text cut into lines that fit a width, in the current font
+    private static List<string> WrapTo(string text, float width)
+    {
+        var lines = new List<string>();
+        var line = "";
+        foreach (var word in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var longer = line.Length == 0 ? word : line + " " + word;
+            if (line.Length > 0 && ImGui.CalcTextSize(longer).X > width)
+            {
+                lines.Add(line);
+                line = word;
+            }
+            else
+                line = longer;
+        }
+        lines.Add(line);
+        return lines;
+    }
+
+    private static void DashedLine(ImDrawListPtr draw, float2 from, float2 to, uint color)
+    {
+        float s = ConsoleStyle.EffectiveInterfaceScale, dash = 4f * s, step = 7f * s;
+        float length = MathF.Abs(to.X - from.X) + MathF.Abs(to.Y - from.Y);
+        for (float at = 0f; at < length; at += step)
+        {
+            float a = at / length, b = MathF.Min(at + dash, length) / length;
+            draw.AddLine(from + (to - from) * a, from + (to - from) * b, color, ConsoleStyle.WindowBorderThicknessPx);
+        }
+    }
+
+    // Under the MetalFX row: what is drawn and what it is shown on, as two boxes to one scale, with the upscaling and
+    // render scale the rows show, pending ones too. A size that needs a restart is filled gold, with an outline of the
+    // one the game draws now
+    private static void DrawRenderBoxes()
     {
         if (RenderScale.Window.X <= 0 || RenderScale.Window.Y <= 0 || RenderScale.Output.X <= 0 || RenderScale.Output.Y <= 0)
             return;
-        string Shown(string key) => PortSettings.Get(key) is { } s ? s.Outside != null ? s.Running : Value(s) : "";
-        float scale = Shown("upscaling") is "metalfx" or "spatial" &&
-            double.TryParse(Shown("render_scale"), NumberStyles.Float, Inv, out var shown) ? (float)shown : 1f;
-        int width = Math.Clamp((int)MathF.Round(RenderScale.Window.X * scale), 1, RenderScale.Output.X);
-        int height = Math.Clamp((int)MathF.Round(RenderScale.Window.Y * scale), 1, RenderScale.Output.Y);
-        Caption($"The 3D view: {width} x {height} pixels, shown on {RenderScale.Output.X} x {RenderScale.Output.Y}.");
+        string Shown(string key) => PortSettings.Get(key) is { } p ? p.Outside != null ? p.Running : Value(p) : "";
+        string Running(string key) => PortSettings.Get(key)?.Running ?? "";
+        var mode = Shown("upscaling");
+        var now = ViewSize(mode, Shown("render_scale"));
+        var then = ViewSize(Running("upscaling"), Running("render_scale"));
+        bool changed = now != then;
+        float s = ConsoleStyle.EffectiveInterfaceScale, inset = ConsoleWidgets.RowLabelInsetPx;
+        float padX = 16f * s, padTop = 14f * s, padBottom = 12f * s, gap = 14f * s;
+        var at = ImGui.GetCursorScreenPos() + new float2(inset, 4f * s);
+        float width = ConsoleStyle.ContentAvailWidth() - inset;
+        float boxWidth = MathF.Min(196f * s, (width - padX * 2f - gap * 2f) * 0.3f);
+        float k = boxWidth / RenderScale.Output.X;
+        float boxHeight = RenderScale.Output.Y * k;
+        ConsoleStyle.PushSignatureFont();
+        float small = ImGui.GetFontSize();
+        ConsoleStyle.PopFont();
+        float captionLine = MathF.Round(small);
+        float height = padTop + boxHeight + 8f * s + captionLine * 2f + padBottom;
+        var draw = ImGui.GetWindowDrawList();
+        var panelEnd = at + new float2(width, height);
+        draw.AddRectFilled(in at, in panelEnd, ConsoleStyle.ApplyAlpha(ConsoleStyle.InsetU32), ConsoleStyle.FrameRoundingPx);
+        draw.AddRect(in at, in panelEnd, ConsoleStyle.ApplyAlpha(ConsoleStyle.FrameU32), ConsoleStyle.FrameRoundingPx, ImDrawFlags.None, ConsoleStyle.WindowBorderThicknessPx);
+        uint fill = ConsoleStyle.ApplyAlpha(ConsoleStyle.ApplyAlpha(ConsoleStyle.ActiveToolU32, 0.45f));
+        uint muted = ConsoleStyle.ApplyAlpha(ConsoleStyle.TextMutedU32), frame = ConsoleStyle.ApplyAlpha(ConsoleStyle.FrameU32);
+        // What is drawn, from the display's corner
+        var box = at + new float2(padX, padTop);
+        var boxEnd = box + new float2(boxWidth, boxHeight);
+        DashedLine(draw, box, new float2(boxEnd.X, box.Y), frame);
+        DashedLine(draw, new float2(boxEnd.X, box.Y), boxEnd, frame);
+        DashedLine(draw, boxEnd, new float2(box.X, boxEnd.Y), frame);
+        DashedLine(draw, new float2(box.X, boxEnd.Y), box, frame);
+        draw.AddRectFilled(new float2(box.X, boxEnd.Y - now.Height * k), new float2(box.X + now.Width * k, boxEnd.Y),
+            changed ? ConsoleStyle.ApplyAlpha(ConsoleStyle.ApplyAlpha(ConsoleStyle.PendingU32, 0.55f)) : fill);
+        if (changed)
+            draw.AddRect(new float2(box.X, boxEnd.Y - then.Height * k), new float2(box.X + then.Width * k, boxEnd.Y), muted, 0f, ImDrawFlags.None, ConsoleStyle.WindowBorderThicknessPx);
+        // The window's size in points: 100 % of Render Scale
+        float full = box.X + MathF.Min(RenderScale.Window.X, RenderScale.Output.X) * k;
+        float fullTop = boxEnd.Y - MathF.Min(RenderScale.Window.Y, RenderScale.Output.Y) * k;
+        DashedLine(draw, new float2(box.X, fullTop), new float2(full, fullTop), muted);
+        DashedLine(draw, new float2(full, fullTop), new float2(full, boxEnd.Y), muted);
+        ConsoleStyle.PushLabelFont(10f / 15f);
+        var hundred = ImGui.CalcTextSize("100 %");
+        draw.AddText(new float2(full - hundred.X - 3f * s, fullTop + 2f * s), muted, "100 %");
+        ConsoleStyle.PopFont();
+        // What it is shown on
+        var shown = new float2(at.X + width - padX - boxWidth, box.Y);
+        draw.AddRectFilled(in shown, shown + new float2(boxWidth, boxHeight), fill);
+        // The boxes' captions, and how one becomes the other between them
+        float text = boxEnd.Y + 8f * s;
+        uint primary = ConsoleStyle.ApplyAlpha(ConsoleStyle.TextPrimaryU32), label = ConsoleStyle.ApplyAlpha(ConsoleStyle.TextLabelU32);
+        float x = (float)RenderScale.Output.X / now.Width;
+        float mostTemporal = TemporalMax();
+        var note = $"{Math.Round(100.0 * now.Width * now.Height / (RenderScale.Output.X * RenderScale.Output.Y))} % of the display's pixels are drawn." +
+            (mode == "metalfx" && mostTemporal > 0f && x > mostTemporal + 0.001f ? $" Past Temporal's largest scale (x {mostTemporal.ToString("0.#", Inv)}), Spatial does the rest." : "");
+        float midLeft = boxEnd.X + gap, midRight = shown.X - gap, mid = (midLeft + midRight) * 0.5f;
+        ConsoleStyle.PushSignatureFont();
+        draw.AddText(new float2(box.X, text), muted, "DRAWN");
+        draw.AddText(new float2(box.X, text + captionLine), primary, $"{now.Width} x {now.Height}");
+        draw.AddText(new float2(shown.X, text), muted, "SHOWN ON");
+        draw.AddText(new float2(shown.X, text + captionLine), primary, $"{RenderScale.Output.X} x {RenderScale.Output.Y}");
+        var how = mode switch
+        {
+            "metalfx" => "METALFX TEMPORAL",
+            "spatial" => "METALFX SPATIAL",
+            _ => now.Width == RenderScale.Output.X && now.Height == RenderScale.Output.Y ? "SHOWN AS IS" : "THE GAME STRETCHES IT",
+        };
+        var noteLines = WrapTo(note, midRight - midLeft);
+        ConsoleStyle.PopFont();
+        ConsoleStyle.PushNavRailFont();
+        float large = ImGui.GetFontSize();
+        var factor = $"x {x.ToString("0.#", Inv)}";
+        float factorWidth = ImGui.CalcTextSize(factor).X;
+        ConsoleStyle.PopFont();
+        float content = small + 6f * s + 9f * s + 6f * s + large + 6f * s + captionLine * noteLines.Count;
+        float y = box.Y + MathF.Max(0f, (boxHeight - content) * 0.5f);
+        ConsoleStyle.PushSignatureFont();
+        draw.AddText(new float2(mid - ImGui.CalcTextSize(how).X * 0.5f, y), label, how);
+        ConsoleStyle.PopFont();
+        y += small + 6f * s;
+        float arrow = y + 4f * s;
+        draw.AddLine(new float2(midLeft, arrow), new float2(midRight - 6f * s, arrow), muted, ConsoleStyle.WindowBorderThicknessPx);
+        draw.AddTriangleFilled(new float2(midRight, arrow), new float2(midRight - 8f * s, arrow - 4f * s), new float2(midRight - 8f * s, arrow + 4f * s), muted);
+        y += 9f * s + 6f * s;
+        ConsoleStyle.PushNavRailFont();
+        draw.AddText(new float2(mid - factorWidth * 0.5f, y), primary, factor);
+        ConsoleStyle.PopFont();
+        y += large + 6f * s;
+        ConsoleStyle.PushSignatureFont();
+        foreach (var line in noteLines)
+        {
+            draw.AddText(new float2(mid - ImGui.CalcTextSize(line).X * 0.5f, y), muted, line);
+            y += captionLine;
+        }
+        ConsoleStyle.PopFont();
+        bool hovered = ImGui.IsWindowHovered() && ImGui.IsMouseHoveringRect(in at, in panelEnd);
+        Gap(height + 10f * s);
+        if (hovered)
+            Tooltip("Both boxes are drawn to one scale. Render Scale is a share of the window's size: on a Retina display, 100 % is half the display's pixels on each side, and 200 % matches them.");
+    }
+
+    // A row's segmented control: as wide as its labels need, right-aligned, from the left edge SegmentedWidth leaves.
+    // The game's Segmented always fills the row and has no pending state
+    private static float SegmentedWidth(PortSetting s)
+    {
+        ConsoleStyle.PushLabelFont();
+        float widest = s.Choices.Max(c => ImGui.CalcTextSize(c.Label).X);
+        ConsoleStyle.PopFont();
+        return (widest + 20f * ConsoleStyle.EffectiveInterfaceScale) * s.Choices.Length;
+    }
+
+    // Returns the help of the option under the mouse
+    private static string? DrawSegmented(PortSetting s, string id, string value, bool pending)
+    {
+        float total = SegmentedWidth(s), each = total / s.Choices.Length, height = ConsoleStyle.FrameHeightPx;
+        var at = ImGui.GetCursorScreenPos();
+        var draw = ImGui.GetWindowDrawList();
+        var end = at + new float2(total, height);
+        bool enabled = ImGui.GetStyle().Alpha >= 1f;
+        string? hovered = null;
+        draw.AddRectFilled(in at, in end, ConsoleStyle.ApplyAlpha(ConsoleStyle.InsetU32), ConsoleStyle.FrameRoundingPx);
+        for (int i = 0; i < s.Choices.Length; i++)
+        {
+            var (choice, label) = s.Choices[i];
+            var pos = at + new float2(each * i, 0f);
+            var size = new float2(each, height);
+            ImGui.SetCursorScreenPos(in pos);
+            bool clicked = false;
+            if (enabled)
+                clicked = ImGui.InvisibleButton($"##{id}{i}", in size);
+            else
+                ImGui.Dummy(in size);
+            bool over = enabled && ImGui.IsItemHovered();
+            if (over)
+                hovered = s.OptionHelp.GetValueOrDefault(choice);
+            if (clicked)
+                Pending[s.Key] = choice;
+            bool active = choice == value;
+            var corners = i == 0 ? ImDrawFlags.RoundCornersLeft : i == s.Choices.Length - 1 ? ImDrawFlags.RoundCornersRight : ImDrawFlags.RoundCornersNone;
+            if (active)
+                draw.AddRectFilled(in pos, pos + size, ConsoleStyle.ApplyAlpha(pending ? ConsoleStyle.PendingU32 : ConsoleStyle.ActiveToolU32), ConsoleStyle.FrameRoundingPx, corners);
+            else if (over)
+                draw.AddRectFilled(in pos, pos + size, ConsoleStyle.ApplyAlpha(ConsoleStyle.RowHoverWashU32), ConsoleStyle.FrameRoundingPx, corners);
+            if (i > 0)
+                draw.AddLine(pos, pos + new float2(0f, height), ConsoleStyle.ApplyAlpha(ConsoleStyle.FrameU32), ConsoleStyle.WindowBorderThicknessPx);
+            ConsoleStyle.PushLabelFont();
+            draw.AddText(pos + (size - ImGui.CalcTextSize(label)) * 0.5f,
+                ConsoleStyle.ApplyAlpha(active ? ConsoleStyle.PanelU32 : over ? ConsoleStyle.TextPrimaryU32 : ConsoleStyle.TextLabelU32), label);
+            ConsoleStyle.PopFont();
+        }
+        draw.AddRect(in at, in end, ConsoleStyle.ApplyAlpha(pending ? ConsoleStyle.PendingU32 : ConsoleStyle.FrameU32), ConsoleStyle.FrameRoundingPx, ImDrawFlags.None, ConsoleStyle.WindowBorderThicknessPx);
+        return hovered;
     }
 
     private static void DrawRow(PortSetting s)
@@ -488,11 +696,20 @@ internal static class MacPortTab
         }
         ConsoleStyle.PushDisabled(reason is { Length: > 0 });
         if (pending)
-            ConsoleWidgets.BeginPendingRow(s.Label, s.LabelOf(s.Saved));
+            ConsoleWidgets.BeginPendingRow(s.Label, s.Kind == "choice" ? "" : s.LabelOf(s.Saved));
         else
             ConsoleWidgets.BeginRow(s.Label);
+        // A segmented control is wider than the row's control column, so it says what the row was itself
+        if (s.Kind == "choice")
+        {
+            var column = ImGui.GetCursorScreenPos();
+            ImGui.SetCursorScreenPos(new float2(column.X + ConsoleWidgets.RowControlWidth - SegmentedWidth(s), column.Y));
+            if (pending)
+                Note(s.Label, "was " + s.LabelOf(s.Saved));
+        }
         if (!pending && note.Length > 0)
             Note(s.Label, note);
+        string? optionHelp = null;
         var id = "MacPort_" + s.Key;
         switch (s.Kind)
         {
@@ -511,20 +728,7 @@ internal static class MacPortTab
                 break;
             }
             default:
-                if (ConsoleWidgets.BeginComboControl(id, s.LabelOf(value), pending))
-                {
-                    foreach (var (choice, label) in s.Choices)
-                    {
-                        bool selected = choice == value;
-                        if (ImGui.Selectable(label, selected, ImGuiSelectableFlags.None, (float2?)null))
-                            Pending[s.Key] = choice;
-                        if (s.OptionHelp.TryGetValue(choice, out var meaning) && ImGui.IsItemHovered())
-                            Tooltip(meaning);
-                        if (selected)
-                            ImGui.SetItemDefaultFocus();
-                    }
-                    ConsoleWidgets.EndComboControl();
-                }
+                optionHelp = DrawSegmented(s, id, value, pending);
                 break;
         }
         bool hovered = ConsoleWidgets.RowHovered;
@@ -532,8 +736,8 @@ internal static class MacPortTab
         ConsoleStyle.PopDisabled();
         if (hovered)
         {
-            var tip = s.Help;
-            if (s.OptionHelp.TryGetValue(value, out var meaning))
+            var tip = optionHelp ?? s.Help;
+            if (optionHelp == null && s.OptionHelp.TryGetValue(value, out var meaning))
                 tip += $"\n\n{s.LabelOf(value)}: {meaning}";
             if (reason is { Length: > 0 })
                 tip += "\n\n" + reason;
@@ -583,8 +787,8 @@ internal static class MacPortTab
         return string.Join('\n', lines);
     }
 
-    // The presets: one button each on a row, making its values the pending changes here and in the game's tabs, and a
-    // line under them with the preset in use. The one the pending changes make is drawn as the game's Apply is then
+    // The presets: one card each, with what it sets, making its values the pending changes here and in the game's tabs.
+    // The one in use has a soft fill, and the one the pending changes make is gold, as the game's Apply is then
     private static void DrawPresets()
     {
         SectionHeader("Presets", "The game's graphics and these settings, changed together.", first: true);
@@ -593,89 +797,211 @@ internal static class MacPortTab
                 ? "Unavailable with this KSA version: the game's settings it sets have moved (logs/console.log says more)."
                 : "Unavailable: it ran into an error (logs/console.log says why)."
             : null;
+        // Without the presets' values there is nothing for the cards to show
+        if (unavailable != null || Presets.All.Any(p => p.Port.Count == 0))
+        {
+            Caption(unavailable ?? "Unavailable.", ConsoleWidgets.RowLabelInsetPx);
+            return;
+        }
         var pending = _temporary.GetValue(null) as GameSettings;
         var mac = Presets.ThisMac;
         var forMac = (mac.SmallMemory ? $"For this Mac's {mac.MemoryGb} GB of memory, the shadow maps and textures are at most 2048 pixels wide. " : "") +
             (mac.RayTracing ? "" : "The M1 and M2 have no ray tracing hardware, so the cockpit is drawn without it. ");
-        Presets.Preset? inUse = null, shown = null;
-        if (unavailable == null)
+        var inUse = Presets.All.FirstOrDefault(p => Presets.Matches(p, GameSettings.Current, key => PortSettings.Get(key)!.Saved));
+        var shown = pending == null ? inUse : Presets.All.FirstOrDefault(p => Presets.Matches(p, pending, key => Value(PortSettings.Get(key)!)));
+        ConsoleStyle.PushDisabled(pending == null);
+        var hovered = DrawCards(inUse, shown, pending);
+        ConsoleStyle.PopDisabled();
+        if (hovered != null)
+            Tooltip(hovered.Help + "\n\n" + (hovered == Presets.GameDefaults ? "" : forMac) +
+                "This makes them pending changes, here and in the game's tabs; Apply keeps them.");
+        if (shown == null && pending != null)
         {
-            inUse = Presets.All.FirstOrDefault(p => Presets.Matches(p, GameSettings.Current, key => PortSettings.Get(key)!.Saved));
-            shown = pending == null ? inUse : Presets.All.FirstOrDefault(p => Presets.Matches(p, pending, key => Value(PortSettings.Get(key)!)));
+            string Port(string key) => Value(PortSettings.Get(key)!);
+            var closest = Presets.All.MinBy(p => Presets.Differences(p, pending, Port))!;
+            int count = Presets.Differences(closest, pending, Port);
+            Caption($"Own settings: {count} setting{(count == 1 ? " differs" : "s differ")} from {closest.Name}.", ConsoleWidgets.RowLabelInsetPx);
         }
-        float gap = ImGui.GetStyle().ItemSpacing.X;
-        var size = new float2((ConsoleStyle.ContentAvailWidth() - gap * (Presets.All.Length - 1)) / Presets.All.Length, ConsoleWidgets.ButtonHeight);
+    }
+
+    // The cards, four on a row, or two when what they show doesn't fit. Returns the one under the mouse
+    private static Presets.Preset? DrawCards(Presets.Preset? inUse, Presets.Preset? shown, GameSettings? pending)
+    {
+        float s = ConsoleStyle.EffectiveInterfaceScale, inset = ConsoleWidgets.RowLabelInsetPx, gap = 8f * s, pad = 10f * s;
+        var at = ImGui.GetCursorScreenPos() + new float2(inset, 0f);
+        float avail = ConsoleStyle.ContentAvailWidth() - inset;
+        var values = Presets.All.Select(Presets.Summary).ToArray();
+        ConsoleStyle.PushSignatureFont();
+        float small = ImGui.GetFontSize(), noteLine = MathF.Round(small), rowLine = noteLine;
+        float need = values.SelectMany(v => v).Max(r => ImGui.CalcTextSize(r.Label).X + ImGui.CalcTextSize(r.Value).X) + gap + pad * 2f;
+        ConsoleStyle.PopFont();
+        ConsoleStyle.PushLabelFont();
+        need = MathF.Max(need, Presets.All.Max(p => ImGui.CalcTextSize(p.Name.ToUpperInvariant()).X) + pad * 2f);
+        ConsoleStyle.PopFont();
+        ConsoleStyle.PushSignatureFont();
+        int columns = (avail - gap * 3f) / 4f >= need ? 4 : 2;
+        float width = (avail - gap * (columns - 1)) / columns;
+        var notes = Presets.All.Select(p => WrapTo(p.Short, width - pad * 2f)).ToArray();
+        int noteLines = notes.Max(n => n.Count);
+        ConsoleStyle.PopFont();
+        ConsoleStyle.PushLabelFont();
+        float nameHeight = ImGui.GetFontSize();
+        ConsoleStyle.PopFont();
+        int rows = values[0].Length;
+        float height = pad + nameHeight + 7f * s + noteLine * noteLines + 7f * s + 7f * s + rowLine * rows + pad;
+        var draw = ImGui.GetWindowDrawList();
+        bool enabled = ImGui.GetStyle().Alpha >= 1f;
         Presets.Preset? hovered = null;
-        ConsoleStyle.PushDisabled(unavailable != null || pending == null);
-        foreach (var preset in Presets.All)
+        for (int i = 0; i < Presets.All.Length; i++)
         {
-            if (preset != Presets.All[0])
-                ImGui.SameLine();
-            var label = preset.Name.ToUpperInvariant();
-            var id = "MacPort_preset_" + preset.Name;
-            bool clicked = shown != null && shown == preset && shown != inUse
-                ? ConsoleWidgets.PrimaryButton(label, id, size)
-                : ConsoleWidgets.Button(label, id, size);
-            if (ImGui.IsItemHovered())
+            var preset = Presets.All[i];
+            var pos = at + new float2((width + gap) * (i % columns), (height + gap) * (i / columns));
+            var size = new float2(width, height);
+            var end = pos + size;
+            ImGui.SetCursorScreenPos(in pos);
+            bool clicked = false;
+            if (enabled)
+                clicked = ImGui.InvisibleButton($"##MacPort_preset_{preset.Name}", in size);
+            else
+                ImGui.Dummy(in size);
+            // A greyed-out card still has its tooltip
+            bool over = ImGui.IsMouseHoveringRect(in pos, in end) && ImGui.IsWindowHovered();
+            if (over)
                 hovered = preset;
-            if (clicked && unavailable == null && pending != null)
+            if (clicked && pending != null)
             {
                 Presets.Use(preset, pending, Pending);
                 Hooks.Log($"Mac Port tab: {preset.Name} preset pending");
             }
+            bool next = shown == preset && shown != inUse, use = inUse == preset;
+            uint Colour(uint normal) => ConsoleStyle.ApplyAlpha(next ? ConsoleStyle.PanelU32 : normal);
+            if (next)
+                draw.AddRectFilled(in pos, in end, ConsoleStyle.ApplyAlpha(ConsoleStyle.PendingU32), ConsoleStyle.FrameRoundingPx);
+            else if (use)
+                draw.AddRectFilled(in pos, in end, ConsoleStyle.ApplyAlpha(ConsoleStyle.ApplyAlpha(ConsoleStyle.ActiveToolU32, 0.1f)), ConsoleStyle.FrameRoundingPx);
+            else if (over && enabled)
+                draw.AddRectFilled(in pos, in end, ConsoleStyle.ApplyAlpha(ConsoleStyle.RowHoverWashU32), ConsoleStyle.FrameRoundingPx);
+            uint border = next ? ConsoleStyle.PendingU32 : use ? ConsoleStyle.ActiveToolU32 : over && enabled ? ConsoleStyle.TextMutedU32 : ConsoleStyle.FrameU32;
+            draw.AddRect(in pos, in end, ConsoleStyle.ApplyAlpha(border), ConsoleStyle.FrameRoundingPx, ImDrawFlags.None, ConsoleStyle.WindowBorderThicknessPx);
+            float y = pos.Y + pad, left = pos.X + pad, right = end.X - pad;
+            ConsoleStyle.PushLabelFont();
+            draw.AddText(new float2(left, y), Colour(use ? ConsoleStyle.TextPrimaryU32 : ConsoleStyle.TextLabelU32), preset.Name.ToUpperInvariant());
+            ConsoleStyle.PopFont();
+            y += nameHeight + 7f * s;
+            ConsoleStyle.PushSignatureFont();
+            foreach (var line in notes[i])
+            {
+                draw.AddText(new float2(left, y), Colour(use ? ConsoleStyle.TextLabelU32 : ConsoleStyle.TextMutedU32), line);
+                y += noteLine;
+            }
+            y = pos.Y + pad + nameHeight + 7f * s + noteLine * noteLines + 7f * s;
+            draw.AddLine(new float2(left, y), new float2(right, y),
+                next ? ConsoleStyle.ApplyAlpha(ConsoleStyle.ApplyAlpha(ConsoleStyle.PanelU32, 0.45f)) : ConsoleStyle.ApplyAlpha(ConsoleStyle.HairlineU32), ConsoleStyle.WindowBorderThicknessPx);
+            y += 7f * s;
+            foreach (var (label, value) in values[i])
+            {
+                draw.AddText(new float2(left, y), Colour(use ? ConsoleStyle.TextLabelU32 : ConsoleStyle.TextMutedU32), label);
+                draw.AddText(new float2(right - ImGui.CalcTextSize(value).X, y), Colour(use ? ConsoleStyle.TextPrimaryU32 : ConsoleStyle.TextLabelU32), value);
+                y += rowLine;
+            }
+            ConsoleStyle.PopFont();
         }
-        ConsoleStyle.PopDisabled();
-        if (hovered != null)
-            Tooltip(unavailable ?? hovered.Help + "\n\n" + (hovered == Presets.GameDefaults ? "" : forMac) +
-                "This makes them pending changes, here and in the game's tabs; Apply keeps them.");
-        Caption(unavailable != null ? "Unavailable." :
-            shown != null && shown != inUse ? $"Pending: {shown.Name}." + (inUse != null ? $" In use: {inUse.Name}." : "") :
-            inUse == null ? "In use: none, the settings are your own." :
-            shown == null ? $"In use: {inUse.Name}, with pending changes." :
-            $"In use: {inUse.Name}.");
+        int lines = (Presets.All.Length + columns - 1) / columns;
+        ImGui.SetCursorScreenPos(new float2(at.X - inset, at.Y + (height + gap) * lines - gap));
+        Gap(7f * s);
+        return hovered;
     }
 
-    // The benchmark's tours: one button each, side by side as the presets are
-    private static readonly (bool Full, string Label, string Help)[] Tours =
+    // The benchmark's tours
+    private static readonly (bool Full, string Name, string Time, string What, string Help)[] Tours =
     [
-        (false, "RUN FAST BENCHMARK", "About 1 minute: a kitten in orbit, Earth from space down to the grass, then rockets and a cockpit, all with the game paused."),
-        (true, "RUN FULL BENCHMARK", "About 8 minutes: from Earth to Jupiter, with a kitten in the grass, a launch and a 2,000-part rocket."),
+        (false, "Fast", "about 1 min", "Earth from space down to the grass, rockets and a cockpit, all paused.", "About 1 minute: a kitten in orbit, Earth from space down to the grass, then rockets and a cockpit, all with the game paused."),
+        (true, "Full", "about 8 min", "From Earth to Jupiter, with a launch and a 2,000-part rocket.", "About 8 minutes: from Earth to Jupiter, with a kitten in the grass, a launch and a 2,000-part rocket."),
     ];
 
-    // The Benchmark section's buttons, a line under them with what each tour plays or why neither can start,
-    // and what the last run left
+    // The Benchmark section's table: a row for each tour with its button, then what the last run left, and under them
+    // why no tour can start
     private static void DrawBenchmark()
     {
         var temporary = _temporary.GetValue(null);
         bool changes = temporary != null && (bool)_hasAnyTabChanged.Invoke(null, [temporary])!;
         var why = changes ? "Apply or discard the changes first." : BenchmarkRun.CannotStart();
-        float gap = ImGui.GetStyle().ItemSpacing.X;
-        var size = new float2((ConsoleStyle.ContentAvailWidth() - gap) / 2f, ConsoleWidgets.ButtonHeight);
-        string? hovered = null;
-        ImGui.Dummy(new float2(0f, 4f * ConsoleStyle.EffectiveInterfaceScale));
-        ConsoleStyle.PushDisabled(why != null);
-        foreach (var (full, label, help) in Tours)
+        var last = BenchmarkRun.Last;
+        const string show = "SHOW REPORT";
+        float s = ConsoleStyle.EffectiveInterfaceScale, inset = ConsoleWidgets.RowLabelInsetPx, gap = 12f * s;
+        Gap(6f * s);
+        float x = ImGui.GetCursorScreenPos().X + inset, right = ImGui.GetCursorScreenPos().X + ConsoleStyle.ContentAvailWidth();
+        float buttonWidth = ConsoleWidgets.ButtonWidth(show);
+        ConsoleStyle.PushLabelFont();
+        float nameWidth = MathF.Max(Tours.Max(t => ImGui.CalcTextSize(t.Name).X), ImGui.CalcTextSize("Last Run").X);
+        ConsoleStyle.PopFont();
+        ConsoleStyle.PushSignatureFont();
+        float small = ImGui.GetFontSize(), line = MathF.Round(small);
+        float timeWidth = MathF.Max(Tours.Max(t => ImGui.CalcTextSize(t.Time).X), last != null ? ImGui.CalcTextSize(last.Date).X : 0f);
+        ConsoleStyle.PopFont();
+        float what = x + nameWidth + gap, button = right - buttonWidth, time = button - gap - timeWidth, whatWidth = time - gap - what;
+        var draw = ImGui.GetWindowDrawList();
+        uint hairline = ConsoleStyle.ApplyAlpha(ConsoleStyle.HairlineU32), muted = ConsoleStyle.ApplyAlpha(ConsoleStyle.TextMutedU32), label = ConsoleStyle.ApplyAlpha(ConsoleStyle.TextLabelU32);
+        float y = ImGui.GetCursorScreenPos().Y;
+        ConsoleStyle.PushSignatureFont();
+        draw.AddText(new float2(x, y), muted, "Run");
+        draw.AddText(new float2(what, y), muted, "What It Plays");
+        draw.AddText(new float2(time, y), muted, "Time");
+        ConsoleStyle.PopFont();
+        y += small + 6f * s;
+        draw.AddLine(new float2(x, y), new float2(right, y), hairline, ConsoleStyle.WindowBorderThicknessPx);
+        string? tip = null;
+
+        // One row: returns whether its button was pressed
+        bool Row(string name, string[] text, uint textColour, string when, string buttonLabel, string id, string help, bool disabled)
         {
-            if (full)
-                ImGui.SameLine();
-            if (ConsoleWidgets.PrimaryButton(label, "MacPort_" + label, size) && why == null)
+            float height = MathF.Max(ConsoleWidgets.ButtonHeight, line * text.Length) + 12f * s;
+            var min = new float2(x, y);
+            var max = new float2(right, y + height);
+            bool over = ImGui.IsWindowHovered() && ImGui.IsMouseHoveringRect(in min, in max);
+            if (over)
+            {
+                draw.AddRectFilled(in min, in max, ConsoleStyle.ApplyAlpha(ConsoleStyle.RowHoverWashU32));
+                tip = help;
+            }
+            ConsoleStyle.PushLabelFont();
+            draw.AddText(new float2(x, y + (height - ImGui.GetFontSize()) * 0.5f), label, name);
+            ConsoleStyle.PopFont();
+            ConsoleStyle.PushSignatureFont();
+            float textY = y + (height - line * text.Length) * 0.5f;
+            foreach (var t in text)
+            {
+                draw.AddText(new float2(what, textY + (line - small) * 0.5f), textColour, t);
+                textY += line;
+            }
+            draw.AddText(new float2(time, y + (height - small) * 0.5f), label, when);
+            ConsoleStyle.PopFont();
+            ImGui.SetCursorScreenPos(new float2(button, y + (height - ConsoleWidgets.ButtonHeight) * 0.5f));
+            ConsoleStyle.PushDisabled(disabled);
+            bool pressed = ConsoleWidgets.Button(buttonLabel, id, new float2(buttonWidth, ConsoleWidgets.ButtonHeight));
+            ConsoleStyle.PopDisabled();
+            y += height;
+            return pressed && !disabled;
+        }
+
+        for (int i = 0; i < Tours.Length; i++)
+        {
+            var (full, name, when, playing, help) = Tours[i];
+            ConsoleStyle.PushSignatureFont();
+            var text = WrapTo(playing, whatWidth).ToArray();
+            ConsoleStyle.PopFont();
+            if (Row(name, text, muted, when, "RUN", "MacPort_run_" + name, why ?? help + "\n\nIt plays with the settings above, and writes its report to the benchmarks folder in the game's documents folder. Leave the mouse and keyboard alone until it is done; Esc stops it.", why != null))
                 BenchmarkRun.StartFromTab(full, PortSettings.Get("restart_for_a_clean_run")?.Saved == "true");
-            if (ImGui.IsItemHovered())
-                hovered = help;
+            if (i < Tours.Length - 1 || last != null)
+                draw.AddLine(new float2(x, y), new float2(right, y), hairline, ConsoleStyle.WindowBorderThicknessPx);
         }
-        ConsoleStyle.PopDisabled();
-        if (hovered != null)
-            Tooltip(why ?? hovered + "\n\nIt plays with the settings above, and writes its report to the benchmarks folder in the game's documents folder. Leave the mouse and keyboard alone until it is done; Esc stops it.");
-        Caption(why ?? "Fast: about 1 minute around Earth, paused. Full: about 8 minutes, from Earth to Jupiter.");
-        if (BenchmarkRun.Last is { } last)
-        {
-            ConsoleWidgets.BeginRow("Last run");
-            if (ConsoleWidgets.Button(last.Passed ? "SHOW REPORT" : "SHOW REPORT (PROBLEMS)"))
-                BenchmarkRun.Show(last.Folder);
-            bool lastHovered = ConsoleWidgets.RowHovered;
-            ConsoleWidgets.EndRow();
-            if (lastHovered)
-                Tooltip(last.Summary);
-        }
+        if (last != null && Row("Last Run", [last.Outcome], ConsoleStyle.ApplyAlpha(last.Passed ? ConsoleStyle.TextLabelU32 : ConsoleStyle.DangerU32), last.Date, show, "MacPort_show_report", last.Summary, false))
+            BenchmarkRun.Show(last.Folder);
+        ImGui.SetCursorScreenPos(new float2(x - inset, y));
+        Gap(4f * s);
+        if (why != null)
+            Caption(why, inset);
+        if (tip != null)
+            Tooltip(tip);
     }
 }

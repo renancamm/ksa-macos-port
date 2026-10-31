@@ -19,7 +19,7 @@ namespace KsaMetalHooks;
 // - benchmark.sh in the port folder starts the game with KSA_BENCH_* set, in a documents folder of its own
 //   (STARMAP_INSTANCE_PATH): the director begins with the game's first frame and quits the game at the end, and the
 //   script writes the report.
-// - The Mac Port tab's RUN FAST BENCHMARK and RUN FULL BENCHMARK, in the running game: the player's game is saved (to
+// - The Mac Port tab's RUN buttons, in the running game: the player's game is saved (to
 //   disk, in case the game doesn't survive the run, and in memory), the world becomes a new game's (its clock at the
 //   start, no vehicles), the tour plays, and the player's game comes back; Esc stops it. The hooks write the report.
 // - The same with "Restart for a Clean Run": the player's game is saved, the game starts again for it the way benchmark.sh
@@ -28,7 +28,7 @@ namespace KsaMetalHooks;
 // The benchmark's vehicles are added to the game's vehicle saves from the app (Contents/Resources/Benchmark/vehicles).
 internal static class BenchmarkRun
 {
-    public record Result(string Folder, bool Passed, string Summary);
+    public record Result(string Folder, bool Passed, string Summary, string Outcome, string Date);
 
     private enum Mode { None, Script, InGame, Restarted }
 
@@ -429,12 +429,22 @@ internal static class BenchmarkRun
             var problems = (report["problems"] as JsonArray ?? new JsonArray()).Select(p => (string?)p).OfType<string>().ToList();
             var summary = $"{Path.GetFileName(folder)}: " + (passed ? "passed." : "problems: " + string.Join("; ", problems.Take(3)) +
                 (problems.Count > 3 ? $" and {problems.Count - 3} more." : "."));
-            return new Result(folder, passed, summary + " Shows report.md in the Finder.");
+            var outcome = passed ? "Passed" : problems.Count == 1 ? "1 problem" : $"{problems.Count} problems";
+            return new Result(folder, passed, summary + " Shows report.md in the Finder.", outcome, RunDate(folder));
         }
         catch (Exception)
         {
-            return new Result(folder, false, $"{Path.GetFileName(folder)}: no report (the run did not finish).");
+            return new Result(folder, false, $"{Path.GetFileName(folder)}: no report (the run did not finish).", "Did not finish", RunDate(folder));
         }
+    }
+
+    // When a run was, from its folder's name: 2026-10-31_0545 is "Oct 31, 05:45"
+    private static string RunDate(string folder)
+    {
+        var name = Path.GetFileName(folder);
+        return DateTime.TryParseExact(name.Length >= 15 ? name[..15] : name, "yyyy-MM-dd_HHmm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
+            ? date.ToString("MMM d, HH:mm", CultureInfo.InvariantCulture)
+            : "";
     }
 
     // The report program (KsaMetalBenchmarkReport.dll), on the app's .NET runtime
