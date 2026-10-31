@@ -35,6 +35,8 @@ public static class Hooks
             Run("benchmark", "benchmark", true, BenchmarkRun.Apply);
             return;
         }
+        // First, and so before any mod patches
+        Run("generic detours", "generic_detours", true, GenericDetours.Apply);
         Run("terrain cache", "terrain_cache", Settings.On("terrain_cache"), TerrainCache.Apply);
         Run("outline skip", "outline_skip", Settings.On("skip_unused_outlines"), OutlineSkip.Apply);
         Run("overlay skip", "overlay_skip", Settings.On("skip_unused_overlays"), OverlaySkip.Apply);
