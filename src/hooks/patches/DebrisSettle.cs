@@ -15,19 +15,30 @@ namespace KsaMetalHooks;
 // sleeps below a higher energy (about 0.7 m/s) after 32 steps, and a piece asleep and that slow is Landed if what it
 // touches reaches the ground. A piece is what PartFailure.IsExpendable means: nobody flies it and no crew is on it, which
 // also covers spent stages and the parts of a breakup that the game doesn't mark as debris; with no engine firing.
-// Pieces stay where they stopped after warp, and in saves.
+// Pieces stay where they stopped after warp, and in saves. What then still holds warp back, with hundreds of pieces, is
+// PhysicsBubble.ApplySurfaceMotion: each step of each one searches the terrain for where its orbit would hit it. A Landed
+// piece doesn't, in warp: its flight plan is the one orbit, complete, until warp ends or it moves. And
+// PhysicsBubble.ComputeBubbleUnconstrainedTime counts gravity for pairs lying still, so settled neighbours take steps of
+// seconds: with every vehicle in a bubble Landed there is no pair to wait for.
 internal static class DebrisSettle
 {
     private const double MinWarp = 8;
     private const float GameEnergy = 0.005f, Energy = 0.5f;
     private const byte GameSteps = byte.MaxValue, Steps = 32;
+    private static AccessTools.FieldRef<FlightPlan, bool> _planComplete = null!;
 
     public static string Apply(Harmony harmony)
     {
+        _planComplete = AccessTools.FieldRefAccess<FlightPlan, bool>(Find.Field(typeof(FlightPlan), "<IsComplete>k__BackingField"));
         harmony.Patch(Find.Method(typeof(ConstraintSim), nameof(ConstraintSim.UpdateSimFromVehicle)),
             postfix: new HarmonyMethod(typeof(DebrisSettle), nameof(SleepRule)));
         foreach (string method in new[] { nameof(ConstraintSim.UpdateVehicleFromSim), nameof(ConstraintSim.ReadBackFromSim) })
             harmony.Patch(Find.Method(typeof(ConstraintSim), method), postfix: new HarmonyMethod(typeof(DebrisSettle), nameof(Rest)));
+        harmony.Patch(Find.Method(typeof(PhysicsBubble), "ComputeBubbleUnconstrainedTime"),
+            prefix: new HarmonyMethod(typeof(DebrisSettle), nameof(PairLimitPrefix)));
+        harmony.Patch(Find.Method(typeof(VehicleUpdateState), nameof(VehicleUpdateState.SetCurrentOrbit)),
+            prefix: new HarmonyMethod(typeof(DebrisSettle), nameof(OrbitBegin)),
+            postfix: new HarmonyMethod(typeof(DebrisSettle), nameof(OrbitEnd)));
         return "on";
     }
 
@@ -42,8 +53,6 @@ internal static class DebrisSettle
     {
         if (vehicle.IsControlled || vehicle.IsKitten || vehicle.AnyActuatorActive())
             return false;
-        if (vehicle.IsDebris)
-            return true;
         var parts = vehicle.ReadOnlyVehicle;
         if (parts.IsControllable)
             return false;
@@ -61,6 +70,31 @@ internal static class DebrisSettle
         bool settles = Applies(vehicleState);
         body.Activity.SleepThreshold = settles ? Energy : GameEnergy;
         body.Activity.MinimumTimestepsUnderThreshold = settles ? Steps : GameSteps;
+    }
+
+    private static bool PairLimitPrefix(List<VehicleUpdateState> ____vehicleStates, ref double __result, out bool anyPairNearContact)
+    {
+        anyPairNearContact = false;
+        if (Universe.GetSimulationSpeed() < MinWarp)
+            return true;
+        foreach (var vehicle in ____vehicleStates)
+            if (vehicle.GetReadOnlyProps().Situation != Situation.Landed)
+                return true;
+        __result = double.PositiveInfinity;
+        return false;
+    }
+
+    private static void OrbitBegin(VehicleUpdateState __instance, ref bool computeFirstPatchTransition, out bool __state)
+    {
+        __state = __instance.GetReadOnlyProps().Situation == Situation.Landed && Universe.GetSimulationSpeed() >= MinWarp && IsPiece(__instance);
+        if (__state)
+            computeFirstPatchTransition = false;
+    }
+
+    private static void OrbitEnd(VehicleUpdateState __instance, bool __state)
+    {
+        if (__state)
+            _planComplete(__instance.UpdateData.NewFlightPlan!) = true;
     }
 
     private static void Rest(ConstraintSim __instance, VehicleUpdateState vehicleState)
