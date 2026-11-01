@@ -127,6 +127,7 @@ holds none of the setting's values, means the default (`console.log` says which)
 | `KSA_PARK_MS=<ms>` | `worker_park_ms`: how long an idle job worker spins before it sleeps (0.25) |
 | `KSA_TRAIL_CACHE=<large>,<small>,<tiny>[,<segments>]` | `trail_caches`: the smoke's volume cache budgets in MiB (developer setting; unset: the game's) |
 | `KSA_TRAIL_SHADOWS=<cascades>,<resolution>,<metres>` | `trail_shadows`: the smoke's sun shadow cascades (developer setting; wins over `lighter_plume_shadows`; unset: the game's) |
+| `KSA_MOD_FIXES=0` | `mod_compatibility_fixes`: without generic detours, window origin, UI view size and extra windows, to tell whether a mod's problem comes from them (developer setting) |
 | `KSA_HOOKS=0` | `hooks`: the game starts without the hooks, but for a benchmark run, which they start |
 
 To find out which patch causes a problem, turn it off in the Mac Port tab (Optimizations), or set it in the file.

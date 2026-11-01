@@ -77,6 +77,7 @@ restart_for_a_clean_run | bool | false | | | live | | Restart for a Clean Run | 
 
 [developer] Developer
 hooks | bool | true | KSA_HOOKS | | restart | | | KSA Metal Hooks, which also draw the Mac Port tab. Off: the game starts without them.
+mod_compatibility_fixes | bool | true | KSA_MOD_FIXES | hooks | restart | | | Harmony patches on generic methods, the desktop starting at the window's corner, the window's size for UI code and detached windows above Fullscreen. Off: to tell whether a mod's problem comes from them. Mods and the game's own panels and detached windows then go wrong in the ways these fix.
 log | int:0:2 | 0 | KSA_MTL_LOG | | restart | | | KSA Metal's log: 0 errors only, 1 also warnings and the first call of each function, 2 also object creation.
 log_file | text | | KSA_MTL_LOG_FILE | | restart | | | Write KSA Metal's log to this file instead of console.log.
 stalls | number:0:10000 | 0 | KSA_MTL_STALLS | | restart | | | Log what blocks the game longer than this many milliseconds: waits for fences, drawables and submits, residency set commits, late command buffers, allocations of 16 MB or more.
