@@ -11,9 +11,11 @@ namespace KsaMetalHooks;
 // asked, for the whole game, until the last piece of the last pile stops, which can take hours of game time. There are
 // two reasons. The physics engine sleeps a pile after 255 quiet steps of all its pieces, and one that still jostles
 // starts the count again. And a piece asleep on another piece touches no ground, so ConstraintSim makes it Freefall,
-// which PhysicsBubble wakes at once in the air. While warp is x8 or more, debris in the air over a body, not in water,
+// which PhysicsBubble wakes at once in the air. While warp is x8 or more, a piece in the air over a body, not in water,
 // sleeps below a higher energy (about 0.7 m/s) after 32 steps, and a piece asleep and that slow is Landed if what it
-// touches reaches the ground. Pieces stay where they stopped after warp, and in saves.
+// touches reaches the ground. A piece is what PartFailure.IsExpendable means: nobody flies it and no crew is on it, which
+// also covers spent stages and the parts of a breakup that the game doesn't mark as debris; with no engine firing.
+// Pieces stay where they stopped after warp, and in saves.
 internal static class DebrisSettle
 {
     private const double MinWarp = 8;
@@ -32,13 +34,28 @@ internal static class DebrisSettle
     private static bool Applies(VehicleUpdateState vehicle)
     {
         var environment = vehicle.GetReadOnlyEnvironment();
-        return vehicle.IsDebris && Universe.GetSimulationSpeed() >= MinWarp && vehicle.Origin.BubFrame.IsCcf()
-            && environment.InPhysicsRadius && environment.AtmosphericDensity > 0f && !vehicle.GetReadOnlyProps().Situation.HasOceanContact();
+        return Universe.GetSimulationSpeed() >= MinWarp && vehicle.Origin.BubFrame.IsCcf() && environment.InPhysicsRadius
+            && environment.AtmosphericDensity > 0f && !vehicle.GetReadOnlyProps().Situation.HasOceanContact() && IsPiece(vehicle);
+    }
+
+    private static bool IsPiece(VehicleUpdateState vehicle)
+    {
+        if (vehicle.IsControlled || vehicle.IsKitten || vehicle.AnyActuatorActive())
+            return false;
+        if (vehicle.IsDebris)
+            return true;
+        var parts = vehicle.ReadOnlyVehicle;
+        if (parts.IsControllable)
+            return false;
+        foreach (var seat in parts.Crew)
+            if (seat.AssignedKittenHash != KeyHash.Zero)
+                return false;
+        return true;
     }
 
     private static void SleepRule(ConstraintSim __instance, VehicleUpdateState vehicleState)
     {
-        if (!vehicleState.IsDebris)
+        if (vehicleState.IsKitten)
             return;
         var body = __instance.Simulation.Bodies[vehicleState.BepuHandles.Body];
         bool settles = Applies(vehicleState);
