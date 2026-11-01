@@ -44,6 +44,7 @@ public static class Hooks
         Run("overlay skip", "overlay_skip", Settings.On("skip_unused_overlays"), OverlaySkip.Apply);
         Run("ocean blending", "ocean_blending", Settings.On("skip_unused_ocean_blending"), OceanBlending.Apply);
         Run("cloud shadow tuning", "cloud_shadow_tuning", true, CloudShadows.Apply);
+        Run("warp cloud shadows", "warp_cloud_shadows", Settings.On("lighter_warp_cloud_shadows"), WarpCloudShadows.Apply);
         Run("plume shadow tuning", "plume_shadow_tuning", true, PlumeShadows.Apply);
         Run("shadow search", "shadow_search", Settings.On("simpler_pcss_shadows"), ShadowSearch.Apply);
         Run("Milky Way bake", "milky_way_bake", Settings.On("baked_milky_way"), MilkyWayBake.Apply);
@@ -51,6 +52,7 @@ public static class Hooks
         Run("worker parking", "worker_park", Settings.On("idle_thread_sleep"), WorkerPark.Apply);
         Run("faded smoke", "faded_smoke", Settings.On("clear_faded_smoke"), FadedSmoke.Apply);
         Run("tumbling physics", "tumbling_physics", Settings.On("lighter_tumbling_physics"), TumblingPhysics.Apply);
+        Run("debris settle", "debris_settle", Settings.On("debris_settles_in_warp"), DebrisSettle.Apply);
         Run("loading pace", "loading_pace", Settings.On("loading_screen_fps_cap"), LoadingPace.Apply);
         Run("render scale", "render_scale", true, RenderScale.Apply);
         Run("HUD layout", "hud_layout", true, HudLayout.Apply);
