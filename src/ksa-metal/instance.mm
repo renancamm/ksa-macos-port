@@ -715,7 +715,7 @@ VKFN(VkResult) vkGetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysicalDevice, VkSur
     c->maxImageArrayLayers = 1;
     c->supportedTransforms = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     c->currentTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
-    c->supportedCompositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR | VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR;
+    c->supportedCompositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR | VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR;
     c->supportedUsageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
         VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
     KLOG(1, "surface extent %ux%u", e.width, e.height);
