@@ -1,7 +1,7 @@
 # The GLFW shim: glfw_shim.c -> libGlfwShim.dylib in KSA_NATIVES_DIR
 #
 # The launcher loads the shim with DYLD_INSERT_LIBRARIES. It replaces a few GLFW and CoreGraphics calls to fix
-# resolution lists, Fullscreen resolution, window positions and raw mouse errors (see the comment at the top of
+# resolution lists, Fullscreen resolution, window positions, raw mouse errors and display sleep (see the comment at the top of
 # glfw_shim.c). It links RocketWerkz's GLFW from the Ahwoo.BRUTAL.Glfw.Native package, with the headers of the fork commit
 # that library is built from.
 set(CMAKE_C_FLAGS_RELEASE "")

@@ -222,6 +222,7 @@ without modifying GLFW; [`glfw_shim.c`](src/glfw-shim/glfw_shim.c) explains each
 | `glfwSetWindowMonitor` | in Fullscreen the game always asks for the desktop's size, so the Resolution setting does nothing there | uses the Resolution from `settings.toml`, and sizes the window again when it leaves Fullscreen |
 | `glfwSetWindowMonitor`, `glfwPollEvents` | GLFW's macOS backend doesn't report the window's new position after a display mode change, so dropdowns open in the wrong spot | reports it |
 | `glfwSetInputMode` | the game turns raw mouse motion off without checking whether it is supported, and GLFW logs an error after every right-drag | skips those calls |
+| `CGDisplayIsAsleep` | GLFW treats a sleeping display as unplugged, and dropping the monitor can free it twice, which crashes the game in Fullscreen when the display goes to sleep | tells GLFW that no display is asleep |
 
 ### The app bundle
 

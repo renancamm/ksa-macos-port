@@ -38,6 +38,11 @@
  *    after a mode change popups would open in the wrong spot, often on another monitor.
  *    After glfwSetWindowMonitor and every glfwPollEvents, report the real position of a
  *    window that went through glfwSetWindowMonitor when it differs from the last one.
+ * 5. CGDisplayIsAsleep: GLFW's Cocoa backend treats a sleeping display as unplugged and
+ *    drops its monitor. Leaving fullscreen on the way runs an event loop with the monitor
+ *    still in GLFW's list, so a second screen change handled there can free the monitor
+ *    before the first one frees it, which aborts the game when the display goes to sleep.
+ *    Tell GLFW that no display is asleep, so its monitors stay.
  */
 #include <CoreGraphics/CoreGraphics.h>
 #include <GLFW/glfw3.h>
@@ -220,6 +225,10 @@ static CFArrayRef shim_CGDisplayCopyAllDisplayModes(CGDirectDisplayID display, C
     if (options == NULL && calledFromGlfw(__builtin_return_address(0)))
         return playerModes(display, CGDisplayCopyAllDisplayModes(display, allModesOptions()));
     return CGDisplayCopyAllDisplayModes(display, options);
+}
+
+static boolean_t shim_CGDisplayIsAsleep(CGDirectDisplayID display) {
+    return calledFromGlfw(__builtin_return_address(0)) ? false : CGDisplayIsAsleep(display);
 }
 
 static void shim_glfwSetInputMode(GLFWwindow* window, int mode, int value) {
@@ -491,6 +500,7 @@ static void shim_glfwDestroyWindow(GLFWwindow* window) {
 
 DYLD_INTERPOSE(shim_CGDisplayCopyAllDisplayModes, CGDisplayCopyAllDisplayModes)
 DYLD_INTERPOSE(shim_CGDisplaySetDisplayMode, CGDisplaySetDisplayMode)
+DYLD_INTERPOSE(shim_CGDisplayIsAsleep, CGDisplayIsAsleep)
 DYLD_INTERPOSE(shim_glfwSetInputMode, glfwSetInputMode)
 DYLD_INTERPOSE(shim_glfwSetWindowMonitor, glfwSetWindowMonitor)
 DYLD_INTERPOSE(shim_glfwPollEvents, glfwPollEvents)
