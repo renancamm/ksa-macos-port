@@ -38,6 +38,7 @@ public static class Hooks
         // First, and so before any mod patches
         Run("generic detours", "generic_detours", true, GenericDetours.Apply);
         Run("window origin", "window_origin", true, WindowOrigin.Apply);
+        Run("extra windows", "extra_windows", true, ExtraWindows.Apply);
         Run("terrain cache", "terrain_cache", Settings.On("terrain_cache"), TerrainCache.Apply);
         Run("outline skip", "outline_skip", Settings.On("skip_unused_outlines"), OutlineSkip.Apply);
         Run("overlay skip", "overlay_skip", Settings.On("skip_unused_overlays"), OverlaySkip.Apply);
