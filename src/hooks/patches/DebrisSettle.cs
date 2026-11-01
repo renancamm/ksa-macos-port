@@ -7,7 +7,7 @@ using KSA;
 namespace KsaMetalHooks;
 
 // Debris settling in warp, debris_settles_in_warp (port-settings.toml). Time warp stops at what the slowest physics
-// bubble can do, and a pile of debris that hasn't come to rest costs about 9 ms a game second: about x70, whatever is
+// bubble can do, and a pile of debris that hasn't come to rest costs about 9 ms a game second: about x70-100, whatever is
 // asked, for the whole game, until the last piece of the last pile stops, which can take hours of game time. There are
 // two reasons. The physics engine sleeps a pile after 255 quiet steps of all its pieces, and one that still jostles
 // starts the count again. And a piece asleep on another piece touches no ground, so ConstraintSim makes it Freefall,
@@ -19,23 +19,28 @@ namespace KsaMetalHooks;
 // PhysicsBubble.ApplySurfaceMotion: each step of each one searches the terrain for where its orbit would hit it. A Landed
 // piece doesn't, in warp: its flight plan is the one orbit, complete, until warp ends or it moves. And
 // PhysicsBubble.ComputeBubbleUnconstrainedTime counts gravity for pairs lying still, so settled neighbours take steps of
-// seconds: with every vehicle in a bubble Landed there is no pair to wait for.
+// seconds: with every vehicle in a bubble Landed there is no pair to wait for. VehicleUpdateTask also predicts contact
+// between neighbouring bubbles, splitting each frame's step at it: two bubbles of nothing but Landed vehicles have none.
 internal static class DebrisSettle
 {
     private const double MinWarp = 8;
     private const float GameEnergy = 0.005f, Energy = 0.5f;
     private const byte GameSteps = byte.MaxValue, Steps = 32;
     private static AccessTools.FieldRef<FlightPlan, bool> _planComplete = null!;
+    private static AccessTools.FieldRef<PhysicsBubble, List<VehicleUpdateState>> _bubbleVehicles = null!;
 
     public static string Apply(Harmony harmony)
     {
         _planComplete = AccessTools.FieldRefAccess<FlightPlan, bool>(Find.Field(typeof(FlightPlan), "<IsComplete>k__BackingField"));
+        _bubbleVehicles = AccessTools.FieldRefAccess<PhysicsBubble, List<VehicleUpdateState>>(Find.Field(typeof(PhysicsBubble), "_vehicleStates"));
         harmony.Patch(Find.Method(typeof(ConstraintSim), nameof(ConstraintSim.UpdateSimFromVehicle)),
             postfix: new HarmonyMethod(typeof(DebrisSettle), nameof(SleepRule)));
         foreach (string method in new[] { nameof(ConstraintSim.UpdateVehicleFromSim), nameof(ConstraintSim.ReadBackFromSim) })
             harmony.Patch(Find.Method(typeof(ConstraintSim), method), postfix: new HarmonyMethod(typeof(DebrisSettle), nameof(Rest)));
         harmony.Patch(Find.Method(typeof(PhysicsBubble), "ComputeBubbleUnconstrainedTime"),
             prefix: new HarmonyMethod(typeof(DebrisSettle), nameof(PairLimitPrefix)));
+        harmony.Patch(Find.Method(typeof(VehicleUpdateTask), "HasValidClearance"),
+            prefix: new HarmonyMethod(typeof(DebrisSettle), nameof(BubblesClear)));
         harmony.Patch(Find.Method(typeof(VehicleUpdateState), nameof(VehicleUpdateState.SetCurrentOrbit)),
             prefix: new HarmonyMethod(typeof(DebrisSettle), nameof(OrbitBegin)),
             postfix: new HarmonyMethod(typeof(DebrisSettle), nameof(OrbitEnd)));
@@ -75,13 +80,26 @@ internal static class DebrisSettle
     private static bool PairLimitPrefix(List<VehicleUpdateState> ____vehicleStates, ref double __result, out bool anyPairNearContact)
     {
         anyPairNearContact = false;
-        if (Universe.GetSimulationSpeed() < MinWarp)
+        if (Universe.GetSimulationSpeed() < MinWarp || !AllLanded(____vehicleStates))
             return true;
-        foreach (var vehicle in ____vehicleStates)
-            if (vehicle.GetReadOnlyProps().Situation != Situation.Landed)
-                return true;
         __result = double.PositiveInfinity;
         return false;
+    }
+
+    private static bool BubblesClear(PhysicsBubble bubbleA, PhysicsBubble bubbleB, ref bool __result)
+    {
+        if (Universe.GetSimulationSpeed() < MinWarp || !AllLanded(_bubbleVehicles(bubbleA)) || !AllLanded(_bubbleVehicles(bubbleB)))
+            return true;
+        __result = true;
+        return false;
+    }
+
+    private static bool AllLanded(List<VehicleUpdateState> vehicles)
+    {
+        foreach (var vehicle in vehicles)
+            if (vehicle.GetReadOnlyProps().Situation != Situation.Landed || vehicle.UpdateData.NewFlightComputer.BurnMode == FlightComputerBurnMode.Auto)
+                return false;
+        return true;
     }
 
     private static void OrbitBegin(VehicleUpdateState __instance, ref bool computeFirstPatchTransition, out bool __state)
