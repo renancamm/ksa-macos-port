@@ -52,6 +52,7 @@ public static class Hooks
         Run("worker parking", "worker_park", Settings.On("idle_thread_sleep"), WorkerPark.Apply);
         Run("faded smoke", "faded_smoke", Settings.On("clear_faded_smoke"), FadedSmoke.Apply);
         Run("tumbling physics", "tumbling_physics", Settings.On("lighter_tumbling_physics"), TumblingPhysics.Apply);
+        Run("debris settle", "debris_settle", Settings.On("debris_settles_in_warp"), DebrisSettle.Apply);
         Run("loading pace", "loading_pace", Settings.On("loading_screen_fps_cap"), LoadingPace.Apply);
         Run("render scale", "render_scale", true, RenderScale.Apply);
         Run("HUD layout", "hud_layout", true, HudLayout.Apply);
