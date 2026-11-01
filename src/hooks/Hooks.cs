@@ -36,9 +36,9 @@ public static class Hooks
             return;
         }
         // First, and so before any mod patches
-        Run("generic detours", "generic_detours", Settings.On("mod_compatibility_fixes"), GenericDetours.Apply);
-        Run("window origin", "window_origin", Settings.On("mod_compatibility_fixes"), WindowOrigin.Apply);
-        Run("extra windows", "extra_windows", Settings.On("mod_compatibility_fixes"), ExtraWindows.Apply);
+        Run("generic detours", "generic_detours", Settings.On("harmony_generic_detours"), GenericDetours.Apply);
+        Run("window origin", "window_origin", true, WindowOrigin.Apply);
+        Run("extra windows", "extra_windows", true, ExtraWindows.Apply);
         Run("terrain cache", "terrain_cache", Settings.On("terrain_cache"), TerrainCache.Apply);
         Run("outline skip", "outline_skip", Settings.On("skip_unused_outlines"), OutlineSkip.Apply);
         Run("overlay skip", "overlay_skip", Settings.On("skip_unused_overlays"), OverlaySkip.Apply);
@@ -61,7 +61,7 @@ public static class Hooks
         // them again, and the JIT can inline a small method they call (RenderAaPreparePasses) as it is then, so a patch
         // made on it later never runs from them (MetalFX Spatial drew nothing)
         Run("hidden parts skip", "hidden_parts_skip", Settings.On("skip_hidden_vessel_parts"), HiddenPartsSkip.Apply);
-        Run("UI view size", "ui_view_size", Settings.On("mod_compatibility_fixes"), UiViewSize.Apply);
+        Run("UI view size", "ui_view_size", true, UiViewSize.Apply);
         // The port's own parts of the game
         Run("documents folder", "documents", true, Documents.Apply);
         Run("restart", "restart", true, Restart.Apply);
