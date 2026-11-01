@@ -44,6 +44,7 @@ public static class Hooks
         Run("overlay skip", "overlay_skip", Settings.On("skip_unused_overlays"), OverlaySkip.Apply);
         Run("ocean blending", "ocean_blending", Settings.On("skip_unused_ocean_blending"), OceanBlending.Apply);
         Run("cloud shadow tuning", "cloud_shadow_tuning", true, CloudShadows.Apply);
+        Run("warp cloud shadows", "warp_cloud_shadows", Settings.On("lighter_warp_cloud_shadows"), WarpCloudShadows.Apply);
         Run("plume shadow tuning", "plume_shadow_tuning", true, PlumeShadows.Apply);
         Run("shadow search", "shadow_search", Settings.On("simpler_pcss_shadows"), ShadowSearch.Apply);
         Run("Milky Way bake", "milky_way_bake", Settings.On("baked_milky_way"), MilkyWayBake.Apply);

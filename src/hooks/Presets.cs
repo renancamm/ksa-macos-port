@@ -153,13 +153,15 @@ internal static class Presets
     // plume shadows' in Performance too, which turns the game's plume shadows off: they are faster when a player turns
     // those on. The Milky Way bake, on in Performance, Balanced and Quality, changes sky pixels by at most 1 of 255 and
     // gives Quality the game's Milky Way High at no cost; otherwise Quality keeps the game's own image. The tumbling
-    // physics, which changes the physics and not the image, and the slower crew portraits are on in Performance only
+    // physics, which changes the physics and not the image, the warp cloud shadows, out of place during warp, and the
+    // slower crew portraits are on in Performance only
     private static Dictionary<string, string> Port(string upscaling, string scale, bool tuning, bool milkyWayBake, bool performanceOnly) => new()
     {
         ["upscaling"] = upscaling,
         ["render_scale"] = scale,
         ["skip_game_anti_aliasing"] = "true",
         ["fewer_cloud_shadow_updates"] = Text(tuning),
+        ["lighter_warp_cloud_shadows"] = Text(performanceOnly),
         ["lighter_plume_shadows"] = Text(tuning),
         ["simpler_pcss_shadows"] = "true",
         ["baked_milky_way"] = Text(milkyWayBake),
