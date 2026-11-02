@@ -480,17 +480,29 @@ internal static partial class MacPortTab
             }
             bool next = shown == preset && shown != inUse, use = inUse == preset;
             uint Colour(uint normal) => ConsoleStyle.ApplyAlpha(next ? ConsoleStyle.PanelU32 : normal);
-            if (next)
-                draw.AddRectFilled(in pos, in end, ConsoleStyle.ApplyAlpha(ConsoleStyle.PendingU32), ConsoleStyle.FrameRoundingPx);
-            else if (use)
-                draw.AddRectFilled(in pos, in end, ConsoleStyle.ApplyAlpha(ConsoleStyle.ApplyAlpha(ConsoleStyle.ActiveToolU32, 0.1f)), ConsoleStyle.FrameRoundingPx);
-            else if (over && enabled)
-                draw.AddRectFilled(in pos, in end, ConsoleStyle.ApplyAlpha(ConsoleStyle.RowHoverWashU32), ConsoleStyle.FrameRoundingPx);
-            if (down)
-                draw.AddRectFilled(in pos, in end, ConsoleStyle.ApplyAlpha(ConsoleStyle.ButtonHoverLightenU32), ConsoleStyle.FrameRoundingPx);
+            // Raised, in the colour of the game's raised panels, and pressed in while the mouse holds it. The shadow is a few
+            // layers, as ImGui has no blur, and stays within the gap between the cards
+            if (!down)
+                for (float layer = 3f; layer >= 1f; layer--)
+                    draw.AddRectFilled(pos - new float2(layer * 0.5f * s, 0f), end + new float2(layer * 0.5f * s, layer * s), ConsoleStyle.ApplyAlpha(ConsoleStyle.ApplyAlpha(ConsoleStyle.BottomShadeU32, 0.6f)), ConsoleStyle.FrameRoundingPx);
+            draw.AddRectFilled(in pos, in end, ConsoleStyle.ApplyAlpha(next ? ConsoleStyle.PendingU32 : down ? ConsoleStyle.InsetU32 : ConsoleStyle.PanelRaisedU32), ConsoleStyle.FrameRoundingPx);
+            if (!next && !down && (use || over && enabled))
+                draw.AddRectFilled(in pos, in end, ConsoleStyle.ApplyAlpha(use ? ConsoleStyle.ApplyAlpha(ConsoleStyle.ActiveToolU32, 0.1f) : ConsoleStyle.RowHoverWashU32), ConsoleStyle.FrameRoundingPx);
             uint border = next ? ConsoleStyle.PendingU32 : use ? ConsoleStyle.ActiveToolU32 : (over || down) && enabled ? ConsoleStyle.TextMutedU32 : ConsoleStyle.FrameU32;
             draw.AddRect(in pos, in end, ConsoleStyle.ApplyAlpha(border), ConsoleStyle.FrameRoundingPx, ImDrawFlags.None, ConsoleStyle.WindowBorderThicknessPx);
-            float y = pos.Y + pad, left = pos.X + pad, right = end.X - pad;
+            if (!down)
+            {
+                // A lit top and a dark bottom: the border's shape cut to a strip, so that they follow its round corners
+                float edge = ConsoleStyle.FrameRoundingPx, thickness = ConsoleStyle.WindowBorderThicknessPx * 2f;
+                draw.PushClipRect(in pos, new float2(end.X, pos.Y + edge), intersectWithCurrentClipRect: true);
+                draw.AddRect(in pos, in end, ConsoleStyle.ApplyAlpha(ConsoleStyle.ButtonHoverLightenU32), edge, ImDrawFlags.None, thickness);
+                draw.PopClipRect();
+                draw.PushClipRect(new float2(pos.X, end.Y - edge), in end, intersectWithCurrentClipRect: true);
+                draw.AddRect(in pos, in end, ConsoleStyle.ApplyAlpha(ConsoleStyle.BottomShadeU32), edge, ImDrawFlags.None, thickness);
+                draw.PopClipRect();
+            }
+            float top = pos.Y + (down ? ConsoleStyle.BezelInsetPx : 0f);
+            float y = top + pad, left = pos.X + pad, right = end.X - pad;
             ConsoleStyle.PushLabelFont();
             draw.AddText(new float2(left, y), Colour(use ? ConsoleStyle.TextPrimaryU32 : ConsoleStyle.TextLabelU32), preset.Name.ToUpperInvariant());
             ConsoleStyle.PopFont();
@@ -501,7 +513,7 @@ internal static partial class MacPortTab
                 draw.AddText(new float2(left, y), Colour(use ? ConsoleStyle.TextLabelU32 : ConsoleStyle.TextMutedU32), line);
                 y += noteLine;
             }
-            y = pos.Y + rule;
+            y = top + rule;
             draw.AddLine(new float2(left, y), new float2(right, y),
                 next ? ConsoleStyle.ApplyAlpha(ConsoleStyle.ApplyAlpha(ConsoleStyle.PanelU32, 0.45f)) : ConsoleStyle.ApplyAlpha(ConsoleStyle.HairlineU32), ConsoleStyle.WindowBorderThicknessPx);
             y += space;
