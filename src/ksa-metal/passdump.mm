@@ -376,7 +376,7 @@ void copyDrawBuffers(KCommandBuffer* cb, KPipeline* pipeline, const std::string&
                     uint32_t size = sizes[b.id + e];
                     if (!address || !size || !g_buffersSeen.insert({pipeline, address, size}).second) continue;
                     std::string what = "[" + name + "] set " + std::to_string(s) + " binding " + std::to_string(b.binding) +
-                                       " element " + std::to_string(e) + " size " + std::to_string(size);
+                                       " element " + std::to_string(e) + " size " + std::to_string(size) + " address " + std::to_string(address);
                     auto memory = g_memory.upper_bound(address);
                     if (memory == g_memory.begin() || address - std::prev(memory)->first >= std::prev(memory)->second.length) {
                         appendLine(dir, "buffer " + what + ": left out, in no memory");
@@ -584,7 +584,7 @@ KMTL_EXPORT uint32_t ksaMtlGpuErrors() { return g_gpuErrors; }
 // white at most 14 % on a clean view and from 50 % on a broken one, the others only on broken ones
 namespace {
 
-constexpr uint64_t kWatchEvery = 30;
+constexpr uint64_t kWatchEvery = 31;  // odd: the game alternates between two sets of frame data, and a fault can be in one
 constexpr NSUInteger kWatchStride = 8, kWatchMinWidth = 640;
 constexpr double kWatchBlack = 99.9, kWatchColour = 0.1;
 constexpr int kWatchDumps = 3, kWatchDumpSeconds = 10, kWatchBlackLooks = 4;
