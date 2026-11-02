@@ -63,7 +63,9 @@ internal static class Presets
         new("Performance", "Fastest. Softer, with rougher edges.",
             "The fastest the game gets: MetalFX Spatial draws the 3D view at half the window's size with the " +
             "game's Anti-Aliasing off; shadows, clouds, smoke and effects are drawn the simple way, without " +
-            "cockpit ray tracing. Softer and plainer, with rougher edges, slower crew portraits, and lighter physics for tumbling pieces.",
+            "cockpit ray tracing. Softer and plainer, with rougher edges and slower crew portraits. Time warp slows down " +
+            "less: lighter physics for tumbling pieces, debris that settles and stays where it lies, and cloud shadows " +
+            "that fall out of place during very high warp.",
             mac => Game(mac, antiAliasing: "Disabled", filter: "Pcf", cascades: 2048, terrain: 2048,
                 milkyWay: "High", clouds: "Low", cloudShadows: "Medium", effects: "Low", godrays: false,
                 clutterShadows: false, plumeShadows: false, rayTracing: false),
@@ -71,7 +73,8 @@ internal static class Presets
         new("Balanced", "Faster, with little visible change.",
             "Faster, with little visible change: MetalFX Temporal draws the 3D view at three quarters of the window's size, " +
             "with simpler shadow filtering, clouds and smoke a step lower, and lighter ray tracing in the cockpit where " +
-            "the Mac has it.",
+            "the Mac has it. Time warp slows down less: lighter physics for tumbling pieces, debris that settles and stays " +
+            "where it lies, and cloud shadows that fall out of place during very high warp.",
             mac => Game(mac, antiAliasing: "MultisampleX2", filter: "Pcf", cascades: 2048, terrain: 4096,
                 milkyWay: "High", clouds: "Medium", cloudShadows: "Medium", effects: "Medium", godrays: true, clutterShadows: true,
                 plumeShadows: true, rayTracing: mac.RayTracing),
@@ -153,21 +156,22 @@ internal static class Presets
     // plume shadows' in Performance too, which turns the game's plume shadows off: they are faster when a player turns
     // those on. The Milky Way bake, on in Performance, Balanced and Quality, changes sky pixels by at most 1 of 255 and
     // gives Quality the game's Milky Way High at no cost; otherwise Quality keeps the game's own image. The tumbling
-    // physics and the debris settling, which change the physics and not the image, the warp cloud shadows, out of place
-    // during warp, and the slower crew portraits are on in Performance only
+    // physics and the debris settling, which change the physics and not the image, and the warp cloud shadows, out of
+    // place during warp, are tuning too: warp is too much of the game to leave to Performance. The slower crew portraits
+    // are on in Performance only
     private static Dictionary<string, string> Port(string upscaling, string scale, bool tuning, bool milkyWayBake, bool performanceOnly) => new()
     {
         ["upscaling"] = upscaling,
         ["render_scale"] = scale,
         ["skip_game_anti_aliasing"] = "true",
         ["fewer_cloud_shadow_updates"] = Text(tuning),
-        ["lighter_warp_cloud_shadows"] = Text(performanceOnly),
+        ["lighter_warp_cloud_shadows"] = Text(tuning),
         ["lighter_plume_shadows"] = Text(tuning),
         ["simpler_pcss_shadows"] = "true",
         ["baked_milky_way"] = Text(milkyWayBake),
         ["crew_portraits_at_15_fps"] = Text(performanceOnly),
-        ["lighter_tumbling_physics"] = Text(performanceOnly),
-        ["debris_settles_in_warp"] = Text(performanceOnly),
+        ["lighter_tumbling_physics"] = Text(tuning),
+        ["debris_settles_in_warp"] = Text(tuning),
     };
 
     private static string Text(int value) => value.ToString(CultureInfo.InvariantCulture);
