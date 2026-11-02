@@ -520,6 +520,7 @@ VKFN(void) vkCmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBind
         uint32_t idx = firstSet + i;
         auto* s = (KDescriptorSet*)sets[i];
         if (!s || idx >= kMaxSets) continue;
+        if (s->destroyedSlots.load(std::memory_order_relaxed)) kmtlReportDestroyedBuffer(s, idx);
         KSetLayout* l = s->layout;
         if (l->dynamicCount == 0) {
             bound[idx].buffer = s->buffer;
@@ -536,7 +537,7 @@ VKFN(void) vkCmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBind
             bound[idx].layout = l;
             for (uint32_t d = 0; d < l->dynamicCount && dynUsed < dynCount; d++, dynUsed++) {
                 uint32_t slot = l->dynamicSlots[d];
-                if (slots[slot]) slots[slot] += dynOffsets[dynUsed];
+                if (slots[slot] && slots[slot] != g_zeroPageAddress.load(std::memory_order_acquire)) slots[slot] += dynOffsets[dynUsed];
             }
             bound[idx].buffer = at.buffer;
             bound[idx].offset = at.offset;

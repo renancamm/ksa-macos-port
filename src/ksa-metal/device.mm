@@ -471,7 +471,9 @@ VKFN(VkResult) vkCreateBuffer(VkDevice device, const VkBufferCreateInfo* ci, con
 
 VKFN(void) vkDestroyBuffer(VkDevice, VkBuffer buffer, const VkAllocationCallbacks*) {
     KTRACE_FIRST();
-    delete (KBuffer*)buffer;
+    auto* b = (KBuffer*)buffer;
+    if (b && b->inDescriptor) kmtlForgetBuffer(b);
+    delete b;
 }
 
 static void bufferRequirements(KBuffer* b, VkMemoryRequirements* r) {

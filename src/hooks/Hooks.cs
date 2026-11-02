@@ -60,6 +60,7 @@ public static class Hooks
         Run("trail caches", "trail_caches", true, TrailCaches.Apply);
         Run("editor clutter", "editor_clutter", true, EditorClutter.Apply);
         Run("clutter off", "clutter_off", true, ClutterOff.Apply);
+        Run("descriptor refresh", "descriptor_refresh", true, DescriptorRefresh.Apply);
         // After every hook that patches a method Program.RenderGame or RenderEditor call: patching those two compiles
         // them again, and the JIT can inline a small method they call (RenderAaPreparePasses) as it is then, so a patch
         // made on it later never runs from them (MetalFX Spatial drew nothing)
