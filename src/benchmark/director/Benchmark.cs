@@ -25,7 +25,7 @@
 // every second, so the script can tell a game that hangs from one that is busy. Every frame goes into frames.csv, and
 // every measured part is a signpost interval (KSA Metal's ksaMtlMarker), so an Instruments trace shows the parts.
 //
-// The script is a series of sections. "section <name> [needs <celestial>...]" starts one; a section whose celestials
+// The script is a series of sections. "section <name> [live] [needs <celestial>...]" starts one; a section whose celestials
 // the loaded system lacks is skipped. Each section is a list of "<seconds> <command>" steps timed from its start. A
 // command is a console command or one of the directives in Directives.cs. Other lines are comments.
 //
@@ -43,6 +43,11 @@
 // each checkpoint the mod waits until the view stops changing (terrain and textures streaming in after a jump),
 // measures a few seconds of the view standing there (instead of the @measure parts) and takes the screenshot. Its
 // numbers compare only with other fast runs.
+//
+// A live section is the time warp's: it plays the same in both modes, by the Mac's clock alone. Its parts take the time
+// they are given whatever the game gets through in it: the game gets the speed the script asks for, as from a player, and
+// nothing waits for it (no catching up; a checkpoint stops where the game has got to), so a slow Mac or a stuck
+// simulation can't hold it up. @measure measures how far the game's clock got.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -86,12 +91,13 @@ public partial class Benchmark
         public string Name = "";
         public string[] Needs = Array.Empty<string>();
         public readonly List<Step> Steps = new();
+        public bool Live;
         public double Length => Steps.Count > 0 ? Steps.Max(s => s.At) : 0;
         // Only the camera's flight: no vehicles, nothing that needs the game's clock
         public bool CameraOnly => Steps.All(s => s.Words[0] is "@key" or "@shot" or "@measure");
     }
 
-    private enum Phase { Play, CatchUp, Settle, Measure, Capture, Shoot, Hold }
+    private enum Phase { Play, CatchUp, Settle, Measure, Capture, Shoot, Hold, NewWorld }
 
     // What a catch-up of the game's clock leads to: a checkpoint's screenshot, the end of a jump of @time, or the end of
     // a @sync
@@ -190,7 +196,10 @@ public partial class Benchmark
             if (words.Length >= 2 && words[0] == "section")
             {
                 int needs = Array.IndexOf(words, "needs");
-                _sections.Add(new Section { Name = words[1], Needs = needs > 0 ? words[(needs + 1)..] : Array.Empty<string>() });
+                _sections.Add(new Section
+                {
+                    Name = words[1], Needs = needs > 0 ? words[(needs + 1)..] : Array.Empty<string>(), Live = words.Length > 2 && words[2] == "live"
+                });
                 continue;
             }
             var space = line.IndexOf(' ');
@@ -287,8 +296,9 @@ public partial class Benchmark
             return;
         // The game's messages stay in its log, off the screen
         Program.ConsoleWindow.ClearConsole();
+        var sim = ReadSim();
         _frames?.Add(_scriptTime - _sectionStart, _sectionResult?.Name, _window?.Name ?? _still?.Name, _phase.ToString(), dt * 1000,
-            DriverStats.Read());
+            DriverStats.Read(), sim);
 
         if (_phase != Phase.Play)
         {
@@ -312,11 +322,13 @@ public partial class Benchmark
             // the script warps, it asks for more as the game falls behind and for less as it gets ahead. Coming out of
             // a warp the game can end up ahead (tens of milliseconds at the speed of the frame before): below a warp
             // it only asks for less, until the game is back in step
-            if (speed > 2 || speed > 0 && Universe.GetElapsedSeconds() > _gameTarget)
+            if (!Live && (speed > 2 || speed > 0 && Universe.GetElapsedSeconds() > _gameTarget))
                 speed = Math.Max(speed + (_gameTarget - Universe.GetElapsedSeconds()) / WarpCatchUp, 0);
             SetSpeed(speed);
-            if (!_fast)
+            if (!_fast || Live)
                 _window?.Add(dt * 1000, DriverStats.Read());
+            if (Live)
+                _window?.AddSim(dt * 1000, sim);
         }
         if (_window != null && _scriptTime >= _window.EndsAt)
             CloseWindow();
@@ -396,6 +408,26 @@ public partial class Benchmark
         for (int i = 1; i < n; i++)
             sum += SpeedAt(from + i * h) * (i % 2 == 1 ? 4 : 2);
         return sum * h / 3;
+    }
+
+    // Whether the section playing is a live one
+    private bool Live => _section >= 0 && _section < _sections.Count && _sections[_section].Live;
+
+    private static readonly System.Reflection.FieldInfo? UpdateTask = typeof(Universe).GetField("_vehicleUpdateTask", BindingFlags.NonPublic | BindingFlags.Static);
+    private static readonly System.Reflection.FieldInfo? Bubbles = typeof(VehicleUpdateTask).GetField("_bubbles", BindingFlags.NonPublic | BindingFlags.Instance);
+
+    private static SimSample ReadSim()
+    {
+        // Fields of the game's: a later version may move them, which only leaves the count out
+        var bubbles = UpdateTask?.GetValue(null) is { } task ? Bubbles?.GetValue(task) as System.Collections.ICollection : null;
+        int vehicles = 0;
+        if (Universe.CurrentSystem is { } system)
+        {
+            foreach (var body in system.All.AsSpan())
+                vehicles += body is Vehicle ? 1 : 0;
+        }
+        return new SimSample(Universe.GetElapsedSeconds(), Universe.GetSimulationSpeed(), JobSystems.VehicleSolver?.GetMaxLastTickTime() ?? 0,
+            PhysicsStepDiagnostics.Substeps, bubbles?.Count ?? 0, vehicles);
     }
 
     // Whether the game stays paused: fast mode, in a section of the camera's flight alone (or before the first section)
@@ -482,6 +514,9 @@ public partial class Benchmark
     private void NextSection()
     {
         EndSection();
+        // After a live section the game's clock is wherever it got to
+        if (Live)
+            _gameTarget = Universe.GetElapsedSeconds();
         if (_section >= 0)
             _sectionStart += _sections[_section].Length;
         _section++;
@@ -502,7 +537,7 @@ public partial class Benchmark
                 Program.TerminalInterface.Execute("exit");
             return;
         }
-        _sectionResult = new SectionResult(_sections[_section].Name);
+        _sectionResult = new SectionResult(_sections[_section].Name) { Live = Live };
         _results!.Sections.Add(_sectionResult);
         Log(FormattableString.Invariant($"section {_sectionResult.Name} (game time {Universe.GetElapsedSeconds():F1} s, {_wall.Elapsed.TotalSeconds:F1} s into the run)"));
     }
@@ -575,6 +610,8 @@ public partial class Benchmark
     private void StartCheckpoint(string shot)
     {
         BackToStep();
+        if (Live)
+            _gameTarget = Universe.GetElapsedSeconds();
         _shotName = shot;
         _after = After.Shot;
         _phase = Phase.CatchUp;
@@ -584,6 +621,8 @@ public partial class Benchmark
     private void Sync()
     {
         BackToStep();
+        if (Live)
+            _gameTarget = Universe.GetElapsedSeconds();
         _after = After.Sync;
         _phase = Phase.CatchUp;
     }
@@ -788,7 +827,7 @@ public partial class Benchmark
                 }
                 SetSpeed(0);
                 // The game ran past the moment the script expects: what follows plays later than written
-                if (-behind > AheadLimit)
+                if (-behind > AheadLimit && !Live)
                     _sectionResult?.Errors.Add(FormattableString.Invariant(
                         $"{_scriptTime - _sectionStart:F1} s: the game's clock is {-behind:F1} s ahead of the script's"));
                 if (_after != After.Shot)
@@ -800,12 +839,12 @@ public partial class Benchmark
                 }
                 // Without screenshots the checkpoint ends here, its clocks in step (fast mode still measures the view), and so
                 // does a checkpoint that isn't one of the places chosen
-                if ((!Chosen || !_shots && !_fast) && !Holding)
+                if ((!Chosen || !_shots && (!_fast || Live)) && !Holding)
                 {
                     Resume();
                     return;
                 }
-                if (_fast)
+                if (_fast && !Live)
                 {
                     ResetClouds(detailOnly: true);
                     ResetSeaFrame();
@@ -813,16 +852,16 @@ public partial class Benchmark
                 }
                 _phase = Phase.Settle;
                 _settleStart = wall;
-                _phaseEnds = wall + (_fast ? ProbeEvery : SettleSeconds);
+                _phaseEnds = wall + (_fast && !Live ? ProbeEvery : SettleSeconds);
                 _phaseFrames = 0;
                 _lastProbe = null;
                 _probe = null;
                 return;
             }
             case Phase.Settle:
-                if (_fast ? !Settled(wall) : wall < _phaseEnds || ++_phaseFrames < SettleFrames)
+                if (_fast && !Live ? !Settled(wall) : wall < _phaseEnds || ++_phaseFrames < SettleFrames)
                     return;
-                if (_fast && !Holding)
+                if (_fast && !Live && !Holding)
                 {
                     _phase = Phase.Measure;
                     return;
@@ -873,6 +912,11 @@ public partial class Benchmark
                 EndCheckpoint();
                 return;
             }
+            case Phase.NewWorld:
+                // A few frames for the game to take it in, the game stopped; steps then act on the new world
+                if (++_phaseFrames >= 3)
+                    _phase = Phase.Play;
+                return;
         }
     }
 
@@ -995,7 +1039,7 @@ public partial class Benchmark
         if (_window == null)
             return;
         // Fast mode measures the views standing still instead, so it only watches its parts for vehicles that broke up
-        if (!_fast)
+        if (!_fast || Live)
         {
             DriverStats.Marker(_window.Name, false);
             _sectionResult?.Windows.Add(_window.Summarize());

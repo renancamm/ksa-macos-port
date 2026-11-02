@@ -235,7 +235,7 @@ without modifying GLFW; [`glfw_shim.c`](src/glfw-shim/glfw_shim.c) explains each
 | `Contents/MacOS/dotnet`, `host/`, `shared/` | the .NET runtime |
 | `Contents/Resources/*.dylib` | the native libraries, next to the game that loads them |
 | `Contents/Resources/Hooks/` | [KSA Metal Hooks](#the-hooks), with Harmony |
-| `Contents/Resources/Benchmark/` | the [benchmark](#the-benchmark), with its tour and vehicles |
+| `Contents/Resources/Benchmark/` | the [benchmark](#the-benchmark), with its tests and vehicles |
 | `Contents/Resources/port-settings.txt`, `port-settings.toml` | the [port settings](#the-mac-port-tab)' table and the file's template |
 | `Contents/Resources/VERSION` | the port's version, for the tab's title |
 | `Contents/Resources/Licenses/` | every component's licence and notices ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)) |
@@ -266,7 +266,7 @@ src/glfw-shim/            the GLFW shim
 src/ktx-shim/             the KTX shim
 src/hooks/                KSA Metal Hooks and their loader, with their own README
 src/ksa-metal/            the driver, with its own README
-src/benchmark/            the benchmark: director, report program, tour and vehicles, with its own README
+src/benchmark/            the benchmark: director, report program, tests and vehicles, with its own README
 third_party/fmod/         FMOD's macOS library, with its licence and notice (not MIT)
 .github/                  the issue templates
 deps/, dist/              made by the build: downloads and build trees; the port folder and release zips
@@ -307,7 +307,7 @@ tabs; each row's tooltip says what it changes and what it costs.
 | Optimizations | the same image, faster, on by default |
 | GPU Features | what the Mac's GPU and display offer the game, with the game's own settings still deciding: tessellation, ray queries, ray tracing, HDR output |
 | Interface | the flight HUD fitted to the display, and Apple's Metal Performance HUD over the game |
-| Benchmark | the [benchmark](#the-benchmark)'s two tours and the last run's report |
+| Benchmark | the [benchmark](#the-benchmark)'s tests and the last run's report |
 
 The settings are kept in `port-settings.toml`, next to the game's `settings.toml` in
 `~/Documents/My Games/Kitten Space Agency`, with a comment on each. The file can be edited instead of the tab, and
@@ -330,16 +330,16 @@ a texture is loaded, so macOS can page them out when memory runs short and read 
 
 ### The benchmark
 
-The benchmark plays a fixed tour of the game in one session, from Earth's orbit to other worlds, a kitten in the
-grass, a rocket launch and a 2,000-part rocket blown up on its pad. It measures each part and writes a report to
-compare with another run, and a zip you can share as an issue if you like. It is in the app: run it from the Mac
-Port tab (**RUN** on its Fast or Full row), or from the port folder:
+The benchmark measures how the game runs on your Mac with three tests, each played in one session: the Mixed Test
+(rockets, smoke, an explosion, a kitten and a cockpit), the Planetary Tour (a flight from Earth to Jupiter) and the Warp
+Test (how far time warp gets in a fixed time). It writes a report you can compare with another run or share. Run it from
+the Mac Port tab (**FAST** or **CINEMATIC** on a test's row), or from the port folder:
 
 ```bash
 ./benchmark.sh
 ```
 
-[`src/benchmark/README.md`](src/benchmark/README.md) explains the tour, its presets and options, how to compare
+[`src/benchmark/README.md`](src/benchmark/README.md) explains the tests, its presets and options, how to compare
 runs, and the tools it brings for work on the port.
 
 ## Extras

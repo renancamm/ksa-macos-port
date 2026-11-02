@@ -33,6 +33,8 @@ internal static class Tests
             ("finish", Finish),
             ("comparing two runs", Compare),
             ("comparing runs of different modes", CompareModes),
+            ("a live part's numbers", LivePart),
+            ("the Warp Test in the report", WarpReport),
             ("the PNG reader and writer", Png),
         };
         foreach (var (name, run) in tests)
@@ -172,7 +174,7 @@ internal static class Tests
         Contains(problems, "the hooks' HUD layout: failed (NullReferenceException)", "a failed hook");
         Check(!problems.Any(p => p.Contains("outline skip", StringComparison.Ordinal)), "a hook that is on is no problem");
         Contains(problems, "game.log: [ksa-metal ERROR] pipeline: no function (3 times)", "KSA Metal's errors, counted");
-        Contains(problems, "game.log: 21:04:05 ERROR Something broke", "the game's own error, without its colours");
+        Contains(problems, "game.log: ERROR Something broke", "the game's own error, without its colours");
         Contains(problems, "the GPU hung or faulted", "a GPU reset");
         Equal(10, problems.Length, "problems");
         Contains([File.ReadAllText(Path.Combine(dir, "report.md"))], "**Failed**: 10 problems", "report.md");
@@ -283,6 +285,65 @@ internal static class Tests
         var (status, output) = Report("compare", a, b);
         Equal(2, status, "exit status: runs that don't compare");
         Contains([output], "different modes (fast, cinematic)", "why");
+    }
+
+    // A window of 20 s at 25 ms a frame: first at the speed asked for after 5 s, or held back all along
+    private static WindowResult Warped(double heldBack, double reachesAfter = 5)
+    {
+        var window = new Window("debris", 0);
+        double wall = 0, game = 1000;
+        for (int i = 0; i < 800; i++)
+        {
+            wall += 0.025;
+            game += 0.025 * (wall >= reachesAfter ? 1000 * heldBack : 10);
+            window.Add(25, null);
+            window.AddSim(25, new SimSample(game, 1000, 3, i * 2, 10 + i % 3, 40));
+        }
+        return window.Summarize();
+    }
+
+    private static void LivePart()
+    {
+        var reached = Warped(1);
+        Equal<double?>(1000.0, reached.SpeedAsked, "the speed asked for");
+        Check(reached.Speed is > 700 and < 800, $"the speed over the whole part: {reached.Speed}");
+        Check(reached.SecondsToSpeed is > 5 and < 7, $"the seconds to 90 %: {reached.SecondsToSpeed}");
+        Check(reached.GameDays is >= 0.17 and <= 0.18, $"the game days: {reached.GameDays}");
+        Equal<long?>(1598L, reached.Substeps, "the substeps");
+        Equal<int?>(12, reached.BubblesMax, "the most bubbles");
+        Equal<double?>(null, Warped(0.5).SecondsToSpeed, "a part that never gets to 90 %");
+        var plain = new Window("earth1", 0);
+        plain.Add(10, null);
+        Equal<double?>(null, plain.Summarize().GameDays, "a part of another section");
+    }
+
+    private static void WarpReport()
+    {
+        var a = Run("a", 10);
+        Results(a, "results.json", 10, section: s => s.Windows.Add(Warped(1)));
+        Report("report", a);
+        var md = File.ReadAllText(Path.Combine(a, "report.md"));
+        Contains([md], "**Warp Test: 0.2 game days**", "the headline");
+        Contains([md], "| debris | 0.2 |", "the part's row");
+        var b = Run("b", 10);
+        Results(b, "results.json", 10, section: s => s.Windows.Add(Warped(0.5)));
+        Report("report", b);
+        var (_, output) = Report("compare", a, b);
+        Contains([output], "| Warp part |", "the warp table of a comparison");
+        Contains([output], "**-50% (-)**", "a part at half the speed");
+        // The game's own errors in a live section are a note, after it a problem again
+        var results = new Results(gpuTimes: false) { Completed = true };
+        var live = new SectionResult("warpdebris") { Live = true };
+        live.Windows.Add(Warped(1));
+        results.Sections.Add(live);
+        results.Write(Path.Combine(a, "results.json"));
+        File.WriteAllLines(Path.Combine(a, "game.log"), ["[benchmark] section warpdebris (game time 0.0 s, 1.0 s into the run)", "12:00:01 ERROR Applying surface motion",
+            "[benchmark] done after 9.0 s", "12:00:02 ERROR At the end"]);
+        Report("report", a);
+        var report = ReportJson(a);
+        Contains(Strings(report["notes"]), "logged 1 errors during the time warp", "the note");
+        Contains(Strings(report["problems"]), "ERROR At the end", "an error after the live section");
+        Check(!Strings(report["problems"]).Any(x => x.Contains("surface motion", StringComparison.Ordinal)), "an error in it is no problem");
     }
 
     private static void Png()

@@ -7,6 +7,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using HarmonyLib;
 using KSA;
@@ -14,14 +15,14 @@ using KsaMetalBenchmark;
 
 namespace KsaMetalHooks;
 
-// The benchmark in the game (src/benchmark/): its director plays the tour after every frame of the game, and starts in
+// The benchmark in the game (src/benchmark/): its director plays a test after every frame of the game, and starts in
 // one of three ways:
 // - benchmark.sh in the port folder starts the game with KSA_BENCH_* set, in a documents folder of its own
 //   (STARMAP_INSTANCE_PATH): the director begins with the game's first frame and quits the game at the end, and the
 //   script writes the report.
 // - The Mac Port tab's RUN buttons, in the running game: the player's game is saved (to
 //   disk, in case the game doesn't survive the run, and in memory), the world becomes a new game's (its clock at the
-//   start, no vehicles), the tour plays, and the player's game comes back; Esc stops it. The hooks write the report.
+//   start, no vehicles), the test plays, and the player's game comes back; Esc stops it. The hooks write the report.
 // - The same with "Restart for a Clean Run": the player's game is saved, the game starts again for it the way benchmark.sh
 //   starts it (a documents folder of its own with a copy of the settings, a new game, none of the player's mods), and
 //   at the end the hooks write the report, open its folder and quit the game.
@@ -42,6 +43,7 @@ internal static class BenchmarkRun
     private static Benchmark? _run;
     private static string _out = "";
     private static bool _fast;
+    private static string _test = "mixed";
     // In the running game: the player's game, which comes back after the run
     private static PlayerGame? _player;
     private static long _logStart;
@@ -49,6 +51,11 @@ internal static class BenchmarkRun
     // What system.txt says about the run (the report program asks macOS about the Mac after the run, not during it)
     private static string _system = "", _start = "", _sections = "";
     private static readonly MemoryWatch Memory = new();
+    // A run from the tab has no script to stop a game that has hung: past this, the game is stopped from a thread of its
+    // own. Time warp can stall a frame for most of a minute before it goes on.
+    private const double HangSeconds = 180;
+    private static long _lastFrame;
+    private static bool _watching;
     private static Result? _last;
     private static bool _lastLooked;
 
@@ -85,9 +92,10 @@ internal static class BenchmarkRun
         return null;
     }
 
-    public static void StartFromTab(bool full, bool restart)
+    public static void StartFromTab(string test, bool fast, bool restart)
     {
-        _fast = !full;
+        _test = test;
+        _fast = fast;
         if (!restart)
         {
             // On the next frame, outside the settings window's drawing
@@ -160,12 +168,14 @@ internal static class BenchmarkRun
 
     private static void Frame()
     {
+        Interlocked.Exchange(ref _lastFrame, Stopwatch.GetTimestamp());
         if (_firstFrame)
         {
             _firstFrame = false;
             if (_mode is Mode.Script or Mode.Restarted)
             {
                 _fast = Environment.GetEnvironmentVariable("KSA_BENCH_FAST") is { Length: > 0 };
+                _test = Environment.GetEnvironmentVariable("KSA_BENCH_TEST") ?? _test;
                 _system = Universe.CurrentSystem?.Id ?? "?";
                 _start = "a new game, restarted from the game's settings";
                 AddVehicles();
@@ -182,6 +192,11 @@ internal static class BenchmarkRun
             Finished();
         if (_run == null)
             return;
+        if (!_watching && _mode != Mode.Script)
+        {
+            _watching = true;
+            new Thread(WatchForHang) { IsBackground = true, Name = "Benchmark watch" }.Start();
+        }
         // Esc stops a run the hooks started (it opens the settings)
         if (_mode != Mode.Script && (GameSettings.Show || EscMenu.Open))
         {
@@ -196,6 +211,45 @@ internal static class BenchmarkRun
             End();
     }
 
+    private static void WatchForHang()
+    {
+        // A display that sleeps stops the frames (benchmark.sh does the same for its runs)
+        try
+        {
+            Process.Start("/usr/bin/caffeinate", ["-d", "-i", "-w", Environment.ProcessId.ToString(Inv)]);
+        }
+        catch (Exception e)
+        {
+            Hooks.Log($"benchmark: caffeinate: {e.Message}");
+        }
+        while (true)
+        {
+            Thread.Sleep(1000);
+            if (_run == null || Stopwatch.GetElapsedTime(Interlocked.Read(ref _lastFrame)).TotalSeconds < HangSeconds)
+                continue;
+            // The director wrote the results of each section it finished; the report comes from them, and the player's game
+            // is in the save on disk
+            Hooks.Log($"benchmark: no frame for {HangSeconds:F0} s: stopping the game. Your game is in the save \"{SafetySave}\", the run's results in {_out.Replace(Home, "~")}");
+            try
+            {
+                File.WriteAllLines(Path.Combine(_out, "run.txt"), [$"Game: hung (no frame for {HangSeconds:F0} s): stopped"]);
+                Console.Out.Flush();
+                if (File.Exists(ConsoleLog))
+                {
+                    using var log = new FileStream(ConsoleLog, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                    log.Seek(_mode == Mode.InGame ? Math.Min(_logStart, log.Length) : 0, SeekOrigin.Begin);
+                    File.WriteAllText(Path.Combine(_out, "game.log"), new StreamReader(log).ReadToEnd().Replace(Home, "~"));
+                }
+                Report(["finish", _out]);
+            }
+            catch (Exception e)
+            {
+                Hooks.Log($"benchmark: the report of the stopped run: {e.Message}");
+            }
+            Environment.Exit(1);
+        }
+    }
+
     private static void AddVehicles()
     {
         var vehicles = Path.Combine(_folder, "vehicles");
@@ -208,13 +262,15 @@ internal static class BenchmarkRun
     private static Dictionary<string, string> Options(string output)
     {
         var script = Path.Combine(_folder, "benchmark.txt");
-        // Fast mode's short test, or the cinematic tour: the tour's "fast" and "tour" lines
-        var only = File.ReadLines(script).Select(l => l.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-            .Where(w => w.Length >= 2 && w[0] == (_fast ? "fast" : "tour")).Select(w => string.Join(' ', w[1..])).FirstOrDefault() ?? "";
+        // The test's sections: the tour's "test" lines, <name> <fast mode's> | <the cinematic run's>
+        var tests = File.ReadLines(script).Select(l => l.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            .Where(w => w.Length >= 4 && w[0] == "test").ToDictionary(w => w[1], w => string.Join(' ', w[2..]).Split(" | "));
+        var names = _test == "full" ? new[] { "tour", "mixed", "warp" } : [_test];
+        var only = string.Join(' ', names.Select(t => tests[t][_fast ? 0 : 1]));
         return new Dictionary<string, string>
         {
             ["KSA_BENCH_SCRIPT"] = script, ["KSA_BENCH_OUT"] = output, ["KSA_BENCH_ONLY"] = only,
-            ["KSA_BENCH_FAST"] = _fast ? "1" : "", ["KSA_BENCH_END"] = "stay"
+            ["KSA_BENCH_FAST"] = _fast ? "1" : "", ["KSA_BENCH_TEST"] = _test, ["KSA_BENCH_END"] = "stay"
         };
     }
 
@@ -238,7 +294,7 @@ internal static class BenchmarkRun
         return
         [
             $"StarMap={(AppDomain.CurrentDomain.GetAssemblies().Any(a => a.GetName().Name == "StarMap.Core") ? "in the app" : "none")}",
-            $"System={_system}", $"Sections={Environment.GetEnvironmentVariable("KSA_BENCH_ONLY") ?? _sections}",
+            $"System={_system}", $"Test={_test}", $"Sections={Environment.GetEnvironmentVariable("KSA_BENCH_ONLY") ?? _sections}",
             $"Mode={(_fast ? "fast" : "cinematic")}", $"Start={_start}",
             $"KSA Metal switches={(outside.Count > 0 ? string.Join(' ', outside) : "none")}",
             // What this game ran with: the port settings that aren't at their defaults, and what the hooks did
@@ -265,18 +321,8 @@ internal static class BenchmarkRun
         Hooks.Log($"benchmark: playing in this game, into {_out.Replace(Home, "~")}");
 
         _player = new PlayerGame();
-        // A new game's world: the clock at its start, no vehicles, no kittens on missions
-        var fresh = UniverseData.Create();
-        fresh.GameTime = new UniverseTimeReference(UniverseTime.Zero);
-        foreach (var system in fresh.CelestialSystems)
-        {
-            system.Vehicles.Clear();
-            system.GroundClutter.Clear();
-        }
-        fresh.KittenRoster = KittenRosterData.Create();
-        Universe.DeserializeSave(fresh);
-        Program.OnGameLoaded();
-        // The tour's view: no names over celestials and places (as benchmark.sh sets them)
+        Benchmark.NewWorld();
+        // The test's view: no names over celestials and places (as benchmark.sh sets them)
         var ui = GameSettings.Current.Interface;
         (ui.CelestialNames, ui.LocationNames) = (false, false);
         AddVehicles();
@@ -347,9 +393,10 @@ internal static class BenchmarkRun
         if (File.Exists(PortSettings.FilePath))
             File.Copy(PortSettings.FilePath, Path.Combine(instance, "port-settings.toml"));
         // Their settings, starting straight into a new testing game (the one that keeps the system's vehicles), without
-        // the system menu, the update popup or names: Earth and the Moon alone for fast mode, as benchmark.sh plays it
+        // the system menu, the update popup or names: Earth and the Moon alone for what plays only there, as benchmark.sh
+        // plays it
         GameSettings.Current.Save();
-        var system = _fast ? "SolLite" : "Sol";
+        var system = _fast && _test is "mixed" or "warp" ? "SolLite" : "Sol";
         var settings = File.ReadAllLines(Path.Combine(Constants.DocumentsFolderPath, "settings.toml"));
         foreach (var (key, value) in new[] { ("selectSystemOnStart", "false"), ("lastSystemId", $"\"{system}\""),
                      ("startGameType", "\"Testing\""), ("startVehicle", "\"Rocket\""), ("startParent", "\"Earth\""),

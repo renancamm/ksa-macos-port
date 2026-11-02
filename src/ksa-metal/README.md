@@ -68,7 +68,7 @@ To see what a change does across the game, run the [benchmark](../benchmark/READ
 numbers. To look at one place, play only that place (`--fast jupiter2`) or stay there with `--hold jupiter2`. The
 game gets the variables below from the script, so `MTL_SHADER_VALIDATION=1 ./benchmark.sh --hold jupiter2` works too.
 
-For a problem the tour doesn't reach, reproduce it in a save and start the app's executable from Terminal with the
+For a problem the tests don't reach, reproduce it in a save and start the app's executable from Terminal with the
 debugging variables below, as with the switches above. For example, to save two screenshots and quit:
 
 ```bash

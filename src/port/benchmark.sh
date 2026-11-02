@@ -1,11 +1,16 @@
 #!/bin/bash
-# Measures how KSA runs on this Mac: plays a fixed tour of the game in one session and writes a report, and a zip of
-# it in the run's folder to share if you like.
+# Measures how KSA runs on this Mac: plays a fixed test of the game in one session and writes a report, and a zip of it
+# in the run's folder to share if you like.
 #
-# Usage: ./benchmark.sh [options] [section or place...]
+# Usage: ./benchmark.sh [options] [mixed | tour | warp | full]
+#        ./benchmark.sh [options] <section or place...>
 #        ./benchmark.sh compare <run> <run>
-#   With no sections, plays the whole tour (with --fast, its short test), with your own settings. A place is a
-#   screenshot of the tour (earth4, or giga_pad where a name is in more than one section): its section up to there.
+#   mixed      the Mixed Test (the default): rockets, smoke, an explosion, a kitten and a cockpit
+#   tour       the Planetary Tour: a flight from Earth to Jupiter
+#   warp       the Warp Test: how far time warp gets in a fixed time, a ship alone and with debris around Earth
+#   full       all three, one after the other
+#   All with your own settings. A place is a screenshot of the test (earth4, or giga_pad where a name is in more than one
+#   section): its section up to there.
 #   The game takes over the screen: leave the mouse and keyboard alone until it is done. The game runs from its own
 #   documents folder, with a copy of your settings: your files stay untouched. Exits with 1 when the run failed (the
 #   game crashed or hung, a step failed, errors in its log).
@@ -17,9 +22,9 @@
 #   --defaults         the settings of a fresh install instead of yours: the game's own and the port's defaults
 #   --system <name>    sol (the solar system) or earth (Earth and the Moon only: for Macs with 8 GB of memory)
 #                      (default: sol, or earth in fast mode when the places played are all on Earth or the Moon)
-#   --fast             a short test: a kitten in orbit, Earth from space down to the grass, then rockets and a
-#                      cockpit set up at one moment, all seen with the game paused (with sections or places: those, the camera's flight
-#                      paused and jumping, vehicles played as written); measures the views standing still
+#   --fast             the test's short form, each view standing still with the game paused: the Mixed Test's vehicles
+#                      set up at one moment, the Planetary Tour's places with the camera jumping between them (with
+#                      sections or places: those, vehicles played as written). The Warp Test has one form
 #   --no-shots         take no screenshots
 #   --set <key=value>  change one setting of settings.toml for the run (again for more), on top of the preset;
 #                      <section>.<key>=<value> adds it to that section when the file has no such key
@@ -71,7 +76,7 @@ INSTANCE="${HOME}/Library/Caches/ksa-macos-port/benchmark/instance"
 ISSUES="https://github.com/${RELEASES_REPO}/issues/new?template=benchmark-report.md"
 
 usage() {
-    sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,49p' "$0" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
 }
 
@@ -151,6 +156,22 @@ SCRIPT="${RES}/Benchmark/benchmark.txt"
 [ -f "${SCRIPT}" ] && [ -f "${RES}/Hooks/KsaMetalHooks.dll" ] ||
     die "the app at ${APP} has no benchmark: update it with ./port.sh."
 
+# The tests (the tour's "test" lines): test_sections <test> <fast|cinematic>
+test_sections() {
+    awk -v test="$1" -v form="$2" '$1 == "test" && $2 == test {
+        line = $0; sub(/^test [^ ]+ /, "", line); split(line, forms, " [|] "); print (form == "fast" ? forms[1] : forms[2]) }' "${SCRIPT}"
+}
+# A test by its name alone, in place of sections or places
+TEST=""
+if [ ${#PLACES[@]} = 1 ] && [ -z "${HOLD}" ] && { [ "${PLACES[0]}" = full ] || [ -n "$(test_sections "${PLACES[0]}" fast)" ]; }; then
+    TEST="${PLACES[0]}"
+    PLACES=()
+elif [ ${#PLACES[@]} = 0 ] && [ -z "${HOLD}" ]; then
+    TEST=mixed
+fi
+# The Warp Test has one form, the short one's system
+[ "${TEST}" != warp ] || FAST=1
+
 # Places: a section, <section>_<shot>, or a screenshot's name alone where only one section has it
 SHOTS="$(awk '$1 == "section" { s = $2 } $2 == "@shot" { print s "_" $3 }' "${SCRIPT}")"
 # place <name>: the section or <section>_<shot> it names
@@ -179,15 +200,17 @@ if [ -n "${HOLD}" ]; then
 fi
 # Places named (the tools that take GB at each place need some)
 NAMED=${#ONLY[@]}
-SECTIONS="${ONLY[*]:-all}"
-# Without places: fast mode's short test, or the cinematic tour (the tour's "fast" and "tour" lines)
-if [ "${NAMED}" = 0 ]; then
-    if [ -n "${FAST}" ]; then
-        read -r -a ONLY <<< "$(awk '$1 == "fast" { $1 = ""; print }' "${SCRIPT}")"
-        SECTIONS="${ONLY[*]}"
+SECTIONS="${ONLY[*]:-}"
+# A test: its sections, full mode's the three tests' in the tour's order
+if [ -n "${TEST}" ]; then
+    form=cinematic
+    [ -z "${FAST}" ] || form=fast
+    if [ "${TEST}" = full ]; then
+        read -r -a ONLY <<< "$(test_sections tour "${form}") $(test_sections mixed "${form}") $(test_sections warp "${form}")"
     else
-        read -r -a ONLY <<< "$(awk '$1 == "tour" { $1 = ""; print }' "${SCRIPT}")"
+        read -r -a ONLY <<< "$(test_sections "${TEST}" "${form}")"
     fi
+    SECTIONS="${ONLY[*]}"
 fi
 # Fast mode plays in Earth's small system when its sections need no other celestial than the Moon
 if [ -z "${SYSTEM}" ] && [ -n "${FAST}" ]; then
@@ -237,7 +260,7 @@ if [ -n "${TRACE}" ]; then
     templates="$(xcrun xctrace list templates 2> /dev/null || true)"
     echo "${templates}" | grep -qx "${TEMPLATE}" ||
         die "Instruments has no template '${TEMPLATE}' (xcrun xctrace list templates)."
-    [ "${NAMED}" -gt 0 ] || die "a trace of the whole tour takes tens of GB: choose sections or places (e.g. --fast jupiter2 --trace)."
+    [ "${NAMED}" -gt 0 ] || die "a trace of a whole test takes tens of GB: choose sections or places (e.g. --fast jupiter2 --trace)."
     [ "$(free_gb)" -ge 10 ] || die "--trace needs 10 GB free on this disk ($(free_gb) GB free)."
     TOOLS+=("Instruments (${TEMPLATE})")
 fi
@@ -382,7 +405,7 @@ preset="${PRESET:-none, own settings}"
 [ -z "${DEFAULTS}" ] || preset="${PRESET:-none}, a fresh install's settings"
 # system_facts: system.txt, with the window from the run's settings.toml
 system_facts() {
-    report system "${OUT}" "${APP}" "StarMap=${starmap}" "System=${SYSTEM_ID}" "Sections=${SECTIONS}" \
+    report system "${OUT}" "${APP}" "StarMap=${starmap}" "System=${SYSTEM_ID}" "Test=${TEST:-places}" "Sections=${SECTIONS}" \
         "Mode=$([ -n "${FAST}" ] && echo fast || echo cinematic)$([ -n "${NO_SHOTS}" ] && echo ", no screenshots" || true)" \
         "Preset=${preset}" "Settings changed=${changed:-none}" "Start=a new game, from benchmark.sh" \
         "KSA Metal switches=${switches:-none}" "Tools=${tools}" > /dev/null
@@ -419,6 +442,10 @@ length="$(awk -v play=" ${ONLY[*]%%_*} " '$1 == "section" { total += max; max = 
 timeout=$((length * 2 + 300))
 hang=60
 [ -z "${CAPTURE}" ] || hang=180
+# Time warp can stall a frame for most of a minute before it goes on: past that, the sections played are kept
+for p in "${ONLY[@]}"; do
+    ! grep -q "^section ${p%%_*} live" "${SCRIPT}" || hang=180
+done
 pressure=1
 swap_before="$(sysctl -n vm.swapusage | sed -n 's/.*used = \([0-9.]*\)M.*/\1/p')"
 if [ -n "${HOLD}" ]; then
@@ -426,7 +453,8 @@ if [ -n "${HOLD}" ]; then
     timeout=0
 else
     what="about $(((length + 60) / 60)) minutes"
-    [ -z "${FAST}" ] || what="fast$([ "${NAMED}" -gt 0 ] || echo ", about a minute")"
+    [ -z "${FAST}" ] || [ "${TEST}" = warp ] || what="fast"
+    [ -z "${TEST}" ] || what="${TEST}, ${what}"
     [ "${REPEAT}" = 1 ] || what="${REPEAT} times, ${what} each"
     step "Benchmarking KSA ${INSTALLED} (${what})"
     info "The game takes over the screen. Leave the mouse and keyboard alone until it is done."

@@ -110,7 +110,7 @@ public static class Program
     // settings and the hooks; finish takes those from the game's log otherwise).
     private static readonly (string Key, string? Default)[] RunFacts =
     [
-        ("StarMap", null), ("System", null), ("Sections", null), ("Mode", null), ("Preset", "none, own settings"),
+        ("StarMap", null), ("System", null), ("Test", null), ("Sections", null), ("Mode", null), ("Preset", "none, own settings"),
         ("Settings changed", "none"), ("Start", null), ("KSA Metal switches", "none"), ("Tools", "none"),
         ("port settings", null), ("Hooks", null),
     ];
@@ -263,8 +263,8 @@ public static class Program
     // The numbers that the parts of repeated runs are merged by: the median over the runs (the worst for those that
     // count events), with the range of the medians of frame and GPU time
     private static readonly string[] MedianFields =
-        { "averageFps", "frameMsMedian", "frameMsP95", "frameMsP99", "frameMsMax", "gpuMsMedian", "gpuMsP95", "drawsMedian", "gpuMemoryPeakMb", "footprintPeakMb" };
-    private static readonly string[] MaxFields = { "hitches", "thermalMax", "shadersCompiled", "pipelinesCreated" };
+        { "averageFps", "frameMsMedian", "frameMsP95", "frameMsP99", "frameMsMax", "gpuMsMedian", "gpuMsP95", "drawsMedian", "gpuMemoryPeakMb", "footprintPeakMb", "gameDays", "speed", "secondsToSpeed" };
+    private static readonly string[] MaxFields = { "hitches", "thermalMax", "shadersCompiled", "pipelinesCreated", "simMsMax", "substeps", "bubblesMax", "vehiclesMax" };
 
     private static JsonArray Merge(List<JsonObject> runs)
     {
@@ -290,12 +290,15 @@ public static class Program
                     if (v.Length > 0)
                         w[field] = v[^1];
                 }
-                foreach (var (field, range) in new[] { ("frameMsMedian", "frameMsRange"), ("gpuMsMedian", "gpuMsRange") })
+                foreach (var (field, range) in new[] { ("frameMsMedian", "frameMsRange"), ("gpuMsMedian", "gpuMsRange"), ("speed", "speedRange") })
                 {
                     var v = Values(field);
                     if (v.Length > 1)
                         w[range] = new JsonArray(v[0], v[^1]);
                 }
+                // A part that didn't get to its speed in one of the runs didn't, whatever the others did
+                if (same.Any(x => x["gameDays"] is not null && x["secondsToSpeed"] is null))
+                    w["secondsToSpeed"] = null;
                 w["runs"] = same.Count;
             }
         }
@@ -343,7 +346,42 @@ public static class Program
         if (compiled.Count > 0)
             notes.Add($"shaders compiled while measuring {string.Join(", ", compiled.Take(8))}{(compiled.Count > 8 ? $" and {compiled.Count - 8} more parts" : "")}: " +
                       "the first run after an update of the game or the port compiles them, the next runs don't");
+        if (LiveErrors(dir, sections) is > 0 and var liveErrors)
+            notes.Add($"the game logged {liveErrors} errors during the time warp (game.log)");
         return notes;
+    }
+
+    private static readonly Regex Ansi = new(@"\x1b\[[0-9;]*m");
+    private static readonly Regex GameError = new(@"^\d\d:\d\d:\d\d\s+(ERROR|FATAL)\b");
+    private static readonly Regex SectionLine = new(@"^\[benchmark\] section (\S+) ");
+    private static readonly Regex EndLine = new(@"^\[benchmark\] (done after|stopped:)");
+
+    private static HashSet<string> LiveSections(JsonObject results) =>
+        Sections(results).OfType<JsonObject>().Where(s => s["live"]?.GetValue<bool>() == true).Select(s => (string?)s["name"] ?? "").ToHashSet();
+
+    // The game's own errors while time warp ran at speeds that hold it back: a condition of the Warp Test, not a broken
+    // run, at settings that leave its stuck pieces as they are
+    private static int LiveErrors(string dir, JsonArray sections)
+    {
+        var live = LiveSections(new JsonObject { ["sections"] = sections.DeepClone() });
+        if (live.Count == 0)
+            return 0;
+        int count = 0;
+        foreach (var log in Directory.GetFiles(dir, "game*.log"))
+        {
+            bool inLive = false;
+            foreach (var raw in File.ReadLines(log))
+            {
+                var line = Ansi.Replace(raw, "").Trim();
+                if (SectionLine.Match(line) is { Success: true } section)
+                    inLive = live.Contains(section.Groups[1].Value);
+                else if (EndLine.IsMatch(line))
+                    inLive = false;
+                else if (inLive && GameError.IsMatch(line))
+                    count++;
+            }
+        }
+        return count;
     }
 
     // What went wrong in a run: how the game ended, the script's steps and screenshots, and errors in the game's log
@@ -376,21 +414,27 @@ public static class Program
                 problems.Add($"the hooks' {hook}");
         }
         // The game's log of each session (game-2.log... for repeats)
+        var liveSections = LiveSections(results);
         foreach (var log in Directory.GetFiles(dir, "game*.log").OrderBy(f => f.Length).ThenBy(f => f, StringComparer.Ordinal))
         {
             var name = Path.GetFileName(log);
             var errors = new Dictionary<string, int>();
             bool gpuReset = false;
-            var ansi = new Regex(@"\x1b\[[0-9;]*m");
-            var gameError = new Regex(@"^\d\d:\d\d:\d\d\s+(ERROR|FATAL)\b");
+            bool live = false;
             foreach (var raw in File.ReadLines(log))
             {
-                var line = ansi.Replace(raw, "").Trim();
-                if (line.StartsWith("[ksa-metal ERROR]", StringComparison.Ordinal) || gameError.IsMatch(line) ||
+                var line = Ansi.Replace(raw, "").Trim();
+                if (SectionLine.Match(line) is { Success: true } section)
+                    live = liveSections.Contains(section.Groups[1].Value);
+                else if (EndLine.IsMatch(line))
+                    live = false;
+                if (line.StartsWith("[ksa-metal ERROR]", StringComparison.Ordinal) || GameError.IsMatch(line) && !live ||
                     line.StartsWith("Unhandled exception", StringComparison.Ordinal))
                 {
                     gpuReset |= line.Contains("kIOGPUCommandBufferCallbackError", StringComparison.Ordinal);
-                    var key = line.Length > 160 ? line[..160] + "..." : line;
+                    // The same error at another second is the same error
+                    var plain = GameError.Replace(line, "$1");
+                    var key = plain.Length > 160 ? plain[..160] + "..." : plain;
                     errors[key] = errors.GetValueOrDefault(key) + 1;
                 }
             }
@@ -445,7 +489,8 @@ public static class Program
         if (runs > 1)
             md.AppendLine($"| Runs | {runs}: each number is the median of the runs, Frame ms shows their range |");
         md.AppendLine();
-        md.AppendLine((string?)report["mode"] == "fast"
+        bool anyPlain = Sections(report).OfType<JsonObject>().Any(s => s["live"]?.GetValue<bool>() != true);
+        md.AppendLine((string?)report["mode"] == "fast" && anyPlain
             ? "Fast mode: each part is the view standing still (the game paused) at the screenshot of that name."
             : "Each part is measured along the way, between two screenshots.");
         md.AppendLine("Frame: time between two frames (median, 95th percentile). GPU: time the GPU worked on a frame. Hitches: frames longer than twice the median. " +
@@ -468,7 +513,34 @@ public static class Program
                 name = "";
             }
         }
+        Warp(md, report);
         return md.ToString();
+    }
+
+    // The parts of a live section, the time warp's: how far the game's clock got in the time they took
+    private static void Warp(StringBuilder md, JsonObject report)
+    {
+        var parts = Sections(report).OfType<JsonObject>()
+            .SelectMany(s => (s["windows"] as JsonArray ?? new JsonArray()).OfType<JsonObject>())
+            .Where(w => w["gameDays"] is not null).ToList();
+        if (parts.Count == 0)
+            return;
+        double days = parts.Sum(w => w["gameDays"]?.GetValue<double>() ?? 0);
+        md.AppendLine();
+        md.AppendLine($"**Warp Test: {days:F1} game days** in the {parts.Sum(w => w["seconds"]?.GetValue<double>() ?? 0):F0} s of its {parts.Count} part{(parts.Count > 1 ? "s" : "")}.");
+        md.AppendLine();
+        md.AppendLine("Speed: game seconds per second, against what was asked (1 is real time). To 90 %: seconds until it ran at 90 % of what was asked. Sim: the slowest vehicle job. A speed far under what was asked means the simulation held it back.");
+        md.AppendLine();
+        md.AppendLine("| Part | Game days | Speed | Asked | To 90 % s | Worst frame ms | Sim ms | Substeps | Bubbles | Vehicles |");
+        md.AppendLine("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
+        foreach (var w in parts)
+        {
+            string speed = Num(w["speed"], "F0");
+            if (w["speedRange"] is JsonArray range)
+                speed += $" ({Num(range[0], "F0")}-{Num(range[1], "F0")})";
+            md.AppendLine($"| {w["name"]} | {Num(w["gameDays"], "F1")} | {speed} | {Num(w["speedAsked"], "F0")} | {(w["secondsToSpeed"] is null ? "never" : Num(w["secondsToSpeed"], "F1"))} | " +
+                          $"{Num(w["frameMsMax"], "F0")} | {Num(w["simMsMax"], "F0")} | {w["substeps"]} | {w["bubblesMax"]} | {w["vehiclesMax"]} |");
+        }
     }
 
     private static string Num(JsonNode? node, string format) =>
@@ -486,7 +558,9 @@ public static class Program
         string modeA = (string?)ra["mode"] ?? "cinematic", modeB = (string?)rb["mode"] ?? "cinematic";
         if (modeA != modeB)
         {
-            Console.WriteLine($"The runs played in different modes ({modeA}, {modeB}): neither their numbers nor their screenshots compare.");
+            // Live sections play the same in both modes
+            WarpNumbers(Windows(ra), Windows(rb));
+            Console.WriteLine($"The runs played in different modes ({modeA}, {modeB}): only the time warp's parts compare.");
             return 2;
         }
         foreach (var (run, report) in new[] { ("a", ra), ("b", rb) })
@@ -584,10 +658,41 @@ public static class Program
         }
         Console.WriteLine();
         bool repeated = (ra["runs"]?.GetValue<int>() ?? 1) > 1 && (rb["runs"]?.GetValue<int>() ?? 1) > 1;
+        WarpNumbers(parts, after);
         Console.WriteLine(repeated
             ? $"Both runs were repeated: changes are marked, faster (+) or slower (-), when the ranges of the repeats don't overlap and the change is over {SignificantRepeated:P0}."
             : $"Changes over {Significant:P0} are marked: faster (+) or slower (-). Smaller ones are within run-to-run noise.");
         Console.WriteLine();
+    }
+
+    // The time warp's parts by the speed they reached: more is better, so the sign of a change turns round
+    private static void WarpNumbers(Dictionary<(string section, string part), JsonObject> a, Dictionary<(string section, string part), JsonObject> b)
+    {
+        var parts = a.Where(kv => kv.Value["gameDays"] is not null && b.TryGetValue(kv.Key, out var w) && w["gameDays"] is not null).ToList();
+        if (parts.Count == 0)
+            return;
+        Console.WriteLine("| Warp part | Game days a | Game days b | Speed a | Speed b | Change |");
+        Console.WriteLine("|---|---:|---:|---:|---:|---:|");
+        foreach (var (key, wa) in parts)
+        {
+            var wb = b[key];
+            Console.WriteLine($"| {key.part} | {Num(wa["gameDays"], "F1")} | {Num(wb["gameDays"], "F1")} | {Num(wa["speed"], "F0")} | {Num(wb["speed"], "F0")} | " +
+                              $"{SpeedChange(wa, wb)} |");
+        }
+        Console.WriteLine();
+    }
+
+    // The change in speed as it is, marked as a gain or a loss (no gain to mark from a speed of 0)
+    private static string SpeedChange(JsonObject a, JsonObject b)
+    {
+        if (a["speed"] is not JsonValue va || b["speed"] is not JsonValue vb || !va.TryGetValue<double>(out var x) || !vb.TryGetValue<double>(out var y) || x <= 0)
+            return "";
+        double change = (y - x) / x;
+        string text = change.ToString("+0%;-0%;0%");
+        bool significant = a["speedRange"] is JsonArray ra && b["speedRange"] is JsonArray rb
+            ? Math.Abs(change) > SignificantRepeated && ((double?)ra[1] < (double?)rb[0] || (double?)rb[1] < (double?)ra[0])
+            : Math.Abs(change) > Significant;
+        return significant ? $"**{text} ({(change > 0 ? "+" : "-")})**" : text;
     }
 
     // Each screenshot of a against b's of the same name; marked copies of b's that differ go to b/diff/

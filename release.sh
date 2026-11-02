@@ -113,7 +113,9 @@ TEST_APP="${TEST}/${APP_NAME}.app"
 "${TEST}/ksa-macos-port/port.sh" --app "${TEST_APP}" "${ARCHIVE}"
 [ "$(app_version "${TEST_APP}")" = "${KSA_VERSION}" ] || die "the test app was not made."
 if [ "${GAME_TEST}" = 1 ]; then
-    "${TEST}/ksa-macos-port/benchmark.sh" --app "${TEST_APP}" --fast --defaults || die "the benchmark failed on the test app."
+    for test in mixed tour; do
+        "${TEST}/ksa-macos-port/benchmark.sh" "${test}" --app "${TEST_APP}" --fast --defaults || die "the benchmark's ${test} test failed on the test app."
+    done
 fi
 rm -rf "${WORK}"
 

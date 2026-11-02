@@ -1,9 +1,15 @@
 # Benchmark
 
-The port's benchmark measures how KSA runs on your Mac. It plays a fixed tour of the game in one session: a camera
-flight from Earth to Jupiter without a cut, then a day in a capsule's cockpit, a kitten in the grass, a rocket launch
-and a 2,000-part rocket blown up on its pad. It measures each part and writes a report you can compare with another
-run or share.
+The port's benchmark measures how KSA runs on your Mac. It has three tests, each played in one session of the game. It
+measures each part and writes a report you can compare with another run or share.
+
+| Test | What it plays | What it is for |
+|---|---|---|
+| **Mixed Test** (`mixed`, the default) | rockets, smoke, a 2,000-part rocket blown up, a kitten and a cockpit | what the tour doesn't check: plumes, explosions, part physics, fur, ray tracing |
+| **Planetary Tour** (`tour`) | a flight from Earth to Jupiter | terrain, ground clutter, the ocean, clouds, rings |
+| **Warp Test** (`warp`) | a ship in orbit at the top speed of time warp, alone and with debris around Earth | how far time warp gets in a fixed time |
+
+`full` plays all three, one after the other, in one game.
 
 It is for spotting differences: between two settings, two versions of the port, or two Macs. Since it plays the same
 way every time, it is also the project's test: every run passes or fails, and `compare` checks its screenshots
@@ -11,22 +17,24 @@ against another run's.
 
 ## Run it
 
-In the game, open the settings (Esc), then **Mac Port**, and press **RUN** on the Fast row (about 1 minute) or
-the Full row (the full tour, about 8 minutes) at the bottom, with your own settings. It plays in the game you
-have open. Your game is saved first, the tour plays in a new game's world, and your game comes back when it ends; Esc
-stops it. With **Restart for a Clean Run** on, your game is saved as "Before the benchmark" and the game starts again for it
-instead, the way `./benchmark.sh` plays it, and quits at the end with the report's folder open.
-**Show report** under the buttons finds the last report in the Finder.
+In the game, open the settings (Esc), then **Mac Port**, and press a test's **FAST** or **CINEMATIC** button at the
+bottom (**RUN** for the Warp Test), with your own settings. It plays in the game you have open. Your game is saved
+first, the test plays in a new game's world, and your game comes back when it ends; Esc stops it. With **Restart for a
+Clean Run** on, your game is saved as "Before the benchmark" and the game starts again for it instead, the way
+`./benchmark.sh` plays it, and quits at the end with the report's folder open. **Show report** under the buttons finds
+the last report in the Finder.
 
 From the port folder, after `./port.sh`:
 
 ```bash
-./benchmark.sh
+./benchmark.sh              # the Mixed Test, about 4 minutes (--fast: under a minute)
+./benchmark.sh tour         # the Planetary Tour, about 5 minutes (--fast: about 2)
+./benchmark.sh warp         # the Warp Test, 2 to 3 minutes
+./benchmark.sh full         # all three, about 11 minutes (--fast: about 4)
 ```
 
-A run takes about 8 minutes and uses your own settings. The game takes over the screen: leave the mouse and keyboard
-alone until the script says it is done. On a Mac with 8 GB of memory, add `--system earth`: it plays Earth and the
-Moon only and needs a few GB less.
+They use your own settings. The game takes over the screen: leave the mouse and keyboard alone until the script says it
+is done. On a Mac with 8 GB of memory, add `--system earth`: it plays Earth and the Moon only and needs a few GB less.
 
 A run in the game you have open starts with that game's clouds and sea, and after what the game played before, so its
 numbers compare best with other runs played the same way, and `compare` doesn't check its screenshots.
@@ -53,12 +61,11 @@ of a run folder.
 
 ### Two ways to play it
 
-By default the tour is cinematic: the camera flies the whole way and the parts are measured as it goes. `--fast` is a
-short test instead: the camera waits on a kitten floating in orbit while three rockets and a capsule are set up
-around the world, then the game pauses and the camera jumps from view to view: the kitten, Earth from space, above
-the clouds, the sea close up, the grass, the Andes, an aurora, the 2,000-part rocket blown up on its pad, a rocket
-lifting off and one high over the coast, and a cockpit in orbit. It measures each view standing still. A run takes
-about a minute and gives screenshots that match from one run to the next, so it is the quick way to check a change:
+By default a test is cinematic: the camera flies the whole way and the parts are measured as it goes. `--fast` is a short
+test instead, for checking that a change kept the image: the game pauses and the camera jumps from view to view, measuring
+each one standing still. The Mixed Test sets its vehicles up with the camera waiting on a kitten floating in orbit, then
+shows the 2,000-part rocket blown up on its pad, a rocket lifting off and one high over the coast, and a cockpit in orbit.
+The Planetary Tour shows each of its places with no flight between them. The screenshots match from one run to the next:
 
 ```bash
 ./benchmark.sh --fast
@@ -66,16 +73,28 @@ about a minute and gives screenshots that match from one run to the next, so it 
 ./benchmark.sh --fast --compare <first run>
 ```
 
-The two modes measure different things, so a fast run compares only with another fast run.
+The two modes measure different things, so a fast run compares only with another fast run. The Warp Test plays one way
+(below).
 
-You can also play part of the tour: name sections (`./benchmark.sh --fast jupiter`) or places by their screenshots'
+You can also play part of a test: name sections (`./benchmark.sh --fast jupiter`) or places by their screenshots'
 names (`./benchmark.sh --fast earth4 jupiter2`; `giga_pad` where two sections have a screenshot of that name). A
 place plays its section up to that point. In fast mode the camera jumps straight to the places of the flight between
-the worlds, and the sections with vehicles play as in the cinematic tour.
+the worlds, and the sections with vehicles play as written.
+
+### The Warp Test
+
+Each part starts from a new game's world and takes the same time on any Mac, from 8 to 30 seconds, whatever the game
+gets through in it: a slow Mac or settings that hold warp back get less far, and the run never waits for them. The ship is asked for its speed at once, as a player holding the warp key does. The report's headline is how many game days
+the parts got through, and its table shows, for each part, the speed reached against the speed asked, how long it took to
+get there, the worst frame and the physics' work. Runs differ more here than in the other tests: use `--repeat 3` to judge
+a change.
+
+With the Extra Performance warp rows off, time warp can stall for most of a minute and the game may stop with an error in
+the part where pieces fall back. The run then fails, keeping the parts it finished.
 
 ## For work on the port
 
-The same tour is the project's tool for looking into the driver, the shaders and the game: settings changed for one
+The same tests are the project's tool for looking into the driver, the shaders and the game: settings changed for one
 run (`--set`, `--settings`), repeated runs, and Apple's tools on the places played.
 
 - `--repeat <n>` plays the run n times, one game session each, and reports the median of each number and the range of
@@ -107,23 +126,26 @@ shaders' hashes, how many other pipelines it ran) instead of an anonymous encode
 ./benchmark.sh --fast --repeat 3 earth4 jupiter2 --compare <run before>
 ```
 
-## The tour
+## The tests' sections
 
-| Section | What it shows | What it measures |
-|---|---|---|
-| `earth` | the whole Earth, down through the clouds to the sea off Brazil, then the jungle, the Andes and the coast of Peru, and up over northern Quebec | atmosphere, clouds, the ocean, terrain and ground clutter; new ground streaming in all along |
-| `moon` | the flight out to the Moon, its disk, the crater Copernicus, then low over the ground in the east | terrain, the long shadows of craters and rocks |
-| `mars` | the flight on to Mars, its disk, sunrise over a dust storm, then low over rocky ground | terrain, the dusty air, rocks |
-| `saturn` | the rings from above, the haze under them, then the ring plane with its rocks going by | rings, their rocks |
-| `jupiter` | Jupiter from afar, its cloud deck, then straight down into the layers under it | volumetric clouds |
-| `capsule` | a capsule's cockpit while a day goes by in twenty seconds, then a kitten climbing out of another capsule in tall grass, its long shadow, its face | ray tracing in the cockpit (when your settings have it on), fur, grass and shadows |
-| `launch` | a rocket with solid boosters lifting off from LC-39A, seen from the ground, then from alongside as it climbs through the clouds, faster in between, and close to its engines up high | plumes, smoke trails, clouds, part physics |
-| `giga` | a rocket of about 2,000 parts on its pad, lifting off, blown up whole, its fire and smoke, the camera turning around it all along | part physics on the CPU, many draw calls, lights, explosions and smoke |
-| `lineup` | fast mode's test: a kitten in its helmet floating in orbit, looking into the camera, then Earth from space, above the clouds, the sea close up, the grass, the Andes and an aurora over Quebec, then the vehicles at one moment, the game paused: the giga rocket blown up whole in the smoke of its boosters on its pad at Starbase, a rocket lifting off from LC-39A, one high over the coast from Vandenberg, and a capsule's cockpit in orbit with sunlight on its wall (with IVA Ray Tracing on) and Earth in its window; set up with the camera on the kitten, it plays alone or after places of the flight | atmosphere, clouds, the ocean, terrain and grass, an aurora; plumes, smoke trails, an explosion and smoke, part physics on the CPU, many draw calls, ray tracing in the cockpit, the kitten |
+| Section | Test | What it shows | What it measures |
+|---|---|---|---|
+| `earth` | tour | the whole Earth, down through the clouds to the sea off Brazil, then the jungle, the Andes and the coast of Peru, and up over northern Quebec | atmosphere, clouds, the ocean, terrain and ground clutter; new ground streaming in all along |
+| `moon` | tour | the flight out to the Moon, its disk, the crater Copernicus, then low over the ground in the east | terrain, the long shadows of craters and rocks |
+| `mars` | tour | the flight on to Mars, its disk, sunrise over a dust storm, then low over rocky ground | terrain, the dusty air, rocks |
+| `saturn` | tour | the rings from above, the haze under them, then the ring plane with its rocks going by | rings, their rocks |
+| `jupiter` | tour | Jupiter from afar, its cloud deck, then straight down into the layers under it | volumetric clouds |
+| `capsule` | mixed | a capsule's cockpit while a day goes by in twenty seconds, then a kitten climbing out of another capsule in tall grass, its long shadow, its face | ray tracing in the cockpit (when your settings have it on), fur, grass and shadows |
+| `launch` | mixed | a rocket with solid boosters lifting off from LC-39A, seen from the ground, then from alongside as it climbs through the clouds, faster in between, and close to its engines up high | plumes, smoke trails, clouds, part physics |
+| `giga` | mixed | a rocket of about 2,000 parts on its pad, lifting off, blown up whole, its fire and smoke, the camera turning around it all along | part physics on the CPU, many draw calls, lights, explosions and smoke |
+| `mixed` | mixed, fast | a kitten in its helmet floating in orbit, looking into the camera, then the vehicles at one moment, the game paused: the giga rocket blown up whole in the smoke of its boosters on its pad at Starbase, a rocket lifting off from LC-39A, one high over the coast from Vandenberg, and a capsule's cockpit in orbit with sunlight on its wall (with IVA Ray Tracing on) and Earth in its window | plumes, smoke trails, an explosion and smoke, part physics on the CPU, many draw calls, ray tracing in the cockpit, the kitten |
+| `warpclean` | warp | a capsule in a 400 km orbit at the top speed of time warp | what the picture costs at that speed |
+| `warpdebris` | warp | the same among 18 rockets blown up around Earth in orbits from 150 to 800 km | hundreds of pieces in orbit, the bubbles of physics they make |
+| `warpfalling` | warp | the same with 18 rockets blown up high, their pieces falling back and landing | pieces in the air and on the ground holding warp back |
 
-The camera flies from one world to the next without a cut and eases to a stop for each screenshot. The vehicles of
-the last three sections are all placed when the tour returns to Earth, the tour's only cut. Each of those sections
-starts at a fixed game time, so its light and clouds are the same whether or not the sections before it played.
+The camera flies from one world to the next without a cut and eases to a stop for each screenshot. The Mixed Test's
+vehicles are all placed at its start, in a new game's world. Each of its sections starts at a fixed game time, so its
+light and clouds are the same whether or not the sections before it played.
 
 ## How it works
 
@@ -131,16 +153,16 @@ The benchmark is in the app, in `Contents/Resources/Benchmark/`, and [KSA Metal 
 of `./benchmark.sh`, the game starts from a documents folder of its own,
 `~/Library/Caches/ksa-macos-port/benchmark/instance/`. That folder holds a copy of your settings (with the preset on
 top, if any) and of your port settings (the defaults with a preset), and no mods, so your saves, settings and mods are
-never touched. The script changes only the settings that start the game straight into the tour (no system menu, the
+never touched. The script changes only the settings that start the game straight into the test (no system menu, the
 chosen system, the game's test vessel in orbit); every quality setting stays yours or the preset's. A run from the
 game with **Restart for a Clean Run** starts the same way. A run in the game you have open keeps its system: the hooks
 save your game, set the world to a new game's (the clock at its start, no vehicles), and load your game again at the
-end. The hooks add the tour's vehicles to the game's list of vehicles from the app, and write the report of a run from
+end. The hooks add the tests' vehicles to the game's list of vehicles from the app, and write the report of a run from
 the game.
 
-The tour is a text file, `benchmark.txt`: sections of steps timed in seconds, each a console command or a directive of
-the benchmark's director (`director/Directives.cs` lists them), and two lines, `fast` and `tour`, with what a run plays
-when no places are named. The camera's flight is given by `@key` steps, places the
+The tests are a text file, `benchmark.txt`: sections of steps timed in seconds, each a console command or a directive of
+the benchmark's director (`director/Directives.cs` lists them), and a `test` line for each test with the sections it plays
+in each mode. The camera's flight is given by `@key` steps, places the
 camera passes through (`director/Path.cs`); around the vehicles, the camera follows them or stands on the ground
 (`director/Rig.cs`). The director in `director/` plays the steps, moves the camera, measures the parts each section
 marks, and asks KSA Metal for each frame's GPU time and for the screenshots. `./build.sh` compiles it against the KSA
@@ -152,30 +174,34 @@ PNG reader. They write their runs with the director's own classes, so they also 
 director writes.
 
 Each screenshot is a checkpoint. The game runs its simulation as fast as the Mac allows, so a slower Mac falls a
-little behind the tour. At a checkpoint the tour waits for the game to reach the moment it should be at, pauses it
+little behind the script. At a checkpoint the script waits for the game to reach the moment it should be at, pauses it
 there and takes the screenshot, so the screenshots show the same moments, in the same light, on every Mac. `@sync`
 waits the same way without a screenshot, so the step after it (an ignition, a kitten's first step) comes at the same
 game time on every Mac.
 
-In fast mode the game stays paused through the flight between the worlds, and the tour's clock jumps from one
+In fast mode the game stays paused through the flight between the worlds, and the script's clock jumps from one
 screenshot to the next, so the light and the clouds there are those of the game's start. The sections with vehicles
-play as written, as in the cinematic tour. At a checkpoint the director takes a screenshot every quarter of a second
+play as written, as in the cinematic run. At a checkpoint the director takes a screenshot every quarter of a second
 until two in a row match, which means the ground and textures that stream in after a jump have settled; then it
 measures the view for a second and takes the real screenshot. The sea's waves take the wind of the place at once (the
 game eases them over several seconds), and at each checkpoint the clouds' detail starts afresh where the camera is, so
 a place of the flight looks the same whatever was played before it. Fast mode plays in the game's smaller system
 (Earth and the Moon) when the places played are all there, since the other worlds' textures would only take memory.
 
-A run fails when the game crashed or hung, a step of the tour failed, a vehicle broke apart before it should, a
-screenshot is missing, the game's log has errors, one of the hooks was skipped (the game's code it changes has moved) or
+A live section, the Warp Test's, plays by the Mac's clock alone: no catching up, and a checkpoint stops where the game has
+got to. Its screenshots are there to look at, since the game's clock differs from run to run; the `@shot` lines allow all
+of them to change.
+
+A run fails when the game crashed or hung, a step of the test failed, a vehicle broke apart before it should, a
+screenshot is missing, the game's log has errors (during the Warp Test the game's own errors are only noted, since settings that hold warp back cause them), one of the hooks was skipped (the game's code it changes has moved) or
 failed, or another game ran at the same time; the script then exits with 1.
-The director touches a file every second; a game that hasn't touched it for a minute counts as hung and is stopped.
+The director touches a file every second; a game that hasn't touched it for a minute (three in the Warp Test, whose frames can stall) counts as hung and is stopped. In a run from the game, the hooks stop a game with no frame for three minutes.
 
 `compare` marks a number as changed when it moved by more than 5%, because two runs on the same Mac differ by a few
 percent in most parts; the flights through space vary more, with little on screen and a high frame rate. Between
 repeated runs it marks a change when the ranges don't overlap and the difference is over 2%. Screenshots are compared
 in blocks of 16 by 16 pixels: a block counts as changed when its mean colour moved by more than 12 (of 255), and a
-screenshot differs when more than 1% of its blocks changed (3% in the cinematic tour, whose screenshots vary a little
+screenshot differs when more than 1% of its blocks changed (3% in a cinematic run, whose screenshots vary a little
 with the frames the Mac happened to draw on the way). Normal run-to-run differences stay within that; a missing
 texture or a broken shader does not. A few views change every run because of physics, particles or waves (the kitten
 after its walk, the plumes, the explosion, the sea close up), and their `@shot` lines in `benchmark.txt` allow more.
@@ -186,14 +212,14 @@ The report's numbers are summaries of it, and it goes into the zip, so a shared 
 when it was made. While a part is measured, KSA Metal also marks it as a signpost interval, which is how an Instruments
 trace knows where each part is.
 
-The rockets and the capsule in `vehicles/` were built for the tour.
+The rockets and the capsule in `vehicles/` were built for the tests.
 
-### Changing the tour
+### Changing the tests
 
-`--explore` starts the benchmark's game as a run would, with its clock paused so the light matches the tour's. Fly the
+`--explore` starts the benchmark's game as a run would, with its clock paused so the light matches the flight's. Fly the
 free camera to a place, open the console (`\`) and type `benchkey <name>`: the place is written as a `@key` line to
 `keys.txt` in a new run folder and copied to the clipboard, ready to paste into `benchmark.txt`. `./build.sh --install`
-puts the tour from `src/benchmark/benchmark.txt` into the app.
+puts the tests from `src/benchmark/benchmark.txt` into the app.
 
 ## Options and files
 
@@ -201,8 +227,9 @@ puts the tour from `src/benchmark/benchmark.txt` into the app.
 |---|---|
 | `--preset low`, `--preset medium`, `--preset high` | fixed settings in a 1280x800 window without Vsync, the same on every Mac (default: your settings) |
 | `--defaults` | the settings of a fresh install instead of yours: the game's own defaults and the port settings' (a preset, `--set` and `--port` go on top) |
-| `--system earth` | Earth and the Moon only (the game's smaller system): skips Mars, Saturn and Jupiter, and needs less memory (default: `sol`; in fast mode `earth` when the places played are all on Earth or the Moon) |
-| `--fast` | the short test (the `lineup` section), or the sections and places named with the camera jumping between places; measures the views standing still (default: the cinematic tour) |
+| `--system earth` | Earth and the Moon only (the game's smaller system): skips Mars, Saturn and Jupiter, and needs less memory (default: `sol`; `earth` in fast mode and the Warp Test when what plays is all on Earth or the Moon) |
+| `mixed`, `tour`, `warp`, `full` | the test to play (default: `mixed`) |
+| `--fast` | the test's short form, or the sections and places named with the camera jumping between places; measures the views standing still (default: cinematic; the Warp Test has one form) |
 | `--no-shots` | take no screenshots |
 | `--set <key>=<value>` | change a setting of `settings.toml` for the run, on top of the preset (repeat for more; strings need no quotes); as `<section>.<key>=<value>` it adds a key your file lacks to that section, such as one a newer KSA added (`display.hdr=true`) |
 | `--settings <file>` | apply the settings in a file of `key = value` lines, on top of the preset and before `--set` |
@@ -223,4 +250,4 @@ puts the tour from `src/benchmark/benchmark.txt` into the app.
 | `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/` | the results: `report.md`, `report.json`, `frames.csv`, the screenshots, `game.log`, and what the tools wrote |
 | `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/<date>.zip` | the run to share |
 | `~/Library/Caches/ksa-macos-port/benchmark/instance/` | the game's documents folder for a run that starts the game |
-| `Contents/Resources/Benchmark/` in the app | the director, the report program, the tour and its vehicles |
+| `Contents/Resources/Benchmark/` in the app | the director, the report program, the tests and their vehicles |
