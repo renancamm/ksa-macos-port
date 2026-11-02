@@ -229,6 +229,7 @@ struct KBuffer {
     VkDeviceSize size = 0;
     VkDeviceSize offset = 0;
     id<MTLBuffer> mtl = nil;  // = memory->whole
+    bool inDescriptor = false;  // written to a descriptor: destroying it looks for those left behind
     uint64_t gpuAddress() const { return mtl ? mtl.gpuAddress + offset : 0; }
 };
 
@@ -338,10 +339,18 @@ struct KDescriptorSet {
     uint32_t index = 0;          // in pool->sets
     VkDeviceSize offset = 0;     // within the chunk
     VkDeviceSize size = 0;
+    std::atomic<uint32_t> destroyedSlots{0};  // buffer slots on the zero page (vkDestroyBuffer); binding them is logged
+    uint32_t destroyedBinding = 0;            // the last of them, for the log
+    uint32_t destroyedBytes = 0;
+    std::atomic<bool> destroyedReported{false};
     uint64_t* slots() const { return (uint64_t*)base; }
     uint32_t* sizes() const { return (uint32_t*)(base + layout->slotCount * 8); }
     ~KDescriptorSet() { if (layout) layout->release(); }
 };
+
+extern std::atomic<uint64_t> g_zeroPageAddress;  // where descriptors left on a destroyed buffer point; 0 until one is
+void kmtlForgetBuffer(KBuffer* b);
+void kmtlReportDestroyedBuffer(KDescriptorSet* s, uint32_t setIndex);
 
 struct KPipelineLayout {
     std::vector<KSetLayout*> sets;

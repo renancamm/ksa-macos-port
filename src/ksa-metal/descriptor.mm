@@ -12,6 +12,60 @@ static bool isDynamic(VkDescriptorType t) {
     return t == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC || t == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
 }
 
+static bool isBuffer(VkDescriptorType t) {
+    return t == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || t == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER || isDynamic(t);
+}
+
+// A set may keep a descriptor on a destroyed buffer as long as no shader reads it. A shader that does would read
+// whatever the allocator has put in that memory since, as if it were its data. So destroying a buffer moves such
+// descriptors to 1 MiB of zeros with size 0, and binding the set logs it. A set's buffer slots hold addresses, so
+// finding them needs no record per descriptor, only a scan for the buffers ever written to one (about 10 us each).
+static constexpr NSUInteger kZeroPageBytes = 1 << 20;
+static std::mutex g_setsMutex;  // the pools' sets and their slots
+static std::vector<KDescriptorPool*> g_pools;
+static id<MTLBuffer> g_zeroPage = nil;
+std::atomic<uint64_t> g_zeroPageAddress{0};
+
+static uint64_t zeroPage(KDevice* dev) {
+    if (!g_zeroPage) {
+        g_zeroPage = [dev->mtl newBufferWithLength:kZeroPageBytes options:MTLResourceStorageModeShared | MTLResourceHazardTrackingModeUntracked];
+        g_zeroPage.label = @"zero page";
+        memset(g_zeroPage.contents, 0, kZeroPageBytes);
+        dev->addResident(g_zeroPage);
+        g_zeroPageAddress.store(g_zeroPage.gpuAddress, std::memory_order_release);
+    }
+    return g_zeroPageAddress.load(std::memory_order_relaxed);
+}
+
+void kmtlForgetBuffer(KBuffer* buf) {
+    uint64_t first = buf->gpuAddress();
+    if (!first) return;
+    uint64_t end = first + buf->size;
+    std::lock_guard<std::mutex> lock(g_setsMutex);
+    for (auto* p : g_pools) {
+        for (auto* s : p->sets) {
+            for (const auto& b : s->layout->bindings) {
+                if (!isBuffer(b.type)) continue;
+                for (uint32_t i = 0; i < b.count; i++) {
+                    uint64_t& slot = s->slots()[b.id + i];
+                    if (slot < first || slot >= end) continue;
+                    s->destroyedBinding = b.binding;
+                    s->destroyedBytes = s->sizes()[b.id + i];
+                    slot = zeroPage(p->device);
+                    s->sizes()[b.id + i] = 0;
+                    s->destroyedSlots++;
+                }
+            }
+        }
+    }
+}
+
+void kmtlReportDestroyedBuffer(KDescriptorSet* s, uint32_t setIndex) {
+    if (s->destroyedReported.exchange(true, std::memory_order_relaxed)) return;
+    KERR_LIMIT(20, "descriptor set %u bound with a destroyed buffer (binding %u, %u bytes); a shader reading it gets zeros", setIndex,
+               s->destroyedBinding, s->destroyedBytes);
+}
+
 VKFN(VkResult) vkCreateDescriptorSetLayout(VkDevice, const VkDescriptorSetLayoutCreateInfo* ci, const VkAllocationCallbacks*,
                                            VkDescriptorSetLayout* out) {
     KTRACE_FIRST();
@@ -80,6 +134,10 @@ VKFN(VkResult) vkCreateDescriptorPool(VkDevice device, const VkDescriptorPoolCre
     auto* p = new KDescriptorPool();
     p->device = dev;
     p->chunkSize = std::max<VkDeviceSize>(cap, 4096);
+    {
+        std::lock_guard<std::mutex> lock(g_setsMutex);
+        g_pools.push_back(p);
+    }
     KLOG(2, "descriptor pool %p: maxSets %u, %llu bytes", p, ci->maxSets, (unsigned long long)cap);
     *out = (VkDescriptorPool)p;
     return VK_SUCCESS;
@@ -101,6 +159,8 @@ VKFN(void) vkDestroyDescriptorPool(VkDevice, VkDescriptorPool pool, const VkAllo
     KTRACE_FIRST();
     auto* p = (KDescriptorPool*)pool;
     if (!p) return;
+    std::lock_guard<std::mutex> lock(g_setsMutex);
+    g_pools.erase(std::find(g_pools.begin(), g_pools.end(), p));
     for (auto* s : p->sets) delete s;
 
     for (auto& c : p->chunks) g_internalBytes -= (int64_t)c.capacity;
@@ -109,6 +169,7 @@ VKFN(void) vkDestroyDescriptorPool(VkDevice, VkDescriptorPool pool, const VkAllo
 
 VKFN(VkResult) vkResetDescriptorPool(VkDevice, VkDescriptorPool pool, VkDescriptorPoolResetFlags) {
     auto* p = (KDescriptorPool*)pool;
+    std::lock_guard<std::mutex> lock(g_setsMutex);
     for (auto* s : p->sets) delete s;
     p->sets.clear();
     for (auto& c : p->chunks) c.used = 0;
@@ -129,6 +190,7 @@ static void writeImmutableSamplers(KDescriptorSet* s) {
 VKFN(VkResult) vkAllocateDescriptorSets(VkDevice, const VkDescriptorSetAllocateInfo* ai, VkDescriptorSet* out) {
     KTRACE_FIRST();
     auto* p = (KDescriptorPool*)ai->descriptorPool;
+    std::lock_guard<std::mutex> lock(g_setsMutex);
     for (uint32_t i = 0; i < ai->descriptorSetCount; i++) {
         auto* l = (KSetLayout*)ai->pSetLayouts[i];
         VkDeviceSize size = kmtlAlignUp<VkDeviceSize>(l->bytes(), 64);
@@ -167,6 +229,7 @@ VKFN(VkResult) vkAllocateDescriptorSets(VkDevice, const VkDescriptorSetAllocateI
 VKFN(VkResult) vkFreeDescriptorSets(VkDevice, VkDescriptorPool pool, uint32_t n, const VkDescriptorSet* sets) {
     KTRACE_FIRST();
     auto* p = (KDescriptorPool*)pool;
+    std::lock_guard<std::mutex> lock(g_setsMutex);
     for (uint32_t i = 0; i < n; i++) {
         auto* s = (KDescriptorSet*)sets[i];
         if (!s) continue;
@@ -211,7 +274,10 @@ static void writeOne(KDescriptorSet* s, const KBinding* b, uint32_t elem, VkDesc
     case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
     case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC: {
         auto* buf = (KBuffer*)bi->buffer;
+        uint64_t zero = g_zeroPageAddress.load(std::memory_order_relaxed);
+        if (zero && slots[b->id + elem] == zero) s->destroyedSlots--;
         if (!buf) { slots[b->id + elem] = 0; sizes[b->id + elem] = 0; break; }
+        buf->inDescriptor = true;
         VkDeviceSize range = bi->range == VK_WHOLE_SIZE ? buf->size - bi->offset : bi->range;
         slots[b->id + elem] = buf->gpuAddress() + bi->offset;
         sizes[b->id + elem] = (uint32_t)std::min<VkDeviceSize>(range, UINT32_MAX);
@@ -231,6 +297,7 @@ static void writeOne(KDescriptorSet* s, const KBinding* b, uint32_t elem, VkDesc
 VKFN(void) vkUpdateDescriptorSets(VkDevice, uint32_t writeCount, const VkWriteDescriptorSet* writes, uint32_t copyCount,
                                   const VkCopyDescriptorSet* copies) {
     KTRACE_FIRST();
+    std::lock_guard<std::mutex> lock(g_setsMutex);
     for (uint32_t w = 0; w < writeCount; w++) {
         const auto& wr = writes[w];
         auto* s = (KDescriptorSet*)wr.dstSet;
@@ -269,7 +336,17 @@ VKFN(void) vkUpdateDescriptorSets(VkDevice, uint32_t writeCount, const VkWriteDe
         const KBinding* db = dst->layout->find(cp.dstBinding);
         if (!sb || !db) continue;
         for (uint32_t i = 0; i < cp.descriptorCount; i++) {
-            dst->slots()[db->id + cp.dstArrayElement + i] = src->slots()[sb->id + cp.srcArrayElement + i];
+            uint64_t& to = dst->slots()[db->id + cp.dstArrayElement + i];
+            uint64_t from = src->slots()[sb->id + cp.srcArrayElement + i];
+            uint64_t zero = g_zeroPageAddress.load(std::memory_order_relaxed);
+            if (zero && isBuffer(db->type)) {
+                dst->destroyedSlots += (from == zero) - (to == zero);
+                if (from == zero) {
+                    dst->destroyedBinding = db->binding;
+                    dst->destroyedBytes = 0;
+                }
+            }
+            to = from;
             dst->sizes()[db->id + cp.dstArrayElement + i] = src->sizes()[sb->id + cp.srcArrayElement + i];
             if (sb->type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                 dst->slots()[db->samplerId + cp.dstArrayElement + i] = src->slots()[sb->samplerId + cp.srcArrayElement + i];

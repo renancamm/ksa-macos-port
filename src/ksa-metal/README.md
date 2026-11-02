@@ -196,6 +196,10 @@ SPIRV-Cross the same layout, so the translated shader reads the right slot. Shad
 `constant` memory, which lets the compiler load the resource handles like uniforms; only the ray tracing kernels
 read theirs as `device` memory, because their resources are passed on to functions.
 
+A descriptor can outlive its buffer. Destroying a buffer moves the descriptors left on it to 1 MiB of zeros with size
+0, and binding such a set writes one line to the log (`descriptor set 1 bound with a destroyed buffer`): a shader that
+reads it by mistake reads zeros, not what the allocator has put in that memory since.
+
 **Commands.** Vulkan programs record commands into command buffers and submit them; Metal works the same way with
 `MTLCommandBuffer`. KSA Metal encodes Metal commands immediately while the game records, so submitting is cheap.
 Render passes become Metal render pass descriptors.
