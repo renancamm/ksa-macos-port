@@ -51,6 +51,8 @@
 #   --trace            record an Instruments trace (Metal System Trace) of the run, parts marked; needs Xcode
 #   --trace-template <name>  another Instruments template for --trace (xcrun xctrace list templates)
 #   --capture          an Xcode GPU frame capture of the view at each place played (.gputrace, to open in Xcode)
+#   --catch <run>      a frame capture when a screenshot is under half its size in that clean run (at most 3, each
+#                      about 10 GB), to catch a picture that goes wrong now and then; needs 40 GB free
 #   --explore          start the benchmark's game paused, to fly the free camera around and capture places for the
 #                      tour (@key lines, for benchmark.txt) with benchkey [name] in its console; quit it when done
 #
@@ -235,9 +237,10 @@ HUD=""
 TRACE=""
 TEMPLATE="Metal System Trace"
 CAPTURE=""
+CATCH=""
 while [ $# -gt 0 ]; do
     case "$1" in
-        --hold | --set | --port | --settings | --compare | --app | --preset | --system | --repeat | --trace-template)
+        --hold | --set | --port | --settings | --compare | --catch | --app | --preset | --system | --repeat | --trace-template)
             [ $# -ge 2 ] || die "$1 needs a value. ./benchmark.sh --help lists the options."
             ;;
     esac
@@ -259,6 +262,7 @@ while [ $# -gt 0 ]; do
         --trace) TRACE=1 ;;
         --trace-template) TRACE=1; TEMPLATE="$2"; shift ;;
         --capture) CAPTURE=1 ;;
+        --catch) CATCH="$2"; shift ;;
         --explore) EXPLORE=1 ;;
         -h | --help) usage ;;
         -*) die "no option $1. ./benchmark.sh --help lists the options." ;;
@@ -374,8 +378,8 @@ driver_has() {
 free_gb() {
     df -g "${DOCS}" | awk 'NR == 2 { print $4 }'
 }
-if [ -n "${PROFILE}${HUD}${TRACE}${CAPTURE}" ]; then
-    [ "${REPEAT}" = 1 ] || die "--repeat measures without tools: use --profile, --hud, --trace or --capture in a run of their own."
+if [ -n "${PROFILE}${HUD}${TRACE}${CAPTURE}${CATCH}" ]; then
+    [ "${REPEAT}" = 1 ] || die "--repeat measures without tools: use --profile, --hud, --trace, --capture or --catch in a run of their own."
     driver_has ksaMtlFrameStats || die "the tools need the app's KSA Metal driver, which this app doesn't have."
 fi
 if [ -n "${PROFILE}" ]; then
@@ -395,6 +399,19 @@ if [ -n "${TRACE}" ]; then
     [ "${NAMED}" -gt 0 ] || die "a trace of a whole test takes tens of GB: choose sections or places (e.g. --fast jupiter2 --trace)."
     [ "$(free_gb)" -ge 10 ] || die "--trace needs 10 GB free on this disk ($(free_gb) GB free)."
     TOOLS+=("Instruments (${TEMPLATE})")
+fi
+if [ -n "${CATCH}" ]; then
+    [ -z "${CAPTURE}" ] || die "--catch and --capture both take frame captures: choose one."
+    driver_has ksaMtlCapture || die "this app's KSA Metal can't capture frames: update it with ./port.sh."
+    CATCH="$(run_folder "${CATCH}")"
+    [ -z "${NO_SHOTS}" ] || die "--catch compares screenshots: it can't go with --no-shots."
+    [ -d "${CATCH}" ] || die "--catch needs a run's folder, with its screenshots, not a zip."
+    ls "${CATCH}"/*_*.png > /dev/null 2>&1 || die "--catch: ${CATCH} has no screenshots to compare with."
+    CATCH="$(CDPATH='' cd -- "${CATCH}" && pwd)"  # absolute: the game starts from elsewhere
+    why="$(report comparable "${CATCH}" "$([ -n "${FAST}" ] && echo fast || echo cinematic)" "${ONLY[*]}")" ||
+        die "--catch: ${why}"
+    [ "$(free_gb)" -ge 40 ] || die "--catch needs 40 GB free on this disk ($(free_gb) GB free)."
+    TOOLS+=("frame captures of broken screenshots")
 fi
 if [ -n "${CAPTURE}" ]; then
     driver_has ksaMtlCapture || die "this app's KSA Metal can't capture frames: update it with ./port.sh."
@@ -601,6 +618,9 @@ fi
 if [ -n "${CAPTURE}" ]; then
     GAME_ENV+=(MTL_CAPTURE_ENABLED=1 KSA_BENCH_CAPTURE=1 KSA_MTL_LABELS=1)
 fi
+if [ -n "${CATCH}" ]; then
+    GAME_ENV+=(MTL_CAPTURE_ENABLED=1 "KSA_BENCH_CATCH=${CATCH}" KSA_MTL_LABELS=1)
+fi
 
 # Loading takes up to a few minutes on a first start (shader compilation), then the script's own length, plus the
 # time slower Macs spend catching up at checkpoints. Once playing, the mod touches its heartbeat file every second: a
@@ -609,7 +629,7 @@ length="$(awk -v play=" ${ONLY[*]%%_*} " '$1 == "section" { total += max; max = 
     on && $1 ~ /^[0-9.]+$/ && $1 > max { max = $1 } END { print int(total + max) }' "${SCRIPT}")"
 timeout=$((length * 2 + 300))
 hang="${KSA_BENCH_HANG_LIMIT:-60}"
-[ -z "${CAPTURE}" ] || hang=180
+[ -z "${CAPTURE}${CATCH}" ] || hang=180
 # Time warp can stall a frame for most of a minute before it goes on: past that, the sections played are kept
 for p in "${ONLY[@]}"; do
     ! grep -q "^section ${p%%_*} live" "${SCRIPT}" || hang="${KSA_BENCH_HANG_LIMIT:-180}"
@@ -806,7 +826,7 @@ if [ -n "${TRACE}" ] && [ -e "${OUT}/trace.trace" ]; then
     report trace "${OUT}" > /dev/null || warn "the trace's summary failed (the trace itself is fine)."
     info "Trace: ${OUT}/trace.trace (open it in Instruments; the parts are under Points of Interest), summary in trace.md"
 fi
-if [ -n "${CAPTURE}" ]; then
+if [ -n "${CAPTURE}${CATCH}" ]; then
     for c in "${OUT}"/*.gputrace; do
         [ -e "${c}" ] && info "Frame capture: ${c} (open it in Xcode)"
     done

@@ -14,6 +14,9 @@
 //                     game needs KSA_MTL_GPUPROF=<csv>)
 //   KSA_BENCH_CAPTURE optional: an Xcode GPU frame capture of the view at every checkpoint, <section>_<shot>.gputrace
 //                     (the game needs MTL_CAPTURE_ENABLED=1)
+//   KSA_BENCH_CATCH   optional: a clean run's folder: a screenshot under half the size of that run's same screenshot gets
+//                     an Xcode GPU frame capture of the view, <section>_<shot>.gputrace, at most MaxCatches a run (the
+//                     game needs MTL_CAPTURE_ENABLED=1)
 //   KSA_BENCH_WAIT    optional: a file to wait for in the game before playing (up to a minute), so that a tool the
 //                     script starts once the game is up (an Instruments trace) sees the whole run
 //   KSA_BENCH_TRACE   optional: write the camera's place every frame to trace.csv, to check its moves are smooth
@@ -97,7 +100,7 @@ public partial class Benchmark
         public bool CameraOnly => Steps.All(s => s.Words[0] is "@key" or "@shot" or "@measure");
     }
 
-    private enum Phase { Play, CatchUp, Settle, Measure, Capture, Shoot, Hold, NewWorld }
+    private enum Phase { Play, CatchUp, Settle, Measure, Capture, Shoot, Catch, Caught, CaughtImage, Hold, NewWorld }
 
     // What a catch-up of the game's clock leads to: a checkpoint's screenshot, the end of a jump of @time, or the end of
     // a @sync
@@ -112,6 +115,11 @@ public partial class Benchmark
     private FrameLog? _frames;
     private uint _profileFrames;
     private bool _capture;
+    // KSA_BENCH_CATCH: the clean run, and the captures taken so far (each several GB)
+    private const int MaxCatches = 3;
+    private const double CatchBelow = 0.5;
+    private string? _catchAgainst;
+    private int _catches;
     private bool _active;
     private Results? _results;
     private bool _fast, _shots = true;
@@ -240,6 +248,7 @@ public partial class Benchmark
         _resultsFile = $"results{_option("KSA_BENCH_RUN")}.json";
         uint.TryParse(_option("KSA_BENCH_PROFILE"), out _profileFrames);
         _capture = _option("KSA_BENCH_CAPTURE") is { Length: > 0 };
+        _catchAgainst = _option("KSA_BENCH_CATCH") is { Length: > 0 } clean ? clean : null;
         _waitFor = _option("KSA_BENCH_WAIT") is { Length: > 0 } wait ? wait : null;
         Directory.CreateDirectory(_outDir);
         _frames = new FrameLog(Path.Combine(_outDir, $"frames{_option("KSA_BENCH_RUN")}.csv"));
@@ -910,9 +919,50 @@ public partial class Benchmark
                     _sectionResult?.Screenshots.Add(_shotName);
                 else
                     _sectionResult?.Errors.Add($"{_shotName}: no screenshot");
+                if (_catchAgainst != null && File.Exists(path))
+                {
+                    _phase = Phase.Catch;
+                    _phaseEnds = wall + 10;
+                    return;
+                }
                 EndCheckpoint();
                 return;
             }
+            case Phase.Catch:
+                // The size counts once the driver has written all of the file
+                bool written = Images.Read(ShotPath()) != null;
+                if (!written && wall < _phaseEnds)
+                    return;
+                if (written && LooksBroken())
+                {
+                    if (_catches < MaxCatches && DriverStats.Capture(CapturePath(), 1))
+                    {
+                        _catches++;
+                        Log($"{_shotName}: far smaller than in the clean run, frame capture {Path.GetFileName(CapturePath())}");
+                        _phase = Phase.Caught;
+                        _phaseEnds = wall + 120;
+                        return;
+                    }
+                    Log($"{_shotName}: far smaller than in the clean run, no frame capture");
+                }
+                EndCheckpoint();
+                return;
+            case Phase.Caught:
+                if (DriverStats.Capturing() && wall < _phaseEnds)
+                    return;
+                if (!Directory.Exists(CapturePath()) && !File.Exists(CapturePath()))
+                    _sectionResult?.Errors.Add($"{_shotName}: no frame capture");
+                // Whether the fault lasted through the captured frame; in a folder of its own, not one of the run's screenshots
+                Directory.CreateDirectory(Path.Combine(_outDir, "caught"));
+                DriverStats.Screenshot(CaughtImagePath());
+                _phase = Phase.CaughtImage;
+                _phaseEnds = wall + 10;
+                return;
+            case Phase.CaughtImage:
+                if (Images.Read(CaughtImagePath()) == null && wall < _phaseEnds)
+                    return;
+                EndCheckpoint();
+                return;
             case Phase.NewWorld:
                 // A few frames for the game to take it in, the game stopped; steps then act on the new world
                 if (++_phaseFrames >= 3)
@@ -924,6 +974,19 @@ public partial class Benchmark
     private string ShotPath() => Path.Combine(_outDir, $"{_sectionResult?.Name}_{_shotName}.png");
 
     private string CapturePath() => Path.Combine(_outDir, $"{_sectionResult?.Name}_{_shotName}.gputrace");
+
+    private string CaughtImagePath() => Path.Combine(_outDir, "caught", Path.GetFileName(ShotPath()));
+
+    // Far smaller than the clean run's screenshot, at the same size in pixels: at another size, the bytes say nothing
+    private bool LooksBroken()
+    {
+        var clean = new FileInfo(Path.Combine(_catchAgainst!, Path.GetFileName(ShotPath())));
+        if (!clean.Exists || new FileInfo(ShotPath()).Length >= clean.Length * CatchBelow)
+            return false;
+        var shot = Images.Read(ShotPath());
+        var reference = Images.Read(clean.FullName);
+        return shot != null && reference != null && shot.Width == reference.Width && shot.Height == reference.Height;
+    }
 
     // With KSA_BENCH_CAPTURE, an Xcode frame capture of the view (one frame, the game paused) before the screenshot
     private void CaptureThenShoot(double wall)
