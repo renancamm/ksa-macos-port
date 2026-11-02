@@ -241,6 +241,19 @@ public static class Images
     }
 
     // The image with the blocks that changed tinted red and the rest dimmed, to see where two screenshots differ
+    // Whether an image is one colour from edge to edge: no pixel further than a few levels from the first. A view of space
+    // or a dark cabin has stars, a window or noise; a screen that drew nothing has none.
+    public static bool Blank(Image image)
+    {
+        var rgb = image.Rgb;
+        for (int i = 3; i < rgb.Length; i += 3)
+        {
+            if (Math.Abs(rgb[i] - rgb[0]) > 3 || Math.Abs(rgb[i + 1] - rgb[1]) > 3 || Math.Abs(rgb[i + 2] - rgb[2]) > 3)
+                return false;
+        }
+        return true;
+    }
+
     public static Image Mark(Image image, Difference d)
     {
         var rgb = new byte[image.Rgb.Length];

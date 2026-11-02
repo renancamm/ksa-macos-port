@@ -1,5 +1,5 @@
-// Measurement windows and the run's results file (written again after every section, so a crash keeps the ones
-// before it).
+// Measurement windows and the run's results file (written again after every part, so a crash keeps the ones before
+// it).
 //
 // Frame time is the time between two game frames, as the player feels it (it includes waiting for Vsync). GPU time
 // is the time the GPU spent on a presented frame; KSA Metal reports it a few frames late, which does not matter over

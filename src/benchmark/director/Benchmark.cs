@@ -883,6 +883,7 @@ public partial class Benchmark
                     return;
                 DriverStats.Marker(_still.Name, false);
                 _sectionResult?.Windows.Add(_still.Summarize());
+                _results?.Write(Path.Combine(_outDir, _resultsFile));
                 Log($"measured {_still.Name}: {_still.Frames} frames");
                 _still = null;
                 CaptureThenShoot(wall);
@@ -1043,6 +1044,7 @@ public partial class Benchmark
         {
             DriverStats.Marker(_window.Name, false);
             _sectionResult?.Windows.Add(_window.Summarize());
+            _results?.Write(Path.Combine(_outDir, _resultsFile));
             Log($"measured {_window.Name}: {_window.Frames} frames");
         }
         var followed = FollowedVehicle();

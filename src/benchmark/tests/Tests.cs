@@ -36,6 +36,12 @@ internal static class Tests
             ("a live part's numbers", LivePart),
             ("the Warp Test in the report", WarpReport),
             ("the PNG reader and writer", Png),
+            ("a run stopped on purpose", Stopped),
+            ("a screenshot of nothing", BlankShot),
+            ("runs that can't compare", NothingInCommon),
+            ("the list of runs", ListOfRuns),
+            ("the terminal's layout", Layout),
+            ("the tests' script", Script),
         };
         foreach (var (name, run) in tests)
         {
@@ -149,12 +155,20 @@ internal static class Tests
         var md = File.ReadAllText(Path.Combine(dir, "report.md"));
         Contains([md], "**Passed**", "report.md");
         Contains([md], "| earth | earth1 | ", "report.md's part");
+        Check(md.IndexOf("| earth | earth1 | ", StringComparison.Ordinal) < md.IndexOf("### This Mac and the run", StringComparison.Ordinal), "the numbers before the facts");
+        var page = File.ReadAllText(Path.Combine(dir, "report.html"));
+        Contains([page], "Passed", "report.html's verdict");
+        Contains([page], "earth1", "report.html's part");
+        var shown = Report("show", dir);
+        Contains([shown.Output], "earth1", "show: the numbers");
+        Check(!shown.Output.Contains("Mac17,2", StringComparison.Ordinal), "show: not the facts about the Mac");
+        Check(!shown.Output.Contains("|", StringComparison.Ordinal), "show: aligned columns, no Markdown");
     }
 
     private static void Problems()
     {
         var dir = Run("problems", system: ["Hooks: terrain cache: skipped (KSA's code moved); outline skip: on; HUD layout: failed (NullReferenceException)"],
-            run: ["Game: hung, stopped", "Alongside: another game", "Memory pressure: normal"]);
+            run: ["Game: hung, stopped", "Alongside-2: another game", "Memory pressure: normal"]);
         Results(dir, "results.json", 10, completed: false, section: s => s.Errors.Add("12.0 s: '@launch Rocket at Pad' failed"));
         File.WriteAllLines(Path.Combine(dir, "game.log"),
         [
@@ -183,7 +197,7 @@ internal static class Tests
     private static void Notes()
     {
         var dir = Run("notes", system: ["Power: Battery Power", "Low Power Mode: on", "KSA Metal switches: KSA_MTL_GPUPROF=x.csv", "Tools: Instruments"],
-            run: ["Game: quit normally", "Memory pressure: warning", "Swap used: 100.00 -> 600.00 MB"]);
+            run: ["Game: quit normally", "Memory pressure: warning", "Swap used: 100.00 -> 600.00 MB", "GPU before the run: 90 %"]);
         Results(dir, "results.json", 10, section: s => s.Windows[0].ShadersCompiled = 3);
         Equal(0, Report("report", dir).Status, "exit status: notes don't fail a run");
         var notes = Strings(ReportJson(dir)["notes"]);
@@ -191,7 +205,7 @@ internal static class Tests
         Contains(notes, "Low Power Mode was on", "Low Power Mode");
         Contains(notes, "KSA Metal switches were set (KSA_MTL_GPUPROF=x.csv)", "KSA Metal switches");
         Contains(notes, "measured with Instruments", "tools");
-        Contains(notes, "memory pressure (warning)", "memory pressure");
+        Contains(notes, "the GPU was busy before the run (90 %)", "a busy GPU");
         Contains(notes, "swapped memory to disk during the run (100.00 -> 600.00 MB)", "swap");
         Contains(notes, "shaders compiled while measuring earth earth1 (3)", "shaders compiled");
         Equal(7, notes.Length, "notes");
@@ -210,6 +224,13 @@ internal static class Tests
         Equal(12.0, (double?)part["frameMsMedian"], "frame time: the median of the runs");
         Equal("[10,20]", part["frameMsRange"]?.ToJsonString(), "frame time's range");
         Equal(5.0, (double?)part["hitches"], "hitches: the most of the runs");
+        // A part that never got to its speed in one repeat never did
+        var warp = Run("warp repeats");
+        Results(warp, "results.json", 10, section: s => s.Windows.Add(Warped(1)));
+        Results(warp, "results-2.json", 10, section: s => s.Windows.Add(Warped(0.5)));
+        Results(warp, "results-3.json", 10, section: s => s.Windows.Add(Warped(1)));
+        Report("report", warp);
+        Check(ReportJson(warp)["sections"]?[0]?["windows"]?[1]?["secondsToSpeed"] is null, "seconds to speed: never, in one of the runs");
         Equal(3, (int?)part["runs"], "the part's runs");
         Contains([File.ReadAllText(Path.Combine(dir, "report.md"))], "| 12.0 (10.0-20.0) |", "report.md's range");
     }
@@ -257,9 +278,13 @@ internal static class Tests
         Report("report", b);
         var (status, output) = Report("compare", a, b);
         Equal(0, status, "exit status: the same screenshots");
-        Contains([output], "| earth | earth1 | 10.0 | 11.0 | **+10% (-)** |", "a part 10% slower, marked");
-        Contains([output], "| earth_earth1.png | 0.00% | 0.0 | same |", "the same screenshot");
-        Contains([output], "Same settings.", "the settings");
+        Contains([output], "Same image (1 of 1 screenshots)", "the verdict");
+        Check(!output.Contains("|", StringComparison.Ordinal), "aligned columns, no Markdown");
+        var written = File.ReadAllText(Path.Combine(b, "compare.md"));
+        Contains([written], "| 10.0 | 11.0 | **10 % slower** |", "a part 10 % slower, marked");
+        Contains([written], "| earth_earth1.png | 0.00% | 0.0 | same |", "the same screenshot");
+        Contains([written], "Same Mac, same version, same settings.", "the settings");
+        Check(File.Exists(Path.Combine(b, "compare.html")), "the page");
 
         // Half the view changed
         var changed = Gradient(64, 48);
@@ -267,13 +292,14 @@ internal static class Tests
         Images.Write(Path.Combine(b, "earth_earth1.png"), changed);
         (status, output) = Report("compare", a, b);
         Equal(1, status, "exit status: a screenshot differs");
-        Contains([output], "**differs**", "the screenshot that differs");
+        Contains([output], "differs (up to 1%)", "the screenshot that differs");
         Check(File.Exists(Path.Combine(b, "diff", "earth_earth1.png")), "the marked copy in b/diff/");
 
         // Within noise
         var c = Run("c", frameMs: 10.2);
         Report("report", c);
-        Contains([Report("compare", a, c).Output], "| earth | earth1 | 10.0 | 10.2 | +2% |", "a change within noise, unmarked");
+        Report("compare", a, c);
+        Contains([File.ReadAllText(Path.Combine(c, "compare.md"))], "| 10.0 | 10.2 | +2 % |", "a change within noise, unmarked");
     }
 
     private static void CompareModes()
@@ -323,14 +349,16 @@ internal static class Tests
         Results(a, "results.json", 10, section: s => s.Windows.Add(Warped(1)));
         Report("report", a);
         var md = File.ReadAllText(Path.Combine(a, "report.md"));
-        Contains([md], "**Warp Test: 0.2 game days**", "the headline");
+        Contains([md], "**0.2 game days** in time warp", "the headline");
+        Contains([md], "Time warp: 0.2 game days", "the table's line");
         Contains([md], "| debris | 0.2 |", "the part's row");
         var b = Run("b", 10);
         Results(b, "results.json", 10, section: s => s.Windows.Add(Warped(0.5)));
         Report("report", b);
-        var (_, output) = Report("compare", a, b);
-        Contains([output], "| Warp part |", "the warp table of a comparison");
-        Contains([output], "**-50% (-)**", "a part at half the speed");
+        Report("compare", a, b);
+        var written = File.ReadAllText(Path.Combine(b, "compare.md"));
+        Contains([written], "| Warp part |", "the warp table of a comparison");
+        Contains([written], "**50 % slower**", "a part at half the speed");
         // The game's own errors in a live section are a note, after it a problem again
         var results = new Results(gpuTimes: false) { Completed = true };
         var live = new SectionResult("warpdebris") { Live = true };
@@ -361,6 +389,173 @@ internal static class Tests
         File.WriteAllBytes(path, File.ReadAllBytes(path)[..40]);
         Check(Images.Read(path) == null, "a PNG cut short (still being written) reads as none");
         Check(Images.Read(Path.Combine(_scratch, "none.png")) == null, "a missing file reads as none");
+    }
+
+    private static void Stopped()
+    {
+        var dir = Run("stopped", run: ["Game: was stopped with Ctrl-C", "Memory pressure: normal"]);
+        Results(dir, "results.json", 10, completed: false);
+        Equal(1, Report("report", dir).Status, "exit status: it did not play to its end");
+        var report = ReportJson(dir);
+        Equal(false, (bool?)report["passed"], "passed");
+        Equal(true, (bool?)report["stopped"], "stopped");
+        Equal(0, Strings(report["problems"]).Length, "no problems");
+        Contains([File.ReadAllText(Path.Combine(dir, "report.md"))], "**Stopped**", "report.md");
+        var esc = Run("esc");
+        Results(esc, "results.json", 10, completed: false, section: s => s.Errors.Add("stopped with Esc"));
+        Report("report", esc);
+        Equal(true, (bool?)ReportJson(esc)["stopped"], "stopped with Esc");
+        // Stopped, with something wrong besides
+        var both = Run("both", run: ["Game: was stopped with Ctrl-C"]);
+        Results(both, "results.json", 10, completed: false, section: s => s.Errors.Add("12.0 s: '@launch' failed"));
+        Report("report", both);
+        Contains(Strings(ReportJson(both)["problems"]), "'@launch' failed", "a real problem stays");
+        // A repeat stopped along the way is part of the same stop
+        var repeat = Run("repeat stopped", run: ["Game: quit normally", "Game 2: was stopped with Ctrl-C"]);
+        Results(repeat, "results-2.json", 10, completed: false);
+        Report("report", repeat);
+        Equal(0, Strings(ReportJson(repeat)["problems"]).Length, "a repeat stopped: no problems");
+    }
+
+    private static void BlankShot()
+    {
+        var black = new Image(32, 32, new byte[32 * 32 * 3]);
+        Check(Images.Blank(black), "all black");
+        var stars = new Image(32, 32, new byte[32 * 32 * 3]);
+        stars.Rgb[500] = 60;
+        Check(!Images.Blank(stars), "one star is a picture");
+        var dir = Run("2026-10-26_0200");
+        Images.Write(Path.Combine(dir, "earth_earth1.png"), black);
+        Equal(1, Report("finish", dir).Status, "exit status");
+        Contains(Strings(ReportJson(dir)["problems"]), "earth_earth1.png: the screenshot is one colour", "the problem");
+        Images.Write(Path.Combine(dir, "earth_earth1.png"), stars);
+        Report("finish", dir);
+        Equal(0, Strings(ReportJson(dir)["problems"]).Length, "a picture: no problem, and none left from before");
+    }
+
+    // Said before a run plays, and when comparing
+    private static void NothingInCommon()
+    {
+        var a = Run("a");
+        Report("report", a);
+        Equal(0, Report("comparable", a, "fast", "earth moon").Status, "a section in common");
+        Equal(0, Report("comparable", a, "fast", "earth_earth4").Status, "a place of a section in common");
+        var modes = Report("comparable", a, "cinematic", "earth");
+        Equal(2, modes.Status, "another mode");
+        Contains([modes.Output], "fast mode", "why");
+        var other = Report("comparable", a, "fast", "jupiter");
+        Equal(2, other.Status, "nothing in common");
+        Contains([other.Output], "nothing in common", "why");
+        var b = Path.Combine(_scratch, "b");
+        Directory.CreateDirectory(b);
+        var results = new Results(gpuTimes: false) { Mode = "fast", Completed = true };
+        results.Sections.Add(new SectionResult("jupiter") { Windows = { Warped(1) } });
+        results.Write(Path.Combine(b, "results.json"));
+        File.WriteAllLines(Path.Combine(b, "run.txt"), ["Game: quit normally"]);
+        Report("report", b);
+        var compared = Report("compare", a, b);
+        Equal(2, compared.Status, "compare: nothing in common");
+        Contains([compared.Output], "no part in common", "compare: why");
+        // The verdict: a slower run isn't good news, and what wasn't compared is said
+        var c = Run("c", frameMs: 10);
+        var d = Run("d", frameMs: 10);
+        File.Copy(Path.Combine(c, "system.txt"), Path.Combine(d, "system.txt"), true);
+        Results(c, "results.json", 10, section: s => s.Windows[0].GpuMsMedian = 10);
+        Results(d, "results.json", 10, section: s => s.Windows[0].GpuMsMedian = 20);
+        Report("report", c);
+        Report("report", d);
+        var slower = Report("compare", c, d);
+        Contains([slower.Output], "GPU time 100 % higher", "the verdict");
+        Contains([slower.Output], "No screenshots in a", "screenshots that weren't compared");
+        Contains([File.ReadAllText(Path.Combine(d, "compare.html"))], "status bad", "the page's verdict");
+    }
+
+    private static void ListOfRuns()
+    {
+        var folder = Path.Combine(_scratch, "benchmarks");
+        Directory.CreateDirectory(folder);
+        foreach (var name in new[] { "2026-10-01_0100", "2026-10-02_0100", "2026-10-03_0100" })
+        {
+            var dir = Run(Path.Combine("benchmarks", name), system: ["Test: mixed", "Preset: none, own settings"]);
+            Report("report", dir);
+        }
+        Directory.CreateDirectory(Path.Combine(folder, "2026-10-04_0100_hold"));
+        var (status, output) = Report("runs", folder, "2");
+        Equal(0, status, "exit status");
+        Contains([output], "2026-10-03_0100", "the newest");
+        Contains([output], "2026-10-02_0100", "the next");
+        Check(!output.Contains("2026-10-01_0100", StringComparison.Ordinal), "only as many as asked");
+        Contains([output], "Mixed Test", "the test's name");
+        Contains([output], "2 of 3 runs", "how many there are");
+    }
+
+    private static void Layout()
+    {
+        var text = KsaMetalBenchmarkReport.Terminal.Layout("## Title\n\n**Passed**\n\n| A | B |\n|---|---:|\n| long name | 1 |\n| x | 100 |\n");
+        Contains([text], "Title", "the heading");
+        Check(!text.Contains('#') && !text.Contains('*') && !text.Contains('|'), $"no Markdown left: {text}");
+        Contains([text], "long name    1", "columns aligned, numbers to the right");
+        Contains([text], "x          100", "columns aligned, numbers to the right");
+    }
+
+    // benchmark.txt itself, without a game: what would otherwise fail minutes into a run
+    private static void Script()
+    {
+        var root = Directory.GetCurrentDirectory();
+        while (root != null && !File.Exists(Path.Combine(root, "src/benchmark/benchmark.txt")))
+            root = Path.GetDirectoryName(root);
+        if (root == null)
+        {
+            Check(false, "no src/benchmark/benchmark.txt above this folder");
+            return;
+        }
+        var directives = System.Text.RegularExpressions.Regex.Matches(File.ReadAllText(Path.Combine(root, "src/benchmark/director/Directives.cs")), "case \"(@\\w+)\"")
+            .Select(m => m.Groups[1].Value).ToHashSet();
+        Check(directives.Contains("@shot"), "the director's directives are read");
+        var sections = new Dictionary<string, List<string[]>>();
+        var live = new HashSet<string>();
+        var tests = new List<string[]>();
+        List<string[]>? current = null;
+        foreach (var line in File.ReadLines(Path.Combine(root, "src/benchmark/benchmark.txt")).Select(l => l.Trim()))
+        {
+            var words = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (words.Length >= 2 && words[0] == "section")
+            {
+                Check(!sections.ContainsKey(words[1]), $"section {words[1]} twice");
+                sections[words[1]] = current = new List<string[]>();
+                if (words.Length > 2 && words[2] == "live")
+                    live.Add(words[1]);
+            }
+            else if (words.Length >= 2 && words[0] == "test")
+                tests.Add(words[1..]);
+            else if (words.Length >= 2 && current != null && double.TryParse(words[0], NumberStyles.Float, CultureInfo.InvariantCulture, out _))
+                current.Add(words);
+        }
+        Equal("mixed tour warp", string.Join(" ", tests.Select(t => t[0]).OrderBy(t => t, StringComparer.Ordinal)), "the tests");
+        foreach (var test in tests)
+        {
+            var forms = string.Join(' ', test[1..]).Split(" | ");
+            Equal(2, forms.Length, $"test {test[0]}: its two forms");
+            foreach (var section in forms.SelectMany(f => f.Split(' ', StringSplitOptions.RemoveEmptyEntries)))
+                Check(sections.ContainsKey(section), $"test {test[0]}: no section {section}");
+        }
+        foreach (var (name, steps) in sections)
+        {
+            var shots = steps.Where(s => s[1] == "@shot").Select(s => s[2]).ToList();
+            Equal(shots.Distinct().Count(), shots.Count, $"{name}: screenshots with one name");
+            foreach (var step in steps.Where(s => s[1].StartsWith('@')))
+                Check(directives.Contains(step[1]), $"{name}: no directive {step[1]}");
+            foreach (var step in steps.Where(s => s[1] == "@shot" && s.Length > 3))
+                Check(double.TryParse(step[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var limit) && limit is > 0 and <= 100, $"{name}: {step[2]}'s limit");
+            foreach (var step in steps.Where(s => s[1] == "@measure"))
+                Check(step.Length == 4 && double.TryParse(step[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds) && seconds > 0, $"{name}: {step[2]}'s time");
+            // A vehicle step's vehicle is launched in the section
+            var named = steps.Where(s => s[1] == "@launch").Select(s => Array.IndexOf(s, "as") is > 0 and var at ? s[at + 1] : s.FirstOrDefault(w => w.StartsWith("benchmark-", StringComparison.Ordinal)) ?? "").ToHashSet();
+            foreach (var step in steps.Where(s => s[1] is "@vehicle" or "@control"))
+                Check(named.Contains(step[2]), $"{name}: {step[1]} {step[2]}, which it doesn't launch");
+            if (live.Contains(name))
+                Check(steps.Where(s => s[1] == "@shot").All(s => s.Length > 3 && s[3] == "100"), $"{name}: a live section's screenshots differ from run to run: limit 100");
+        }
     }
 
     private static Image Gradient(int width, int height)
