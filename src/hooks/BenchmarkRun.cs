@@ -307,7 +307,7 @@ internal static class BenchmarkRun
 
     private static string Home => Environment.GetEnvironmentVariable("HOME") ?? "~";
     private static string App => Path.GetFullPath(Path.Combine(Hooks.Resources, "..", ".."));
-    private static string ConsoleLog => Path.Combine(Path.GetDirectoryName(PortSettings.FilePath) ?? Constants.DocumentsFolderPath, "logs", "console.log");
+    internal static string ConsoleLog => Path.Combine(Path.GetDirectoryName(PortSettings.FilePath) ?? Constants.DocumentsFolderPath, "logs", "console.log");
 
     // In the running game
     private static void BeginInGame()

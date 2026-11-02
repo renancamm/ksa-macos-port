@@ -86,6 +86,7 @@ stalls | number:0:10000 | 0 | KSA_MTL_STALLS | | restart | | | Log what blocks t
 frames | text | | KSA_MTL_FRAMES | | restart | | | A CSV file of every frame: CPU frame time, GPU busy time, draws, dispatches and allocated memory.
 latency | text | | KSA_MTL_LATENCY | | restart | | | A CSV file of every frame's timing: when it began, was presented, was done on the GPU and was shown.
 labels | bool | false | KSA_MTL_LABELS | | restart | | | Name every encoder after its pipelines, for Instruments, the Metal HUD and Xcode's frame capture.
+frame_capture | bool | false | MTL_CAPTURE_ENABLED | | restart | | | Allow Xcode frame captures, for the console's framecapture command; encoders are named too (KSA_MTL_LABELS=0 turns that off).
 gpu_profile | text | | KSA_MTL_GPUPROF | | restart | | | A CSV file of the GPU time of every encoder, for 300 frames from present 2000.
 gpu_profile_frames | text | | KSA_MTL_GPUPROF_FRAMES | gpu_profile | restart | | | <first>,<count>: other frames for gpu_profile.
 gpu_profile_split | bool | false | KSA_MTL_GPUPROF_SPLIT | gpu_profile | restart | | | Give every draw and dispatch its own encoder, so the profiler times each one (times grow).

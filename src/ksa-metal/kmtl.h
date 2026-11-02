@@ -705,7 +705,8 @@ id<MTLBuffer> kmtlTessStats(KDevice* dev);
 uint32_t kmtlTessCap(KDevice* dev);
 
 // Frame instruments (instruments.mm)
-void kmtlOnPresent(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb);
+void kmtlOnPresent(KDevice* dev, KSwapchain* swapchain, KImage* image, id<MTLCommandBuffer> cb);
+void kmtlOnSwapchainDestroyed(KSwapchain* swapchain);
 void kmtlCountWork(uint32_t draws, uint32_t dispatches, uint32_t passes);
 void kmtlNoteGpuTime(id<MTLCommandBuffer> cb);  // from completion handlers: GPU busy time for the frame log
 double kmtlTakeFrameGpuTime();  // one frame's GPU busy time in seconds (since the last present completed), reset

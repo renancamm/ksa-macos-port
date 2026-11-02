@@ -56,7 +56,7 @@ public partial class Benchmark
     }
 
     // The camera's place as a key: the celestial it follows (or the nearest), altitude above sea level
-    private static string? CurrentKey()
+    public static string? CurrentKey()
     {
         var camera = Program.GetHoveredCamera();
         var body = camera?.Following as Celestial ?? Program.GetNearbyCelestial();

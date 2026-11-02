@@ -82,8 +82,10 @@ struct KsaMtlFrameStats {
 };
 static KsaMtlFrameStats g_lastFrame{};
 static std::vector<std::string> g_shotRequests;
-// Frame capture: the file, the presents left to capture (0 when none is running), whether one waits to start
+// Frame capture: the file, the swapchain whose presents count (a pop-out window's come in the same frame), the presents
+// left to capture (0 when none is running), whether one waits to start
 static std::string g_capturePath;
+static KSwapchain* g_captureSwapchain = nullptr;
 static std::atomic<uint32_t> g_captureFrames{0};
 static std::atomic<bool> g_captureStart{false}, g_capturing{false};
 
@@ -131,9 +133,10 @@ KMTL_EXPORT bool ksaMtlCapture(const char* path, uint32_t frames) {
 KMTL_EXPORT bool ksaMtlCapturing() { return g_capturing; }
 
 // At a present: starts a requested capture (the next frames' command buffers go into it) or ends a running one
-static void captureAtPresent(KDevice* dev) {
+static void captureAtPresent(KDevice* dev, KSwapchain* swapchain) {
     MTLCaptureManager* manager = [MTLCaptureManager sharedCaptureManager];
     if (g_captureStart.exchange(false)) {
+        g_captureSwapchain = swapchain;
         MTLCaptureDescriptor* d = [MTLCaptureDescriptor new];
         d.captureObject = dev->mtl;
         d.destination = MTLCaptureDestinationGPUTraceDocument;
@@ -148,11 +151,18 @@ static void captureAtPresent(KDevice* dev) {
         }
         return;
     }
-    if (g_captureFrames && manager.isCapturing && --g_captureFrames == 0) {
+    // With its swapchain gone (a resize, a closed pop-out), any present counts, or the capture would never end
+    if ((!g_captureSwapchain || swapchain == g_captureSwapchain) && g_captureFrames && manager.isCapturing &&
+        --g_captureFrames == 0) {
         [manager stopCapture];
         KLOG(0, "frame capture written: %s", g_capturePath.c_str());
         g_capturing = false;
     }
+}
+
+void kmtlOnSwapchainDestroyed(KSwapchain* swapchain) {
+    std::lock_guard<std::mutex> lock(g_frameMutex);
+    if (g_captureSwapchain == swapchain) g_captureSwapchain = nullptr;
 }
 
 // Thermal state and memory footprint, sampled every 30 presents (a system call each)
@@ -325,7 +335,7 @@ static void takeShot(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb, const
     });
 }
 
-void kmtlOnPresent(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb) {
+void kmtlOnPresent(KDevice* dev, KSwapchain* swapchain, KImage* image, id<MTLCommandBuffer> cb) {
     ensureInstruments();
     std::lock_guard<std::mutex> lock(g_frameMutex);
     g_presents++;
@@ -364,7 +374,7 @@ void kmtlOnPresent(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb) {
         lastPresents = g_presents;
         lastTime = now;
     }
-    if (g_capturing) captureAtPresent(dev);
+    if (g_capturing) captureAtPresent(dev, swapchain);
     if (g_frameCsv) {
         fprintf(g_frameCsv, "%llu,%.3f,%u,%u,%u,%u,%lld,%.3f\n", (unsigned long long)g_presents, ms, g_frameDraws, g_frameDispatches,
                 g_framePasses, g_frameSubmits, (long long)g_lastFrame.allocatedMb, gpu);

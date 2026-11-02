@@ -72,6 +72,7 @@ public static class Hooks
         Run("presets", "presets", true, Presets.Apply);
         Run("Mac Port tab", "mac_port_tab", true, MacPortTab.Apply);
         Run("benchmark", "benchmark", true, BenchmarkRun.Apply);
+        Run("frame capture command", "frame_capture_command", true, FrameCaptureCommand.Apply);
     }
 
     // apply(harmony) patches and returns what it did ("on", "off", ...); it throws Skip when the game's code isn't what
