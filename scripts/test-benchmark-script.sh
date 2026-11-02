@@ -192,11 +192,16 @@ wait "${script}"
 STATUS=$?
 OUTPUT="$(cat "${T}/stopped.txt")"
 expect "Ctrl-C" 1 "you stopped the run"
-pgrep -f "${APP}/Contents/MacOS/KSA" > /dev/null && fail "Ctrl-C left the game running"
+pgrep -f "${APP}/Contents/MacOS/KSA" > /dev/null
+[ $? = 1 ] || fail "Ctrl-C left the game running (or pgrep can't look)"
 
 # Clean: only runs, the oldest
 B="${T}/home/Documents/My Games/Kitten Space Agency/benchmarks"
-mkdir "${B}/2020-01-01_0100" "${B}/2020-01-02_0100_hold" "${B}/2020-01-03_0100_explore" "${B}/a baseline"
+mkdir "${B}/2020-01-01_0100" "${B}/2020-01-02_0100_hold" "${B}/2020-01-03_0100_explore" "${B}/a baseline" "${B}/zz renamed"
+# A renamed run isn't the last one
+cp "${DIR}/report.json" "${B}/zz renamed/"
+bench report last
+case "${OUTPUT}" in *"zz renamed"*) fail "last took a folder that isn't named by its date: ${OUTPUT}" ;; esac
 touch "${B}/stray.zip"
 HOME="${T}/home" "${BENCH}" clean --keep 1 < /dev/null > "${T}/clean.txt" 2>&1
 STATUS=$?

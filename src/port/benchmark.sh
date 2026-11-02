@@ -102,7 +102,7 @@ run_folder() {
     case "${name}" in
         last | previous)
             [ "${name}" = last ] || skip=1
-            for d in $(ls -1 "${BENCHMARKS}" 2> /dev/null | sort -r); do
+            for d in $(ls -1 "${BENCHMARKS}" 2> /dev/null | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{4}' | sort -r); do
                 [ -f "${BENCHMARKS}/${d}/report.json" ] || continue
                 if [ "${skip}" = 0 ]; then
                     echo "${BENCHMARKS}/${d}"

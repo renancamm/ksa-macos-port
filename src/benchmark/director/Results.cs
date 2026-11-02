@@ -199,7 +199,12 @@ public class Results
 
     public Results(bool gpuTimes) => GpuTimes = gpuTimes;
 
-    public void Write(string path) => File.WriteAllText(path, JsonSerializer.Serialize(this, Options));
+    // In one go: a game that stops while this writes leaves the file before it, not half of one
+    public void Write(string path)
+    {
+        File.WriteAllText(path + ".new", JsonSerializer.Serialize(this, Options));
+        File.Move(path + ".new", path, overwrite: true);
+    }
 }
 
 // Every frame of the run, one line each (frames.csv): the raw data the parts' summaries come from, kept so that a

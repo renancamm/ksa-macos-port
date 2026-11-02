@@ -29,7 +29,7 @@ namespace KsaMetalHooks;
 // The benchmark's vehicles are added to the game's vehicle saves from the app (Contents/Resources/Benchmark/vehicles).
 internal static class BenchmarkRun
 {
-    public record Result(string Folder, bool Passed, string Summary, string Outcome, string Date);
+    public record Result(string Folder, bool Passed, bool Stopped, string Summary, string Outcome, string Date);
 
     private enum Mode { None, Script, InGame, Restarted }
 
@@ -124,7 +124,8 @@ internal static class BenchmarkRun
                 _lastLooked = true;
                 var runs = Path.Combine(Constants.DocumentsFolderPath, "benchmarks");
                 var newest = Directory.Exists(runs)
-                    ? Directory.GetDirectories(runs).Where(d => File.Exists(Path.Combine(d, "report.json"))).OrderBy(d => d, StringComparer.Ordinal).LastOrDefault()
+                    ? Directory.GetDirectories(runs).Where(d => Regex.IsMatch(Path.GetFileName(d), @"^\d{4}-\d{2}-\d{2}_\d{4}") && File.Exists(Path.Combine(d, "report.json")))
+                        .OrderBy(d => d, StringComparer.Ordinal).LastOrDefault()
                     : null;
                 if (newest != null)
                     _last = ReadResult(newest);
@@ -241,6 +242,7 @@ internal static class BenchmarkRun
                     log.Seek(_mode == Mode.InGame ? Math.Min(_logStart, log.Length) : 0, SeekOrigin.Begin);
                     File.WriteAllText(Path.Combine(_out, "game.log"), new StreamReader(log).ReadToEnd().Replace(Home, "~"));
                 }
+                Report(["system", _out, App, .. SystemFacts()]);
                 Report(["finish", _out]);
             }
             catch (Exception e)
@@ -464,7 +466,7 @@ internal static class BenchmarkRun
             return;
         }
         _mode = Mode.None;
-        TimedAlert.Create(_last.Passed ? "Benchmark done: Settings > Mac Port opens its report" : "Benchmark done, with problems: Settings > Mac Port opens its report",
+        TimedAlert.Create(_last.Passed ? "Benchmark done: Settings > Mac Port opens its report" : _last.Stopped ? "Benchmark stopped: Settings > Mac Port opens what it measured" : "Benchmark done, with problems: Settings > Mac Port opens its report",
             default, 8);
     }
 
@@ -477,15 +479,16 @@ internal static class BenchmarkRun
             var problems = (report["problems"] as JsonArray ?? new JsonArray()).Select(p => (string?)p).OfType<string>().ToList();
             var summary = $"{Path.GetFileName(folder)}: " + (passed ? "passed." : problems.Count == 0 ? "stopped." : "problems: " + string.Join("; ", problems.Take(3)) +
                 (problems.Count > 3 ? $" and {problems.Count - 3} more." : "."));
-            var outcome = passed ? "Passed" : report["stopped"]?.GetValue<bool>() == true ? "Stopped" : problems.Count == 1 ? "1 problem" : $"{problems.Count} problems";
+            bool stopped = report["stopped"]?.GetValue<bool>() == true;
+            var outcome = passed ? "Passed" : stopped ? "Stopped" : problems.Count == 1 ? "1 problem" : $"{problems.Count} problems";
             // Its main number: "Passed, 30 FPS"
             if ((string?)report["headline"] is { Length: > 0 } headline)
                 outcome += $", {headline}";
-            return new Result(folder, passed, summary + " Opens its page, with its numbers and screenshots.", outcome, RunDate(folder));
+            return new Result(folder, passed, stopped, summary + " Opens its page, with its numbers and screenshots.", outcome, RunDate(folder));
         }
         catch (Exception)
         {
-            return new Result(folder, false, $"{Path.GetFileName(folder)}: no report (the run did not finish).", "Did not finish", RunDate(folder));
+            return new Result(folder, false, false, $"{Path.GetFileName(folder)}: no report (the run did not finish).", "Did not finish", RunDate(folder));
         }
     }
 

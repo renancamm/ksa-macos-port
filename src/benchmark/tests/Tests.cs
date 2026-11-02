@@ -23,6 +23,8 @@ internal static class Tests
     private static int Main()
     {
         _scratch = Path.Combine(Path.GetTempPath(), $"ksa-benchmark-tests-{Environment.ProcessId}");
+        // Nothing of this Mac's: finish looks for crash reports in the home folder
+        Environment.SetEnvironmentVariable("HOME", _scratch);
         var tests = new (string Name, Action Run)[]
         {
             ("a run that passed", Passed),
@@ -210,6 +212,13 @@ internal static class Tests
         Contains(notes, "swapped memory to disk during the run (100.00 -> 600.00 MB)", "swap");
         Contains(notes, "shaders compiled while measuring earth earth1 (3)", "shaders compiled");
         Equal(8, notes.Length, "notes");
+        // Two crash reports in a run don't stop the report; nor does a results file cut short
+        File.WriteAllLines(Path.Combine(dir, "run.txt"), ["Game: crashed (signal 6)", "Crash report: a.ips", "Crash report: b.ips"]);
+        Report("report", dir);
+        Contains(Strings(ReportJson(dir)["notes"]), "crash report, b.ips", "the second crash report");
+        File.WriteAllText(Path.Combine(dir, "results-2.json"), "{\"sections\":[{");
+        Report("report", dir);
+        Contains(Strings(ReportJson(dir)["problems"]), "results-2.json can't be read", "a results file cut short");
     }
 
     private static void Repeats()
@@ -447,7 +456,6 @@ internal static class Tests
         var a = Run("a");
         Report("report", a);
         Equal(0, Report("comparable", a, "fast", "earth moon").Status, "a section in common");
-        Equal(0, Report("comparable", a, "fast", "earth_earth4").Status, "a place of a section in common");
         var modes = Report("comparable", a, "cinematic", "earth");
         Equal(2, modes.Status, "another mode");
         Contains([modes.Output], "fast mode", "why");
@@ -475,6 +483,24 @@ internal static class Tests
         var slower = Report("compare", c, d);
         Contains([slower.Output], "GPU time 100 % higher", "the verdict");
         Contains([slower.Output], "No screenshots in a", "screenshots that weren't compared");
+        // The newer run decides a view's limit, and a has shots b lacks: said in a sentence
+        var old = Run("old");
+        Results(old, "results.json", 10, section: s => s.ShotLimits["earth1"] = 70);
+        var fresh = Run("fresh");
+        Results(fresh, "results.json", 10);
+        var picture = Gradient(64, 48);
+        Images.Write(Path.Combine(old, "earth_earth1.png"), picture);
+        Report("report", old);
+        Report("report", fresh);
+        var missing = Report("compare", old, fresh);
+        Contains([missing.Output], "b has no PNG", "no pictures in b");
+        var changedPicture = Gradient(64, 48);
+        Array.Fill(changedPicture.Rgb, (byte)255, 0, changedPicture.Rgb.Length / 2);
+        Images.Write(Path.Combine(fresh, "earth_earth1.png"), changedPicture);
+        Equal(1, Report("compare", old, fresh).Status, "an old run's loose limit doesn't hide a change");
+        // Fast mode's places have to be among those measured
+        Equal(2, Report("comparable", a, "fast", "earth_earth9").Status, "a place that run didn't measure");
+        Equal(0, Report("comparable", a, "fast", "earth_earth1 earth_earth9").Status, "one that it did");
         Contains([File.ReadAllText(Path.Combine(d, "compare.html"))], "status bad", "the page's verdict");
     }
 

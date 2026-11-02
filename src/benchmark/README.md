@@ -214,7 +214,8 @@ of them to change.
 
 A run fails when the game crashed or hung, a step of the test failed, a vehicle broke apart before it should, a
 screenshot is missing, the game's log has errors (during the Warp Test the game's own errors are only noted, since settings that hold warp back cause them), one of the hooks was skipped (the game's code it changes has moved) or
-failed, the game could not read the run's settings, a screenshot is one colour from edge to edge, or another game ran at
+failed, the game could not read the run's settings, a screenshot is one colour from edge to edge or 30 % of it or more
+pure white (a real view reaches about a fifth), or another game ran at
 the same time; the script then exits with 1. A run you stop (Esc, Ctrl-C) ends with what it measured and exits with 1 too.
 Before the game starts, the script refuses what would waste the run: a value a port setting can't take (the game would
 ignore it and play unchanged), a `--compare` run that shares nothing with this one or played in another mode, an app or a

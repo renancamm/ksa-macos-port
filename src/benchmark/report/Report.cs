@@ -88,11 +88,24 @@ public static class Program
         foreach (var (key, value) in KeyValues(Path.Combine(dir, "system.txt")))
             system[key] = value;
         // The run's results, and those of its repeats
+        var unreadable = new List<string>();
         var runs = Directory.GetFiles(dir, "results*.json")
             .Select(f => (file: f, n: Path.GetFileNameWithoutExtension(f) is var name && name.StartsWith("results-", StringComparison.Ordinal) && int.TryParse(name[8..], out var k) ? k : 1))
-            .OrderBy(r => r.n).Select(r => JsonNode.Parse(File.ReadAllText(r.file)) as JsonObject ?? new JsonObject()).ToList();
+            .OrderBy(r => r.n).Select(r =>
+            {
+                try
+                {
+                    return JsonNode.Parse(File.ReadAllText(r.file)) as JsonObject ?? new JsonObject();
+                }
+                catch (JsonException)
+                {
+                    unreadable.Add($"{Path.GetFileName(r.file)} can't be read: the game stopped while writing it");
+                    return new JsonObject();
+                }
+            }).ToList();
         var results = runs.Count > 0 ? runs[0] : new JsonObject();
         var problems = Problems(dir, results);
+        problems.AddRange(unreadable);
         for (int i = 1; i < runs.Count; i++)
         {
             if (runs[i]["completed"]?.GetValue<bool>() != true)
@@ -216,8 +229,8 @@ public static class Program
     private static int Finish(string dir)
     {
         var system = Path.Combine(dir, "system.txt");
-        // The run started when system.txt was written: crash reports since then are the run's
-        var started = File.GetLastWriteTimeUtc(system);
+        // The run started when its folder was made: crash reports made since then are the run's
+        var started = Directory.GetCreationTimeUtc(dir);
         var have = KeyValues(system).Select(kv => kv.key).ToHashSet();
         var log = Path.Combine(dir, "game.log");
         var lines = File.Exists(log) ? File.ReadAllLines(log) : [];
@@ -233,8 +246,8 @@ public static class Program
         BlankShots(dir);
         // What macOS wrote about a crash of the game, for the report to name
         var crashes = CrashReports(started);
-        if (crashes.Count > 0)
-            File.AppendAllLines(Path.Combine(dir, "run.txt"), crashes.Select(c => $"Crash report: {Path.GetFileName(c)}"));
+        var known = KeyValues(Path.Combine(dir, "run.txt")).Where(kv => kv.key == "Crash report").Select(kv => kv.value).ToHashSet();
+        File.AppendAllLines(Path.Combine(dir, "run.txt"), crashes.Select(Path.GetFileName).OfType<string>().Where(c => !known.Contains(c)).Select(c => $"Crash report: {c}"));
         int status = Report(dir);
         Package(dir, crashes);
         return status;
@@ -262,8 +275,23 @@ public static class Program
     private static List<string> CrashReports(DateTime started)
     {
         var reports = Path.Combine(Environment.GetEnvironmentVariable("HOME") ?? "", "Library", "Logs", "DiagnosticReports");
+        bool TheGame(string crash)
+        {
+            try
+            {
+                return Regex.IsMatch(File.ReadAllText(crash), "\"procName\" *: *\"dotnet\"|KSA\\.dll|StarMap");
+            }
+            catch (IOException)
+            {
+                return false;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return false;
+            }
+        }
         return (Directory.Exists(reports) ? Directory.GetFiles(reports, "*.ips") : [])
-            .Where(crash => File.GetLastWriteTimeUtc(crash) >= started && Regex.IsMatch(File.ReadAllText(crash), "\"procName\" *: *\"dotnet\"|KSA\\.dll|StarMap")).ToList();
+            .Where(crash => File.GetCreationTimeUtc(crash) >= started && TheGame(crash)).ToList();
     }
 
     // <dir>/<name>.zip: what a shared run holds, with the game's crash reports of the run
@@ -389,7 +417,7 @@ public static class Program
             notes.Add("played in a running game, after what was played before: its numbers compare best with runs started the same way");
         if (Sys("Tools") is { Length: > 0 } tools && tools != "none")
             notes.Add($"measured with {tools}: their own cost is in the numbers");
-        var run = KeyValues(Path.Combine(dir, "run.txt")).ToDictionary(kv => kv.key, kv => kv.value);
+        var run = KeyValues(Path.Combine(dir, "run.txt")).GroupBy(kv => kv.key).ToDictionary(g => g.Key, g => g.Last().value);
         // "warning" is how a Mac with little memory runs this game, nearly always: only the worst level says something
         if (run.TryGetValue("Memory pressure", out var pressure) && pressure == "critical")
             notes.Add($"macOS reported memory pressure ({pressure}): the game may have had to wait for memory, which shows as stutters");
@@ -398,7 +426,7 @@ public static class Program
         if (run.TryGetValue("Swap used", out var swap) && swap.Split(' ') is [var from, "->", var to, ..] &&
             double.TryParse(from, out var f) && double.TryParse(to, out var t) && t - f > 256)
             notes.Add($"the Mac swapped memory to disk during the run ({swap})");
-        foreach (var (_, crash) in KeyValues(Path.Combine(dir, "run.txt")).Where(kv => kv.key == "Crash report"))
+        foreach (var (_, crash) in KeyValues(Path.Combine(dir, "run.txt")).Where(kv => kv.key == "Crash report").TakeLast(3))
             notes.Add($"macOS wrote a crash report, {crash}, in ~/Library/Logs/DiagnosticReports (the zip holds it)");
         var hot = new List<string>();
         var compiled = new List<string>();
@@ -665,7 +693,8 @@ public static class Program
     private static int Runs(string folder, int count)
     {
         var all = Directory.Exists(folder)
-            ? Directory.GetDirectories(folder).Where(d => File.Exists(Path.Combine(d, "report.json"))).OrderByDescending(d => Path.GetFileName(d), StringComparer.Ordinal).ToList()
+            ? Directory.GetDirectories(folder).Where(d => Regex.IsMatch(Path.GetFileName(d), @"^\d{4}-\d{2}-\d{2}_\d{4}") && File.Exists(Path.Combine(d, "report.json")))
+                .OrderByDescending(d => Path.GetFileName(d), StringComparer.Ordinal).ToList()
             : new List<string>();
         if (all.Count == 0)
         {
@@ -709,9 +738,7 @@ public static class Program
         // The sections played, whole or up to a place
         static HashSet<string> Names(string text) => text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(n => n.Split('_')[0]).ToHashSet();
         string other = (string?)report["mode"] ?? "cinematic";
-        // Live sections play the same in both modes
-        bool sharesLive = LiveSections(report).Overlaps(Names(sections));
-        if (other != mode && !sharesLive)
+        if (other != mode)
         {
             Console.WriteLine($"that run played in {other} mode and this one plays in {mode} mode: neither their numbers nor their screenshots would compare.");
             return 2;
@@ -720,6 +747,15 @@ public static class Program
         if (!played.Overlaps(Names(sections)))
         {
             Console.WriteLine($"that run played {string.Join(" ", played)} and this one plays {sections}: they have nothing in common.");
+            return 2;
+        }
+        // Fast mode measures the places chosen: places of a section still have to be among those that run measured
+        var parts = Windows(report).Keys.ToHashSet();
+        var wanted = sections.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (mode == "fast" && wanted.All(n => n.Contains('_')) &&
+            !wanted.Any(n => parts.Contains((n[..n.IndexOf('_')], n[(n.IndexOf('_') + 1)..]))))
+        {
+            Console.WriteLine($"that run didn't measure {sections}: they have no part in common.");
             return 2;
         }
         return 0;
@@ -815,7 +851,7 @@ public static class Program
         else
         {
             (differ, shotsTable) = Screenshots(dirA, dirB, modeA == "fast" ? FastShotLimit : CinematicShotLimit, shots);
-            // Nothing compared: the table is the sentence that says why
+            // Nothing compared: the sentence that says why
             if (shots.Count == 0)
                 shotsNote = shotsTable;
         }
@@ -944,7 +980,7 @@ public static class Program
     {
         var parts = Windows(ra);
         var after = Windows(rb);
-        var plain = parts.Where(kv => after.ContainsKey(kv.Key)).ToList();
+        var plain = parts.Where(kv => kv.Value["gameDays"] is null && after.ContainsKey(kv.Key)).ToList();
         if (plain.Count > 0)
         {
             md.AppendLine("| Section | Part | GPU ms a | GPU ms b | Change | Frame ms a | Frame ms b | Change |");
@@ -981,13 +1017,13 @@ public static class Program
         var parts = a.Where(kv => kv.Value["gameDays"] is not null && b.TryGetValue(kv.Key, out var w) && w["gameDays"] is not null).ToList();
         if (parts.Count == 0)
             return;
-        md.AppendLine("| Warp part | Game days a | Game days b | Speed a | Speed b | Change |");
-        md.AppendLine("|---|---:|---:|---:|---:|---:|");
+        md.AppendLine("| Warp part | Game days a | Game days b | Speed a | Speed b | Change | GPU ms a | GPU ms b |");
+        md.AppendLine("|---|---:|---:|---:|---:|---:|---:|---:|");
         foreach (var (key, wa) in parts)
         {
             var wb = b[key];
             md.AppendLine($"| {key.part} | {Num(wa["gameDays"], "F1")} | {Num(wb["gameDays"], "F1")} | {Num(wa["speed"], "F0")} | {Num(wb["speed"], "F0")} | " +
-                          $"{Change(wa["speed"], wb["speed"], wa["speedRange"], wb["speedRange"], moreIsBetter: true)} |");
+                          $"{Change(wa["speed"], wb["speed"], wa["speedRange"], wb["speedRange"], moreIsBetter: true)} | {Num(wa["gpuMsMedian"], "F1")} | {Num(wb["gpuMsMedian"], "F1")} |");
         }
         md.AppendLine();
     }
@@ -1005,17 +1041,16 @@ public static class Program
                 : "No screenshots in a to compare.");
             return (0, md.ToString());
         }
-        // The limits of screenshots that change from run to run (in either run's sections)
+        // The limits of screenshots that change from run to run
+        // The newer run's say, so that a limit tightened since an older run counts: a's only for sections b didn't play
         var limits = new Dictionary<string, double>();
-        foreach (var dir in new[] { a, b })
+        var played = Sections(Load(b) ?? new JsonObject()).OfType<JsonObject>().Select(s => (string?)s["name"]).ToHashSet();
+        foreach (var (dir, onlyOthers) in new[] { (a, true), (b, false) })
         {
-            foreach (var section in Sections(Load(dir) ?? new JsonObject()).OfType<JsonObject>())
+            foreach (var section in Sections(Load(dir) ?? new JsonObject()).OfType<JsonObject>().Where(s => !onlyOthers || !played.Contains((string?)s["name"])))
             {
                 foreach (var (shot, limit) in section["shotLimits"] as JsonObject ?? new JsonObject())
-                {
-                    var name = $"{section["name"]}_{shot}.png";
-                    limits[name] = Math.Max(limits.GetValueOrDefault(name, shotLimit), limit?.GetValue<double>() ?? 0);
-                }
+                    limits[$"{section["name"]}_{shot}.png"] = limit?.GetValue<double>() ?? shotLimit;
             }
         }
         var diffDir = Path.Combine(b, "diff");
@@ -1056,6 +1091,8 @@ public static class Program
             Directory.CreateDirectory(diffDir);
             Images.Write(Path.Combine(diffDir, name), Images.Mark(ib, d));
         }
+        if (results.Count == 0)
+            return (0, "Screenshots not compared: b has no PNG of a's screenshots (a run without screenshots, or a shared zip's).\n");
         md.AppendLine();
         md.AppendLine($"Changed: the share of the screenshot's {Images.Block}-pixel blocks whose colour moved by more than {Images.BlockLimit:F0} " +
                       $"(of 255); over {shotLimit:F0}% it differs (more for views that physics, particles or the sea change every time).");
@@ -1077,8 +1114,13 @@ public static class Program
             md.AppendLine();
         }
         int same = shots.Count(s => s.State == "same"), free = shots.Count(s => s.State == "free");
+        var told = new List<string>();
         if (same > 0)
-            md.AppendLine($"{same} screenshot{(same > 1 ? "s" : "")} the same{(free > 0 ? $", {free} that may change from run to run not compared" : "")}.");
+            told.Add($"{same} screenshot{(same > 1 ? "s" : "")} the same");
+        if (free > 0)
+            told.Add($"{free} that may change from run to run not compared");
+        if (told.Count > 0)
+            md.AppendLine(string.Join(", ", told) + ".");
         return md.ToString();
     }
 

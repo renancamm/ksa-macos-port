@@ -254,7 +254,7 @@ public static class Images
         return true;
     }
 
-    // The share of an image that is pure white, in percent. A real view has highlights (an explosion fills up to about a third);
+    // The share of an image that is pure white, in percent. A real view has highlights (an explosion fills up to about a fifth);
     // a picture gone wrong in the game's light has its whole sky so.
     public static double WhitePercent(Image image)
     {
