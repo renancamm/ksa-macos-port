@@ -15,16 +15,16 @@ namespace KsaMetalHooks;
 // went wrong, from the moment it is on the screen, in a folder of its own (framecaptures/<date>_<time> in the documents
 // folder):
 //   before.png        KSA Metal's image of the frame the command ran in
-//   frame.gputrace    an Xcode GPU frame capture of the next frame, every pass and its inputs (needs the frame_capture
+//   passes/           the next frame's passes: their images and numbers, in passes.txt
+//   frame.gputrace    an Xcode GPU frame capture of a frame after them, every pass and its inputs (needs the frame_capture
 //                     port setting, set when the game starts, and 20 GB free)
 //   after.png         KSA Metal's image of the frame after it
 //   state.txt         the time, the note, the camera's place, the warp, the driver's numbers and the switches set
 //   console.log, settings.toml, port-settings.toml
-// If after.png shows the fault too, the fault lasted through the captured frame, and the capture shows the first pass
-// that has it.
+// If after.png shows the fault too, the fault lasted through those frames, and passes/ shows the first draw that has it.
 internal sealed class FrameCaptureCommand
 {
-    private enum Step { Idle, Capturing, After }
+    private enum Step { Idle, Passes, Capturing, After }
 
     private const long CaptureNeedsBytes = 20L << 30;
     private const double CaptureLimitSeconds = 120;
@@ -36,6 +36,7 @@ internal sealed class FrameCaptureCommand
     private Step _step;
     private string _folder = "";
     private string? _noCapture;
+    private bool _noPasses;
     private readonly Stopwatch _captureTime = new();
     private int _frames;
 
@@ -78,10 +79,7 @@ internal sealed class FrameCaptureCommand
             Directory.CreateDirectory(_folder);
             File.WriteAllText(Path.Combine(_folder, "state.txt"), State(note.Trim()));
             DriverStats.Screenshot(Path.Combine(_folder, "before.png"));
-            _noCapture = new DriveInfo(_folder).AvailableFreeSpace < CaptureNeedsBytes ? "less than 20 GB free"
-                : DriverStats.Capturing() ? "another capture is still running"
-                : DriverStats.Capture(CapturePath, 1) ? null
-                : "set frame_capture = true in port-settings.toml and restart the game";
+            _noPasses = !DriverStats.PassDump(Path.Combine(_folder, "passes"));
         }
         // A command's exception would end the game
         catch (Exception e)
@@ -90,7 +88,7 @@ internal sealed class FrameCaptureCommand
             return;
         }
         _captureTime.Restart();
-        _step = Step.Capturing;
+        _step = Step.Passes;
         Program.ConsoleWindow.Print($"framecapture: saving to {_folder}");
     }
 
@@ -100,6 +98,25 @@ internal sealed class FrameCaptureCommand
     {
         switch (_step)
         {
+            case Step.Passes:
+                if (DriverStats.PassDumping() && _captureTime.Elapsed.TotalSeconds < CaptureLimitSeconds)
+                    return;
+                try
+                {
+                    _noCapture = DriverStats.GpuErrors() > 0 ? "the GPU has failed and refuses this game's work: a capture would replay as nonsense"
+                        : new DriveInfo(_folder).AvailableFreeSpace < CaptureNeedsBytes ? "less than 20 GB free"
+                        : DriverStats.Capturing() ? "another capture is still running"
+                        : !DriverStats.Available ? "the game isn't on KSA Metal"
+                        : DriverStats.Capture(CapturePath, 1) ? null
+                        : "set frame_capture = true in port-settings.toml and restart the game";
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
+                {
+                    _noCapture = e.Message;
+                }
+                _captureTime.Restart();
+                _step = Step.Capturing;
+                return;
             case Step.Capturing:
                 if (DriverStats.Capturing() && _captureTime.Elapsed.TotalSeconds < CaptureLimitSeconds)
                     return;
@@ -128,6 +145,10 @@ internal sealed class FrameCaptureCommand
         {
             Program.ConsoleWindow.Print($"framecapture: not all of the files: {e.Message}");
         }
+        if (_noPasses)
+            Program.ConsoleWindow.Print(DriverStats.GpuErrors() > 0
+                ? "framecapture: no passes/: the GPU has failed and refuses this game's work"
+                : "framecapture: no passes/: KSA Metal could not start a pass dump");
         // The driver only logs a capture that doesn't start
         if (_noCapture == null && DriverStats.Capturing())
             _noCapture = "it is still being written";
@@ -161,6 +182,7 @@ internal sealed class FrameCaptureCommand
             text.AppendLine($"image: {f.DrawableWidth} x {f.DrawableHeight}");
             text.AppendLine($"memory: footprint {f.FootprintMb} MB, GPU {f.AllocatedMb} MB");
             text.AppendLine($"thermal state: {f.ThermalState}");
+            text.AppendLine($"failed command buffers: {DriverStats.GpuErrors()}");
         }
         else
             text.AppendLine("frame: not on KSA Metal");

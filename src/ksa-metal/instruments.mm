@@ -61,6 +61,9 @@ static double g_gpuBusyFrame = 0;  // the same, since the last present completed
 //   ksaMtlScreenshot(path)       PNG of the next presented image
 //   ksaMtlMarker(name, begin)    begins or ends a signpost interval "part" with that name (Points of Interest in
 //                                Instruments), so a trace comes split into the benchmark's parts
+//   ksaMtlPassDump(dir)          the next frame's passes' images, and the images at its end (passdump.mm);
+//                                ksaMtlPassDumping() is true until they are written; ksaMtlGpuErrors() counts the command
+//                                buffers that failed, after which nothing the GPU would have to do can be dumped or captured
 //   ksaMtlCapture(path, frames)  Xcode GPU frame capture of the next frames into path (.gputrace); false when Metal
 //                                does not allow it (the game needs MTL_CAPTURE_ENABLED=1); ksaMtlCapturing() is true
 //                                until the file is written
@@ -120,7 +123,8 @@ KMTL_EXPORT void ksaMtlMarker(const char* name, bool begin) {
 }
 
 KMTL_EXPORT bool ksaMtlCapture(const char* path, uint32_t frames) {
-    if (g_capturing || ![[MTLCaptureManager sharedCaptureManager] supportsDestination:MTLCaptureDestinationGPUTraceDocument])
+    // After a GPU failure the GPU refuses this process's work: a capture would replay as nonsense
+    if (g_capturing || ksaMtlGpuErrors() || ![[MTLCaptureManager sharedCaptureManager] supportsDestination:MTLCaptureDestinationGPUTraceDocument])
         return false;
     std::lock_guard<std::mutex> lock(g_frameMutex);
     g_capturePath = path;
@@ -161,6 +165,7 @@ static void captureAtPresent(KDevice* dev, KSwapchain* swapchain) {
 }
 
 void kmtlOnSwapchainDestroyed(KSwapchain* swapchain) {
+    kmtlPassDumpSwapchainGone(swapchain);
     std::lock_guard<std::mutex> lock(g_frameMutex);
     if (g_captureSwapchain == swapchain) g_captureSwapchain = nullptr;
 }
@@ -249,7 +254,7 @@ static void exitSoon(const char* why) {
     dispatch_async(dispatch_get_global_queue(0, 0), ^{ usleep(300000); _exit(0); });
 }
 
-static void writePNG(id<MTLBuffer> buf, NSUInteger w, NSUInteger h, bool bgra, const std::string& path) {
+void kmtlWritePNG(id<MTLBuffer> buf, NSUInteger w, NSUInteger h, bool bgra, const std::string& path) {
     uint8_t* px = (uint8_t*)buf.contents;
     if (bgra) {
         for (NSUInteger i = 0; i < w * h; i++) std::swap(px[i * 4], px[i * 4 + 2]);
@@ -321,7 +326,7 @@ void kmtlSavePNG(id<MTLCommandBuffer> cb, id<MTLTexture> tex, id<MTLFence> after
               toBuffer:buf destinationOffset:0 destinationBytesPerRow:w * 4 destinationBytesPerImage:w * h * 4];
     [b endEncoding];
     [cb addCompletedHandler:^(id<MTLCommandBuffer>) {
-        writePNG(buf, w, h, bgra, path);
+        kmtlWritePNG(buf, w, h, bgra, path);
         if (done) done();
     }];
 }
@@ -375,6 +380,8 @@ void kmtlOnPresent(KDevice* dev, KSwapchain* swapchain, KImage* image, id<MTLCom
         lastTime = now;
     }
     if (g_capturing) captureAtPresent(dev, swapchain);
+    kmtlPassDumpAtPresent(dev->queue, swapchain, cb);
+    kmtlWatchAtPresent(dev->queue, image, cb);
     if (g_frameCsv) {
         fprintf(g_frameCsv, "%llu,%.3f,%u,%u,%u,%u,%lld,%.3f\n", (unsigned long long)g_presents, ms, g_frameDraws, g_frameDispatches,
                 g_framePasses, g_frameSubmits, (long long)g_lastFrame.allocatedMb, gpu);

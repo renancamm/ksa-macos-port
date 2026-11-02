@@ -101,6 +101,9 @@ struct KConfig {
     const char* gpuprofFrames = nullptr;  // KSA_MTL_GPUPROF_FRAMES=<first>,<count>
     bool gpuprofSplit = false;            // KSA_MTL_GPUPROF_SPLIT=1: every draw and dispatch in its own encoder
     bool labels = false;                  // KSA_MTL_LABELS=1: encoders named after their pipelines
+    bool gpuErrors = false;               // KSA_MTL_GPU_ERRORS=1: a failed command buffer logs each encoder's state
+    const char* watch = nullptr;          // KSA_MTL_WATCH=<dir>: a look at the image a few times a second, a pass dump when it looks broken
+    double watchWhite = 30;               // KSA_MTL_WATCH_WHITE: the share of pure white that counts as broken, in percent
     bool fxDebug = false;                 // KSA_MTL_FX_DEBUG=1: the upscale shows its motion vectors
     const char* fxShots = nullptr;        // KSA_MTL_FX_SHOTS=<dir>: PNGs of what MetalFX made now and then
     const char* throttle = nullptr;       // KSA_MTL_THROTTLE=<hash>:<N>,...: experiment, run a shader every N-th present (0 never)
@@ -456,6 +459,9 @@ struct KBoundSet {
     id<MTLBuffer> buffer = nil;
     NSUInteger offset = 0;
     VkShaderStageFlags stages = 0;  // the layout's: a graphics set is bound to the functions that read it
+    // For a pass dump: its slots as the GPU reads them (dynamic offsets added) and their layout, valid while recording
+    const uint8_t* slots = nullptr;
+    KSetLayout* layout = nullptr;
 };
 
 struct KUploadRing {
@@ -573,6 +579,14 @@ struct KCommandBuffer : KDispatchable {
     uint32_t encPipelines = 0;
     uint64_t encLastPipeline = 0;
     void notePipelineLabel(KPipeline* p);
+    // Pass dump (passdump.mm), while a frame is dumped: the open pass's descriptor and its first load actions, its name (the
+    // first encoder's, as it may suspend and resume), its draws so far, whether a suspension resolves its images, whether the
+    // recording is being dropped
+    MTLRenderPassDescriptor* dumpDesc = nil;
+    MTLLoadAction dumpLoads[8] = {}, dumpDepthLoad = MTLLoadActionDontCare;
+    std::string dumpName;
+    uint32_t dumpDraws = 0;
+    bool dumpResolves = false, dumpDrawsSkipped = false, dropping = false;
     template <typename E> void nameEncoder(E enc);
 
     void endEncoder();
@@ -707,6 +721,20 @@ uint32_t kmtlTessCap(KDevice* dev);
 // Frame instruments (instruments.mm)
 void kmtlOnPresent(KDevice* dev, KSwapchain* swapchain, KImage* image, id<MTLCommandBuffer> cb);
 void kmtlOnSwapchainDestroyed(KSwapchain* swapchain);
+// Pass dump (passdump.mm)
+void kmtlPassDumpTrack(KImage* image);
+void kmtlPassDumpForget(KImage* image);
+void kmtlPassDumpTrackMemory(id<MTLBuffer> whole);
+void kmtlPassDumpForgetMemory(id<MTLBuffer> whole);
+void kmtlPassDumpSwapchainGone(KSwapchain* swapchain);
+bool kmtlPassDumpRecording();
+void kmtlPassDumpEncoder(KCommandBuffer* cb, const std::string& name, MTLRenderPassDescriptor* pass);
+void kmtlPassDumpAfterDraw(KCommandBuffer* cb, KPipeline* pipeline);
+void kmtlPassDumpAtPresent(KQueue* queue, KSwapchain* swapchain, id<MTLCommandBuffer> cb);
+void kmtlWatchAtPresent(KQueue* queue, KImage* image, id<MTLCommandBuffer> cb);
+void kmtlNoteGpuError();
+extern "C" uint32_t ksaMtlGpuErrors();
+void kmtlWritePNG(id<MTLBuffer> buf, NSUInteger w, NSUInteger h, bool bgra, const std::string& path);
 void kmtlCountWork(uint32_t draws, uint32_t dispatches, uint32_t passes);
 void kmtlNoteGpuTime(id<MTLCommandBuffer> cb);  // from completion handlers: GPU busy time for the frame log
 double kmtlTakeFrameGpuTime();  // one frame's GPU busy time in seconds (since the last present completed), reset

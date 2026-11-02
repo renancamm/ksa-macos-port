@@ -108,6 +108,8 @@ The debugging variables, used the same way:
 | `KSA_MTL_GPUPROF=<file.csv>` | GPU time of every encoder, for 300 frames from present 2000 (`KSA_MTL_GPUPROF_FRAMES=<first>,<count>` changes that) |
 | `KSA_MTL_GPUPROF_SPLIT=1` | give every draw and dispatch its own encoder, so the profiler times each one (times grow: each draw stores and loads its attachments) |
 | `KSA_MTL_LABELS=1` | name every encoder after its pipelines (render pass size, shader hashes), for Instruments, the Metal HUD and Xcode's frame capture; on by default with `MTL_CAPTURE_ENABLED=1` |
+| `KSA_MTL_GPU_ERRORS=1` | a failed command buffer logs each encoder's state (completed, faulted, affected, pending); with `KSA_MTL_LABELS=1` the log names them |
+| `KSA_MTL_WATCH=<dir>` | every 30 presents, a look at a sample of the presented image: at 30 % pure white, 99.9 % pure black for a second, or 0.1 % of pure primary colours or green with no red or blue, it saves the image and a pass dump of the next frame in `<dir>` (at most 3, 10 s apart), `watch.txt` says when each fault began and ended, and `watch.csv` has every look's numbers. Only an image after a clean one counts. `KSA_MTL_WATCH_WHITE=<percent>` changes the white limit: 0 fires on any image, to test it |
 | `KSA_MTL_THROTTLE=<hash>:<n>,...` | experiment: a pipeline whose name holds that shader hash runs only every n-th present (0: never), to see what a shader costs and what it draws |
 
 Metal's own tools work too: `MTL_HUD_ENABLED=1` shows Apple's performance overlay, and `MTL_DEBUG_LAYER=1` and
@@ -121,6 +123,8 @@ The benchmark's mod and the hooks talk to KSA Metal through the only functions i
 | `ksaMtlFrameStats` | the latest presented frame: the `KSA_MTL_FRAMES` numbers, thermal state, shaders compiled, memory footprint, drawable size, display interval |
 | `ksaMtlScreenshot` | a PNG of the next frame |
 | `ksaMtlMarker` | begins or ends a signpost interval, one per measured part, under Points of Interest in Instruments |
+| `ksaMtlPassDump`, `ksaMtlPassDumping` | the next frame's colour attachments after each draw of a render pass (the first 64, then every 16th) and at its end, the images at the frame's end that it can read, as PNGs (NaN magenta, infinity cyan), and the first 64 KB of the buffers bound for each draw, with their numbers and heap places in `passes.txt`, which says why others are left out; that frame's passes don't overlap, so a clean dump doesn't rule out a missing barrier. The second says whether they are still being written |
+| `ksaMtlGpuErrors` | how many command buffers failed; after a hang the GPU refuses the process's work, and pass dumps refuse to start |
 | `ksaMtlCapture`, `ksaMtlCapturing` | an Xcode GPU frame capture of the next frames (with `MTL_CAPTURE_ENABLED=1`), and whether it is still being written |
 | `ksaMtlProfileFrames` | the GPU profiler (`KSA_MTL_GPUPROF`) on the next frames, under a label |
 | `ksaMtlEarlyFragmentTests` | whether draws use the pipelines' states that test depth first (below); the hooks' Skip Hidden Vessel Parts sets it at the start of a frame |
@@ -312,6 +316,7 @@ vertex buffer n.
 | `tessspirv.cpp`, `tessspirv.h` | the SPIR-V rewrites behind passthrough and fused tessellation |
 | `spvmodule.h` | a SPIR-V module as a list of instructions, for those rewrites |
 | `swapchain.mm` | swapchain and presentation: pacing, HDR, frame interpolation at present, latency |
+| `passdump.mm` | one frame's images, pass by pass (`ksaMtlPassDump`) |
 | `instruments.mm` | what is measured at each present: frame log, screenshots, exits, the benchmark's interface, frame captures, signposts |
 | `upscale.mm` | MetalFX: upscaling, motion vectors, frame interpolation |
 | `profile.mm` | the GPU profiler |

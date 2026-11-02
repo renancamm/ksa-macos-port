@@ -14,9 +14,14 @@
 //                     game needs KSA_MTL_GPUPROF=<csv>)
 //   KSA_BENCH_CAPTURE optional: an Xcode GPU frame capture of the view at every checkpoint, <section>_<shot>.gputrace
 //                     (the game needs MTL_CAPTURE_ENABLED=1)
-//   KSA_BENCH_CATCH   optional: a clean run's folder: a screenshot under half the size of that run's same screenshot gets
-//                     an Xcode GPU frame capture of the view, <section>_<shot>.gputrace, at most MaxCatches a run (the
-//                     game needs MTL_CAPTURE_ENABLED=1)
+//   KSA_BENCH_CATCH   optional: a clean run's folder: after a screenshot under half the size of that run's same screenshot,
+//                     KSA Metal's pass dump of the next frame in caught/<section>_<shot>/ and an image of a frame after it
+//                     in caught/, at most MaxCatches a run. A screenshot also counts when it has far more pure black than
+//                     that run's, or is 30 % pure white
+//   KSA_BENCH_CATCH_CAPTURE optional, with KSA_BENCH_CATCH: an Xcode GPU frame capture after the pass dump, in
+//                     caught/<section>_<shot>.gputrace (the game needs MTL_CAPTURE_ENABLED=1)
+//   KSA_BENCH_PASSES  optional: the same pass dump and image at every checkpoint, broken or not: a clean run's, to compare
+//                     a caught one with
 //   KSA_BENCH_WAIT    optional: a file to wait for in the game before playing (up to a minute), so that a tool the
 //                     script starts once the game is up (an Instruments trace) sees the whole run
 //   KSA_BENCH_TRACE   optional: write the camera's place every frame to trace.csv, to check its moves are smooth
@@ -100,7 +105,7 @@ public partial class Benchmark
         public bool CameraOnly => Steps.All(s => s.Words[0] is "@key" or "@shot" or "@measure");
     }
 
-    private enum Phase { Play, CatchUp, Settle, Measure, Capture, Shoot, Catch, Caught, CaughtImage, Hold, NewWorld }
+    private enum Phase { Play, CatchUp, Settle, Measure, Capture, Shoot, Catch, CatchPasses, CatchCapture, CaughtImage, Hold, NewWorld }
 
     // What a catch-up of the game's clock leads to: a checkpoint's screenshot, the end of a jump of @time, or the end of
     // a @sync
@@ -117,8 +122,9 @@ public partial class Benchmark
     private bool _capture;
     // KSA_BENCH_CATCH: the clean run, and the captures taken so far (each several GB)
     private const int MaxCatches = 3;
-    private const double CatchBelow = 0.5;
+    private const double CatchBelow = 0.5, CatchMoreBlack = 25, CatchWhite = 30;
     private string? _catchAgainst;
+    private bool _catchCapture, _passesEverywhere;
     private int _catches;
     private bool _active;
     private Results? _results;
@@ -249,6 +255,8 @@ public partial class Benchmark
         uint.TryParse(_option("KSA_BENCH_PROFILE"), out _profileFrames);
         _capture = _option("KSA_BENCH_CAPTURE") is { Length: > 0 };
         _catchAgainst = _option("KSA_BENCH_CATCH") is { Length: > 0 } clean ? clean : null;
+        _catchCapture = _option("KSA_BENCH_CATCH_CAPTURE") == "1";
+        _passesEverywhere = _option("KSA_BENCH_PASSES") == "1";
         _waitFor = _option("KSA_BENCH_WAIT") is { Length: > 0 } wait ? wait : null;
         Directory.CreateDirectory(_outDir);
         _frames = new FrameLog(Path.Combine(_outDir, $"frames{_option("KSA_BENCH_RUN")}.csv"));
@@ -919,44 +927,61 @@ public partial class Benchmark
                     _sectionResult?.Screenshots.Add(_shotName);
                 else
                     _sectionResult?.Errors.Add($"{_shotName}: no screenshot");
-                if (_catchAgainst != null && File.Exists(path))
+                if ((_catchAgainst != null || _passesEverywhere) && File.Exists(path))
                 {
                     _phase = Phase.Catch;
-                    _phaseEnds = wall + 10;
+                    _phaseEnds = wall + 30;
                     return;
                 }
                 EndCheckpoint();
                 return;
             }
             case Phase.Catch:
+                // A dump the watch started takes a moment; this view's own comes after it
+                if (DriverStats.PassDumping() && wall < _phaseEnds)
+                    return;
                 // The size counts once the driver has written all of the file
                 bool written = Images.Read(ShotPath()) != null;
                 if (!written && wall < _phaseEnds)
                     return;
-                if (written && LooksBroken())
+                if ((!written ? null : _passesEverywhere ? "a clean run's passes" : LooksBroken()) is { } reason)
                 {
-                    if (_catches < MaxCatches && DriverStats.Capture(CapturePath(), 1))
+                    if (DriverStats.GpuErrors() > 0)
+                        Log($"{_shotName}: {reason}, no pass dump: the GPU has failed and refuses this game's work");
+                    else if (!_passesEverywhere && _catches >= MaxCatches)
+                        Log($"{_shotName}: {reason}, no pass dump: limit reached");
+                    else if (DriverStats.PassDump(Path.Combine(_outDir, "caught", Path.GetFileNameWithoutExtension(ShotPath()))))
                     {
                         _catches++;
-                        Log($"{_shotName}: far smaller than in the clean run, frame capture {Path.GetFileName(CapturePath())}");
-                        _phase = Phase.Caught;
+                        Log($"{_shotName}: {reason}, its passes in caught/ (present {DriverStats.Read()?.Present})");
+                        _phase = Phase.CatchPasses;
                         _phaseEnds = wall + 120;
                         return;
                     }
-                    Log($"{_shotName}: far smaller than in the clean run, no frame capture");
+                    else
+                        Log($"{_shotName}: {reason}, no pass dump: KSA Metal could not start one");
                 }
                 EndCheckpoint();
                 return;
-            case Phase.Caught:
+            case Phase.CatchPasses:
+                if (DriverStats.PassDumping() && wall < _phaseEnds)
+                    return;
+                if (DriverStats.PassDumping())
+                    Log($"{_shotName}: the pass dump did not finish");
+                // A capture of a frame that the GPU ran, or none: one taken after a hang replays as nonsense
+                if (_catchCapture && DriverStats.GpuErrors() == 0 && DriverStats.Capture(CaughtCapturePath(), 1))
+                {
+                    _phase = Phase.CatchCapture;
+                    _phaseEnds = wall + 120;
+                    return;
+                }
+                CaughtImage(wall);
+                return;
+            case Phase.CatchCapture:
                 if (DriverStats.Capturing() && wall < _phaseEnds)
                     return;
-                if (!Directory.Exists(CapturePath()) && !File.Exists(CapturePath()))
-                    _sectionResult?.Errors.Add($"{_shotName}: no frame capture");
-                // Whether the fault lasted through the captured frame; in a folder of its own, not one of the run's screenshots
-                Directory.CreateDirectory(Path.Combine(_outDir, "caught"));
-                DriverStats.Screenshot(CaughtImagePath());
-                _phase = Phase.CaughtImage;
-                _phaseEnds = wall + 10;
+                Log($"{_shotName}: frame capture {(Directory.Exists(CaughtCapturePath()) || File.Exists(CaughtCapturePath()) ? Path.GetFileName(CaughtCapturePath()) : "missing")}");
+                CaughtImage(wall);
                 return;
             case Phase.CaughtImage:
                 if (Images.Read(CaughtImagePath()) == null && wall < _phaseEnds)
@@ -977,15 +1002,43 @@ public partial class Benchmark
 
     private string CaughtImagePath() => Path.Combine(_outDir, "caught", Path.GetFileName(ShotPath()));
 
-    // Far smaller than the clean run's screenshot, at the same size in pixels: at another size, the bytes say nothing
-    private bool LooksBroken()
+    private string CaughtCapturePath() => Path.Combine(_outDir, "caught", Path.GetFileNameWithoutExtension(ShotPath()) + ".gputrace");
+
+    // Whether the fault lasted through the dumped frame; in a folder of its own, not one of the run's screenshots
+    private void CaughtImage(double wall)
     {
-        var clean = new FileInfo(Path.Combine(_catchAgainst!, Path.GetFileName(ShotPath())));
-        if (!clean.Exists || new FileInfo(ShotPath()).Length >= clean.Length * CatchBelow)
-            return false;
+        DriverStats.Screenshot(CaughtImagePath());
+        _phase = Phase.CaughtImage;
+        _phaseEnds = wall + 10;
+    }
+
+    // What is wrong with the screenshot, or null. A real view reaches about a fifth of pure white, whatever the clean run shows.
+    // Against the clean run's, at the same size in pixels (at another, the bytes say nothing): far smaller, or far more pure
+    // black, which a dark view has anyway
+    private string? LooksBroken()
+    {
         var shot = Images.Read(ShotPath());
-        var reference = Images.Read(clean.FullName);
-        return shot != null && reference != null && shot.Width == reference.Width && shot.Height == reference.Height;
+        if (shot == null)
+            return null;
+        if (Images.WhitePercent(shot) >= CatchWhite)
+            return "pure white";
+        var clean = new FileInfo(Path.Combine(_catchAgainst!, Path.GetFileName(ShotPath())));
+        var reference = clean.Exists ? Images.Read(clean.FullName) : null;
+        if (reference == null || shot.Width != reference.Width || shot.Height != reference.Height)
+            return null;
+        if (new FileInfo(ShotPath()).Length < clean.Length * CatchBelow)
+            return "far smaller than in the clean run";
+        return PureBlackPercent(shot) > PureBlackPercent(reference) + CatchMoreBlack ? "far more black than in the clean run" : null;
+    }
+
+    private static double PureBlackPercent(Image image)
+    {
+        long black = 0;
+        var rgb = image.Rgb;
+        for (int i = 0; i < rgb.Length; i += 3)
+            if (rgb[i] <= 1 && rgb[i + 1] <= 1 && rgb[i + 2] <= 1)
+                black++;
+        return 100.0 * black / Math.Max(1, rgb.Length / 3);
     }
 
     // With KSA_BENCH_CAPTURE, an Xcode frame capture of the view (one frame, the game paused) before the screenshot

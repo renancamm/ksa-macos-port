@@ -189,8 +189,10 @@ id<MTLBlitCommandEncoder> kmtlProfBlitEncoder(KCommandBuffer* cb) {
 // A draw or dispatch with this pipeline in the current encoder
 void kmtlProfNote(KCommandBuffer* cb, KPipeline* p, bool dispatch, uint32_t n) {
     const KConfig& cfg = kmtlConfig();
-    if (!cb->prof && !cfg.labels) return;  // the common case: two predictable branches per draw
-    if (cfg.labels) cb->notePipelineLabel(p);
+    bool label = cfg.labels || kmtlPassDumpRecording();  // a pass dump names its passes
+    if (!cb->prof && !label) return;  // the common case: three predictable branches per draw
+    if (label) cb->notePipelineLabel(p);
+    if (!dispatch && cb->render && cb->deferredStores && cb->dumpDesc) kmtlPassDumpAfterDraw(cb, p);
     KProfState* s = cb->prof;
     if (!s || s->current < 0) return;
     KProfEncoder& e = s->encoders[s->current];

@@ -132,7 +132,7 @@ run (`--set`, `--settings`), repeated runs, and Apple's tools on the places play
   in the menu bar while the game runs, can write performance reports; they go to `hud/`. It can't be combined with
   `--profile`, since both use the GPU's counters.
 
-With `--trace`, `--capture`, `--catch` and `--hud`, KSA Metal names every encoder after its pipelines (`KSA_MTL_LABELS=1`), so
+With `--trace`, `--capture` and `--hud`, KSA Metal names every encoder after its pipelines (`KSA_MTL_LABELS=1`), so
 the tools show `1280x800 v1658c4ba926081e2+f7e01e1b174a96688 +1` (the render pass's size, the vertex and fragment
 shaders' hashes, how many other pipelines it ran) instead of an anonymous encoder.
 
@@ -270,7 +270,9 @@ puts the tests from `src/benchmark/benchmark.txt` into the app.
 | `--profile` | KSA Metal's GPU profiler on every measured part: `gpuprof.csv`, `profile.md` |
 | `--trace`, `--trace-template <name>` | an Instruments trace of the run: `trace.trace`, `trace.md` (needs Xcode, 10 GB free, and sections or places) |
 | `--capture` | an Xcode GPU frame capture at each place played: `<section>_<shot>.gputrace` (needs places, 20 GB free) |
-| `--catch <run>` | a frame capture when a screenshot is under half its size in that clean run, for a picture that goes wrong now and then: `<section>_<shot>.gputrace`, and in `caught/` the image of the frame after it, which says whether the fault lasted (at most 3, about 10 GB each; needs a comparable run with screenshots and 40 GB free) |
+| `--catch <run>` | for a picture that goes wrong now and then, with no capture mode or other switch: KSA Metal looks at the image a few times a second, and each screenshot is compared with that clean run's (30 % pure white, under half the size, or far more pure black). A broken one gets a pass dump in `caught/`: `watch_<n>/` from the image, `<section>_<shot>/` from a screenshot, with `passes.txt` and an image of a frame after it; `watch.txt` says when each fault began and ended (at most 3 of each; about 40 MB each; needs a comparable run with screenshots and 1 GB free). After a GPU failure nothing more is dumped |
+| `--catch-capture` | with `--catch`: an Xcode GPU frame capture after each pass dump, `caught/<section>_<shot>.gputrace` (capture mode, about 9 GB each, 40 GB free) |
+| `--passes` | a pass dump at every place played, in `caught/`: the clean run a caught dump is compared with (needs places, or `--fast`) |
 | `--hud` | Apple's Metal Performance HUD, its log in `hud.log` and its reports in `hud/` |
 | `--explore` | start the benchmark's game paused, with a console command (`benchkey`) that captures the camera's place for the tour |
 
