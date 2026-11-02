@@ -133,10 +133,11 @@ internal static class BenchmarkRun
         }
     }
 
+    // Its page in the browser, or the folder of a run that has none
     public static void Show(string folder)
     {
-        var report = Path.Combine(folder, "report.md");
-        Process.Start("/usr/bin/open", File.Exists(report) ? new[] { "-R", report } : new[] { folder });
+        var page = Path.Combine(folder, "report.html");
+        Process.Start("/usr/bin/open", new[] { File.Exists(page) ? page : folder });
     }
 
     private static void FramePostfix()
@@ -458,12 +459,12 @@ internal static class BenchmarkRun
         Hooks.Log($"benchmark: {(_last.Passed ? "passed" : "done, with problems")}, report in {_out.Replace(Home, "~")}");
         if (_mode == Mode.Restarted)
         {
-            Process.Start("/usr/bin/open", new[] { _out });
+            Show(_out);
             Program.Instance.RequestExit(0);
             return;
         }
         _mode = Mode.None;
-        TimedAlert.Create(_last.Passed ? "Benchmark done: Settings > Mac Port shows its report" : "Benchmark done, with problems: Settings > Mac Port shows its report",
+        TimedAlert.Create(_last.Passed ? "Benchmark done: Settings > Mac Port opens its report" : "Benchmark done, with problems: Settings > Mac Port opens its report",
             default, 8);
     }
 
@@ -474,10 +475,13 @@ internal static class BenchmarkRun
             var report = JsonNode.Parse(File.ReadAllText(Path.Combine(folder, "report.json")))!;
             bool passed = report["passed"]?.GetValue<bool>() == true;
             var problems = (report["problems"] as JsonArray ?? new JsonArray()).Select(p => (string?)p).OfType<string>().ToList();
-            var summary = $"{Path.GetFileName(folder)}: " + (passed ? "passed." : "problems: " + string.Join("; ", problems.Take(3)) +
+            var summary = $"{Path.GetFileName(folder)}: " + (passed ? "passed." : problems.Count == 0 ? "stopped." : "problems: " + string.Join("; ", problems.Take(3)) +
                 (problems.Count > 3 ? $" and {problems.Count - 3} more." : "."));
-            var outcome = passed ? "Passed" : problems.Count == 1 ? "1 problem" : $"{problems.Count} problems";
-            return new Result(folder, passed, summary + " Shows report.md in the Finder.", outcome, RunDate(folder));
+            var outcome = passed ? "Passed" : report["stopped"]?.GetValue<bool>() == true ? "Stopped" : problems.Count == 1 ? "1 problem" : $"{problems.Count} problems";
+            // Its main number: "Passed, 30 FPS"
+            if ((string?)report["headline"] is { Length: > 0 } headline)
+                outcome += $", {headline}";
+            return new Result(folder, passed, summary + " Opens its page, with its numbers and screenshots.", outcome, RunDate(folder));
         }
         catch (Exception)
         {

@@ -21,8 +21,8 @@ In the game, open the settings (Esc), then **Mac Port**, and press a test's **FA
 bottom (**RUN** for the Warp Test), with your own settings. It plays in the game you have open. Your game is saved
 first, the test plays in a new game's world, and your game comes back when it ends; Esc stops it. With **Restart for a
 Clean Run** on, your game is saved as "Before the benchmark" and the game starts again for it instead, the way
-`./benchmark.sh` plays it, and quits at the end with the report's folder open. **Show report** under the buttons finds
-the last report in the Finder.
+`./benchmark.sh` plays it, and quits at the end with the report open. **Show report** under the buttons opens the last
+report.
 
 From the port folder, after `./port.sh`:
 
@@ -31,23 +31,41 @@ From the port folder, after `./port.sh`:
 ./benchmark.sh tour         # the Planetary Tour, about 5 minutes (--fast: about 2)
 ./benchmark.sh warp         # the Warp Test, 2 to 3 minutes
 ./benchmark.sh full         # all three, about 11 minutes (--fast: about 4)
+./benchmark.sh list         # what can be played
 ```
 
 They use your own settings. The game takes over the screen: leave the mouse and keyboard alone until the script says it
-is done. On a Mac with 8 GB of memory, add `--system earth`: it plays Earth and the Moon only and needs a few GB less.
+is done, or press Ctrl-C in the terminal to stop the run and keep what it measured. On a Mac with 8 GB of memory, add
+`--system earth`: it plays Earth and the Moon only and needs a few GB less.
 
 A run in the game you have open starts with that game's clouds and sea, and after what the game played before, so its
 numbers compare best with other runs played the same way, and `compare` doesn't check its screenshots.
+
+### Reading a run
+
+The terminal shows the result and each part's numbers. `report.html` in the run's folder shows them with the run's
+screenshots and charts:
+
+```bash
+./benchmark.sh report       # the last run, here and in your browser
+./benchmark.sh runs         # your last runs, with their main numbers
+```
 
 To compare two runs:
 
 ```bash
 ./benchmark.sh compare <first run> <second run>
+./benchmark.sh compare <first run>      # against the last run
+./benchmark.sh compare                  # the last run against the one before it
 ```
 
-It lists what differs between the two Macs and their settings, shows each part's numbers side by side, and names the
-screenshots that changed. A copy of each changed screenshot, with the changed blocks marked in red, goes to `diff/` in
-the second run's folder.
+A run is its folder's name (`2026-11-02_0158`), its path, its zip, `last` or `previous`. The comparison starts with a
+verdict, lists what differs between the two Macs and their settings, shows each part's numbers side by side, and names the
+screenshots that changed. `compare.html` in the second run's folder shows the screenshots of both runs with a slider to go
+from one to the other, and a copy of each changed screenshot, with the changed blocks marked in red, goes to `diff/` there.
+
+Runs add up, up to a few hundred MB each with their screenshots. `./benchmark.sh clean` deletes all but the last 30, after
+asking (`--keep <n>` keeps another number).
 
 ### Sharing a run
 
@@ -70,7 +88,7 @@ The Planetary Tour shows each of its places with no flight between them. The scr
 ```bash
 ./benchmark.sh --fast
 # ...make the change, then:
-./benchmark.sh --fast --compare <first run>
+./benchmark.sh --fast --compare last
 ```
 
 The two modes measure different things, so a fast run compares only with another fast run. The Warp Test plays one way
@@ -166,12 +184,14 @@ in each mode. The camera's flight is given by `@key` steps, places the
 camera passes through (`director/Path.cs`); around the vehicles, the camera follows them or stands on the ground
 (`director/Rig.cs`). The director in `director/` plays the steps, moves the camera, measures the parts each section
 marks, and asks KSA Metal for each frame's GPU time and for the screenshots. `./build.sh` compiles it against the KSA
-version the port is made for. `report/` holds the small program that describes the Mac, writes the report and the
-zip, and compares runs. The build then runs its tests ([`tests/`](tests/)), which need no game, and stops when one
-fails: what passes and fails a run, the conditions the report notes, repeats merged into medians, numbers the same on
-a Mac in any region, what `finish` takes from the game's log and puts in the zip, the comparison of two runs, and the
-PNG reader. They write their runs with the director's own classes, so they also check that the report reads what the
-director writes.
+version the port is made for. `report/` holds the small program that describes the Mac, writes the report, its page and the
+zip, and compares runs. The build then runs its tests, which need no game, and stops when one fails. Those in
+[`tests/`](tests/) check what passes and fails a run, the conditions the report notes, repeats merged into medians, numbers
+the same on a Mac in any region, what `finish` takes from the game's log and puts in the zip, the comparison of two runs,
+the PNG reader, and `benchmark.txt` itself (its tests, sections, directives, screenshots and vehicles). They write their
+runs with the director's own classes, so they also check that the report reads what the director writes.
+[`scripts/test-benchmark-script.sh`](../../scripts/test-benchmark-script.sh) plays `benchmark.sh` against a stand-in for the
+game: its commands, what it refuses, and a run that passes, crashes, hangs or is stopped.
 
 Each screenshot is a checkpoint. The game runs its simulation as fast as the Mac allows, so a slower Mac falls a
 little behind the script. At a checkpoint the script waits for the game to reach the moment it should be at, pauses it
@@ -194,10 +214,15 @@ of them to change.
 
 A run fails when the game crashed or hung, a step of the test failed, a vehicle broke apart before it should, a
 screenshot is missing, the game's log has errors (during the Warp Test the game's own errors are only noted, since settings that hold warp back cause them), one of the hooks was skipped (the game's code it changes has moved) or
-failed, or another game ran at the same time; the script then exits with 1.
+failed, the game could not read the run's settings, a screenshot is one colour from edge to edge, or another game ran at
+the same time; the script then exits with 1. A run you stop (Esc, Ctrl-C) ends with what it measured and exits with 1 too.
+Before the game starts, the script refuses what would waste the run: a value a port setting can't take (the game would
+ignore it and play unchanged), a `--compare` run that shares nothing with this one or played in another mode, an app or a
+test that isn't there. It warns when the GPU is already busy.
 The director touches a file every second; a game that hasn't touched it for a minute (three in the Warp Test, whose frames can stall) counts as hung and is stopped. In a run from the game, the hooks stop a game with no frame for three minutes.
 
-`compare` marks a number as changed when it moved by more than 5%, because two runs on the same Mac differ by a few
+`compare` reads GPU time first, as frame times sit on the display's beat. It marks a number as changed when it moved by
+more than 5%, because two runs on the same Mac differ by a few
 percent in most parts; the flights through space vary more, with little on screen and a high frame rate. Between
 repeated runs it marks a change when the ranges don't overlap and the difference is over 2%. Screenshots are compared
 in blocks of 16 by 16 pixels: a block counts as changed when its mean colour moved by more than 12 (of 255), and a
@@ -234,7 +259,7 @@ puts the tests from `src/benchmark/benchmark.txt` into the app.
 | `--set <key>=<value>` | change a setting of `settings.toml` for the run, on top of the preset (repeat for more; strings need no quotes); as `<section>.<key>=<value>` it adds a key your file lacks to that section, such as one a newer KSA added (`display.hdr=true`) |
 | `--settings <file>` | apply the settings in a file of `key = value` lines, on top of the preset and before `--set` |
 | `--port <key>=<value>` | change a [port setting](../../README.md#the-mac-port-tab) for the run, on top of yours (with a preset or `--defaults`, on top of the defaults); the report shows the port settings and what the hooks did |
-| `--compare <run>` | compare with that run (folder or zip) at the end; the script fails when screenshots differ |
+| `--compare <run>` | compare with that run at the end (its folder, zip or name, `last`, `previous`), checked before the game starts; the script fails when screenshots differ |
 | `--app <path>` | the app to measure (default: `~/Applications/Kitten Space Agency.app`) |
 | `<section or place> ...` | play only these sections, or a section up to the named place (a screenshot's name) |
 | `--hold <place>` | jump to that place and stay there, paused, until you quit the game |
@@ -245,9 +270,17 @@ puts the tests from `src/benchmark/benchmark.txt` into the app.
 | `--hud` | Apple's Metal Performance HUD, its log in `hud.log` and its reports in `hud/` |
 | `--explore` | start the benchmark's game paused, with a console command (`benchkey`) that captures the camera's place for the tour |
 
+| Command | |
+|---|---|
+| `list` | the tests, their sections and their places |
+| `runs [n]` | your last runs (15, or n), the newest first |
+| `report [run]` | a run's report in the terminal, and its page in your browser (default: the last run) |
+| `compare [run] [run]` | how the second run differs from the first (with one run: against the last; with none: the last against the one before it); exits with 1 when screenshots differ, 2 when the runs don't compare |
+| `clean [--keep n] [--yes]` | delete all but your last runs (30, or n), after asking (`--yes`: without asking); only folders a run leaves, and not `--explore`'s |
+
 | File | |
 |---|---|
-| `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/` | the results: `report.md`, `report.json`, `frames.csv`, the screenshots, `game.log`, and what the tools wrote |
+| `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/` | the results: `report.html`, `report.md`, `report.json`, `frames.csv`, the screenshots, `game.log`, `compare.html` and `compare.md` after a comparison, and what the tools wrote |
 | `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/<date>.zip` | the run to share |
 | `~/Library/Caches/ksa-macos-port/benchmark/instance/` | the game's documents folder for a run that starts the game |
 | `Contents/Resources/Benchmark/` in the app | the director, the report program, the tests and their vehicles |

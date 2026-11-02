@@ -283,8 +283,9 @@ section mixed
 # times a second (what the clouds' shadows cost in low orbit at warp), then at the top speed. warpdebris: 18 rockets blown up around Earth in
 # orbits from 150 to 800 km. warpfalling: 18 blown up high, falling back, their pieces landing.
 # What is around a ship doesn't depend on the camera, and in low orbit at the top speed day and night would flash by every
-# frame: at that speed the camera stands on the Moon, zoomed in on Earth over its horizon. The screenshots after a warp differ from run to
-# run (the game's clock is wherever it got to), so they are there to look at.
+# frame: at that speed the camera stands on the Moon, zoomed in on Earth over its horizon, and stands there again for the screenshot, the Moon
+# having moved on from under it. The screenshots after a warp differ from run to run (the game's clock is wherever it got
+# to), so they are there to look at.
 section warpclean live
 0 @reset
 0 @launch benchmark-capsule at GSC ELA-4 as ship
@@ -300,6 +301,7 @@ section warpclean live
 12 @warp 524288 1
 12 @measure clean 13
 25 @warp 0 0.5
+25.5 @place Luna 81 0 400 177.2 2.4
 26 @shot clean 100
 
 section warpdebris live
@@ -406,6 +408,7 @@ section warpdebris live
 9 @warp 524288 1
 9 @measure debris 30
 39 @warp 0 0.5
+39.5 @place Luna 81 0 400 177.2 2.4
 40 @shot debris 100
 
 section warpfalling live
@@ -511,4 +514,5 @@ section warpfalling live
 9 @warp 524288 1
 9 @measure falling 30
 39 @warp 0 0.5
+39.5 @place Luna 81 0 400 177.2 2.4
 40 @shot falling 100

@@ -74,8 +74,8 @@ hdr_output | bool | true | KSA_MTL_HDR | | restart | | HDR Output | Lets the gam
 fit_hud_to_display | bool | true | KSA_HUD_LAYOUT | | live | hud_layout | Fit HUD to Display | The flight HUD keeps its fullscreen size in a window, smaller on displays narrower than 16:9 such as MacBooks, with panel text scaled to fit. If panels overlap, lower HUD Scale (Interface). Off is the game's own: text can overflow in smaller windows.
 metal_performance_hud | bool | false | MTL_HUD_ENABLED | | restart | | Metal Performance HUD | Apple's overlay in a corner of the window: frame rate, frame and GPU times, and memory.
 
-[benchmark] Benchmark | A fixed tour with these settings that writes a report. Esc stops it.
-restart_for_a_clean_run | bool | false | | | live | | Restart for a Clean Run | On: your game is saved as "Before the benchmark", and the game restarts into a new game without your mods; at the end, it quits and the report's folder opens. Off: it plays in this game, which comes back at the end.
+[benchmark] Benchmark | Fixed tests with these settings, each writing a report. Esc stops one.
+restart_for_a_clean_run | bool | false | | | live | | Restart for a Clean Run | On: your game is saved as "Before the benchmark", and the game restarts into a new game without your mods; at the end, it quits and the report opens. Off: it plays in this game, which comes back at the end.
 
 [developer] Developer
 hooks | bool | true | KSA_HOOKS | | restart | | | KSA Metal Hooks, which also draw the Mac Port tab. Off: the game starts without them.
