@@ -5,15 +5,20 @@
 //                      (in that order), and the window from <dir>/settings.toml
 //   report <dir>       <dir>/results.json (written by the director; results-2.json... for repeats, merged into medians) +
 //                      <dir>/system.txt and <dir>/run.txt ("key: value" lines) + <dir>/game.log -> <dir>/report.json
-//                      and <dir>/report.md. Exits with 1 when the run had problems (it failed).
+//                      and <dir>/report.md and <dir>/report.html. Exits with 1 when the run had problems (it failed).
 //   finish <dir>       the port settings and the hooks from game.log into system.txt (when it has them not), then the
 //                      report, then <dir>/<dir's name>.zip to share: the report, every frame's numbers, the logs, crash
 //                      reports of the game since the run started, the settings, and the screenshots as JPEG, your home
 //                      folder's name replaced by ~. Exits as report does.
-//   compare <a> <b>    two runs (folders or shared zips): the Macs and settings that differ, per part of each section
-//                      b's numbers against a's, and each screenshot of b against a's (marked copies of those that
-//                      differ go to <b>/diff/; not when a run played in a running game). Exits with 1 when screenshots
-//                      differ, 2 when the runs don't compare (different modes).
+//   show <dir>         prints the report for a terminal, up to the facts about the Mac
+//   page <dir>         <dir>/report.html from report.json (for a run older than the page)
+//   runs <folder> [n]  a table of the last n runs in a benchmarks folder
+//   comparable <run> <mode> <sections>  exits with 2 and says why when a run about to play won't compare with that one
+//   compare <a> <b>    two runs (folders or shared zips): a verdict, the Macs and settings that differ, per part of each
+//                      section b's numbers against a's, and each screenshot of b against a's (marked copies of those that
+//                      differ go to <b>/diff/; not when a run played in a running game), as compare.md and compare.html in
+//                      b's folder. Exits with 1 when screenshots differ, 2 when the runs don't compare (different modes, or
+//                      no part in common).
 //   profile <dir>      <dir>/gpuprof.csv (KSA Metal's GPU profiler, one window per measured part) -> <dir>/profile.md:
 //                      the encoders that took the most GPU time in each part
 //   trace <dir>        <dir>/trace-parts.xml and <dir>/trace-gpu.xml (tables exported from an Instruments trace: the
@@ -57,6 +62,14 @@ public static class Program
             return SystemFacts(args[1], args[2], args[3..]);
         if (args.Length == 2 && args[0] == "report")
             return Report(args[1]);
+        if (args.Length == 2 && args[0] == "show")
+            return Show(args[1]);
+        if (args.Length == 2 && args[0] == "page")
+            return Page(args[1]);
+        if (args.Length is 2 or 3 && args[0] == "runs")
+            return Runs(args[1], args.Length == 3 && int.TryParse(args[2], out var count) ? count : 15);
+        if (args.Length == 4 && args[0] == "comparable")
+            return Comparable(args[1], args[2], args[3]);
         if (args.Length == 2 && args[0] == "finish")
             return Finish(args[1]);
         if (args.Length == 3 && args[0] == "compare")
@@ -65,7 +78,7 @@ public static class Program
             return Profile(args[1]);
         if (args.Length == 2 && args[0] == "trace")
             return Trace(args[1]);
-        Console.Error.WriteLine("usage: system <dir> <app> [key=value...] | report <dir> | finish <dir> | compare <a> <b> | profile <dir> | trace <dir>");
+        Console.Error.WriteLine("usage: system <dir> <app> [key=value...] | report <dir> | finish <dir> | show <dir> | page <dir> | runs <folder> [n] | comparable <run> <mode> <sections> | compare <a> <b> | profile <dir> | trace <dir>");
         return 2;
     }
 
@@ -75,11 +88,24 @@ public static class Program
         foreach (var (key, value) in KeyValues(Path.Combine(dir, "system.txt")))
             system[key] = value;
         // The run's results, and those of its repeats
+        var unreadable = new List<string>();
         var runs = Directory.GetFiles(dir, "results*.json")
             .Select(f => (file: f, n: Path.GetFileNameWithoutExtension(f) is var name && name.StartsWith("results-", StringComparison.Ordinal) && int.TryParse(name[8..], out var k) ? k : 1))
-            .OrderBy(r => r.n).Select(r => JsonNode.Parse(File.ReadAllText(r.file)) as JsonObject ?? new JsonObject()).ToList();
+            .OrderBy(r => r.n).Select(r =>
+            {
+                try
+                {
+                    return JsonNode.Parse(File.ReadAllText(r.file)) as JsonObject ?? new JsonObject();
+                }
+                catch (JsonException)
+                {
+                    unreadable.Add($"{Path.GetFileName(r.file)} can't be read: the game stopped while writing it");
+                    return new JsonObject();
+                }
+            }).ToList();
         var results = runs.Count > 0 ? runs[0] : new JsonObject();
         var problems = Problems(dir, results);
+        problems.AddRange(unreadable);
         for (int i = 1; i < runs.Count; i++)
         {
             if (runs[i]["completed"]?.GetValue<bool>() != true)
@@ -88,20 +114,40 @@ public static class Program
                 foreach (var e in section["errors"] as JsonArray ?? new JsonArray())
                     problems.Add($"repeat {i + 1}: {section["name"]}: {e}");
         }
+        // A run stopped on purpose (Esc, Ctrl-C) isn't a run that went wrong: what it says is that it was stopped
+        bool stopped = problems.Any(p => p.EndsWith("stopped with Esc", StringComparison.Ordinal) || p.EndsWith("stopped with Ctrl-C", StringComparison.Ordinal));
+        if (stopped)
+            problems.RemoveAll(p => p.EndsWith("stopped with Esc", StringComparison.Ordinal) || p.EndsWith("stopped with Ctrl-C", StringComparison.Ordinal) ||
+                                    p.EndsWith("did not play to its end", StringComparison.Ordinal) || p == "the run wrote no results");
         var sections = runs.Count > 1 ? Merge(runs) : results["sections"]?.DeepClone() as JsonArray ?? new JsonArray();
         var notes = Notes(dir, system, sections);
         var report = new JsonObject
         {
-            ["schema"] = 2, ["system"] = system, ["mode"] = (string?)results["mode"] ?? "cinematic", ["runs"] = Math.Max(runs.Count, 1),
-            ["drawable"] = results["drawable"]?.DeepClone(), ["passed"] = problems.Count == 0,
+            ["schema"] = 2, ["headline"] = Headline(sections), ["system"] = system, ["mode"] = (string?)results["mode"] ?? ((string?)system["Mode"] is { } mode && mode.StartsWith("fast", StringComparison.Ordinal) ? "fast" : "cinematic"), ["runs"] = Math.Max(runs.Count, 1),
+            ["drawable"] = results["drawable"]?.DeepClone(), ["passed"] = problems.Count == 0 && !stopped, ["stopped"] = stopped,
             ["problems"] = new JsonArray(problems.Select(p => (JsonNode?)p).ToArray()),
             ["notes"] = new JsonArray(notes.Select(p => (JsonNode?)p).ToArray()), ["loadSeconds"] = results["loadSeconds"]?.DeepClone(),
             ["sections"] = sections
         };
         File.WriteAllText(Path.Combine(dir, "report.json"), report.ToJsonString(Indented));
         File.WriteAllText(Path.Combine(dir, "report.md"), Markdown(report));
+        Html.WriteReport(dir, report);
         Console.WriteLine(Path.Combine(dir, "report.md"));
-        return problems.Count == 0 ? 0 : 1;
+        return problems.Count == 0 && !stopped ? 0 : 1;
+    }
+
+    // The run's main number in a few words, which the Mac Port tab shows: "30 FPS", "78.4 game days"
+    private static string Headline(JsonArray sections)
+    {
+        var report = new JsonObject { ["sections"] = sections.DeepClone() };
+        var (fps, _, _, _, _) = Html.Headline(report);
+        double days = Html.WarpDays(report);
+        var words = new List<string>();
+        if (!double.IsNaN(fps))
+            words.Add($"{fps:F0} FPS");
+        if (days > 0)
+            words.Add($"{days:F1} game days");
+        return string.Join(", ", words);
     }
 
     // system.txt: what the report says about this Mac and the run
@@ -110,7 +156,7 @@ public static class Program
     // settings and the hooks; finish takes those from the game's log otherwise).
     private static readonly (string Key, string? Default)[] RunFacts =
     [
-        ("StarMap", null), ("System", null), ("Sections", null), ("Mode", null), ("Preset", "none, own settings"),
+        ("StarMap", null), ("System", null), ("Test", null), ("Sections", null), ("Mode", null), ("Preset", "none, own settings"),
         ("Settings changed", "none"), ("Start", null), ("KSA Metal switches", "none"), ("Tools", "none"),
         ("port settings", null), ("Hooks", null),
     ];
@@ -183,8 +229,8 @@ public static class Program
     private static int Finish(string dir)
     {
         var system = Path.Combine(dir, "system.txt");
-        // The run started when system.txt was written: crash reports since then are the run's
-        var started = File.GetLastWriteTimeUtc(system);
+        // The run started when its folder was made: crash reports made since then are the run's
+        var started = Directory.GetCreationTimeUtc(dir);
         var have = KeyValues(system).Select(kv => kv.key).ToHashSet();
         var log = Path.Combine(dir, "game.log");
         var lines = File.Exists(log) ? File.ReadAllLines(log) : [];
@@ -197,13 +243,59 @@ public static class Program
             added.Add($"Hooks: {(hooks.Count > 0 ? string.Join("; ", hooks) : "none")}");
         }
         File.AppendAllLines(system, added);
+        BlankShots(dir);
+        // What macOS wrote about a crash of the game, for the report to name
+        var crashes = CrashReports(started);
+        var known = KeyValues(Path.Combine(dir, "run.txt")).Where(kv => kv.key == "Crash report").Select(kv => kv.value).ToHashSet();
+        File.AppendAllLines(Path.Combine(dir, "run.txt"), crashes.Select(Path.GetFileName).OfType<string>().Where(c => !known.Contains(c)).Select(c => $"Crash report: {c}"));
         int status = Report(dir);
-        Package(dir, started);
+        Package(dir, crashes);
         return status;
     }
 
-    // <dir>/<name>.zip: what a shared run holds, with the game's crash reports since the run started
-    private static void Package(string dir, DateTime started)
+    // Screenshots that show something went wrong with no other sign of it, which a comparison would only catch against a run
+    // that had a picture: one colour from edge to edge, or mostly pure white. For Problems: blank.txt
+    private const double BlownOutPercent = 30;
+
+    private static void BlankShots(string dir)
+    {
+        var blank = Directory.GetFiles(dir, "*_*.png").OrderBy(f => f, StringComparer.Ordinal)
+            .AsParallel().AsOrdered().Select(f => (Name: Path.GetFileName(f), Image: Images.Read(f)))
+            .Select(s => s.Image == null ? null : Images.Blank(s.Image) ? $"{s.Name}: the screenshot is one colour from edge to edge"
+                : Images.WhitePercent(s.Image) is >= BlownOutPercent and var white ? $"{s.Name}: {white:F0} % of the screenshot is pure white: the picture went wrong" : null)
+            .OfType<string>().ToList();
+        var file = Path.Combine(dir, "blank.txt");
+        if (blank.Count > 0)
+            File.WriteAllLines(file, blank);
+        else
+            File.Delete(file);
+    }
+
+    // The game's crash reports since the run started
+    private static List<string> CrashReports(DateTime started)
+    {
+        var reports = Path.Combine(Environment.GetEnvironmentVariable("HOME") ?? "", "Library", "Logs", "DiagnosticReports");
+        bool TheGame(string crash)
+        {
+            try
+            {
+                return Regex.IsMatch(File.ReadAllText(crash), "\"procName\" *: *\"dotnet\"|KSA\\.dll|StarMap");
+            }
+            catch (IOException)
+            {
+                return false;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return false;
+            }
+        }
+        return (Directory.Exists(reports) ? Directory.GetFiles(reports, "*.ips") : [])
+            .Where(crash => File.GetCreationTimeUtc(crash) >= started && TheGame(crash)).ToList();
+    }
+
+    // <dir>/<name>.zip: what a shared run holds, with the game's crash reports of the run
+    private static void Package(string dir, List<string> crashes)
     {
         var name = Path.GetFileName(Path.GetFullPath(dir).TrimEnd('/'));
         var zip = Path.Combine(dir, name + ".zip");
@@ -215,7 +307,7 @@ public static class Program
             foreach (var file in Directory.GetFiles(dir))
             {
                 var f = Path.GetFileName(file);
-                if (f is "report.md" or "report.json" or "system.txt" or "run.txt" or "settings.toml" or "profile.md" ||
+                if (f is "report.md" or "report.html" or "report.json" or "system.txt" or "run.txt" or "blank.txt" or "settings.toml" or "profile.md" ||
                     f.StartsWith("game", StringComparison.Ordinal) && f.EndsWith(".log", StringComparison.Ordinal) ||
                     f.StartsWith("frames", StringComparison.Ordinal) && f.EndsWith(".csv", StringComparison.Ordinal) ||
                     f.StartsWith("results", StringComparison.Ordinal) && f.EndsWith(".json", StringComparison.Ordinal))
@@ -224,18 +316,12 @@ public static class Program
                     Run("/usr/bin/sips", "-s", "format", "jpeg", "-s", "formatOptions", "70", "-Z", "1600", file, "--out",
                         Path.Combine(stage, Path.ChangeExtension(f, ".jpg")));
             }
-            var reports = Path.Combine(home, "Library", "Logs", "DiagnosticReports");
             var user = Environment.UserName;
-            foreach (var crash in Directory.Exists(reports) ? Directory.GetFiles(reports, "*.ips") : [])
+            foreach (var crash in crashes)
             {
-                if (File.GetLastWriteTimeUtc(crash) < started)
-                    continue;
-                var text = File.ReadAllText(crash);
-                if (!Regex.IsMatch(text, "\"procName\" *: *\"dotnet\"|KSA\\.dll|StarMap"))
-                    continue;
                 Directory.CreateDirectory(Path.Combine(stage, "crashes"));
                 File.WriteAllText(Path.Combine(stage, "crashes", Path.GetFileName(crash)),
-                    text.Replace(home, "~").Replace($"/Users/{user}", "~"));
+                    File.ReadAllText(crash).Replace(home, "~").Replace($"/Users/{user}", "~"));
             }
             File.Delete(zip);
             ZipFile.CreateFromDirectory(Path.GetDirectoryName(stage)!, zip);
@@ -263,8 +349,8 @@ public static class Program
     // The numbers that the parts of repeated runs are merged by: the median over the runs (the worst for those that
     // count events), with the range of the medians of frame and GPU time
     private static readonly string[] MedianFields =
-        { "averageFps", "frameMsMedian", "frameMsP95", "frameMsP99", "frameMsMax", "gpuMsMedian", "gpuMsP95", "drawsMedian", "gpuMemoryPeakMb", "footprintPeakMb" };
-    private static readonly string[] MaxFields = { "hitches", "thermalMax", "shadersCompiled", "pipelinesCreated" };
+        { "averageFps", "frameMsMedian", "frameMsP95", "frameMsP99", "frameMsMax", "gpuMsMedian", "gpuMsP95", "drawsMedian", "gpuMemoryPeakMb", "footprintPeakMb", "gameDays", "speed", "secondsToSpeed" };
+    private static readonly string[] MaxFields = { "hitches", "thermalMax", "shadersCompiled", "pipelinesCreated", "simMsMax", "substeps", "bubblesMax", "vehiclesMax" };
 
     private static JsonArray Merge(List<JsonObject> runs)
     {
@@ -290,12 +376,15 @@ public static class Program
                     if (v.Length > 0)
                         w[field] = v[^1];
                 }
-                foreach (var (field, range) in new[] { ("frameMsMedian", "frameMsRange"), ("gpuMsMedian", "gpuMsRange") })
+                foreach (var (field, range) in new[] { ("frameMsMedian", "frameMsRange"), ("gpuMsMedian", "gpuMsRange"), ("speed", "speedRange") })
                 {
                     var v = Values(field);
                     if (v.Length > 1)
                         w[range] = new JsonArray(v[0], v[^1]);
                 }
+                // A part that didn't get to its speed in one of the runs didn't, whatever the others did
+                if (same.Any(x => x["gameDays"] is not null && x["secondsToSpeed"] is null))
+                    w["secondsToSpeed"] = null;
                 w["runs"] = same.Count;
             }
         }
@@ -316,16 +405,29 @@ public static class Program
             notes.Add($"KSA Metal switches were set ({switches}): they change what the driver does");
         if (Sys("port settings") is { Length: > 0 } port && port != "defaults")
             notes.Add($"port settings were changed ({port}): they change what the game draws or how");
+        // --port lines the game doesn't list: a value that is the default, or a setting waiting for another one (its "needs")
+        if (Sys("Settings changed") is { Length: > 0 } changed && changed.IndexOf("port-settings: ", StringComparison.Ordinal) is >= 0 and var from_)
+        {
+            var running = Sys("port settings");
+            foreach (var kv in changed[(from_ + 15)..].Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                if (running.Length > 0 && !running.Contains(kv.Split('=')[0] + "=", StringComparison.Ordinal) && !running.Contains(kv.Split('=')[0] + " =", StringComparison.Ordinal))
+                    notes.Add($"--port {kv} is not among the settings the game ran with: it is the setting's default, or it waits for another setting");
+        }
         if (Sys("Start") is { Length: > 0 } start && start.StartsWith("in the running game", StringComparison.Ordinal))
             notes.Add("played in a running game, after what was played before: its numbers compare best with runs started the same way");
         if (Sys("Tools") is { Length: > 0 } tools && tools != "none")
             notes.Add($"measured with {tools}: their own cost is in the numbers");
-        var run = KeyValues(Path.Combine(dir, "run.txt")).ToDictionary(kv => kv.key, kv => kv.value);
-        if (run.TryGetValue("Memory pressure", out var pressure) && pressure != "normal")
+        var run = KeyValues(Path.Combine(dir, "run.txt")).GroupBy(kv => kv.key).ToDictionary(g => g.Key, g => g.Last().value);
+        // "warning" is how a Mac with little memory runs this game, nearly always: only the worst level says something
+        if (run.TryGetValue("Memory pressure", out var pressure) && pressure == "critical")
             notes.Add($"macOS reported memory pressure ({pressure}): the game may have had to wait for memory, which shows as stutters");
+        if (run.TryGetValue("GPU before the run", out var busy))
+            notes.Add($"the GPU was busy before the run ({busy}): something else may have shared it");
         if (run.TryGetValue("Swap used", out var swap) && swap.Split(' ') is [var from, "->", var to, ..] &&
             double.TryParse(from, out var f) && double.TryParse(to, out var t) && t - f > 256)
             notes.Add($"the Mac swapped memory to disk during the run ({swap})");
+        foreach (var (_, crash) in KeyValues(Path.Combine(dir, "run.txt")).Where(kv => kv.key == "Crash report").TakeLast(3))
+            notes.Add($"macOS wrote a crash report, {crash}, in ~/Library/Logs/DiagnosticReports (the zip holds it)");
         var hot = new List<string>();
         var compiled = new List<string>();
         foreach (var section in sections.OfType<JsonObject>())
@@ -343,7 +445,49 @@ public static class Program
         if (compiled.Count > 0)
             notes.Add($"shaders compiled while measuring {string.Join(", ", compiled.Take(8))}{(compiled.Count > 8 ? $" and {compiled.Count - 8} more parts" : "")}: " +
                       "the first run after an update of the game or the port compiles them, the next runs don't");
+        var liveErrors = LiveErrors(dir, sections);
+        if (liveErrors.Count > 0)
+        {
+            var common = liveErrors.MaxBy(e => e.Value).Key;
+            notes.Add($"the game logged {liveErrors.Values.Sum()} errors during the time warp, {liveErrors.Count} kind{(liveErrors.Count > 1 ? "s" : "")}, most often \"{(common.Length > 80 ? common[..80] + "..." : common)}\" (game.log)");
+        }
         return notes;
+    }
+
+    private static readonly Regex Ansi = new(@"\x1b\[[0-9;]*m");
+    private static readonly Regex GameError = new(@"^\d\d:\d\d:\d\d\s+(ERROR|FATAL)\b");
+    private static readonly Regex SectionLine = new(@"^\[benchmark\] section (\S+) ");
+    private static readonly Regex EndLine = new(@"^\[benchmark\] (done after|stopped:)");
+
+    private static HashSet<string> LiveSections(JsonObject results) =>
+        Sections(results).OfType<JsonObject>().Where(s => s["live"]?.GetValue<bool>() == true).Select(s => (string?)s["name"] ?? "").ToHashSet();
+
+    // The game's own errors while time warp ran at speeds that hold it back, by how often each came: a condition of the
+    // Warp Test, not a broken run, at settings that leave its stuck pieces as they are
+    private static Dictionary<string, int> LiveErrors(string dir, JsonArray sections)
+    {
+        var errors = new Dictionary<string, int>();
+        var live = LiveSections(new JsonObject { ["sections"] = sections.DeepClone() });
+        if (live.Count == 0)
+            return errors;
+        foreach (var log in Directory.GetFiles(dir, "game*.log"))
+        {
+            bool inLive = false;
+            foreach (var raw in File.ReadLines(log))
+            {
+                var line = Ansi.Replace(raw, "").Trim();
+                if (SectionLine.Match(line) is { Success: true } section)
+                    inLive = live.Contains(section.Groups[1].Value);
+                else if (EndLine.IsMatch(line))
+                    inLive = false;
+                else if (inLive && GameError.IsMatch(line))
+                {
+                    var plain = GameError.Replace(line, "").Trim();
+                    errors[plain] = errors.GetValueOrDefault(plain) + 1;
+                }
+            }
+        }
+        return errors;
     }
 
     // What went wrong in a run: how the game ended, the script's steps and screenshots, and errors in the game's log
@@ -356,8 +500,12 @@ public static class Program
             if (ending is not ("quit normally" or "kept running"))
                 problems.Add($"the game {(key == "Game" ? "" : $"(repeat {key[5..]}) ")}{ending}");
         }
-        if (KeyValues(Path.Combine(dir, "run.txt")).Any(kv => kv.key == "Alongside"))
+        if (KeyValues(Path.Combine(dir, "run.txt")).Any(kv => kv.key.StartsWith("Alongside", StringComparison.Ordinal)))
             problems.Add("another game ran at the same time, sharing the Mac's GPU and memory");
+        // A game gone before its first frame, with nothing in its log to say why: one thing it can't start without
+        if (KeyValues(Path.Combine(dir, "run.txt")).Any(kv => kv.value.Contains("before its first frame", StringComparison.Ordinal)) &&
+            !Directory.GetFiles(dir, "game*.log").Any(log => File.ReadLines(log).Any(l => l.Contains("Unhandled exception", StringComparison.Ordinal))))
+            problems.Add("the display must be awake and the Mac unlocked for the game to start");
         if (results.Count == 0)
             problems.Add("the run wrote no results");
         else if (results["completed"]?.GetValue<bool>() != true)
@@ -367,6 +515,9 @@ public static class Program
             foreach (var e in section["errors"] as JsonArray ?? new JsonArray())
                 problems.Add($"{section["name"]}: {e}");
         }
+        var blank = Path.Combine(dir, "blank.txt");
+        if (File.Exists(blank))
+            problems.AddRange(File.ReadAllLines(blank));
         // A hook that was skipped (the game's code it changes has moved) or failed: the run didn't play the port as it is
         var hooks = KeyValues(Path.Combine(dir, "system.txt")).FirstOrDefault(kv => kv.key == "Hooks").value ?? "";
         foreach (var hook in hooks.Split("; ", StringSplitOptions.RemoveEmptyEntries))
@@ -376,21 +527,30 @@ public static class Program
                 problems.Add($"the hooks' {hook}");
         }
         // The game's log of each session (game-2.log... for repeats)
+        var liveSections = LiveSections(results);
         foreach (var log in Directory.GetFiles(dir, "game*.log").OrderBy(f => f.Length).ThenBy(f => f, StringComparer.Ordinal))
         {
             var name = Path.GetFileName(log);
             var errors = new Dictionary<string, int>();
             bool gpuReset = false;
-            var ansi = new Regex(@"\x1b\[[0-9;]*m");
-            var gameError = new Regex(@"^\d\d:\d\d:\d\d\s+(ERROR|FATAL)\b");
+            bool live = false;
             foreach (var raw in File.ReadLines(log))
             {
-                var line = ansi.Replace(raw, "").Trim();
-                if (line.StartsWith("[ksa-metal ERROR]", StringComparison.Ordinal) || gameError.IsMatch(line) ||
+                var line = Ansi.Replace(raw, "").Trim();
+                if (SectionLine.Match(line) is { Success: true } section)
+                    live = liveSections.Contains(section.Groups[1].Value);
+                else if (EndLine.IsMatch(line))
+                    live = false;
+                // The game then runs on its defaults: every number would be of other settings than the run says
+                if (line.Contains("failed to load settings file", StringComparison.Ordinal))
+                    problems.Add($"{name}: the game could not read the run's settings.toml and played with its defaults");
+                if (line.StartsWith("[ksa-metal ERROR]", StringComparison.Ordinal) || GameError.IsMatch(line) && !live ||
                     line.StartsWith("Unhandled exception", StringComparison.Ordinal))
                 {
                     gpuReset |= line.Contains("kIOGPUCommandBufferCallbackError", StringComparison.Ordinal);
-                    var key = line.Length > 160 ? line[..160] + "..." : line;
+                    // The same error at another second is the same error
+                    var plain = GameError.Replace(line, "$1");
+                    var key = plain.Length > 160 ? plain[..160] + "..." : plain;
                     errors[key] = errors.GetValueOrDefault(key) + 1;
                 }
             }
@@ -408,20 +568,46 @@ public static class Program
 
     private static JsonArray Sections(JsonObject report) => report["sections"] as JsonArray ?? new JsonArray();
 
+    // Where a report's facts about the Mac and the run begin: the terminal stops there
+    private const string FactsHeading = "### This Mac and the run";
+
     private static string Markdown(JsonObject report)
     {
         var md = new StringBuilder();
-        md.AppendLine("## KSA Metal benchmark");
+        var system = report["system"] as JsonObject ?? new JsonObject();
+        var mode = (string?)report["mode"] == "fast" ? "fast" : "cinematic";
+        var test = Html.TestName((string?)system["Test"]);
+        md.AppendLine($"## KSA Metal benchmark: {test}{(test == "Warp Test" ? "" : $", {mode}")}");
         md.AppendLine();
         var problems = (report["problems"] as JsonArray ?? new JsonArray()).Select(p => (string?)p).ToList();
-        if (problems.Count == 0)
+        bool stopped = report["stopped"]?.GetValue<bool>() == true;
+        if (stopped)
+            md.AppendLine(Sections(report).OfType<JsonObject>().Any(x => (x["windows"] as JsonArray)?.Count > 0)
+                ? "**Stopped**: you stopped the run. Below is what it measured until then."
+                : "**Stopped**: you stopped the run before it finished measuring a part.");
+        else if (problems.Count == 0)
             md.AppendLine("**Passed**: the run played to its end without errors.");
-        else
+        if (problems.Count > 0)
         {
             md.AppendLine($"**Failed**: {problems.Count} problem{(problems.Count > 1 ? "s" : "")} (the parts they concern may not compare with other runs):");
             md.AppendLine();
             foreach (var p in problems)
                 md.AppendLine($"- {p}");
+        }
+        var (fps, gpu, slowest, section, memory) = Html.Headline(report);
+        var headline = new List<string>();
+        if (!double.IsNaN(fps))
+            headline.Add($"**{fps:F0} FPS** across the parts{(double.IsNaN(gpu) ? "" : $", GPU {gpu:F1} ms a frame")}");
+        if (slowest != null)
+            headline.Add($"slowest {section} {slowest["name"]}, {Num(slowest["averageFps"], "F0")} FPS");
+        if (Html.WarpDays(report) is > 0 and var days)
+            headline.Add($"**{days:F1} game days** in time warp");
+        if (memory > 0)
+            headline.Add($"memory peak {memory / 1024:F1} GB");
+        if (headline.Count > 0)
+        {
+            md.AppendLine();
+            md.AppendLine(string.Join("; ", headline) + ".");
         }
         var notes = (report["notes"] as JsonArray ?? new JsonArray()).Select(p => (string?)p).ToList();
         if (notes.Count > 0)
@@ -433,9 +619,40 @@ public static class Program
                 md.AppendLine($"- {n}");
         }
         md.AppendLine();
+        if (Sections(report).OfType<JsonObject>().SelectMany(x => (x["windows"] as JsonArray ?? new JsonArray()).OfType<JsonObject>()).Any())
+        {
+            md.AppendLine("| Section | Part | FPS | Frame ms | p95 ms | GPU ms | Hitches | Worst ms | Draws | Memory MB | GPU memory MB | Shaders |");
+            md.AppendLine("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
+            foreach (var part in Sections(report).OfType<JsonObject>())
+            {
+                string name = (string?)part["name"] ?? "?";
+                foreach (var w in (part["windows"] as JsonArray ?? new JsonArray()).OfType<JsonObject>())
+                {
+                    string frame = Num(w["frameMsMedian"], "F1");
+                    if (w["frameMsRange"] is JsonArray range)
+                        frame += $" ({Num(range[0], "F1")}-{Num(range[1], "F1")})";
+                    md.AppendLine($"| {name} | {w["name"]} | {Num(w["averageFps"], "F1")} | {frame} | " +
+                                  $"{Num(w["frameMsP95"], "F1")} | {Num(w["gpuMsMedian"], "F1")} | {w["hitches"]} | " +
+                                  $"{Num(w["frameMsMax"], "F0")} | {Num(w["drawsMedian"], "F0")} | {w["footprintPeakMb"]} | {w["gpuMemoryPeakMb"]} | " +
+                                  $"{w["shadersCompiled"]} |");
+                    name = "";
+                }
+            }
+            md.AppendLine();
+            bool anyPlain = Sections(report).OfType<JsonObject>().Any(x => x["live"]?.GetValue<bool>() != true);
+            md.AppendLine(mode == "fast" && anyPlain
+                ? "Fast mode: each part is the view standing still (the game paused) at the screenshot of that name."
+                : "Each part is measured along the way, between two screenshots.");
+            md.AppendLine("Frame: time between two frames (median, 95th percentile). GPU: time the GPU worked on a frame. Hitches: frames longer than twice the median. " +
+                          "Memory: the game's footprint at its peak, and what KSA Metal allocated for the GPU. Shaders: compiled while measuring (each one a stutter).");
+        }
+        Warp(md, report);
+        md.AppendLine();
+        md.AppendLine(FactsHeading);
+        md.AppendLine();
         md.AppendLine("| | |");
         md.AppendLine("|---|---|");
-        foreach (var (key, value) in report["system"] as JsonObject ?? new JsonObject())
+        foreach (var (key, value) in system)
             md.AppendLine($"| {key} | {value} |");
         if (report["drawable"] is { } drawable)
             md.AppendLine($"| Drawn | {drawable} pixels |");
@@ -444,31 +661,130 @@ public static class Program
         int runs = report["runs"]?.GetValue<int>() ?? 1;
         if (runs > 1)
             md.AppendLine($"| Runs | {runs}: each number is the median of the runs, Frame ms shows their range |");
-        md.AppendLine();
-        md.AppendLine((string?)report["mode"] == "fast"
-            ? "Fast mode: each part is the view standing still (the game paused) at the screenshot of that name."
-            : "Each part is measured along the way, between two screenshots.");
-        md.AppendLine("Frame: time between two frames (median, 95th percentile). GPU: time the GPU worked on a frame. Hitches: frames longer than twice the median. " +
-                      "Memory: the game's footprint at its peak, and what KSA Metal allocated for the GPU. Shaders: compiled while measuring (each one a stutter).");
-        md.AppendLine();
-        md.AppendLine("| Section | Part | FPS | Frame ms | p95 ms | GPU ms | Hitches | Worst ms | Draws | Memory MB | GPU memory MB | Shaders |");
-        md.AppendLine("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
-        foreach (var section in Sections(report).OfType<JsonObject>())
-        {
-            string name = (string?)section["name"] ?? "?";
-            foreach (var w in (section["windows"] as JsonArray ?? new JsonArray()).OfType<JsonObject>())
-            {
-                string frame = Num(w["frameMsMedian"], "F1");
-                if (w["frameMsRange"] is JsonArray range)
-                    frame += $" ({Num(range[0], "F1")}-{Num(range[1], "F1")})";
-                md.AppendLine($"| {name} | {w["name"]} | {Num(w["averageFps"], "F1")} | {frame} | " +
-                              $"{Num(w["frameMsP95"], "F1")} | {Num(w["gpuMsMedian"], "F1")} | {w["hitches"]} | " +
-                              $"{Num(w["frameMsMax"], "F0")} | {Num(w["drawsMedian"], "F0")} | {w["footprintPeakMb"]} | {w["gpuMemoryPeakMb"]} | " +
-                              $"{w["shadersCompiled"]} |");
-                name = "";
-            }
-        }
         return md.ToString();
+    }
+
+    // The report for a terminal: the verdict and the numbers, without the facts about the Mac
+    private static int Show(string dir)
+    {
+        var file = Path.Combine(dir, "report.md");
+        if (!File.Exists(file))
+        {
+            Console.Error.WriteLine($"no report at {file}");
+            return 2;
+        }
+        var md = File.ReadAllText(file);
+        int facts = md.IndexOf(FactsHeading, StringComparison.Ordinal);
+        Console.Write(Terminal.Layout(facts > 0 ? md[..facts] : md));
+        return 0;
+    }
+
+    // report.html for a run that has a report but no page yet
+    private static int Page(string dir)
+    {
+        var report = Load(dir);
+        if (report == null)
+            return 2;
+        Html.WriteReport(dir, report);
+        return 0;
+    }
+
+    // The last runs of a benchmarks folder, newest first: when, what, how it ended, its main number
+    private static int Runs(string folder, int count)
+    {
+        var all = Directory.Exists(folder)
+            ? Directory.GetDirectories(folder).Where(d => Regex.IsMatch(Path.GetFileName(d), @"^\d{4}-\d{2}-\d{2}_\d{4}") && File.Exists(Path.Combine(d, "report.json")))
+                .OrderByDescending(d => Path.GetFileName(d), StringComparer.Ordinal).ToList()
+            : new List<string>();
+        if (all.Count == 0)
+        {
+            Console.WriteLine("No runs yet.");
+            return 0;
+        }
+        var md = new StringBuilder("| Run | Test | Mode | Result | FPS | GPU ms | Warp days | Settings |\n|---|---|---|---|---:|---:|---:|---|\n");
+        foreach (var dir in all.Take(count))
+        {
+            JsonObject? report;
+            try
+            {
+                report = JsonNode.Parse(File.ReadAllText(Path.Combine(dir, "report.json"))) as JsonObject;
+            }
+            catch (JsonException)
+            {
+                continue;
+            }
+            if (report == null)
+                continue;
+            var (fps, gpu, _, _, _) = Html.Headline(report);
+            double days = Html.WarpDays(report);
+            string Sys(string key) => (string?)report["system"]?[key] ?? "";
+            var preset = Sys("Preset") switch { "none, own settings" => "own", "none, a fresh install's settings" => "defaults", var named => named };
+            var settings = string.Join(", ", new[] { preset, Sys("Settings changed") is { Length: > 0 } c && c != "none" ? c : "" }.Where(x => x.Length > 0));
+            md.AppendLine($"| {Path.GetFileName(dir)} | {Html.TestName(Sys("Test"))} | {(Sys("Test") == "warp" ? "" : report["mode"])} | {(report["passed"]?.GetValue<bool>() == true ? "passed" : report["stopped"]?.GetValue<bool>() == true ? "stopped" : "**failed**")} | " +
+                          $"{(double.IsNaN(fps) ? "" : fps.ToString("F0"))} | {(double.IsNaN(gpu) ? "" : gpu.ToString("F1"))} | {(days > 0 ? days.ToString("F1") : "")} | {settings} |");
+        }
+        Console.Write(Terminal.Layout(md.ToString()));
+        Console.WriteLine();
+        Console.WriteLine($"{Math.Min(count, all.Count)} of {all.Count} runs.");
+        return 0;
+    }
+
+    // Whether a run about to play will compare with this one: said before the minutes it takes, not after
+    private static int Comparable(string run, string mode, string sections)
+    {
+        var report = Load(Unpacked(run));
+        if (report == null)
+            return 2;
+        // The sections played, whole or up to a place
+        static HashSet<string> Names(string text) => text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(n => n.Split('_')[0]).ToHashSet();
+        string other = (string?)report["mode"] ?? "cinematic";
+        if (other != mode)
+        {
+            Console.WriteLine($"that run played in {other} mode and this one plays in {mode} mode: neither their numbers nor their screenshots would compare.");
+            return 2;
+        }
+        var played = Sections(report).OfType<JsonObject>().Select(s => (string?)s["name"] ?? "").ToHashSet();
+        if (!played.Overlaps(Names(sections)))
+        {
+            Console.WriteLine($"that run played {string.Join(" ", played)} and this one plays {sections}: they have nothing in common.");
+            return 2;
+        }
+        // Fast mode measures the places chosen: places of a section still have to be among those that run measured
+        var parts = Windows(report).Keys.ToHashSet();
+        var wanted = sections.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (mode == "fast" && wanted.All(n => n.Contains('_')) &&
+            !wanted.Any(n => parts.Contains((n[..n.IndexOf('_')], n[(n.IndexOf('_') + 1)..]))))
+        {
+            Console.WriteLine($"that run didn't measure {sections}: they have no part in common.");
+            return 2;
+        }
+        return 0;
+    }
+
+    // The parts of a live section, the time warp's: how far the game's clock got in the time they took
+    private static void Warp(StringBuilder md, JsonObject report)
+    {
+        var parts = Sections(report).OfType<JsonObject>()
+            .SelectMany(s => (s["windows"] as JsonArray ?? new JsonArray()).OfType<JsonObject>())
+            .Where(w => w["gameDays"] is not null).ToList();
+        if (parts.Count == 0)
+            return;
+        double days = parts.Sum(w => w["gameDays"]?.GetValue<double>() ?? 0);
+        md.AppendLine();
+        md.AppendLine($"Time warp: {days:F1} game days in the {parts.Sum(w => w["seconds"]?.GetValue<double>() ?? 0):F0} s of its {parts.Count} part{(parts.Count > 1 ? "s" : "")}.");
+        md.AppendLine();
+        md.AppendLine("Speed: game seconds per second, against what was asked (1 is real time). To 90 %: seconds until it ran at 90 % of what was asked. Sim: the slowest vehicle job. A speed far under what was asked means the simulation held it back.");
+        md.AppendLine();
+        md.AppendLine("| Part | Game days | Speed | Asked | To 90 % s | Worst frame ms | Sim ms | Substeps | Bubbles | Vehicles |");
+        md.AppendLine("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
+        foreach (var w in parts)
+        {
+            string speed = Num(w["speed"], "F0");
+            if (w["speedRange"] is JsonArray range)
+                speed += $" ({Num(range[0], "F0")}-{Num(range[1], "F0")})";
+            md.AppendLine($"| {w["name"]} | {Num(w["gameDays"], "F1")} | {speed} | {Num(w["speedAsked"], "F0")} | {(w["secondsToSpeed"] is null ? "never" : Num(w["secondsToSpeed"], "F1"))} | " +
+                          $"{Num(w["frameMsMax"], "F0")} | {Num(w["simMsMax"], "F0")} | {w["substeps"]} | {w["bubblesMax"]} | {w["vehiclesMax"]} |");
+        }
     }
 
     private static string Num(JsonNode? node, string format) =>
@@ -480,31 +796,138 @@ public static class Program
         var (ra, rb) = (Load(a), Load(b));
         if (ra == null || rb == null)
             return 2;
-        Console.WriteLine($"a: {a}");
-        Console.WriteLine($"b: {b}");
-        Console.WriteLine();
         string modeA = (string?)ra["mode"] ?? "cinematic", modeB = (string?)rb["mode"] ?? "cinematic";
         if (modeA != modeB)
         {
-            Console.WriteLine($"The runs played in different modes ({modeA}, {modeB}): neither their numbers nor their screenshots compare.");
+            // Live sections play the same in both modes
+            var warp = new StringBuilder();
+            WarpNumbers(warp, Windows(ra), Windows(rb));
+            Console.Write(Terminal.Layout(warp.ToString()));
+            Console.WriteLine($"The runs played in different modes ({modeA}, {modeB}): {(warp.Length > 0 ? "only the time warp's parts compare" : "neither their numbers nor their screenshots compare")}.");
             return 2;
         }
+        string dirA = Directory.Exists(a) ? a : Path.GetDirectoryName(a)!, dirB = Directory.Exists(b) ? b : Path.GetDirectoryName(b)!;
+        var (partsA, partsB) = (Windows(ra), Windows(rb));
+        if (!partsA.Keys.Any(partsB.ContainsKey))
+        {
+            Console.WriteLine($"The runs have no part in common ({SectionNames(ra)}; {SectionNames(rb)}): nothing to compare.");
+            return 2;
+        }
+        // The screenshots first: the verdict leads with them
+        var body = new StringBuilder();
+        var warnings = new List<string>();
         foreach (var (run, report) in new[] { ("a", ra), ("b", rb) })
         {
-            if (report["passed"]?.GetValue<bool>() == false)
-                Console.WriteLine($"Run {run} failed (see its report.md): the parts its problems concern may not compare.");
+            if (report["stopped"]?.GetValue<bool>() == true)
+                warnings.Add($"Run {run} was stopped before its end.");
+            else if (report["passed"]?.GetValue<bool>() == false)
+                warnings.Add($"Run {run} failed (see its report.md): the parts its problems concern may not compare.");
         }
-        Macs(ra, rb);
-        Settings(Directory.Exists(a) ? a : Path.GetDirectoryName(a)!, Directory.Exists(b) ? b : Path.GetDirectoryName(b)!);
-        Numbers(ra, rb);
-        // A run in a running game starts with the clouds and the sea where that game had them
-        if (new[] { ra, rb }.Any(r => ((string?)r["system"]?["Start"] ?? "").StartsWith("in the running game", StringComparison.Ordinal)))
+        if (SectionNames(ra) != SectionNames(rb))
+            warnings.Add($"The runs played different sections ({SectionNames(ra)}; {SectionNames(rb)}): clouds and the sea follow what played before, so screenshots may differ for that alone.");
+        var differences = Macs(ra, rb);
+        differences.AddRange(Settings(dirA, dirB));
+        if (differences.Count > 0)
         {
-            Console.WriteLine("Screenshots: not compared, a run played in a running game (its clouds and sea are that game's).");
-            return 0;
+            body.AppendLine("| | a | b |");
+            body.AppendLine("|---|---|---|");
+            foreach (var (key, va, vb) in differences)
+                body.AppendLine($"| {key} | {va} | {vb} |");
+            body.AppendLine();
         }
-        return Screenshots(Directory.Exists(a) ? a : Path.GetDirectoryName(a)!, Directory.Exists(b) ? b : Path.GetDirectoryName(b)!,
-            modeA == "fast" ? FastShotLimit : CinematicShotLimit);
+        else
+        {
+            body.AppendLine("Same Mac, same version, same settings.");
+            body.AppendLine();
+        }
+        Numbers(body, ra, rb);
+        // A run in a running game starts with the clouds and the sea where that game had them
+        var shots = new List<ShotResult>();
+        bool inGame = new[] { ra, rb }.Any(r => ((string?)r["system"]?["Start"] ?? "").StartsWith("in the running game", StringComparison.Ordinal));
+        string shotsTable = "", shotsNote = "";
+        int differ = 0;
+        if (inGame)
+            body.AppendLine("Screenshots: not compared, a run played in a running game (its clouds and sea are that game's).");
+        else
+        {
+            (differ, shotsTable) = Screenshots(dirA, dirB, modeA == "fast" ? FastShotLimit : CinematicShotLimit, shots);
+            // Nothing compared: the sentence that says why
+            if (shots.Count == 0)
+                shotsNote = shotsTable;
+        }
+        bool repeated = (ra["runs"]?.GetValue<int>() ?? 1) > 1 && (rb["runs"]?.GetValue<int>() ?? 1) > 1;
+        var (verdict, good) = Verdict(partsA, partsB, shots, inGame, repeated);
+        var md = new StringBuilder();
+        md.AppendLine("## Comparison");
+        md.AppendLine();
+        md.AppendLine($"**{verdict}**");
+        md.AppendLine();
+        foreach (var w in warnings)
+        {
+            md.AppendLine(w);
+            md.AppendLine();
+        }
+        md.AppendLine($"a: {a}");
+        md.AppendLine($"b: {b}");
+        md.AppendLine();
+        var printed = new StringBuilder(md.ToString()).Append(body).Append(shotsNote).Append(ShotsForTerminal(shots, differ));
+        md.Append(body).Append(shotsTable);
+        File.WriteAllText(Path.Combine(dirB, "compare.md"), md.ToString());
+        Html.WriteCompare(dirA, dirB, ra, rb, shots, verdict, good, differences, shotsNote.Trim());
+        Console.Write(Terminal.Layout(printed.ToString()));
+        Console.WriteLine();
+        Console.WriteLine($"Side by side: {Path.Combine(dirB, "compare.html")}");
+        return differ > 0 ? 1 : 0;
+    }
+
+    private static string SectionNames(JsonObject report) => string.Join(" ", Sections(report).OfType<JsonObject>().Select(s => (string?)s["name"] ?? ""));
+
+    // One sentence for two runs: the image, then the GPU time over the parts (each part counts the same), then time warp
+    private static (string Text, bool? Good) Verdict(Dictionary<(string section, string part), JsonObject> a, Dictionary<(string section, string part), JsonObject> b,
+        List<ShotResult> shots, bool inGame, bool repeated)
+    {
+        var words = new List<string>();
+        int differ = shots.Count(s => s.State is "differs" or "unreadable"), compared = shots.Count(s => s.State != "free");
+        if (!inGame && compared > 0)
+            words.Add(differ == 0 ? $"same image ({compared} of {compared} screenshots)" : $"{differ} of {compared} screenshots differ");
+        double Ratio(string field, bool warp, out int parts)
+        {
+            double sum = 0;
+            int n = 0;
+            foreach (var (key, wa) in a)
+            {
+                if (!b.TryGetValue(key, out var wb) || wa["gameDays"] is not null != warp)
+                    continue;
+                if (wa[field] is JsonValue x && wb[field] is JsonValue y && x.TryGetValue<double>(out var dx) && y.TryGetValue<double>(out var dy) && dx > 0 && dy > 0)
+                {
+                    sum += Math.Log(dy / dx);
+                    n++;
+                }
+            }
+            parts = n;
+            return n > 0 ? Math.Exp(sum / n) : 1;
+        }
+        // Over the limit, and a part that counts as changed in that direction: with repeats, ranges that don't overlap
+        bool Moved(string field, string range, bool warp, double ratio)
+        {
+            if (Math.Abs(ratio - 1) < (repeated ? SignificantRepeated : Significant))
+                return false;
+            return a.Any(kv => b.TryGetValue(kv.Key, out var wb) && kv.Value["gameDays"] is not null == warp && kv.Value[field] is JsonValue x && wb[field] is JsonValue y &&
+                               x.TryGetValue<double>(out var dx) && y.TryGetValue<double>(out var dy) && dy > dx == ratio > 1 && Marked(kv.Value[field], wb[field], kv.Value[range], wb[range]));
+        }
+        double gpu = Ratio("gpuMsMedian", false, out var gpuParts);
+        bool gpuMoved = gpuParts > 0 && Moved("gpuMsMedian", "gpuMsRange", false, gpu);
+        if (gpuParts > 0)
+            words.Add(gpuMoved ? $"GPU time {Math.Abs(gpu - 1) * 100:F0} % {(gpu < 1 ? "lower" : "higher")}" : "GPU time within noise");
+        double speed = Ratio("speed", true, out var warpParts);
+        bool warpMoved = warpParts > 0 && Moved("speed", "speedRange", true, speed);
+        if (warpParts > 0)
+            words.Add(warpMoved ? $"time warp {Math.Abs(speed - 1) * 100:F0} % {(speed > 1 ? "faster" : "slower")}" : "time warp within noise");
+        if (words.Count == 0)
+            return ("Nothing to compare", null);
+        var text = string.Join(", ", words);
+        // Good: nothing got worse
+        return (char.ToUpperInvariant(text[0]) + text[1..], differ == 0 && !(gpuMoved && gpu > 1) && !(warpMoved && speed < 1));
     }
 
     // A shared run's zip, unpacked next to it (once): the folder that holds its report.json
@@ -520,24 +943,19 @@ public static class Program
     }
 
     // What differs between the two runs' Macs and versions (from their system.txt)
-    private static void Macs(JsonObject ra, JsonObject rb)
+    private static List<(string Key, string A, string B)> Macs(JsonObject ra, JsonObject rb)
     {
         var (sa, sb) = (ra["system"] as JsonObject ?? new JsonObject(), rb["system"] as JsonObject ?? new JsonObject());
-        var keys = sa.Select(kv => kv.Key).Union(sb.Select(kv => kv.Key))
-            .Where(k => k is not ("Displays" or "Sections" or "Settings changed") && (string?)sa[k] != (string?)sb[k]).ToList();
+        var rows = sa.Select(kv => kv.Key).Union(sb.Select(kv => kv.Key))
+            .Where(k => k is not ("Displays" or "Sections" or "Settings changed") && (string?)sa[k] != (string?)sb[k])
+            .Select(k => (k, (string?)sa[k] ?? "", (string?)sb[k] ?? "")).ToList();
         if ((string?)ra["drawable"] != (string?)rb["drawable"])
-            keys.Add("Drawn");
-        if (keys.Count == 0)
-            return;
-        Console.WriteLine("| | a | b |");
-        Console.WriteLine("|---|---|---|");
-        foreach (var k in keys)
-            Console.WriteLine(k == "Drawn" ? $"| Drawn | {ra["drawable"]} | {rb["drawable"]} |" : $"| {k} | {sa[k]} | {sb[k]} |");
-        Console.WriteLine();
+            rows.Add(("Drawn", (string?)ra["drawable"] ?? "", (string?)rb["drawable"] ?? ""));
+        return rows;
     }
 
     // The settings that differ between the two runs (settings.toml in their folders)
-    private static void Settings(string a, string b)
+    private static List<(string Key, string A, string B)> Settings(string a, string b)
     {
         Dictionary<string, string> Read(string dir)
         {
@@ -554,72 +972,93 @@ public static class Program
             return all;
         }
         var (sa, sb) = (Read(a), Read(b));
-        var differ = sa.Keys.Union(sb.Keys).Where(k => sa.GetValueOrDefault(k) != sb.GetValueOrDefault(k)).OrderBy(k => k).ToList();
-        if (differ.Count == 0)
-        {
-            Console.WriteLine("Same settings.");
-            Console.WriteLine();
-            return;
-        }
-        Console.WriteLine("| Setting | a | b |");
-        Console.WriteLine("|---|---|---|");
-        foreach (var k in differ)
-            Console.WriteLine($"| {k} | {sa.GetValueOrDefault(k, "")} | {sb.GetValueOrDefault(k, "")} |");
-        Console.WriteLine();
+        return sa.Keys.Union(sb.Keys).Where(k => sa.GetValueOrDefault(k) != sb.GetValueOrDefault(k)).OrderBy(k => k)
+            .Select(k => (k, sa.GetValueOrDefault(k, ""), sb.GetValueOrDefault(k, ""))).ToList();
     }
 
-    private static void Numbers(JsonObject ra, JsonObject rb)
+    private static void Numbers(StringBuilder md, JsonObject ra, JsonObject rb)
     {
         var parts = Windows(ra);
         var after = Windows(rb);
-        Console.WriteLine("| Section | Part | Frame ms a | Frame ms b | Change | GPU ms a | GPU ms b | Change |");
-        Console.WriteLine("|---|---|---:|---:|---:|---:|---:|---:|");
-        foreach (var (key, wa) in parts)
+        var plain = parts.Where(kv => kv.Value["gameDays"] is null && after.ContainsKey(kv.Key)).ToList();
+        if (plain.Count > 0)
         {
-            if (!after.TryGetValue(key, out var wb))
-                continue;
-            Console.WriteLine($"| {key.section} | {key.part} | {Num(wa["frameMsMedian"], "F1")} | {Num(wb["frameMsMedian"], "F1")} | " +
-                              $"{Change(wa["frameMsMedian"], wb["frameMsMedian"], wa["frameMsRange"], wb["frameMsRange"])} | {Num(wa["gpuMsMedian"], "F1")} | " +
-                              $"{Num(wb["gpuMsMedian"], "F1")} | {Change(wa["gpuMsMedian"], wb["gpuMsMedian"], wa["gpuMsRange"], wb["gpuMsRange"])} |");
+            md.AppendLine("| Section | Part | GPU ms a | GPU ms b | Change | Frame ms a | Frame ms b | Change |");
+            md.AppendLine("|---|---|---:|---:|---:|---:|---:|---:|");
+            string last = "";
+            foreach (var (key, wa) in plain)
+            {
+                var wb = after[key];
+                md.AppendLine($"| {(key.section == last ? "" : key.section)} | {key.part} | {Num(wa["gpuMsMedian"], "F1")} | {Num(wb["gpuMsMedian"], "F1")} | " +
+                              $"{Change(wa["gpuMsMedian"], wb["gpuMsMedian"], wa["gpuMsRange"], wb["gpuMsRange"])} | {Num(wa["frameMsMedian"], "F1")} | " +
+                              $"{Num(wb["frameMsMedian"], "F1")} | {Change(wa["frameMsMedian"], wb["frameMsMedian"], wa["frameMsRange"], wb["frameMsRange"])} |");
+                last = key.section;
+            }
+            md.AppendLine();
         }
-        Console.WriteLine();
+        WarpNumbers(md, parts, after);
+        var gone = parts.Keys.Where(k => !after.ContainsKey(k)).Select(k => $"{k.section} {k.part}").ToList();
+        var come = after.Keys.Where(k => !parts.ContainsKey(k)).Select(k => $"{k.section} {k.part}").ToList();
+        if (gone.Count > 0)
+            md.AppendLine($"Only in a: {string.Join(", ", gone)}.");
+        if (come.Count > 0)
+            md.AppendLine($"Only in b: {string.Join(", ", come)}.");
         bool repeated = (ra["runs"]?.GetValue<int>() ?? 1) > 1 && (rb["runs"]?.GetValue<int>() ?? 1) > 1;
-        Console.WriteLine(repeated
-            ? $"Both runs were repeated: changes are marked, faster (+) or slower (-), when the ranges of the repeats don't overlap and the change is over {SignificantRepeated:P0}."
-            : $"Changes over {Significant:P0} are marked: faster (+) or slower (-). Smaller ones are within run-to-run noise.");
-        Console.WriteLine();
+        md.AppendLine(repeated
+            ? $"Both runs were repeated: a change is marked when the ranges of the repeats don't overlap and it is over {SignificantRepeated:P0}."
+            : $"Changes over {Significant:P0} are marked; smaller ones are within run-to-run noise. Frame times sit on the display's beat: read GPU ms first. " +
+              "A Mac's heat moves GPU time too, about 10 % between a first run after a rest and the next ones: compare runs at the same point of a series, or with --repeat 3 on both sides.");
+        md.AppendLine();
     }
 
-    // Each screenshot of a against b's of the same name; marked copies of b's that differ go to b/diff/
-    private static int Screenshots(string a, string b, double shotLimit)
+    // The time warp's parts by the speed they reached: more is better
+    private static void WarpNumbers(StringBuilder md, Dictionary<(string section, string part), JsonObject> a, Dictionary<(string section, string part), JsonObject> b)
     {
+        var parts = a.Where(kv => kv.Value["gameDays"] is not null && b.TryGetValue(kv.Key, out var w) && w["gameDays"] is not null).ToList();
+        if (parts.Count == 0)
+            return;
+        md.AppendLine("| Warp part | Game days a | Game days b | Speed a | Speed b | Change | GPU ms a | GPU ms b |");
+        md.AppendLine("|---|---:|---:|---:|---:|---:|---:|---:|");
+        foreach (var (key, wa) in parts)
+        {
+            var wb = b[key];
+            md.AppendLine($"| {key.part} | {Num(wa["gameDays"], "F1")} | {Num(wb["gameDays"], "F1")} | {Num(wa["speed"], "F0")} | {Num(wb["speed"], "F0")} | " +
+                          $"{Change(wa["speed"], wb["speed"], wa["speedRange"], wb["speedRange"], moreIsBetter: true)} | {Num(wa["gpuMsMedian"], "F1")} | {Num(wb["gpuMsMedian"], "F1")} |");
+        }
+        md.AppendLine();
+    }
+
+    // Each screenshot of a against b's of the same name; marked copies of b's that differ go to b/diff/. A view allowed to
+    // change all it likes (the Warp Test's) isn't compared. Returns how many differ, and their table.
+    private static (int Differ, string Table) Screenshots(string a, string b, double shotLimit, List<ShotResult> results)
+    {
+        var md = new StringBuilder();
         var shots = Directory.GetFiles(a, "*_*.png").Select(Path.GetFileName).OfType<string>().OrderBy(n => n, StringComparer.Ordinal).ToList();
         if (shots.Count == 0)
         {
-            Console.WriteLine(Directory.GetFiles(a, "*_*.jpg").Length > 0
+            md.AppendLine(Directory.GetFiles(a, "*_*.jpg").Length > 0
                 ? "Screenshots not compared: a's are JPEG (a shared zip's), which only show by eye what changed."
                 : "No screenshots in a to compare.");
-            return 0;
+            return (0, md.ToString());
         }
-        // The limits of screenshots that change from run to run (in either run's sections)
+        // The limits of screenshots that change from run to run
+        // The newer run's say, so that a limit tightened since an older run counts: a's only for sections b didn't play
         var limits = new Dictionary<string, double>();
-        foreach (var dir in new[] { a, b })
+        var played = Sections(Load(b) ?? new JsonObject()).OfType<JsonObject>().Select(s => (string?)s["name"]).ToHashSet();
+        foreach (var (dir, onlyOthers) in new[] { (a, true), (b, false) })
         {
-            foreach (var section in Sections(Load(dir) ?? new JsonObject()).OfType<JsonObject>())
+            foreach (var section in Sections(Load(dir) ?? new JsonObject()).OfType<JsonObject>().Where(s => !onlyOthers || !played.Contains((string?)s["name"])))
             {
                 foreach (var (shot, limit) in section["shotLimits"] as JsonObject ?? new JsonObject())
-                {
-                    var name = $"{section["name"]}_{shot}.png";
-                    limits[name] = Math.Max(limits.GetValueOrDefault(name, shotLimit), limit?.GetValue<double>() ?? 0);
-                }
+                    limits[$"{section["name"]}_{shot}.png"] = limit?.GetValue<double>() ?? shotLimit;
             }
         }
         var diffDir = Path.Combine(b, "diff");
         if (Directory.Exists(diffDir))
             Directory.Delete(diffDir, true);
         int differ = 0;
-        Console.WriteLine("| Screenshot | Changed | Mean change | |");
-        Console.WriteLine("|---|---:|---:|---|");
+        md.AppendLine("| Screenshot | Changed | Mean change | |");
+        md.AppendLine("|---|---:|---:|---|");
         foreach (var name in shots)
         {
             var pathB = Path.Combine(b, name);
@@ -628,29 +1067,61 @@ public static class Program
                 // A run without screenshots compares by its numbers only
                 continue;
             }
+            double allowed = limits.GetValueOrDefault(name, shotLimit);
+            if (allowed >= 100)
+            {
+                results.Add(new ShotResult(name, 0, 0, allowed, "free"));
+                continue;
+            }
             var (ia, ib) = (Images.Read(Path.Combine(a, name)), Images.Read(pathB));
             if (ia == null || ib == null)
             {
-                Console.WriteLine($"| {name} | | | **unreadable** |");
+                md.AppendLine($"| {name} | | | **unreadable** |");
+                results.Add(new ShotResult(name, 100, 0, allowed, "unreadable"));
                 differ++;
                 continue;
             }
             var d = Images.Compare(ia, ib);
-            double allowed = limits.GetValueOrDefault(name, shotLimit);
             bool same = d.ChangedPercent <= allowed;
-            Console.WriteLine($"| {name} | {d.ChangedPercent:F2}% | {d.MeanChange:F1} | {(same ? "same" : "**differs**")}{(allowed > shotLimit ? $" (up to {allowed:F0}%)" : "")} |");
+            md.AppendLine($"| {name} | {d.ChangedPercent:F2}% | {d.MeanChange:F1} | {(same ? "same" : "**differs**")}{(allowed > shotLimit ? $" (up to {allowed:F0}%)" : "")} |");
+            results.Add(new ShotResult(name, d.ChangedPercent, d.MeanChange, allowed, same ? "same" : "differs"));
             if (same)
                 continue;
             differ++;
             Directory.CreateDirectory(diffDir);
             Images.Write(Path.Combine(diffDir, name), Images.Mark(ib, d));
         }
-        Console.WriteLine();
-        Console.WriteLine($"Changed: the share of the screenshot's {Images.Block}-pixel blocks whose colour moved by more than {Images.BlockLimit:F0} " +
-                          $"(of 255); over {shotLimit:F0}% it differs (more for views that physics, particles or the sea change every time).");
+        if (results.Count == 0)
+            return (0, "Screenshots not compared: b has no PNG of a's screenshots (a run without screenshots, or a shared zip's).\n");
+        md.AppendLine();
+        md.AppendLine($"Changed: the share of the screenshot's {Images.Block}-pixel blocks whose colour moved by more than {Images.BlockLimit:F0} " +
+                      $"(of 255); over {shotLimit:F0}% it differs (more for views that physics, particles or the sea change every time).");
         if (differ > 0)
-            Console.WriteLine($"{differ} screenshot{(differ > 1 ? "s differ" : " differs")}: {diffDir} shows where (in red).");
-        return differ > 0 ? 1 : 0;
+            md.AppendLine($"{differ} screenshot{(differ > 1 ? "s differ" : " differs")}: {diffDir} shows where (in red).");
+        return (differ, md.ToString());
+    }
+
+    // The screenshots for a terminal: those that differ, each with its numbers, and how many are the same
+    private static string ShotsForTerminal(List<ShotResult> shots, int differ)
+    {
+        var md = new StringBuilder();
+        if (differ > 0)
+        {
+            md.AppendLine("| Screenshot | Changed | Mean change | |");
+            md.AppendLine("|---|---:|---:|---|");
+            foreach (var s in shots.Where(s => s.State is "differs" or "unreadable"))
+                md.AppendLine($"| {s.Name} | {s.ChangedPercent:F2}% | {s.MeanChange:F1} | **{s.State}** (up to {s.Allowed:F0}%) |");
+            md.AppendLine();
+        }
+        int same = shots.Count(s => s.State == "same"), free = shots.Count(s => s.State == "free");
+        var told = new List<string>();
+        if (same > 0)
+            told.Add($"{same} screenshot{(same > 1 ? "s" : "")} the same");
+        if (free > 0)
+            told.Add($"{free} that may change from run to run not compared");
+        if (told.Count > 0)
+            md.AppendLine(string.Join(", ", told) + ".");
+        return md.ToString();
     }
 
     // KSA Metal's GPU profiler (gpuprof.csv): per measured part, the encoders that took the most GPU time, averaged over
@@ -836,19 +1307,25 @@ public static class Program
         return all;
     }
 
-    private static string Change(JsonNode? a, JsonNode? b, JsonNode? rangeA, JsonNode? rangeB)
+    // Whether a number moved by more than noise: with repeats on both sides, the ranges don't overlap
+    public static bool Marked(JsonNode? a, JsonNode? b, JsonNode? rangeA, JsonNode? rangeB)
+    {
+        if (a is not JsonValue va || b is not JsonValue vb || !va.TryGetValue<double>(out var x) || !vb.TryGetValue<double>(out var y) || x <= 0)
+            return false;
+        double change = (y - x) / x;
+        return rangeA is JsonArray ra && rangeB is JsonArray rb
+            ? Math.Abs(change) >= SignificantRepeated && ((double)rb[0]! > (double)ra[1]! || (double)rb[1]! < (double)ra[0]!)
+            : Math.Abs(change) >= Significant;
+    }
+
+    // How far b is from a, marked when it counts: "12 % slower", or "+2%" within noise. Times: less is faster.
+    private static string Change(JsonNode? a, JsonNode? b, JsonNode? rangeA, JsonNode? rangeB, bool moreIsBetter = false)
     {
         if (a is not JsonValue va || b is not JsonValue vb || !va.TryGetValue<double>(out var x) || !vb.TryGetValue<double>(out var y) || x <= 0)
             return "";
         double change = (y - x) / x;
-        string text = change.ToString("+0%;-0%;0%");
-        bool significant = rangeA is JsonArray ra && rangeB is JsonArray rb
-            ? Math.Abs(change) >= SignificantRepeated &&
-              ((double)rb[0]! > (double)ra[1]! || (double)rb[1]! < (double)ra[0]!)
-            : Math.Abs(change) >= Significant;
-        if (!significant)
-            return text;
-        // Less time is faster
-        return change < 0 ? $"**{text} (+)**" : $"**{text} (-)**";
+        if (!Marked(a, b, rangeA, rangeB))
+            return (change * 100).ToString("+0;-0;0") + " %";
+        return $"**{Math.Abs(change) * 100:F0} % {(change < 0 != moreIsBetter ? "faster" : "slower")}**";
     }
 }

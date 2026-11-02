@@ -104,6 +104,7 @@ run build-hooks "${KSA_DIR}"
 step "[6/6] The port folder"
 run make-kit payload
 run check-kit
+run test-benchmark-script "${OUT}"
 
 echo ""
 step "Done: ${OUT#"${REPO}/"} (port ${VERSION}, KSA ${KSA_VERSION})"

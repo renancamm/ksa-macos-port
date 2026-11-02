@@ -163,7 +163,17 @@ static void signalFence(KFence* f) {
 
 static void checkCommandBufferError(id<MTLCommandBuffer> cb) {
     if (cb.status == MTLCommandBufferStatusError) {
+        kmtlNoteGpuError();
         KERR_LIMIT(20, "command buffer failed: %s", cb.error.description.UTF8String);
+        // With KSA_MTL_GPU_ERRORS=1, which encoders ran, faulted or never started
+        NSArray* infos = cb.error.userInfo[MTLCommandBufferEncoderInfoErrorKey];
+        for (id<MTLCommandBufferEncoderInfo> info in infos) {
+            const char* state = info.errorState == MTLCommandEncoderErrorStateCompleted ? "completed"
+                : info.errorState == MTLCommandEncoderErrorStateFaulted ? "FAULTED"
+                : info.errorState == MTLCommandEncoderErrorStateAffected ? "affected"
+                : info.errorState == MTLCommandEncoderErrorStatePending ? "pending" : "unknown";
+            KERR_LIMIT(400, "  encoder %s: %s", state, info.label.UTF8String ?: "(no label)");
+        }
     }
 }
 
@@ -392,6 +402,7 @@ VKFN(VkResult) vkAllocateMemory(VkDevice device, const VkMemoryAllocateInfo* ai,
     m->typeIndex = ai->memoryTypeIndex;
     m->heap = heap;
     m->whole = whole;
+    kmtlPassDumpTrackMemory(whole);
     if (shared) m->mapped = whole.contents;
     dev->addResident(heap);
     kmtlRegisterMemory(m);
@@ -412,6 +423,7 @@ VKFN(void) vkFreeMemory(VkDevice, VkDeviceMemory memory, const VkAllocationCallb
     KTRACE_FIRST();
     auto* m = (KDeviceMemory*)memory;
     if (!m) return;
+    kmtlPassDumpForgetMemory(m->whole);
     if (kmtlConfig().stallMs > 0 && m->size >= (16u << 20))
         KLOG(0, "stall: memory -%llu MB type %u at %.3f present %llu", (unsigned long long)(m->size >> 20), m->typeIndex,
              CACurrentMediaTime(), (unsigned long long)kmtlPresentCount());
@@ -606,12 +618,14 @@ VKFN(VkResult) vkCreateImage(VkDevice device, const VkImageCreateInfo* ci, const
     KLOG(2, "image %p %ux%ux%u fmt %d mips %u layers %u samples %u usage 0x%x -> %lu bytes", img, ci->extent.width,
          ci->extent.height, ci->extent.depth, ci->format, ci->mipLevels, ci->arrayLayers, ci->samples, ci->usage,
          (unsigned long)img->sizeAlign.size);
+    kmtlPassDumpTrack(img);
     *out = (VkImage)img;
     return VK_SUCCESS;
 }
 
 void kmtlDestroyImage(KImage* img) {
     if (!img) return;
+    kmtlPassDumpForget(img);
     if (img->ownsTexture && img->mtl) img->device->removeResident(img->mtl);
     delete img;
 }

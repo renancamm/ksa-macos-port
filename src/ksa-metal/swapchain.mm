@@ -169,6 +169,7 @@ VKFN(void) vkDestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain, cons
     auto* sc = (KSwapchain*)swapchain;
     if (!sc) return;
     vkDeviceWaitIdle(device);
+    kmtlOnSwapchainDestroyed(sc);
     for (auto* img : sc->images) kmtlDestroyImage(img);
     delete sc;
 }
@@ -305,7 +306,7 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
             [b updateFence:q->chain];
             [b endEncoding];
             [cb addCompletedHandler:^(id<MTLCommandBuffer> c) { kmtlNoteGpuTime(c); }];
-            kmtlOnPresent(q->device, img, cb);
+            kmtlOnPresent(q->device, sc, img, cb);
             {
                 // For vkWaitForPresentKHR: when this present was made, ended on the GPU, and was shown
                 std::shared_ptr<KPresentState> state = sc->presentState;

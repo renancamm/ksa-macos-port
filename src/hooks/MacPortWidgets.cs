@@ -519,15 +519,17 @@ internal static partial class MacPortTab
         return hovered;
     }
 
-    // The benchmark's tours
-    private static readonly (bool Full, string Name, string Time, string What, string Help)[] Tours =
+    // The benchmark's tests: a test with one form has no cinematic time
+    private static readonly (string Test, string Name, string Time, string? Cinematic, string What, string Help)[] Tests =
     [
-        (false, "Fast", "about 1 min", "Earth from space down to the grass, rockets and a cockpit, all paused.", "About 1 minute: a kitten in orbit, Earth from space down to the grass, then rockets and a cockpit, all with the game paused."),
-        (true, "Full", "about 8 min", "From Earth to Jupiter, with a launch and a 2,000-part rocket.", "About 8 minutes: from Earth to Jupiter, with a kitten in the grass, a launch and a 2,000-part rocket."),
+        ("mixed", "Mixed Test", "1 min", "4 min", "Rockets, smoke, an explosion, a kitten and a cockpit.", "What the tour doesn't check. Fast: the views standing still, the game paused. Cinematic: a cockpit through a day, a kitten in the grass, a launch and a 2,000-part rocket blown up."),
+        ("tour", "Planetary Tour", "2 min", "5 min", "From Earth to Jupiter: ground, sea, clouds and rings.", "Fast: each place standing still, the camera jumping between them. Cinematic: the flight between the worlds, without a cut."),
+        ("warp", "Warp Test", "3 min", null, "How far time warp gets, with debris around Earth.", "A ship in orbit at the top speed: alone, among rockets blown up in orbit, and as pieces fall back and land. Each part takes the same time on any Mac, so a slow one gets less far. With the Extra Performance warp rows off, the game may stop here: the parts it finished are kept."),
+        ("full", "Full", "4 min", "11 min", "All three, one after the other.", "The Planetary Tour, the Mixed Test and the Warp Test, in one game."),
     ];
 
-    // The Benchmark section's table: a row for each tour with its button, then what the last run left, and under them
-    // why no tour can start
+    // The Benchmark section's table: a row for each test with its buttons, then what the last run left, and under them
+    // why no test can start
     private static void DrawBenchmark()
     {
         var temporary = _temporary.GetValue(null);
@@ -538,16 +540,19 @@ internal static partial class MacPortTab
         float s = ConsoleStyle.EffectiveInterfaceScale, inset = ConsoleWidgets.RowLabelInsetPx, gap = 12f * s;
         Gap(6f * s);
         float x = ImGui.GetCursorScreenPos().X + inset, right = ImGui.GetCursorScreenPos().X + ConsoleStyle.ContentAvailWidth();
-        float buttonWidth = ConsoleWidgets.ButtonWidth(show);
-        float nameWidth = MathF.Max(Tours.Max(t => LabelWidth(t.Name)), LabelWidth("Last Run"));
+        const string fast = "FAST", cinematic = "CINEMATIC";
+        float buttonWidth = MathF.Max(ConsoleWidgets.ButtonWidth(show), ConsoleWidgets.ButtonWidth(fast) + gap + ConsoleWidgets.ButtonWidth(cinematic));
+        float nameWidth = MathF.Max(Tests.Max(t => LabelWidth(t.Name)), LabelWidth("Last Run"));
         float small = SmallHeight(), line = MathF.Round(small);
-        float timeWidth = MathF.Max(Tours.Max(t => SmallWidth(t.Time)), last != null ? SmallWidth(last.Date) : 0f);
+        static string Times((string Test, string Name, string Time, string? Cinematic, string What, string Help) t) =>
+            t.Cinematic != null ? $"{t.Time}, {t.Cinematic}" : t.Time;
+        float timeWidth = MathF.Max(Tests.Max(t => SmallWidth(Times(t))), last != null ? SmallWidth(last.Date) : 0f);
         float what = x + nameWidth + gap, button = right - buttonWidth, time = button - gap - timeWidth, whatWidth = time - gap - what;
         var draw = ImGui.GetWindowDrawList();
         uint hairline = ConsoleStyle.ApplyAlpha(ConsoleStyle.HairlineU32), muted = ConsoleStyle.ApplyAlpha(ConsoleStyle.TextMutedU32), label = ConsoleStyle.ApplyAlpha(ConsoleStyle.TextLabelU32);
         float y = ImGui.GetCursorScreenPos().Y;
         ConsoleStyle.PushSignatureFont();
-        draw.AddText(new float2(x, y), muted, "Tour");
+        draw.AddText(new float2(x, y), muted, "Test");
         draw.AddText(new float2(what, y), muted, "What It Plays");
         draw.AddText(new float2(time, y), muted, "Time");
         ConsoleStyle.PopFont();
@@ -555,8 +560,8 @@ internal static partial class MacPortTab
         draw.AddLine(new float2(x, y), new float2(right, y), hairline, ConsoleStyle.WindowBorderThicknessPx);
         string? tip = null;
 
-        // One row: returns whether its button was pressed
-        bool Row(string name, string[] text, uint textColour, string when, string buttonLabel, string id, string help, bool disabled)
+        // One row, with one button or two side by side: returns which was pressed, 1 or 2, or 0
+        int Row(string name, string[] text, uint textColour, string when, string buttonLabel, string? second, string id, string help, bool disabled)
         {
             float height = MathF.Max(ConsoleWidgets.ButtonHeight, line * text.Length) + 12f * s;
             var min = new float2(x, y);
@@ -579,24 +584,33 @@ internal static partial class MacPortTab
             }
             draw.AddText(new float2(time, y + (height - small) * 0.5f), label, when);
             ConsoleStyle.PopFont();
-            ImGui.SetCursorScreenPos(new float2(button, y + (height - ConsoleWidgets.ButtonHeight) * 0.5f));
+            float top = y + (height - ConsoleWidgets.ButtonHeight) * 0.5f;
+            float first = second == null ? buttonWidth : buttonWidth - gap - ConsoleWidgets.ButtonWidth(second);
             ConsoleStyle.PushDisabled(disabled);
-            bool pressed = ConsoleWidgets.Button(buttonLabel, id, new float2(buttonWidth, ConsoleWidgets.ButtonHeight));
+            ImGui.SetCursorScreenPos(new float2(button, top));
+            int pressed = ConsoleWidgets.Button(buttonLabel, id, new float2(first, ConsoleWidgets.ButtonHeight)) ? 1 : 0;
+            if (second != null)
+            {
+                ImGui.SetCursorScreenPos(new float2(button + first + gap, top));
+                if (ConsoleWidgets.Button(second, id + "_2", new float2(buttonWidth - first - gap, ConsoleWidgets.ButtonHeight)))
+                    pressed = 2;
+            }
             ConsoleStyle.PopDisabled();
             y += height;
-            return pressed && !disabled;
+            return disabled ? 0 : pressed;
         }
 
-        for (int i = 0; i < Tours.Length; i++)
+        for (int i = 0; i < Tests.Length; i++)
         {
-            var (full, name, when, playing, help) = Tours[i];
+            var (test, name, _, cine, playing, help) = Tests[i];
             var text = WrapSmall(playing, whatWidth);
-            if (Row(name, text, muted, when, "RUN", "MacPort_run_" + name, why ?? help + "\n\nIt plays with the settings above, and writes its report to the benchmarks folder in the game's documents folder. Leave the mouse and keyboard alone until it is done; Esc stops it.", why != null))
-                BenchmarkRun.StartFromTab(full, PortSettings.Get("restart_for_a_clean_run")?.Saved == "true");
-            if (i < Tours.Length - 1 || last != null)
+            int pressed = Row(name, text, muted, Times(Tests[i]), cine != null ? fast : "RUN", cine != null ? cinematic : null, "MacPort_run_" + test, why ?? help + "\n\nIt plays with the settings above, and writes its report to the benchmarks folder in the game's documents folder. Leave the mouse and keyboard alone until it is done; Esc stops it.", why != null);
+            if (pressed > 0)
+                BenchmarkRun.StartFromTab(test, cine == null || pressed == 1, PortSettings.Get("restart_for_a_clean_run")?.Saved == "true");
+            if (i < Tests.Length - 1 || last != null)
                 draw.AddLine(new float2(x, y), new float2(right, y), hairline, ConsoleStyle.WindowBorderThicknessPx);
         }
-        if (last != null && Row("Last Run", [last.Outcome], ConsoleStyle.ApplyAlpha(last.Passed ? ConsoleStyle.TextLabelU32 : ConsoleStyle.DangerU32), last.Date, show, "MacPort_show_report", last.Summary, false))
+        if (last != null && Row("Last Run", [last.Outcome], ConsoleStyle.ApplyAlpha(last.Passed || last.Stopped ? ConsoleStyle.TextLabelU32 : ConsoleStyle.DangerU32), last.Date, show, null, "MacPort_show_report", last.Summary, false) > 0)
             BenchmarkRun.Show(last.Folder);
         ImGui.SetCursorScreenPos(new float2(x - inset, y));
         Gap(4f * s);

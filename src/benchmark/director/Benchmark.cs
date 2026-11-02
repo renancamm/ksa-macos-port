@@ -14,6 +14,14 @@
 //                     game needs KSA_MTL_GPUPROF=<csv>)
 //   KSA_BENCH_CAPTURE optional: an Xcode GPU frame capture of the view at every checkpoint, <section>_<shot>.gputrace
 //                     (the game needs MTL_CAPTURE_ENABLED=1)
+//   KSA_BENCH_CATCH   optional: a clean run's folder: after a screenshot under half the size of that run's same screenshot,
+//                     KSA Metal's pass dump of the next frame in caught/<section>_<shot>/ and an image of a frame after it
+//                     in caught/, at most MaxCatches a run. A screenshot also counts when it has far more pure black than
+//                     that run's, or is 30 % pure white
+//   KSA_BENCH_CATCH_CAPTURE optional, with KSA_BENCH_CATCH: an Xcode GPU frame capture after the pass dump, in
+//                     caught/<section>_<shot>.gputrace (the game needs MTL_CAPTURE_ENABLED=1)
+//   KSA_BENCH_PASSES  optional: the same pass dump and image at every checkpoint, broken or not: a clean run's, to compare
+//                     a caught one with
 //   KSA_BENCH_WAIT    optional: a file to wait for in the game before playing (up to a minute), so that a tool the
 //                     script starts once the game is up (an Instruments trace) sees the whole run
 //   KSA_BENCH_TRACE   optional: write the camera's place every frame to trace.csv, to check its moves are smooth
@@ -25,7 +33,7 @@
 // every second, so the script can tell a game that hangs from one that is busy. Every frame goes into frames.csv, and
 // every measured part is a signpost interval (KSA Metal's ksaMtlMarker), so an Instruments trace shows the parts.
 //
-// The script is a series of sections. "section <name> [needs <celestial>...]" starts one; a section whose celestials
+// The script is a series of sections. "section <name> [live] [needs <celestial>...]" starts one; a section whose celestials
 // the loaded system lacks is skipped. Each section is a list of "<seconds> <command>" steps timed from its start. A
 // command is a console command or one of the directives in Directives.cs. Other lines are comments.
 //
@@ -43,6 +51,11 @@
 // each checkpoint the mod waits until the view stops changing (terrain and textures streaming in after a jump),
 // measures a few seconds of the view standing there (instead of the @measure parts) and takes the screenshot. Its
 // numbers compare only with other fast runs.
+//
+// A live section is the time warp's: it plays the same in both modes, by the Mac's clock alone. Its parts take the time
+// they are given whatever the game gets through in it: the game gets the speed the script asks for, as from a player, and
+// nothing waits for it (no catching up; a checkpoint stops where the game has got to), so a slow Mac or a stuck
+// simulation can't hold it up. @measure measures how far the game's clock got.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -86,12 +99,13 @@ public partial class Benchmark
         public string Name = "";
         public string[] Needs = Array.Empty<string>();
         public readonly List<Step> Steps = new();
+        public bool Live;
         public double Length => Steps.Count > 0 ? Steps.Max(s => s.At) : 0;
         // Only the camera's flight: no vehicles, nothing that needs the game's clock
         public bool CameraOnly => Steps.All(s => s.Words[0] is "@key" or "@shot" or "@measure");
     }
 
-    private enum Phase { Play, CatchUp, Settle, Measure, Capture, Shoot, Hold }
+    private enum Phase { Play, CatchUp, Settle, Measure, Capture, Shoot, Catch, CatchPasses, CatchCapture, CaughtImage, Hold, NewWorld }
 
     // What a catch-up of the game's clock leads to: a checkpoint's screenshot, the end of a jump of @time, or the end of
     // a @sync
@@ -106,6 +120,12 @@ public partial class Benchmark
     private FrameLog? _frames;
     private uint _profileFrames;
     private bool _capture;
+    // KSA_BENCH_CATCH: the clean run, and the captures taken so far (each several GB)
+    private const int MaxCatches = 3;
+    private const double CatchBelow = 0.5, CatchMoreBlack = 25, CatchWhite = 30;
+    private string? _catchAgainst;
+    private bool _catchCapture, _passesEverywhere;
+    private int _catches;
     private bool _active;
     private Results? _results;
     private bool _fast, _shots = true;
@@ -190,7 +210,10 @@ public partial class Benchmark
             if (words.Length >= 2 && words[0] == "section")
             {
                 int needs = Array.IndexOf(words, "needs");
-                _sections.Add(new Section { Name = words[1], Needs = needs > 0 ? words[(needs + 1)..] : Array.Empty<string>() });
+                _sections.Add(new Section
+                {
+                    Name = words[1], Needs = needs > 0 ? words[(needs + 1)..] : Array.Empty<string>(), Live = words.Length > 2 && words[2] == "live"
+                });
                 continue;
             }
             var space = line.IndexOf(' ');
@@ -231,6 +254,9 @@ public partial class Benchmark
         _resultsFile = $"results{_option("KSA_BENCH_RUN")}.json";
         uint.TryParse(_option("KSA_BENCH_PROFILE"), out _profileFrames);
         _capture = _option("KSA_BENCH_CAPTURE") is { Length: > 0 };
+        _catchAgainst = _option("KSA_BENCH_CATCH") is { Length: > 0 } clean ? clean : null;
+        _catchCapture = _option("KSA_BENCH_CATCH_CAPTURE") == "1";
+        _passesEverywhere = _option("KSA_BENCH_PASSES") == "1";
         _waitFor = _option("KSA_BENCH_WAIT") is { Length: > 0 } wait ? wait : null;
         Directory.CreateDirectory(_outDir);
         _frames = new FrameLog(Path.Combine(_outDir, $"frames{_option("KSA_BENCH_RUN")}.csv"));
@@ -287,8 +313,9 @@ public partial class Benchmark
             return;
         // The game's messages stay in its log, off the screen
         Program.ConsoleWindow.ClearConsole();
+        var sim = ReadSim();
         _frames?.Add(_scriptTime - _sectionStart, _sectionResult?.Name, _window?.Name ?? _still?.Name, _phase.ToString(), dt * 1000,
-            DriverStats.Read());
+            DriverStats.Read(), sim);
 
         if (_phase != Phase.Play)
         {
@@ -312,11 +339,13 @@ public partial class Benchmark
             // the script warps, it asks for more as the game falls behind and for less as it gets ahead. Coming out of
             // a warp the game can end up ahead (tens of milliseconds at the speed of the frame before): below a warp
             // it only asks for less, until the game is back in step
-            if (speed > 2 || speed > 0 && Universe.GetElapsedSeconds() > _gameTarget)
+            if (!Live && (speed > 2 || speed > 0 && Universe.GetElapsedSeconds() > _gameTarget))
                 speed = Math.Max(speed + (_gameTarget - Universe.GetElapsedSeconds()) / WarpCatchUp, 0);
             SetSpeed(speed);
-            if (!_fast)
+            if (!_fast || Live)
                 _window?.Add(dt * 1000, DriverStats.Read());
+            if (Live)
+                _window?.AddSim(dt * 1000, sim);
         }
         if (_window != null && _scriptTime >= _window.EndsAt)
             CloseWindow();
@@ -396,6 +425,26 @@ public partial class Benchmark
         for (int i = 1; i < n; i++)
             sum += SpeedAt(from + i * h) * (i % 2 == 1 ? 4 : 2);
         return sum * h / 3;
+    }
+
+    // Whether the section playing is a live one
+    private bool Live => _section >= 0 && _section < _sections.Count && _sections[_section].Live;
+
+    private static readonly System.Reflection.FieldInfo? UpdateTask = typeof(Universe).GetField("_vehicleUpdateTask", BindingFlags.NonPublic | BindingFlags.Static);
+    private static readonly System.Reflection.FieldInfo? Bubbles = typeof(VehicleUpdateTask).GetField("_bubbles", BindingFlags.NonPublic | BindingFlags.Instance);
+
+    private static SimSample ReadSim()
+    {
+        // Fields of the game's: a later version may move them, which only leaves the count out
+        var bubbles = UpdateTask?.GetValue(null) is { } task ? Bubbles?.GetValue(task) as System.Collections.ICollection : null;
+        int vehicles = 0;
+        if (Universe.CurrentSystem is { } system)
+        {
+            foreach (var body in system.All.AsSpan())
+                vehicles += body is Vehicle ? 1 : 0;
+        }
+        return new SimSample(Universe.GetElapsedSeconds(), Universe.GetSimulationSpeed(), JobSystems.VehicleSolver?.GetMaxLastTickTime() ?? 0,
+            PhysicsStepDiagnostics.Substeps, bubbles?.Count ?? 0, vehicles);
     }
 
     // Whether the game stays paused: fast mode, in a section of the camera's flight alone (or before the first section)
@@ -482,6 +531,9 @@ public partial class Benchmark
     private void NextSection()
     {
         EndSection();
+        // After a live section the game's clock is wherever it got to
+        if (Live)
+            _gameTarget = Universe.GetElapsedSeconds();
         if (_section >= 0)
             _sectionStart += _sections[_section].Length;
         _section++;
@@ -502,7 +554,7 @@ public partial class Benchmark
                 Program.TerminalInterface.Execute("exit");
             return;
         }
-        _sectionResult = new SectionResult(_sections[_section].Name);
+        _sectionResult = new SectionResult(_sections[_section].Name) { Live = Live };
         _results!.Sections.Add(_sectionResult);
         Log(FormattableString.Invariant($"section {_sectionResult.Name} (game time {Universe.GetElapsedSeconds():F1} s, {_wall.Elapsed.TotalSeconds:F1} s into the run)"));
     }
@@ -575,6 +627,8 @@ public partial class Benchmark
     private void StartCheckpoint(string shot)
     {
         BackToStep();
+        if (Live)
+            _gameTarget = Universe.GetElapsedSeconds();
         _shotName = shot;
         _after = After.Shot;
         _phase = Phase.CatchUp;
@@ -584,6 +638,8 @@ public partial class Benchmark
     private void Sync()
     {
         BackToStep();
+        if (Live)
+            _gameTarget = Universe.GetElapsedSeconds();
         _after = After.Sync;
         _phase = Phase.CatchUp;
     }
@@ -788,7 +844,7 @@ public partial class Benchmark
                 }
                 SetSpeed(0);
                 // The game ran past the moment the script expects: what follows plays later than written
-                if (-behind > AheadLimit)
+                if (-behind > AheadLimit && !Live)
                     _sectionResult?.Errors.Add(FormattableString.Invariant(
                         $"{_scriptTime - _sectionStart:F1} s: the game's clock is {-behind:F1} s ahead of the script's"));
                 if (_after != After.Shot)
@@ -800,12 +856,12 @@ public partial class Benchmark
                 }
                 // Without screenshots the checkpoint ends here, its clocks in step (fast mode still measures the view), and so
                 // does a checkpoint that isn't one of the places chosen
-                if ((!Chosen || !_shots && !_fast) && !Holding)
+                if ((!Chosen || !_shots && (!_fast || Live)) && !Holding)
                 {
                     Resume();
                     return;
                 }
-                if (_fast)
+                if (_fast && !Live)
                 {
                     ResetClouds(detailOnly: true);
                     ResetSeaFrame();
@@ -813,16 +869,16 @@ public partial class Benchmark
                 }
                 _phase = Phase.Settle;
                 _settleStart = wall;
-                _phaseEnds = wall + (_fast ? ProbeEvery : SettleSeconds);
+                _phaseEnds = wall + (_fast && !Live ? ProbeEvery : SettleSeconds);
                 _phaseFrames = 0;
                 _lastProbe = null;
                 _probe = null;
                 return;
             }
             case Phase.Settle:
-                if (_fast ? !Settled(wall) : wall < _phaseEnds || ++_phaseFrames < SettleFrames)
+                if (_fast && !Live ? !Settled(wall) : wall < _phaseEnds || ++_phaseFrames < SettleFrames)
                     return;
-                if (_fast && !Holding)
+                if (_fast && !Live && !Holding)
                 {
                     _phase = Phase.Measure;
                     return;
@@ -844,6 +900,7 @@ public partial class Benchmark
                     return;
                 DriverStats.Marker(_still.Name, false);
                 _sectionResult?.Windows.Add(_still.Summarize());
+                _results?.Write(Path.Combine(_outDir, _resultsFile));
                 Log($"measured {_still.Name}: {_still.Frames} frames");
                 _still = null;
                 CaptureThenShoot(wall);
@@ -870,15 +927,119 @@ public partial class Benchmark
                     _sectionResult?.Screenshots.Add(_shotName);
                 else
                     _sectionResult?.Errors.Add($"{_shotName}: no screenshot");
+                if ((_catchAgainst != null || _passesEverywhere) && File.Exists(path))
+                {
+                    _phase = Phase.Catch;
+                    _phaseEnds = wall + 30;
+                    return;
+                }
                 EndCheckpoint();
                 return;
             }
+            case Phase.Catch:
+                // A dump the watch started takes a moment; this view's own comes after it
+                if (DriverStats.PassDumping() && wall < _phaseEnds)
+                    return;
+                // The size counts once the driver has written all of the file
+                bool written = Images.Read(ShotPath()) != null;
+                if (!written && wall < _phaseEnds)
+                    return;
+                if ((!written ? null : _passesEverywhere ? "a clean run's passes" : LooksBroken()) is { } reason)
+                {
+                    if (DriverStats.GpuErrors() > 0)
+                        Log($"{_shotName}: {reason}, no pass dump: the GPU has failed and refuses this game's work");
+                    else if (!_passesEverywhere && _catches >= MaxCatches)
+                        Log($"{_shotName}: {reason}, no pass dump: limit reached");
+                    else if (DriverStats.PassDump(Path.Combine(_outDir, "caught", Path.GetFileNameWithoutExtension(ShotPath()))))
+                    {
+                        _catches++;
+                        Log($"{_shotName}: {reason}, its passes in caught/ (present {DriverStats.Read()?.Present})");
+                        _phase = Phase.CatchPasses;
+                        _phaseEnds = wall + 120;
+                        return;
+                    }
+                    else
+                        Log($"{_shotName}: {reason}, no pass dump: KSA Metal could not start one");
+                }
+                EndCheckpoint();
+                return;
+            case Phase.CatchPasses:
+                if (DriverStats.PassDumping() && wall < _phaseEnds)
+                    return;
+                if (DriverStats.PassDumping())
+                    Log($"{_shotName}: the pass dump did not finish");
+                // A capture of a frame that the GPU ran, or none: one taken after a hang replays as nonsense
+                if (_catchCapture && DriverStats.GpuErrors() == 0 && DriverStats.Capture(CaughtCapturePath(), 1))
+                {
+                    _phase = Phase.CatchCapture;
+                    _phaseEnds = wall + 120;
+                    return;
+                }
+                CaughtImage(wall);
+                return;
+            case Phase.CatchCapture:
+                if (DriverStats.Capturing() && wall < _phaseEnds)
+                    return;
+                Log($"{_shotName}: frame capture {(Directory.Exists(CaughtCapturePath()) || File.Exists(CaughtCapturePath()) ? Path.GetFileName(CaughtCapturePath()) : "missing")}");
+                CaughtImage(wall);
+                return;
+            case Phase.CaughtImage:
+                if (Images.Read(CaughtImagePath()) == null && wall < _phaseEnds)
+                    return;
+                EndCheckpoint();
+                return;
+            case Phase.NewWorld:
+                // A few frames for the game to take it in, the game stopped; steps then act on the new world
+                if (++_phaseFrames >= 3)
+                    _phase = Phase.Play;
+                return;
         }
     }
 
     private string ShotPath() => Path.Combine(_outDir, $"{_sectionResult?.Name}_{_shotName}.png");
 
     private string CapturePath() => Path.Combine(_outDir, $"{_sectionResult?.Name}_{_shotName}.gputrace");
+
+    private string CaughtImagePath() => Path.Combine(_outDir, "caught", Path.GetFileName(ShotPath()));
+
+    private string CaughtCapturePath() => Path.Combine(_outDir, "caught", Path.GetFileNameWithoutExtension(ShotPath()) + ".gputrace");
+
+    // Whether the fault lasted through the dumped frame; in a folder of its own, not one of the run's screenshots
+    private void CaughtImage(double wall)
+    {
+        DriverStats.Screenshot(CaughtImagePath());
+        _phase = Phase.CaughtImage;
+        _phaseEnds = wall + 10;
+    }
+
+    // What is wrong with the screenshot, or null. A real view reaches about a fifth of pure white, whatever the clean run shows.
+    // Against the clean run's, at the same size in pixels (at another, the bytes say nothing): far smaller, or far more pure
+    // black, which a dark view has anyway
+    private string? LooksBroken()
+    {
+        var shot = Images.Read(ShotPath());
+        if (shot == null)
+            return null;
+        if (Images.WhitePercent(shot) >= CatchWhite)
+            return "pure white";
+        var clean = new FileInfo(Path.Combine(_catchAgainst!, Path.GetFileName(ShotPath())));
+        var reference = clean.Exists ? Images.Read(clean.FullName) : null;
+        if (reference == null || shot.Width != reference.Width || shot.Height != reference.Height)
+            return null;
+        if (new FileInfo(ShotPath()).Length < clean.Length * CatchBelow)
+            return "far smaller than in the clean run";
+        return PureBlackPercent(shot) > PureBlackPercent(reference) + CatchMoreBlack ? "far more black than in the clean run" : null;
+    }
+
+    private static double PureBlackPercent(Image image)
+    {
+        long black = 0;
+        var rgb = image.Rgb;
+        for (int i = 0; i < rgb.Length; i += 3)
+            if (rgb[i] <= 1 && rgb[i + 1] <= 1 && rgb[i + 2] <= 1)
+                black++;
+        return 100.0 * black / Math.Max(1, rgb.Length / 3);
+    }
 
     // With KSA_BENCH_CAPTURE, an Xcode frame capture of the view (one frame, the game paused) before the screenshot
     private void CaptureThenShoot(double wall)
@@ -995,10 +1156,11 @@ public partial class Benchmark
         if (_window == null)
             return;
         // Fast mode measures the views standing still instead, so it only watches its parts for vehicles that broke up
-        if (!_fast)
+        if (!_fast || Live)
         {
             DriverStats.Marker(_window.Name, false);
             _sectionResult?.Windows.Add(_window.Summarize());
+            _results?.Write(Path.Combine(_outDir, _resultsFile));
             Log($"measured {_window.Name}: {_window.Frames} frames");
         }
         var followed = FollowedVehicle();

@@ -14,6 +14,9 @@
 //                                catches up with the script's, and the steps after it act at the same game time on
 //                                every Mac (a kitten walking through the slow frames walks differently, though)
 //   @gpuprof <name> <frames>     profile the next frames with KSA Metal's GPU profiler (needs KSA_MTL_GPUPROF=<csv>)
+//   @reset                       the world becomes a new game's (its clock at the start, no vehicles), so the section is
+//                                the same whatever played before it. The game stays stopped for the steps at that time in
+//                                a live section (until its @warp), and runs at real time in another
 //
 // Vehicles and kittens
 // The vehicle steps act on the vehicle chosen last (@vehicle, @control, @launch, @eva), or the controlled one. None of
@@ -112,8 +115,11 @@ public partial class Benchmark
                 CloseWindow();
                 _window = new Window(a[1], _scriptTime + seconds) { Vehicle = FollowedVehicle() };
                 // Fast mode measures the views standing still instead
-                if (!_fast)
+                if (!_fast || Live)
                     Opened(_window);
+                // From this moment, so that a first frame that stalls counts
+                if (Live)
+                    _window.AddSim(0, ReadSim());
                 return true;
             case "@shot" when a.Length is 2 or 3:
             {
@@ -121,7 +127,9 @@ public partial class Benchmark
                 {
                     if (!double.TryParse(a[2], NumberStyles.Float, Inv, out var limit))
                         return false;
-                    _sectionResult?.ShotLimits[a[1]] = limit;
+                    // A paused view comes out the same every time: it gets no allowance for what moves
+                    if (!Paused)
+                        _sectionResult?.ShotLimits[a[1]] = limit;
                 }
                 // The game stays paused: nothing to keep in step
                 if (Paused && !IsChosen(a[1]))
@@ -141,6 +149,9 @@ public partial class Benchmark
                 return SkipTo(time);
             case "@sync" when a.Length == 1:
                 Sync();
+                return true;
+            case "@reset" when a.Length == 1:
+                Reset();
                 return true;
             case "@key" when a.Length == 7:
                 // The camera's flight (Path.cs) is laid out before the run; the step only marks the key's time
@@ -316,6 +327,42 @@ public partial class Benchmark
         }
         Log($"unknown directive '{step.Command}'");
         return false;
+    }
+
+    // @reset
+    private void Reset()
+    {
+        CloseWindow();
+        ReleaseCamera();
+        EndRig();
+        _rotateRadPerSecond = 0;
+        _vehicle = null;
+        _exploded = null;
+        _blown.Clear();
+        NewWorld();
+        _gameStart = _gameTarget = Universe.GetElapsedSeconds();
+        _warpFrom = _warpTo = Live ? 0 : 1;
+        _warpSeconds = 0;
+        _speedSent = double.NaN;
+        SetSpeed(0);
+        _phase = Phase.NewWorld;
+        _phaseFrames = 0;
+    }
+
+    // The world of a new game: its clock at the start, no vehicles, no kittens on missions
+    public static void NewWorld()
+    {
+        JobSystems.WaitAll();
+        var fresh = UniverseData.Create();
+        fresh.GameTime = new UniverseTimeReference(UniverseTime.Zero);
+        foreach (var system in fresh.CelestialSystems)
+        {
+            system.Vehicles.Clear();
+            system.GroundClutter.Clear();
+        }
+        fresh.KittenRoster = KittenRosterData.Create();
+        Universe.DeserializeSave(fresh);
+        Program.OnGameLoaded();
     }
 
     private static bool TryParse3(string[] a, out double3 v)

@@ -1,5 +1,5 @@
 // What KSA Metal measures for each presented frame, read through its benchmark interface (src/ksa-metal/instruments.mm:
-// ksaMtlFrameStats, ksaMtlScreenshot, ksaMtlMarker, ksaMtlCapture, ksaMtlCapturing; profile.mm: ksaMtlProfileFrames). The
+// ksaMtlFrameStats, ksaMtlScreenshot, ksaMtlMarker, ksaMtlCapture, ksaMtlCapturing; passdump.mm: ksaMtlPassDump, ksaMtlPassDumping, ksaMtlGpuErrors; profile.mm: ksaMtlProfileFrames). The
 // app ships the director with the KSA Metal it was built with, so the driver has all of it. With another Vulkan driver
 // the mod still measures CPU frame times.
 using System;
@@ -46,6 +46,17 @@ public static unsafe class DriverStats
     [return: MarshalAs(UnmanagedType.U1)]
     private static extern bool CapturingNative();
 
+    [DllImport(Driver, EntryPoint = "ksaMtlPassDump")]
+    [return: MarshalAs(UnmanagedType.U1)]
+    private static extern bool PassDumpNative([MarshalAs(UnmanagedType.LPUTF8Str)] string dir);
+
+    [DllImport(Driver, EntryPoint = "ksaMtlPassDumping")]
+    [return: MarshalAs(UnmanagedType.U1)]
+    private static extern bool PassDumpingNative();
+
+    [DllImport(Driver, EntryPoint = "ksaMtlGpuErrors")]
+    private static extern uint GpuErrorsNative();
+
     // Whether the game's driver is KSA Metal, filling every field of FrameStats
     public static readonly bool Available = Probe();
 
@@ -62,6 +73,15 @@ public static unsafe class DriverStats
 
     // Until the capture's file is written
     public static bool Capturing() => Available && CapturingNative();
+
+    // Every pass's images of the next frame into dir, and all the images at its end
+    public static bool PassDump(string dir) => Available && PassDumpNative(dir);
+
+    // Until they are written
+    public static bool PassDumping() => Available && PassDumpingNative();
+
+    // Command buffers that failed: after a hang the GPU refuses this process's work, and a dump or capture holds nothing
+    public static uint GpuErrors() => Available ? GpuErrorsNative() : 0;
 
     // The driver's GPU profiler (KSA_MTL_GPUPROF) for the next frames; false when it is off
     public static bool ProfileFrames(string label, uint count) => Available && ProfileFramesNative(label, count);

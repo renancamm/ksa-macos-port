@@ -200,6 +200,7 @@ template <typename E> void KCommandBuffer::nameEncoder(E enc) {
 }
 
 void KCommandBuffer::endEncoder() {
+    bool dump = !dropping && kmtlPassDumpRecording();
     if (render && deferredStores) {
         for (int i = 0; i < 8; i++) {
             id<MTLTexture> t = passDesc.colorAttachments[i].texture;
@@ -208,7 +209,8 @@ void KCommandBuffer::endEncoder() {
             if (suspending && tileOnly)
                 KERR_ONCE("render pass suspended with a memoryless attachment (a tessellated draw, or KSA_MTL_GPUPROF_SPLIT=1): "
                           "its contents are lost");
-            [render setColorStoreAction:suspending && !tileOnly ? MTLStoreActionStore : colorStores[i] atIndex:i];
+            MTLStoreAction suspended = dumpResolves && passDesc.colorAttachments[i].resolveTexture ? MTLStoreActionStoreAndMultisampleResolve : MTLStoreActionStore;
+            [render setColorStoreAction:suspending && !tileOnly ? suspended : colorStores[i] atIndex:i];
         }
         if (passDesc.depthAttachment.texture) [render setDepthStoreAction:suspending ? MTLStoreActionStore : depthStore];
         if (passDesc.stencilAttachment.texture) [render setStencilStoreAction:suspending ? MTLStoreActionStore : stencilStore];
@@ -219,9 +221,19 @@ void KCommandBuffer::endEncoder() {
         uint32_t late = encRoles & ~kClassVertex;
         if (late) [render updateFence:finishFence(late) afterStages:kAllRenderStages];
         nameEncoder(render);
+        if (dump) {
+            if (dumpName.empty())
+                dumpName = render.label ? std::string(render.label.UTF8String)
+                    : std::to_string(rtWidth) + "x" + std::to_string(rtHeight) + " " + (encodedPipeline ? encodedPipeline->profName : "no pipeline");
+        }
         [render endEncoding];
         render = nil;
         inRenderPass = false;
+        if (dump && !suspending) {
+            kmtlPassDumpEncoder(this, dumpName, dumpDesc);
+            dumpName.clear();
+            dumpDesc = nil;
+        }
         if (passResolves && !suspending) {
             passResolves = false;
             if (!resolveEvent) resolveEvent = [device->mtl newEvent];
@@ -231,8 +243,11 @@ void KCommandBuffer::endEncoder() {
     if (compute) {
         [compute updateFence:finishFence(encRoles)];
         nameEncoder(compute);
+        std::string dumpName = !dump ? "" : compute.label ? std::string(compute.label.UTF8String)
+            : computePipeline ? computePipeline->profName : "compute";
         [compute endEncoding];
         compute = nil;
+        if (dump) kmtlPassDumpEncoder(this, dumpName, nil);
     }
     if (blit) {
         [blit updateFence:finishFence(encRoles)];
@@ -289,6 +304,14 @@ void KCommandBuffer::beginRender(MTLRenderPassDescriptor* rp, uint32_t w, uint32
     if (!resuming) {
         passResolves = rp.depthAttachment.resolveTexture || rp.stencilAttachment.resolveTexture;
         for (int i = 0; i < 8; i++) passResolves |= rp.colorAttachments[i].resolveTexture != nil;
+        dumpDesc = kmtlPassDumpRecording() ? rp : nil;
+        dumpDraws = 0;
+        dumpDrawsSkipped = false;
+        dumpName.clear();
+        if (dumpDesc) {
+            for (int i = 0; i < 8; i++) dumpLoads[i] = rp.colorAttachments[i].loadAction;
+            dumpDepthLoad = rp.depthAttachment.loadAction;
+        }
     }
     deferredStores = kmtlConfig().tessellation;
     if (deferredStores) {
@@ -378,7 +401,11 @@ VKFN(VkResult) vkCreateCommandPool(VkDevice device, const VkCommandPoolCreateInf
 
 static void dropRecording(KCommandBuffer* cb) {
     if (cb->mtl) {
+        cb->dropping = true;
         cb->endEncoder();
+        cb->dropping = false;
+        cb->dumpDesc = nil;
+        cb->dumpName.clear();
         cb->mtl = nil;
     }
     cb->releaseTimestamps();
@@ -440,7 +467,13 @@ VKFN(VkResult) vkBeginCommandBuffer(VkCommandBuffer commandBuffer, const VkComma
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
     dropRecording(cb);
-    cb->mtl = [cb->queue->mtl commandBuffer];
+    if (kmtlConfig().gpuErrors) {
+        MTLCommandBufferDescriptor* d = [MTLCommandBufferDescriptor new];
+        d.errorOptions = MTLCommandBufferErrorOptionEncoderExecutionStatus;
+        cb->mtl = [cb->queue->mtl commandBufferWithDescriptor:d];
+    } else {
+        cb->mtl = [cb->queue->mtl commandBuffer];
+    }
     kmtlProfBegin(cb);
     cb->beginCommands();
     cb->resetState();
@@ -491,12 +524,16 @@ VKFN(void) vkCmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBind
         if (l->dynamicCount == 0) {
             bound[idx].buffer = s->buffer;
             bound[idx].offset = s->offset;
+            bound[idx].slots = s->base;
+            bound[idx].layout = l;
         } else {
             // Copy the set and add the dynamic offsets to its buffer addresses
             KUploadRing::Place at = cb->ring.alloc(cb->device, s->size);
             memcpy(at.ptr, s->base, s->size);
             auto* slots = (uint64_t*)at.ptr;
             slots[l->sizeSlot] = at.gpuAddress + at.offset + l->slotCount * 8;
+            bound[idx].slots = (const uint8_t*)at.ptr;
+            bound[idx].layout = l;
             for (uint32_t d = 0; d < l->dynamicCount && dynUsed < dynCount; d++, dynUsed++) {
                 uint32_t slot = l->dynamicSlots[d];
                 if (slots[slot]) slots[slot] += dynOffsets[dynUsed];

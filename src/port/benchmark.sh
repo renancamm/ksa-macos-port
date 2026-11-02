@@ -1,25 +1,37 @@
 #!/bin/bash
-# Measures how KSA runs on this Mac: plays a fixed tour of the game in one session and writes a report, and a zip of
-# it in the run's folder to share if you like.
+# Measures how KSA runs on this Mac: plays a fixed test of the game in one session and writes a report, and a zip of it
+# in the run's folder to share if you like.
 #
-# Usage: ./benchmark.sh [options] [section or place...]
-#        ./benchmark.sh compare <run> <run>
-#   With no sections, plays the whole tour (with --fast, its short test), with your own settings. A place is a
-#   screenshot of the tour (earth4, or giga_pad where a name is in more than one section): its section up to there.
-#   The game takes over the screen: leave the mouse and keyboard alone until it is done. The game runs from its own
-#   documents folder, with a copy of your settings: your files stay untouched. Exits with 1 when the run failed (the
-#   game crashed or hung, a step failed, errors in its log).
-#   compare prints how the second run differs from the first: the Macs, settings, numbers part by part, and
-#   screenshots (exits with 1 when screenshots differ). A run is a run folder or a shared zip.
+# Usage: ./benchmark.sh [options] [mixed | tour | warp | full]
+#        ./benchmark.sh [options] <section or place...>
+#        ./benchmark.sh list | runs [n] | report [run] | compare [run] [run] | clean [--keep n] [--yes]
+#   mixed      the Mixed Test (the default): rockets, smoke, an explosion, a kitten and a cockpit
+#   tour       the Planetary Tour: a flight from Earth to Jupiter
+#   warp       the Warp Test: how far time warp gets in a fixed time, a ship alone and with debris around Earth
+#   full       all three, one after the other
+#   All with your own settings. A place is a screenshot of the test (earth4, or giga_pad where a name is in more than one
+#   section): its section up to there.
+#   The game takes over the screen: leave the mouse and keyboard alone until it is done, or press Ctrl-C here to stop it
+#   and keep what it measured. The game runs from its own documents folder, with a copy of your settings: your files stay
+#   untouched. Exits with 1 when the run failed (the game crashed or hung, a step failed, errors in its log).
+#
+#   list       the tests, their sections and their places
+#   runs       your last runs (15, or n), the newest first
+#   report     a run's report here, and its page in your browser (default: the last run)
+#   compare    how the second run differs from the first: a verdict, the Macs, settings, numbers part by part, and
+#              screenshots (exits with 1 when screenshots differ), and a page to see them side by side (with one run:
+#              against the last; with none: the last against the one before it)
+#   clean      delete all but your last runs (30, or n), after asking (--yes: without asking)
+#   A run is a run's folder, its zip, the folder's name in your benchmarks folder, "last" or "previous".
 #
 # Options:
 #   --preset <name>    low, medium or high: fixed settings in a 1280x800 window, the same on every Mac (default: yours)
 #   --defaults         the settings of a fresh install instead of yours: the game's own and the port's defaults
 #   --system <name>    sol (the solar system) or earth (Earth and the Moon only: for Macs with 8 GB of memory)
 #                      (default: sol, or earth in fast mode when the places played are all on Earth or the Moon)
-#   --fast             a short test: a kitten in orbit, Earth from space down to the grass, then rockets and a
-#                      cockpit set up at one moment, all seen with the game paused (with sections or places: those, the camera's flight
-#                      paused and jumping, vehicles played as written); measures the views standing still
+#   --fast             the test's short form, each view standing still with the game paused: the Mixed Test's vehicles
+#                      set up at one moment, the Planetary Tour's places with the camera jumping between them (with
+#                      sections or places: those, vehicles played as written). The Warp Test has one form
 #   --no-shots         take no screenshots
 #   --set <key=value>  change one setting of settings.toml for the run (again for more), on top of the preset;
 #                      <section>.<key>=<value> adds it to that section when the file has no such key
@@ -27,7 +39,7 @@
 #                      needs no quotes), on top of the preset and before --set
 #   --port <key=value>  change one setting of port-settings.toml for the run (again for more), on top of yours (with
 #                      a preset or --defaults: on top of the defaults)
-#   --compare <run>    compare with that run at the end (and fail when screenshots differ)
+#   --compare <run>    compare with that run at the end (and fail when screenshots differ); checked before the game starts
 #   --app <path>       the app to measure (default: ~/Applications/Kitten Space Agency.app)
 #
 # For work on the port (see the benchmark's README):
@@ -39,6 +51,10 @@
 #   --trace            record an Instruments trace (Metal System Trace) of the run, parts marked; needs Xcode
 #   --trace-template <name>  another Instruments template for --trace (xcrun xctrace list templates)
 #   --capture          an Xcode GPU frame capture of the view at each place played (.gputrace, to open in Xcode)
+#   --catch <run>      for a picture that goes wrong now and then: KSA Metal watches the image, and a screenshot is compared
+#                      with that clean run's; a broken one gets a pass dump in caught/ (at most 3 each); needs 1 GB free
+#   --catch-capture    with --catch: an Xcode GPU frame capture after each pass dump (needs capture mode and 40 GB free)
+#   --passes           the pass dump at every place played: the clean run a caught one is compared with (needs places)
 #   --explore          start the benchmark's game paused, to fly the free camera around and capture places for the
 #                      tour (@key lines, for benchmark.txt) with benchkey [name] in its console; quit it when done
 #
@@ -71,25 +87,139 @@ INSTANCE="${HOME}/Library/Caches/ksa-macos-port/benchmark/instance"
 ISSUES="https://github.com/${RELEASES_REPO}/issues/new?template=benchmark-report.md"
 
 usage() {
-    sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'
+    awk 'NR > 1 && !/^#/ { exit } NR > 1' "$0" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
 }
 
 APP="${DEFAULT_APP}"
-# The report program, from the app, on its .NET runtime
+BENCHMARKS="${DOCS}/benchmarks"
+# The report program, from this port folder, on its .NET runtime: an app not updated yet still gets the current reports
 report() {
-    DOTNET_ROOT="${APP}/Contents/MacOS" "${APP}/Contents/MacOS/dotnet" \
-        "${APP}/Contents/Resources/Benchmark/KsaMetalBenchmarkReport.dll" "$@"
+    DOTNET_ROOT="${SKELETON}/MacOS" "${SKELETON}/MacOS/dotnet" \
+        "${SKELETON}/Resources/Benchmark/KsaMetalBenchmarkReport.dll" "$@"
+}
+
+# run_folder <run>: the folder or zip a run's name stands for: a path, a folder's name in the benchmarks folder, "last" or
+# "previous". Stops with a message when there is none.
+run_folder() {
+    local name="${1%/}" skip=0 d
+    case "${name}" in
+        last | previous)
+            [ "${name}" = last ] || skip=1
+            for d in $(ls -1 "${BENCHMARKS}" 2> /dev/null | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{4}' | sort -r); do
+                [ -f "${BENCHMARKS}/${d}/report.json" ] || continue
+                if [ "${skip}" = 0 ]; then
+                    echo "${BENCHMARKS}/${d}"
+                    return
+                fi
+                skip=$((skip - 1))
+            done
+            die "there is no ${name} run in ${BENCHMARKS}."
+            ;;
+    esac
+    if [ -f "${name}/report.json" ] || [ -f "${name}" ]; then
+        echo "${name}"
+    elif [ -f "${BENCHMARKS}/${name}/report.json" ]; then
+        echo "${BENCHMARKS}/${name}"
+    else
+        die "no run '${name}' (no report.json there, and not a zip). ./benchmark.sh runs lists your runs."
+    fi
+}
+
+# clean [--keep n] [--yes]: all but the last n runs deleted, after asking. Only what a run leaves counts as a run: a folder
+# named by its date and time (not an --explore's, which holds the places captured by hand); anything else there stays.
+clean_runs() {
+    local keep=30 yes="" old=() names d answer
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --keep) keep="${2:-}"; shift ;;
+            --yes) yes=1 ;;
+            *) usage 1 ;;
+        esac
+        shift
+    done
+    [[ "${keep}" =~ ^[0-9]+$ ]] || die "--keep needs a number of runs, not '${keep}'."
+    keep=$((10#${keep}))
+    [ -d "${BENCHMARKS}" ] || { info "No runs."; return; }
+    names="$(ls -1 "${BENCHMARKS}" | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{4}(_[0-9]{2}|_hold)?$' | sort -r | tail -n "+$((keep + 1))" || true)"
+    for d in ${names}; do
+        [ -d "${BENCHMARKS}/${d}" ] && old+=("${BENCHMARKS}/${d}")
+    done
+    if [ ${#old[@]} = 0 ]; then
+        info "Nothing to delete: you have ${keep} runs or fewer."
+        return
+    fi
+    info "${#old[@]} runs, $(echo "${names}" | tail -1) to $(echo "${names}" | head -1), take $(du -shc "${old[@]}" | tail -1 | cut -f1 | tr -d ' ')."
+    if [ -z "${yes}" ]; then
+        [ -t 0 ] || die "this deletes runs, so it asks first: run it from a terminal, or add --yes."
+        printf '    Delete them, and keep the last %s? [y/N] ' "${keep}"
+        read -r answer
+        case "${answer}" in
+            y | Y | yes) ;;
+            *)
+                info "Nothing deleted."
+                return
+                ;;
+        esac
+    fi
+    rm -rf "${old[@]}"
+    info "Deleted."
+}
+
+# list: what can be played, from benchmark.txt
+list_tests() {
+    local script="${SKELETON}/Resources/Benchmark/benchmark.txt"
+    awk '
+        $1 == "test" {
+            line = $0; sub(/^test [^ ]+ /, "", line); split(line, forms, " [|] ")
+            printf "%s\n    fast:      %s\n", $2, forms[1]
+            if (forms[2] != forms[1]) printf "    cinematic: %s\n", forms[2]
+        }
+        $1 == "section" && !sections++ { print "full\n    all three, one after the other\n\nSections and their places:" }
+        $1 == "section" { if (s != "") print s places; s = "    " $2 ":"; places = "" }
+        $2 == "@shot" { places = places " " $3 }
+        END { print s places }' "${script}"
 }
 
 require_kit
-if [ "$1" = compare ]; then
-    [ $# = 3 ] || usage 1
-    [ -f "${APP}/Contents/Resources/Benchmark/KsaMetalBenchmarkReport.dll" ] ||
-        die "no benchmark in ${APP}: update it with ./port.sh."
-    report compare "$2" "$3"
-    exit
-fi
+case "${1:-}" in
+    list)
+        list_tests
+        exit
+        ;;
+    runs)
+        [ -z "${2:-}" ] || [[ "$2" =~ ^[1-9][0-9]*$ ]] || die "runs takes a number of runs, not '$2'."
+        report runs "${BENCHMARKS}" ${2:+"$2"}
+        [ ! -d "${BENCHMARKS}" ] || info "They take $(du -sh "${BENCHMARKS}" | cut -f1 | tr -d ' ') in ${BENCHMARKS}"
+        exit
+        ;;
+    report)
+        RUN="$(run_folder "${2:-last}")"
+        [ -d "${RUN}" ] || die "report takes a run's folder, not its zip."
+        [ -f "${RUN}/report.html" ] || report page "${RUN}"
+        report show "${RUN}"
+        echo ""
+        info "The page: ${RUN}/report.html"
+        [ ! -t 1 ] || open "${RUN}/report.html" 2> /dev/null || true
+        exit
+        ;;
+    compare)
+        [ $# -le 3 ] || usage 1
+        case $# in
+            1) set -- compare previous last ;;
+            2) set -- compare "$2" last ;;
+        esac
+        FIRST="$(run_folder "$2")" || exit 2
+        SECOND="$(run_folder "$3")" || exit 2
+        report compare "${FIRST}" "${SECOND}"
+        exit
+        ;;
+    clean)
+        shift
+        clean_runs "$@"
+        exit
+        ;;
+esac
 
 PLACES=()
 PRESET=""
@@ -109,7 +239,15 @@ HUD=""
 TRACE=""
 TEMPLATE="Metal System Trace"
 CAPTURE=""
+CATCH=""
+CATCH_CAPTURE=""
+PASSES=""
 while [ $# -gt 0 ]; do
+    case "$1" in
+        --hold | --set | --port | --settings | --compare | --catch | --app | --preset | --system | --repeat | --trace-template)
+            [ $# -ge 2 ] || die "$1 needs a value. ./benchmark.sh --help lists the options."
+            ;;
+    esac
     case "$1" in
         --fast) FAST=1 ;;
         --no-shots) NO_SHOTS=1 ;;
@@ -117,7 +255,7 @@ while [ $# -gt 0 ]; do
         --set) SETS+=("$2"); shift ;;
         --port) PORTS+=("$2"); shift ;;
         --settings) SETTINGS_FILE="$2"; shift ;;
-        --compare) REFERENCE="${2%/}"; shift ;;
+        --compare) REFERENCE="$2"; shift ;;
         --app) APP="${2%/}"; shift ;;
         --preset) PRESET="$2"; shift ;;
         --defaults) DEFAULTS=1 ;;
@@ -128,13 +266,18 @@ while [ $# -gt 0 ]; do
         --trace) TRACE=1 ;;
         --trace-template) TRACE=1; TEMPLATE="$2"; shift ;;
         --capture) CAPTURE=1 ;;
+        --catch) CATCH="$2"; shift ;;
+        --catch-capture) CATCH_CAPTURE=1 ;;
+        --passes) PASSES=1 ;;
         --explore) EXPLORE=1 ;;
         -h | --help) usage ;;
-        -*) echo "Unknown option: $1"; usage 1 ;;
+        -*) die "no option $1. ./benchmark.sh --help lists the options." ;;
         *) PLACES+=("$1") ;;
     esac
     shift
 done
+# A relative path would not reach the game, which starts from elsewhere
+case "${APP}" in /*) ;; *) APP="${PWD}/${APP}" ;; esac
 case "${PRESET}" in
     "") PRESET_SETTINGS=() ;;
     low) PRESET_SETTINGS=("${PRESET_COMMON[@]}" "${PRESET_LOW[@]}") ;;
@@ -151,6 +294,22 @@ SCRIPT="${RES}/Benchmark/benchmark.txt"
 [ -f "${SCRIPT}" ] && [ -f "${RES}/Hooks/KsaMetalHooks.dll" ] ||
     die "the app at ${APP} has no benchmark: update it with ./port.sh."
 
+# The tests (the tour's "test" lines): test_sections <test> <fast|cinematic>
+test_sections() {
+    awk -v test="$1" -v form="$2" '$1 == "test" && $2 == test {
+        line = $0; sub(/^test [^ ]+ /, "", line); split(line, forms, " [|] "); print (form == "fast" ? forms[1] : forms[2]) }' "${SCRIPT}"
+}
+# A test by its name alone, in place of sections or places
+TEST=""
+if [ ${#PLACES[@]} = 1 ] && [ -z "${HOLD}" ] && { [ "${PLACES[0]}" = full ] || [ -n "$(test_sections "${PLACES[0]}" fast)" ]; }; then
+    TEST="${PLACES[0]}"
+    PLACES=()
+elif [ ${#PLACES[@]} = 0 ] && [ -z "${HOLD}" ]; then
+    TEST=mixed
+fi
+# The Warp Test has one form, the short one's system
+[ "${TEST}" != warp ] || FAST=1
+
 # Places: a section, <section>_<shot>, or a screenshot's name alone where only one section has it
 SHOTS="$(awk '$1 == "section" { s = $2 } $2 == "@shot" { print s "_" $3 }' "${SCRIPT}")"
 # place <name>: the section or <section>_<shot> it names
@@ -161,7 +320,7 @@ place() {
     fi
     local matches
     matches="$(echo "${SHOTS}" | grep "_$1$" || true)"
-    [ -n "${matches}" ] || die "no section or screenshot '$1' in the tour (the app's Benchmark/benchmark.txt)."
+    [ -n "${matches}" ] || die "no test, section or screenshot '$1'. ./benchmark.sh list shows them."
     [ "$(echo "${matches}" | wc -l)" -eq 1 ] || die "more than one screenshot '$1': ${matches//$'\n'/ }."
     echo "${matches}"
 }
@@ -179,15 +338,17 @@ if [ -n "${HOLD}" ]; then
 fi
 # Places named (the tools that take GB at each place need some)
 NAMED=${#ONLY[@]}
-SECTIONS="${ONLY[*]:-all}"
-# Without places: fast mode's short test, or the cinematic tour (the tour's "fast" and "tour" lines)
-if [ "${NAMED}" = 0 ]; then
-    if [ -n "${FAST}" ]; then
-        read -r -a ONLY <<< "$(awk '$1 == "fast" { $1 = ""; print }' "${SCRIPT}")"
-        SECTIONS="${ONLY[*]}"
+SECTIONS="${ONLY[*]:-}"
+# A test: its sections, full mode's the three tests' in the tour's order
+if [ -n "${TEST}" ]; then
+    form=cinematic
+    [ -z "${FAST}" ] || form=fast
+    if [ "${TEST}" = full ]; then
+        read -r -a ONLY <<< "$(test_sections tour "${form}") $(test_sections mixed "${form}") $(test_sections warp "${form}")"
     else
-        read -r -a ONLY <<< "$(awk '$1 == "tour" { $1 = ""; print }' "${SCRIPT}")"
+        read -r -a ONLY <<< "$(test_sections "${TEST}" "${form}")"
     fi
+    SECTIONS="${ONLY[*]}"
 fi
 # Fast mode plays in Earth's small system when its sections need no other celestial than the Moon
 if [ -z "${SYSTEM}" ] && [ -n "${FAST}" ]; then
@@ -202,8 +363,12 @@ case "${SYSTEM:-sol}" in
     earth) SYSTEM_ID="SolLite" ;;
     *) die "unknown system '${SYSTEM}' (sol or earth)." ;;
 esac
-[ -z "${REFERENCE}" ] || [ -f "${REFERENCE}/report.json" ] || [ -f "${REFERENCE}" ] ||
-    die "no run at ${REFERENCE} (no report.json, and not a zip)."
+# --compare: said now, not after the minutes the run takes
+if [ -n "${REFERENCE}" ]; then
+    REFERENCE="$(run_folder "${REFERENCE}")"
+    why="$(report comparable "${REFERENCE}" "$([ -n "${FAST}" ] && echo fast || echo cinematic)" "${ONLY[*]}")" ||
+        die "--compare: ${why}"
+fi
 
 check_mac
 [ -f "${DOCS}/settings.toml" ] || die "start the game once before benchmarking it (it has no settings yet)."
@@ -219,8 +384,8 @@ driver_has() {
 free_gb() {
     df -g "${DOCS}" | awk 'NR == 2 { print $4 }'
 }
-if [ -n "${PROFILE}${HUD}${TRACE}${CAPTURE}" ]; then
-    [ "${REPEAT}" = 1 ] || die "--repeat measures without tools: use --profile, --hud, --trace or --capture in a run of their own."
+if [ -n "${PROFILE}${HUD}${TRACE}${CAPTURE}${CATCH}${PASSES}" ]; then
+    [ "${REPEAT}" = 1 ] || die "--repeat measures without tools: use --profile, --hud, --trace, --capture, --catch or --passes in a run of their own."
     driver_has ksaMtlFrameStats || die "the tools need the app's KSA Metal driver, which this app doesn't have."
 fi
 if [ -n "${PROFILE}" ]; then
@@ -237,9 +402,35 @@ if [ -n "${TRACE}" ]; then
     templates="$(xcrun xctrace list templates 2> /dev/null || true)"
     echo "${templates}" | grep -qx "${TEMPLATE}" ||
         die "Instruments has no template '${TEMPLATE}' (xcrun xctrace list templates)."
-    [ "${NAMED}" -gt 0 ] || die "a trace of the whole tour takes tens of GB: choose sections or places (e.g. --fast jupiter2 --trace)."
+    [ "${NAMED}" -gt 0 ] || die "a trace of a whole test takes tens of GB: choose sections or places (e.g. --fast jupiter2 --trace)."
     [ "$(free_gb)" -ge 10 ] || die "--trace needs 10 GB free on this disk ($(free_gb) GB free)."
     TOOLS+=("Instruments (${TEMPLATE})")
+fi
+if [ -n "${CATCH}" ]; then
+    [ -z "${CAPTURE}" ] || die "--catch plays the game with no capture mode, --capture needs it: choose one."
+    driver_has ksaMtlPassDump || die "this app's KSA Metal can't dump passes: update it with ./port.sh."
+    CATCH="$(run_folder "${CATCH}")"
+    [ -z "${NO_SHOTS}" ] || die "--catch compares screenshots: it can't go with --no-shots."
+    [ -d "${CATCH}" ] || die "--catch needs a run's folder, with its screenshots, not a zip."
+    ls "${CATCH}"/*_*.png > /dev/null 2>&1 || die "--catch: ${CATCH} has no screenshots to compare with."
+    CATCH="$(CDPATH='' cd -- "${CATCH}" && pwd)"  # absolute: the game starts from elsewhere
+    why="$(report comparable "${CATCH}" "$([ -n "${FAST}" ] && echo fast || echo cinematic)" "${ONLY[*]}")" ||
+        die "--catch: ${why}"
+    [ "$(free_gb)" -ge 1 ] || die "--catch needs 1 GB free on this disk ($(free_gb) GB free)."
+    TOOLS+=("pass dumps of broken pictures")
+    if [ -n "${CATCH_CAPTURE}" ]; then
+        driver_has ksaMtlCapture || die "this app's KSA Metal can't capture frames: update it with ./port.sh."
+        [ "$(free_gb)" -ge 40 ] || die "--catch-capture needs 40 GB free on this disk ($(free_gb) GB free)."
+        TOOLS+=("frame captures of broken pictures")
+    fi
+fi
+[ -z "${CATCH_CAPTURE}" ] || [ -n "${CATCH}" ] || die "--catch-capture goes with --catch."
+if [ -n "${PASSES}" ]; then
+    [ -z "${CATCH}${CAPTURE}" ] || die "--passes is a clean run's dump at every place: it can't go with --catch or --capture."
+    driver_has ksaMtlPassDump || die "this app's KSA Metal can't dump passes: update it with ./port.sh."
+    [ -z "${NO_SHOTS}" ] || die "--passes dumps at the screenshots: it can't go with --no-shots."
+    [ "${NAMED}" -gt 0 ] || [ -n "${FAST}" ] || die "--passes takes minutes at every screenshot: choose places, or --fast."
+    TOOLS+=("pass dumps at every place")
 fi
 if [ -n "${CAPTURE}" ]; then
     driver_has ksaMtlCapture || die "this app's KSA Metal can't capture frames: update it with ./port.sh."
@@ -323,6 +514,28 @@ if [ -n "${DEFAULTS}" ]; then
     mv "${SETTINGS}.new" "${SETTINGS}"
 fi
 
+# check_port_value <key> <value>: stops at a value the game would refuse: it would run an unchanged game with only a line
+# in its log to say so
+check_port_value() {
+    local type values
+    type="$(awk -F' *[|] *' -v key="$1" '$1 == key { print $2; exit }' "${TABLE}")"
+    case "${type}" in
+        bool) values="true false" ;;
+        choice:*) values="$(echo "${type#choice:}" | tr '/' '\n' | sed 's/=.*//' | tr '\n' ' ')" ;;
+        scale:* | int:* | number:*)
+            awk -v value="$2" -v min="$(echo "${type}" | cut -d: -f2)" -v max="$(echo "${type}" | cut -d: -f3)" \
+                'BEGIN { exit !(value ~ /^-?[0-9.]+$/ && value + 0 >= min + 0 && value + 0 <= max + 0) }' ||
+                die "--port $1=$2: it takes a number from $(echo "${type}" | cut -d: -f2) to $(echo "${type}" | cut -d: -f3)."
+            return
+            ;;
+        *) return ;;
+    esac
+    case " ${values} " in
+        *" $2 "*) ;;
+        *) die "--port $1=$2: it takes $(echo "${values}" | sed 's/ *$//; s/ / or /g')." ;;
+    esac
+}
+
 # The run's port settings (the app's port-settings.toml template): yours unless a preset is played or --defaults,
 # --port on top
 PORT_SETTINGS="${INSTANCE}/port-settings.toml"
@@ -337,6 +550,7 @@ for kv in ${PORTS[@]+"${PORTS[@]}"}; do
     # A key the game doesn't know would run an unchanged game that looks like an A/B test
     TABLE="${APP}/Contents/Resources/port-settings.txt"
     [ ! -f "${TABLE}" ] || grep -q "^${key} |" "${TABLE}" || die "--port: there is no setting '${key}' in port-settings.toml."
+    [ ! -f "${TABLE}" ] || check_port_value "${key}" "${kv#*=}"
     if grep -q "^${key} *=" "${PORT_SETTINGS}"; then
         sed -i '' "s|^${key} *=.*|${key} = ${kv#*=}|" "${PORT_SETTINGS}"
     else
@@ -364,8 +578,21 @@ if [ -z "${SYSTEM}" ] && [ "${memory_gb}" -le 8 ]; then
     info "This Mac has ${memory_gb} GB of memory: if the game runs out of it, --system earth plays Earth and the Moon only."
 fi
 
+# Results take up to a few hundred MB
+[ "$(free_gb)" -ge 1 ] || die "the results need 1 GB free on this disk ($(free_gb) GB free). ./benchmark.sh clean deletes old runs."
+# gpu_busy: how busy the GPU is now, in percent (the lower of two looks a second apart, as a window's move is a blip)
+gpu_busy() {
+    local first second
+    first="$(ioreg -r -d 1 -c IOAccelerator 2> /dev/null | sed -n 's/.*"Device Utilization %"=\([0-9]*\).*/\1/p' | head -1)"
+    [ -n "${first}" ] || return 0
+    [ "${first}" -ge 30 ] || { echo "${first}"; return; }
+    sleep 1
+    second="$(ioreg -r -d 1 -c IOAccelerator 2> /dev/null | sed -n 's/.*"Device Utilization %"=\([0-9]*\).*/\1/p' | head -1)"
+    echo "$((first < ${second:-0} ? first : ${second:-0}))"
+}
+
 # 2. The run
-OUT="${DOCS}/benchmarks/$(date +%Y-%m-%d_%H%M)"
+OUT="${BENCHMARKS}/$(date +%Y-%m-%d_%H%M)"
 [ -z "${HOLD}" ] || OUT="${OUT}_hold"
 [ ! -e "${OUT}" ] || OUT="${OUT}_$(date +%S)"
 mkdir -p "${OUT}"
@@ -382,7 +609,7 @@ preset="${PRESET:-none, own settings}"
 [ -z "${DEFAULTS}" ] || preset="${PRESET:-none}, a fresh install's settings"
 # system_facts: system.txt, with the window from the run's settings.toml
 system_facts() {
-    report system "${OUT}" "${APP}" "StarMap=${starmap}" "System=${SYSTEM_ID}" "Sections=${SECTIONS}" \
+    report system "${OUT}" "${APP}" "StarMap=${starmap}" "System=${SYSTEM_ID}" "Test=${TEST:-places}" "Sections=${SECTIONS}" \
         "Mode=$([ -n "${FAST}" ] && echo fast || echo cinematic)$([ -n "${NO_SHOTS}" ] && echo ", no screenshots" || true)" \
         "Preset=${preset}" "Settings changed=${changed:-none}" "Start=a new game, from benchmark.sh" \
         "KSA Metal switches=${switches:-none}" "Tools=${tools}" > /dev/null
@@ -410,6 +637,13 @@ fi
 if [ -n "${CAPTURE}" ]; then
     GAME_ENV+=(MTL_CAPTURE_ENABLED=1 KSA_BENCH_CAPTURE=1 KSA_MTL_LABELS=1)
 fi
+if [ -n "${CATCH}" ]; then
+    GAME_ENV+=("KSA_BENCH_CATCH=${CATCH}" "KSA_MTL_WATCH=${OUT}/caught")
+    [ -z "${CATCH_CAPTURE}" ] || GAME_ENV+=(MTL_CAPTURE_ENABLED=1 KSA_BENCH_CATCH_CAPTURE=1 KSA_MTL_LABELS=1)
+fi
+if [ -n "${PASSES}" ]; then
+    GAME_ENV+=(KSA_BENCH_PASSES=1)
+fi
 
 # Loading takes up to a few minutes on a first start (shader compilation), then the script's own length, plus the
 # time slower Macs spend catching up at checkpoints. Once playing, the mod touches its heartbeat file every second: a
@@ -417,8 +651,12 @@ fi
 length="$(awk -v play=" ${ONLY[*]%%_*} " '$1 == "section" { total += max; max = 0; on = index(play, " " $2 " ") }
     on && $1 ~ /^[0-9.]+$/ && $1 > max { max = $1 } END { print int(total + max) }' "${SCRIPT}")"
 timeout=$((length * 2 + 300))
-hang=60
-[ -z "${CAPTURE}" ] || hang=180
+hang="${KSA_BENCH_HANG_LIMIT:-60}"
+[ -z "${CAPTURE}${CATCH}${PASSES}" ] || hang=180
+# Time warp can stall a frame for most of a minute before it goes on: past that, the sections played are kept
+for p in "${ONLY[@]}"; do
+    ! grep -q "^section ${p%%_*} live" "${SCRIPT}" || hang="${KSA_BENCH_HANG_LIMIT:-180}"
+done
 pressure=1
 swap_before="$(sysctl -n vm.swapusage | sed -n 's/.*used = \([0-9.]*\)M.*/\1/p')"
 if [ -n "${HOLD}" ]; then
@@ -426,16 +664,74 @@ if [ -n "${HOLD}" ]; then
     timeout=0
 else
     what="about $(((length + 60) / 60)) minutes"
-    [ -z "${FAST}" ] || what="fast$([ "${NAMED}" -gt 0 ] || echo ", about a minute")"
+    if [ -n "${FAST}" ]; then
+        case "${TEST}" in
+            mixed) what="about a minute" ;;
+            tour) what="about 2 minutes" ;;
+            warp) what="about 3 minutes" ;;
+            full) what="about 4 minutes" ;;
+            *) what="fast" ;;
+        esac
+    fi
+    [ -z "${TEST}" ] || what="${TEST}, ${what}"
     [ "${REPEAT}" = 1 ] || what="${REPEAT} times, ${what} each"
     step "Benchmarking KSA ${INSTALLED} (${what})"
-    info "The game takes over the screen. Leave the mouse and keyboard alone until it is done."
+    info "The game takes over the screen. Leave the mouse and keyboard alone until it is done, or press Ctrl-C here to stop it."
 fi
 [ ${#TOOLS[@]} = 0 ] || info "With ${tools}."
+BUSY="$(gpu_busy)"
+if [ -n "${BUSY}" ] && [ "${BUSY}" -ge 30 ]; then
+    warn "the GPU is ${BUSY} % busy before the game starts: something else is using it, and this run's numbers will show that."
+else
+    BUSY=""
+fi
+
+# The sections' lengths on the script's clock, for the progress line: <section> <seconds>, in the order played
+LENGTHS="$(awk -v play=" ${ONLY[*]%%_*} " '$1 == "section" { if (on) print name, max; name = $2; max = 0; on = index(play, " " $2 " ") }
+    on && $1 ~ /^[0-9.]+$/ && $1 > max { max = $1 } END { if (on) print name, max }' "${SCRIPT}")"
+LAST_SHOWN=""
+# progress <seconds since the start>: where the run is. A line that updates itself on a terminal; elsewhere (a log), a line
+# for each section
+progress() {
+    local section="" at="" percent filled bar="" i
+    if [ -f "${OUT}/heartbeat" ]; then
+        read -r section at < "${OUT}/heartbeat" 2> /dev/null || true
+    fi
+    # Before the first section the heartbeat has the time alone
+    [ -n "${at}" ] && [ "${section}" != waiting ] || section=""
+    if [ ! -t 1 ]; then
+        if [ -n "${section}" ] && [ "${section}" != "${LAST_SHOWN}" ]; then
+            info "${section}"
+            LAST_SHOWN="${section}"
+        fi
+        return
+    fi
+    if [ -z "${section}" ]; then
+        printf '\r\033[K    Loading the game  %d:%02d' $(($1 / 60)) $(($1 % 60))
+        return
+    fi
+    percent="$(echo "${LENGTHS}" | awk -v section="${section}" -v at="${at:-0}" '{ total += $2; if (!found) { if ($1 == section) { done_ += at; found = 1 } else done_ += $2 } }
+        END { p = total > 0 ? 100 * done_ / total : 0; print int(p > 100 ? 100 : p) }')"
+    filled=$((percent / 4))
+    for ((i = 0; i < 25; i++)); do
+        if [ "${i}" -lt "${filled}" ]; then bar="${bar}█"; else bar="${bar}░"; fi
+    done
+    printf '\r\033[K    %s %3d %%  %s  %d:%02d' "${bar}" "${percent}" "${section}" $(($1 / 60)) $(($1 % 60))
+}
+progress_end() {
+    [ ! -t 1 ] || printf '\r\033[K'
+}
+
+# Ctrl-C: the game is stopped, and what it measured is reported. A terminal sends it to the script's whole process group: the
+# game ignores it (a job started with &), and whatever command the script is in dies of it, which set -e must not take for a
+# failure until the game is over and its ending written.
+STOPPED=""
+trap 'STOPPED=1' INT TERM
+set +e
 
 # play <run number>: one game session; its ending goes to run.txt
 play() {
-    local n="$1" suffix="" label="Game" pid start now ending="" alongside="" status=0 tracer="" level
+    local n="$1" suffix="" label="Game" pid start now ending="" alongside="" status=0 tracer="" level where="" waited
     if [ "${n}" -gt 1 ]; then
         suffix="-${n}"
         label="Game ${n}"
@@ -450,13 +746,14 @@ play() {
     start="$(date +%s)"
     while kill -0 "${pid}" 2> /dev/null; do
         now="$(date +%s)"
+        progress $((now - start))
         # --trace: once the game is up (its first heartbeat), Instruments attaches, and the tour starts when it records
         if [ -n "${TRACE}" ] && [ -z "${tracer}" ] && [ -f "${OUT}/heartbeat" ]; then
             # Points of Interest holds the parts (KSA Metal's signposts)
             xcrun xctrace record --template "${TEMPLATE}" --instrument "Points of Interest" --attach "${pid}" \
                 --output "${OUT}/trace.trace" --no-prompt > "${OUT}/xctrace.log" 2>&1 &
             tracer=$!
-            local waited=0
+            waited=0
             until grep -q -i "recording\|ctrl-c" "${OUT}/xctrace.log" 2> /dev/null || [ "${waited}" -ge 60 ] ||
                 ! kill -0 "${tracer}" 2> /dev/null; do
                 sleep 1
@@ -474,24 +771,34 @@ play() {
         # macOS's memory pressure: 1 normal, 2 warning, 4 critical
         level="$(sysctl -n kern.memorystatus_vm_pressure_level 2> /dev/null || echo 1)"
         [ "${level}" -le "${pressure}" ] || pressure="${level}"
-        if [ -f "${OUT}/heartbeat" ] && [ $((now - $(stat -f %m "${OUT}/heartbeat"))) -gt "${hang}" ]; then
-            ending="hung in $(awk '{ print $1 " at " $2 " s" }' "${OUT}/heartbeat") (no frame for ${hang} s): stopped"
+        if [ -n "${STOPPED}" ]; then
+            ending="was stopped with Ctrl-C"
+        elif [ -f "${OUT}/heartbeat" ] && [ $((now - $(stat -f %m "${OUT}/heartbeat"))) -gt "${hang}" ]; then
+            ending="hung$(awk 'NF == 2 { print " in " $1 " at " $2 " s" }' "${OUT}/heartbeat") (no frame for ${hang} s): stopped"
         elif [ "${timeout}" -gt 0 ] && [ $((now - start)) -ge "${timeout}" ]; then
             ending="did not finish in ${timeout} s: stopped"
         fi
         if [ -n "${ending}" ]; then
-            warn "the game ${ending}."
+            progress_end
+            [ -n "${STOPPED}" ] || warn "the game ${ending}."
             kill -9 "${pid}" 2> /dev/null || true
             break
         fi
         sleep 1
     done
+    progress_end
     wait "${pid}" 2> /dev/null || status=$?
     if [ -z "${ending}" ]; then
+        # Where the game had got to
+        if [ -f "${OUT}/heartbeat" ]; then
+            where="$(awk 'NF == 2 && $1 != "waiting" { print " in " $1 " at " $2 " s" }' "${OUT}/heartbeat")"
+        else
+            where=" before its first frame"
+        fi
         case "${status}" in
             0) ending="quit normally" ;;
-            13[0-9] | 1[4-9][0-9]) ending="crashed (signal $((status - 128)))" ;;
-            *) ending="quit with status ${status}" ;;
+            13[0-9] | 1[4-9][0-9]) ending="crashed (signal $((status - 128)))${where}" ;;
+            *) ending="quit with status ${status}${where}" ;;
         esac
     fi
     echo "${label}: ${ending}" >> "${OUT}/run.txt"
@@ -510,7 +817,11 @@ play() {
 : > "${OUT}/run.txt"
 for n in $(seq 1 "${REPEAT}"); do
     play "${n}"
+    [ -z "${STOPPED}" ] || break
 done
+trap - INT TERM
+set -e
+[ -z "${BUSY}" ] || echo "GPU before the run: ${BUSY} %" >> "${OUT}/run.txt"
 # --defaults: the settings as the game saved them, with its defaults filled in
 if [ -n "${DEFAULTS}" ]; then
     cp "${SETTINGS}" "${OUT}/settings.toml"
@@ -543,6 +854,9 @@ if [ -n "${CAPTURE}" ]; then
         [ -e "${c}" ] && info "Frame capture: ${c} (open it in Xcode)"
     done
 fi
+if [ -n "${CATCH}${PASSES}" ] && [ -d "${OUT}/caught" ]; then
+    info "Caught: ${OUT}/caught (each place's passes and passes.txt; watch.txt: when the image looked broken)"
+fi
 if [ -n "${HOLD}" ]; then
     step "Done: ${OUT}"
     exit
@@ -553,20 +867,28 @@ fi
 failed=0
 ZIP="$(report finish "${OUT}" | tail -1)" || failed=1
 [ -z "${PROFILE}" ] || report profile "${OUT}" > /dev/null || true
+if [ ! -f "${OUT}/report.md" ]; then
+    die "the report program did not write the report. What the run left is in ${OUT}"
+fi
 echo ""
-cat "${OUT}/report.md"
+report show "${OUT}"
 echo ""
 if [ -n "${REFERENCE}" ]; then
     report compare "${REFERENCE}" "${OUT}" || failed=1
     echo ""
 fi
 
-if [ "${failed}" = 0 ]; then
+if [ -n "${STOPPED}" ]; then
+    step "Stopped: ${OUT}"
+elif [ "${failed}" = 0 ]; then
     step "Done: ${OUT}"
 else
     step "Done, with problems: ${OUT}"
 fi
-info "Compare with another run: ./benchmark.sh compare <other run> \"${OUT}\""
-info "To share it (up to you): ${ZIP} ($(du -h "${ZIP}" | cut -f1 | tr -d ' ')) holds the report, the numbers,"
-info "the logs and the screenshots. Attach it to a new issue: ${ISSUES}"
+info "See it, with its pictures: ./benchmark.sh report $(basename "${OUT}")"
+info "Compare with another run: ./benchmark.sh compare <other run> $(basename "${OUT}")"
+if [ -f "${ZIP}" ]; then
+    info "To share it (up to you): ${ZIP} ($(du -h "${ZIP}" | cut -f1 | tr -d ' ')) holds the report, the numbers,"
+    info "the logs and the screenshots. Attach it to a new issue: ${ISSUES}"
+fi
 exit "${failed}"

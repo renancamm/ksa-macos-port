@@ -62,7 +62,10 @@ const KConfig& kmtlConfig() {
         c.gpuprof = env("KSA_MTL_GPUPROF");
         c.gpuprofFrames = env("KSA_MTL_GPUPROF_FRAMES");
         c.gpuprofSplit = envOn("KSA_MTL_GPUPROF_SPLIT", false);
-        c.labels = envOn("KSA_MTL_LABELS", false);
+        c.labels = envOn("KSA_MTL_LABELS", envOn("MTL_CAPTURE_ENABLED", false));
+        c.gpuErrors = envOn("KSA_MTL_GPU_ERRORS", false);
+        c.watch = env("KSA_MTL_WATCH");
+        c.watchWhite = env("KSA_MTL_WATCH_WHITE") ? atof(env("KSA_MTL_WATCH_WHITE")) : 30;
         c.fxDebug = envOn("KSA_MTL_FX_DEBUG", false);
         c.fxShots = env("KSA_MTL_FX_SHOTS");
         c.throttle = env("KSA_MTL_THROTTLE");

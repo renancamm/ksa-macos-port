@@ -17,6 +17,8 @@
 	</PropertyGroup>
 	<ItemGroup>
 		<Compile Include="../report/Report.cs" />
+		<Compile Include="../report/Html.cs" />
+		<Compile Include="../report/Terminal.cs" />
 		<Compile Include="../director/Images.cs" />
 		<Compile Include="../director/Results.cs" />
 		<Compile Include="../director/DriverStats.cs" />

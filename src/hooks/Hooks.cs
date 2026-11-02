@@ -59,6 +59,7 @@ public static class Hooks
         Run("resolution list", "resolution_list", true, ResolutionList.Apply);
         Run("trail caches", "trail_caches", true, TrailCaches.Apply);
         Run("editor clutter", "editor_clutter", true, EditorClutter.Apply);
+        Run("clutter off", "clutter_off", true, ClutterOff.Apply);
         // After every hook that patches a method Program.RenderGame or RenderEditor call: patching those two compiles
         // them again, and the JIT can inline a small method they call (RenderAaPreparePasses) as it is then, so a patch
         // made on it later never runs from them (MetalFX Spatial drew nothing)
@@ -71,6 +72,7 @@ public static class Hooks
         Run("presets", "presets", true, Presets.Apply);
         Run("Mac Port tab", "mac_port_tab", true, MacPortTab.Apply);
         Run("benchmark", "benchmark", true, BenchmarkRun.Apply);
+        Run("frame capture command", "frame_capture_command", true, FrameCaptureCommand.Apply);
     }
 
     // apply(harmony) patches and returns what it did ("on", "off", ...); it throws Skip when the game's code isn't what
