@@ -242,7 +242,7 @@ internal static partial class MacPortTab
         var then = ViewSize(Running("upscaling"), Running("render_scale"));
         bool changed = now != then;
         float s = ConsoleStyle.EffectiveInterfaceScale, inset = ConsoleWidgets.RowLabelInsetPx;
-        float padX = 16f * s, padTop = 14f * s, padBottom = 12f * s, gap = 14f * s;
+        float padX = 24f * s, padTop = 22f * s, padBottom = 20f * s, gap = 14f * s;
         var at = ImGui.GetCursorScreenPos() + new float2(inset, 4f * s);
         float width = ConsoleStyle.ContentAvailWidth() - inset;
         float boxWidth = MathF.Min(196f * s, (width - padX * 2f - gap * 2f) * 0.3f);
@@ -277,7 +277,7 @@ internal static partial class MacPortTab
         var hundredAt = new float2(full - hundred.X - 3f * s, fullTop + 2f * s);
         // On the panel's colour, as the drawn box, grey or gold, can lie behind it
         draw.AddRectFilled(hundredAt - new float2(2f * s, 0f), hundredAt + hundred + new float2(2f * s, 0f), ConsoleStyle.ApplyAlpha(ConsoleStyle.InsetU32));
-        draw.AddText(in hundredAt, muted, "100 %");
+        draw.AddText(in hundredAt, ConsoleStyle.ApplyAlpha(ConsoleStyle.TextPrimaryU32), "100 %");
         ConsoleStyle.PopFont();
         // What it is shown on: the drawn box's grey, fainter, as only its size matters
         var shown = new float2(at.X + width - padX - boxWidth, box.Y);
