@@ -6,6 +6,10 @@
 # camera and the simulation ease to a stop, the game catches up with the script's game time and the screenshot is
 # taken, so the screenshots show the same moments on every Mac. benchmark.sh --explore captures keys from the game.
 #
+# A number after a screenshot's name is how much of it may change from run to run (percent of its blocks), for views that
+# physics, particles or the clouds and sea change every time: about three times what repeated runs showed. A view of the flight
+# in fast mode stands paused and comes out the same to the pixel, so there it doesn't count.
+#
 # Three tests, and "full", which plays them one after the other. The sections each one plays, in fast mode (benchmark.sh
 # --fast) and in the cinematic run, split by "|" (benchmark.sh and the game's Mac Port tab read these lines): the Planetary
 # Tour, whose fast mode is the flight's places with the camera jumping between them; the Mixed Test, what the tour doesn't
@@ -24,7 +28,7 @@ section earth
 10 @shot earth2
 10.5 @measure earth3 7
 18 @key Earth 0.712986 -34.339823 6272 268.1 4.0
-18 @shot earth3
+18 @shot earth3 25
 18.5 @measure earth4 9
 28 @key Earth 0.600314 -35.167166 9 266.4 -6.8
 28 @shot earth4 70
@@ -39,7 +43,7 @@ section earth
 55 @shot earth7
 55.5 @measure earth8 9
 65 @key Earth -16.373333 -73.301128 160 295.5 -5.0
-65 @shot earth8
+65 @shot earth8 8
 65.5 @measure earth9 13
 79 @key Earth 64.121609 -76.318757 25764 71.7 7.7
 79 @shot earth9
@@ -145,7 +149,7 @@ section capsule
 42.5 @aim 0.3 4
 42.5 @chase -165 5 0.9 4
 42.5 @measure fur 5
-47.5 @shot fur 50
+47.5 @shot fur 25
 
 # Rocket launch: the bundled rocket (a core stage and three solid boosters) on launch pad LC-39A, the camera turning
 # around it, then pulling back to the ground 300 m away for its ignition and lift-off, zooming to keep it in view; then
@@ -169,7 +173,7 @@ section launch
 8.5 @stage 1
 8.5 @measure liftoff 7
 9.5 @input MainEngineThrottleUp release
-15.5 @shot liftoff 50
+15.5 @shot liftoff 30
 16 @chase 230 8 150 5
 16 @measure climb 11
 21 @warp 4 1.5
@@ -260,17 +264,17 @@ section mixed
 1.5 @vehicle giga
 1.5 @explode
 3 @warp 0
-3 @shot kitten
+3 @shot kitten 4
 3 @vehicle giga
 3 @chase 0 15 200
-3 @shot explosion 60
+3 @shot explosion 15
 3 @control liftoff
 3 @watch 240 300 2 70
-3 @shot liftoff 50
+3 @shot liftoff 10
 3 @control topdown
 3 @chase 215 75 45
 3 @aim 10
-3 @shot topdown 50
+3 @shot topdown 3
 3 @control cockpit
 3 @camera iva
 3 @look 35 25

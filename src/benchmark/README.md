@@ -229,7 +229,9 @@ in blocks of 16 by 16 pixels: a block counts as changed when its mean colour mov
 screenshot differs when more than 1% of its blocks changed (3% in a cinematic run, whose screenshots vary a little
 with the frames the Mac happened to draw on the way). Normal run-to-run differences stay within that; a missing
 texture or a broken shader does not. A few views change every run because of physics, particles or waves (the kitten
-after its walk, the plumes, the explosion, the sea close up), and their `@shot` lines in `benchmark.txt` allow more.
+after its walk, the plumes, the explosion, the sea close up), and their `@shot` lines in `benchmark.txt` allow more, about
+three times what repeated runs showed. The Planetary Tour in fast mode stands paused and comes out the same to the pixel, so
+those allowances don't apply there.
 
 Every frame of a run goes into `frames.csv`: the script's time, the section and part, frame and GPU time, draws and
 passes, memory, thermal state, shaders compiled so far, and the time between the last two images the display showed.

@@ -127,7 +127,9 @@ public partial class Benchmark
                 {
                     if (!double.TryParse(a[2], NumberStyles.Float, Inv, out var limit))
                         return false;
-                    _sectionResult?.ShotLimits[a[1]] = limit;
+                    // A paused view comes out the same every time: it gets no allowance for what moves
+                    if (!Paused)
+                        _sectionResult?.ShotLimits[a[1]] = limit;
                 }
                 // The game stays paused: nothing to keep in step
                 if (Paused && !IsChosen(a[1]))
