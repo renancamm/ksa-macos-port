@@ -610,7 +610,7 @@ internal static partial class MacPortTab
             if (i < Tests.Length - 1 || last != null)
                 draw.AddLine(new float2(x, y), new float2(right, y), hairline, ConsoleStyle.WindowBorderThicknessPx);
         }
-        if (last != null && Row("Last Run", [last.Outcome], ConsoleStyle.ApplyAlpha(last.Passed ? ConsoleStyle.TextLabelU32 : ConsoleStyle.DangerU32), last.Date, show, null, "MacPort_show_report", last.Summary, false) > 0)
+        if (last != null && Row("Last Run", [last.Outcome], ConsoleStyle.ApplyAlpha(last.Passed || last.Outcome == "Stopped" ? ConsoleStyle.TextLabelU32 : ConsoleStyle.DangerU32), last.Date, show, null, "MacPort_show_report", last.Summary, false) > 0)
             BenchmarkRun.Show(last.Folder);
         ImGui.SetCursorScreenPos(new float2(x - inset, y));
         Gap(4f * s);

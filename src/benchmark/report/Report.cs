@@ -231,17 +231,26 @@ public static class Program
         }
         File.AppendAllLines(system, added);
         BlankShots(dir);
+        // What macOS wrote about a crash of the game, for the report to name
+        var crashes = CrashReports(started);
+        if (crashes.Count > 0)
+            File.AppendAllLines(Path.Combine(dir, "run.txt"), crashes.Select(c => $"Crash report: {Path.GetFileName(c)}"));
         int status = Report(dir);
-        Package(dir, started);
+        Package(dir, crashes);
         return status;
     }
 
-    // Screenshots of nothing, one colour from edge to edge (a black screen that a comparison would only catch against a
-    // run that had a picture), for Problems: blank.txt
+    // Screenshots that show something went wrong with no other sign of it, which a comparison would only catch against a run
+    // that had a picture: one colour from edge to edge, or mostly pure white. For Problems: blank.txt
+    private const double BlownOutPercent = 30;
+
     private static void BlankShots(string dir)
     {
         var blank = Directory.GetFiles(dir, "*_*.png").OrderBy(f => f, StringComparer.Ordinal)
-            .Where(f => Images.Read(f) is { } image && Images.Blank(image)).Select(Path.GetFileName).OfType<string>().ToList();
+            .AsParallel().AsOrdered().Select(f => (Name: Path.GetFileName(f), Image: Images.Read(f)))
+            .Select(s => s.Image == null ? null : Images.Blank(s.Image) ? $"{s.Name}: the screenshot is one colour from edge to edge"
+                : Images.WhitePercent(s.Image) is >= BlownOutPercent and var white ? $"{s.Name}: {white:F0} % of the screenshot is pure white: the picture went wrong" : null)
+            .OfType<string>().ToList();
         var file = Path.Combine(dir, "blank.txt");
         if (blank.Count > 0)
             File.WriteAllLines(file, blank);
@@ -249,8 +258,16 @@ public static class Program
             File.Delete(file);
     }
 
-    // <dir>/<name>.zip: what a shared run holds, with the game's crash reports since the run started
-    private static void Package(string dir, DateTime started)
+    // The game's crash reports since the run started
+    private static List<string> CrashReports(DateTime started)
+    {
+        var reports = Path.Combine(Environment.GetEnvironmentVariable("HOME") ?? "", "Library", "Logs", "DiagnosticReports");
+        return (Directory.Exists(reports) ? Directory.GetFiles(reports, "*.ips") : [])
+            .Where(crash => File.GetLastWriteTimeUtc(crash) >= started && Regex.IsMatch(File.ReadAllText(crash), "\"procName\" *: *\"dotnet\"|KSA\\.dll|StarMap")).ToList();
+    }
+
+    // <dir>/<name>.zip: what a shared run holds, with the game's crash reports of the run
+    private static void Package(string dir, List<string> crashes)
     {
         var name = Path.GetFileName(Path.GetFullPath(dir).TrimEnd('/'));
         var zip = Path.Combine(dir, name + ".zip");
@@ -271,18 +288,12 @@ public static class Program
                     Run("/usr/bin/sips", "-s", "format", "jpeg", "-s", "formatOptions", "70", "-Z", "1600", file, "--out",
                         Path.Combine(stage, Path.ChangeExtension(f, ".jpg")));
             }
-            var reports = Path.Combine(home, "Library", "Logs", "DiagnosticReports");
             var user = Environment.UserName;
-            foreach (var crash in Directory.Exists(reports) ? Directory.GetFiles(reports, "*.ips") : [])
+            foreach (var crash in crashes)
             {
-                if (File.GetLastWriteTimeUtc(crash) < started)
-                    continue;
-                var text = File.ReadAllText(crash);
-                if (!Regex.IsMatch(text, "\"procName\" *: *\"dotnet\"|KSA\\.dll|StarMap"))
-                    continue;
                 Directory.CreateDirectory(Path.Combine(stage, "crashes"));
                 File.WriteAllText(Path.Combine(stage, "crashes", Path.GetFileName(crash)),
-                    text.Replace(home, "~").Replace($"/Users/{user}", "~"));
+                    File.ReadAllText(crash).Replace(home, "~").Replace($"/Users/{user}", "~"));
             }
             File.Delete(zip);
             ZipFile.CreateFromDirectory(Path.GetDirectoryName(stage)!, zip);
@@ -387,6 +398,8 @@ public static class Program
         if (run.TryGetValue("Swap used", out var swap) && swap.Split(' ') is [var from, "->", var to, ..] &&
             double.TryParse(from, out var f) && double.TryParse(to, out var t) && t - f > 256)
             notes.Add($"the Mac swapped memory to disk during the run ({swap})");
+        foreach (var (_, crash) in KeyValues(Path.Combine(dir, "run.txt")).Where(kv => kv.key == "Crash report"))
+            notes.Add($"macOS wrote a crash report, {crash}, in ~/Library/Logs/DiagnosticReports (the zip holds it)");
         var hot = new List<string>();
         var compiled = new List<string>();
         foreach (var section in sections.OfType<JsonObject>())
@@ -461,6 +474,10 @@ public static class Program
         }
         if (KeyValues(Path.Combine(dir, "run.txt")).Any(kv => kv.key.StartsWith("Alongside", StringComparison.Ordinal)))
             problems.Add("another game ran at the same time, sharing the Mac's GPU and memory");
+        // A game gone before its first frame, with nothing in its log to say why: one thing it can't start without
+        if (KeyValues(Path.Combine(dir, "run.txt")).Any(kv => kv.value.Contains("before its first frame", StringComparison.Ordinal)) &&
+            !Directory.GetFiles(dir, "game*.log").Any(log => File.ReadLines(log).Any(l => l.Contains("Unhandled exception", StringComparison.Ordinal))))
+            problems.Add("the display must be awake and the Mac unlocked for the game to start");
         if (results.Count == 0)
             problems.Add("the run wrote no results");
         else if (results["completed"]?.GetValue<bool>() != true)
@@ -472,7 +489,7 @@ public static class Program
         }
         var blank = Path.Combine(dir, "blank.txt");
         if (File.Exists(blank))
-            problems.AddRange(File.ReadAllLines(blank).Select(shot => $"{shot}: the screenshot is one colour from edge to edge"));
+            problems.AddRange(File.ReadAllLines(blank));
         // A hook that was skipped (the game's code it changes has moved) or failed: the run didn't play the port as it is
         var hooks = KeyValues(Path.Combine(dir, "system.txt")).FirstOrDefault(kv => kv.key == "Hooks").value ?? "";
         foreach (var hook in hooks.Split("; ", StringSplitOptions.RemoveEmptyEntries))

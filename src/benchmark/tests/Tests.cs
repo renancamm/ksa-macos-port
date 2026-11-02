@@ -197,7 +197,7 @@ internal static class Tests
     private static void Notes()
     {
         var dir = Run("notes", system: ["Power: Battery Power", "Low Power Mode: on", "KSA Metal switches: KSA_MTL_GPUPROF=x.csv", "Tools: Instruments"],
-            run: ["Game: quit normally", "Memory pressure: warning", "Swap used: 100.00 -> 600.00 MB", "GPU before the run: 90 %"]);
+            run: ["Game: quit normally", "Memory pressure: warning", "Swap used: 100.00 -> 600.00 MB", "GPU before the run: 90 %", "Crash report: dotnet-2026-10-26.ips"]);
         Results(dir, "results.json", 10, section: s => s.Windows[0].ShadersCompiled = 3);
         Equal(0, Report("report", dir).Status, "exit status: notes don't fail a run");
         var notes = Strings(ReportJson(dir)["notes"]);
@@ -206,9 +206,10 @@ internal static class Tests
         Contains(notes, "KSA Metal switches were set (KSA_MTL_GPUPROF=x.csv)", "KSA Metal switches");
         Contains(notes, "measured with Instruments", "tools");
         Contains(notes, "the GPU was busy before the run (90 %)", "a busy GPU");
+        Contains(notes, "crash report, dotnet-2026-10-26.ips", "a crash report");
         Contains(notes, "swapped memory to disk during the run (100.00 -> 600.00 MB)", "swap");
         Contains(notes, "shaders compiled while measuring earth earth1 (3)", "shaders compiled");
-        Equal(7, notes.Length, "notes");
+        Equal(8, notes.Length, "notes");
     }
 
     private static void Repeats()
@@ -428,6 +429,13 @@ internal static class Tests
         Images.Write(Path.Combine(dir, "earth_earth1.png"), black);
         Equal(1, Report("finish", dir).Status, "exit status");
         Contains(Strings(ReportJson(dir)["problems"]), "earth_earth1.png: the screenshot is one colour", "the problem");
+        // The sky gone white around a planet, as when the game's light breaks: a picture, but not a right one
+        var flood = new Image(32, 32, new byte[32 * 32 * 3]);
+        Array.Fill(flood.Rgb, (byte)255, 0, flood.Rgb.Length * 3 / 4);
+        Equal(75.0, Images.WhitePercent(flood), "the white share");
+        Images.Write(Path.Combine(dir, "earth_earth1.png"), flood);
+        Report("finish", dir);
+        Contains(Strings(ReportJson(dir)["problems"]), "75 % of the screenshot is pure white", "the problem");
         Images.Write(Path.Combine(dir, "earth_earth1.png"), stars);
         Report("finish", dir);
         Equal(0, Strings(ReportJson(dir)["problems"]).Length, "a picture: no problem, and none left from before");

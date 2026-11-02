@@ -254,6 +254,20 @@ public static class Images
         return true;
     }
 
+    // The share of an image that is pure white, in percent. A real view has highlights (an explosion fills up to about a third);
+    // a picture gone wrong in the game's light has its whole sky so.
+    public static double WhitePercent(Image image)
+    {
+        var rgb = image.Rgb;
+        long white = 0;
+        for (int i = 0; i + 2 < rgb.Length; i += 3)
+        {
+            if (rgb[i] >= 250 && rgb[i + 1] >= 250 && rgb[i + 2] >= 250)
+                white++;
+        }
+        return rgb.Length > 0 ? 300.0 * white / rgb.Length : 0;
+    }
+
     public static Image Mark(Image image, Difference d)
     {
         var rgb = new byte[image.Rgb.Length];

@@ -750,7 +750,7 @@ play() {
         if [ -f "${OUT}/heartbeat" ]; then
             where="$(awk 'NF == 2 && $1 != "waiting" { print " in " $1 " at " $2 " s" }' "${OUT}/heartbeat")"
         else
-            where=" before its first frame (the display must be awake and the Mac unlocked)"
+            where=" before its first frame"
         fi
         case "${status}" in
             0) ending="quit normally" ;;
