@@ -8,13 +8,10 @@
 		<UseAppHost>false</UseAppHost>
 	</PropertyGroup>
 	<ItemGroup>
-		<!-- The PNG reader and the comparison of screenshots, shared with the director -->
-		<Compile Include="../shared/Images.cs" />
-		<!-- A run's options, which it writes as run.json for the director -->
-		<Compile Include="../shared/RunOptions.cs" />
-		<!-- benchmark.sh's command (Command.cs): the port folder's names and the apps this port made, shared with the porter -->
-		<Compile Include="../../porter/PortFolder.cs" />
-		<!-- The settings' library, which checks and writes a run's port settings (the option port) -->
-		<ProjectReference Include="../../settings/KsaPortSettings.csproj" />
+		<!-- The port settings, the port folder's names, a run's options and the screenshots' comparison -->
+		<ProjectReference Include="../../shared/KsaPort.Common.csproj" />
+	</ItemGroup>
+	<ItemGroup>
+		<InternalsVisibleTo Include="KsaMetalBenchmarkTests" />
 	</ItemGroup>
 </Project>

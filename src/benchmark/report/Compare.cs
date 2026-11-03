@@ -12,7 +12,7 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
-using KsaMetalBenchmark;
+using KsaPort.Common;
 
 namespace KsaMetalBenchmarkReport;
 

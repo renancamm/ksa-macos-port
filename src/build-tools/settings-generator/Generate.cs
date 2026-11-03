@@ -5,10 +5,10 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
-using KsaPortSettings;
+using KsaPort.Common;
 
-// What is made from the table of the port settings (src/settings/port-settings.txt), and the checks that keep the rest
-// of the repository in step with it (src/settings/README.md):
+// What is made from the table of the port settings (src/shared/settings/port-settings.txt), and the checks that keep
+// the rest of the repository in step with it (src/shared/settings/README.md):
 //
 //   KsaPortSettingsGenerator template <table>   the commented template of port-settings.toml, to standard output
 //   KsaPortSettingsGenerator generate <repo>    port-settings.h written again when the table changed, then the checks
@@ -145,7 +145,7 @@ internal static class Generate
     private static IEnumerable<PortSetting> Native => PortSettings.All.Where(s => By(s, "driver") || By(s, "ktx-shim"));
 
     // The header the native code reads its settings with: a field of PortSettings per setting the driver or the KTX
-    // shim does, which portSettingsRead() reads from its variable with the values the settings' library takes (one
+    // shim does, which portSettingsRead() reads from its variable with the values the shared library takes (one
     // that is none of the setting's means its default)
     private static string Header()
     {
@@ -153,7 +153,7 @@ internal static class Generate
             // The port settings of the native code, KSA Metal and the KTX shim: made from port-settings.txt by
             // KsaPortSettingsGenerator (README.md in this folder), which build.sh runs. Edit the table, not this.
             //
-            // portSettingsRead() reads each one from its variable, taking the values the settings' library takes: a switch
+            // portSettingsRead() reads each one from its variable, taking the values the shared library takes: a switch
             // 0 or 1, a number in the table's range, an int of digits only; unset, empty or anything else, the table's
             // default. Text is NULL when unset. A variable set outside the game is taken without its setting's needs,
             // which the hooks' loader applies to those it sets.
@@ -227,10 +227,10 @@ internal static class Generate
     {
         var t = new StringBuilder("""
             // The port settings the hooks read, as properties of Settings (Settings.cs): made from
-            // src/settings/port-settings.txt by KsaPortSettingsGenerator (src/settings/README.md), which build.sh runs.
-            // Edit the table, not this. A setting that applies when the game starts is read once, when the hooks load; a
-            // live one each time, since the Mac Port tab's Apply changes it.
-            using KsaPortSettings;
+            // src/shared/settings/port-settings.txt by KsaPortSettingsGenerator (src/shared/settings/README.md), which
+            // build.sh runs. Edit the table, not this. A setting that applies when the game starts is read once, when
+            // the hooks load; a live one each time, since the Mac Port tab's Apply changes it.
+            using KsaPort.Common;
 
             namespace KsaMetalHooks;
 
@@ -296,7 +296,8 @@ internal static class Generate
     }
 
     // The files made from the table, in the repository
-    private const string HeaderPath = "src/settings/port-settings.h", HooksPath = "src/hooks/Settings.Generated.cs";
+    private const string HeaderPath = "src/shared/settings/port-settings.h";
+    private const string HooksPath = "src/hooks/Settings.Generated.cs";
 
     // The checks: the files made from the table as it makes them; each setting's by column what the code does (the
     // driver and the KTX shim use the fields of the settings it names for them, the hooks the properties of those it
@@ -306,7 +307,7 @@ internal static class Generate
     // table's; every variable a README names in the table or in some code
     private static int Check(string repo, bool write)
     {
-        Load(Path.Combine(repo, "src", "settings"));
+        Load(Path.Combine(repo, "src", "shared", "settings"));
         var problems = new List<string>();
         Made(repo, HeaderPath, Header(), write, problems);
         Made(repo, HooksPath, HooksSettings(), write, problems);
@@ -321,7 +322,7 @@ internal static class Generate
             .Concat(new[] { "build.sh", "release.sh", "CMakeLists.txt" }.Select(f => Path.Combine(repo, f)))
             .Where(p => Path.GetExtension(p) is ".cs" or ".c" or ".mm" or ".cpp" or ".h" or ".sh" or ".cmake" or ".txt")
             .ToDictionary(p => Path.GetRelativePath(repo, p), File.ReadAllText)
-            .Where(c => c.Key is not ("src/settings/port-settings.txt" or HeaderPath or HooksPath))
+            .Where(c => c.Key is not ("src/shared/settings/port-settings.txt" or HeaderPath or HooksPath))
             .ToDictionary(c => c.Key, c => c.Value);
         bool Names(string text, string name) => Regex.IsMatch(text, $@"\b{name}\b");
         string Component(string folder) =>

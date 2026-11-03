@@ -8,7 +8,7 @@ using Brutal.ImGuiApi.Abstractions;
 using HarmonyLib;
 using KSA;
 using KsaMetalBenchmark;
-using KsaPortSettings;
+using KsaPort.Common;
 
 namespace KsaMetalHooks.App;
 

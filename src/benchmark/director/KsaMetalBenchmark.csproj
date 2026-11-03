@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 	<!-- The benchmark's director, compiled against the KSA version the port folder is made for (KsaDir,
-	     src/Directory.Build.props). The game's assemblies are references only: the game loads them, the director
-	     doesn't ship them. -->
+	     src/Directory.Build.props). The game's assemblies and the shared library are references only: the game loads
+	     them, and the shared library is next to the hooks. -->
 	<PropertyGroup>
 		<AssemblyName>KsaMetalBenchmark</AssemblyName>
 		<RootNamespace>KsaMetalBenchmark</RootNamespace>
@@ -9,7 +9,7 @@
 	</PropertyGroup>
 	<ItemGroup>
 		<Reference Include="$(KsaDir)/*.dll" Private="false" />
-		<!-- What the report program and the tests share: the PNG reader and the classes that write results.json -->
-		<Compile Include="../shared/*.cs" />
+		<!-- A run's options, the screenshots' reader, the results and KSA Metal's measurements -->
+		<ProjectReference Include="../../shared/KsaPort.Common.csproj" Private="false" />
 	</ItemGroup>
 </Project>

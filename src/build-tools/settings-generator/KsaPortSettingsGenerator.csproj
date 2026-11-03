@@ -6,6 +6,6 @@
 		<UseAppHost>false</UseAppHost>
 	</PropertyGroup>
 	<ItemGroup>
-		<ProjectReference Include="../KsaPortSettings.csproj" />
+		<ProjectReference Include="../../shared/KsaPort.Common.csproj" />
 	</ItemGroup>
 </Project>

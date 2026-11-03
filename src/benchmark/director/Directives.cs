@@ -93,6 +93,7 @@ using System.Globalization;
 using System.Reflection;
 using Brutal.Numerics;
 using KSA;
+using KsaPort.Common;
 
 namespace KsaMetalBenchmark;
 

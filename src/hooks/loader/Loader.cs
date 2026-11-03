@@ -6,7 +6,7 @@ using System.Threading;
 
 // KSA Metal Hooks' entry point: the launcher names this assembly in DOTNET_STARTUP_HOOKS, so .NET runs Initialize
 // before the program it starts (KSA, or StarMap, which loads KSA itself). First it applies the port settings
-// (PortEnvironment.cs, with the settings' library, KsaPortSettings.dll next to it). It references nothing of the game:
+// (PortEnvironment.cs, with the shared library, KsaPort.Common.dll next to it). It references nothing of the game:
 // it waits until KSA.dll is loaded, then loads KsaMetalHooks.dll from its own folder into the same load context and
 // applies it, unless the settings turn the hooks off (then only for a benchmark run, KSA_BENCH_OUT, which the hooks
 // start). Harmony is not loaded before that: StarMap loads its own copy at start, and the hooks then use that one.
@@ -20,10 +20,10 @@ internal class StartupHook
         if (Assembly.GetEntryAssembly()?.GetName().Name is not ("KSA" or "StarMap"))
             return;
         string folder = Path.GetDirectoryName(typeof(StartupHook).Assembly.Location)!;
-        // .NET looks for a startup hook's references only where it looks for the program's: the settings' library is
-        // in this folder
+        // .NET looks for a startup hook's references only where it looks for the program's: the shared library is in
+        // this folder
         AssemblyLoadContext.Default.Resolving += (ctx, name) =>
-            name.Name == "KsaPortSettings" ? ctx.LoadFromAssemblyPath(Path.Combine(folder, "KsaPortSettings.dll")) : null;
+            name.Name == "KsaPort.Common" ? ctx.LoadFromAssemblyPath(Path.Combine(folder, "KsaPort.Common.dll")) : null;
         bool hooks = true;
         try
         {
@@ -49,7 +49,7 @@ internal class StartupHook
         {
             AssemblyLoadContext context = AssemblyLoadContext.GetLoadContext(assembly)!;
             // KsaMetalHooks.dll's references that the context can't find are in this folder (Harmony, without StarMap,
-            // and the settings' library), or in the benchmark's next to it (its director)
+            // and the shared library), or in the benchmark's next to it (its director)
             context.Resolving += (ctx, name) =>
             {
                 foreach (string dir in new[] { folder, Path.Combine(folder, "..", "Benchmark") })

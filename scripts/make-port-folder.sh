@@ -48,21 +48,21 @@ folder_payload() {
     mkdir -p "${contents}/Resources"
     ditto "${DOTNET_RUNTIME}" "${contents}/MacOS"
     cp "${NATIVES}/KSA" "${contents}/MacOS/KSA"
-    # The port settings: their table, and the commented template the hooks copy for the player (src/settings/)
-    cp "${REPO}/src/settings/port-settings.txt" "${contents}/Resources/"
+    # The port settings: their table, and the commented template the hooks copy for the player (src/shared/settings/)
+    cp "${REPO}/src/shared/settings/port-settings.txt" "${contents}/Resources/"
     # What the tab's title says: the port's version
     cp "${OUT}/VERSION" "${contents}/Resources/VERSION"
-    dotnet "${ASSEMBLIES}/bin/KsaPortSettingsGenerator/KsaPortSettingsGenerator.dll" template "${REPO}/src/settings/port-settings.txt" \
+    dotnet "${ASSEMBLIES}/bin/KsaPortSettingsGenerator/KsaPortSettingsGenerator.dll" template "${REPO}/src/shared/settings/port-settings.txt" \
         > "${contents}/Resources/port-settings.toml"
     cp -P "${NATIVES}"/*.dylib "${NATIVES}/Brutal.Monitor.Subprocess" "${contents}/Resources/"
     cp "${REPO}/third_party/fmod/libfmod.dylib" "${contents}/Resources/libfmod.dylib"
     chmod u+w "${contents}/Resources/libfmod.dylib"
     cp "${BUILD}/icon/AppIcon.icns" "${contents}/Resources/"
-    # KSA Metal Hooks, which the launcher loads and which apply the port settings (src/hooks/), with the settings'
-    # library (src/settings/) and Harmony
+    # KSA Metal Hooks, which the launcher loads and which apply the port settings (src/hooks/), with the shared
+    # library (src/shared/) and Harmony
     mkdir -p "${contents}/Resources/Hooks"
     cp "${ASSEMBLIES}/bin/KsaMetalHooksLoader/KsaMetalHooksLoader.dll" "${ASSEMBLIES}/bin/KsaMetalHooks/KsaMetalHooks.dll" \
-        "${ASSEMBLIES}/bin/KsaPortSettings/KsaPortSettings.dll" "${HARMONY_DLL}" "${contents}/Resources/Hooks/"
+        "${ASSEMBLIES}/bin/KsaPort.Common/KsaPort.Common.dll" "${HARMONY_DLL}" "${contents}/Resources/Hooks/"
     # The benchmark (src/benchmark/): its director, which the hooks start, the report program, the tour and its vehicles
     local bench="${contents}/Resources/Benchmark"
     mkdir -p "${bench}"

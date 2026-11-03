@@ -1,7 +1,7 @@
 // The port settings of the native code, KSA Metal and the KTX shim: made from port-settings.txt by
 // KsaPortSettingsGenerator (README.md in this folder), which build.sh runs. Edit the table, not this.
 //
-// portSettingsRead() reads each one from its variable, taking the values the settings' library takes: a switch
+// portSettingsRead() reads each one from its variable, taking the values the shared library takes: a switch
 // 0 or 1, a number in the table's range, an int of digits only; unset, empty or anything else, the table's
 // default. Text is NULL when unset. A variable set outside the game is taken without its setting's needs,
 // which the hooks' loader applies to those it sets.

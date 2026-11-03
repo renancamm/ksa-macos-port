@@ -1,4 +1,7 @@
 <Solution>
+	<Folder Name="/build-tools/">
+		<Project Path="src/build-tools/settings-generator/KsaPortSettingsGenerator.csproj" />
+	</Folder>
 	<Folder Name="/benchmark/">
 		<Project Path="src/benchmark/director/KsaMetalBenchmark.csproj" />
 		<Project Path="src/benchmark/report/KsaMetalBenchmarkReport.csproj" />
@@ -15,9 +18,8 @@
 		<Project Path="src/porter/KsaPorter.csproj" />
 		<Project Path="src/porter/tests/KsaPorterTests.csproj" />
 	</Folder>
-	<Folder Name="/settings/">
-		<Project Path="src/settings/KsaPortSettings.csproj" />
-		<Project Path="src/settings/generator/KsaPortSettingsGenerator.csproj" />
-		<Project Path="src/settings/tests/KsaPortSettingsTests.csproj" />
+	<Folder Name="/shared/">
+		<Project Path="src/shared/KsaPort.Common.csproj" />
+		<Project Path="src/shared/tests/KsaPort.Common.Tests.csproj" />
 	</Folder>
 </Solution>

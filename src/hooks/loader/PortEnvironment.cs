@@ -4,10 +4,10 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
-using KsaPortSettings;
+using KsaPort.Common;
 
 // The player's port settings, port-settings.toml in the game's documents folder, become the environment variables that
-// KSA Metal, its shims and the hooks read (PortSettings.Plan, in the settings' library, says which). It runs in the
+// KSA Metal, its shims and the hooks read (PortSettings.Plan, in the shared library, says which). It runs in the
 // game's process, before the game; KSA Metal and the shims read their variables when the game first uses them, later.
 // A variable already set when the game starts wins over the file.
 //

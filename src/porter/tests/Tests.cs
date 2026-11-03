@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using KsaPort.Common;
 using KsaPorter;
 
 // The tests of the porter that need no game: the shader edits' format and rules on synthetic shaders, the port's own

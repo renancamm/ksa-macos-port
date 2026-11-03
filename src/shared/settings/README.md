@@ -13,22 +13,22 @@ class's name, in the table as in the log.
 | Path | What it holds |
 |---|---|
 | [`port-settings.txt`](port-settings.txt) | the table |
-| [`PortSettings.cs`](PortSettings.cs), [`PortSetting.cs`](PortSetting.cs) | the library, `KsaPortSettings.dll`: the table, `port-settings.toml`, the needs, and the environment the game runs with |
-| [`generator/`](generator/) | the generator: the file's template, the native code's and the hooks' typed settings, and the checks that keep the repository in step with the table |
+| [`PortSettings.cs`](PortSettings.cs), [`PortSetting.cs`](PortSetting.cs) | the settings in the port's shared library, `KsaPort.Common.dll` ([`../`](../)): the table, `port-settings.toml`, the needs, and the environment the game runs with |
+| [`../../build-tools/settings-generator/`](../../build-tools/settings-generator/) | the generator: the file's template, the native code's and the hooks' typed settings, and the checks that keep the repository in step with the table |
 | [`port-settings.h`](port-settings.h) | the native code's settings, made from the table |
-| [`tests/`](tests/) | the library's tests |
+| [`../tests/`](../tests/) | the settings' tests |
 
 ## The library
 
-`KsaPortSettings.dll` is in the app's `Contents/Resources/Hooks/`, next to the hooks, and in its `Benchmark/`, next to
-the report program. Who uses it:
+`KsaPort.Common.dll` is in the app's `Contents/Resources/Hooks/`, next to the hooks, in its `Benchmark/`, next to the
+report program, and in the port folder's `lib/porter/`. Who reads the settings with it:
 
 | Reader | How |
 |---|---|
-| the hooks' loader ([`../hooks/loader/`](../hooks/loader/)) | reads the table and `port-settings.toml` when the game starts, and sets each setting the file changes as its variable (`PortSettings.Plan`) |
-| the hooks ([`../hooks/Settings.cs`](../hooks/Settings.cs)) | read each setting back from its variable (`PortSettings.Load`) |
-| the Mac Port tab ([`../hooks/tab/`](../hooks/tab/)) | draws its rows from the table, and writes the values it changes into the file (`PortSettings.Save`) |
-| the benchmark's report program ([`../benchmark/report/`](../benchmark/report/)) | checks `--port` against the table and writes it into the run's file |
+| the hooks' loader ([`../../hooks/loader/`](../../hooks/loader/)) | reads the table and `port-settings.toml` when the game starts, and sets each setting the file changes as its variable (`PortSettings.Plan`) |
+| the hooks ([`../../hooks/Settings.cs`](../../hooks/Settings.cs)) | read each setting back from its variable (`PortSettings.Load`) |
+| the Mac Port tab ([`../../hooks/tab/`](../../hooks/tab/)) | draws its rows from the table, and writes the values it changes into the file (`PortSettings.Save`) |
+| the benchmark's report program ([`../../benchmark/report/`](../../benchmark/report/)) | checks `--port` against the table and writes it into the run's file |
 
 A variable already set when the game starts wins over the file. A variable that is unset, holds none of its setting's
 values, or belongs to a setting whose needs aren't met means the default.
@@ -40,15 +40,17 @@ doesn't compile. Two files are made from the table:
 
 | File | Holds |
 |---|---|
-| [`port-settings.h`](port-settings.h) | `PortSettings`, a field per setting the driver or the KTX shim does (`fusedTessellation`, a `bool`), and `portSettingsRead()`, which reads them from their variables with the values the library takes (it doesn't apply needs to a variable set outside the game); KSA Metal keeps them in `kmtlConfig()` ([`../ksa-metal/setup/config.mm`](../ksa-metal/setup/config.mm)) |
-| [`../hooks/Settings.Generated.cs`](../hooks/Settings.Generated.cs) | a property of the hooks' `Settings` per setting the hooks do (`Settings.TerrainCache`, a `bool`; `Settings.RenderScale`, a `double`): read once when the hooks load, or each time for a live setting |
+| [`port-settings.h`](port-settings.h) | `PortSettings`, a field per setting the driver or the KTX shim does (`fusedTessellation`, a `bool`), and `portSettingsRead()`, which reads them from their variables with the values the library takes (it doesn't apply needs to a variable set outside the game); KSA Metal keeps them in `kmtlConfig()` ([`../../ksa-metal/setup/config.mm`](../../ksa-metal/setup/config.mm)) |
+| [`../../hooks/Settings.Generated.cs`](../../hooks/Settings.Generated.cs) | a property of the hooks' `Settings` per setting the hooks do (`Settings.TerrainCache`, a `bool`; `Settings.RenderScale`, a `double`): read once when the hooks load, or each time for a live setting |
 
 ## The generator
 
-`KsaPortSettingsGenerator` ([`generator/Generate.cs`](generator/Generate.cs)) is a build tool, not part of the app.
-`build.sh` builds and runs it first ([`scripts/build-settings.sh`](../../scripts/build-settings.sh)): it makes the
-two typed files again when the table changed (commit them with it), then checks the repository against the table,
-and stops the build when it isn't in step:
+`KsaPortSettingsGenerator`
+([`../../build-tools/settings-generator/Generate.cs`](../../build-tools/settings-generator/Generate.cs)) is a build
+tool, not part of the app. `build.sh` builds and runs it first
+([`scripts/build-settings.sh`](../../../scripts/build-settings.sh)): it makes the two typed files again when the table
+changed (commit them with it), then checks the repository against the table, and stops the build when it isn't in
+step:
 
 - each setting's `by` column is what the code does: the driver and the KTX shim use the field of each setting it
   names for them, the hooks the property, and the hook it names is one `Hooks.Apply` runs and reads it (in its

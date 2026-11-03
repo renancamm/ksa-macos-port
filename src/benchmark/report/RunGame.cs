@@ -10,8 +10,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
-using KsaMetalBenchmark;
-using KsaPorter;
+using KsaPort.Common;
 
 namespace KsaMetalBenchmarkReport;
 

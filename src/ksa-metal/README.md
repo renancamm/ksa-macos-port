@@ -11,10 +11,11 @@ switches, how to build and test a change, how each Vulkan concept maps onto Meta
 
 KSA Metal takes its settings from environment variables, which the hooks' loader sets from the port settings ([The Mac
 Port tab](../../README.md#the-mac-port-tab)): each setting below is a line of `port-settings.toml`
-([`../settings/port-settings.txt`](../settings/port-settings.txt)), the switches in the tab's Optimizations and GPU
-Features sections, the debugging settings in the file's Troubleshooting, Diagnostics and Experiments sections. A
-setting's variable is `KSA_MTL_` and its key in capitals, with 0 for off and 1 for on. A variable can also be set
-where the app's executable starts, from Terminal, where its output stays visible; it then wins over the file:
+([`../shared/settings/port-settings.txt`](../shared/settings/port-settings.txt)), the switches in the tab's
+Optimizations and GPU Features sections, the debugging settings in the file's Troubleshooting, Diagnostics and
+Experiments sections. A setting's variable is `KSA_MTL_` and its key in capitals, with 0 for off and 1 for on. A
+variable can also be set where the app's executable starts, from Terminal, where its output stays visible; it then
+wins over the file:
 
 ```bash
 KSA_MTL_TESSELLATION=0 ~/Applications/"Kitten Space Agency.app"/Contents/MacOS/KSA
@@ -323,7 +324,7 @@ share is in that folder's header too, under a heading that says so (`stages.h` f
 | Folder, file | What it holds |
 |---|---|
 | `kmtl.h` | the core: logging, the configuration, buffer indices, the dispatchable objects (instance, physical device, queue, device), shared helpers; then the layers' headers |
-| `setup/config.mm` | the settings above, read once from their variables (their names and defaults from `src/settings/port-settings.h`), and the log |
+| `setup/config.mm` | the settings above, read once from their variables (their names and defaults from `src/shared/settings/port-settings.h`), and the log |
 | `setup/entry.mm`, `setup/entries.inc` | the table behind `vkGetInstanceProcAddr` and `vkGetDeviceProcAddr`, made from Vulkan's registry ([`entries/`](entries/)) |
 | `setup/instance.mm` | instance, physical device queries, features and limits, the extensions advertised |
 | `setup/device.mm` | device and queues, residency, fences and semaphores, submission |

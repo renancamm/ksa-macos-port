@@ -1,8 +1,8 @@
 // The port settings the hooks read, as properties of Settings (Settings.cs): made from
-// src/settings/port-settings.txt by KsaPortSettingsGenerator (src/settings/README.md), which build.sh runs.
-// Edit the table, not this. A setting that applies when the game starts is read once, when the hooks load; a
-// live one each time, since the Mac Port tab's Apply changes it.
-using KsaPortSettings;
+// src/shared/settings/port-settings.txt by KsaPortSettingsGenerator (src/shared/settings/README.md), which
+// build.sh runs. Edit the table, not this. A setting that applies when the game starts is read once, when
+// the hooks load; a live one each time, since the Mac Port tab's Apply changes it.
+using KsaPort.Common;
 
 namespace KsaMetalHooks;
 

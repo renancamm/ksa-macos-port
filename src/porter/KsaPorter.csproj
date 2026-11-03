@@ -11,7 +11,12 @@
 	</PropertyGroup>
 	<ItemGroup>
 		<Compile Remove="tests/**" />
+		<!-- The port folder's names, the apps this port made and the commands' output, shared with the benchmark -->
+		<ProjectReference Include="../shared/KsaPort.Common.csproj" />
 		<!-- The shader edits go with the program -->
 		<None Include="shader-edits/**/*.edits" CopyToOutputDirectory="PreserveNewest" />
+	</ItemGroup>
+	<ItemGroup>
+		<InternalsVisibleTo Include="KsaPorterTests" />
 	</ItemGroup>
 </Project>

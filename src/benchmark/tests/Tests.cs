@@ -5,7 +5,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Text.Json.Nodes;
-using KsaMetalBenchmark;
+using KsaPort.Common;
 
 // The tests of the report program, which runs without the game: the report of a run (what passes and what fails it,
 // the conditions it notes, repeats merged into medians, numbers that don't depend on the Mac's region), finish (what

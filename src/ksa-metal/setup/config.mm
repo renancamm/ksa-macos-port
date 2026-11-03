@@ -1,5 +1,5 @@
-// The driver's port settings, read once from their variables (portSettingsRead, src/settings/port-settings.h), and
-// the log they set up (log, log_file). README.md documents them: "Configuration" has the switches, "Test" the
+// The driver's port settings, read once from their variables (portSettingsRead, src/shared/settings/port-settings.h),
+// and the log they set up (log, log_file). README.md documents them: "Configuration" has the switches, "Test" the
 // debugging settings.
 #include "kmtl.h"
 #include <cstdarg>

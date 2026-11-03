@@ -7,6 +7,6 @@
 		<UseAppHost>false</UseAppHost>
 	</PropertyGroup>
 	<ItemGroup>
-		<Compile Include="../*.cs" Exclude="../Program.cs" />
+		<ProjectReference Include="../KsaPorter.csproj" />
 	</ItemGroup>
 </Project>

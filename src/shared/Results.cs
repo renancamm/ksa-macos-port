@@ -10,7 +10,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 
-namespace KsaMetalBenchmark;
+namespace KsaPort.Common;
 
 // What the simulation did in a frame: the game's clock, the speed asked for, the slowest vehicle job, substeps so far,
 // physics bubbles and vehicles

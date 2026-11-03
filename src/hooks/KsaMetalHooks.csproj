@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 	<!-- KSA Metal Hooks, compiled against the KSA version the port folder is made for (KsaDir, src/Directory.Build.props).
-	     The game's assemblies, Harmony, the settings' library and the benchmark's director are references only: the app
-	     ships Harmony and the library next to the hooks and the director in its Benchmark folder. The loader (loader/)
-	     is a project of its own. -->
+	     The game's assemblies, Harmony, the shared library and the benchmark's director are references only: the app
+	     ships Harmony and the shared library next to the hooks and the director in its Benchmark folder. The loader
+	     (loader/) is a project of its own. -->
 	<PropertyGroup>
 		<AssemblyName>KsaMetalHooks</AssemblyName>
 		<RootNamespace>KsaMetalHooks</RootNamespace>
@@ -12,7 +12,7 @@
 		<Compile Remove="loader/**" />
 		<Reference Include="$(KsaDir)/*.dll" Private="false" />
 		<Reference Include="$(HarmonyDll)" Private="false" />
-		<ProjectReference Include="../settings/KsaPortSettings.csproj" Private="false" />
+		<ProjectReference Include="../shared/KsaPort.Common.csproj" Private="false" />
 		<ProjectReference Include="../benchmark/director/KsaMetalBenchmark.csproj" Private="false" />
 	</ItemGroup>
 </Project>

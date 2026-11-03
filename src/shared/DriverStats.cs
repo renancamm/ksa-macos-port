@@ -5,7 +5,7 @@
 using System;
 using System.Runtime.InteropServices;
 
-namespace KsaMetalBenchmark;
+namespace KsaPort.Common;
 
 [StructLayout(LayoutKind.Sequential)]
 public struct FrameStats

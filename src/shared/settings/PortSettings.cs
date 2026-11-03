@@ -6,7 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace KsaPortSettings;
+namespace KsaPort.Common;
 
 // The port settings: the table (port-settings.txt, in the app's Contents/Resources), the player's file
 // (port-settings.toml in the game's documents folder) and the environment the game runs with. The hooks' loader reads
@@ -30,8 +30,8 @@ public static class PortSettings
             ? instance
             : Path.Combine(Environment.GetEnvironmentVariable("HOME") ?? "", "Documents", "My Games", "Kitten Space Agency");
 
-    // Reads the table in this folder (the app's Contents/Resources, or src/settings/), and the template's path next to
-    // it. Throws when it is missing or a line isn't a setting.
+    // Reads the table in this folder (the app's Contents/Resources, or src/shared/settings/), and the template's path
+    // next to it. Throws when it is missing or a line isn't a setting.
     public static void LoadTable(string folder)
     {
         All.Clear();

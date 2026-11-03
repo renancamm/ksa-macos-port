@@ -7,6 +7,7 @@ using Brutal.GlfwApi;
 using Brutal.ImGuiApi.Abstractions;
 using Brutal.Numerics;
 using KSA;
+using KsaPort.Common;
 
 namespace KsaMetalBenchmark;
 

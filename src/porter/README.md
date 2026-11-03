@@ -13,9 +13,11 @@ the port folder it is `lib/porter/`, with its shader edits.
 | [`MilkyWay.cs`](MilkyWay.cs) | the one edit made by code: the Milky Way bake's |
 | [`App.cs`](App.cs) | the app made around the converted game, or the port's files put into it again; StarMap in the app |
 | [`Update.cs`](Update.cs) | `port.sh --update`: the newest release downloaded and checked |
-| [`PortFolder.cs`](PortFolder.cs) | the port folder, its `VERSION`, KSA's versions, the apps this port made, the messages |
 | [`shader-edits/`](shader-edits/) | the edits to the game's shaders, as data, with their own README |
 | [`tests/`](tests/) | the tests that need no game |
+
+The port folder, its `VERSION`, KSA's versions, the apps this port made and the messages are in the library the
+porter shares with the benchmark ([`../shared/PortFolder.cs`](../shared/PortFolder.cs)).
 
 The port's names (the app's name and bundle id, the oldest macOS, where releases are) are in
 [`../port-folder/lib/common.sh`](../port-folder/lib/common.sh), which the commands, CMake and the porter all read. File

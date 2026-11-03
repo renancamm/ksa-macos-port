@@ -15,7 +15,7 @@ Mapped pages belong to the file: macOS drops them when memory runs short and rea
 them again. Textures that need transcoding (Basis) stay as libktx made them. [`ktx_shim.c`](ktx_shim.c) has the
 details; libktx itself, RocketWerkz's build from the `Ahwoo.BRUTAL.Ktx.Native` package, stays unmodified.
 
-Its port settings ([`../settings/`](../settings/); each one's variable is `KSA_MTL_` and its key in capitals):
+Its port settings ([`../shared/settings/`](../shared/settings/); each one's variable is `KSA_MTL_` and its key in capitals):
 
 | Setting | Effect |
 |---|---|

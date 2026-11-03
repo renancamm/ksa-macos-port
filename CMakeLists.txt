@@ -59,9 +59,10 @@ endforeach()
 
 # The components, each with its README; ctest runs the tests some of them have
 enable_testing()
-# The port settings' variables and defaults for the native code: src/settings/port-settings.h, made from the table
+# The port settings' variables and defaults for the native code: src/shared/settings/port-settings.h, made from the
+# table
 add_library(port-settings INTERFACE)
-target_include_directories(port-settings INTERFACE "${PROJECT_SOURCE_DIR}/src/settings")
+target_include_directories(port-settings INTERFACE "${PROJECT_SOURCE_DIR}/src/shared/settings")
 add_subdirectory(src/ksa-metal)
 add_subdirectory(src/glfw-shim)
 add_subdirectory(src/ktx-shim)

@@ -20,8 +20,8 @@ and test a change.
 
 Each folder of the hooks' assembly is a namespace of its own: `KsaMetalHooks.Patches`, `KsaMetalHooks.App`,
 `KsaMetalHooks.Tab`; `Hooks.cs` and `Settings.cs` are `KsaMetalHooks`, the root, where the loader finds
-`KsaMetalHooks.Hooks`. The settings table, `port-settings.toml` and the environment are read by the port settings'
-library ([`../settings/`](../settings/)), which the loader and the hooks share.
+`KsaMetalHooks.Hooks`. The settings table, `port-settings.toml` and the environment are read by the port settings in
+the port's shared library ([`../shared/settings/`](../shared/settings/)), which the loader and the hooks share.
 
 ## How they load
 
@@ -31,7 +31,7 @@ KSA itself, or StarMap, which loads KSA into a load context of its own. The load
 ([Settings](#settings)). Then it waits until `KSA.dll` is loaded, loads `KsaMetalHooks.dll` into the same load context
 and applies it; with the `hooks` setting off it stops after the settings, except for a benchmark run. It loads no
 Harmony itself: under StarMap, the hooks use the copy StarMap has already loaded; without StarMap, they find the app's
-copy next to them, in `Contents/Resources/Hooks/`, with the settings' library. The benchmark's director, which the
+copy next to them, in `Contents/Resources/Hooks/`, with the port's shared library. The benchmark's director, which the
 hooks start, is in `Contents/Resources/Benchmark/`.
 
 ## The rule every hook follows
@@ -120,17 +120,17 @@ The MetalFX entry points are KSA Metal's own ([`../ksa-metal/presentation/upscal
 ## Settings
 
 The hooks, KSA Metal and its shims read environment variables, which the loader sets from `port-settings.toml` when
-the game starts ([`loader/PortEnvironment.cs`](loader/PortEnvironment.cs), with the settings' library
-[`../settings/`](../settings/)): a setting's variable is `KSA_MTL_` and its key in capitals, with 0 for off and 1 for
-on. One set before the game starts wins over the file, and the Mac Port tab shows its row as set outside. The loader
-sets each variable twice, for .NET, which keeps its own copy of the environment, and with `setenv` for KSA Metal and
-the shims, which read theirs when the game first uses them. It also sends the game's output to `console.log` and
-copies the file's template for a new player. The hooks read their settings through the library, each as a typed
-property of [`Settings`](Settings.cs) named after its key (`terrain_cache`: `Settings.TerrainCache`): a variable that
-is unset, holds none of the setting's values (`console.log` says which), or belongs to a setting whose needs aren't
-met means the default. The table
-[`../settings/port-settings.txt`](../settings/port-settings.txt) says which hook does each setting; those of the
-hooks:
+the game starts ([`loader/PortEnvironment.cs`](loader/PortEnvironment.cs), with the port settings in the shared
+library, [`../shared/settings/`](../shared/settings/)): a setting's variable is `KSA_MTL_` and its key in capitals,
+with 0 for off and 1 for on. One set before the game starts wins over the file, and the Mac Port tab shows its row as
+set outside. The loader sets each variable twice, for .NET, which keeps its own copy of the environment, and with
+`setenv` for KSA Metal and the shims, which read theirs when the game first uses them. It also sends the game's output
+to `console.log` and copies the file's template for a new player. The hooks read their settings through the library,
+each as a typed property of [`Settings`](Settings.cs) named after its key (`terrain_cache`: `Settings.TerrainCache`):
+a variable that is unset, holds none of the setting's values (`console.log` says which), or belongs to a setting whose
+needs aren't met means the default. The table
+[`../shared/settings/port-settings.txt`](../shared/settings/port-settings.txt) says which hook does each setting;
+those of the hooks:
 
 | Setting | Effect |
 |---|---|
@@ -151,13 +151,14 @@ To find out which patch causes a problem, turn it off in the Mac Port tab (Optim
 
 ## Build and test
 
-`./build.sh` builds both assemblies against the KSA it is given, with the settings' library and the benchmark
+`./build.sh` builds both assemblies against the KSA it is given, with the shared library and the benchmark
 ([`scripts/build-dotnet.sh`](../../scripts/build-dotnet.sh)): `KSA.dll` and the benchmark's director are references
 only. Harmony comes from the `Lib.Harmony` package on nuget.org, pinned in
 [`cmake/dependencies.cmake`](../../cmake/dependencies.cmake).
 
-Before it, the port settings' generator checks the table against the hooks ([`../settings/`](../settings/)): the hooks
-it names exist, and the hooks read the settings it says they do and no others; it stops the build when they don't.
+Before it, the port settings' generator checks the table against the hooks
+([`../shared/settings/`](../shared/settings/)): the hooks it names exist, and the hooks read the settings it says they
+do and no others; it stops the build when they don't.
 
 For the patches, the benchmark is the test. `--port` changes a port setting for one run, and the report lists the port settings and
 what the hooks did:

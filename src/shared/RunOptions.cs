@@ -1,7 +1,7 @@
 using System.IO;
 using System.Text.Json;
 
-namespace KsaMetalBenchmark;
+namespace KsaPort.Common;
 
 // A run's options: what the director plays and how. benchmark.sh's report program writes them, or the hooks for a run
 // from the Mac Port tab, as run.json in the run's folder, which the game gets as KSA_BENCH_OUT; the director and the

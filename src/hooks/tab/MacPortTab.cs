@@ -9,7 +9,7 @@ using Brutal.Numerics;
 using HarmonyLib;
 using KSA;
 using KSA.Rendering.Lighting;
-using KsaPortSettings;
+using KsaPort.Common;
 
 namespace KsaMetalHooks.Tab;
 

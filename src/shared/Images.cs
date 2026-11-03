@@ -1,6 +1,7 @@
 // Screenshots as pixels: a small PNG reader and writer (8-bit RGB and RGBA without interlacing, as KSA Metal writes
-// them) and the comparison of two images block by block. Shared by the mod, which waits for the view to stop changing
-// before a screenshot in fast mode, and the report program, which compares the screenshots of two runs.
+// them) and the comparison of two images block by block. Shared by the benchmark's director, which waits for the view
+// to stop changing before a screenshot in fast mode, and the report program, which compares the screenshots of two
+// runs.
 //
 // The comparison works on blocks of pixels rather than single pixels: terrain detail, grass and the clouds' temporal
 // noise move single pixels a little from run to run, while a real change (a missing texture, a broken shader, a
@@ -9,7 +10,7 @@ using System;
 using System.IO;
 using System.IO.Compression;
 
-namespace KsaMetalBenchmark;
+namespace KsaPort.Common;
 
 public sealed class Image(int width, int height, byte[] rgb)
 {

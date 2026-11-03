@@ -2,14 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using KsaPortSettings;
+using KsaPort.Common;
 
-// The tests of the port settings' library: the table (src/settings/port-settings.txt) and the rules its lines keep,
-// reading and writing port-settings.toml, the needs, the values read back from the environment, and the variables the
-// loader sets. scripts/build-dotnet.sh runs them; a failure stops the build. The generator checks the table against
-// the rest of the repository (the hooks it names, the settings the hooks read).
+// The tests of the port settings in the shared library: the table (src/shared/settings/port-settings.txt) and the rules
+// its lines keep, reading and writing port-settings.toml, the needs, the values read back from the environment, and the
+// variables the loader sets. scripts/build-dotnet.sh runs them; a failure stops the build. The generator checks the
+// table against the rest of the repository (the hooks it names, the settings the hooks read).
 //
-// Usage: dotnet KsaPortSettingsTests.dll <repository>
+// Usage: dotnet KsaPort.Common.Tests.dll <repository>
 internal static class Tests
 {
     private static string _repo = "", _test = "", _scratch = "";
@@ -80,7 +80,7 @@ internal static class Tests
     private static PortSetting Setting(string key) => PortSettings.Get(key) ?? throw new Exception($"no setting {key}");
 
     // The table's folder in the repository
-    private static string SettingsFolder => Path.Combine(_repo, "src", "settings");
+    private static string SettingsFolder => Path.Combine(_repo, "src", "shared", "settings");
 
     // Each line of the table: its key and variable are its own, its default is one of its values, its needs name
     // settings that exist (or the game's that the tab checks) with values they take, without a loop, its presets'

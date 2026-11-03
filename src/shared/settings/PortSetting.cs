@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 
-namespace KsaPortSettings;
+namespace KsaPort.Common;
 
 // One port setting: a line of the table (port-settings.txt, whose header explains the columns), with the value
 // port-settings.toml holds and the one the game runs with

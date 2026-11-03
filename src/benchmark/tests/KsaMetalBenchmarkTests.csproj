@@ -1,17 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
-	<!-- The tests of the report program (Tests.cs), which needs no game: report/ with the director's code in shared/,
-	     the PNG reader and the classes that write results.json. scripts/build-dotnet.sh runs them:
-	     dotnet KsaMetalBenchmarkTests.dll -->
+	<!-- The tests of the report program and of the benchmark's results (Tests.cs), which need no game.
+	     scripts/build-dotnet.sh runs them: dotnet KsaMetalBenchmarkTests.dll -->
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
 		<AssemblyName>KsaMetalBenchmarkTests</AssemblyName>
-		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<StartupObject>Tests</StartupObject>
 	</PropertyGroup>
 	<ItemGroup>
-		<Compile Include="../report/*.cs" />
-		<Compile Include="../../porter/PortFolder.cs" />
-		<Compile Include="../shared/*.cs" />
-		<ProjectReference Include="../../settings/KsaPortSettings.csproj" />
+		<ProjectReference Include="../report/KsaMetalBenchmarkReport.csproj" />
+		<ProjectReference Include="../../shared/KsaPort.Common.csproj" />
 	</ItemGroup>
 </Project>

@@ -1,11 +1,11 @@
 // The benchmark's director: plays the benchmark's script in one game session and measures it.
 //
-// KSA Metal Hooks start it (src/hooks/app/BenchmarkRun.cs) with a run's options (RunOptions, in shared/): when the game
-// starts with KSA_BENCH_OUT naming a run's folder that holds them as run.json, which benchmark.sh's report program
+// KSA Metal Hooks start it (src/hooks/app/BenchmarkRun.cs) with a run's options (RunOptions, in src/shared/): when the
+// game starts with KSA_BENCH_OUT naming a run's folder that holds them as run.json, which benchmark.sh's report program
 // writes, or with the same options from the Mac Port tab in the game's settings. Without a folder and a script (or
-// explore mode) there is nothing to play. While it plays, it touches the file "heartbeat" in the results' folder
-// every second, so the script can tell a game that hangs from one that is busy. Every frame goes into frames.csv, and
-// every measured part is a signpost interval (KSA Metal's ksaMtlMarker), so an Instruments trace shows the parts.
+// explore mode) there is nothing to play. While it plays, it touches the file "heartbeat" in the results' folder every
+// second, so the script can tell a game that hangs from one that is busy. Every frame goes into frames.csv, and every
+// measured part is a signpost interval (KSA Metal's ksaMtlMarker), so an Instruments trace shows the parts.
 //
 // The script is a series of sections. "section <name> [live] [needs <celestial>...]" starts one; a section whose celestials
 // the loaded system lacks is skipped. Each section is a list of "<seconds> <command>" steps timed from its start. A
@@ -39,6 +39,7 @@ using System.Linq;
 using System.Reflection;
 using KSA;
 using KSA.Atmosphere.Rendering;
+using KsaPort.Common;
 
 namespace KsaMetalBenchmark;
 
