@@ -12,9 +12,9 @@ switches, how to build and test a change, how each Vulkan concept maps onto Meta
 KSA Metal takes its settings from environment variables, which the hooks' loader sets from the port settings ([The Mac
 Port tab](../../README.md#the-mac-port-tab)): each setting below is a line of `port-settings.toml`
 ([`../settings/port-settings.txt`](../settings/port-settings.txt)), the switches in the tab's Optimizations and GPU
-Features sections, the debugging settings in the file's `[developer]` section. A setting's variable is `KSA_MTL_` and
-its key in capitals, with 0 for off and 1 for on. A variable can also be set where the app's executable starts, from
-Terminal, where its output stays visible; it then wins over the file:
+Features sections, the debugging settings in the file's Troubleshooting, Diagnostics and Experiments sections. A
+setting's variable is `KSA_MTL_` and its key in capitals, with 0 for off and 1 for on. A variable can also be set
+where the app's executable starts, from Terminal, where its output stays visible; it then wins over the file:
 
 ```bash
 KSA_MTL_TESSELLATION=0 ~/Applications/"Kitten Space Agency.app"/Contents/MacOS/KSA

@@ -10,7 +10,7 @@ namespace KsaMetalHooks.Patches;
 // self-shadow samples and which cast the smoke's shadows on the ground. Low makes them 4 of 128^2 out to 3 km: the
 // giga rocket's smoke draws about 20 % faster on an M5, its ground shadows are coarser and end 3 km from the camera.
 // The self-shadow samples stay, so the smoke beyond the cascades is still shaded.
-// The developer setting trail_shadows (<cascades>,<resolution>,<max distance m>) sets them directly.
+// The setting trail_shadows, of the file's Experiments (<cascades>,<resolution>,<max distance m>) sets them directly.
 internal static class PlumeShadows
 {
     private static double[] _shadows = [];

@@ -4,11 +4,11 @@ using KSA;
 
 namespace KsaMetalHooks.Patches;
 
-// Trail volume caches (experiment, the developer setting trail_caches: <large MiB>,<small MiB>,<tiny MiB>[,<minimum
-// segments>]): the
-// raymarch reads a dense cell of smoke from a baked lattice when the cell has a volume cache, and otherwise walks a
-// subset of the cell's segments, about five times slower. The game gives each of the three lattice sizes an 8 MiB
-// atlas (60 caches of 16^3, 481 of 8^3, 3,855 of 4^3) and caches only cells with 33 segments or more.
+// Trail volume caches (experiment, the setting trail_caches of the file's Experiments: <large MiB>,<small MiB>,<tiny
+// MiB>[,<minimum segments>]): the raymarch reads a dense cell of smoke from a baked lattice when the cell has a
+// volume cache, and otherwise walks a subset of the cell's segments, about five times slower. The game gives each of
+// the three lattice sizes an 8 MiB atlas (60 caches of 16^3, 481 of 8^3, 3,855 of 4^3) and caches only cells with 33
+// segments or more.
 internal static class TrailCaches
 {
     private static int[] _values = [];

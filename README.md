@@ -326,7 +326,8 @@ tabs; each row's tooltip says what it changes and what it costs.
 
 The settings are kept in `port-settings.toml`, next to the game's `settings.toml` in
 `~/Documents/My Games/Kitten Space Agency`, with a comment on each. The file can be edited instead of the tab, and
-its `[developer]` section holds switches for testing and debugging that the tab doesn't show.
+three sections the tab doesn't show hold settings for testing and debugging: Troubleshooting, Diagnostics and
+Experiments.
 
 ### The hooks
 

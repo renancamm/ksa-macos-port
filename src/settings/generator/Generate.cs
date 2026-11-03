@@ -51,7 +51,7 @@ internal static class Generate
     }
 
     // The template the hooks copy for the player: each section with its caption, each setting with its values and its
-    // help as a comment, at its default; [developer]'s settings commented out
+    // help as a comment, at its default; the settings of the sections the tab doesn't show commented out
     private static string Template()
     {
         var t = new StringBuilder();
@@ -63,19 +63,24 @@ internal static class Generate
             # one back. Messages about the file go to logs/console.log in this folder.
 
             """);
-        foreach (var (key, _, caption) in PortSettings.Sections)
+        bool first = true;
+        foreach (var (key, _, caption, inTab) in PortSettings.Sections)
         {
+            if (!inTab && first)
+            {
+                t.Append('\n').Append(Comment("The sections below aren't in the Mac Port tab: they are for work on the port, " +
+                    "and for testing a problem. The READMEs of the port's repository (src/ksa-metal/, src/hooks/) explain " +
+                    "them. Remove the # in front of a line to use it."));
+                first = false;
+            }
             t.Append($"\n[{key}]\n");
             if (caption.Length > 0)
                 t.Append('\n').Append(Comment(caption));
-            if (key == "developer")
-                t.Append('\n').Append(Comment("For work on the port, and for testing a problem: the driver's README in the " +
-                    "port's repository (src/ksa-metal/) explains them. Remove the # in front of a line to use it."));
             foreach (var s in PortSettings.All.Where(s => s.Section == key))
             {
                 var help = s.Help + string.Concat(s.OptionHelp.Select(o => $" \"{o.Key}\": {o.Value}"));
                 t.Append('\n').Append(Comment($"{s.Key} ({Values(s.Type)}): {help}"));
-                t.Append(key == "developer" ? "# " : "").Append($"{s.Key} = {TomlValue(s)}\n");
+                t.Append(inTab ? "" : "# ").Append($"{s.Key} = {TomlValue(s)}\n");
             }
         }
         return t.ToString();

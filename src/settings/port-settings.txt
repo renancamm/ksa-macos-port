@@ -6,8 +6,9 @@
 # (fused_tessellation: KSA_MTL_FUSED_TESSELLATION); one already set when the game starts wins over the file.
 #
 # [<section>] <title> | <caption>: starts a section of the file and of the tab, the caption being the line under its
-# title (and the file's comment); [developer]'s settings are in the file only. Then one setting per line; a choice can
-# be followed by indented lines "<value> | <help>", what its values mean (their tooltips):
+# title (and the file's comment); a section whose header ends in "| file" is in the file only, not in the tab. Then one
+# setting per line; a choice can be followed by indented lines "<value> | <help>", what its values mean (their
+# tooltips):
 #
 #   key | type | default | needs | applies | by | presets | label | help
 #
@@ -82,9 +83,15 @@ metal_performance_hud | bool | false | | restart | metal:MTL_HUD_ENABLED | | Met
 [benchmark] Benchmark | Fixed tests with these settings, each writing a report. Esc stops one.
 restart_for_a_clean_run | bool | false | | live | tab | | Restart for a Clean Run | On: your game is saved as "Before the benchmark", and the game restarts into a new game without your mods; at the end, it quits and the report opens. Off: it plays in this game, which comes back at the end.
 
-[developer] Developer
+[troubleshooting] Troubleshooting | Turn a part of the port off, or run it strictly, to find out what causes a problem. | file
 hooks | bool | true | | restart | hooks | | | KSA Metal Hooks, which also draw the Mac Port tab. Off: the game starts without them.
 harmony_generic_detours | bool | true | hooks | restart | hooks:GenericDetours | | | Mods' Harmony patches on generic methods over reference types land on the shared method. Off: to tell whether a mod's problem comes from this. Such patches then get shifted arguments, which can crash the game, or never run.
+early_fragment_tests | bool | true | | restart | driver | | | A second state that tests depth first, for pipelines whose fragment shader stores to an image: Skip Hidden Vessel Parts switches to it. Off: none, to tell whether a problem comes from it.
+strict_pipelines | bool | false | | restart | driver | | | Return pipeline errors to the game, instead of skipping the pipeline and continuing.
+strict_sync | bool | false | | restart | driver | | | Run all GPU work strictly in order: slower, but rules out synchronization bugs.
+precise_math | bool | false | | restart | driver | | | Compile shaders without fast math: rules out precision problems.
+
+[diagnostics] Diagnostics | Logs, measurements, dumps and screenshots, for work on the port. | file
 log | int:0:2 | 0 | | restart | driver | | | KSA Metal's log: 0 errors only, 1 also warnings and the first call of each function, 2 also object creation.
 log_file | text | | | restart | driver | | | Write KSA Metal's log to this file instead of console.log.
 stalls | number:0:10000 | 0 | | restart | driver | | | Log what blocks the game longer than this many milliseconds: waits for fences, drawables and submits, residency set commits, late command buffers, allocations of 16 MB or more.
@@ -92,24 +99,15 @@ frames | text | | | restart | driver | | | A CSV file of every frame: CPU frame 
 latency | text | | | restart | driver | | | A CSV file of every frame's timing: when it began, was presented, was done on the GPU and was shown.
 labels | bool | false | | restart | driver | | | Name every encoder after its pipelines, for Instruments, the Metal HUD and Xcode's frame capture.
 frame_capture | bool | false | | restart | metal:MTL_CAPTURE_ENABLED, driver | | | Allow Xcode frame captures, for the console's framecapture command; encoders are named too.
+gpu_errors | bool | false | | restart | driver | | | A command buffer that fails logs each encoder's state (completed, faulted, affected, pending); with labels the log names them.
 gpu_profile | text | | | restart | driver | | | A CSV file of the GPU time of every encoder, for 300 frames from present 2000.
 gpu_profile_frames | text | | gpu_profile | restart | driver | | | <first>,<count>: other frames for gpu_profile.
 gpu_profile_split | bool | false | gpu_profile | restart | driver | | | Give every draw and dispatch its own encoder, so the profiler times each one (times grow).
-gpu_errors | bool | false | | restart | driver | | | A command buffer that fails logs each encoder's state (completed, faulted, affected, pending); with labels the log names them.
 watch | text | | | restart | driver | | | A folder: every 31 presents, a look at a sample of the presented image; when it looks broken (mostly pure white, pure black for a second, or specks of pure primary colours), the image and a pass dump go there.
 watch_white | number:0:100 | 30 | watch | restart | driver | | | The share of pure white, in percent, at which watch counts an image as broken (0: every image, to test it).
 dump_msl | text | | | restart | driver | | | A folder: write every translated shader, and the errors of those that fail to compile.
 dump_spv | text | | | restart | driver | | | A folder: write every shader module the game creates as <hash>.spv.
 shader_corpus | text | | | restart | driver | | | A folder: record every shader translation's inputs and result there, for KSA Metal's shader corpus test.
-shader_overrides | text | | | restart | driver | | | A folder of hand-written Metal source used in place of translated shaders, named as in dump_msl.
-spec | text | | | restart | driver | | | <hash>:<id>=<value>,...: replace a specialization constant of a shader module.
-throttle | text | | | restart | driver | | | <hash>:<N>,...: a pipeline whose name holds one of these module hashes runs every N-th present (an experiment, to measure what skipping a pass would save).
-trail_caches | numbers:3:4 | | | restart | hooks:TrailCaches | | | <large>,<small>,<tiny>[,<segments>]: the atlas budgets in MiB of the smoke's 16, 8 and 4 texel volume caches (the game's: 8,8,8), and the fewest segments a cell needs to get one (33).
-trail_shadows | numbers:3:3 | | | restart | hooks:PlumeShadows | | | <cascades>,<resolution>,<metres>: the smoke's sun shadow cascades, which the game draws with its Plume trail shadows setting (the game's: 8,512,20000; lighter_plume_shadows: 4,128,3000). Wins over lighter_plume_shadows.
-strict_pipelines | bool | false | | restart | driver | | | Return pipeline errors to the game, instead of skipping the pipeline and continuing.
-strict_sync | bool | false | | restart | driver | | | Run all GPU work strictly in order: slower, but rules out synchronization bugs.
-early_fragment_tests | bool | true | | restart | driver | | | A second state that tests depth first, for pipelines whose fragment shader stores to an image: Skip Hidden Vessel Parts switches to it. Off: none, to tell whether a problem comes from it.
-precise_math | bool | false | | restart | driver | | | Compile shaders without fast math: rules out precision problems.
 shots | text | | | restart | driver | | | <n>,...: save the presented image as shot_<n>.png at these points.
 shot_unit | choice:presents=presents/frames=frames/seconds=seconds | presents | shots | restart | driver | | | What shots counts: presents, or frames or seconds from the first in-game frame.
 shot_dir | text | | shots | restart | driver | | | Where shots go (default: the current folder).
@@ -118,7 +116,14 @@ exit_after | int:0:100000000 | 0 | | restart | driver | | | Quit after this many
 exit_after_s | number:0:100000 | 0 | | restart | driver | | | Quit this many seconds after the start.
 fx_debug | bool | false | | restart | driver | | | The upscaled image shows MetalFX's motion vectors instead.
 fx_shots | text | | | restart | driver | | | A folder: now and then, a PNG of what MetalFX made.
+
+[experiments] Experiments | Features not finished, and values to measure with. | file
 frame_interpolation | bool | false | upscaling=metalfx | restart | driver, hooks:RenderScale | | | A frame MetalFX interpolates between every two the game draws, shown before each one: smoother motion, about half a frame more delay, 1.7-3 ms more GPU a frame, so it pays only when the game already runs at half the refresh rate or more. While it is on, the game's UI pixel culling is off, so the scene is drawn under the HUD too (about 0.1 ms more GPU a frame): otherwise the interpolated frames smear the HUD, and probably the black boxes seen beside it came from there too. Known issue: ragged rocket plumes.
-cache_dir | text | | | restart | driver, ktx-shim | | | Where the shader cache and the texture copies go (default: ~/Library/Caches/ksa-metal).
+shader_overrides | text | | | restart | driver | | | A folder of hand-written Metal source used in place of translated shaders, named as in dump_msl.
+spec | text | | | restart | driver | | | <hash>:<id>=<value>,...: replace a specialization constant of a shader module.
+throttle | text | | | restart | driver | | | <hash>:<N>,...: a pipeline whose name holds one of these module hashes runs every N-th present (an experiment, to measure what skipping a pass would save).
+trail_caches | numbers:3:4 | | | restart | hooks:TrailCaches | | | <large>,<small>,<tiny>[,<segments>]: the atlas budgets in MiB of the smoke's 16, 8 and 4 texel volume caches (the game's: 8,8,8), and the fewest segments a cell needs to get one (33).
+trail_shadows | numbers:3:3 | | | restart | hooks:PlumeShadows | | | <cascades>,<resolution>,<metres>: the smoke's sun shadow cascades, which the game draws with its Plume trail shadows setting (the game's: 8,512,20000; lighter_plume_shadows: 4,128,3000). Wins over lighter_plume_shadows.
 texture_budget_mb | int:0:1048576 | 0 | | restart | driver | | | The GPU memory budget reported to the game, which sizes its texture streaming from it (0: what Metal recommends for this Mac).
 worker_park_ms | number:0:100 | 0.25 | idle_thread_sleep | restart | hooks:WorkerPark | | | How long an idle job worker spins before it sleeps, with idle_thread_sleep.
+cache_dir | text | | | restart | driver, ktx-shim | | | Where the shader cache and the texture copies go (default: ~/Library/Caches/ksa-metal).

@@ -13,7 +13,8 @@ public sealed class PortSetting
     public string[] Needs = [], By = [];
     // Its values in the Mac Port tab's presets Performance, Balanced and Quality (none: the presets leave it alone)
     public string[] Presets = [];
-    public bool Live;
+    // Applies while the game runs (the table's "live"); shown in the Mac Port tab (its section's)
+    public bool Live, InTab;
     // A choice's values and their labels (bool: on and off), and what some of them mean
     public (string Value, string Label)[] Choices = [];
     public readonly Dictionary<string, string> OptionHelp = new();

@@ -26,6 +26,10 @@ typedef struct PortSettings {
     bool rayQueries;                        // KSA_MTL_RAY_QUERIES
     bool rayTracing;                        // KSA_MTL_RAY_TRACING
     bool hdrOutput;                         // KSA_MTL_HDR_OUTPUT
+    bool earlyFragmentTests;                // KSA_MTL_EARLY_FRAGMENT_TESTS
+    bool strictPipelines;                   // KSA_MTL_STRICT_PIPELINES
+    bool strictSync;                        // KSA_MTL_STRICT_SYNC
+    bool preciseMath;                       // KSA_MTL_PRECISE_MATH
     int log;                                // KSA_MTL_LOG
     const char* logFile;                    // KSA_MTL_LOG_FILE
     double stalls;                          // KSA_MTL_STALLS
@@ -33,22 +37,15 @@ typedef struct PortSettings {
     const char* latency;                    // KSA_MTL_LATENCY
     bool labels;                            // KSA_MTL_LABELS
     bool frameCapture;                      // MTL_CAPTURE_ENABLED
+    bool gpuErrors;                         // KSA_MTL_GPU_ERRORS
     const char* gpuProfile;                 // KSA_MTL_GPU_PROFILE
     const char* gpuProfileFrames;           // KSA_MTL_GPU_PROFILE_FRAMES
     bool gpuProfileSplit;                   // KSA_MTL_GPU_PROFILE_SPLIT
-    bool gpuErrors;                         // KSA_MTL_GPU_ERRORS
     const char* watch;                      // KSA_MTL_WATCH
     double watchWhite;                      // KSA_MTL_WATCH_WHITE
     const char* dumpMsl;                    // KSA_MTL_DUMP_MSL
     const char* dumpSpv;                    // KSA_MTL_DUMP_SPV
     const char* shaderCorpus;               // KSA_MTL_SHADER_CORPUS
-    const char* shaderOverrides;            // KSA_MTL_SHADER_OVERRIDES
-    const char* spec;                       // KSA_MTL_SPEC
-    const char* throttle;                   // KSA_MTL_THROTTLE
-    bool strictPipelines;                   // KSA_MTL_STRICT_PIPELINES
-    bool strictSync;                        // KSA_MTL_STRICT_SYNC
-    bool earlyFragmentTests;                // KSA_MTL_EARLY_FRAGMENT_TESTS
-    bool preciseMath;                       // KSA_MTL_PRECISE_MATH
     const char* shots;                      // KSA_MTL_SHOTS
     const char* shotUnit;                   // KSA_MTL_SHOT_UNIT
     const char* shotDir;                    // KSA_MTL_SHOT_DIR
@@ -58,8 +55,11 @@ typedef struct PortSettings {
     bool fxDebug;                           // KSA_MTL_FX_DEBUG
     const char* fxShots;                    // KSA_MTL_FX_SHOTS
     bool frameInterpolation;                // KSA_MTL_FRAME_INTERPOLATION
-    const char* cacheDir;                   // KSA_MTL_CACHE_DIR
+    const char* shaderOverrides;            // KSA_MTL_SHADER_OVERRIDES
+    const char* spec;                       // KSA_MTL_SPEC
+    const char* throttle;                   // KSA_MTL_THROTTLE
     int textureBudgetMb;                    // KSA_MTL_TEXTURE_BUDGET_MB
+    const char* cacheDir;                   // KSA_MTL_CACHE_DIR
 } PortSettings;
 
 static inline const char* portSettingText(const char* name) {
@@ -102,6 +102,10 @@ static inline PortSettings portSettingsRead(void) {
     s.rayQueries = portSettingOn("KSA_MTL_RAY_QUERIES", true);
     s.rayTracing = portSettingOn("KSA_MTL_RAY_TRACING", true);
     s.hdrOutput = portSettingOn("KSA_MTL_HDR_OUTPUT", true);
+    s.earlyFragmentTests = portSettingOn("KSA_MTL_EARLY_FRAGMENT_TESTS", true);
+    s.strictPipelines = portSettingOn("KSA_MTL_STRICT_PIPELINES", false);
+    s.strictSync = portSettingOn("KSA_MTL_STRICT_SYNC", false);
+    s.preciseMath = portSettingOn("KSA_MTL_PRECISE_MATH", false);
     s.log = portSettingInt("KSA_MTL_LOG", 0, 0, 2);
     s.logFile = portSettingText("KSA_MTL_LOG_FILE");
     s.stalls = portSettingNumber("KSA_MTL_STALLS", 0, 0, 10000);
@@ -109,22 +113,15 @@ static inline PortSettings portSettingsRead(void) {
     s.latency = portSettingText("KSA_MTL_LATENCY");
     s.labels = portSettingOn("KSA_MTL_LABELS", false);
     s.frameCapture = portSettingOn("MTL_CAPTURE_ENABLED", false);
+    s.gpuErrors = portSettingOn("KSA_MTL_GPU_ERRORS", false);
     s.gpuProfile = portSettingText("KSA_MTL_GPU_PROFILE");
     s.gpuProfileFrames = portSettingText("KSA_MTL_GPU_PROFILE_FRAMES");
     s.gpuProfileSplit = portSettingOn("KSA_MTL_GPU_PROFILE_SPLIT", false);
-    s.gpuErrors = portSettingOn("KSA_MTL_GPU_ERRORS", false);
     s.watch = portSettingText("KSA_MTL_WATCH");
     s.watchWhite = portSettingNumber("KSA_MTL_WATCH_WHITE", 30, 0, 100);
     s.dumpMsl = portSettingText("KSA_MTL_DUMP_MSL");
     s.dumpSpv = portSettingText("KSA_MTL_DUMP_SPV");
     s.shaderCorpus = portSettingText("KSA_MTL_SHADER_CORPUS");
-    s.shaderOverrides = portSettingText("KSA_MTL_SHADER_OVERRIDES");
-    s.spec = portSettingText("KSA_MTL_SPEC");
-    s.throttle = portSettingText("KSA_MTL_THROTTLE");
-    s.strictPipelines = portSettingOn("KSA_MTL_STRICT_PIPELINES", false);
-    s.strictSync = portSettingOn("KSA_MTL_STRICT_SYNC", false);
-    s.earlyFragmentTests = portSettingOn("KSA_MTL_EARLY_FRAGMENT_TESTS", true);
-    s.preciseMath = portSettingOn("KSA_MTL_PRECISE_MATH", false);
     s.shots = portSettingText("KSA_MTL_SHOTS");
     s.shotUnit = portSettingText("KSA_MTL_SHOT_UNIT");
     s.shotDir = portSettingText("KSA_MTL_SHOT_DIR");
@@ -134,7 +131,10 @@ static inline PortSettings portSettingsRead(void) {
     s.fxDebug = portSettingOn("KSA_MTL_FX_DEBUG", false);
     s.fxShots = portSettingText("KSA_MTL_FX_SHOTS");
     s.frameInterpolation = portSettingOn("KSA_MTL_FRAME_INTERPOLATION", false);
-    s.cacheDir = portSettingText("KSA_MTL_CACHE_DIR");
+    s.shaderOverrides = portSettingText("KSA_MTL_SHADER_OVERRIDES");
+    s.spec = portSettingText("KSA_MTL_SPEC");
+    s.throttle = portSettingText("KSA_MTL_THROTTLE");
     s.textureBudgetMb = portSettingInt("KSA_MTL_TEXTURE_BUDGET_MB", 0, 0, 1048576);
+    s.cacheDir = portSettingText("KSA_MTL_CACHE_DIR");
     return s;
 }

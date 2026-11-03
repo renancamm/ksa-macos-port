@@ -58,11 +58,11 @@ public static partial class Settings
 
     public static bool HarmonyGenericDetours { get; private set; }
 
+    public static bool FrameInterpolation { get; private set; }
+
     public static double[] TrailCaches { get; private set; } = [];
 
     public static double[] TrailShadows { get; private set; } = [];
-
-    public static bool FrameInterpolation { get; private set; }
 
     public static double WorkerParkMs { get; private set; }
 
@@ -91,9 +91,9 @@ public static partial class Settings
         _fitHudToDisplay = Get("fit_hud_to_display");
         Hooks = On(Get("hooks"));
         HarmonyGenericDetours = On(Get("harmony_generic_detours"));
+        FrameInterpolation = On(Get("frame_interpolation"));
         TrailCaches = Numbers(Get("trail_caches"));
         TrailShadows = Numbers(Get("trail_shadows"));
-        FrameInterpolation = On(Get("frame_interpolation"));
         WorkerParkMs = Number(Get("worker_park_ms"));
     }
 }

@@ -18,7 +18,7 @@ internal static class Tests
     // The game's own settings a need can name: those MacPortTab.Game reads
     private static readonly string[] GameNeeds = ["vsync", "plume_trail_shadows", "pcss"];
 
-    // The kinds of setting the Mac Port tab draws (MacPortTab.DrawRow); the others are the file's only ([developer])
+    // The kinds of setting the Mac Port tab draws (MacPortTab.DrawRow); the others are the file's only
     private static readonly string[] TabKinds = ["bool", "choice", "scale"];
 
     // The characters a value can have before a control runs out of room for it
@@ -95,14 +95,14 @@ internal static class Tests
         foreach (var variable in all.Where(s => s.Variable.Length > 0).GroupBy(s => s.Variable).Where(g => g.Count() > 1))
             Check(false, $"{variable.Key} is the variable of {string.Join(" and ", variable.Select(s => s.Key))}");
         var sections = PortSettings.Sections.Select(s => s.Key).ToHashSet();
-        foreach (var (key, _, caption) in PortSettings.Sections.Where(s => s.Key != "developer"))
+        foreach (var (key, _, caption, _) in PortSettings.Sections)
             Check(caption.Length > 0, $"section {key} has no caption");
         foreach (var s in all)
         {
             Check(s.Valid(s.Default), $"{s.Key}'s default '{s.Default}' is none of its values ({s.Type})");
             Check(sections.Contains(s.Section), $"{s.Key} is in no section");
             Check(!s.Help.Contains('|'), $"{s.Key}'s help holds |, the table's separator");
-            if (s.Section != "developer")
+            if (s.InTab)
             {
                 Check(TabKinds.Contains(s.Kind), $"{s.Key}'s kind, {s.Kind}, isn't one the Mac Port tab draws");
                 Check(s.Label.Length > 0, $"{s.Key} has no label for its row in the tab");
@@ -132,7 +132,7 @@ internal static class Tests
             if (s.Section == "performance")
                 Check(s.Presets.FirstOrDefault() is { } performance && performance != s.Default,
                     $"{s.Key} is an Extra Performance row, but Performance doesn't turn it on");
-            Check(s.Presets.Length == 0 || s.Section != "developer", $"{s.Key} is a developer setting, which the presets leave alone");
+            Check(s.Presets.Length == 0 || s.InTab, $"{s.Key} is the file's only, and the presets leave those alone");
         }
     }
 
@@ -163,7 +163,7 @@ internal static class Tests
 
     private static void MalformedTable()
     {
-        File.WriteAllText(Path.Combine(_scratch, "port-settings.txt"), "[image] Image\nupscaling | choice:off=Off | off\n");
+        File.WriteAllText(Path.Combine(_scratch, "port-settings.txt"), "[image] Image | The 3D view.\nupscaling | choice:off=Off | off\n");
         try
         {
             PortSettings.LoadTable(_scratch);

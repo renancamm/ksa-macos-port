@@ -16,8 +16,9 @@ namespace KsaPortSettings;
 public static class PortSettings
 {
     public static readonly List<PortSetting> All = new();
-    // The sections, in the table's order: key, title and the line under it
-    public static readonly List<(string Key, string Title, string Caption)> Sections = new();
+    // The sections, in the table's order: key, title, the line under it, and whether the Mac Port tab shows it (the
+    // others are the file's only)
+    public static readonly List<(string Key, string Title, string Caption, bool InTab)> Sections = new();
     public static string FilePath = "", TemplatePath = "";
 
     public static PortSetting? Get(string key) => All.FirstOrDefault(s => s.Key == key);
@@ -48,10 +49,15 @@ public static class PortSettings
             {
                 int end = line.IndexOf(']');
                 section = line[1..end];
-                var title = line[(end + 1)..].Split('|', 2);
-                Sections.Add((section, title[0].Trim(), title.Length > 1 ? title[1].Trim() : ""));
+                // <title> | <caption> [| file]
+                var title = line[(end + 1)..].Split('|', StringSplitOptions.TrimEntries);
+                if (title.Length is < 2 or > 3 || title.Length == 3 && title[2] != "file")
+                    throw new FormatException($"{table}, line {n + 1}: not a section's [key] title | caption [| file]");
+                Sections.Add((section, title[0], title[1], title.Length < 3));
                 continue;
             }
+            if (Sections.Count == 0)
+                throw new FormatException($"{table}, line {n + 1}: a setting before the first [section]");
             var c = line.Split('|').Select(x => x.Trim()).ToArray();
             // An indented line: what one of the values of the setting above means
             if (char.IsWhiteSpace(lines[n][0]))
@@ -67,7 +73,7 @@ public static class PortSettings
             string[] List(string column) => column.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             var s = new PortSetting
             {
-                Section = section, Key = c[0], Type = c[1], Default = c[2], Needs = List(c[3]), Live = c[4] == "live",
+                Section = section, InTab = Sections[^1].InTab, Key = c[0], Type = c[1], Default = c[2], Needs = List(c[3]), Live = c[4] == "live",
                 By = List(c[5]), Presets = List(c[6]), Label = c[7], Help = string.Join('|', c[8..]),
             };
             var parts = s.Type.Split(':');
