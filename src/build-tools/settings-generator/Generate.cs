@@ -76,8 +76,8 @@ internal static class Generate
             if (!inTab && first)
             {
                 t.Append('\n').Append(Comment("The sections below aren't in the Mac Port tab: they are for work on the port, " +
-                    "and for testing a problem. The READMEs of the port's repository (src/ksa-metal/, src/hooks/) explain " +
-                    "them. Remove the # in front of a line to use it."));
+                    "and for testing a problem. The READMEs of the port's repository (src/game/driver/, " +
+                    "src/game/hooks/) explain them. Remove the # in front of a line to use it."));
                 first = false;
             }
             t.Append($"\n[{key}]\n");
@@ -141,7 +141,8 @@ internal static class Generate
     // What a by column's entry names: a component that reads the setting, with the README that documents it
     private static readonly Dictionary<string, string> Readers = new()
     {
-        ["driver"] = "src/ksa-metal/README.md", ["ktx-shim"] = "src/ktx-shim/README.md", ["hooks"] = "src/hooks/README.md",
+        ["driver"] = "src/game/driver/README.md", ["ktx-shim"] = "src/game/shims/ktx/README.md",
+        ["hooks"] = "src/game/hooks/README.md",
     };
 
     private static string Reader(string by) => by.StartsWith("hooks:", StringComparison.Ordinal) ? "hooks" : by;
@@ -336,12 +337,16 @@ internal static class Generate
         string Component(string folder) =>
             string.Join('\n', code.Where(c => c.Key.StartsWith($"src/{folder}/") && Path.GetExtension(c.Key) is ".c" or ".mm" or ".cpp" or ".h")
                 .Select(c => Uses(c.Value)));
-        var native = new Dictionary<string, string> { ["driver"] = Component("ksa-metal"), ["ktx-shim"] = Component("ktx-shim") };
+        var native = new Dictionary<string, string>
+            { ["driver"] = Component("game/driver"), ["ktx-shim"] = Component("game/shims/ktx") };
         // config.mm adjusts the driver's settings on c: a field on the right of c.x = ... is read (frame_capture turns
         // labels on), the one it sets isn't
-        foreach (Match m in Regex.Matches(Uses(code["src/ksa-metal/setup/config.mm"]), @"\bc\.(\w+) = ([^;]*);"))
+        foreach (Match m in Regex.Matches(Uses(code["src/game/driver/setup/config.mm"]), @"\bc\.(\w+) = ([^;]*);"))
             native["driver"] += "\n" + Regex.Replace(m.Groups[2].Value, $@"\bc\.(?!{m.Groups[1].Value}\b)", "cfg.");
-        var hooks = code.Where(c => c.Key.StartsWith("src/hooks/") && c.Key.EndsWith(".cs")).ToDictionary(c => c.Key, c => Uses(c.Value));
+        // The hooks' code: their folder and the changes they apply, but the porter's code among those (port/)
+        var hooks = code.Where(c => (c.Key.StartsWith("src/game/hooks/") || c.Key.StartsWith("src/game/changes/")) &&
+                c.Key.EndsWith(".cs") && !c.Key.Contains("/port/"))
+            .ToDictionary(c => c.Key, c => Uses(c.Value));
         string hooksCode = string.Join('\n', hooks.Values);
         // The hooks: the classes marked [Hook(...)], with the setting that switches each, if any
         var marked = Regex.Matches(hooksCode, @"\[Hook\(([^\]]*)\)\]\s*internal\s+(?:\w+\s+)*class\s+(\w+)")
@@ -380,7 +385,8 @@ internal static class Generate
                 {
                     var hook = by[6..];
                     if (!marked.TryGetValue(hook, out var hookSwitch))
-                        problems.Add($"{s.Key}: its hook {hook} isn't a class marked [Hook] (src/hooks/Hooks.cs).");
+                        problems.Add($"{s.Key}: its hook {hook} isn't a class marked [Hook] " +
+                            "(src/game/hooks/Hooks.cs).");
                     else if (!Regex.IsMatch(HookCode(hook), $@"\bSettings\.{Pascal(s.Key)}\b") && hookSwitch != Pascal(s.Key))
                         problems.Add($"{s.Key}: its hook {hook} doesn't read it, in its code or as its switch.");
                 }

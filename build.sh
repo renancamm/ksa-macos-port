@@ -89,7 +89,7 @@ cmake --preset default -B "${CMAKE_TREE}" -DKSA_NATIVES_DIR="${NATIVES}" -DKSA_A
     { tail -40 "${LOG}"; die "CMake's configure failed (${LOG})."; }
 cmake --build "${CMAKE_TREE}" >> "${LOG}" 2>&1 || { grep -v xcrun_db "${LOG}" | tail -40; die "the native build failed (${LOG})."; }
 info "Libraries in ${NATIVES#"${REPO}/"}, CMake's output in ${LOG#"${REPO}/"}"
-# The driver's tests that need no recording (src/ksa-metal/tests/)
+# The driver's tests that need no recording (src/game/driver/tests/)
 ctest --test-dir "${CMAKE_TREE}" -LE corpus --output-on-failure > "${CMAKE_TREE}/tests.log" 2>&1 ||
     { tail -20 "${CMAKE_TREE}/tests.log"; die "KSA Metal's tests failed (${CMAKE_TREE#"${REPO}/"}/tests.log)."; }
 info "KSA Metal's tests: passed."
@@ -111,7 +111,7 @@ run build-dotnet "${KSA_DIR}" ${CONVERT_FLAG[@]+"${CONVERT_FLAG[@]}"}
 step "[6/6] The port folder"
 run make-port-folder payload
 run check-port-folder
-bash "${REPO}/src/benchmark/tests/command.sh" "${OUT}"
+bash "${REPO}/src/player/benchmark-cli/tests/command.sh" "${OUT}"
 
 echo ""
 step "Done: ${OUT#"${REPO}/"} (port ${VERSION}, KSA ${KSA_VERSION})"

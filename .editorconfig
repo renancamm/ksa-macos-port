@@ -15,7 +15,7 @@ max_line_length = 120
 indent_style = tab
 
 # Files kept as their makers wrote them: the game's vehicle saves and FMOD's licence
-[{src/benchmark/vehicles/**,third_party/**}]
+[{src/game/benchmark/lineup/vehicles/**,third_party/**}]
 charset = unset
 end_of_line = unset
 insert_final_newline = unset

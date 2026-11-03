@@ -28,4 +28,4 @@ Content/
 .claude-docs/
 
 # The benchmark's vehicle saves are ours
-!src/benchmark/**/*.toml
+!src/game/benchmark/**/*.toml

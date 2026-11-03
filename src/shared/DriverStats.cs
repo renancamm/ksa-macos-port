@@ -1,7 +1,8 @@
-// What KSA Metal measures for each presented frame, read through its benchmark interface (src/ksa-metal/diagnostics/instruments.mm:
-// ksaMtlFrameStats, ksaMtlScreenshot, ksaMtlMarker, ksaMtlCapture, ksaMtlCapturing; passdump.mm: ksaMtlPassDump, ksaMtlPassDumping, ksaMtlGpuErrors; profile.mm: ksaMtlProfileFrames). The
-// app ships the director with the KSA Metal it was built with, so the driver has all of it. With another Vulkan driver
-// the mod still measures CPU frame times.
+// What KSA Metal measures for each presented frame, read through its benchmark interface
+// (src/game/driver/diagnostics/instruments.mm: ksaMtlFrameStats, ksaMtlScreenshot, ksaMtlMarker, ksaMtlCapture,
+// ksaMtlCapturing; passdump.mm: ksaMtlPassDump, ksaMtlPassDumping, ksaMtlGpuErrors; profile.mm: ksaMtlProfileFrames).
+// The app ships the director with the KSA Metal it was built with, so the driver has all of it. With another Vulkan
+// driver the mod still measures CPU frame times.
 using System;
 using System.Runtime.InteropServices;
 

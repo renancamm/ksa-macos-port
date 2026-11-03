@@ -1,8 +1,0 @@
-# For Baked Milky Way (the hooks' MilkyWayBake.cs): MilkyWay.frag works out the Milky Way's dust clouds for every
-# pixel of the band, from the view direction alone, with about 90 noise lookups each. The edit moves them into a
-# function, which reads them instead from a strip the hooks fill once, when the hooks bind it in the noise texture's
-# place (it isn't square); and it writes MilkyWayBake.comp, the compute shader that fills the strip with that same
-# function. The porter's code makes it (src/porter/MilkyWay.cs): it moves a whole block of the shader.
-
-@@ code milky-way MilkyWay.frag
-@@ what put the clouds in a function the hooks' bake shares

@@ -110,8 +110,8 @@ So the app is made of three kinds of pieces:
 - **Patched:** the game's own files lose the Linux .NET runtime and the two files that point the .NET host at it
   ([.NET](#net)), then get small changes: two bytes in `KSA.dll`'s header, and bug fixes in its shader sources
   ([Shader fixes](#shader-fixes)).
-- **Built by this project:** the GLFW shim ([`src/glfw-shim/`](src/glfw-shim/)), KSA Metal's driver
-  ([`src/ksa-metal/`](src/ksa-metal/)), the launcher ([`src/launcher/`](src/launcher/)) and the
+- **Built by this project:** the GLFW shim ([`src/game/shims/glfw/`](src/game/shims/glfw/)), KSA Metal's driver
+  ([`src/game/driver/`](src/game/driver/)), the launcher ([`src/game/launcher/`](src/game/launcher/)) and the
   app bundle around everything ([Building the port](#building-the-port)).
 
 ### The steps
@@ -119,12 +119,12 @@ So the app is made of three kinds of pieces:
 The port folder holds the app without the game, `payload/app/Contents/`: the launcher, the .NET runtime, the native
 libraries, the icon and the licences. `port.sh` runs the port's program, the **porter**, on that .NET runtime: it
 extracts the game's archive, converts the game and puts it into a copy of that app. The porter is in the folder's
-`lib/porter/`, and in this repository in [`src/porter/`](src/porter/), which has its own README.
+`lib/porter/`, and in this repository in [`src/player/porter/`](src/player/porter/), which has its own README.
 
 | Step | In the porter | What it does |
 |---|---|---|
 | Convert | `Conversion.cs` | removes the Linux binaries and the Windows installer files, makes the .NET files run on the macOS runtime |
-| | `ShaderEdits.cs` | fixes and edits the game's shaders, as the files in `shader-edits/` say |
+| | `ShaderEdits.cs` | fixes and edits the game's shaders, as the `.edits` files of `src/game/changes/` say |
 | App | `App.cs` | builds the app around the converted game, or puts the port's files into one |
 
 To update an app, `port.sh` runs the same steps on it again, without the extraction.
@@ -179,8 +179,8 @@ made for that KSA version. Everything the build downloads is declared in
 Three files are made by the build, in its build tree, and are not in the repository: `port-settings.h` and
 `Settings.Generated.cs`, the settings the native code and the hooks read, from the settings table
 ([`src/shared/settings/`](src/shared/settings/)), and `entries.inc`, the driver's entry table, from Vulkan's registry
-and the driver's sources ([`src/ksa-metal/entries/`](src/ksa-metal/entries/)). A build makes them again when what
-they come from changed.
+and the driver's sources ([`src/build-tools/entries-generator/`](src/build-tools/entries-generator/)). A build makes
+them again when what they come from changed.
 
 Warnings are errors in the native libraries and the .NET projects, and the build runs the tests of the driver, the
 porter, the port settings and the benchmark. The scripts run on macOS's own bash 3.2 and are kept clean of
@@ -209,10 +209,11 @@ launcher needs: DYLD environment variables, unsigned libraries and JIT.
 
 ### Shader fixes
 
-KSA compiles its GLSL shaders from `Content/` at startup, so fixes can go straight into the shader sources. The
-porter applies these to files under `Content/Core/Shaders/`, as the edit files of
-[`src/porter/shader-edits/fixes/`](src/porter/shader-edits/fixes/) say, each with its explanation. It also edits shaders
-for the hooks and the driver (`features/` and `optimizations/` there), which their READMEs explain.
+KSA compiles its GLSL shaders from `Content/` at startup, so fixes can go straight into the shader sources. The porter
+applies these to files under `Content/Core/Shaders/`, as the edit files of
+[`src/game/changes/fixes/`](src/game/changes/fixes/) say, each with its explanation. It also edits shaders for the
+hooks and the driver (`features/` and `optimizations/` beside it), which
+[`src/game/changes/README.md`](src/game/changes/README.md) explains.
 
 | Shader | Bug | Fix |
 |---|---|---|
@@ -225,7 +226,7 @@ When a KSA update changes the code around a fix, the porter prints `[WARN]` and 
 ### GLFW shim
 
 The launcher loads `libGlfwShim.dylib` with `DYLD_INSERT_LIBRARIES`. With dyld interposing it replaces a few calls
-without modifying GLFW; [`glfw_shim.c`](src/glfw-shim/glfw_shim.c) explains each one:
+without modifying GLFW; [`glfw_shim.c`](src/game/shims/glfw/glfw_shim.c) explains each one:
 
 | Call | Problem | Fix |
 |---|---|---|
@@ -242,7 +243,7 @@ The porter moves the converted game folder into the app as `Contents/Resources` 
 
 | In the app | What |
 |---|---|
-| `Contents/MacOS/KSA` | the launcher, [`launcher.c`](src/launcher/launcher.c) |
+| `Contents/MacOS/KSA` | the launcher, [`launcher.c`](src/game/launcher/launcher.c) |
 | `Contents/MacOS/dotnet`, `host/`, `shared/` | the .NET runtime |
 | `Contents/Resources/*.dylib` | the native libraries, next to the game that loads them |
 | `Contents/Resources/Hooks/` | [KSA Metal Hooks](#the-hooks), with Harmony |
@@ -272,17 +273,20 @@ CMakeLists.txt, cmake/      the native build, and every external source the buil
 CMakePresets.json           how CMake is run: Ninja, Release, deps/build/cmake/
 ksa-macos-port.slnx         the .NET projects: the porter, the hooks, the benchmark, the shared library, the generators
 global.json                 the .NET SDK version that builds them
-src/port-folder/            the port folder's commands and lib/common.sh, which they share
-src/porter/                 the porter: the program the commands run, the shader edits and tests, with its own README
-src/launcher/               the app's executable
-src/glfw-shim/              the GLFW shim
-src/ktx-shim/               the KTX shim, with its own README
+src/game/                   what runs in the game's process:
+  driver/                   KSA Metal's driver and its tests, with its own README
+  launcher/                 the app's executable
+  shims/glfw/, shims/ktx/   the GLFW shim; the KTX shim, with its own README
+  hooks/                    KSA Metal Hooks, their loader and the Mac Port tab, with their own README
+  changes/                  the changes to the game: fixes, optimizations, features, with their own README
+  benchmark/                the benchmark's director, its tests and vehicles (lineup/), with the benchmark's README
+src/player/                 what the player runs from the port folder:
+  port-folder/              the port folder's commands and lib/common.sh, which they share
+  porter/                   the porter, the program the commands run, with its own README
+  benchmark-cli/            the program benchmark.sh runs: runs, reports, comparisons, with its tests
 src/shared/                 the library the programs share: the port settings (settings/, with their own README),
-                            the port folder's names, a run's options, the screenshots' comparison
-src/build-tools/            the settings' generator, a build tool
-src/ksa-metal/              the driver and its tests, with its own README
-src/hooks/                  KSA Metal Hooks and their loader, with their own README
-src/benchmark/              the benchmark: its command, programs, tests and vehicles, with its own README
+                            the port folder's names, a run's options and results, the screenshots' comparison
+src/build-tools/            the generators the build runs: the typed settings, the driver's entry table
 src/Directory.Build.props   what the .NET projects share
 third_party/fmod/           FMOD's macOS library, with its licence and notice (not MIT)
 .github/                    the issue templates
@@ -308,7 +312,7 @@ changes. It implements only the part of Vulkan that KSA uses, about 180 function
 Metal features it uses.
 
 Vulkan and Metal are both explicit, low-level GPU APIs with similar ideas, so each Vulkan concept maps onto Metal
-in a direct way. [`src/ksa-metal/README.md`](src/ksa-metal/README.md) has that mapping, the driver's switches, how
+in a direct way. [`src/game/driver/README.md`](src/game/driver/README.md) has that mapping, the driver's switches, how
 to build and test a change, and what each source file holds.
 
 ### The Mac Port tab
@@ -337,14 +341,15 @@ Some of the port's changes need the game's C# code. KSA Metal Hooks make them in
 [Harmony](https://github.com/pardeike/Harmony), so `KSA.dll` stays as it is on disk. Their patches are the tab's
 rows that reach into the game; the hooks also draw the tab itself, start the benchmark from it, and make the game's
 Restart button start the app again. When a KSA update has moved the code a hook changes, the hook is left out, the
-tab shows its row as unavailable, and the game runs as it would without it. [`src/hooks/`](src/hooks/) says what
-each one changes and how.
+tab shows its row as unavailable, and the game runs as it would without it. [`src/game/changes/`](src/game/changes/)
+says what each one changes and how, with the porter's shader edits; [`src/game/hooks/`](src/game/hooks/) how the hooks
+load and apply.
 
 ### The KTX shim
 
 The game keeps every texture's pixels in memory for the whole session. The KTX shim maps them from files instead once
 a texture is loaded, so macOS can page them out when memory runs short and read them back later. It is the tab's
-**Texture File Mapping** row; [`ktx_shim.c`](src/ktx-shim/ktx_shim.c) has the details.
+**Texture File Mapping** row; [`ktx_shim.c`](src/game/shims/ktx/ktx_shim.c) has the details.
 
 ### The benchmark
 
@@ -357,8 +362,8 @@ the Mac Port tab (**FAST** or **CINEMATIC** on a test's row), or from the port f
 ./benchmark.sh
 ```
 
-[`src/benchmark/README.md`](src/benchmark/README.md) explains the tests, its presets and options, how to compare
-runs, and the tools it brings for work on the port.
+[`src/game/benchmark/README.md`](src/game/benchmark/README.md) explains the tests, its presets and options, how to
+compare runs, and the tools it brings for work on the port.
 
 ## Extras
 

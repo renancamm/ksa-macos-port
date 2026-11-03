@@ -1,0 +1,523 @@
+# The benchmark: one session of the game, in sections. See src/game/benchmark/Benchmark.cs for the format
+# and src/game/benchmark/Directives.cs for the @ directives; other commands are the game's console commands.
+#
+# The tour of the worlds is one flight of the camera (src/game/benchmark/Path.cs): it passes through each @key at its
+# time, turning, climbing and turning again as it goes, from Earth to Jupiter without a cut. Every @shot is a
+# checkpoint: the camera and the simulation ease to a stop, the game catches up with the script's game time and the
+# screenshot is taken, so the screenshots show the same moments on every Mac. benchmark.sh --explore captures keys
+# from the game.
+#
+# A number after a screenshot's name is how much of it may change from run to run (percent of its blocks), for views that
+# physics, particles or the clouds and sea change every time: about three times what repeated runs showed. A view of the flight
+# in fast mode stands paused and comes out the same to the pixel, so there it doesn't count.
+#
+# Three tests, and "full", which plays them one after the other. The sections each one plays, in fast mode (benchmark.sh
+# --fast) and in the cinematic run, split by "|" (benchmark.sh and the game's Mac Port tab read these lines): the Planetary
+# Tour, whose fast mode is the flight's places with the camera jumping between them; the Mixed Test, what the tour doesn't
+# check, whose fast mode is the mixed section; and the Warp Test, one way to play in both.
+test tour earth moon mars saturn jupiter | earth moon mars saturn jupiter
+test mixed mixed | capsule launch giga
+test warp warpclean warpdebris warpfalling | warpclean warpdebris warpfalling
+
+# Earth: from high above South America to orbit, down through the clouds to the sea, the Andes and the coast of
+# Peru, then up over northern Quebec.
+section earth
+0 @key Earth -30.756801 -68.506039 10912km 0 -88.1
+0 @shot earth1
+0.5 @measure earth2 9
+10 @key Earth 0.883441 -33.180022 112km 266.0 -14.2
+10 @shot earth2
+10.5 @measure earth3 7
+18 @key Earth 0.712986 -34.339823 6272 268.1 4.0
+18 @shot earth3 25
+18.5 @measure earth4 9
+28 @key Earth 0.600314 -35.167166 9 266.4 -6.8
+28 @shot earth4 70
+28.5 @measure earth5 13
+42 @key Earth -10.610988 -72.810129 843 247.7 -5.9
+42 @shot earth5
+42.5 @measure earth6 4
+47 @key Earth -10.619303 -72.830249 353 249.4 6.9
+47 @shot earth6
+47.5 @measure earth7 7
+55 @key Earth -11.524500 -73.790276 +8 295.9 -7.1
+55 @shot earth7
+55.5 @measure earth8 9
+65 @key Earth -16.373333 -73.301128 160 295.5 -5.0
+65 @shot earth8 8
+65.5 @measure earth9 13
+79 @key Earth 64.121609 -76.318757 25764 71.7 7.7
+79 @shot earth9
+
+# The Moon: out to it, its disk, the crater Copernicus, then low over the ground in the east.
+section moon needs Luna
+0.5 @measure moon1 11
+12 @key Luna 2.537805 13.666287 3037km 0 -87.7
+12 @shot moon1
+12.5 @measure moon2 11
+24 @key Luna 9.666268 -20.358532 -785 119.1 -2.7
+24 @shot moon2
+24.5 @measure moon3 11
+36 @key Luna -18.333393 64.488045 1726 275.5 17.3
+36 @shot moon3
+
+# Mars: across to it, its disk, at sunrise over a dust storm, then low over rocky ground.
+section mars needs Mars
+0.5 @measure mars1 13
+14 @key Mars -14.901881 -172.860332 5887km 0 -88.3
+14 @shot mars1
+14.5 @measure mars2 13
+28 @key Mars 10.754366 57.549555 25103 117.0 -7.2
+28 @shot mars2
+28.5 @measure mars3 13
+42 @key Mars -34.573950 -143.979732 7632 249.3 -2.4
+42 @shot mars3
+
+# Saturn: from high above, down into its haze under the rings, then out to the ring plane, where the camera stays
+# for a moment to watch the rocks go by.
+section saturn needs Saturn
+0.5 @measure saturn1 17
+18 @key Saturn 13.630052 -44.165128 179671km 0 -85.8
+18 @shot saturn1
+18.5 @measure saturn2 11
+30 @key Saturn -11.322988 -29.262921 600km 283.7 14.2
+30 @shot saturn2
+30.5 @measure saturn3 7
+38 @key Saturn -0.000350 -51.672887 44599km 265.5 -26.2
+38 @shot saturn3 5
+40 @key Saturn -0.000350 -51.672887 44599km 265.5 -26.2
+
+# Jupiter: from afar, down to its cloud deck, then straight down into the layers under it.
+section jupiter needs Jupiter
+0.5 @measure jupiter1 15
+16 @key Jupiter 10.302538 125.478017 122938km 0 -88.8
+16 @shot jupiter1
+16.5 @measure jupiter2 11
+28 @key Jupiter -7.440038 121.302079 876km 231.2 -0.1
+28 @shot jupiter2
+28.5 @measure jupiter3 9
+38 @key Jupiter -7.440038 121.302079 59548 231.2 -0.1
+38 @shot jupiter3
+
+# Capsule: the vehicles of the sections that follow are put in their places first, all at once (the only cut away from
+# the tour). The cockpit of a one-seat capsule on launch pad ELA-4 in French Guiana in the afternoon (ray traced when
+# the settings say so: the sun comes in through its window), then a day goes by in twenty seconds, the light moving
+# round the cabin, to the next afternoon. Then the same capsule standing in tall grass by a forest in the Amazon: its
+# kitten climbs out and walks a few steps towards the camera's side, then the camera turns around it and its long shadow, it
+# takes its helmet off and the camera comes close to its face. Fur, grass, shadows.
+section capsule
+0 @reset
+0 @launch benchmark-srb at CCSFS LC-39A
+0 @launch benchmark-giga at Starbase OLM A
+0 @launch -3.1 -60 benchmark-capsule as lander
+0 @launch benchmark-capsule at GSC ELA-4 as cockpit
+0.3 @control lander
+0.3 @crew Benchy
+0.3 @control cockpit
+0.3 @crew Pixel
+0.3 @camera iva
+0.3 @look -55 5
+0.3 @time 240
+3 @measure cockpit 5
+8 @shot cockpit
+8.5 @look -30 20 6
+8.5 @warp 1500 2
+8.5 @measure day 19
+13.5 @warp 12000 1.5
+17.5 @warp 1500 1.5
+17.5 @look 15 30 4
+20.5 @warp 8000 2
+21.5 @look -55 5 4
+25.1 @warp 1 2
+28 @time 86400
+28.5 @shot afternoon
+29 @control lander
+29 @time 86430
+29 @eva
+31 @input TranslateUp press
+31.2 @input TranslateUp release
+31.5 @chase -100 12 3.5 2
+33.5 @input TranslateBackward press
+33.5 @input TranslateRight press
+33.5 @measure kitten 5
+38.5 @input TranslateBackward release
+38.5 @input TranslateRight release
+38.5 @rotate 14
+38.5 @chase - 30 4.5 3
+42 @shot shadow
+42.5 @rotate 0
+42.5 @helmet off
+42.5 @aim 0.3 4
+42.5 @chase -165 5 0.9 4
+42.5 @measure fur 5
+47.5 @shot fur 25
+
+# Rocket launch: the bundled rocket (a core stage and three solid boosters) on launch pad LC-39A, the camera turning
+# around it, then pulling back to the ground 300 m away for its ignition and lift-off, zooming to keep it in view; then
+# flying up alongside it, four times faster up to the clouds, through them in real time, ten times faster up high; there
+# the camera looks down along it from above its nose, loops down its side to below its engines and pulls back again,
+# turning around it. Plumes, smoke trails, clouds, part
+# physics (on the CPU, more of it while fast).
+section launch
+0 @launch benchmark-srb at CCSFS LC-39A
+0.1 @control benchmark-srb
+0.1 @time 86480
+0.1 @chase 200 6 55
+0.1 @rotate 5
+2 @measure pad 5
+7 @shot pad
+7.5 @watch 240 300 2 70 3
+7.5 @rotate 0
+8 @input MainEngineThrottleUp press
+8.3 @input MainEngineStartup press
+8.4 @input MainEngineStartup release
+8.5 @stage 1
+8.5 @measure liftoff 7
+9.5 @input MainEngineThrottleUp release
+15.5 @shot liftoff 30
+16 @chase 230 8 150 5
+16 @measure climb 11
+21 @warp 4 1.5
+21 @rotate 2
+27 @warp 1 1.5
+27 @measure clouds 6
+33 @warp 10 2
+33 @measure fast 7
+40 @warp 1 2
+40 @rotate 0
+40 @chase 215 75 45 3
+40 @aim 10 3
+43 @shot high
+43.5 @chase - -50 55 6
+43.5 @aim -12 6
+43.5 @measure loop 6
+49.5 @rotate 9
+49.5 @aim 0 5
+49.5 @chase - 14 80 6
+50 @measure circle 6
+56 @shot circle
+56.5 @rotate 0
+
+# Stress: the bundled "giga rocket" (about 2,000 parts: 200 solid boosters on eight curved arms, hundreds of batteries
+# and lights) on launch pad OLM A at Starbase. The camera turns slowly around it all along, starting close and slowly
+# rising and pulling back: the pad, the ignition and lift-off (200 plumes, many lights, a spiral of smoke), the rocket
+# blown up whole, the fire and smoke seen from above. No checkpoint between the ignition and the explosion: the
+# simulation slowing down or stopping makes the game's g-load check break the rocket up at a moment that differs from
+# run to run.
+section giga
+0 @launch benchmark-giga at Starbase OLM A
+0.1 @control benchmark-giga
+0.1 @time 86640
+0.1 @chase 200 18 70
+0.1 @rotate 6
+2 @measure pad 5
+7 @shot pad
+7.5 @chase - 30 180 12
+7.5 @stage 1
+8 @input MainEngineStartup press
+8.1 @input MainEngineStartup release
+9 @measure liftoff 8
+17 @explode
+17 @measure explosion 3
+20 @shot explosion 60
+20.5 @chase - 55 380 12
+21 @measure smoke 9
+30.5 @shot smoke 30
+
+# Mixed, the Mixed Test's fast mode: the vehicles' views at one moment of the game, the game paused. The camera comes in
+# from 40 m to a kitten in its helmet floating in orbit, its eyes on the camera, Earth going by behind, while everything is
+# set up (@kitten, @front holds the camera on it, zooming by the game's clock): each view has a vehicle of its own, placed
+# and started so that its moment comes at the same game time: the giga rocket blown up whole as it lights its 200 boosters
+# on its pad at Starbase, a rocket rising from LC-39A, one high over the coast from Vandenberg (put in the air with @fly, so
+# it skips its climb), and a capsule's cockpit in orbit by the kitten, the sun coming in through one window onto its wall
+# and Earth in the other (@fly, @face, @fov; the patch of sunlight needs IVA ray tracing on). A vehicle's throttle starts at
+# full, so a rocket starts with its engines and the staging key alone. Then the game pauses and the camera goes from view
+# to view. The clouds start from the same place every run (@time), and each start and blast waits for the game's clock
+# (@sync), so it happens at the same game time on every Mac.
+section mixed
+0 @reset
+0 @kitten 5.26474 -52.79218 Benchy 200km orbit
+0 @front x 1 -z 0.3 40 2
+0 @time 0
+0 @launch benchmark-giga at Starbase OLM A as giga
+0 @launch benchmark-srb at VSFB LC-4 as topdown
+0 @launch benchmark-srb at CCSFS LC-39A as liftoff
+0 @launch benchmark-capsule at GSC ELA-4 as cockpit
+0.3 @vehicle cockpit
+0.3 @crew Pixel
+0.4 @vehicle topdown
+0.4 @fly 6500 365
+0.4 @vehicle cockpit
+0.4 @fly 200km orbit
+0.4 @face -32.6 -0.8 sun 78.7 0.3
+0.5 @sync
+0.5 @vehicle topdown
+0.5 @input MainEngineStartup press
+0.5 @stage
+0.5 @vehicle liftoff
+0.5 @input MainEngineStartup press
+0.5 @stage
+0.5 @vehicle giga
+0.5 @input MainEngineStartup press
+0.5 @stage
+0.5 @warp 2 0.5
+1.5 @sync
+1.5 @vehicle giga
+1.5 @explode
+3 @warp 0
+3 @shot kitten 4
+3 @vehicle giga
+3 @chase 0 15 200
+3 @shot explosion 15
+3 @control liftoff
+3 @watch 240 300 2 70
+3 @shot liftoff 10
+3 @control topdown
+3 @chase 215 75 45
+3 @aim 10
+3 @shot topdown 3
+3 @control cockpit
+3 @camera iva
+3 @look 35 25
+3 @fov 95
+3 @shot cockpit
+
+# The Warp Test: a capsule in a 400 km orbit asked for a speed at once, as a player holding the warp key does. Live
+# sections: each part takes the same time whatever the game gets through in it, starts from a new game's world, and keeps
+# its results when a later one ends the run. warpclean: the ship alone, over Earth at a speed where the sun rises three
+# times a second (what the clouds' shadows cost in low orbit at warp), then at the top speed. warpdebris: 18 rockets blown up around Earth in
+# orbits from 150 to 800 km. warpfalling: 18 blown up high, falling back, their pieces landing.
+# What is around a ship doesn't depend on the camera, and in low orbit at the top speed day and night would flash by every
+# frame: at that speed the camera stands on the Moon, zoomed in on Earth over its horizon, and stands there again for the screenshot, the Moon
+# having moved on from under it. The screenshots after a warp differ from run to run (the game's clock is wherever it got
+# to), so they are there to look at.
+section warpclean live
+0 @reset
+0 @launch benchmark-capsule at GSC ELA-4 as ship
+0.2 @warp 1 0.1
+0.4 @vehicle ship
+0.4 @fly 400km orbit
+1 @chase 215 30 30
+3 @warp 16384 2
+3 @measure low 8
+11 @warp 0 0.5
+12 @place Luna 81 0 400 177.2 2.4
+12 @fov 13
+12 @warp 524288 1
+12 @measure clean 13
+25 @warp 0 0.5
+25.5 @place Luna 81 0 400 177.2 2.4
+26 @shot clean 100
+
+section warpdebris live
+0 @reset
+0 @launch benchmark-capsule at GSC ELA-4 as ship
+0 @launch -40 -60 benchmark-srb as o0
+0 @launch -24 -60 benchmark-srb as o1
+0 @launch -8 -60 benchmark-srb as o2
+0 @launch 8 -60 benchmark-srb as o3
+0 @launch 24 -60 benchmark-srb as o4
+0 @launch 40 -60 benchmark-srb as o5
+0 @launch -40 -35 benchmark-srb as o6
+0 @launch -24 -35 benchmark-srb as o7
+0 @launch -8 -35 benchmark-srb as o8
+0 @launch 8 -35 benchmark-srb as o9
+0 @launch 24 -35 benchmark-srb as o10
+0 @launch 40 -35 benchmark-srb as o11
+0 @launch -40 -10 benchmark-srb as o12
+0 @launch -24 -10 benchmark-srb as o13
+0 @launch -8 -10 benchmark-srb as o14
+0 @launch 8 -10 benchmark-srb as o15
+0 @launch 24 -10 benchmark-srb as o16
+0 @launch 40 -10 benchmark-srb as o17
+0.2 @warp 1 0.1
+0.4 @vehicle ship
+0.4 @fly 400km orbit
+0.4 @vehicle o0
+0.4 @fly 150km orbit
+0.4 @vehicle o1
+0.4 @fly 200km orbit
+0.4 @vehicle o2
+0.4 @fly 300km orbit
+0.4 @vehicle o3
+0.4 @fly 400km orbit
+0.4 @vehicle o4
+0.4 @fly 600km orbit
+0.4 @vehicle o5
+0.4 @fly 800km orbit
+0.4 @vehicle o6
+0.4 @fly 150km orbit
+0.4 @vehicle o7
+0.4 @fly 200km orbit
+0.4 @vehicle o8
+0.4 @fly 300km orbit
+0.4 @vehicle o9
+0.4 @fly 400km orbit
+0.4 @vehicle o10
+0.4 @fly 600km orbit
+0.4 @vehicle o11
+0.4 @fly 800km orbit
+0.4 @vehicle o12
+0.4 @fly 150km orbit
+0.4 @vehicle o13
+0.4 @fly 200km orbit
+0.4 @vehicle o14
+0.4 @fly 300km orbit
+0.4 @vehicle o15
+0.4 @fly 400km orbit
+0.4 @vehicle o16
+0.4 @fly 600km orbit
+0.4 @vehicle o17
+0.4 @fly 800km orbit
+0.8 @vehicle o0
+0.8 @explode
+1.05 @vehicle o1
+1.05 @explode
+1.3 @vehicle o2
+1.3 @explode
+1.55 @vehicle o3
+1.55 @explode
+1.8 @vehicle o4
+1.8 @explode
+2.05 @vehicle o5
+2.05 @explode
+2.3 @vehicle o6
+2.3 @explode
+2.55 @vehicle o7
+2.55 @explode
+2.8 @vehicle o8
+2.8 @explode
+3.05 @vehicle o9
+3.05 @explode
+3.3 @vehicle o10
+3.3 @explode
+3.55 @vehicle o11
+3.55 @explode
+3.8 @vehicle o12
+3.8 @explode
+4.05 @vehicle o13
+4.05 @explode
+4.3 @vehicle o14
+4.3 @explode
+4.55 @vehicle o15
+4.55 @explode
+4.8 @vehicle o16
+4.8 @explode
+5.05 @vehicle o17
+5.05 @explode
+6 @control ship
+6.1 @chase 215 30 30
+7 @shot ship 100
+9 @place Luna 81 0 400 177.2 2.4
+9 @fov 13
+9 @warp 524288 1
+9 @measure debris 30
+39 @warp 0 0.5
+39.5 @place Luna 81 0 400 177.2 2.4
+40 @shot debris 100
+
+section warpfalling live
+0 @reset
+0 @launch benchmark-capsule at GSC ELA-4 as ship
+0 @launch -40 -60 benchmark-srb as f0
+0 @launch -24 -60 benchmark-srb as f1
+0 @launch -8 -60 benchmark-srb as f2
+0 @launch 8 -60 benchmark-srb as f3
+0 @launch 24 -60 benchmark-srb as f4
+0 @launch 40 -60 benchmark-srb as f5
+0 @launch -40 -35 benchmark-srb as f6
+0 @launch -24 -35 benchmark-srb as f7
+0 @launch -8 -35 benchmark-srb as f8
+0 @launch 8 -35 benchmark-srb as f9
+0 @launch 24 -35 benchmark-srb as f10
+0 @launch 40 -35 benchmark-srb as f11
+0 @launch -40 -10 benchmark-srb as f12
+0 @launch -24 -10 benchmark-srb as f13
+0 @launch -8 -10 benchmark-srb as f14
+0 @launch 8 -10 benchmark-srb as f15
+0 @launch 24 -10 benchmark-srb as f16
+0 @launch 40 -10 benchmark-srb as f17
+0.2 @warp 1 0.1
+0.4 @vehicle ship
+0.4 @fly 400km orbit
+0.4 @vehicle f0
+0.4 @fly 120km 800
+0.4 @vehicle f1
+0.4 @fly 150km 800
+0.4 @vehicle f2
+0.4 @fly 200km 800
+0.4 @vehicle f3
+0.4 @fly 300km 800
+0.4 @vehicle f4
+0.4 @fly 120km 800
+0.4 @vehicle f5
+0.4 @fly 150km 800
+0.4 @vehicle f6
+0.4 @fly 200km 800
+0.4 @vehicle f7
+0.4 @fly 300km 800
+0.4 @vehicle f8
+0.4 @fly 120km 800
+0.4 @vehicle f9
+0.4 @fly 150km 800
+0.4 @vehicle f10
+0.4 @fly 200km 800
+0.4 @vehicle f11
+0.4 @fly 300km 800
+0.4 @vehicle f12
+0.4 @fly 120km 800
+0.4 @vehicle f13
+0.4 @fly 150km 800
+0.4 @vehicle f14
+0.4 @fly 200km 800
+0.4 @vehicle f15
+0.4 @fly 300km 800
+0.4 @vehicle f16
+0.4 @fly 120km 800
+0.4 @vehicle f17
+0.4 @fly 150km 800
+0.8 @vehicle f0
+0.8 @explode
+1.05 @vehicle f1
+1.05 @explode
+1.3 @vehicle f2
+1.3 @explode
+1.55 @vehicle f3
+1.55 @explode
+1.8 @vehicle f4
+1.8 @explode
+2.05 @vehicle f5
+2.05 @explode
+2.3 @vehicle f6
+2.3 @explode
+2.55 @vehicle f7
+2.55 @explode
+2.8 @vehicle f8
+2.8 @explode
+3.05 @vehicle f9
+3.05 @explode
+3.3 @vehicle f10
+3.3 @explode
+3.55 @vehicle f11
+3.55 @explode
+3.8 @vehicle f12
+3.8 @explode
+4.05 @vehicle f13
+4.05 @explode
+4.3 @vehicle f14
+4.3 @explode
+4.55 @vehicle f15
+4.55 @explode
+4.8 @vehicle f16
+4.8 @explode
+5.05 @vehicle f17
+5.05 @explode
+6 @control ship
+6.1 @chase 215 30 30
+9 @place Luna 81 0 400 177.2 2.4
+9 @fov 13
+9 @warp 524288 1
+9 @measure falling 30
+39 @warp 0 0.5
+39.5 @place Luna 81 0 400 177.2 2.4
+40 @shot falling 100

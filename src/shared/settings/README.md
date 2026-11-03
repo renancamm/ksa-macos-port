@@ -24,10 +24,10 @@ report program, and in the port folder's `lib/porter/`. Who reads the settings w
 
 | Reader | How |
 |---|---|
-| the hooks' loader ([`../../hooks/loader/`](../../hooks/loader/)) | reads the table and `port-settings.toml` when the game starts, and sets each setting the file changes as its variable (`PortSettings.Plan`) |
-| the hooks ([`../../hooks/Settings.cs`](../../hooks/Settings.cs)) | read each setting back from its variable (`PortSettings.Load`) |
-| the Mac Port tab ([`../../hooks/tab/`](../../hooks/tab/)) | draws its rows from the table, and writes the values it changes into the file (`PortSettings.Save`) |
-| the benchmark's report program ([`../../benchmark/report/`](../../benchmark/report/)) | checks `--port` against the table and writes it into the run's file |
+| the hooks' loader ([`../../game/hooks/loader/`](../../game/hooks/loader/)) | reads the table and `port-settings.toml` when the game starts, and sets each setting the file changes as its variable (`PortSettings.Plan`) |
+| the hooks ([`../../game/hooks/Settings.cs`](../../game/hooks/Settings.cs)) | read each setting back from its variable (`PortSettings.Load`) |
+| the Mac Port tab ([`../../game/hooks/tab/`](../../game/hooks/tab/)) | draws its rows from the table, and writes the values it changes into the file (`PortSettings.Save`) |
+| the benchmark's report program ([`../../player/benchmark-cli/`](../../player/benchmark-cli/)) | checks `--port` against the table and writes it into the run's file |
 
 A variable already set when the game starts wins over the file. A variable that is unset, holds none of its setting's
 values, or belongs to a setting whose needs aren't met means the default.
@@ -35,22 +35,22 @@ values, or belongs to a setting whose needs aren't met means the default.
 ## Typed settings
 
 The code reads a setting by a name made from its key, typed as the table says, so a setting that isn't in the table
-doesn't compile. Two files are made from the table, where they are compiled: the native build makes the header in
-its build tree ([`CMakeLists.txt`](../../../CMakeLists.txt)), the hooks' build the C# in their `obj/`
-([`KsaMetalHooks.csproj`](../../hooks/KsaMetalHooks.csproj)). Each is written only when it differs, so the code that
-reads it is compiled again only then.
+doesn't compile. Two files are made from the table, where they are compiled: the native build makes the header in its
+build tree ([`CMakeLists.txt`](../../../CMakeLists.txt)), the hooks' build the C# in their `obj/`
+([`KsaMetalHooks.csproj`](../../game/hooks/KsaMetalHooks.csproj)). Each is written only when it differs, so the code
+that reads it is compiled again only then.
 
 | File | Holds |
 |---|---|
-| `port-settings.h` | `PortSettings`, a field per setting the driver or the KTX shim does (`fusedTessellation`, a `bool`), and `portSettingsRead()`, which reads them from their variables with the values the library takes (it doesn't apply needs to a variable set outside the game); KSA Metal keeps them in `kmtlConfig()` ([`../../ksa-metal/setup/config.mm`](../../ksa-metal/setup/config.mm)) |
+| `port-settings.h` | `PortSettings`, a field per setting the driver or the KTX shim does (`fusedTessellation`, a `bool`), and `portSettingsRead()`, which reads them from their variables with the values the library takes (it doesn't apply needs to a variable set outside the game); KSA Metal keeps them in `kmtlConfig()` ([`../../game/driver/setup/config.mm`](../../game/driver/setup/config.mm)) |
 | `Settings.Generated.cs` | a property of the hooks' `Settings` per setting the hooks do (`Settings.TerrainCache`, a `bool`; `Settings.RenderScale`, a `double`): read once when the hooks load, or each time for a live setting |
 
 ## The generator
 
 `KsaPortSettingsGenerator`
 ([`../../build-tools/settings-generator/Generate.cs`](../../build-tools/settings-generator/Generate.cs)) is a build
-tool, not part of the app, which makes the two typed files and the template. `build.sh` builds it and runs its
-checks first ([`scripts/build-settings.sh`](../../../scripts/build-settings.sh)): it checks the repository against
+tool, not part of the app, which makes the two typed files and the template. `build.sh` builds it and runs its checks
+first ([`../../../scripts/build-settings.sh`](../../../scripts/build-settings.sh)): it checks the repository against
 the table, and stops the build when it isn't in step:
 
 - each setting's `by` column is what the code does: the driver and the KTX shim use the field of each setting it

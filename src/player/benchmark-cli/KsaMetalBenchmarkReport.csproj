@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<!-- The report program, which benchmark.sh runs on the port folder's .NET runtime. Needs nothing from the game. -->
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<AssemblyName>KsaMetalBenchmarkReport</AssemblyName>
+		<RootNamespace>KsaMetalBenchmarkReport</RootNamespace>
+		<GenerateDependencyFile>true</GenerateDependencyFile>
+		<UseAppHost>false</UseAppHost>
+	</PropertyGroup>
+	<ItemGroup>
+		<Compile Remove="tests/**" />
+		<!-- The port settings, the port folder's names, a run's options and the screenshots' comparison -->
+		<ProjectReference Include="../../shared/KsaPort.Common.csproj" />
+	</ItemGroup>
+	<ItemGroup>
+		<InternalsVisibleTo Include="KsaMetalBenchmarkTests" />
+	</ItemGroup>
+</Project>

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<!-- The tests of the report program and of the benchmark's results (Tests.cs), which need no game.
+	     scripts/build-dotnet.sh runs them: dotnet KsaMetalBenchmarkTests.dll -->
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<AssemblyName>KsaMetalBenchmarkTests</AssemblyName>
+		<StartupObject>Tests</StartupObject>
+	</PropertyGroup>
+	<ItemGroup>
+		<ProjectReference Include="../KsaMetalBenchmarkReport.csproj" />
+		<ProjectReference Include="../../../shared/KsaPort.Common.csproj" />
+	</ItemGroup>
+</Project>

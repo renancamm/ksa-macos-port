@@ -1,9 +1,10 @@
-# The port settings: every setting of port-settings.toml, in the file's order. The hooks' loader (src/hooks/loader/)
-# reads this table when the game starts and sets each setting the file changes as the environment variable that KSA
-# Metal, its shims and its hooks read; the Mac Port tab in the game's settings (src/hooks/tab/) draws its rows from it;
-# KsaPortSettingsGenerator (README.md in this folder) makes the file's commented template from it, and port-settings.h,
-# the variables and defaults the native code reads. A setting's variable is KSA_MTL_ and its key in capitals
-# (fused_tessellation: KSA_MTL_FUSED_TESSELLATION); one already set when the game starts wins over the file.
+# The port settings: every setting of port-settings.toml, in the file's order. The hooks' loader
+# (src/game/hooks/loader/) reads this table when the game starts and sets each setting the file changes as the
+# environment variable that KSA Metal, its shims and its hooks read; the Mac Port tab in the game's settings
+# (src/game/hooks/tab/) draws its rows from it; KsaPortSettingsGenerator (README.md in this folder) makes the file's
+# commented template from it, and port-settings.h, the variables and defaults the native code reads. A setting's
+# variable is KSA_MTL_ and its key in capitals (fused_tessellation: KSA_MTL_FUSED_TESSELLATION); one already set when
+# the game starts wins over the file.
 #
 # [<section>] <title> | <caption>: starts a section of the file and of the tab, the caption being the line under its
 # title (and the file's comment); a section whose header ends in "| file" is in the file only, not in the tab. Then one
@@ -23,9 +24,9 @@
 #   applies   live: on Apply, in the running game (the hooks read it while the game runs); restart: when the game
 #             starts
 #   by        what does it (comma separated): driver (KSA Metal), ktx-shim, hooks (the hooks and their loader),
-#             hooks:<hook>, a class marked [Hook] (src/hooks/Hooks.cs) by its name, which the tab shows the setting as
-#             unavailable without (skipped or failed), metal:<variable>, Apple's variable that Metal reads, which the
-#             setting sets instead of its own, or tab: the tab's own, which sets no variable
+#             hooks:<hook>, a class marked [Hook] (src/game/hooks/Hooks.cs) by its name, which the tab shows the
+#             setting as unavailable without (skipped or failed), metal:<variable>, Apple's variable that Metal reads,
+#             which the setting sets instead of its own, or tab: the tab's own, which sets no variable
 #   presets   its values in the Mac Port tab's presets Performance, Balanced and Quality, comma separated (Game
 #             Defaults gives it its default); none for a setting the presets leave alone. Every Extra Performance row
 #             is on in Performance

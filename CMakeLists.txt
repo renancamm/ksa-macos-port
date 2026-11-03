@@ -7,12 +7,12 @@
 cmake_minimum_required(VERSION 3.30)
 
 # Everything compiled targets the oldest macOS the app supports, dependencies included: MACOS_MIN in
-# src/port-folder/lib/common.sh. Otherwise a binary inherits the build Mac's version.
-file(STRINGS src/port-folder/lib/common.sh macos_min REGEX "^MACOS_MIN=")
+# src/player/port-folder/lib/common.sh. Otherwise a binary inherits the build Mac's version.
+file(STRINGS src/player/port-folder/lib/common.sh macos_min REGEX "^MACOS_MIN=")
 string(REGEX REPLACE "^MACOS_MIN=\"(.*)\"$" "\\1" MACOS_MIN "${macos_min}")
 set(CMAKE_OSX_DEPLOYMENT_TARGET "${MACOS_MIN}")
-# The app's identifier, which the launcher's signature names (src/launcher/)
-file(STRINGS src/port-folder/lib/common.sh bundle_id REGEX "^BUNDLE_ID=")
+# The app's identifier, which the launcher's signature names (src/game/launcher/)
+file(STRINGS src/player/port-folder/lib/common.sh bundle_id REGEX "^BUNDLE_ID=")
 string(REGEX REPLACE "^BUNDLE_ID=\"(.*)\"$" "\\1" BUNDLE_ID "${bundle_id}")
 set(CMAKE_OSX_ARCHITECTURES arm64)
 
@@ -109,10 +109,10 @@ add_library(port-settings INTERFACE)
 target_include_directories(port-settings INTERFACE "${KSA_GENERATED_DIR}")
 # Followed by every target that links it
 add_dependencies(port-settings port-settings-header)
-add_subdirectory(src/ksa-metal)
-add_subdirectory(src/glfw-shim)
-add_subdirectory(src/ktx-shim)
-add_subdirectory(src/launcher)
+add_subdirectory(src/game/driver)
+add_subdirectory(src/game/shims/glfw)
+add_subdirectory(src/game/shims/ktx)
+add_subdirectory(src/game/launcher)
 
 # For build.sh's other steps: where each download is (deps.sh)
 include(cmake/deps-file.cmake)

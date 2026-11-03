@@ -16,9 +16,9 @@ folder_commands() {
     local version="$1" ksa="$2" commit="$3"
     rm -rf "${OUT}"
     mkdir -p "${OUT}/lib"
-    cp "${REPO}"/src/port-folder/*.sh "${REPO}/src/port-folder/README.md" "${REPO}/src/benchmark/benchmark.sh" \
+    cp "${REPO}"/src/player/port-folder/*.sh "${REPO}/src/player/port-folder/README.md" \
         "${OUT}/"
-    cp "${REPO}"/src/port-folder/lib/*.sh "${OUT}/lib/"
+    cp "${REPO}"/src/player/port-folder/lib/*.sh "${OUT}/lib/"
     chmod +x "${OUT}"/*.sh
     cp "${REPO}/LICENSE" "${REPO}/THIRD_PARTY_NOTICES.md" "${OUT}/"
     # The BRUTAL packages the libraries come from, for the porter's version check of the game's
@@ -40,10 +40,10 @@ folder_payload() {
     [ -f "${STARMAP}/StarMap.dll" ] && [ -f "${STARMAP}/StarMap.Core.dll" ] || die "the StarMap archive has an unexpected layout."
     step "Assembling ${OUT#"${REPO}/"}"
     rm -rf "${OUT}/payload" "${OUT}/lib/porter"
-    # The port's program, which the commands run (src/porter/), with its shader edits
+    # The port's program, which the commands run (src/player/porter/), with its shader edits
     ditto "${ASSEMBLIES}/bin/KsaPorter" "${OUT}/lib/porter"
 
-    # The app without the game: launcher (src/launcher/launcher.c) and .NET runtime (ditto keeps Microsoft's
+    # The app without the game: launcher (src/game/launcher/launcher.c) and .NET runtime (ditto keeps Microsoft's
     # signatures), libraries and BRUTAL's crash-dump helper, icon
     mkdir -p "${contents}/Resources"
     ditto "${DOTNET_RUNTIME}" "${contents}/MacOS"
@@ -58,18 +58,19 @@ folder_payload() {
     cp "${REPO}/third_party/fmod/libfmod.dylib" "${contents}/Resources/libfmod.dylib"
     chmod u+w "${contents}/Resources/libfmod.dylib"
     cp "${BUILD}/icon/AppIcon.icns" "${contents}/Resources/"
-    # KSA Metal Hooks, which the launcher loads and which apply the port settings (src/hooks/), with the shared
+    # KSA Metal Hooks, which the launcher loads and which apply the port settings (src/game/hooks/), with the shared
     # library (src/shared/) and Harmony
     mkdir -p "${contents}/Resources/Hooks"
     cp "${ASSEMBLIES}/bin/KsaMetalHooksLoader/KsaMetalHooksLoader.dll" "${ASSEMBLIES}/bin/KsaMetalHooks/KsaMetalHooks.dll" \
         "${ASSEMBLIES}/bin/KsaPort.Common/KsaPort.Common.dll" "${HARMONY_DLL}" "${contents}/Resources/Hooks/"
-    # The benchmark (src/benchmark/): its director, which the hooks run, the report program, the tour and its vehicles
+    # The benchmark (src/game/benchmark/, src/player/benchmark-cli/): its director, which the hooks run, the report
+    # program, the tour and its vehicles
     local bench="${contents}/Resources/Benchmark"
     mkdir -p "${bench}"
     cp "${ASSEMBLIES}/bin/KsaMetalBenchmark/KsaMetalBenchmark.dll" "${ASSEMBLIES}"/bin/KsaMetalBenchmarkReport/*.dll \
         "${ASSEMBLIES}"/bin/KsaMetalBenchmarkReport/*.json \
-        "${REPO}/src/benchmark/benchmark.txt" "${bench}/"
-    for v in "${REPO}"/src/benchmark/vehicles/*/; do
+        "${REPO}/src/game/benchmark/lineup/benchmark.txt" "${bench}/"
+    for v in "${REPO}"/src/game/benchmark/lineup/vehicles/*/; do
         mkdir -p "${bench}/vehicles/$(basename "${v}")"
         cp "${v}"* "${bench}/vehicles/$(basename "${v}")/"
     done
