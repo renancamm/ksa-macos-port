@@ -61,7 +61,10 @@ echo "==> port settings: defaults" > "${STARMAP_INSTANCE_PATH}/logs/console.log"
 case "${FAKE_GAME:-pass}" in
     nothing) exit 134 ;;
 esac
-first="${KSA_BENCH_ONLY%% *}"
+# The run's options, which the report program writes for the director
+option() { plutil -extract "$1" raw -o - "${KSA_BENCH_OUT}/run.json"; }
+only="$(option only)"
+first="${only%% *}"
 echo "${first} 1.5" > "${KSA_BENCH_OUT}/heartbeat"
 case "${FAKE_GAME:-pass}" in
     crash) kill -ABRT $$ ;;
@@ -69,8 +72,8 @@ case "${FAKE_GAME:-pass}" in
     long) for i in 1 2 3 4 5 6 7 8 9 10; do sleep 1; done; exit 0 ;;
 esac
 mode=cinematic
-[ -z "${KSA_BENCH_FAST}" ] || mode=fast
-cat > "${KSA_BENCH_OUT}/results${KSA_BENCH_RUN}.json" <<JSON
+[ "$(option fast)" != true ] || mode=fast
+cat > "${KSA_BENCH_OUT}/results$(option suffix).json" <<JSON
 {"gpuTimes":true,"mode":"${mode}","shots":true,"completed":true,"loadSeconds":1.5,"drawable":"100x50",
 "sections":[{"name":"${first}","windows":[{"name":"part1","frames":100,"seconds":2,"averageFps":50,"frameMsMedian":20,"frameMsP95":22,
 "frameMsP99":23,"frameMsMax":30,"hitches":0,"gpuMsMedian":${FAKE_GPU:-15},"gpuMsP95":16,"drawsMedian":100,"gpuMemoryPeakMb":1000,"footprintPeakMb":2000,

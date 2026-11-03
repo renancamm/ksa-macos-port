@@ -21,8 +21,9 @@ public static partial class Program
         private readonly List<string> _places = [], _sets = [], _ports = [], _tools = [];
         private string _preset = "", _system = "", _hold = "", _settingsFile = "", _reference = "", _catch = "";
         private string _template = "Metal System Trace", _test = "";
-        private bool _defaults, _explore, _fast, _noShots, _profile, _hud, _trace, _capture, _catchCapture, _passes;
-        private string _repeatText = "1";
+        private bool _defaults, _explore, _fast, _noShots, _profile, _hud, _trace, _capture, _catchCapture, _passes, _cameraLog;
+        private string _repeatText = "1", _filmText = "0";
+        private double _film;
         private int _repeat = 1;
         private string _app = PortFolder.DefaultApp, _res = "", _script = "", _installed = "";
         private List<string> _only = [];
@@ -48,7 +49,7 @@ public static partial class Program
         {
             status = 0;
             var withValue = new[] { "--hold", "--set", "--port", "--settings", "--compare", "--catch", "--app", "--preset", "--system",
-                "--repeat", "--trace-template" };
+                "--repeat", "--trace-template", "--film" };
             for (int i = 0; i < args.Length; i++)
             {
                 var a = args[i];
@@ -76,6 +77,8 @@ public static partial class Program
                     case "--catch": _catch = args[++i]; break;
                     case "--catch-capture": _catchCapture = true; break;
                     case "--passes": _passes = true; break;
+                    case "--film": _filmText = args[++i]; break;
+                    case "--camera-log": _cameraLog = true; break;
                     case "--explore": _explore = true; break;
                     case "-h" or "--help":
                         Console.WriteLine(CommandUsage);
@@ -100,6 +103,8 @@ public static partial class Program
             if (!Regex.IsMatch(_repeatText, "^[1-9][0-9]*$"))
                 Die($"--repeat needs a number of runs, not '{_repeatText}'.");
             _repeat = int.Parse(_repeatText);
+            if (!double.TryParse(_filmText, NumberStyles.Float, CultureInfo.InvariantCulture, out _film) || _film < 0)
+                Die($"--film needs a number of seconds, not '{_filmText}'.");
             if (_settingsFile.Length > 0 && !File.Exists(_settingsFile))
                 Die($"no settings file {_settingsFile}.");
             _installed = PortFolder.AppVersion(_app);
@@ -250,6 +255,10 @@ public static partial class Program
             }
             if (_hud)
                 _tools.Add("Metal HUD");
+            if (_film > 0)
+                _tools.Add($"film every {_film.ToString(CultureInfo.InvariantCulture)} s");
+            if (_cameraLog)
+                _tools.Add("camera log");
             if (_trace)
             {
                 if (Tool.Exec("xcrun", ["-f", "xctrace"], out _) != 0)

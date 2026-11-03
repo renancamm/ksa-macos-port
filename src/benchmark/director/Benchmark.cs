@@ -1,35 +1,9 @@
 // The benchmark's director: plays the benchmark's script in one game session and measures it.
 //
-// KSA Metal Hooks start it (src/hooks/app/BenchmarkRun.cs): when the game starts with the variables below set, which
-// benchmark.sh in the port folder sets, or with the same options from the Mac Port tab in the game's settings.
-//   KSA_BENCH_SCRIPT  the script (benchmark.txt)
-//   KSA_BENCH_OUT     the folder for the results (results.json, frames.csv) and the screenshots
-//   KSA_BENCH_ONLY    optional: what to play (space separated): sections, or places as <section>_<shot> (the section
-//                     up to that checkpoint, its other checkpoints only keeping the clocks in step)
-//   KSA_BENCH_FAST    optional: fast mode (below)
-//   KSA_BENCH_NO_SHOTS optional: no screenshots (the checkpoints still keep the game's clock in step)
-//   KSA_BENCH_HOLD    optional: <section>_<shot>: stop at that checkpoint for good, the game paused, until it is quit
-//   KSA_BENCH_RUN     optional: a suffix for the results' file names (results-2.json, frames-2.csv), for repeats
-//   KSA_BENCH_PROFILE optional: profile that many frames of every measured part with KSA Metal's GPU profiler (the
-//                     game needs KSA_MTL_GPU_PROFILE=<csv>)
-//   KSA_BENCH_CAPTURE optional: an Xcode GPU frame capture of the view at every checkpoint, <section>_<shot>.gputrace
-//                     (the game needs MTL_CAPTURE_ENABLED=1)
-//   KSA_BENCH_CATCH   optional: a clean run's folder: after a screenshot under half the size of that run's same screenshot,
-//                     KSA Metal's pass dump of the next frame in caught/<section>_<shot>/ and an image of a frame after it
-//                     in caught/, at most MaxCatches a run. A screenshot also counts when it has far more pure black than
-//                     that run's, or is 30 % pure white
-//   KSA_BENCH_CATCH_CAPTURE optional, with KSA_BENCH_CATCH: an Xcode GPU frame capture after the pass dump, in
-//                     caught/<section>_<shot>.gputrace (the game needs MTL_CAPTURE_ENABLED=1)
-//   KSA_BENCH_PASSES  optional: the same pass dump and image at every checkpoint, broken or not: a clean run's, to compare
-//                     a caught one with
-//   KSA_BENCH_WAIT    optional: a file to wait for in the game before playing (up to a minute), so that a tool the
-//                     script starts once the game is up (an Instruments trace) sees the whole run
-//   KSA_BENCH_TRACE   optional: write the camera's place every frame to trace.csv, to check its moves are smooth
-//   KSA_BENCH_FILM    optional: a screenshot every that many seconds of the script's clock, into film/, to see moves
-//   KSA_BENCH_EXPLORE optional: no script, the explore mode's console command instead (Explore.cs)
-//   KSA_BENCH_END     optional: "stay": the game goes on when the script ends (Done), instead of quitting
-//   KSA_BENCH_START   optional: "game": the run plays in a game that was running already (no loading time)
-// Without the first two there is nothing to play. While it plays, it touches the file "heartbeat" in the results' folder
+// KSA Metal Hooks start it (src/hooks/app/BenchmarkRun.cs) with a run's options (RunOptions, in shared/): when the game
+// starts with KSA_BENCH_OUT naming a run's folder that holds them as run.json, which benchmark.sh's report program
+// writes, or with the same options from the Mac Port tab in the game's settings. Without a folder and a script (or
+// explore mode) there is nothing to play. While it plays, it touches the file "heartbeat" in the results' folder
 // every second, so the script can tell a game that hangs from one that is busy. Every frame goes into frames.csv, and
 // every measured part is a signpost interval (KSA Metal's ksaMtlMarker), so an Instruments trace shows the parts.
 //
@@ -114,13 +88,13 @@ public partial class Benchmark
     private readonly List<Section> _sections = new();
     private readonly Stopwatch _wall = new();
     private string _outDir = "";
-    // KSA_BENCH_ONLY: the sections to play, each with the checkpoints chosen in it (null: all of them)
+    // RunOptions.Only: the sections to play, each with the checkpoints chosen in it (null: all of them)
     private Dictionary<string, HashSet<string>?>? _only;
     private string _resultsFile = "results.json";
     private FrameLog? _frames;
     private uint _profileFrames;
     private bool _capture;
-    // KSA_BENCH_CATCH: the clean run, and the captures taken so far (each several GB)
+    // RunOptions.Catch: the clean run, and the captures taken so far (each several GB)
     private const int MaxCatches = 3;
     private const double CatchBelow = 0.5, CatchMoreBlack = 25, CatchWhite = 30;
     private string? _catchAgainst;
@@ -171,24 +145,24 @@ public partial class Benchmark
     private string? _waitFor;
     private readonly Stopwatch _waiting = new();
 
-    private readonly Func<string, string?> _option;
+    private readonly RunOptions _options;
 
     // Whether the script has ended (played to its end, or stopped)
     public bool Done { get; private set; }
 
-    // Starts a run with these options (the variables above, by name), or null when there is nothing to play. The
-    // caller calls OnFrame after every frame of the game.
-    public static Benchmark? Begin(Func<string, string?> option)
+    // Starts a run with these options, or null when there is nothing to play. The caller calls OnFrame after every
+    // frame of the game.
+    public static Benchmark? Begin(RunOptions options)
     {
-        var benchmark = new Benchmark(option);
+        var benchmark = new Benchmark(options);
         return benchmark._active || benchmark._exploring ? benchmark : null;
     }
 
-    private Benchmark(Func<string, string?> option)
+    private Benchmark(RunOptions options)
     {
-        _option = option;
-        var script = _option("KSA_BENCH_SCRIPT");
-        _outDir = _option("KSA_BENCH_OUT") ?? "";
+        _options = options;
+        var script = options.Script;
+        _outDir = options.Out;
         if (string.IsNullOrEmpty(_outDir))
             return;
         StartExplore();
@@ -199,9 +173,9 @@ public partial class Benchmark
             Log($"script {script} not found");
             return;
         }
-        _fast = _option("KSA_BENCH_FAST") is { Length: > 0 };
-        _shots = _option("KSA_BENCH_NO_SHOTS") is not { Length: > 0 };
-        _hold = _option("KSA_BENCH_HOLD") is { Length: > 0 } hold ? hold : null;
+        _fast = options.Fast;
+        _shots = !options.NoShots;
+        _hold = options.Hold is { Length: > 0 } hold ? hold : null;
         var lines = File.ReadAllLines(script);
         for (int i = 0; i < lines.Length; i++)
         {
@@ -228,7 +202,7 @@ public partial class Benchmark
             section.Steps.Clear();
             section.Steps.AddRange(ordered);
         }
-        var only = _option("KSA_BENCH_ONLY");
+        var only = options.Only;
         if (!string.IsNullOrWhiteSpace(only))
         {
             _only = new Dictionary<string, HashSet<string>?>();
@@ -251,22 +225,22 @@ public partial class Benchmark
                 shots?.Add(name[(section.Name.Length + 1)..]);
             }
         }
-        _resultsFile = $"results{_option("KSA_BENCH_RUN")}.json";
-        uint.TryParse(_option("KSA_BENCH_PROFILE"), out _profileFrames);
-        _capture = _option("KSA_BENCH_CAPTURE") is { Length: > 0 };
-        _catchAgainst = _option("KSA_BENCH_CATCH") is { Length: > 0 } clean ? clean : null;
-        _catchCapture = _option("KSA_BENCH_CATCH_CAPTURE") == "1";
-        _passesEverywhere = _option("KSA_BENCH_PASSES") == "1";
-        _waitFor = _option("KSA_BENCH_WAIT") is { Length: > 0 } wait ? wait : null;
+        _resultsFile = $"results{options.Suffix}.json";
+        _profileFrames = options.Profile;
+        _capture = options.Capture;
+        _catchAgainst = options.Catch is { Length: > 0 } clean ? clean : null;
+        _catchCapture = options.CatchCapture;
+        _passesEverywhere = options.Passes;
+        _waitFor = options.Wait is { Length: > 0 } wait ? wait : null;
         Directory.CreateDirectory(_outDir);
-        _frames = new FrameLog(Path.Combine(_outDir, $"frames{_option("KSA_BENCH_RUN")}.csv"));
-        if (!string.IsNullOrEmpty(_option("KSA_BENCH_TRACE")))
+        _frames = new FrameLog(Path.Combine(_outDir, $"frames{options.Suffix}.csv"));
+        if (options.Trace)
         {
             _trace = new StreamWriter(Path.Combine(_outDir, "trace.csv"));
             _trace.WriteLine("wall,script,phase,following,x,y,z,fx,fy,fz,ux,uy,uz,lat,lon,alt,ground");
         }
-        if (double.TryParse(_option("KSA_BENCH_FILM"), NumberStyles.Float, CultureInfo.InvariantCulture,
-                out _filmEvery) && _filmEvery > 0)
+        _filmEvery = options.Film;
+        if (_filmEvery > 0)
             Directory.CreateDirectory(Path.Combine(_outDir, "film"));
         _results = new Results(DriverStats.Available) { Mode = _fast ? "fast" : "cinematic", Shots = _shots };
         _active = true;
@@ -480,7 +454,7 @@ public partial class Benchmark
     {
         _wall.Start();
         // A run in a running game has no loading of its own
-        if (_option("KSA_BENCH_START") != "game")
+        if (!_options.InGame)
         {
             _results!.LoadSeconds = Math.Round((DateTime.Now - Process.GetCurrentProcess().StartTime).TotalSeconds - _waiting.Elapsed.TotalSeconds, 1);
             Log(FormattableString.Invariant($"first in-game frame after {_results.LoadSeconds:F1} s"));
@@ -550,7 +524,7 @@ public partial class Benchmark
             Unhold();
             EndRig();
             Done = true;
-            if (_option("KSA_BENCH_END") != "stay")
+            if (!_options.Stay)
                 Program.TerminalInterface.Execute("exit");
             return;
         }

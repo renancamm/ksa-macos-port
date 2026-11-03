@@ -18,7 +18,8 @@ namespace KsaMetalHooks.App;
 
 // The benchmark in the game (src/benchmark/): its director plays a test after every frame of the game, and starts in
 // one of three ways:
-// - benchmark.sh in the port folder starts the game with KSA_BENCH_* set, in a documents folder of its own
+// - benchmark.sh in the port folder starts the game with KSA_BENCH_OUT naming the run's folder, which holds the run's
+//   options (RunOptions, run.json), in a documents folder of its own
 //   (STARMAP_INSTANCE_PATH): the director begins with the game's first frame and quits the game at the end, and the
 //   script writes the report.
 // - The Mac Port tab's RUN buttons, in the running game: the player's game is saved (to
@@ -51,6 +52,8 @@ internal static class BenchmarkRun
     private static Task? _finishing;
     // What system.txt says about the run (the report program asks macOS about the Mac after the run, not during it)
     private static string _system = "", _start = "", _sections = "";
+    // The options of a run that starts with the game (run.json in KSA_BENCH_OUT's folder)
+    private static RunOptions? _options;
     private static readonly MemoryWatch Memory = new();
     // A run from the tab has no script to stop a game that has hung: past this, the game is stopped from a thread of its
     // own. Time warp can stall a frame for most of a minute before it goes on.
@@ -70,8 +73,11 @@ internal static class BenchmarkRun
         _installed = true;
         if (Environment.GetEnvironmentVariable("KSA_BENCH_OUT") is not { Length: > 0 } output)
             return "ready";
+        _options = RunOptions.Read(output);
+        if (_options == null)
+            return $"ready (no run in {output.Replace(Home, "~")}: its {RunOptions.FileName} can't be read)";
         _out = output;
-        _mode = Environment.GetEnvironmentVariable("KSA_BENCH_FINISH") == "1" ? Mode.Restarted : Mode.Script;
+        _mode = _options.Restarted ? Mode.Restarted : Mode.Script;
         return _mode == Mode.Restarted ? "a run starts with the game, restarted from its settings" : "a run starts with the game";
     }
 
@@ -177,12 +183,13 @@ internal static class BenchmarkRun
             _firstFrame = false;
             if (_mode is Mode.Script or Mode.Restarted)
             {
-                _fast = Environment.GetEnvironmentVariable("KSA_BENCH_FAST") is { Length: > 0 };
-                _test = Environment.GetEnvironmentVariable("KSA_BENCH_TEST") ?? _test;
+                _fast = _options!.Fast;
+                if (_options.Test.Length > 0)
+                    _test = _options.Test;
                 _system = Universe.CurrentSystem?.Id ?? "?";
                 _start = "a new game, restarted from the game's settings";
                 AddVehicles();
-                _run = Benchmark.Begin(Environment.GetEnvironmentVariable);
+                _run = Benchmark.Begin(_options);
                 Memory.Start();
             }
         }
@@ -263,7 +270,7 @@ internal static class BenchmarkRun
     }
 
     // The director's options for a run from the tab
-    private static Dictionary<string, string> Options(string output)
+    private static RunOptions Options(string output)
     {
         var script = Path.Combine(_folder, "benchmark.txt");
         // The test's sections: the tour's "test" lines, <name> <fast mode's> | <the cinematic run's>
@@ -271,11 +278,7 @@ internal static class BenchmarkRun
             .Where(w => w.Length >= 4 && w[0] == "test").ToDictionary(w => w[1], w => string.Join(' ', w[2..]).Split(" | "));
         var names = _test == "full" ? new[] { "tour", "mixed", "warp" } : [_test];
         var only = string.Join(' ', names.Select(t => tests[t][_fast ? 0 : 1]));
-        return new Dictionary<string, string>
-        {
-            ["KSA_BENCH_SCRIPT"] = script, ["KSA_BENCH_OUT"] = output, ["KSA_BENCH_ONLY"] = only,
-            ["KSA_BENCH_FAST"] = _fast ? "1" : "", ["KSA_BENCH_TEST"] = _test, ["KSA_BENCH_END"] = "stay"
-        };
+        return new RunOptions { Script = script, Out = output, Only = only, Fast = _fast, Test = _test, Stay = true };
     }
 
     private static string NewRunFolder()
@@ -298,7 +301,7 @@ internal static class BenchmarkRun
         return
         [
             $"StarMap={(AppDomain.CurrentDomain.GetAssemblies().Any(a => a.GetName().Name == "StarMap.Core") ? "in the app" : "none")}",
-            $"System={_system}", $"Test={_test}", $"Sections={Environment.GetEnvironmentVariable("KSA_BENCH_ONLY") ?? _sections}",
+            $"System={_system}", $"Test={_test}", $"Sections={_options?.Only ?? _sections}",
             $"Mode={(_fast ? "fast" : "cinematic")}", $"Start={_start}",
             $"KSA Metal switches={(outside.Count > 0 ? string.Join(' ', outside) : "none")}",
             // What this game ran with: the port settings that aren't at their defaults, and what the hooks did
@@ -316,10 +319,10 @@ internal static class BenchmarkRun
         _mode = Mode.InGame;
         _out = NewRunFolder();
         var options = Options(_out);
-        options["KSA_BENCH_START"] = "game";
+        options.InGame = true;
         GameSettings.Current.Save();
         File.Copy(Path.Combine(Constants.DocumentsFolderPath, "settings.toml"), Path.Combine(_out, "settings.toml"), true);
-        (_system, _sections, _start) = (Universe.CurrentSystem?.Id ?? "?", options["KSA_BENCH_ONLY"], "in the running game, from its settings");
+        (_system, _sections, _start) = (Universe.CurrentSystem?.Id ?? "?", options.Only, "in the running game, from its settings");
         Console.Out.Flush();
         _logStart = File.Exists(ConsoleLog) ? new FileInfo(ConsoleLog).Length : 0;
         Hooks.Log($"BenchmarkRun: playing in this game, into {_out.Replace(Home, "~")}");
@@ -330,11 +333,11 @@ internal static class BenchmarkRun
         var ui = GameSettings.Current.Interface;
         (ui.CelestialNames, ui.LocationNames) = (false, false);
         AddVehicles();
-        _run = Benchmark.Begin(name => options.GetValueOrDefault(name));
+        _run = Benchmark.Begin(options);
         Memory.Start();
         if (_run == null)
         {
-            Hooks.Log("benchmark: nothing to play");
+            Hooks.Log("BenchmarkRun: nothing to play");
             PutBack();
         }
     }
@@ -416,10 +419,10 @@ internal static class BenchmarkRun
         var output = NewRunFolder();
         File.Copy(Path.Combine(instance, "settings.toml"), Path.Combine(output, "settings.toml"));
         var options = Options(output);
-        options["STARMAP_INSTANCE_PATH"] = instance;
-        options["KSA_BENCH_FINISH"] = "1";
+        options.Restarted = true;
+        options.Write(output);
         Hooks.Log($"BenchmarkRun: the game starts again for it, into {output.Replace(Home, "~")}");
-        Restart.Run(options);
+        Restart.Run(new Dictionary<string, string> { ["STARMAP_INSTANCE_PATH"] = instance, ["KSA_BENCH_OUT"] = output });
         Program.Instance.RequestExit(0);
     }
 
@@ -450,7 +453,7 @@ internal static class BenchmarkRun
             Report(facts);
             Report(["finish", output]);
         });
-        Hooks.Log("benchmark: writing the report");
+        Hooks.Log("BenchmarkRun: writing the report");
     }
 
     private static void Finished()

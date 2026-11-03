@@ -114,7 +114,7 @@ internal static partial class MacPortTab
         foreach (var rail in rails)
             rail.operand = AccessTools.Method(typeof(MacPortTab), nameof(Rail));
         if (rails.Count == 0)
-            Hooks.Log("Mac Port tab: the settings' rail moved, so the tab stays in one group with the game's");
+            Hooks.Log("MacPortTab: the settings' rail moved, so the tab stays in one group with the game's");
         int name = Find.Once(code, i => i.Is(OpCodes.Ldstr, "SettingsContent"), "the settings' content body");
         var beginBody = AccessTools.GetDeclaredMethods(typeof(ConsoleStyle)).Where(m => m.Name == nameof(ConsoleStyle.BeginBody)).ToList();
         int call = Find.Next(code, i => beginBody.Any(i.Calls), "the content body's BeginBody", name);

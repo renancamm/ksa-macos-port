@@ -190,7 +190,10 @@ the command that `./benchmark.sh` starts on the port folder's .NET runtime (`Com
 `Run.cs`, its documents folder and settings `RunSettings.cs`, the game's sessions, Ctrl-C and the tools `RunGame.cs`),
 and the report, which describes the Mac and writes the report, its page and the zip (`Report.cs`, `Finish.cs`,
 `Html.cs`, `Terminal.cs`), compares runs (`Compare.cs`) and sums up the tools' output (`Tools.cs`); `shared/` the
-director's code that the report program and the tests use too: the PNG reader and the classes of `results.json`. The
+director's code that the report program and the tests use too: the PNG reader, the classes of `results.json`, and a
+run's options (`RunOptions.cs`). The program writes those as `run.json` in the run's folder and starts the game with
+`KSA_BENCH_OUT` naming the folder; the hooks read them there and start the director with them, as they do with the
+options of a run from the Mac Port tab. The
 build then runs its tests, which need no game, and stops when one fails. Those in
 [`tests/`](tests/) check what passes and fails a run, the conditions the report notes, repeats merged into medians,
 numbers the same on a Mac in any region, what `finish` takes from the game's log and puts in the zip, the comparison
@@ -279,6 +282,8 @@ puts the tests from `src/benchmark/benchmark.txt` into the app.
 | `--catch <run>` | for a picture that goes wrong now and then, with no capture mode or other switch: KSA Metal looks at the image a few times a second, and each screenshot is compared with that clean run's (30 % pure white, under half the size, or far more pure black). A broken one gets a pass dump in `caught/`: `watch_<n>/` from the image, `<section>_<shot>/` from a screenshot, with `passes.txt` and an image of a frame after it; `watch.txt` says when each fault began and ended (at most 3 of each; about 40 MB each; needs a comparable run with screenshots and 1 GB free). After a GPU failure nothing more is dumped |
 | `--catch-capture` | with `--catch`: an Xcode GPU frame capture after each pass dump, `caught/<section>_<shot>.gputrace` (capture mode, about 9 GB each, 40 GB free) |
 | `--passes` | a pass dump at every place played, in `caught/`: the clean run a caught dump is compared with (needs places, or `--fast`) |
+| `--film <seconds>` | a screenshot every that many seconds of the script's clock, in `film/`, to see the camera's moves |
+| `--camera-log` | the camera's place every frame in `trace.csv`, to check its moves are smooth |
 | `--hud` | Apple's Metal Performance HUD, its log in `hud.log` and its reports in `hud/` |
 | `--explore` | start the benchmark's game paused, with a console command (`benchkey`) that captures the camera's place for the tour |
 

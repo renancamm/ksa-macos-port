@@ -10,6 +10,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
+using KsaMetalBenchmark;
 using KsaPorter;
 
 namespace KsaMetalBenchmarkReport;
@@ -41,7 +42,8 @@ public static partial class Program
             Directory.CreateDirectory(output);
             Tool.Exec("caffeinate", ["-u", "-t", "1"], out _);
             Output.Step($"Exploring KSA {_installed}: fly the free camera, type benchkey [name] in the console (\\) at each place, quit when done");
-            using (var game = Process.Start(Game(new() { ["KSA_BENCH_EXPLORE"] = "1", ["KSA_BENCH_OUT"] = output }))!)
+            new RunOptions { Explore = true }.Write(output);
+            using (var game = Process.Start(Game(new() { ["KSA_BENCH_OUT"] = output }))!)
             {
                 // Ctrl-C here quits the game too, as it did the game in the foreground
                 ConsoleCancelEventHandler quit = (_, e) =>
@@ -179,14 +181,15 @@ public static partial class Program
             Process.Start("caffeinate", ["-d", "-i", "-w", Environment.ProcessId.ToString(CultureInfo.InvariantCulture)]);
             Tool.Exec("caffeinate", ["-u", "-t", "1"], out _);
 
-            // What the tools add to the game's environment
+            // What the tools add to the game's environment, and to the run's options
             var env = new Dictionary<string, string>();
+            var options = new RunOptions();
             if (_profile)
             {
                 // Nothing profiled until the director opens a part
                 env["KSA_MTL_GPU_PROFILE"] = Path.Combine(_out, "gpuprof.csv");
                 env["KSA_MTL_GPU_PROFILE_FRAMES"] = "0,0";
-                env["KSA_BENCH_PROFILE"] = "60";
+                options.Profile = 60;
             }
             if (_hud)
             {
@@ -198,22 +201,28 @@ public static partial class Program
             }
             if (_trace)
             {
-                env["KSA_BENCH_WAIT"] = Path.Combine(_out, ".recording");
+                options.Wait = Path.Combine(_out, ".recording");
                 env["KSA_MTL_LABELS"] = "1";
             }
             if (_capture)
             {
-                env["MTL_CAPTURE_ENABLED"] = env["KSA_BENCH_CAPTURE"] = env["KSA_MTL_LABELS"] = "1";
+                env["MTL_CAPTURE_ENABLED"] = env["KSA_MTL_LABELS"] = "1";
+                options.Capture = true;
             }
             if (_catch.Length > 0)
             {
-                env["KSA_BENCH_CATCH"] = _catch;
+                options.Catch = _catch;
                 env["KSA_MTL_WATCH"] = Path.Combine(_out, "caught");
                 if (_catchCapture)
-                    env["MTL_CAPTURE_ENABLED"] = env["KSA_BENCH_CATCH_CAPTURE"] = env["KSA_MTL_LABELS"] = "1";
+                {
+                    env["MTL_CAPTURE_ENABLED"] = env["KSA_MTL_LABELS"] = "1";
+                    options.CatchCapture = true;
+                }
             }
             if (_passes)
-                env["KSA_BENCH_PASSES"] = "1";
+                options.Passes = true;
+            options.Film = _film;
+            options.Trace = _cameraLog;
 
             // Loading takes up to a few minutes on a first start (shader compilation), then the script's own length, plus
             // the time slower Macs spend catching up at checkpoints. Once playing, the director touches its heartbeat file
@@ -281,7 +290,7 @@ public static partial class Program
             File.WriteAllText(Path.Combine(_out, "run.txt"), "");
             for (int n = 1; n <= _repeat; n++)
             {
-                PlayOnce(n, env, lengths, timeout, hang, ref pressure);
+                PlayOnce(n, env, options, lengths, timeout, hang, ref pressure);
                 if (_stopped)
                     break;
             }
@@ -341,7 +350,7 @@ public static partial class Program
         }
 
         // One game session; its ending goes to run.txt
-        private void PlayOnce(int n, Dictionary<string, string> tools, List<(string Section, double Seconds)> lengths, int timeout, int hang,
+        private void PlayOnce(int n, Dictionary<string, string> env, RunOptions options, List<(string Section, double Seconds)> lengths, int timeout, int hang,
             ref int pressure)
         {
             string suffix = n > 1 ? $"-{n}" : "", label = n > 1 ? $"Game {n}" : "Game";
@@ -351,17 +360,15 @@ public static partial class Program
             var recording = Path.Combine(_out, ".recording");
             File.Delete(heartbeat);
             File.Delete(recording);
-            var env = new Dictionary<string, string>(tools)
-            {
-                ["KSA_BENCH_ONLY"] = string.Join(' ', _only),
-                ["KSA_BENCH_FAST"] = _fast ? "1" : "",
-                ["KSA_BENCH_HOLD"] = _hold,
-                ["KSA_BENCH_NO_SHOTS"] = _noShots || n > 1 ? "1" : "",
-                ["KSA_BENCH_RUN"] = suffix,
-                ["KSA_BENCH_SCRIPT"] = _script,
-                ["KSA_BENCH_OUT"] = _out,
-            };
-            using var game = Process.Start(Game(env))!;
+            // This game's options, in the run's folder (a repeat's after the first's)
+            options.Only = string.Join(' ', _only);
+            options.Fast = _fast;
+            options.Hold = _hold;
+            options.NoShots = _noShots || n > 1;
+            options.Suffix = suffix;
+            options.Script = _script;
+            options.Write(_out);
+            using var game = Process.Start(Game(new Dictionary<string, string>(env) { ["KSA_BENCH_OUT"] = _out }))!;
             var started = DateTime.UtcNow;
             string ending = "";
             bool alongside = false;

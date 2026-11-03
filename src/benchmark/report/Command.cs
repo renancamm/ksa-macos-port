@@ -75,12 +75,14 @@ public static partial class Program
                              with that clean run's; a broken one gets a pass dump in caught/ (at most 3 each); needs 1 GB free
           --catch-capture    with --catch: an Xcode GPU frame capture after each pass dump (needs capture mode and 40 GB free)
           --passes           the pass dump at every place played: the clean run a caught one is compared with (needs places)
+          --film <seconds>   a screenshot every that many seconds of the script's clock, in film/, to see the camera's moves
+          --camera-log       the camera's place every frame in trace.csv, to check its moves are smooth
           --explore          start the benchmark's game paused, to fly the free camera around and capture places for the
                              tour (@key lines, for benchmark.txt) with benchkey [name] in its console; quit it when done
 
         The benchmark is in the app (Contents/Resources/Benchmark/), built for the KSA version this port folder was made for:
-        KSA Metal Hooks start its director when the game starts with the run's variables set, in a documents folder of its
-        own. The Mac Port tab in the game's settings runs it too.
+        KSA Metal Hooks start its director when the game starts with the run's options (run.json in the run's folder), in a
+        documents folder of its own. The Mac Port tab in the game's settings runs it too.
         """;
 
     // Presets: fixed settings, the same on every Mac, so reports compare. Without one, your own settings are used. All run

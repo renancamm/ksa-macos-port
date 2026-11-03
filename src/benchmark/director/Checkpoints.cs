@@ -302,7 +302,7 @@ public partial class Benchmark
         return 100.0 * black / Math.Max(1, rgb.Length / 3);
     }
 
-    // With KSA_BENCH_CAPTURE, an Xcode frame capture of the view (one frame, the game paused) before the screenshot
+    // With RunOptions.Capture, an Xcode frame capture of the view (one frame, the game paused) before the screenshot
     private void CaptureThenShoot(double wall)
     {
         if (_capture)
@@ -318,7 +318,7 @@ public partial class Benchmark
         Shoot();
     }
 
-    // A measured part opens: a signpost interval for traces, and the GPU profiler's frames with KSA_BENCH_PROFILE
+    // A measured part opens: a signpost interval for traces, and the GPU profiler's frames with RunOptions.Profile
     private void Opened(Window window)
     {
         DriverStats.Marker(window.Name, true);

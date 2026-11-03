@@ -89,6 +89,6 @@ internal static class Restart
         open.WaitForExit();
         if (open.ExitCode != 0)
             throw new InvalidOperationException($"open exited with {open.ExitCode}");
-        Hooks.Log("restart: the game starts again once it has quit");
+        Hooks.Log("Restart: the game starts again once it has quit");
     }
 }
