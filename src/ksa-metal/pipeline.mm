@@ -556,8 +556,8 @@ static bool translate(KShaderModule* mod, const char* entryName, spv::ExecutionM
             }
         }
 
-        // KSA_MTL_UNLIT_SHADOW_SKIP=0: the shader edits of src/port-folder/lib/convert-shaders.sh that skip shadows where
-        // there is no light read this constant (PORT_SKIP_UNLIT_SHADOWS, true in the source)
+        // KSA_MTL_UNLIT_SHADOW_SKIP=0: the shader edits of src/port-folder/lib/convert-shaders.sh that skip shadows
+        // where there is no light read this constant (PORT_SKIP_UNLIT_SHADOWS, true in the source)
         if (!kmtlConfig().unlitShadowSkip)
             for (auto& sc : c.get_specialization_constants())
                 if (sc.constant_id == kUnlitShadowSkipConstant) c.get_constant(sc.id).m.c[0].r[0].u32 = 0;

@@ -35,7 +35,7 @@ FetchContent_MakeAvailable(vulkan_headers spirv_cross spirv_tools glfw_headers d
 # Harmony for KSA Metal Hooks: the package's .NET 10 assembly. Extracted again only for another version, and then dated
 # now: the hooks' build tells a changed reference by its date, and the package's own is older than the last build.
 set(HARMONY_DIR "${CMAKE_BINARY_DIR}/harmony")
-if(NOT EXISTS "${HARMONY_DIR}/${HARMONY_VERSION}.version")
+if(NOT EXISTS "${HARMONY_DIR}/${HARMONY_VERSION}.version" OR NOT EXISTS "${HARMONY_DIR}/lib/net10.0/0Harmony.dll")
     file(REMOVE_RECURSE "${HARMONY_DIR}")
     # By its name: the download folder keeps the package of an earlier version when the version changes
     file(ARCHIVE_EXTRACT INPUT "${lib_harmony_SOURCE_DIR}/lib.harmony.${HARMONY_VERSION}.nupkg"

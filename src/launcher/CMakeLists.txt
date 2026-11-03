@@ -1,4 +1,5 @@
-# The launcher: launcher.c -> KSA in KSA_NATIVES_DIR, which scripts/make-port-folder.sh puts in the app as Contents/MacOS/KSA
+# The launcher: launcher.c -> KSA in KSA_NATIVES_DIR, which scripts/make-port-folder.sh puts in the app as
+# Contents/MacOS/KSA
 #
 # It sets up the game's environment and becomes .NET's dotnet running KSA (see the comment at the top of launcher.c).
 set(CMAKE_C_FLAGS_RELEASE "")

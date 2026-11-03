@@ -1,7 +1,8 @@
 # BRUTAL's native libraries -> KSA_NATIVES_DIR, included by CMakeLists.txt once the packages of BRUTAL_PACKAGES
 # (cmake/dependencies.cmake) are declared: RocketWerkz's macOS builds, unmodified, from each package's
-# runtimes/osx-arm64/native/, with BRUTAL's licence, notice and the packages' third-party notices. The one file there that is not a library,
-# Brutal.Monitor.Subprocess, is a program: it gets back the execute permission the package's zip doesn't keep.
+# runtimes/osx-arm64/native/, with BRUTAL's licence, notice and the packages' third-party notices. The one file there
+# that is not a library, Brutal.Monitor.Subprocess, is a program: it gets back the execute permission the package's
+# zip doesn't keep.
 # Some packages ship one library under several names, as identical copies (libglfw.dylib, libglfw.3.dylib,
 # libglfw.3.5.dylib): the copies become links to the one named by the library's install name, so that the game and
 # the GLFW shim, which links that name, load the same GLFW.
