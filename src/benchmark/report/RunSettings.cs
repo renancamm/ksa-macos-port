@@ -11,6 +11,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using KsaPorter;
+using KsaPortSettings;
 
 namespace KsaMetalBenchmarkReport;
 
@@ -100,27 +101,32 @@ public static partial class Program
                 File.Copy(template, portSettings);
             else
                 File.WriteAllText(portSettings, "");
-            var table = Path.Combine(_res, "port-settings.txt");
+            if (_ports.Count == 0)
+                return;
+            // --port: checked against the app's table (a key or value the game doesn't take would run an unchanged
+            // game that looks like an A/B test), and written as the Mac Port tab writes them
+            try
+            {
+                PortSettings.LoadTable(_res);
+            }
+            catch (Exception e) when (e is IOException or FormatException)
+            {
+                Die($"--port: the app's table of the port settings can't be read: {e.Message}");
+            }
+            var values = new Dictionary<string, string>();
             foreach (var kv in _ports)
             {
                 if (!kv.Contains('='))
                     Die($"--port needs key=value, not '{kv}'.");
                 string key = kv[..kv.IndexOf('=')], value = kv[(kv.IndexOf('=') + 1)..];
-                // A key the game doesn't know would run an unchanged game that looks like an A/B test
-                if (File.Exists(table))
-                {
-                    if (!File.ReadLines(table).Any(l => l.StartsWith(key + " |")))
-                        Die($"--port: there is no setting '{key}' in port-settings.toml.");
-                    CheckPortValue(table, key, value);
-                }
-                var lines = File.ReadAllLines(portSettings).ToList();
-                var pattern = new Regex($"^{Regex.Escape(key)} *=");
-                if (lines.Any(pattern.IsMatch))
-                    lines = lines.Select(l => pattern.IsMatch(l) ? $"{key} = {value}" : l).ToList();
-                else
-                    lines.Add($"{key} = {value}");
-                File.WriteAllText(portSettings, string.Join('\n', lines) + "\n");
+                if (PortSettings.Get(key) is not { } setting)
+                    Die($"--port: there is no setting '{key}' in port-settings.toml.");
+                else if (!setting.Valid(value))
+                    Die($"--port {key}={value}: it takes {setting.Values()}.");
+                values[key] = value;
             }
+            PortSettings.FilePath = portSettings;
+            PortSettings.Save(values);
         }
 
         // One line of settings.toml (keys are unique across its sections). As <section>.<key>, the key in that section,
@@ -164,32 +170,5 @@ public static partial class Program
         // A bare word is a string, quoted as TOML wants it (Pcf -> "Pcf"); anything else as written
         private static string TomlValue(string value) =>
             Regex.IsMatch(value, "^[A-Za-z_][A-Za-z0-9_-]*$") && value is not ("true" or "false" or "inf" or "nan") ? $"\"{value}\"" : value;
-
-        // Stops at a value the game would refuse: it would run an unchanged game with only a line in its log to say so
-        private static void CheckPortValue(string table, string key, string value)
-        {
-            var row = File.ReadLines(table).FirstOrDefault(l => l.Split('|')[0].Trim() == key);
-            var type = row == null ? "" : row.Split('|').ElementAtOrDefault(1)?.Trim() ?? "";
-            var parts = type.Split(':');
-            string[] values;
-            switch (parts[0])
-            {
-                case "bool":
-                    values = ["true", "false"];
-                    break;
-                case "choice":
-                    values = parts[1].Split('/').Select(v => v.Split('=')[0]).ToArray();
-                    break;
-                case "scale" or "int" or "number":
-                    if (!Regex.IsMatch(value, @"^-?[0-9.]+$") || !double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ||
-                        v < double.Parse(parts[1], CultureInfo.InvariantCulture) || v > double.Parse(parts[2], CultureInfo.InvariantCulture))
-                        Die($"--port {key}={value}: it takes a number from {parts[1]} to {parts[2]}.");
-                    return;
-                default:
-                    return;
-            }
-            if (!values.Contains(value))
-                Die($"--port {key}={value}: it takes {string.Join(" or ", values)}.");
-        }
     }
 }

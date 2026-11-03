@@ -1,14 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using KsaPortSettings;
 
 namespace KsaMetalHooks;
 
 // The hooks' settings: what the game runs with. The loader sets each setting port-settings.toml changes as an
-// environment variable, and a variable set before the game starts wins over the file; here each setting's variable is
-// read against the table of the port settings (Contents/Resources/port-settings.txt, which says which variable, which
-// values and which default): unset, or holding none of the setting's values (the log says so), it means the default.
-// A live setting (the table's "live") changes while the game runs: the Mac Port tab sets its value on Apply.
+// environment variable, and a variable set before the game starts wins over the file; here the settings' library
+// (src/settings/) reads each variable back against the table: unset, holding none of the setting's values (the log
+// says so), or with its needs not met, it means the default. A live setting (the table's "live") changes while the
+// game runs: the Mac Port tab sets its value on Apply.
 public static class Settings
 {
     private static readonly Dictionary<string, PortSetting> ByKey = new();
@@ -32,7 +33,7 @@ public static class Settings
         _crewPortraitsAt15Fps = Get("crew_portraits_at_15_fps");
         _fitHudToDisplay = Get("fit_hud_to_display");
         Upscaler = Value("upscaling");
-        RenderScale = Upscaler is "metalfx" or "spatial" ? (float)Number("render_scale") : 1f;
+        RenderScale = (float)Number("render_scale");
     }
 
     public static PortSetting Get(string key) =>

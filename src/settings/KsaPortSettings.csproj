@@ -1,12 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
-	<!-- The table's generator and checks (Generate.cs), a build tool: build.sh runs it before the native build. It
-	     reads the table with the hooks' own reader. -->
+	<!-- The port settings' library (PortSettings.cs, PortSetting.cs): the table, port-settings.toml and the environment.
+	     The hooks' loader and the hooks use it in the game, next to them in the app's Hooks folder; the benchmark's
+	     report program, the generator (generator/) and the tests (tests/) use it too. References nothing of the game. -->
 	<PropertyGroup>
-		<OutputType>Exe</OutputType>
 		<AssemblyName>KsaPortSettings</AssemblyName>
-		<UseAppHost>false</UseAppHost>
+		<RootNamespace>KsaPortSettings</RootNamespace>
 	</PropertyGroup>
 	<ItemGroup>
-		<Compile Include="../hooks/settings/PortSettingsTable.cs" />
+		<Compile Remove="generator/**;tests/**" />
 	</ItemGroup>
 </Project>

@@ -9,6 +9,7 @@ using Brutal.Numerics;
 using HarmonyLib;
 using KSA;
 using KSA.Rendering.Lighting;
+using KsaPortSettings;
 
 namespace KsaMetalHooks.Tab;
 
@@ -262,7 +263,10 @@ internal static partial class MacPortTab
         _reset = false;
     }
 
-    private static string Value(PortSetting s) => Pending.TryGetValue(s.Key, out var v) ? v : s.Saved;
+    // A setting's value as the tab sees it: the pending one, or what the game runs with for one set outside, which the
+    // tab can't change
+    private static string Value(PortSetting s) =>
+        s.Outside != null ? s.Running : Pending.TryGetValue(s.Key, out var v) ? v : s.Saved;
 
     private static bool Game(string what)
     {

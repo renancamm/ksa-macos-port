@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<!-- The table's generator and checks (Generate.cs), a build tool: build.sh runs it before the native build. -->
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<AssemblyName>KsaPortSettingsGenerator</AssemblyName>
+		<UseAppHost>false</UseAppHost>
+	</PropertyGroup>
+	<ItemGroup>
+		<ProjectReference Include="../KsaPortSettings.csproj" />
+	</ItemGroup>
+</Project>

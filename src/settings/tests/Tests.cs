@@ -2,15 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
-using KsaMetalHooks;
+using KsaPortSettings;
 
-// The tests of the port settings' code that runs without the game: the table (src/settings/port-settings.txt) and
-// the rules its lines keep, reading and writing port-settings.toml, the needs, the values read back from the
-// environment, and the variables the loader sets. scripts/build-dotnet.sh runs them after building the hooks; a failure
-// stops the build.
+// The tests of the port settings' library: the table (src/settings/port-settings.txt) and the rules its lines keep,
+// reading and writing port-settings.toml, the needs, the values read back from the environment, and the variables the
+// loader sets. scripts/build-dotnet.sh runs them; a failure stops the build. The generator checks the table against
+// the rest of the repository (the hooks it names, the settings the hooks read).
 //
-// Usage: dotnet KsaMetalHooksTests.dll <repository>
+// Usage: dotnet KsaPortSettingsTests.dll <repository>
 internal static class Tests
 {
     private static string _repo = "", _test = "", _scratch = "";
@@ -28,12 +27,10 @@ internal static class Tests
     private static int Main(string[] args)
     {
         _repo = Path.GetFullPath(args.Length > 0 ? args[0] : ".");
-        _scratch = Path.Combine(Path.GetTempPath(), $"ksa-hooks-tests-{Environment.ProcessId}");
+        _scratch = Path.Combine(Path.GetTempPath(), $"ksa-settings-tests-{Environment.ProcessId}");
         var tests = new (string Name, Action Run)[]
         {
             ("the table's lines", TableRules),
-            ("the hooks the table names", TableHooks),
-            ("the settings the hooks read", SettingsRead),
             ("a malformed table", MalformedTable),
             ("reading the file", ReadFile),
             ("writing the file", Save),
@@ -63,8 +60,8 @@ internal static class Tests
         foreach (var failure in Failures)
             Console.WriteLine($"FAILED {failure}");
         Console.WriteLine(Failures.Count == 0
-            ? $"    The hooks' tests: {tests.Length} passed."
-            : $"    The hooks' tests: {Failures.Count} failures.");
+            ? $"    The port settings' tests: {tests.Length} passed."
+            : $"    The port settings' tests: {Failures.Count} failures.");
         return Failures.Count == 0 ? 0 : 1;
     }
 
@@ -83,8 +80,6 @@ internal static class Tests
 
     // The table's folder in the repository
     private static string SettingsFolder => Path.Combine(_repo, "src", "settings");
-
-    private static string Source(params string[] path) => File.ReadAllText(Path.Combine([_repo, "src", "hooks", .. path]));
 
     // Each line of the table: its key and variable are its own, its default is one of its values, its needs name
     // settings that exist (or the game's that the tab checks) with values they take, without a loop, the tab draws its
@@ -142,31 +137,6 @@ internal static class Tests
                 return true;
         }
         return false;
-    }
-
-    // The hook column names hooks that Hooks.Apply runs: otherwise the tab couldn't show the setting as unavailable
-    private static void TableHooks()
-    {
-        var keys = Regex.Matches(Source("Hooks.cs"), @"Run\(""[^""]+"", ""([a-z_]+)""").Select(m => m.Groups[1].Value).ToHashSet();
-        Check(keys.Count > 5, $"only {keys.Count} hooks found in Hooks.cs");
-        foreach (var s in PortSettings.All.Where(s => s.Hook.Length > 0))
-            Check(keys.Contains(s.Hook), $"{s.Key}'s hook {s.Hook} isn't one Hooks.Apply runs");
-    }
-
-    // Every key the hooks read is in the table (Settings.Load would throw, and no hook would apply), and every live
-    // setting with a variable is read by them (the tab's Apply only changes what they read)
-    private static void SettingsRead()
-    {
-        var hooks = Path.Combine(_repo, "src", "hooks");
-        var read = Directory.GetFiles(hooks, "*.cs", SearchOption.AllDirectories)
-            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}tests{Path.DirectorySeparatorChar}"))
-            .SelectMany(f => Regex.Matches(File.ReadAllText(f), @"(?:Settings\.(?:Value|On|Number|Numbers|Get)|\bGet)\(""([a-z_0-9]+)""\)"))
-            .Select(m => m.Groups[1].Value).ToHashSet();
-        Check(read.Count > 10, $"only {read.Count} settings found read by the hooks");
-        foreach (var key in read)
-            Check(PortSettings.Get(key) != null, $"the hooks read {key}, which isn't in the table");
-        foreach (var s in PortSettings.All.Where(s => s.Live && s.Variable.Length > 0))
-            Check(read.Contains(s.Key), $"{s.Key} is live, but no hook reads it");
     }
 
     private static void MalformedTable()
@@ -283,7 +253,7 @@ internal static class Tests
         Is("log_file", "~/ksa.log", "~/ksa.log");
     }
 
-    // PortSettings.Load, as Settings.Load calls it: the file, the environment, and the variables set outside
+    // PortSettings.Load, as the hooks call it: the file, the environment, the variables set outside, and needs not met
     private static void HooksLoad()
     {
         var file = Path.Combine(_scratch, "port-settings.toml");
@@ -291,7 +261,7 @@ internal static class Tests
         var variables = new Dictionary<string, string?>
         {
             ["KSA_PORT_SETTINGS"] = file, ["KSA_PORT_OUTSIDE"] = "KSA_RENDER_SCALE", ["KSA_RENDER_SCALE"] = "Always",
-            ["KSA_HUD_LAYOUT"] = "0", ["KSA_UPSCALER"] = "metalfx", ["KSA_TERRAIN_CACHE"] = "0",
+            ["KSA_HUD_LAYOUT"] = "0", ["KSA_UPSCALER"] = "metalfx", ["KSA_TERRAIN_CACHE"] = "0", ["KSA_MTL_GPUPROF_SPLIT"] = "1",
         };
         var before = variables.Keys.ToDictionary(k => k, Environment.GetEnvironmentVariable);
         foreach (var (name, value) in variables)
@@ -307,6 +277,7 @@ internal static class Tests
             Equal("1.0", Setting("render_scale").Running, "an invalid variable: the default");
             Equal("KSA_RENDER_SCALE=Always", Setting("render_scale").Outside, "set outside");
             Equal(null, Setting("fit_hud_to_display").Outside, "set from the file");
+            Equal("false", Setting("gpu_profile_split").Running, "a variable whose setting's needs aren't met: the default");
             Equal(1, warnings.Count, "warnings");
         }
         finally
@@ -320,7 +291,7 @@ internal static class Tests
     {
         var env = new Dictionary<string, string>();
         (List<(string Name, string Value)> Set, List<string> Changed, List<string> Outside) Plan(Dictionary<string, string> saved) =>
-            PortEnvironment.Plan(saved, v => env.GetValueOrDefault(v), "/home/kitten");
+            PortSettings.Plan(saved, v => env.GetValueOrDefault(v), "/home/kitten");
 
         var plan = Plan([]);
         Check(plan.Set.Count == 0 && plan.Changed.Count == 0, "the defaults set something");

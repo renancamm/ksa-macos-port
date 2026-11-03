@@ -1,5 +1,6 @@
 // The port settings that set a variable, for the native code (KSA Metal, the KTX shim): made from
-// port-settings.txt by KsaPortSettings (README.md in this folder), which build.sh runs. Edit the table, not this.
+// port-settings.txt by KsaPortSettingsGenerator (README.md in this folder), which build.sh runs. Edit the
+// table, not this.
 //
 // PORT_SETTING_<KEY> is the setting's variable and its default, as the readers take them:
 //   bool          "<variable>", <true | false>; with an on value of its own: "<variable>", "<on value>"

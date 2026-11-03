@@ -8,6 +8,7 @@ using Brutal.Numerics;
 using KSA;
 using KsaMetalHooks.App;
 using KsaMetalHooks.Patches;
+using KsaPortSettings;
 
 namespace KsaMetalHooks.Tab;
 

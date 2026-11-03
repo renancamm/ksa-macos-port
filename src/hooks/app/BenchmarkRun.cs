@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using HarmonyLib;
 using KSA;
 using KsaMetalBenchmark;
+using KsaPortSettings;
 
 namespace KsaMetalHooks.App;
 

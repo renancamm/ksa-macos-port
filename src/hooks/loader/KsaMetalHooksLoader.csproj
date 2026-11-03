@@ -1,10 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
-	<!-- The startup hook (Loader.cs) and the port settings it applies (PortEnvironment.cs, with the hooks'
-	     PortSettingsTable.cs). References nothing of the game. -->
+	<!-- The startup hook (Loader.cs) and the port settings it applies (PortEnvironment.cs, with the settings' library,
+	     src/settings/). References nothing of the game. -->
 	<PropertyGroup>
 		<AssemblyName>KsaMetalHooksLoader</AssemblyName>
 	</PropertyGroup>
 	<ItemGroup>
-		<Compile Include="../settings/PortSettingsTable.cs" />
+		<ProjectReference Include="../../settings/KsaPortSettings.csproj" />
 	</ItemGroup>
 </Project>

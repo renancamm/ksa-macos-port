@@ -34,7 +34,7 @@ folder_payload() {
         [ -f "${BUILD}/icon/AppIcon.icns" ] &&
         [ -f "${ASSEMBLIES}/bin/KsaMetalBenchmark/KsaMetalBenchmark.dll" ] &&
         [ -f "${ASSEMBLIES}/bin/KsaMetalHooks/KsaMetalHooks.dll" ] &&
-        [ -f "${ASSEMBLIES}/bin/KsaPortSettings/KsaPortSettings.dll" ] &&
+        [ -f "${ASSEMBLIES}/bin/KsaPortSettingsGenerator/KsaPortSettingsGenerator.dll" ] &&
         [ -f "${ASSEMBLIES}/bin/KsaPorter/KsaPorter.dll" ] ||
         die "the pieces of the port are not all built. Run ./build.sh."
     [ -f "${STARMAP}/StarMap.dll" ] && [ -f "${STARMAP}/StarMap.Core.dll" ] || die "the StarMap archive has an unexpected layout."
@@ -52,16 +52,17 @@ folder_payload() {
     cp "${REPO}/src/settings/port-settings.txt" "${contents}/Resources/"
     # What the tab's title says: the port's version
     cp "${OUT}/VERSION" "${contents}/Resources/VERSION"
-    dotnet "${ASSEMBLIES}/bin/KsaPortSettings/KsaPortSettings.dll" template "${REPO}/src/settings/port-settings.txt" \
+    dotnet "${ASSEMBLIES}/bin/KsaPortSettingsGenerator/KsaPortSettingsGenerator.dll" template "${REPO}/src/settings/port-settings.txt" \
         > "${contents}/Resources/port-settings.toml"
     cp -P "${NATIVES}"/*.dylib "${NATIVES}/Brutal.Monitor.Subprocess" "${contents}/Resources/"
     cp "${REPO}/third_party/fmod/libfmod.dylib" "${contents}/Resources/libfmod.dylib"
     chmod u+w "${contents}/Resources/libfmod.dylib"
     cp "${BUILD}/icon/AppIcon.icns" "${contents}/Resources/"
-    # KSA Metal Hooks, which the launcher loads and which apply the port settings (src/hooks/), with Harmony
+    # KSA Metal Hooks, which the launcher loads and which apply the port settings (src/hooks/), with the settings'
+    # library (src/settings/) and Harmony
     mkdir -p "${contents}/Resources/Hooks"
-    cp "${ASSEMBLIES}/bin/KsaMetalHooksLoader/KsaMetalHooksLoader.dll" \
-        "${ASSEMBLIES}/bin/KsaMetalHooks/KsaMetalHooks.dll" "${HARMONY_DLL}" "${contents}/Resources/Hooks/"
+    cp "${ASSEMBLIES}/bin/KsaMetalHooksLoader/KsaMetalHooksLoader.dll" "${ASSEMBLIES}/bin/KsaMetalHooks/KsaMetalHooks.dll" \
+        "${ASSEMBLIES}/bin/KsaPortSettings/KsaPortSettings.dll" "${HARMONY_DLL}" "${contents}/Resources/Hooks/"
     # The benchmark (src/benchmark/): its director, which the hooks start, the report program, the tour and its vehicles
     local bench="${contents}/Resources/Benchmark"
     mkdir -p "${bench}"

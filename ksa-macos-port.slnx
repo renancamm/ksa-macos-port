@@ -7,7 +7,6 @@
 	<Folder Name="/hooks/">
 		<Project Path="src/hooks/KsaMetalHooks.csproj" />
 		<Project Path="src/hooks/loader/KsaMetalHooksLoader.csproj" />
-		<Project Path="src/hooks/tests/KsaMetalHooksTests.csproj" />
 	</Folder>
 	<Folder Name="/ksa-metal/">
 		<Project Path="src/ksa-metal/entries/KsaMetalEntries.csproj" />
@@ -18,5 +17,7 @@
 	</Folder>
 	<Folder Name="/settings/">
 		<Project Path="src/settings/KsaPortSettings.csproj" />
+		<Project Path="src/settings/generator/KsaPortSettingsGenerator.csproj" />
+		<Project Path="src/settings/tests/KsaPortSettingsTests.csproj" />
 	</Folder>
 </Solution>

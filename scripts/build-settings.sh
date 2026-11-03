@@ -10,7 +10,7 @@ source "$(dirname "$0")/lib.sh"
 MODE=generate
 [ "${1:-dev}" = dev ] || MODE=check
 mkdir -p "${ASSEMBLIES}"
-dotnet_cli build "${REPO}/src/settings/KsaPortSettings.csproj" -c Release -nologo -v quiet -p:PortBuildDir="${ASSEMBLIES}" \
+dotnet_cli build "${REPO}/src/settings/generator/KsaPortSettingsGenerator.csproj" -c Release -nologo -v quiet -p:PortBuildDir="${ASSEMBLIES}" \
     -p:DebugType=none -nodeReuse:false > "${ASSEMBLIES}/settings-build.log" 2>&1 ||
     { cat "${ASSEMBLIES}/settings-build.log"; die "the port settings' generator didn't build."; }
-dotnet "${ASSEMBLIES}/bin/KsaPortSettings/KsaPortSettings.dll" "${MODE}" "${REPO}" || die "the port settings' checks failed."
+dotnet "${ASSEMBLIES}/bin/KsaPortSettingsGenerator/KsaPortSettingsGenerator.dll" "${MODE}" "${REPO}" || die "the port settings' checks failed."

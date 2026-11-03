@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<!-- The tests of the port settings' library (Tests.cs): the table's rules, port-settings.toml, the needs, the
+	     environment and what the loader sets. scripts/build-dotnet.sh runs them:
+	     dotnet KsaPortSettingsTests.dll <repository> -->
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<AssemblyName>KsaPortSettingsTests</AssemblyName>
+	</PropertyGroup>
+	<ItemGroup>
+		<ProjectReference Include="../KsaPortSettings.csproj" />
+	</ItemGroup>
+</Project>

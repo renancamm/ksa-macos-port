@@ -9,6 +9,7 @@ using System.Text.RegularExpressions;
 using HarmonyLib;
 using KSA;
 using KsaMetalHooks.App;
+using KsaPortSettings;
 
 namespace KsaMetalHooks.Tab;
 

@@ -12,5 +12,6 @@
 		<Compile Include="../report/*.cs" />
 		<Compile Include="../../porter/PortFolder.cs" />
 		<Compile Include="../shared/*.cs" />
+		<ProjectReference Include="../../settings/KsaPortSettings.csproj" />
 	</ItemGroup>
 </Project>

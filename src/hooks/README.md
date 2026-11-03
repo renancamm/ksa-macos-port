@@ -12,17 +12,16 @@ and test a change.
 | Path | What it holds |
 |---|---|
 | `Hooks.cs` | the list of hooks in the order they apply, and the rule they follow: `Skip`, `Find`, `Fail` |
+| `Settings.cs` | the settings as the hooks read them ([Settings](#settings)) |
 | [`patches/`](patches/) | the patches to the game's rendering and physics ([The patches](#the-patches)) |
 | [`app/`](app/) | the port's part of the game: Restart, the documents folder, windows and UI coordinates, displays, HDR, mods' generic patches, frame captures, the benchmark's runs ([The port's part of the game](#the-ports-part-of-the-game)) |
 | [`tab/`](tab/) | the Mac Port tab and its presets |
-| [`settings/`](settings/) | the code that reads the settings table ([`../settings/`](../settings/)) and `port-settings.toml` ([Settings](#settings)) |
 | [`loader/`](loader/) | the startup hook, which applies the settings and loads the hooks ([How they load](#how-they-load)) |
-| [`tests/`](tests/) | the tests of the code that needs no game ([Build and test](#build-and-test)) |
 
 Each folder of the hooks' assembly is a namespace of its own: `KsaMetalHooks.Patches`, `KsaMetalHooks.App`,
-`KsaMetalHooks.Tab`. `Hooks.cs` and `settings/` are `KsaMetalHooks`, the root: the settings table's reader
-(`PortSettingsTable.cs`) is compiled into the loader, the tests and the settings generator too, and the loader finds
-`KsaMetalHooks.Hooks` by that name.
+`KsaMetalHooks.Tab`; `Hooks.cs` and `Settings.cs` are `KsaMetalHooks`, the root, where the loader finds
+`KsaMetalHooks.Hooks`. The settings table, `port-settings.toml` and the environment are read by the port settings'
+library ([`../settings/`](../settings/)), which the loader and the hooks share.
 
 ## How they load
 
@@ -32,8 +31,8 @@ KSA itself, or StarMap, which loads KSA into a load context of its own. The load
 ([Settings](#settings)). Then it waits until `KSA.dll` is loaded, loads `KsaMetalHooks.dll` into the same load context
 and applies it; with the `hooks` setting off it stops after the settings, except for a benchmark run. It loads no
 Harmony itself: under StarMap, the hooks use the copy StarMap has already loaded; without StarMap, they find the app's
-copy next to them, in `Contents/Resources/Hooks/`. The benchmark's director, which the hooks start, is in
-`Contents/Resources/Benchmark/`.
+copy next to them, in `Contents/Resources/Hooks/`, with the settings' library. The benchmark's director, which the
+hooks start, is in `Contents/Resources/Benchmark/`.
 
 ## The rule every hook follows
 
@@ -106,7 +105,7 @@ The MetalFX entry points are KSA Metal's own ([`../ksa-metal/presentation/upscal
 | Hook | File | How |
 |---|---|---|
 | Presets | [`Presets.cs`](tab/Presets.cs) | the tab's Performance, Balanced and Quality, and Game Defaults with the same settings at their defaults (a new `GameSettings`, as the game's Reset makes; the table's defaults): each gives every game setting any of them sets (fields of `GameSettings` and `GameSettings.Graphics`, found by name when the game starts, each value checked against its type) and its port settings. The Mac's memory (`hw.memsize`; 8 GB or less: shadow maps and textures at most 2048) and chip (`machdep.cpu.brand_string`; M1 and M2: no `IVARayTracing`) decide some of them (not Game Defaults', the same on every Mac). In Fullscreen each also sets the Resolution to the size of the screen's desktop ([`Displays.cs`](app/Displays.cs): the GLFW shim's answer, the display's current mode or, while the game's Fullscreen has it switched, the one it had before), so the render scale alone sizes the 3D view and the display keeps its mode; Windowed and Borderless keep theirs. A preset's button sets them on the game's pending copy of its settings and as the tab's pending values, so the game's pending marks, Apply, Discard and restart popup handle them as any change |
-| Mac Port tab | [`MacPortTab.cs`](tab/MacPortTab.cs), [`MacPortWidgets.cs`](tab/MacPortWidgets.cs), [`PortSettings.cs`](settings/PortSettings.cs) | the settings window's rail gets a tab first, in a group of its own (its arrays are read-only fields, so the methods that read them read longer copies, and `OnDrawUi`'s `NavRail` call draws two groups), whose rows are drawn with the game's own widgets once the content's body has begun. The rows come from the table of the port settings (`Contents/Resources/port-settings.txt`), their values from `port-settings.toml`, and what the game runs with from the environment the loader set. The tab's pending values go with the game's pending copy of its settings, so the game's pending marks, Apply, Discard, Reset and Close, and its "restart required on apply" popup, all count them. Apply writes the changed lines into the file; live settings take effect at once. Under Render Scale a line gives the 3D view's size in pixels with the upscaling and render scale shown, worked out as [`RenderScale.cs`](patches/RenderScale.cs) does |
+| Mac Port tab | [`MacPortTab.cs`](tab/MacPortTab.cs), [`MacPortWidgets.cs`](tab/MacPortWidgets.cs) | the settings window's rail gets a tab first, in a group of its own (its arrays are read-only fields, so the methods that read them read longer copies, and `OnDrawUi`'s `NavRail` call draws two groups), whose rows are drawn with the game's own widgets once the content's body has begun. The rows come from the table of the port settings (`Contents/Resources/port-settings.txt`), their values from `port-settings.toml`, and what the game runs with from the environment the loader set. The tab's pending values go with the game's pending copy of its settings, so the game's pending marks, Apply, Discard, Reset and Close, and its "restart required on apply" popup, all count them. Apply writes the changed lines into the file; live settings take effect at once. Under Render Scale a line gives the 3D view's size in pixels with the upscaling and render scale shown, worked out as [`RenderScale.cs`](patches/RenderScale.cs) does |
 | Restart | [`Restart.cs`](app/Restart.cs) | the popup's Restart starts the game's own executable again, which in the app is .NET's `dotnet` with no program: the game only quits. A transpiler replaces that call: it starts the app again through macOS (`open -n`, which hands the app its own environment: the game's, without what the port settings set, and `KSA_PORT_WAIT`, the game's process id), and the new launcher waits until this game has quit. A process the game started itself would not survive: when the app was started from the Finder, macOS ends what a quitting app leaves running. The new game reads the port settings as any start does |
 | HDR brightness | [`Hdr.cs`](app/Hdr.cs) | the driver shows the game's HDR output with its HDR Paper White (Display) at the display's SDR white and tells macOS its HDR Peak Brightness ([Presentation](../ksa-metal/README.md#from-vulkan-to-metal)); the game keeps paper white to itself and sends the peak only when it rebuilds the swapchain: a postfix on `GameSettings.ApplyTo(GlfwWindow)`, where the game hands its Display settings to its renderer when it starts and at every Apply, passes `HdrOutput.PaperWhiteNits` and `PeakNits` to the driver (`ksaMtlHdrNits`). Without it, the driver takes the game's defaults, 200 and 1000 nits, and the peak the swapchain was built with |
 | Generic detours | [`GenericDetours.cs`](app/GenericDetours.cs) | mods' Harmony patches on generic methods over reference types: on arm64, MonoMod stops at the method's instantiating stub, so the arguments arrive shifted by one or the patch never runs, and it crashes the game when a mod reads them. The first hook, so before any mod patches: each detour starts from the shared method, read from the stub's jump. It changes nothing in the game. It also keeps these patches running after tiered compilation, which x64 doesn't. As on x64, a patch on `M<string>` also runs for `M<object>`, and of patches on both only the last one runs. Limits: with arguments on the stack, direct calls skip the patch (the log says so); a shared method returning a struct through a return buffer, or a virtual method of a generic struct over a reference type, can't be patched (MonoMod's errors, with or without this); constructors aren't covered; a mod with its own copy of Harmony isn't covered; with the hooks off, it isn't applied |
@@ -120,14 +119,15 @@ The MetalFX entry points are KSA Metal's own ([`../ksa-metal/presentation/upscal
 ## Settings
 
 The hooks, KSA Metal and its shims read environment variables, which the loader sets from `port-settings.toml` when
-the game starts ([`loader/PortEnvironment.cs`](loader/PortEnvironment.cs), with the table and file reading of
-[`PortSettingsTable.cs`](settings/PortSettingsTable.cs), which the hooks share); one set before the game starts wins
-over the file, and the Mac Port tab shows its row as set outside. The loader sets each variable twice, for .NET, which
-keeps its own copy of the environment, and with `setenv` for KSA Metal and the shims, which read theirs when the game
-first uses them. It also sends the game's output to `console.log` and copies the file's template for a new player. The
-table [`../settings/port-settings.txt`](../settings/port-settings.txt) lists every setting with its variable, its values and
-its default, and the hooks read their settings against it ([`Settings.cs`](settings/Settings.cs)): a variable that is
-unset, or holds none of the setting's values, means the default (`console.log` says which). Those of the hooks:
+the game starts ([`loader/PortEnvironment.cs`](loader/PortEnvironment.cs), with the settings' library
+[`../settings/`](../settings/)); one set before the game starts wins over the file, and the Mac Port tab shows its row
+as set outside. The loader sets each variable twice, for .NET, which keeps its own copy of the environment, and with
+`setenv` for KSA Metal and the shims, which read theirs when the game first uses them. It also sends the game's output
+to `console.log` and copies the file's template for a new player. The table
+[`../settings/port-settings.txt`](../settings/port-settings.txt) lists every setting with its variable, its values and
+its default, and the hooks read their settings against it ([`Settings.cs`](Settings.cs)): a variable that is unset,
+holds none of the setting's values (`console.log` says which), or belongs to a setting whose needs aren't met means the
+default. Those of the hooks:
 
 | Variable | Setting |
 |---|---|
@@ -156,16 +156,13 @@ To find out which patch causes a problem, turn it off in the Mac Port tab (Optim
 
 ## Build and test
 
-`./build.sh` builds both assemblies against the KSA it is given, with the benchmark
+`./build.sh` builds both assemblies against the KSA it is given, with the settings' library and the benchmark
 ([`scripts/build-dotnet.sh`](../../scripts/build-dotnet.sh)): `KSA.dll` and the benchmark's director are references
 only. Harmony comes from the `Lib.Harmony` package on nuget.org, pinned in
 [`cmake/dependencies.cmake`](../../cmake/dependencies.cmake).
 
-The build then runs the tests of the code that needs no game ([`tests/`](tests/)), and stops when one fails: every
-line of the settings table keeps the table's rules (a default among its values, needs that exist, without a loop,
-the kinds the tab draws), the hooks it names and the settings the hooks read exist, and reading and writing
-`port-settings.toml`, the needs, the values read back from the environment and what the loader sets work as they
-should.
+Before it, the port settings' generator checks that the hooks the table names and the settings the hooks read exist
+([`../settings/`](../settings/)), and stops the build when they don't.
 
 For the patches, the benchmark is the test. `--port` changes a port setting for one run, and the report lists the port settings and
 what the hooks did:

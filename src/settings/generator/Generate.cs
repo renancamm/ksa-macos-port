@@ -4,14 +4,14 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
-using KsaMetalHooks;
+using KsaPortSettings;
 
-// What is made from the table of the port settings (port-settings.txt next to this file), and the checks that keep the
-// rest of the repository in step with it (README.md in this folder):
+// What is made from the table of the port settings (src/settings/port-settings.txt), and the checks that keep the rest
+// of the repository in step with it (src/settings/README.md):
 //
-//   KsaPortSettings template <table>   the commented template of port-settings.toml, to standard output
-//   KsaPortSettings generate <repo>    port-settings.h written again when the table changed, then the checks
-//   KsaPortSettings check <repo>       the checks, with port-settings.h as it is: stale counts as a problem
+//   KsaPortSettingsGenerator template <table>   the commented template of port-settings.toml, to standard output
+//   KsaPortSettingsGenerator generate <repo>    port-settings.h written again when the table changed, then the checks
+//   KsaPortSettingsGenerator check <repo>       the checks, with port-settings.h as it is: stale counts as a problem
 //
 // Exits with 1 when a check fails.
 internal static class Generate
@@ -31,7 +31,7 @@ internal static class Generate
                 case ["generate" or "check", var repo]:
                     return Check(Path.GetFullPath(repo), write: args[0] == "generate");
                 default:
-                    Console.Error.WriteLine("usage: KsaPortSettings template <table> | generate <repo> | check <repo>");
+                    Console.Error.WriteLine("usage: KsaPortSettingsGenerator template <table> | generate <repo> | check <repo>");
                     return 2;
             }
         }
@@ -128,7 +128,8 @@ internal static class Generate
     {
         var t = new StringBuilder("""
             // The port settings that set a variable, for the native code (KSA Metal, the KTX shim): made from
-            // port-settings.txt by KsaPortSettings (README.md in this folder), which build.sh runs. Edit the table, not this.
+            // port-settings.txt by KsaPortSettingsGenerator (README.md in this folder), which build.sh runs. Edit the
+            // table, not this.
             //
             // PORT_SETTING_<KEY> is the setting's variable and its default, as the readers take them:
             //   bool          "<variable>", <true | false>; with an on value of its own: "<variable>", "<on value>"
@@ -159,6 +160,23 @@ internal static class Generate
     private static readonly string[] AppleVariables = ["MTL_SHADER_VALIDATION", "MTL_DEBUG_LAYER"];
 
     private static string Macro(PortSetting s) => "PORT_SETTING_" + s.Key.ToUpperInvariant();
+
+    // The hooks against the table: the hook column names hooks that Hooks.Apply runs (otherwise the tab couldn't show
+    // the setting as unavailable), every key the hooks read is in the table (Settings.Load would throw, and no hook
+    // would apply), and every live setting with a variable is read by them (the tab's Apply only changes what they read)
+    private static void HooksCheck(Dictionary<string, string> code, List<string> problems)
+    {
+        var hooks = Regex.Matches(code["src/hooks/Hooks.cs"], @"Run\(""[^""]+"", ""([a-z_]+)""").Select(m => m.Groups[1].Value).ToHashSet();
+        foreach (var s in PortSettings.All.Where(s => s.Hook.Length > 0 && !hooks.Contains(s.Hook)))
+            problems.Add($"{s.Key}: its hook {s.Hook} isn't one Hooks.Apply runs (src/hooks/Hooks.cs).");
+        var read = code.Where(c => c.Key.StartsWith("src/hooks/") && c.Key.EndsWith(".cs"))
+            .SelectMany(c => Regex.Matches(c.Value, @"(?:Settings\.(?:Value|On|Number|Numbers|Get)|\bGet)\(""([a-z_0-9]+)""\)"))
+            .Select(m => m.Groups[1].Value).ToHashSet();
+        foreach (var key in read.Where(k => PortSettings.Get(k) == null))
+            problems.Add($"the hooks read {key}, which isn't in the table.");
+        foreach (var s in PortSettings.All.Where(s => s.Live && s.Variable.Length > 0 && !read.Contains(s.Key)))
+            problems.Add($"{s.Key} is live, but no hook reads it.");
+    }
 
     // The checks: port-settings.h made from the table; every variable the table has named in a README, the driver's,
     // the KTX shim's and the hooks' in their own README when their code reads it; every variable a README names in the
@@ -207,12 +225,13 @@ internal static class Generate
             foreach (var component in new[] { "ksa-metal", "ktx-shim" })
                 if (code.Any(c => c.Key.StartsWith($"src/{component}/") && Regex.IsMatch(c.Value, $@"\b{Macro(s)}\b")))
                     readers.Add($"src/{component}/README.md");
-            if (code.Any(c => c.Key.StartsWith("src/hooks/") && !c.Key.StartsWith("src/hooks/tests/") && c.Key.EndsWith(".cs") &&
+            if (code.Any(c => c.Key.StartsWith("src/hooks/") && c.Key.EndsWith(".cs") &&
                     Regex.IsMatch(c.Value, $@"\b(?:Settings\.)?(?:On|Value|Number|Numbers|Get)\(\s*""{s.Key}""")))
                 readers.Add("src/hooks/README.md");
             foreach (var readme in readers.Where(r => !Names(readmes[r], s.Variable)))
                 problems.Add($"{s.Key}: {readme} doesn't name {s.Variable}, which its code reads.");
         }
+        HooksCheck(code, problems);
         var known = variables.Select(s => s.Variable).Concat(AppleVariables).ToHashSet();
         foreach (var (path, text) in readmes)
             foreach (var name in Regex.Matches(text, @"\b(?:KSA|MTL)_[A-Z0-9_]*[A-Z0-9]\b").Select(m => m.Value).Distinct())

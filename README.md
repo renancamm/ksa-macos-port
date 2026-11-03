@@ -170,7 +170,7 @@ cd ksa-macos-port
 
 That makes `dist/ksa-macos-port/`, a port folder like a release's; `./build.sh --install` also puts its files into the
 installed app. The native libraries are a CMake project ([`CMakeLists.txt`](CMakeLists.txt)), and the porter, the
-hooks, the benchmark and the two generators are .NET projects of one solution
+hooks, the benchmark, the port settings' library and the two generators are .NET projects of one solution
 ([`ksa-macos-port.slnx`](ksa-macos-port.slnx)), which an editor can open after a first build. The hooks and the
 benchmark are built against the installed app's KSA, or another one with `--ksa <archive>`, and the port folder is
 made for that KSA version. Everything the build downloads is declared in
@@ -183,8 +183,9 @@ variables and defaults the native code reads, from the settings table ([`src/set
 a release only checks that they match.
 
 Warnings are errors in the native libraries and the .NET projects, and the build runs the tests of the driver, the
-porter, the hooks and the benchmark. The scripts run on macOS's own bash 3.2 and are kept clean of ShellCheck's findings
-([`.shellcheckrc`](.shellcheckrc)); [`.editorconfig`](.editorconfig) says how the sources are written.
+porter, the port settings and the benchmark. The scripts run on macOS's own bash 3.2 and are kept clean of
+ShellCheck's findings ([`.shellcheckrc`](.shellcheckrc)); [`.editorconfig`](.editorconfig) says how the sources are
+written.
 
 Releases are made with `release.sh <ksa_linux_vX.tar.gz>`. It builds the port folder from a clean copy of the
 committed sources, zips it, and tests the zip by making an app with it and running the benchmark on that app with a
@@ -269,14 +270,14 @@ build.sh, release.sh        make the port folder; make a release of it
 scripts/                    the build's steps, and lib.sh
 CMakeLists.txt, cmake/      the native build, and every external source the build uses (dependencies.cmake)
 CMakePresets.json           how CMake is run: Ninja, Release, deps/build/cmake/
-ksa-macos-port.slnx         the .NET projects: the porter, the hooks, the benchmark and the two generators
+ksa-macos-port.slnx         the .NET projects: the porter, the hooks, the benchmark, the settings and the generators
 global.json                 the .NET SDK version that builds them
 src/port-folder/            the port folder's commands and lib/common.sh, which they share
 src/porter/                 the porter: the program the commands run, the shader edits and tests, with its own README
 src/launcher/               the app's executable
 src/glfw-shim/              the GLFW shim
 src/ktx-shim/               the KTX shim, with its own README
-src/settings/               the port settings: their table and its generator, with their own README
+src/settings/               the port settings: their table, library and generator, with their own README
 src/ksa-metal/              the driver and its tests, with its own README
 src/hooks/                  KSA Metal Hooks and their loader, with their own README
 src/benchmark/              the benchmark: its command, programs, tests and vehicles, with its own README

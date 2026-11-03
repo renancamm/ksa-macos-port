@@ -1,12 +1,13 @@
 #!/bin/bash
 # The port's .NET projects (ksa-macos-port.slnx) -> deps/build/assemblies/bin/: the porter, KSA Metal Hooks and their
-# loader, the benchmark's director and report program, the port settings' generator, and the tests, which run here
+# loader, the benchmark's director and report program, the port settings' library and generator, and the tests, which
+# run here
 #
 # The hooks (src/hooks/) and the director (src/benchmark/director/) are compiled against KSA's assemblies, references
 # only: they are built for the KSA version the port folder is made for, and the hooks skip what moved in another one.
-# The porter, the loader, the report program and the tests reference nothing of the game. With --convert, the
-# assemblies are an archive's or a folder's copy: the porter, built first, converts them (convert-dotnet). Each
-# project's output is in a folder of its own there, by the project's name (src/Directory.Build.props); the SDK is the
+# The porter, the settings' library, the loader, the report program and the tests reference nothing of the game. With
+# --convert, the assemblies are an archive's or a folder's copy: the porter, built first, converts them
+# (convert-dotnet). Each project's output is in a folder of its own there, by the project's name (src/Directory.Build.props); the SDK is the
 # one global.json picks.
 #
 # Usage: scripts/build-dotnet.sh <folder with KSA's assemblies> [--convert]
@@ -38,5 +39,5 @@ dotnet_cli build "${REPO}/ksa-macos-port.slnx" "${BUILD_OPTIONS[@]}" -p:KsaDir="
     { cat "${WORK}/build.log"; die "the .NET build failed (does this KSA version still match?)."; }
 
 dotnet "${ASSEMBLIES}/bin/KsaPorterTests/KsaPorterTests.dll" "${REPO}" || die "the porter's tests failed."
-dotnet "${ASSEMBLIES}/bin/KsaMetalHooksTests/KsaMetalHooksTests.dll" "${REPO}" || die "the hooks' tests failed."
+dotnet "${ASSEMBLIES}/bin/KsaPortSettingsTests/KsaPortSettingsTests.dll" "${REPO}" || die "the port settings' tests failed."
 dotnet "${ASSEMBLIES}/bin/KsaMetalBenchmarkTests/KsaMetalBenchmarkTests.dll" || die "the benchmark's tests failed."

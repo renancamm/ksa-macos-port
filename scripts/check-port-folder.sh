@@ -26,7 +26,8 @@ for f in port.sh starmap.sh benchmark.sh README.md LICENSE THIRD_PARTY_NOTICES.m
     payload/app/Contents/Resources/port-settings.txt payload/app/Contents/Resources/port-settings.toml \
     payload/app/Contents/Resources/VERSION \
     payload/app/Contents/Resources/Hooks/KsaMetalHooksLoader.dll \
-    payload/app/Contents/Resources/Hooks/KsaMetalHooks.dll payload/app/Contents/Resources/Hooks/0Harmony.dll; do
+    payload/app/Contents/Resources/Hooks/KsaMetalHooks.dll payload/app/Contents/Resources/Hooks/KsaPortSettings.dll \
+    payload/app/Contents/Resources/Hooks/0Harmony.dll; do
     [ -e "${FOLDER}/${f}" ] || problem "${f} is missing"
 done
 for f in port.sh starmap.sh benchmark.sh payload/app/Contents/MacOS/KSA \
