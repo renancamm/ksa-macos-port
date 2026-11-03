@@ -53,6 +53,12 @@ load_deps() {
     source "${CMAKE_TREE}/deps.sh"
 }
 
+# dotnet_cli <args...>: dotnet as the build runs it: the SDK's state and the packages it restores in the build tree
+dotnet_cli() {
+    DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 \
+        DOTNET_CLI_HOME="${ASSEMBLIES}/home" NUGET_PACKAGES="${ASSEMBLIES}/nuget" dotnet "$@"
+}
+
 # dotnet_sdk_version: the .NET SDK that builds the benchmark and the hooks, as global.json picks it for this
 # repository
 dotnet_sdk_version() {

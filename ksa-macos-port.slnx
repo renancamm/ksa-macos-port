@@ -9,4 +9,7 @@
 		<Project Path="src/hooks/loader/KsaMetalHooksLoader.csproj" />
 		<Project Path="src/hooks/tests/KsaMetalHooksTests.csproj" />
 	</Folder>
+	<Folder Name="/settings/">
+		<Project Path="src/settings/KsaPortSettings.csproj" />
+	</Folder>
 </Solution>

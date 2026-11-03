@@ -1,6 +1,7 @@
 <Project>
-	<!-- What the port's .NET projects share: the hooks (hooks/), their loader and tests, and the benchmark's director,
-	     report program and tests (benchmark/). scripts/build-dotnet.sh builds them all, from ksa-macos-port.slnx. -->
+	<!-- What the port's .NET projects share: the hooks (hooks/), their loader and tests, the benchmark's director,
+	     report program and tests (benchmark/), and the port settings' generator (settings/). scripts/build-dotnet.sh
+	     builds them all, from ksa-macos-port.slnx. -->
 	<PropertyGroup>
 		<TargetFramework>net10.0</TargetFramework>
 		<ImplicitUsings>disable</ImplicitUsings>

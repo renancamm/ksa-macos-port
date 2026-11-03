@@ -27,7 +27,7 @@ target_compile_options(ksa-metal-objects PUBLIC ${KSA_MTL_OPT} -g -Wall -Werror 
 target_include_directories(ksa-metal-objects INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_features(ksa-metal-objects PUBLIC cxx_std_17)
 target_link_libraries(ksa-metal-objects PUBLIC
-    Vulkan::Headers spirv-cross-msl spirv-cross-glsl spirv-cross-core SPIRV-Tools-link SPIRV-Tools-opt SPIRV-Tools-static
+    port-settings Vulkan::Headers spirv-cross-msl spirv-cross-glsl spirv-cross-core SPIRV-Tools-link SPIRV-Tools-opt SPIRV-Tools-static
     "-framework Metal" "-framework MetalFX" "-framework QuartzCore" "-framework Foundation" "-framework CoreGraphics" "-framework ImageIO"
     "-framework UniformTypeIdentifiers" "-framework AppKit" "-framework CoreImage")
 

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<!-- The table's generator and checks (Generate.cs), a build tool: build.sh runs it before the native build. It
+	     reads the table with the hooks' own reader. -->
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<AssemblyName>KsaPortSettings</AssemblyName>
+		<UseAppHost>false</UseAppHost>
+	</PropertyGroup>
+	<ItemGroup>
+		<Compile Include="../hooks/settings/PortSettingsTable.cs" />
+	</ItemGroup>
+</Project>

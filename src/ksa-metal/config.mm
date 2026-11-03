@@ -1,6 +1,7 @@
 // The KSA_MTL_* environment variables, read once into KConfig (kmtl.h), and the log they set up (KSA_MTL_LOG,
 // KSA_MTL_LOG_FILE). README.md documents them: "Configuration" has the switches, "Test" the debugging variables.
 #include "kmtl.h"
+#include "port-settings.h"
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -19,60 +20,70 @@ static bool envOn(const char* name, bool def) {
     const char* v = env(name);
     return v && !strcmp(v, "0") ? false : v && !strcmp(v, "1") ? true : def;
 }
+// A switch whose on value is a word of its own (KSA_MTL_SYNC=strict)
+static bool envIs(const char* name, const char* on) {
+    const char* v = env(name);
+    return v && !strcmp(v, on);
+}
+static double envNumber(const char* name, double def) {
+    const char* v = env(name);
+    return v ? atof(v) : def;
+}
+// A switch whose default is another's value, not its own in the table
+static bool envOnOr(const char* name, bool /* the table's default */, bool def) { return envOn(name, def); }
 
 const KConfig& kmtlConfig() {
     static const KConfig config = [] {
         KConfig c;
         // Switches
-        c.tessellation = envOn("KSA_MTL_TESSELLATION", true);
-        c.tessFuse = envOn("KSA_MTL_TESS_FUSE", true);
-        c.rayQuery = envOn("KSA_MTL_RAYQUERY", true);
-        c.rtPipeline = c.rayQuery && envOn("KSA_MTL_RTPIPELINE", true);
-        c.asyncPipelines = envOn("KSA_MTL_ASYNC_PIPELINES", true);
-        c.cache = envOn("KSA_MTL_CACHE", true);
-        const char* sync = env("KSA_MTL_SYNC");
-        c.strictSync = sync && !strcmp(sync, "strict");
-        c.safeMath = envOn("KSA_MTL_SAFE_MATH", false);
-        c.constantArgumentBuffers = envOn("KSA_MTL_AB_CONSTANT", true);
-        c.uncompressedTextures = envOn("KSA_MTL_UNCOMPRESSED_TEXTURES", true);
-        c.budgetMb = envInt("KSA_MTL_BUDGET_MB", 0);
-        c.presentPacing = envOn("KSA_MTL_PRESENT_PACING", true);
-        c.fxInterpolate = envOn("KSA_MTL_FX_INTERPOLATE", false);
-        c.hdr = envOn("KSA_MTL_HDR", true);
+        c.tessellation = envOn(PORT_SETTING_TESSELLATION);
+        c.tessFuse = envOn(PORT_SETTING_FUSED_TESSELLATION);
+        c.rayQuery = envOn(PORT_SETTING_RAY_QUERIES);
+        c.rtPipeline = c.rayQuery && envOn(PORT_SETTING_RAY_TRACING);
+        c.asyncPipelines = envOn(PORT_SETTING_BACKGROUND_SHADER_COMPILING);
+        c.cache = envOn(PORT_SETTING_SHADER_CACHE);
+        c.strictSync = envIs(PORT_SETTING_STRICT_SYNC);
+        c.safeMath = envOn(PORT_SETTING_PRECISE_MATH);
+        c.constantArgumentBuffers = envOn(PORT_SETTING_SHADER_CONSTANT_MEMORY);
+        c.uncompressedTextures = envOn(PORT_SETTING_SKIP_GPU_TEXTURE_COMPRESSION);
+        c.budgetMb = envInt(PORT_SETTING_TEXTURE_BUDGET_MB);
+        c.presentPacing = envOn(PORT_SETTING_VSYNC_PACING);
+        c.fxInterpolate = envOn(PORT_SETTING_FRAME_INTERPOLATION);
+        c.hdr = envOn(PORT_SETTING_HDR_OUTPUT);
         // Debugging
-        c.logLevel = envInt("KSA_MTL_LOG", 0);
-        c.logFile = env("KSA_MTL_LOG_FILE");
-        c.strictPipelines = envOn("KSA_MTL_STRICT", false);
+        c.logLevel = envInt(PORT_SETTING_LOG);
+        c.logFile = env(PORT_SETTING_LOG_FILE);
+        c.strictPipelines = envOn(PORT_SETTING_STRICT_PIPELINES);
         // A pipeline that fails on a worker has a handle already: strict errors need the game's thread
         if (c.strictPipelines) c.asyncPipelines = false;
-        c.dumpMsl = env("KSA_MTL_DUMP_MSL");
-        c.dumpSpv = env("KSA_MTL_DUMP_SPV");
-        c.corpus = env("KSA_MTL_CORPUS");
-        c.overrides = env("KSA_MTL_OVERRIDES");
-        c.spec = env("KSA_MTL_SPEC");
-        c.cacheDir = env("KSA_MTL_CACHE_DIR");
-        c.shots = env("KSA_MTL_SHOTS");
-        c.shotUnit = env("KSA_MTL_SHOT_UNIT");
-        c.shotDir = env("KSA_MTL_SHOT_DIR");
-        c.exitAfter = envInt("KSA_MTL_EXIT_AFTER", 0);
-        c.exitAfterSeconds = env("KSA_MTL_EXIT_AFTER_S") ? atof(env("KSA_MTL_EXIT_AFTER_S")) : 0;
-        c.exitAfterShots = envOn("KSA_MTL_EXIT_AFTER_SHOTS", false);
-        c.frames = env("KSA_MTL_FRAMES");
-        c.latency = env("KSA_MTL_LATENCY");
-        if (const char* st = env("KSA_MTL_STALLS")) c.stallMs = atof(st);
-        c.gpuprof = env("KSA_MTL_GPUPROF");
-        c.gpuprofFrames = env("KSA_MTL_GPUPROF_FRAMES");
-        c.gpuprofSplit = envOn("KSA_MTL_GPUPROF_SPLIT", false);
-        c.labels = envOn("KSA_MTL_LABELS", envOn("MTL_CAPTURE_ENABLED", false));
+        c.dumpMsl = env(PORT_SETTING_DUMP_MSL);
+        c.dumpSpv = env(PORT_SETTING_DUMP_SPV);
+        c.corpus = env(PORT_SETTING_SHADER_CORPUS);
+        c.overrides = env(PORT_SETTING_SHADER_OVERRIDES);
+        c.spec = env(PORT_SETTING_SPEC);
+        c.cacheDir = env(PORT_SETTING_CACHE_DIR);
+        c.shots = env(PORT_SETTING_SHOTS);
+        c.shotUnit = env(PORT_SETTING_SHOT_UNIT);
+        c.shotDir = env(PORT_SETTING_SHOT_DIR);
+        c.exitAfter = envInt(PORT_SETTING_EXIT_AFTER);
+        c.exitAfterSeconds = envNumber(PORT_SETTING_EXIT_AFTER_S);
+        c.exitAfterShots = envOn(PORT_SETTING_EXIT_AFTER_SHOTS);
+        c.frames = env(PORT_SETTING_FRAMES);
+        c.latency = env(PORT_SETTING_LATENCY);
+        c.stallMs = envNumber(PORT_SETTING_STALLS);
+        c.gpuprof = env(PORT_SETTING_GPU_PROFILE);
+        c.gpuprofFrames = env(PORT_SETTING_GPU_PROFILE_FRAMES);
+        c.gpuprofSplit = envOn(PORT_SETTING_GPU_PROFILE_SPLIT);
+        c.labels = envOnOr(PORT_SETTING_LABELS, envOn(PORT_SETTING_FRAME_CAPTURE));
         c.gpuErrors = envOn("KSA_MTL_GPU_ERRORS", false);
         c.watch = env("KSA_MTL_WATCH");
         c.watchWhite = env("KSA_MTL_WATCH_WHITE") ? atof(env("KSA_MTL_WATCH_WHITE")) : 30;
-        c.fxDebug = envOn("KSA_MTL_FX_DEBUG", false);
-        c.fxShots = env("KSA_MTL_FX_SHOTS");
-        c.throttle = env("KSA_MTL_THROTTLE");
-        c.uniformRefs = envOn("KSA_MTL_UNIFORM_REFS", true);
-        c.rtIntersector = envOn("KSA_MTL_RT_INTERSECTOR", true);
-        c.unlitShadowSkip = envOn("KSA_MTL_UNLIT_SHADOW_SKIP", true);
+        c.fxDebug = envOn(PORT_SETTING_FX_DEBUG);
+        c.fxShots = env(PORT_SETTING_FX_SHOTS);
+        c.throttle = env(PORT_SETTING_THROTTLE);
+        c.uniformRefs = envOn(PORT_SETTING_IN_PLACE_SHADER_PARAMETERS);
+        c.rtIntersector = envOn(PORT_SETTING_IVA_RAY_SEARCH);
+        c.unlitShadowSkip = envOn(PORT_SETTING_SKIP_SHADOWS_ON_UNLIT_SIDES);
         c.earlyFragmentTests = envOn("KSA_MTL_EARLY_FRAGMENT_TESTS", true);
         return c;
     }();

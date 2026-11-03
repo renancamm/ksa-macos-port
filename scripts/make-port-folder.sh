@@ -32,7 +32,8 @@ folder_payload() {
     [ -f "${NATIVES}/libvulkan.1.dylib" ] && [ -x "${NATIVES}/KSA" ] && [ -x "${DOTNET_RUNTIME}/dotnet" ] &&
         [ -f "${BUILD}/icon/AppIcon.icns" ] &&
         [ -f "${ASSEMBLIES}/bin/KsaMetalBenchmark/KsaMetalBenchmark.dll" ] &&
-        [ -f "${ASSEMBLIES}/bin/KsaMetalHooks/KsaMetalHooks.dll" ] ||
+        [ -f "${ASSEMBLIES}/bin/KsaMetalHooks/KsaMetalHooks.dll" ] &&
+        [ -f "${ASSEMBLIES}/bin/KsaPortSettings/KsaPortSettings.dll" ] ||
         die "the pieces of the port are not all built. Run ./build.sh."
     [ -f "${STARMAP}/StarMap.dll" ] && [ -f "${STARMAP}/StarMap.Core.dll" ] || die "the StarMap archive has an unexpected layout."
     step "Assembling ${OUT#"${REPO}/"}"
@@ -43,11 +44,11 @@ folder_payload() {
     mkdir -p "${contents}/Resources"
     ditto "${DOTNET_RUNTIME}" "${contents}/MacOS"
     cp "${NATIVES}/KSA" "${contents}/MacOS/KSA"
-    # The port settings: their table, and the commented template the hooks copy for the player
-    cp "${REPO}/src/hooks/settings/port-settings.txt" "${contents}/Resources/"
+    # The port settings: their table, and the commented template the hooks copy for the player (src/settings/)
+    cp "${REPO}/src/settings/port-settings.txt" "${contents}/Resources/"
     # What the tab's title says: the port's version
     cp "${OUT}/VERSION" "${contents}/Resources/VERSION"
-    bash "${REPO}/src/hooks/settings/make-port-settings.sh" "${REPO}/src/hooks/settings/port-settings.txt" \
+    dotnet "${ASSEMBLIES}/bin/KsaPortSettings/KsaPortSettings.dll" template "${REPO}/src/settings/port-settings.txt" \
         > "${contents}/Resources/port-settings.toml"
     cp -P "${NATIVES}"/*.dylib "${NATIVES}/Brutal.Monitor.Subprocess" "${contents}/Resources/"
     cp "${REPO}/third_party/fmod/libfmod.dylib" "${contents}/Resources/libfmod.dylib"

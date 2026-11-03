@@ -170,9 +170,9 @@ cd ksa-macos-port
 ```
 
 That makes `dist/ksa-macos-port/`, a port folder like a release's; `./build.sh --install` also puts its files into the
-installed app. The native libraries are a CMake project ([`CMakeLists.txt`](CMakeLists.txt)), and the hooks and the
-benchmark are .NET projects of one solution ([`ksa-macos-port.slnx`](ksa-macos-port.slnx)), which an editor can open
-after a first build. The hooks and the benchmark are built against the installed app's KSA, or another one with
+installed app. The native libraries are a CMake project ([`CMakeLists.txt`](CMakeLists.txt)), and the hooks, the
+benchmark and the port settings' generator are .NET projects of one solution
+([`ksa-macos-port.slnx`](ksa-macos-port.slnx)), which an editor can open after a first build. The hooks and the benchmark are built against the installed app's KSA, or another one with
 `--ksa <archive>`, and the port folder is made for that KSA version. Everything the build downloads is declared in
 [`cmake/dependencies.cmake`](cmake/dependencies.cmake).
 
@@ -262,14 +262,15 @@ build.sh, release.sh        make the port folder; make a release of it
 scripts/                    the build's steps, and lib.sh
 CMakeLists.txt, cmake/      the native build, and every external source the build uses (dependencies.cmake)
 CMakePresets.json           how CMake is run: Ninja, Release, deps/build/cmake/
-ksa-macos-port.slnx         the .NET projects: the hooks and the benchmark
+ksa-macos-port.slnx         the .NET projects: the hooks, the benchmark and the settings generator
 global.json                 the .NET SDK version that builds them
 src/port-folder/            the port folder's commands and lib/, its steps
 src/launcher/               the app's executable
 src/glfw-shim/              the GLFW shim
-src/ktx-shim/               the KTX shim
-src/ksa-metal/              the driver, with its own README
-src/hooks/                  KSA Metal Hooks, their loader and the settings table, with their own README
+src/ktx-shim/               the KTX shim, with its own README
+src/settings/               the port settings: their table and its generator, with their own README
+src/ksa-metal/              the driver and its tests, with its own README
+src/hooks/                  KSA Metal Hooks and their loader, with their own README
 src/benchmark/              the benchmark: its command, programs, tests and vehicles, with its own README
 src/Directory.Build.props   what the .NET projects share
 third_party/fmod/           FMOD's macOS library, with its licence and notice (not MIT)

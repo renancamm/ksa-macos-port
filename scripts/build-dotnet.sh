@@ -1,6 +1,6 @@
 #!/bin/bash
 # The port's .NET projects (ksa-macos-port.slnx) -> deps/build/assemblies/bin/: KSA Metal Hooks and their loader, the
-# benchmark's director and report program, and the tests of both, which run here
+# benchmark's director and report program, the port settings' generator, and the tests, which run here
 #
 # The hooks (src/hooks/) and the director (src/benchmark/director/) are compiled against KSA's assemblies, references
 # only: they are built for the KSA version the port folder is made for, and the hooks skip what moved in another one.
@@ -23,11 +23,8 @@ cd "${REPO}"
 
 step "Building the hooks and the benchmark against KSA $(game_version "${KSA_DIR}")" \
     "(.NET SDK $(dotnet_sdk_version), Harmony ${HARMONY_VERSION})"
-# No PDB: the port folder doesn't ship them, and a DLL built with one records its path. The SDK's state and the
-# packages it restores stay in the work folder.
-DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 \
-    DOTNET_CLI_HOME="${WORK}/home" NUGET_PACKAGES="${WORK}/nuget" \
-    dotnet build "${REPO}/ksa-macos-port.slnx" -c Release -nologo -v quiet \
+# No PDB: the port folder doesn't ship them, and a DLL built with one records its path
+dotnet_cli build "${REPO}/ksa-macos-port.slnx" -c Release -nologo -v quiet \
     -p:PortBuildDir="${WORK}" -p:DebugType=none -p:KsaDir="${KSA_DIR}" -p:HarmonyDll="${HARMONY_DLL}" -nodeReuse:false \
     > "${WORK}/build.log" 2>&1 ||
     { cat "${WORK}/build.log"; die "the .NET build failed (does this KSA version still match?)."; }

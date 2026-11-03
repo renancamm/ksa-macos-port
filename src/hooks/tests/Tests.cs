@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using KsaMetalHooks;
 
-// The tests of the port settings' code that runs without the game: the table (src/hooks/settings/port-settings.txt) and
+// The tests of the port settings' code that runs without the game: the table (src/settings/port-settings.txt) and
 // the rules its lines keep, reading and writing port-settings.toml, the needs, the values read back from the
 // environment, and the variables the loader sets. scripts/build-dotnet.sh runs them after building the hooks; a failure
 // stops the build.
@@ -82,7 +82,7 @@ internal static class Tests
     private static PortSetting Setting(string key) => PortSettings.Get(key) ?? throw new Exception($"no setting {key}");
 
     // The table's folder in the repository
-    private static string SettingsFolder => Path.Combine(_repo, "src", "hooks", "settings");
+    private static string SettingsFolder => Path.Combine(_repo, "src", "settings");
 
     private static string Source(params string[] path) => File.ReadAllText(Path.Combine([_repo, "src", "hooks", .. path]));
 

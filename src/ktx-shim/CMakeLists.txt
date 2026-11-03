@@ -18,6 +18,6 @@ set_target_properties(ktx-shim PROPERTIES
     BUILD_WITH_INSTALL_RPATH ON)
 target_compile_options(ktx-shim PRIVATE -O2 -Wall -Werror)
 target_compile_definitions(ktx-shim PRIVATE NDEBUG)
-target_link_libraries(ktx-shim PRIVATE brutal-ktx)
+target_link_libraries(ktx-shim PRIVATE brutal-ktx port-settings)
 
 add_custom_command(TARGET ktx-shim POST_BUILD COMMAND codesign -f -s - "$<TARGET_FILE:ktx-shim>" 2> /dev/null)

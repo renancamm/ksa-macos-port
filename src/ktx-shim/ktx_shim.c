@@ -33,6 +33,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "port-settings.h"
+
 #define DYLD_INTERPOSE(replacement, replacee) \
     __attribute__((used)) static struct { const void* replacement; const void* replacee; } \
     interpose_##replacee __attribute__((section("__DATA,__interpose"))) = \
@@ -62,10 +64,15 @@ static size_t g_count, g_capacity;
 static uint64_t g_fileBytes, g_cacheBytes, g_logged;
 static int g_enabled = -1;
 
+// A switch's variable: 0 is off and 1 on; anything else means its default, as the port settings' table reads it
+static bool envOn(const char* name, bool def) {
+    const char* v = getenv(name);
+    return v && !strcmp(v, "0") ? false : v && !strcmp(v, "1") ? true : def;
+}
+
 static bool enabled(void) {
     if (g_enabled < 0) {
-        const char* e = getenv("KSA_KTX_SHIM");
-        g_enabled = !(e && !strcmp(e, "0"));
+        g_enabled = envOn(PORT_SETTING_TEXTURE_FILE_MAPPING);
     }
     return g_enabled;
 }
@@ -138,7 +145,7 @@ static void cleanCache(const char* dir) {
 static char g_parent[1024], g_cacheDir[1024];
 static pthread_once_t g_cacheOnce = PTHREAD_ONCE_INIT;
 static void findCache(void) {
-    const char* custom = getenv("KSA_MTL_CACHE_DIR");
+    const char* custom = getenv(PORT_SETTING_CACHE_DIR);
     const char* home = getenv("HOME");
     if (custom && *custom) snprintf(g_parent, sizeof g_parent, "%s", custom);
     else if (home) snprintf(g_parent, sizeof g_parent, "%s/Library/Caches/ksa-metal", home);
