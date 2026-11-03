@@ -7,7 +7,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using KsaPort.Common;
 
-namespace KsaPort.Porter;
+namespace KsaPort.Cli;
 
 // port.sh --update: the newest release of the port, when it is newer than this folder, downloaded, checked against the
 // checksum GitHub publishes and unpacked into the folder's .update/. port.sh then replaces the folder's contents with

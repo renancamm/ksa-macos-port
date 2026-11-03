@@ -4,13 +4,13 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using KsaPort.Common;
-using KsaPort.Porter;
+using KsaPort.Cli;
 
-// The tests of the porter that need no game: the shader edits' format and rules on synthetic shaders, the port's own
-// .edits files, the ARM64 mark, the cleanup's ELF check and the versions. The build runs them (ctest) after the
-// build; a failure stops it.
+// The tests of the port's program that need no game: the shader edits' format and rules on synthetic shaders, the
+// port's own .edits files, the ARM64 mark, the cleanup's ELF check and the versions. The build runs them (ctest)
+// after the build; a failure stops it.
 //
-// Usage: dotnet KsaPort.Porter.Tests.dll <repository>
+// Usage: dotnet KsaPort.Cli.Tests.dll <repository>
 internal static class Tests
 {
     private static string _repo = "", _test = "", _scratch = "";
@@ -20,7 +20,7 @@ internal static class Tests
     private static int Main(string[] args)
     {
         _repo = Path.GetFullPath(args.Length > 0 ? args[0] : ".");
-        _scratch = Path.Combine(Path.GetTempPath(), $"ksa-porter-tests-{Environment.ProcessId}");
+        _scratch = Path.Combine(Path.GetTempPath(), $"ksa-port-cli-tests-{Environment.ProcessId}");
         var tests = new (string Name, Action Run)[]
         {
             ("the port's shader edits", PortEdits),
@@ -36,7 +36,7 @@ internal static class Tests
             ("the cleanup", Cleanup),
             ("versions", Versions),
         };
-        // The porter's messages stay out of the build's output
+        // The port program's messages stay out of the build's output
         var console = Console.Out;
         Console.SetOut(TextWriter.Null);
         foreach (var (name, run) in tests)
@@ -60,8 +60,8 @@ internal static class Tests
         foreach (var failure in Failures)
             Console.WriteLine($"FAILED {failure}");
         Console.WriteLine(Failures.Count == 0
-            ? $"    The porter's tests: {tests.Length} passed."
-            : $"    The porter's tests: {Failures.Count} failures.");
+            ? $"    The port program's tests: {tests.Length} passed."
+            : $"    The port program's tests: {Failures.Count} failures.");
         return Failures.Count == 0 ? 0 : 1;
     }
 

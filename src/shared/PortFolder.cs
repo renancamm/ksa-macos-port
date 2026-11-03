@@ -46,8 +46,8 @@ public static class Tool
     }
 }
 
-// The port folder the running program is in (the porter, in its lib/porter/), its VERSION file, and what the commands
-// share: KSA's versions, the archives in ~/Downloads, the apps this port made
+// The port folder the running program is in (the port's program, in its lib/port-cli/), its VERSION file, and what
+// the commands share: KSA's versions, the archives in ~/Downloads, the apps this port made
 public static class PortFolder
 {
     // The port's names, from lib/port.env, which the commands and the build (CMakeLists.txt) read them from too

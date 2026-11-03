@@ -1,7 +1,7 @@
 # The port folder, dist/ksa-macos-port/ (`cmake --install`): everything the port needs but the game. The native
 # components install their own files (port_folder_copy in their CMakeLists.txt) and BRUTAL's libraries theirs
 # (brutal.cmake); this file builds the .NET projects, installs them, the commands, the downloads the folder bundles,
-# the icon and the licences, and adds the tests of the port as a whole. App.cs (src/player/porter/) describes the
+# the icon and the licences, and adds the tests of the port as a whole. App.cs (src/player/port-cli/) describes the
 # app's layout.
 
 # What the build is made for: the KSA the hooks and the benchmark are compiled against (build.sh finds it: the
@@ -31,8 +31,8 @@ if(NOT EXISTS "${starmap_SOURCE_DIR}/StarMap.dll" OR NOT EXISTS "${starmap_SOURC
     message(FATAL_ERROR "the StarMap archive has an unexpected layout (${starmap_SOURCE_DIR})")
 endif()
 
-# The port folder's files made here: VERSION, the BRUTAL packages the porter checks the game's assemblies against,
-# and the port's names next to them (for the conversion below, which reads the folder's lib/)
+# The port folder's files made here: VERSION, the BRUTAL packages the port's program checks the game's assemblies
+# against, and the port's names next to them (for the conversion below, which reads the folder's lib/)
 set(stage "${CMAKE_BINARY_DIR}/port-folder")
 execute_process(COMMAND "${DOTNET}" --version WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
     OUTPUT_VARIABLE dotnet_sdk OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
@@ -76,22 +76,22 @@ add_custom_target(settings-checks ALL
 
 # The .NET projects (ksa-macos-port.slnx), against KSA_DIR's assemblies and Harmony; the hooks and the director are
 # built for that KSA version, and the hooks skip what moved in another. An archive's assemblies are converted first
-# (the porter's convert-dotnet), as port.sh converts a game.
+# (KsaPort.Cli convert-dotnet), as port.sh converts a game.
 set(harmony "${HARMONY_DIR}/lib/net10.0/0Harmony.dll")
 set(ksa_input "${KSA_DIR}/KSA.dll")
-set(keep_porter "")
+set(keep_port_cli "")
 if(convert)
-    # The porter compiles the changes' port/ code: every .cs of src/game/changes/ counts
-    port_dotnet_tool(PORTER "${PROJECT_SOURCE_DIR}/src/player/porter/KsaPort.Porter.csproj"
+    # The port's program compiles the changes' port/ code: every .cs of src/game/changes/ counts
+    port_dotnet_tool(PORT_CLI "${PROJECT_SOURCE_DIR}/src/player/port-cli/KsaPort.Cli.csproj"
         "${PROJECT_SOURCE_DIR}/src/shared/KsaPort.Common.csproj" "${PROJECT_SOURCE_DIR}/src/game/changes/README.md")
-    # The solution's build keeps the porter it converted with, so a failed build converts nothing twice
-    set(keep_porter ! -name KsaPort.Porter)
+    # The solution's build keeps the port's program it converted with, so a failed build converts nothing twice
+    set(keep_port_cli ! -name KsaPort.Cli)
     set(ksa_input "${KSA_DIR}/.converted")
     add_custom_command(OUTPUT "${ksa_input}"
-        COMMAND "${CMAKE_COMMAND}" -E env "KSA_PORT_FOLDER=${stage}" "${DOTNET}" "${PORTER}" convert-dotnet "${KSA_DIR}"
-            "${dotnet_runtime_SOURCE_DIR}"
+        COMMAND "${CMAKE_COMMAND}" -E env "KSA_PORT_FOLDER=${stage}" "${DOTNET}" "${PORT_CLI}" convert-dotnet
+            "${KSA_DIR}" "${dotnet_runtime_SOURCE_DIR}"
         COMMAND "${CMAKE_COMMAND}" -E touch "${ksa_input}"
-        DEPENDS "${PORTER}" "${KSA_DIR}/KSA.dll" "${stage}/lib/brutal.txt"
+        DEPENDS "${PORT_CLI}" "${KSA_DIR}/KSA.dll" "${stage}/lib/brutal.txt"
         JOB_POOL dotnet
         COMMENT "Converting KSA's assemblies" VERBATIM)
 endif()
@@ -106,7 +106,7 @@ add_custom_command(OUTPUT "${solution_stamp}"
     # so only what changed is compiled again
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${bin}"
     COMMAND find "${bin}" -mindepth 1 -maxdepth 1 ! -name KsaPort.Tools.EntriesGenerator
-        ! -name KsaPort.Tools.SettingsGenerator ${keep_porter} -exec rm -rf {} +
+        ! -name KsaPort.Tools.SettingsGenerator ${keep_port_cli} -exec rm -rf {} +
     COMMAND ${PORT_DOTNET} build "${PROJECT_SOURCE_DIR}/ksa-macos-port.slnx" ${PORT_DOTNET_BUILD} "-p:KsaDir=${KSA_DIR}"
         "-p:HarmonyDll=${harmony}"
     COMMAND "${CMAKE_COMMAND}" -E touch "${solution_stamp}"
@@ -128,11 +128,11 @@ set(folder "${PROJECT_SOURCE_DIR}/src/player/port-folder")
 set(res "${PORT_APP}/Resources")
 set(licenses "${res}/Licenses")
 
-# The commands, what they share, and the porter they run, with its shader edits
+# The commands, what they share, and the port's program they run, with its shader edits
 port_folder_copy("." "${folder}/port.sh" "${folder}/starmap.sh" "${folder}/benchmark.sh" "${folder}/README.md"
     "${PROJECT_SOURCE_DIR}/LICENSE" "${PROJECT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md" "${stage}/VERSION")
 port_folder_copy("lib" "${folder}/lib/common.sh" "${folder}/lib/port.env" "${stage}/lib/brutal.txt")
-port_folder_copy("lib/porter" "${bin}/KsaPort.Porter/")
+port_folder_copy("lib/port-cli" "${bin}/KsaPort.Cli/")
 
 # The app without the game: Microsoft's .NET runtime as published (its signatures stay), the settings table and its
 # template, the port's version for the Mac Port tab's title, FMOD, the icon
@@ -165,20 +165,20 @@ port_folder_copy_as("${licenses}/harmony/LICENSE.txt" "${harmony_license_SOURCE_
 
 # StarMap, which starmap.sh adds to an app: its release is its Windows build, of which only two files are
 # Windows-specific: StarMap.exe, a launcher the app doesn't need (the launcher runs StarMap.dll with the app's .NET
-# runtime), left out, and StarMap.dll's AMD64 mark, changed to ARM64 like KSA.dll's (the porter's mark-arm64). The rest
+# runtime), left out, and StarMap.dll's AMD64 mark, changed to ARM64 like KSA.dll's (KsaPort.Cli mark-arm64). The rest
 # is platform-neutral .NET.
 install(CODE "
     set(starmap \"\${CMAKE_INSTALL_PREFIX}/payload/starmap\")
     file(COPY \"${starmap_SOURCE_DIR}/\" DESTINATION \"\${starmap}\" PATTERN StarMap.exe EXCLUDE)
     file(GLOB assemblies \"\${starmap}/*.dll\")
-    execute_process(COMMAND \"${DOTNET}\" \"${bin}/KsaPort.Porter/KsaPort.Porter.dll\" mark-arm64 \${assemblies}
+    execute_process(COMMAND \"${DOTNET}\" \"${bin}/KsaPort.Cli/KsaPort.Cli.dll\" mark-arm64 \${assemblies}
         COMMAND_ERROR_IS_FATAL ANY)
     file(WRITE \"\${starmap}/version.txt\" \"${STARMAP_VERSION}\\n\")
 ")
 
 # The .NET projects' tests, which need no game
-add_test(NAME porter-tests
-    COMMAND "${DOTNET}" "${bin}/KsaPort.Porter.Tests/KsaPort.Porter.Tests.dll" "${PROJECT_SOURCE_DIR}")
+add_test(NAME port-cli-tests
+    COMMAND "${DOTNET}" "${bin}/KsaPort.Cli.Tests/KsaPort.Cli.Tests.dll" "${PROJECT_SOURCE_DIR}")
 add_test(NAME common-tests
     COMMAND "${DOTNET}" "${bin}/KsaPort.Common.Tests/KsaPort.Common.Tests.dll" "${PROJECT_SOURCE_DIR}")
 add_test(NAME benchmark-tests

@@ -345,7 +345,7 @@ internal static class Generate
         // labels on), the one it sets isn't
         foreach (Match m in Regex.Matches(Uses(code["src/game/driver/setup/config.mm"]), @"\bc\.(\w+) = ([^;]*);"))
             native["driver"] += "\n" + Regex.Replace(m.Groups[2].Value, $@"\bc\.(?!{m.Groups[1].Value}\b)", "cfg.");
-        // The hooks' code: their folder and the changes they apply, but the porter's code among those (port/)
+        // The hooks' code: their folder and the changes they apply, without the code the port's program runs (port/)
         var hooks = code.Where(c => (c.Key.StartsWith("src/game/hooks/") || c.Key.StartsWith("src/game/changes/")) &&
                 c.Key.EndsWith(".cs") && !c.Key.Contains("/port/"))
             .ToDictionary(c => c.Key, c => Uses(c.Value));

@@ -10,7 +10,7 @@
 	</PropertyGroup>
 	<ItemGroup>
 		<Compile Remove="loader/**" />
-		<!-- The changes to the game they apply (src/game/changes/), but the code the porter runs (port/) -->
+		<!-- The changes to the game they apply (src/game/changes/), but the code the port's program runs (port/) -->
 		<Compile Include="../changes/**/*.cs" Exclude="../changes/**/port/**" />
 		<Reference Include="$(KsaDir)/*.dll" Private="false" />
 		<Reference Include="$(HarmonyDll)" Private="false" />

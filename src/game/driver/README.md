@@ -180,7 +180,7 @@ fragment shader stores only to that mask (and doesn't discard or write depth) a 
 while `ksaMtlEarlyFragmentTests` says so: the hooks do while no part is selected, when the stores never run, so the
 image is the same. On an M5 at the game's own settings it takes the cockpit's GPU time from 23.9 ms to 21.2.
 
-At port time, the porter also edits the game's GLSL for speed
+At port time, the port's program also edits the game's GLSL for speed
 ([`../changes/optimizations/`](../changes/optimizations/)), three times with the same
 idea. The terrain's, the vessels' and the kitten's shaders multiply the sun's light by its soft shadows (32 shadow-map
 taps a pixel) also where that light is already zero, on every surface turned away from the sun; the cockpit's ray

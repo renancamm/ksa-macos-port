@@ -6,10 +6,10 @@ using System.Text;
 using System.Text.RegularExpressions;
 using KsaPort.Common;
 
-namespace KsaPort.Porter;
+namespace KsaPort.Cli;
 
 // The port's edits to the game's shaders (Content/Core/Shaders/): KSA compiles its GLSL shaders when it starts, so
-// the changes go into the sources. They are data, the .edits files in shader-edits/ next to the porter, from
+// the changes go into the sources. They are data, the .edits files in shader-edits/ next to the port's program, from
 // src/game/changes/ (README.md there describes the format): fixes/ the game needs on the port, features/ that a port
 // setting needs, optimizations/ that keep the same image, faster. Safe to run again: an edit made already is [OK].
 //

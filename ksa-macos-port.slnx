@@ -12,9 +12,9 @@
 		<Project Path="src/game/hooks/KsaMetal.Hooks.csproj" />
 		<Project Path="src/game/hooks/loader/KsaMetal.Hooks.Loader.csproj" />
 	</Folder>
-	<Folder Name="/porter/">
-		<Project Path="src/player/porter/KsaPort.Porter.csproj" />
-		<Project Path="src/player/porter/tests/KsaPort.Porter.Tests.csproj" />
+	<Folder Name="/port-cli/">
+		<Project Path="src/player/port-cli/KsaPort.Cli.csproj" />
+		<Project Path="src/player/port-cli/tests/KsaPort.Cli.Tests.csproj" />
 	</Folder>
 	<Folder Name="/shared/">
 		<Project Path="src/shared/KsaPort.Common.csproj" />

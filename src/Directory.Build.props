@@ -1,6 +1,6 @@
 <Project>
 	<!-- What the port's .NET projects share: the hooks and their loader (game/hooks/), the benchmark's director
-	     (game/benchmark/), the porter and its tests (player/porter/), the benchmark's program and its tests
+	     (game/benchmark/), the port's program and its tests (player/port-cli/), the benchmark's program and its tests
 	     (player/benchmark-cli/), the shared library and its tests (shared/), and the build's tools (build-tools/).
 	     The build (cmake/port-folder.cmake) builds them all, from ksa-macos-port.slnx. -->
 	<PropertyGroup>

@@ -1,6 +1,6 @@
 /*
- * KSA - the app's executable (Kitten Space Agency.app/Contents/MacOS/KSA), installed by the porter
- * (src/player/porter/App.cs) from the port folder.
+ * KSA - the app's executable (Kitten Space Agency.app/Contents/MacOS/KSA), installed by the port's program
+ * (src/player/port-cli/App.cs) from the port folder.
  *
  * Starts KSA (Contents/Resources/KSA.dll) with the .NET runtime in Contents/MacOS. As a program of the app, it makes
  * macOS treat the game as the app from its start, which Game Mode needs. It sets:

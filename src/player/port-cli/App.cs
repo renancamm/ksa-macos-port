@@ -3,7 +3,7 @@ using System.IO;
 using System.Linq;
 using KsaPort.Common;
 
-namespace KsaPort.Porter;
+namespace KsaPort.Cli;
 
 // "Kitten Space Agency.app": built around a converted game folder, or the port's files put into one again. The port's
 // part of the app is the port folder's payload/app/Contents/, the app without the game:

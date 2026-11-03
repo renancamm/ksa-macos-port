@@ -1,9 +1,9 @@
-# The porter
+# The port's program
 
-`KsaPort.Porter.dll` is the port's program: it does what `port.sh` and `starmap.sh` do. The commands are short bash
-scripts ([`../port-folder/`](../port-folder/)) that check the Mac and the folder, then start the porter on the port
-folder's own .NET runtime (`payload/app/Contents/MacOS/dotnet`, Microsoft's), so a player needs nothing installed. In
-the port folder it is `lib/porter/`, with its shader edits.
+`KsaPort.Cli.dll` is the port's program: it does what `port.sh` and `starmap.sh` do. The commands are short bash
+scripts ([`../port-folder/`](../port-folder/)) that check the Mac and the folder, then start it on the port folder's
+own .NET runtime (`payload/app/Contents/MacOS/dotnet`, Microsoft's), so a player needs nothing installed. In the port
+folder it is `lib/port-cli/`, with its shader edits.
 
 | File | What it holds |
 |---|---|
@@ -14,16 +14,16 @@ the port folder it is `lib/porter/`, with its shader edits.
 | [`Update.cs`](Update.cs) | `port.sh --update`: the newest release downloaded and checked |
 | [`tests/`](tests/) | the tests that need no game |
 
-The port folder, its `VERSION`, KSA's versions, the apps this port made and the messages are in the library the
-porter shares with the benchmark ([`../../shared/PortFolder.cs`](../../shared/PortFolder.cs)). The shader edits it
+The port folder, its `VERSION`, KSA's versions, the apps this port made and the messages are in the library it
+shares with the benchmark ([`../../shared/PortFolder.cs`](../../shared/PortFolder.cs)). The shader edits it
 makes are data, `.edits` files with the changes to the game they belong to
 ([`../../game/changes/`](../../game/changes/), whose README describes the format); the one edit made by code is there
-too ([`MilkyWay.cs`](../../game/changes/features/port/MilkyWay.cs)), and the porter compiles it.
+too ([`MilkyWay.cs`](../../game/changes/features/port/MilkyWay.cs)), and the port's program compiles it.
 
 The port's names (the app's name and bundle id, the oldest macOS, where releases are) are in
-[`../port-folder/lib/port.env`](../port-folder/lib/port.env), which the commands, CMake and the porter all read. File
-operations that macOS's tools do best stay theirs: `ditto` keeps Microsoft's signatures and the links in a copy, `tar`
-extracts the game, `plutil` reads and checks `Info.plist`, `xattr` removes the quarantine.
+[`../port-folder/lib/port.env`](../port-folder/lib/port.env), which the commands, CMake and the port's program all
+read. File operations that macOS's tools do best stay theirs: `ditto` keeps Microsoft's signatures and the links in a
+copy, `tar` extracts the game, `plutil` reads and checks `Info.plist`, `xattr` removes the quarantine.
 
 ## Commands
 
@@ -37,7 +37,7 @@ extracts the game, `plutil` reads and checks `Info.plist`, `xattr` removes the q
 
 It exits with 0 when done, 1 on a problem (the message says which), 2 on a wrong option, and 75 after
 `port --update` has put a newer release of the folder in `.update/`: `port.sh` then replaces the folder's contents
-with it (the porter runs from the folder, so it doesn't) and runs the new `port.sh` without `--update`.
+with it (the port's program runs from the folder, so it doesn't) and runs the new `port.sh` without `--update`.
 `KSA_PORT_RELEASE_API` points the update at another release's JSON, for a test.
 
 ## Test
@@ -50,7 +50,7 @@ For a change to the edits or the conversion, port the game's archive into a test
 
 ```bash
 dist/ksa-macos-port/port.sh --app /tmp/ksa-test/KSA.app ~/Downloads/ksa_linux_v2026.10.25.5707.tar.gz
-KsaPort.Porter edit-shaders <game folder>    # dotnet deps/build/assemblies/bin/KsaPort.Porter/KsaPort.Porter.dll
+KsaPort.Cli edit-shaders <game folder>    # dotnet deps/build/assemblies/bin/KsaPort.Cli/KsaPort.Cli.dll
 ```
 
 A second run on the same folder must print only `[OK]` lines and change nothing.

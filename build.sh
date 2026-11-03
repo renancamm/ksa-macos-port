@@ -53,7 +53,7 @@ if [ -z "${KSA_SOURCE}" ]; then
 fi
 
 # KSA's assemblies, for the benchmark and the hooks: an app's are converted already; an archive's or a folder's are copied
-# into deps/build/ksa/, and the build converts them there (the porter's convert-dotnet)
+# into deps/build/ksa/, and the build converts them there (KsaPort.Cli convert-dotnet)
 KSA_DIR="${BUILD}/ksa"
 rm -rf "${KSA_DIR}"
 mkdir -p "${KSA_DIR}"

@@ -2,9 +2,10 @@
 	<!-- What the port's programs share, in the game and outside it: the port settings (settings/: the table,
 	     port-settings.toml and the environment), the port folder's names and the apps this port made (PortFolder.cs),
 	     a benchmark run's options (RunOptions.cs), the screenshots' reader and comparison (Images.cs), and the
-	     benchmark's results and KSA Metal's measurements (Results.cs, DriverStats.cs). The hooks' loader, the hooks and
-	     the benchmark's director use it in the game, next to the hooks in the app's Hooks folder; the porter, the
-	     benchmark's report program, the settings' generator and the tests use it too. References nothing of the game. -->
+	     benchmark's results and KSA Metal's measurements (Results.cs, DriverStats.cs). The hooks' loader, the hooks
+	     and the benchmark's director use it in the game, next to the hooks in the app's Hooks folder; the port's
+	     program, the benchmark's report program, the settings' generator and the tests use it too. References nothing
+	     of the game. -->
 	<PropertyGroup>
 		<AssemblyName>KsaPort.Common</AssemblyName>
 		<RootNamespace>KsaPort.Common</RootNamespace>

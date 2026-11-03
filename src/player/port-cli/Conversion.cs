@@ -3,7 +3,7 @@ using System.IO;
 using System.Linq;
 using KsaPort.Common;
 
-namespace KsaPort.Porter;
+namespace KsaPort.Cli;
 
 // The conversion of a KSA game folder for macOS, in the order port.sh makes it: what macOS can't use goes, the .NET
 // files run on the app's .NET runtime, the shaders get the port's edits (ShaderEdits.cs). Each step is safe to run

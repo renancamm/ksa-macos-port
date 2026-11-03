@@ -5,16 +5,16 @@ using System.Text;
 using System.Text.RegularExpressions;
 using KsaPort.Common;
 
-namespace KsaPort.Porter;
+namespace KsaPort.Cli;
 
-// The edit for the hooks' Milky Way bake (features/milky-way-bake.edits), made by code, which the porter compiles: it
-// moves a whole block of MilkyWay.frag. The clouds' noise moves into a function, portMilkyWayClouds; main reads the
-// clouds through portMilkyWayCloudsAt, which takes them from the strip the hooks bind in milkyWayNoise's place (it
-// isn't square), or works them out as the game does. MilkyWayBake.comp, the compute shader that fills the strip, is
-// MilkyWay.frag without its inputs, outputs and main, the cubemap's binding replaced by the strip's: for each texel
-// of a strip that spans the band, the longitude -PI..PI across and sampleDir.y -BAND_HEIGHT..BAND_HEIGHT down (texel
-// centres), the clouds the fragment shader would see in that direction. Its patterns are Perl's, with ASCII classes
-// as Perl matched them on the shader's bytes ([ \t\r\n\f\v] for \s).
+// The edit for the hooks' Milky Way bake (features/milky-way-bake.edits), made by code, which the port's program
+// compiles: it moves a whole block of MilkyWay.frag. The clouds' noise moves into a function, portMilkyWayClouds;
+// main reads the clouds through portMilkyWayCloudsAt, which takes them from the strip the hooks bind in
+// milkyWayNoise's place (it isn't square), or works them out as the game does. MilkyWayBake.comp, the compute shader
+// that fills the strip, is MilkyWay.frag without its inputs, outputs and main, the cubemap's binding replaced by the
+// strip's: for each texel of a strip that spans the band, the longitude -PI..PI across and sampleDir.y
+// -BAND_HEIGHT..BAND_HEIGHT down (texel centres), the clouds the fragment shader would see in that direction. Its
+// patterns are Perl's, with ASCII classes as Perl matched them on the shader's bytes ([ \t\r\n\f\v] for \s).
 public static class MilkyWay
 {
     private const RegexOptions Lines = RegexOptions.Multiline | RegexOptions.CultureInvariant;

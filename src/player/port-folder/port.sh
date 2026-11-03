@@ -2,8 +2,8 @@
 # Turns the Linux release of Kitten Space Agency into a Mac app, ~/Applications/Kitten Space Agency.app, or updates
 # the one you have. Saves, settings and StarMap stay. ./port.sh --help lists the options.
 #
-# The port's program does the work (lib/porter/, src/player/porter/ in the repository). After --update it has put a
-# newer release of this folder in .update/: this script then replaces the folder's contents with it and runs the new
+# The port's program does the work (lib/port-cli/, src/player/port-cli/ in the repository). After --update it has put
+# a newer release of this folder in .update/: this script then replaces the folder's contents with it and runs the new
 # port.sh, without --update.
 set -eo pipefail
 source "$(dirname "$0")/lib/common.sh"
@@ -11,7 +11,7 @@ source "$(dirname "$0")/lib/common.sh"
 check_mac
 require_port_folder
 status=0
-run_porter port "$@" || status=$?
+run_port_cli port "$@" || status=$?
 [ "${status}" = 75 ] || exit "${status}"
 
 NEW="${PORT_FOLDER}/.update/ksa-macos-port"

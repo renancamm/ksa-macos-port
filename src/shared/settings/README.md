@@ -20,7 +20,7 @@ class's name, in the table as in the log.
 ## The library
 
 `KsaPort.Common.dll` is in the app's `Contents/Resources/Hooks/`, next to the hooks, in its `Benchmark/`, next to the
-report program, and in the port folder's `lib/porter/`. Who reads the settings with it:
+report program, and in the port folder's `lib/port-cli/`. Who reads the settings with it:
 
 | Reader | How |
 |---|---|
