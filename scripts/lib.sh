@@ -49,7 +49,7 @@ require_build_tools() {
 # load_deps: where CMake put each download, and the versions the port folder records (cmake/dependencies.cmake)
 load_deps() {
     [ -f "${CMAKE_TREE}/deps.sh" ] || die "the build tree has no deps.sh. Run ./build.sh."
-    # shellcheck source=/dev/null  # written by cmake/dependencies.cmake
+    # shellcheck source=/dev/null  # written by cmake/deps-file.cmake
     source "${CMAKE_TREE}/deps.sh"
 }
 

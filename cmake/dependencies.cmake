@@ -73,7 +73,7 @@ foreach(entry IN LISTS BRUTAL_PACKAGES)
     FetchContent_Declare(${name}
         URL https://api.nuget.org/v3-flatcontainer/${lower}/${version}/${lower}.${version}.nupkg
         URL_HASH SHA512=${sha512}
-        DOWNLOAD_NO_EXTRACT TRUE) # CMakeLists.txt takes the macOS libraries out of it
+        DOWNLOAD_NO_EXTRACT TRUE) # cmake/brutal.cmake takes the macOS libraries out of it
 endforeach()
 
 # The .NET runtime bundled into the app: Microsoft's osx-arm64 build, SHA-512 from Microsoft's release metadata
