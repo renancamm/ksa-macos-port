@@ -1,10 +1,13 @@
-# shellcheck shell=bash disable=SC2034  # the variables are the commands' and the steps'
-# Shared by the port's commands and the steps in lib/. Source it; it defines no behaviour of its own.
+# shellcheck shell=bash disable=SC2034  # the variables are the commands'
+# Shared by the port's commands (port.sh, starmap.sh, benchmark.sh) and the build. Source it; it defines no behaviour of
+# its own.
 #
-# Everything here runs on macOS's own bash 3.2 and base tools: the port folder needs nothing else installed.
-# The folder is what ./build.sh makes (dist/ksa-macos-port/) and what a release contains:
+# Everything here runs on macOS's own bash 3.2 and base tools: the port folder needs nothing else installed. The
+# commands' work is done by the port's program, lib/porter/KsaPorter.dll (src/porter/ in the repository), which
+# run_porter starts on the folder's .NET runtime. The folder is what ./build.sh makes (dist/ksa-macos-port/) and what a
+# release contains:
 #   port.sh, starmap.sh, benchmark.sh              the commands
-#   lib/                                           the steps they run, this file, brutal.txt
+#   lib/                                           this file, the porter with its shader edits, brutal.txt
 #   payload/app/Contents/                          the app without the game: launcher, .NET runtime, libraries,
 #                                                  hooks, benchmark, icon, licences
 #   payload/starmap/                               StarMap, which starmap.sh adds to the app
@@ -30,11 +33,9 @@ info() { echo "    $*"; }
 warn() { echo "    WARNING: $*" >&2; }
 die()  { echo "Error: $*" >&2; exit 1; }
 
-# run <step name> [args...]: runs lib/<name>.sh
-run() {
-    local name="$1"
-    shift
-    bash "${LIB}/${name}.sh" "$@"
+# run_porter <command> [args...]: the port's program, on this folder's .NET runtime
+run_porter() {
+    DOTNET_ROOT="${SKELETON}/MacOS" "${SKELETON}/MacOS/dotnet" "${LIB}/porter/KsaPorter.dll" "$@"
 }
 
 # version_file <key>: a value from the folder's VERSION file (version, ksa, commit)
@@ -47,7 +48,7 @@ version_file() {
 # A browser download marks every file as quarantined, and macOS then holds programs in it, like the .NET runtime the
 # benchmark's report runs on, for a Gatekeeper check: the folder's own files lose that mark.
 require_port_folder() {
-    [ -f "${PORT_FOLDER}/VERSION" ] && [ -x "${SKELETON}/MacOS/dotnet" ] ||
+    [ -f "${PORT_FOLDER}/VERSION" ] && [ -x "${SKELETON}/MacOS/dotnet" ] && [ -f "${LIB}/porter/KsaPorter.dll" ] ||
         die "${PORT_FOLDER} is not a complete port folder. Download a release, or build one with ./build.sh."
     xattr -dr com.apple.quarantine "${PORT_FOLDER}" 2> /dev/null || true
 }
@@ -108,15 +109,6 @@ check_ksa_match() {
         warn "this version of the port was made for KSA ${made_for}, not ${1}. Download the current Linux version" \
             "of KSA from https://ksa.ahwoo.com."
     fi
-}
-
-# install_starmap <folder>: a copy of the port folder's StarMap there (the launcher starts the game through the app's
-# Contents/Resources/StarMap, or through the folder KSA_STARMAP_DIR names)
-install_starmap() {
-    local target="$1"
-    rm -rf "${target}"
-    ditto "${PAYLOAD}/starmap" "${target}"
-    xattr -cr "${target}" 2> /dev/null || true
 }
 
 check_mac() {

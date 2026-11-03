@@ -25,9 +25,9 @@ namespace KsaMetalHooks;
 // in points (so picking and the UI's world positions stay right), while what the shaders see as the screen size is
 // the render size. The light clustering's tiles and the UI coverage mask follow the render size too, and UI code sees the
 // window's (UiCoordinates.cs). Pixel sizes measured on the window (the sun's glow, star and planet discs,
-// ground clutter's level of detail) are converted: the sun's radius here, the rest by the shader edits
-// convert-shaders.sh makes, from the window's height in the camera data. On a display without Retina at a render scale
-// of 1, the three sizes are one and nothing changes.
+// ground clutter's level of detail) are converted: the sun's radius here, the rest by the shader edits of
+// src/porter/shader-edits/features/window-size.edits, from the window's height in the camera data. On a display
+// without Retina at a render scale of 1, the three sizes are one and nothing changes.
 internal static class RenderScale
 {
     public static bool Scaled;  // the main view renders at another size than the window's in points

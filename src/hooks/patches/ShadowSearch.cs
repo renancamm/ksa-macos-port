@@ -10,7 +10,7 @@ namespace KsaMetalHooks;
 // The search now stops at 32 texels; cascades whose texels are 3 cm or more search as before. A penumbra is about
 // 1/200 of the height of what casts it, so a shadow within about 2 m of the camera cast from more than about 8 m
 // above it (30 m within 8 m of the camera, 85 m within 24 m) can find fewer of its casters and get a sharper edge;
-// no view tried showed it. The shadow edit of convert-shaders.sh reads the limit from the cascades' data, in its
+// no view tried showed it. The shader edit of shadow-search.edits reads the limit from the cascades' data, in its
 // spare _pad1 (0 without this patch: the game's search); a prefix on CascadedShadowMap.UploadCascades sets it before
 // the upload.
 internal static class ShadowSearch

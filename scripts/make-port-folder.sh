@@ -6,7 +6,8 @@
 #   scripts/make-port-folder.sh commands <version> <KSA version> <commit>
 #       Starts the folder anew with the commands, lib/, the notices and VERSION.
 #   scripts/make-port-folder.sh payload
-#       Adds payload/: the app without the game (app/Contents/), with the benchmark, and StarMap.
+#       Adds the porter (lib/porter/) and payload/: the app without the game (app/Contents/), with the benchmark, and
+#       StarMap.
 set -eo pipefail
 source "$(dirname "$0")/lib.sh"
 load_deps
@@ -20,7 +21,7 @@ folder_commands() {
     cp "${REPO}"/src/port-folder/lib/*.sh "${OUT}/lib/"
     chmod +x "${OUT}"/*.sh
     cp "${REPO}/LICENSE" "${REPO}/THIRD_PARTY_NOTICES.md" "${OUT}/"
-    # The BRUTAL packages the libraries come from, for lib/convert-dotnet.sh's version check
+    # The BRUTAL packages the libraries come from, for the porter's version check of the game's
     printf '%s\n' "${BRUTAL_PACKAGES[@]}" > "${OUT}/lib/brutal.txt"
     printf 'version=%s\nksa=%s\ncommit=%s\ndotnet_sdk=%s\n' "${version}" "${ksa}" "${commit}" "$(dotnet_sdk_version)" \
         > "${OUT}/VERSION"
@@ -33,11 +34,14 @@ folder_payload() {
         [ -f "${BUILD}/icon/AppIcon.icns" ] &&
         [ -f "${ASSEMBLIES}/bin/KsaMetalBenchmark/KsaMetalBenchmark.dll" ] &&
         [ -f "${ASSEMBLIES}/bin/KsaMetalHooks/KsaMetalHooks.dll" ] &&
-        [ -f "${ASSEMBLIES}/bin/KsaPortSettings/KsaPortSettings.dll" ] ||
+        [ -f "${ASSEMBLIES}/bin/KsaPortSettings/KsaPortSettings.dll" ] &&
+        [ -f "${ASSEMBLIES}/bin/KsaPorter/KsaPorter.dll" ] ||
         die "the pieces of the port are not all built. Run ./build.sh."
     [ -f "${STARMAP}/StarMap.dll" ] && [ -f "${STARMAP}/StarMap.Core.dll" ] || die "the StarMap archive has an unexpected layout."
     step "Assembling ${OUT#"${REPO}/"}"
-    rm -rf "${OUT}/payload"
+    rm -rf "${OUT}/payload" "${OUT}/lib/porter"
+    # The port's program, which the commands run (src/porter/), with its shader edits
+    ditto "${ASSEMBLIES}/bin/KsaPorter" "${OUT}/lib/porter"
 
     # The app without the game: launcher (src/launcher/launcher.c) and .NET runtime (ditto keeps Microsoft's
     # signatures), libraries and BRUTAL's crash-dump helper, icon
@@ -84,10 +88,10 @@ folder_payload() {
 
     # StarMap's release is its Windows build. Only two of its files are Windows-specific: StarMap.exe, a launcher the
     # app doesn't need (the launcher runs StarMap.dll with the app's .NET runtime), left out, and StarMap.dll's AMD64
-    # mark, changed to ARM64 like KSA.dll's (src/port-folder/lib/mark-arm64.sh). The rest is platform-neutral .NET.
+    # mark, changed to ARM64 like KSA.dll's (the porter's mark-arm64). The rest is platform-neutral .NET.
     ditto "${STARMAP}" "${OUT}/payload/starmap"
     rm -f "${OUT}/payload/starmap/StarMap.exe"
-    bash "${LIB}/mark-arm64.sh" "${OUT}"/payload/starmap/*.dll
+    dotnet "${ASSEMBLIES}/bin/KsaPorter/KsaPorter.dll" mark-arm64 "${OUT}"/payload/starmap/*.dll
     echo "${STARMAP_VERSION}" > "${OUT}/payload/starmap/version.txt"
 }
 

@@ -15,7 +15,7 @@ namespace KsaMetalHooks;
 // Milky Way bake. MilkyWay.frag draws the Milky Way's dust clouds for every pixel of the band it covers, from the view
 // direction alone: about 90 lookups of a noise texture each, 1 to 2 ms of a frame with much sky on an M5 (5 to 7 at the game's Milky
 // Way Quality Ultra). The port's shader edit
-// (src/port-folder/lib/convert-shaders.sh, 8) moves the clouds into a function, and makes MilkyWayBake.comp from
+// (src/porter/shader-edits/features/milky-way-bake.edits) moves the clouds into a function, makes MilkyWayBake.comp from
 // the same file. When MilkyWayRenderer has made its noise texture, the patch makes a strip of the clouds over the
 // whole band (8192 x 512), puts it in the noise's place, so the game binds it to the shader, and fills it with the
 // bake, again when the game's Milky Way Quality changes (it sets the clouds' octaves). The shader reads the clouds

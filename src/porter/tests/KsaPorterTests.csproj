@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<!-- The porter's tests (Tests.cs), on synthetic shaders and files: scripts/build-dotnet.sh runs them:
+	     dotnet KsaPorterTests.dll <repository> -->
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<AssemblyName>KsaPorterTests</AssemblyName>
+		<UseAppHost>false</UseAppHost>
+	</PropertyGroup>
+	<ItemGroup>
+		<Compile Include="../*.cs" Exclude="../Program.cs" />
+	</ItemGroup>
+</Project>

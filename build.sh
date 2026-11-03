@@ -53,7 +53,7 @@ if [ -z "${KSA_SOURCE}" ]; then
 fi
 
 # KSA's assemblies, for the benchmark and the hooks: an app's are converted already; an archive's or a folder's are copied
-# into deps/build/ksa/ and converted there (the port folder's lib/convert-dotnet.sh, once it is in place)
+# into deps/build/ksa/ and converted there (the porter's convert-dotnet, scripts/build-dotnet.sh)
 KSA_DIR="${BUILD}/ksa"
 CONVERT=1
 rm -rf "${KSA_DIR}"
@@ -101,10 +101,11 @@ run make-port-folder commands "${VERSION}" "${KSA_VERSION}" "${COMMIT}"
 step "[4/6] Icon"
 run build-icon
 
-step "[5/6] The hooks and the benchmark (.NET)"
+step "[5/6] The .NET projects: the porter, the hooks, the benchmark"
 load_deps
-[ "${CONVERT}" = 0 ] || bash "${OUT}/lib/convert-dotnet.sh" "${KSA_DIR}" "${DOTNET_RUNTIME}" > /dev/null
-run build-dotnet "${KSA_DIR}"
+CONVERT_FLAG=()
+[ "${CONVERT}" = 0 ] || CONVERT_FLAG=(--convert)
+run build-dotnet "${KSA_DIR}" ${CONVERT_FLAG[@]+"${CONVERT_FLAG[@]}"}
 
 step "[6/6] The port folder"
 run make-port-folder payload

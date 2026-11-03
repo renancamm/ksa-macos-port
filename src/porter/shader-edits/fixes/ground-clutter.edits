@@ -1,0 +1,46 @@
+# Two bugs in the ground clutter's shaders, which the game needs fixed on Metal.
+#
+# PrefixSum.comp declares its ecotype uniform block by hand and leaves out the 16-byte TextureHandles member that the
+# real EcotypeData layout (GroundClutterCommon.glsl) has before numObjects. The shader then reads a texture index as the
+# object count, and reads and writes past its buffers: corrupted clutter and GPU hangs, worst with clutter shadows.
+#
+# Solid.vert (the colour pass) and SolidDepth.vert (the depth pre-pass) must compute bit-identical positions, because
+# the colour pass draws with the depth test EQUAL. Without "invariant gl_Position", Metal's fast math computes them
+# slightly differently: black stripes and see-through patches on clutter.
+
+@@ edit clutter-texture-handles Planet/GroundClutter/PrefixSum.comp
+@@ what added the missing textureHandles
+@@ done-if-line TextureHandles textureHandles;
+@@ find
+    PlacementParams placementParams;
+    uint numObjects;
+@@ replace
+    PlacementParams placementParams;
+    TextureHandles textureHandles;  // macOS port: was missing; must match EcotypeData (GroundClutterCommon.glsl)
+    uint numObjects;
+
+@@ edit clutter-invariant-colour Planet/GroundClutter/Solid.vert
+@@ what declared gl_Position invariant
+@@ done-if-line invariant gl_Position;
+@@ find
+
+void main()
+@@ replace
+
+// macOS port: depth pre-pass and colour pass (depth EQUAL) need bit-identical positions on Metal
+invariant gl_Position;
+
+void main()
+
+@@ edit clutter-invariant-depth Planet/GroundClutter/SolidDepth.vert
+@@ what declared gl_Position invariant
+@@ done-if-line invariant gl_Position;
+@@ find
+
+void main()
+@@ replace
+
+// macOS port: depth pre-pass and colour pass (depth EQUAL) need bit-identical positions on Metal
+invariant gl_Position;
+
+void main()

@@ -83,7 +83,8 @@ KSA_MTL_SHOTS=300,3000 KSA_MTL_SHOT_DIR=/tmp/ksa-shots KSA_MTL_EXIT_AFTER_SHOTS=
 ```
 
 Either way, `MTL_SHADER_VALIDATION=1` and `KSA_MTL_DUMP_MSL` show which shader misbehaves and what Metal source it
-became. The ground clutter's shader fixes in `src/port-folder/lib/convert-shaders.sh` were found this way.
+became. The ground clutter's shader fixes ([`../porter/shader-edits/fixes/`](../porter/shader-edits/fixes/)) were found this
+way.
 
 Vulkan validation layers can't be used, because KSA Metal takes the loader's place. `KSA_MTL_LOG=1` logs its
 warnings and the first call of each Vulkan function, which shows what the game asks for, and `KSA_MTL_STRICT=1`
@@ -173,7 +174,8 @@ fragment shader stores only to that mask (and doesn't discard or write depth) a 
 while `ksaMtlEarlyFragmentTests` says so: the hooks do while no part is selected, when the stores never run, so the
 image is the same. On an M5 at the game's own settings it takes the cockpit's GPU time from 23.9 ms to 21.2.
 
-At port time, `src/port-folder/lib/convert-shaders.sh` also edits the game's GLSL for speed, three times with the same
+At port time, the porter also edits the game's GLSL for speed
+([`../porter/shader-edits/optimizations/`](../porter/shader-edits/optimizations/)), three times with the same
 idea. The terrain's, the vessels' and the kitten's shaders multiply the sun's light by its soft shadows (32 shadow-map
 taps a pixel) also where that light is already zero, on every surface turned away from the sun; the cockpit's ray
 tracing likewise traces a shadow ray towards a light from surfaces it doesn't light. The grass and the buildings

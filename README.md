@@ -117,16 +117,15 @@ So the app is made of three kinds of pieces:
 ### The steps
 
 The port folder holds the app without the game, `payload/app/Contents/`: the launcher, the .NET runtime, the native
-libraries, the icon and the licences. `port.sh` extracts the game's archive, converts the game with the scripts in the
-folder's `lib/` and puts it into a copy of that app; in this repository they are in
-[`src/port-folder/lib/`](src/port-folder/lib/).
+libraries, the icon and the licences. `port.sh` runs the port's program, the **porter**, on that .NET runtime: it
+extracts the game's archive, converts the game and puts it into a copy of that app. The porter is in the folder's
+`lib/porter/`, and in this repository in [`src/porter/`](src/porter/), which has its own README.
 
-| Step | Script | What it does |
+| Step | In the porter | What it does |
 |---|---|---|
-| Convert | `convert-cleanup.sh` | removes the Linux binaries and the Windows installer files |
-| | `convert-dotnet.sh` | makes the .NET files run on the macOS runtime (with `mark-arm64.sh`) |
-| | `convert-shaders.sh` | fixes and edits the game's shaders |
-| App | `make-app.sh` | builds the app around the converted game, or puts the port's files into one |
+| Convert | `Conversion.cs` | removes the Linux binaries and the Windows installer files, makes the .NET files run on the macOS runtime |
+| | `ShaderEdits.cs` | fixes and edits the game's shaders, as the files in `shader-edits/` say |
+| App | `App.cs` | builds the app around the converted game, or puts the port's files into one |
 
 To update an app, `port.sh` runs the same steps on it again, without the extraction.
 
@@ -151,7 +150,7 @@ Linux and macOS on Apple Silicon. The port takes the macOS builds of the eleven 
 | Ahwoo.BRUTAL.Monitor.Host | `Brutal.Monitor.Subprocess`, a program | crash dumps |
 
 These are the same versions KSA ships for Linux: the Linux libraries in the game's archive are identical to the
-Linux builds in these packages. `convert-dotnet.sh` compares each package version with the matching game assembly
+Linux builds in these packages. The porter compares each package version with the matching game assembly
 (`Ahwoo.BRUTAL.Glfw.Native` with `Brutal.Glfw.dll`). It stops when the game is older than the packages, because older
 bindings don't match the newer libraries, and warns when the game is newer.
 
@@ -170,14 +169,15 @@ cd ksa-macos-port
 ```
 
 That makes `dist/ksa-macos-port/`, a port folder like a release's; `./build.sh --install` also puts its files into the
-installed app. The native libraries are a CMake project ([`CMakeLists.txt`](CMakeLists.txt)), and the hooks, the
-benchmark and the port settings' generator are .NET projects of one solution
-([`ksa-macos-port.slnx`](ksa-macos-port.slnx)), which an editor can open after a first build. The hooks and the benchmark are built against the installed app's KSA, or another one with
+installed app. The native libraries are a CMake project ([`CMakeLists.txt`](CMakeLists.txt)), and the porter, the
+hooks, the benchmark and the port settings' generator are .NET projects of one solution
+([`ksa-macos-port.slnx`](ksa-macos-port.slnx)), which an editor can open after a first build. The hooks and the
+benchmark are built against the installed app's KSA, or another one with
 `--ksa <archive>`, and the port folder is made for that KSA version. Everything the build downloads is declared in
 [`cmake/dependencies.cmake`](cmake/dependencies.cmake).
 
-Warnings are errors in the native libraries, the hooks and the benchmark, and the build runs the hooks' and the
-benchmark's tests. The scripts run on macOS's own bash 3.2 and are kept clean of ShellCheck's findings
+Warnings are errors in the native libraries and the .NET projects, and the build runs the tests of the driver, the
+porter, the hooks and the benchmark. The scripts run on macOS's own bash 3.2 and are kept clean of ShellCheck's findings
 ([`.shellcheckrc`](.shellcheckrc)); [`.editorconfig`](.editorconfig) says how the sources are written.
 
 Releases are made with `release.sh <ksa_linux_vX.tar.gz>`. It builds the port folder from a clean copy of the
@@ -186,7 +186,7 @@ fresh install's settings. `release.sh --publish` then tags the commit and upload
 
 ### .NET
 
-The Linux release is a self-contained `linux-x64` .NET program. `convert-dotnet.sh` turns it into one that runs on
+The Linux release is a self-contained `linux-x64` .NET program. The porter turns it into one that runs on
 the shared macOS runtime the app bundles:
 
 1. It removes the Linux .NET runtime libraries (`System.*.dll`, `mscorlib.dll`, ...): exactly the DLLs whose names
@@ -202,9 +202,10 @@ launcher needs: DYLD environment variables, unsigned libraries and JIT.
 
 ### Shader fixes
 
-KSA compiles its GLSL shaders from `Content/` at startup, so fixes can go straight into the shader sources.
-`convert-shaders.sh` applies these, to files under `Content/Core/Shaders/`; its header explains each one. It also
-edits shaders for the hooks and the driver, which their READMEs explain.
+KSA compiles its GLSL shaders from `Content/` at startup, so fixes can go straight into the shader sources. The
+porter applies these to files under `Content/Core/Shaders/`, as the edit files of
+[`src/porter/shader-edits/fixes/`](src/porter/shader-edits/fixes/) say, each with its explanation. It also edits shaders
+for the hooks and the driver (`features/` and `optimizations/` there), which their READMEs explain.
 
 | Shader | Bug | Fix |
 |---|---|---|
@@ -212,7 +213,7 @@ edits shaders for the hooks and the driver, which their READMEs explain.
 | `Planet/GroundClutter/Solid.vert`, `SolidDepth.vert` | the depth pre-pass and the colour pass (depth `EQUAL`) need bit-identical positions, which Vulkan only guarantees for `invariant` outputs; with Metal's fast math they differ: black stripes and see-through patches on trees and rocks | declares `invariant gl_Position` |
 | `Lighting/LightFineClusterCompact.comp` | a tile whose depth range comes out inverted makes a loop run about 4 billion times: the GPU hangs | skips such a tile |
 
-When a KSA update changes the code around a fix, the script prints `[WARN]` and skips it.
+When a KSA update changes the code around a fix, the porter prints `[WARN]` and skips it.
 
 ### GLFW shim
 
@@ -229,7 +230,7 @@ without modifying GLFW; [`glfw_shim.c`](src/glfw-shim/glfw_shim.c) explains each
 
 ### The app bundle
 
-`make-app.sh` moves the converted game folder into the app as `Contents/Resources` and adds the port's part from
+The porter moves the converted game folder into the app as `Contents/Resources` and adds the port's part from
 `payload/app/Contents/`:
 
 | In the app | What |
@@ -250,7 +251,7 @@ launcher is the app's own executable and hands its process over to `dotnet`, so 
 Mode included. `Info.plist` turns `NSHighResolutionCapable` on, so the game draws its interface at the display's full
 resolution.
 
-The bundle isn't signed as a whole, because that would replace Microsoft's signature on `dotnet`. `make-app.sh`
+The bundle isn't signed as a whole, because that would replace Microsoft's signature on `dotnet`. The porter
 removes the quarantine attribute that a browser download puts on the files, so macOS opens the app as one made on
 this Mac. When `port.sh` replaces an app, it builds the new one next to it, keeps its window layout (`imgui.ini`) and
 StarMap, and moves the old one to the Trash only at the end; if anything fails, the old app is left as it was.
@@ -262,9 +263,10 @@ build.sh, release.sh        make the port folder; make a release of it
 scripts/                    the build's steps, and lib.sh
 CMakeLists.txt, cmake/      the native build, and every external source the build uses (dependencies.cmake)
 CMakePresets.json           how CMake is run: Ninja, Release, deps/build/cmake/
-ksa-macos-port.slnx         the .NET projects: the hooks, the benchmark and the settings generator
+ksa-macos-port.slnx         the .NET projects: the porter, the hooks, the benchmark and the settings generator
 global.json                 the .NET SDK version that builds them
-src/port-folder/            the port folder's commands and lib/, its steps
+src/port-folder/            the port folder's commands and lib/common.sh, which they share
+src/porter/                 the porter: the program the commands run, the shader edits and tests, with its own README
 src/launcher/               the app's executable
 src/glfw-shim/              the GLFW shim
 src/ktx-shim/               the KTX shim, with its own README

@@ -93,7 +93,7 @@ static ParsedIR sizeRuntimeArrays(const std::vector<uint32_t>& spirv, KPipelineL
     return ir;
 }
 
-// PORT_SKIP_UNLIT_SHADOWS, the specialization constant of src/port-folder/lib/convert-shaders.sh's shadow edits
+// PORT_SKIP_UNLIT_SHADOWS, the specialization constant of the shadow edits (src/porter/shader-edits/optimizations/)
 static const uint32_t kUnlitShadowSkipConstant = 900;
 
 // Whether the module declares a specialization constant with this id (OpDecorate <id> SpecId <specId>)
@@ -267,8 +267,8 @@ bool kmtlTranslate(KShaderModule* mod, const char* entryName, spv::ExecutionMode
             }
         }
 
-        // KSA_MTL_UNLIT_SHADOW_SKIP=0: the shader edits of src/port-folder/lib/convert-shaders.sh that skip shadows
-        // where there is no light read this constant (PORT_SKIP_UNLIT_SHADOWS, true in the source)
+        // KSA_MTL_UNLIT_SHADOW_SKIP=0: the shader edits that skip shadows where there is no light (unlit-shadows.edits)
+        // read this constant (PORT_SKIP_UNLIT_SHADOWS, true in the source)
         if (!kmtlConfig().unlitShadowSkip)
             for (auto& sc : c.get_specialization_constants())
                 if (sc.constant_id == kUnlitShadowSkipConstant) c.get_constant(sc.id).m.c[0].r[0].u32 = 0;

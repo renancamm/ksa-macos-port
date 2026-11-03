@@ -1,0 +1,16 @@
+# For Simpler PCSS Shadows (the hooks' ShadowSearch.cs): the soft shadows' blocker search ends at the limit in texels
+# the hooks put in the cascades' spare _pad1 (0 without it: the game's search, as far as the widest penumbra).
+
+@@ check shadow-search-pad Lighting/CascadedShadows.glsl
+@@ what the soft shadows' search limit
+@@ contains
+    float _pad1;
+
+@@ edit shadow-search Lighting/CascadedShadows.glsl
+@@ what limited the soft shadows' search where the hooks ask
+@@ needs shadow-search-pad
+@@ find
+    float searchRadiusTexels = maxPenumbraWorld / texelWorldSize;
+@@ replace
+    float searchRadiusTexels = maxPenumbraWorld / texelWorldSize;
+    if (shadowUbo._pad1 > 0.0) searchRadiusTexels = min(searchRadiusTexels, shadowUbo._pad1);  // macOS port: the hooks' shadow search limit

@@ -1,0 +1,564 @@
+# The same image, faster: Skip Shadows on Unlit Sides (the tab's Optimizations), which KSA Metal turns off with
+# KSA_MTL_UNLIT_SHADOW_SKIP=0.
+#
+# The terrain's, the vessels', the kitten's and the buildings' shaders multiply the sun's light by the cascaded shadows
+# for every pixel, also where that light is already zero (surfaces turned away from the sun): the soft shadows' 32 taps
+# for nothing, about half of a cockpit's frame. The edits look a shadow up only where the light isn't zero (zero times
+# a shadow, at most 1, is zero). The terrain's own sun shadow, the clouds' and the trails' shadows likewise only
+# multiply light that can be zero: the sun's on the terrain and on the buildings, the planet's own shadow on the ground
+# clutter (for its light and the grass's glow from behind), and the planets' shadow on the ocean's colour (cloud
+# shadows). The terrain's and the clouds' shadows take derivatives, so they are skipped only where a whole 2x2 quad of
+# pixels has no light (quad operations, which KSA Metal supports): on the night side, on slopes turned from the sun and
+# in an eclipse. Where the terrain is in the planet's own shadow with no forward lights (vessels' lamps), every term of
+# its colour is zero: such quads are drawn black without their textures. The godrays' march, which the clouds' raymarch
+# runs too, multiplies the light reaching each step by the terrain's, the trails' and the clouds' shadows: they are
+# looked up only where that light isn't zero, and the clouds' only where the others let some through. The cockpit's ray
+# tracing traces a shadow ray towards each light that casts shadows, also from surfaces turned away from it: only where
+# the light isn't zero.
+#
+# The edits read PORT_SKIP_UNLIT_SHADOWS, a specialization constant (id 900) that KSA Metal sets to false when
+# KSA_MTL_UNLIT_SHADOW_SKIP is 0. Each shader that uses it declares it first (switch-*), behind a guard, as a shader
+# may include two of the files that declare it. A check (*-uses) makes sure the code that uses what an edit skips still
+# reads as it does here: a KSA version that changed it keeps the game's code, never a different image.
+
+@@ edit switch-cascaded Lighting/CascadedShadows.glsl
+@@ what declared the switch for shadows where there is no light
+@@ done-if PORT_SKIP_UNLIT_SHADOWS
+@@ find
+#define CASCADED_SHADOWS_GLSL
+@@ replace
+#define CASCADED_SHADOWS_GLSL
+#ifndef PORT_SKIP_UNLIT_SHADOWS_DECLARED
+#define PORT_SKIP_UNLIT_SHADOWS_DECLARED
+layout(constant_id = 900) const bool PORT_SKIP_UNLIT_SHADOWS = true;  // macOS port
+#endif
+@@ earlier
+#define CASCADED_SHADOWS_GLSL
+layout(constant_id = 900) const bool PORT_SKIP_UNLIT_SHADOWS = true;  // macOS port
+
+@@ edit switch-raygen Raytracing/raygen.rgen
+@@ what declared the switch for shadows where there is no light
+@@ done-if PORT_SKIP_UNLIT_SHADOWS
+@@ find
+layout(location = 1) rayPayloadEXT RayPayload rayPayload;
+@@ replace
+layout(location = 1) rayPayloadEXT RayPayload rayPayload;
+#ifndef PORT_SKIP_UNLIT_SHADOWS_DECLARED
+#define PORT_SKIP_UNLIT_SHADOWS_DECLARED
+layout(constant_id = 900) const bool PORT_SKIP_UNLIT_SHADOWS = true;  // macOS port
+#endif
+@@ earlier
+layout(location = 1) rayPayloadEXT RayPayload rayPayload;
+layout(constant_id = 900) const bool PORT_SKIP_UNLIT_SHADOWS = true;  // macOS port
+
+@@ edit mesh-fur Mesh/Fur.frag
+@@ what looked the shadows up only where there is sunlight
+@@ needs switch-cascaded
+@@ find
+    sunlight *= GetCascadedShadow(inWorldPos, N, dotNL, viewDepth);
+@@ replace
+    if (!PORT_SKIP_UNLIT_SHADOWS || any(notEqual(sunlight, vec3(0.0))))  // macOS port: no shadow where there is no light
+        sunlight *= GetCascadedShadow(inWorldPos, N, dotNL, viewDepth);
+
+@@ edit mesh-pbr Mesh/ModelPbr.frag
+@@ what looked the shadows up only where there is sunlight
+@@ needs switch-cascaded
+@@ find
+    sunlight *= GetCascadedShadow(inWorldPos, N, dotNL, viewDepth);
+@@ replace
+    if (!PORT_SKIP_UNLIT_SHADOWS || any(notEqual(sunlight, vec3(0.0))))  // macOS port: no shadow where there is no light
+        sunlight *= GetCascadedShadow(inWorldPos, N, dotNL, viewDepth);
+
+@@ edit mesh-translucent Mesh/ModelTranslucent.frag
+@@ what looked the shadows up only where there is sunlight
+@@ needs switch-cascaded
+@@ find
+        sunlight *= GetCascadedShadow(inWorldPos, N, dotNL, viewDepth);
+@@ replace
+        if (!PORT_SKIP_UNLIT_SHADOWS || any(notEqual(sunlight, vec3(0.0))))  // macOS port: no shadow where there is no light
+            sunlight *= GetCascadedShadow(inWorldPos, N, dotNL, viewDepth);
+
+@@ edit mesh-glass Mesh/MeshGlassIndirect.frag
+@@ what looked the shadows up only where there is sunlight
+@@ needs switch-cascaded
+@@ find
+        sunlight *= GetCascadedShadow(inWorldPosition, N, dotNL, viewDepth);
+@@ replace
+        if (!PORT_SKIP_UNLIT_SHADOWS || any(notEqual(sunlight, vec3(0.0))))  // macOS port: no shadow where there is no light
+            sunlight *= GetCascadedShadow(inWorldPosition, N, dotNL, viewDepth);
+
+@@ edit mesh-glass-raytraced Mesh/MeshGlassIndirectRaytraced.frag
+@@ what looked the shadows up only where there is sunlight
+@@ needs switch-cascaded
+@@ find
+        sunlight *= GetCascadedShadow(inWorldPosition, N, dotNL, viewDepth);
+@@ replace
+        if (!PORT_SKIP_UNLIT_SHADOWS || any(notEqual(sunlight, vec3(0.0))))  // macOS port: no shadow where there is no light
+            sunlight *= GetCascadedShadow(inWorldPosition, N, dotNL, viewDepth);
+
+@@ edit mesh-indirect Mesh/MeshIndirect.frag
+@@ what looked the shadows up only where there is sunlight
+@@ needs switch-cascaded
+@@ find
+        lightColor *= GetCascadedShadow(inWorldPosition, N, dotNL, viewDepth);
+@@ replace
+        if (!PORT_SKIP_UNLIT_SHADOWS || any(notEqual(lightColor, vec3(0.0))))  // macOS port: no shadow where there is no light
+            lightColor *= GetCascadedShadow(inWorldPosition, N, dotNL, viewDepth);
+
+@@ edit spline Spline.frag
+@@ what looked the shadows up only where there is sunlight
+@@ needs switch-cascaded
+@@ find
+        lightColor *= GetCascadedShadow(inWorldPosition, N, dotNL, viewDepth);
+@@ replace
+        if (!PORT_SKIP_UNLIT_SHADOWS || any(notEqual(lightColor, vec3(0.0))))  // macOS port: no shadow where there is no light
+            lightColor *= GetCascadedShadow(inWorldPosition, N, dotNL, viewDepth);
+
+@@ edit quad-buildings Mesh/StaticObject.frag
+@@ what enabled the quad operations for the shadows' skip
+@@ needs switch-cascaded
+@@ find
+#version 450
+@@ replace
+#version 450
+#extension GL_KHR_shader_subgroup_quad : require  // macOS port: the shadows' skip below decides per 2x2 quad
+@@ earlier
+#version 450
+#extension GL_KHR_shader_subgroup_quad : require  // macOS port: the cloud shadows' skip below decides per 2x2 quad
+
+@@ edit buildings Mesh/StaticObject.frag
+@@ what looked the shadows up only where there is sunlight
+@@ needs quad-buildings
+@@ find
+        lightColor *= getSunShadowFiltered(terrainShadowUbo, inWorldPosition, geometricNormal)
+                    * GetCascadedShadow(inWorldPosition, geometricNormal, dotNL, viewDepth)
+                    * GetCloudShadows(inWorldPosition, planetPos(), L)
+                    * GetTrailShadowTransmittance(inWorldPosition)
+                    * celestialShadow;
+@@ replace
+        // macOS port: the shadows only multiply the sun's light, also where it is zero (turned away, or in a planet's
+        // shadow); the terrain's and the clouds' take derivatives, so they are skipped only where the whole 2x2 quad
+        // has none
+        bool portSunlit = !PORT_SKIP_UNLIT_SHADOWS || (any(notEqual(lightColor, vec3(0.0))) && celestialShadow != 0.0);
+        uint portLit = portSunlit ? 1u : 0u;
+        portLit |= subgroupQuadSwapHorizontal(portLit);  // every lane swaps: no branch before the swaps
+        portLit |= subgroupQuadSwapVertical(portLit);
+        float portTerrainShadow = 1.0, portCascadeShadow = 1.0, portCloudShadow = 1.0, portTrailShadow = 1.0;
+        if (portLit != 0u)
+        {
+            portTerrainShadow = getSunShadowFiltered(terrainShadowUbo, inWorldPosition, geometricNormal);
+            portCloudShadow = GetCloudShadows(inWorldPosition, planetPos(), L);
+        }
+        if (portSunlit)
+        {
+            portCascadeShadow = GetCascadedShadow(inWorldPosition, geometricNormal, dotNL, viewDepth);
+            portTrailShadow = GetTrailShadowTransmittance(inWorldPosition);
+        }
+        lightColor *= portTerrainShadow * portCascadeShadow * portCloudShadow * portTrailShadow * celestialShadow;
+@@ earlier
+        float cascadeShadow = 1.0;
+        if (!PORT_SKIP_UNLIT_SHADOWS || any(notEqual(lightColor, vec3(0.0))))  // macOS port: no shadow where there is no light
+            cascadeShadow = GetCascadedShadow(inWorldPosition, geometricNormal, dotNL, viewDepth);
+        lightColor *= getSunShadowFiltered(terrainShadowUbo, inWorldPosition, geometricNormal)
+                    * cascadeShadow
+                    * GetCloudShadows(inWorldPosition, planetPos(), L)
+                    * GetTrailShadowTransmittance(inWorldPosition)
+                    * celestialShadow;
+
+@@ check terrain-uses Planet/Planet.frag
+@@ what the terrain's shadows where there is no sunlight
+@@ needs switch-cascaded
+@@ contains
+    vec4 finalColor = vec4(lightColor * selfShadowFactor * combinedShadowFactor + environmentLighting * ao + punctualLighting, 1.0f);
+@@ contains
+    float combinedShadowFactor = sunShadowFactor * cloudShadows * cascadeShadowFactor * trailShadows;
+@@ contains
+        vec3 prefilteredAmbient = selfShadowFactor * GetAmbient(
+@@ contains
+        vec3 prefilteredReflection = prefilteredAmbient * 0.5;
+@@ contains
+                combinedShadowFactor *= ringTransmittance;
+                environmentLighting *= ringTransmittance;
+@@ contains
+    vec3 punctualLighting = SampleForwardLights(inWorldPosition.xyz, worldNormal, surfaceColor * averageLuminosity, metallic);
+@@ contains
+    outColor = finalColor;
+@@ counts finalColor=11 combinedShadowFactor=3 environmentLighting=4 punctualLighting=2 outColor=3 prefilteredAmbient=3 selfShadowFactor=3,4,5 cascadeShadowFactor=2,3 sunShadowFactor=2,3 cloudShadows=2,3 trailShadows=2,3
+@@ contains Common/Lighting.glsl
+    vec3 diffuse = filteredDiffuseMap * albedo;
+    
+    vec3 specular = vec3(0.0);
+@@ contains Common/Lighting.glsl
+    if (!all(equal(filteredSpecularMap, vec3(0.0))))
+@@ contains Common/Lighting.glsl
+    return kD * diffuse + specular;
+@@ contains Lighting/PunctualLighting.glsl
+    vec3 irradiance = vec3(0.0);
+
+    for (int i = 0; i < global.lighting.forwardLightCount; ++i)
+@@ contains Lighting/PunctualLighting.glsl
+    return (1.0 - inMetallic) * inAlbedo * (1.0 / PI) * irradiance;
+
+@@ edit terrain-cascades Planet/Planet.frag
+@@ what looked the shadows up only where there is sunlight
+@@ needs terrain-uses
+@@ find
+    float cascadeShadowFactor = GetCascadedShadow(inWorldPosition.xyz, worldNormal, dotNL, -(global.camera.view * inWorldPosition).z);
+@@ replace
+    float cascadeShadowFactor = 1.0;
+    if (!PORT_SKIP_UNLIT_SHADOWS || (any(notEqual(lightColor, vec3(0.0))) && selfShadowFactor > 0.0))  // macOS port: no shadow where there is no light
+        cascadeShadowFactor = GetCascadedShadow(inWorldPosition.xyz, worldNormal, dotNL, -(global.camera.view * inWorldPosition).z);
+@@ earlier
+    float cascadeShadowFactor = 1.0;
+    if (!PORT_SKIP_UNLIT_SHADOWS || any(notEqual(lightColor, vec3(0.0))))  // macOS port: no shadow where there is no light
+        cascadeShadowFactor = GetCascadedShadow(inWorldPosition.xyz, worldNormal, dotNL, -(global.camera.view * inWorldPosition).z);
+
+@@ edit quad-terrain Planet/Planet.frag
+@@ what enabled the quad operations for the shadows' skip
+@@ needs terrain-uses
+@@ find
+#version 450
+@@ replace
+#version 450
+#extension GL_KHR_shader_subgroup_quad : require  // macOS port: the shadows' skip below decides per 2x2 quad
+@@ earlier
+#version 450
+#extension GL_KHR_shader_subgroup_quad : require  // macOS port: the cloud shadows' skip below decides per 2x2 quad
+
+@@ edit terrain-black Planet/Planet.frag
+@@ what drew the terrain black without its textures where it is in the planet's shadow and unlit
+@@ needs quad-terrain
+@@ find
+    if (IsTerrainOccludedByOcean(sphereVector))
+    {
+        outColor = vec4(vec3(0.0), 1.0);
+        return;
+    }
+@@ replace
+    // macOS port: in the planet's own shadow (at night), with no forward lights, every term of the colour below is
+    // multiplied by zero, so it is black, as under the ocean: the textures and lighting are skipped, per 2x2 quad (they
+    // take derivatives); the swaps come before any return. The planet's shadow is worked out here once for both
+    bool portOcean = IsTerrainOccludedByOcean(sphereVector);
+    float portSelfShadow = 0.0;
+    if (!portOcean)
+        portSelfShadow = getSelfCelestialShadow(inWorldPosition.xyz, global.lighting.sunPosition, sphereWorldNormal, uboPlanet.celestialIndex);
+    uint portBlack = (portOcean || (PORT_SKIP_UNLIT_SHADOWS && global.lighting.forwardLightCount == 0 && portSelfShadow == 0.0)) ? 1u : 0u;
+    portBlack &= subgroupQuadSwapHorizontal(portBlack);
+    portBlack &= subgroupQuadSwapVertical(portBlack);
+    // a quad the ocean cuts short keeps the game's shadows below: its returned pixels' swaps would be undefined
+    uint portOceanQuad = portOcean ? 1u : 0u;
+    portOceanQuad |= subgroupQuadSwapHorizontal(portOceanQuad);
+    portOceanQuad |= subgroupQuadSwapVertical(portOceanQuad);
+    if (portOcean || portBlack != 0u)
+    {
+        outColor = vec4(vec3(0.0), 1.0);
+        return;
+    }
+@@ earlier
+    // macOS port: in the planet's own shadow (at night), with no forward lights, every term of the colour below is
+    // multiplied by zero, so it is black, as under the ocean: the textures and lighting are skipped, per 2x2 quad (they
+    // take derivatives); the swaps come before any return
+    bool portOcean = IsTerrainOccludedByOcean(sphereVector);
+    uint portBlack = (portOcean || (PORT_SKIP_UNLIT_SHADOWS && global.lighting.forwardLightCount == 0 &&
+        getSelfCelestialShadow(inWorldPosition.xyz, global.lighting.sunPosition, sphereWorldNormal, uboPlanet.celestialIndex) == 0.0)) ? 1u : 0u;
+    portBlack &= subgroupQuadSwapHorizontal(portBlack);
+    portBlack &= subgroupQuadSwapVertical(portBlack);
+    if (portOcean || portBlack != 0u)
+    {
+        outColor = vec4(vec3(0.0), 1.0);
+        return;
+    }
+
+@@ edit terrain-black-reuse Planet/Planet.frag
+@@ what reused the planet's shadow worked out for the black skip
+@@ needs terrain-black
+@@ find
+    float selfShadowFactor = getSelfCelestialShadow(inWorldPosition.xyz, sunPosition, sphereWorldNormal, uboPlanet.celestialIndex);
+@@ replace
+    float selfShadowFactor = portSelfShadow;  // macOS port: worked out above
+
+@@ edit terrain-shadows Planet/Planet.frag
+@@ what looked the terrain's other shadows up only where there is sunlight
+@@ needs terrain-black
+@@ find
+    float sunShadowFactor = getSunShadowFiltered(terrainShadowUbo, inWorldPosition.xyz, sphereWorldNormal);
+    float cloudShadows = GetCloudShadows(inWorldPosition.xyz, global.lighting.planetPosition.xyz, directionToSun);
+    float trailShadows = GetTrailShadowTransmittance(inWorldPosition.xyz);
+@@ replace
+    // macOS port: the terrain's, the clouds' and the trails' shadows only multiply the sun's light, also where it is
+    // zero; the first two take derivatives, so they are skipped only where the whole 2x2 quad has none
+    bool portSunlit = !PORT_SKIP_UNLIT_SHADOWS || (any(notEqual(lightColor, vec3(0.0))) && selfShadowFactor > 0.0);
+    uint portLit = (portSunlit || portOceanQuad != 0u) ? 1u : 0u;
+    portLit |= subgroupQuadSwapHorizontal(portLit);
+    portLit |= subgroupQuadSwapVertical(portLit);
+    float sunShadowFactor = 1.0, cloudShadows = 1.0, trailShadows = 1.0;
+    if (portLit != 0u)
+    {
+        sunShadowFactor = getSunShadowFiltered(terrainShadowUbo, inWorldPosition.xyz, sphereWorldNormal);
+        cloudShadows = GetCloudShadows(inWorldPosition.xyz, global.lighting.planetPosition.xyz, directionToSun);
+    }
+    if (portSunlit)
+        trailShadows = GetTrailShadowTransmittance(inWorldPosition.xyz);
+@@ earlier
+    // macOS port: the terrain's, the clouds' and the trails' shadows only multiply the sun's light, also where it is
+    // zero; they take derivatives, so they are skipped only where the whole 2x2 quad has none
+    uint portLit = (!PORT_SKIP_UNLIT_SHADOWS || (any(notEqual(lightColor, vec3(0.0))) && selfShadowFactor > 0.0)) ? 1u : 0u;
+    portLit |= subgroupQuadSwapHorizontal(portLit);  // every lane swaps: no branch before the swaps
+    portLit |= subgroupQuadSwapVertical(portLit);
+    float sunShadowFactor = 1.0, cloudShadows = 1.0, trailShadows = 1.0;
+    if (portLit != 0u)
+    {
+        sunShadowFactor = getSunShadowFiltered(terrainShadowUbo, inWorldPosition.xyz, sphereWorldNormal);
+        cloudShadows = GetCloudShadows(inWorldPosition.xyz, global.lighting.planetPosition.xyz, directionToSun);
+        trailShadows = GetTrailShadowTransmittance(inWorldPosition.xyz);
+    }
+
+@@ check grass-uses Planet/GroundClutter/Solid.frag
+@@ what the grass's shadows where there is no sunlight
+@@ needs switch-cascaded
+@@ contains
+        combinedShadowFactor = shadowFactor * cascadeShadowFactor * cloudShadows * sunShadowFactor * trailShadows;
+@@ contains
+    outColor = vec4(lightColor * combinedShadowFactor + environmentLighting * ao + punctualLighting, 1);
+@@ contains
+        vec3 fLt = vec3(combinedShadowFactor * (fLTDot + ltAmbient) * (1-thicknessSample));
+@@ counts combinedShadowFactor=4 shadowFactor=2,3,4 sunShadowFactor=2,3,4 cloudShadows=2,3,4 trailShadows=2,3,4 cascadeShadowFactor=2,3
+
+@@ edit quad-grass Planet/GroundClutter/Solid.frag
+@@ what enabled the quad operations for the shadows' skip
+@@ needs grass-uses
+@@ find
+#version 450
+@@ replace
+#version 450
+#extension GL_KHR_shader_subgroup_quad : require  // macOS port: the shadows' skip below decides per 2x2 quad
+@@ earlier
+#version 450
+#extension GL_KHR_shader_subgroup_quad : require  // macOS port: the cloud shadows' skip below decides per 2x2 quad
+
+@@ edit grass Planet/GroundClutter/Solid.frag
+@@ what looked the grass's shadows up only where the planet's shadow lets sunlight through
+@@ needs quad-grass
+@@ find
+        float sunShadowFactor = getSunShadowFiltered(terrainShadowUbo, inWorldPosition.xyz, meshWorldNormal);
+        float cascadeShadowFactor = GetCascadedShadow(inWorldPosition.xyz, meshWorldNormal, dotNL, viewDepth);
+        float cloudShadows = GetCloudShadows(inWorldPosition.xyz, planetPos(), directionToSun);
+        float trailShadows = GetTrailShadowTransmittance(inWorldPosition.xyz);
+@@ replace
+        // macOS port: the other shadows only multiply the planet's own, also where it is zero (at night). The terrain's
+        // and the clouds' take derivatives, so they are skipped only where the whole 2x2 quad is in it, and the
+        // cascades' also where those let no sunlight through
+        bool portSunlit = !PORT_SKIP_UNLIT_SHADOWS || shadowFactor != 0.0;
+        uint portLit = portSunlit ? 1u : 0u;
+        portLit |= subgroupQuadSwapHorizontal(portLit);  // every lane swaps: no branch before the swaps
+        portLit |= subgroupQuadSwapVertical(portLit);
+        float sunShadowFactor = 1.0, cloudShadows = 1.0, trailShadows = 1.0;
+        if (portLit != 0u)
+        {
+            sunShadowFactor = getSunShadowFiltered(terrainShadowUbo, inWorldPosition.xyz, meshWorldNormal);
+            cloudShadows = GetCloudShadows(inWorldPosition.xyz, planetPos(), directionToSun);
+        }
+        if (portSunlit)
+            trailShadows = GetTrailShadowTransmittance(inWorldPosition.xyz);
+        float cascadeShadowFactor = 1.0;
+        if (!PORT_SKIP_UNLIT_SHADOWS || shadowFactor * cloudShadows * sunShadowFactor * trailShadows != 0.0)
+            cascadeShadowFactor = GetCascadedShadow(inWorldPosition.xyz, meshWorldNormal, dotNL, viewDepth);
+@@ earlier
+        float sunShadowFactor = getSunShadowFiltered(terrainShadowUbo, inWorldPosition.xyz, meshWorldNormal);
+        float cloudShadows = GetCloudShadows(inWorldPosition.xyz, planetPos(), directionToSun);
+        float trailShadows = GetTrailShadowTransmittance(inWorldPosition.xyz);
+        float cascadeShadowFactor = 1.0;
+        if (!PORT_SKIP_UNLIT_SHADOWS || shadowFactor * cloudShadows * sunShadowFactor * trailShadows != 0.0)  // macOS port: no shadow where there is no light
+            cascadeShadowFactor = GetCascadedShadow(inWorldPosition.xyz, meshWorldNormal, dotNL, viewDepth);
+
+@@ edit switch-godrays Atmosphere/Godrays.glsl
+@@ what declared the switch for shadows where there is no light
+@@ done-if PORT_SKIP_UNLIT_SHADOWS
+@@ find
+#define GODRAYS_GLSL_INCLUDED
+@@ replace
+#define GODRAYS_GLSL_INCLUDED
+#ifndef PORT_SKIP_UNLIT_SHADOWS_DECLARED
+#define PORT_SKIP_UNLIT_SHADOWS_DECLARED
+layout(constant_id = 900) const bool PORT_SKIP_UNLIT_SHADOWS = true;  // macOS port
+#endif
+@@ earlier
+#define GODRAYS_GLSL_INCLUDED
+layout(constant_id = 900) const bool PORT_SKIP_UNLIT_SHADOWS = true;  // macOS port
+
+@@ check godrays-uses Atmosphere/Godrays.glsl
+@@ what the godrays' shadows where no sunlight reaches the march
+@@ needs switch-godrays
+@@ contains
+        vec3 lightShadowed = (1.0 - sunShadowFactor * cloudShadowFactor) * lightReceived;
+@@ counts sunShadowFactor=4,7 cloudShadowFactor=3 lightShadowed=4 lightReceived=4,6
+
+@@ edit godrays Atmosphere/Godrays.glsl
+@@ what looked the godrays' shadows up only where sunlight reaches the march's steps
+@@ needs godrays-uses
+@@ find
+        // Apply trail shadows alongside terrain shadows
+        float sunShadowFactor = getSunShadow(shadowUbo, rayPosition, zenithDirection) *
+            GetTrailShadowTransmittance(rayPosition);
+
+        float seaLevelAltitude = max(distanceFromPlanetCenter - atmosphereData.bottomRadius, 0.0);
+        vec2 densityFalloff = exp(-seaLevelAltitude / vec2(rayleighScaleHeight, mieScaleHeight));
+        float ozoneDensity = saturate(1.0 - abs(seaLevelAltitude - atmosphereData.ozoneCoefficientsAndAltitude.w) / atmosphereData.ozoneExtent);
+        vec3 localAbsorption = rayleighAbsorption * densityFalloff.x + mieAbsorption * densityFalloff.y + atmosphereData.ozoneCoefficientsAndAltitude.xyz * ozoneDensity;
+        vec3 stepTransmittance = exp(-localAbsorption * currentStepSize);
+
+        vec3 lightReceived = GetTransmittanceFromLut(atmosphereDataUbo.planetRadius, atmosphereData.bottomRadius, atmosphereData.topRadius,
+            distanceFromPlanetCenter, dot(zenithDirection, directionToSun), transmittanceLut, lutLayer, transmittanceLutDimensions);
+        
+        float cloudShadowFactor = 1.0;
+        vec3 shadowVolumeIntersection;
+
+        if (GetShadowVolumeSamplePosition(rayPosition, planetPosition, directionToSun,
+@@ replace
+        float seaLevelAltitude = max(distanceFromPlanetCenter - atmosphereData.bottomRadius, 0.0);
+        vec2 densityFalloff = exp(-seaLevelAltitude / vec2(rayleighScaleHeight, mieScaleHeight));
+        float ozoneDensity = saturate(1.0 - abs(seaLevelAltitude - atmosphereData.ozoneCoefficientsAndAltitude.w) / atmosphereData.ozoneExtent);
+        vec3 localAbsorption = rayleighAbsorption * densityFalloff.x + mieAbsorption * densityFalloff.y + atmosphereData.ozoneCoefficientsAndAltitude.xyz * ozoneDensity;
+        vec3 stepTransmittance = exp(-localAbsorption * currentStepSize);
+
+        vec3 lightReceived = GetTransmittanceFromLut(atmosphereDataUbo.planetRadius, atmosphereData.bottomRadius, atmosphereData.topRadius,
+            distanceFromPlanetCenter, dot(zenithDirection, directionToSun), transmittanceLut, lutLayer, transmittanceLutDimensions);
+
+        // macOS port: the shadows below only multiply the light received: no terrain or trail shadow where it is
+        // zero, no cloud shadow where those make it zero
+        float sunShadowFactor = 0.0;
+        if (!PORT_SKIP_UNLIT_SHADOWS || any(notEqual(lightReceived, vec3(0.0))))
+        {
+            // Apply trail shadows alongside terrain shadows
+            sunShadowFactor = getSunShadow(shadowUbo, rayPosition, zenithDirection) *
+                GetTrailShadowTransmittance(rayPosition);
+        }
+
+        float cloudShadowFactor = 1.0;
+        vec3 shadowVolumeIntersection;
+
+        if ((!PORT_SKIP_UNLIT_SHADOWS || sunShadowFactor != 0.0) && GetShadowVolumeSamplePosition(rayPosition, planetPosition, directionToSun,
+
+@@ edit godrays-no-clouds Atmosphere/Godrays.glsl
+@@ what looked the godrays' shadows up only where sunlight reaches the march's steps, with clouds off
+@@ needs godrays-uses
+@@ find
+        // Apply trail shadows alongside terrain shadows
+        float sunShadowFactor = getSunShadow(shadowUbo, rayPosition, zenithDirection) *
+            GetTrailShadowTransmittance(rayPosition);
+
+        float seaLevelAltitude = max(distanceFromPlanetCenter - atmosphereData.bottomRadius, 0.0);
+        vec2 densityFalloff = exp(-seaLevelAltitude / vec2(rayleighScaleHeight, mieScaleHeight));
+        float ozoneDensity = saturate(1.0 - abs(seaLevelAltitude - atmosphereData.ozoneCoefficientsAndAltitude.w) / atmosphereData.ozoneExtent);
+        vec3 localAbsorption = rayleighAbsorption * densityFalloff.x + mieAbsorption * densityFalloff.y + atmosphereData.ozoneCoefficientsAndAltitude.xyz * ozoneDensity;
+        vec3 stepTransmittance = exp(-localAbsorption * currentStepSize);
+
+        vec3 lightReceived = GetTransmittanceFromLut(atmosphereDataUbo.planetRadius, atmosphereData.bottomRadius, atmosphereData.topRadius,
+            distanceFromPlanetCenter, dot(zenithDirection, directionToSun), transmittanceLut, lutLayer, transmittanceLutDimensions);
+
+        vec3 lightShadowed = (1.0 - sunShadowFactor) * lightReceived;
+@@ replace
+        float seaLevelAltitude = max(distanceFromPlanetCenter - atmosphereData.bottomRadius, 0.0);
+        vec2 densityFalloff = exp(-seaLevelAltitude / vec2(rayleighScaleHeight, mieScaleHeight));
+        float ozoneDensity = saturate(1.0 - abs(seaLevelAltitude - atmosphereData.ozoneCoefficientsAndAltitude.w) / atmosphereData.ozoneExtent);
+        vec3 localAbsorption = rayleighAbsorption * densityFalloff.x + mieAbsorption * densityFalloff.y + atmosphereData.ozoneCoefficientsAndAltitude.xyz * ozoneDensity;
+        vec3 stepTransmittance = exp(-localAbsorption * currentStepSize);
+
+        vec3 lightReceived = GetTransmittanceFromLut(atmosphereDataUbo.planetRadius, atmosphereData.bottomRadius, atmosphereData.topRadius,
+            distanceFromPlanetCenter, dot(zenithDirection, directionToSun), transmittanceLut, lutLayer, transmittanceLutDimensions);
+
+        // macOS port: the shadows below only multiply the light received: none where it is zero
+        float sunShadowFactor = 0.0;
+        if (!PORT_SKIP_UNLIT_SHADOWS || any(notEqual(lightReceived, vec3(0.0))))
+        {
+            // Apply trail shadows alongside terrain shadows
+            sunShadowFactor = getSunShadow(shadowUbo, rayPosition, zenithDirection) *
+                GetTrailShadowTransmittance(rayPosition);
+        }
+
+        vec3 lightShadowed = (1.0 - sunShadowFactor) * lightReceived;
+
+@@ edit switch-ocean Water/Ocean.frag
+@@ what declared the switch for shadows where there is no light
+@@ done-if PORT_SKIP_UNLIT_SHADOWS
+@@ find
+#include "../Clouds/CloudShadows.glsl"
+@@ replace
+#include "../Clouds/CloudShadows.glsl"
+#ifndef PORT_SKIP_UNLIT_SHADOWS_DECLARED
+#define PORT_SKIP_UNLIT_SHADOWS_DECLARED
+layout(constant_id = 900) const bool PORT_SKIP_UNLIT_SHADOWS = true;  // macOS port
+#endif
+@@ earlier
+#include "../Clouds/CloudShadows.glsl"
+layout(constant_id = 900) const bool PORT_SKIP_UNLIT_SHADOWS = true;  // macOS port
+
+@@ check ocean-uses Water/Ocean.frag
+@@ what the cloud shadows where the planets' shadow lets no sunlight through
+@@ needs switch-ocean
+@@ contains
+    sunSpecular *= cloudShadow;
+@@ contains
+mix(cloudShadow, 1.0, 0.5));
+@@ contains
+    vec3 foamColor = 0.15 * foam * (cloudShadow * transmittanceToSun
+@@ contains
+    oceanColor = oceanColor * (1.0 - foam) + foamColor;
+@@ contains
+    outColor = vec4(oceanColor + (1.0 - fresnel) * transmittance * backGroundColor.rgb, 0.0);
+@@ counts cloudShadow=4,5 sunSpecular=5 foamColor=2 oceanColor=5 outColor=4
+
+@@ edit quad-ocean Water/Ocean.frag
+@@ what enabled the quad operations for the shadows' skip
+@@ needs ocean-uses
+@@ find
+#version 450
+@@ replace
+#version 450
+#extension GL_KHR_shader_subgroup_quad : require  // macOS port: the shadows' skip below decides per 2x2 quad
+@@ earlier
+#version 450
+#extension GL_KHR_shader_subgroup_quad : require  // macOS port: the cloud shadows' skip below decides per 2x2 quad
+
+@@ edit ocean Water/Ocean.frag
+@@ what looked the ocean's cloud shadows up only where the planets' shadow lets sunlight through
+@@ needs quad-ocean
+@@ find
+    float cloudShadow = GetCloudShadows(inOceanWorldPosition.xyz, global.lighting.planetPosition.xyz, L);
+@@ replace
+    // macOS port: the cloud shadows only reach the ocean's own colour, which the planets' shadow multiplies at the
+    // end, also where it is zero (at night); they take derivatives, so they are skipped only where a whole 2x2 quad is in it
+    float portCelestialShadow = getCelestialShadow(inOceanWorldPosition.xyz, global.lighting.sunPosition);
+    uint portLit = (!PORT_SKIP_UNLIT_SHADOWS || portCelestialShadow != 0.0) ? 1u : 0u;
+    portLit |= subgroupQuadSwapHorizontal(portLit);  // every lane swaps: no branch before the swaps
+    portLit |= subgroupQuadSwapVertical(portLit);
+    float cloudShadow = 1.0;
+    if (portLit != 0u)
+        cloudShadow = GetCloudShadows(inOceanWorldPosition.xyz, global.lighting.planetPosition.xyz, L);
+
+@@ edit ocean-reuse Water/Ocean.frag
+@@ what reused the planets' shadow worked out for the cloud shadows' skip
+@@ needs ocean
+@@ find
+    oceanColor *= getCelestialShadow(inOceanWorldPosition.xyz, global.lighting.sunPosition);
+@@ replace
+    oceanColor *= portCelestialShadow;  // macOS port: worked out above
+
+@@ check raygen-uses Raytracing/raygen.rgen
+@@ what the shadow rays where there is no light
+@@ needs switch-raygen
+@@ contains
+            light *= shadow;
+            light += indirectContrib;
+        } else {
+            light *= shadow;
+        }
+@@ counts shadow=4,5
+
+@@ edit raygen Raytracing/raygen.rgen
+@@ what traced shadow rays only where there is light
+@@ needs raygen-uses
+@@ find
+        if(lightData.color.w > 0.5){
+@@ replace
+        if(lightData.color.w > 0.5 && (!PORT_SKIP_UNLIT_SHADOWS || any(notEqual(light, vec3(0.0))))){  // macOS port: no shadow ray where there is no light

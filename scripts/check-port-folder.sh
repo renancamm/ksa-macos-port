@@ -18,7 +18,8 @@ problem() {
 }
 
 for f in port.sh starmap.sh benchmark.sh README.md LICENSE THIRD_PARTY_NOTICES.md VERSION lib/common.sh \
-    lib/brutal.txt payload/app/Contents/MacOS/KSA payload/app/Contents/MacOS/dotnet payload/starmap/StarMap.dll \
+    lib/brutal.txt lib/porter/KsaPorter.dll lib/porter/KsaPorter.runtimeconfig.json \
+    lib/porter/shader-edits/fixes/ground-clutter.edits payload/app/Contents/MacOS/KSA payload/app/Contents/MacOS/dotnet payload/starmap/StarMap.dll \
     payload/app/Contents/Resources/Benchmark/KsaMetalBenchmark.dll \
     payload/app/Contents/Resources/Benchmark/KsaMetalBenchmarkReport.dll \
     payload/app/Contents/Resources/Benchmark/benchmark.txt "payload/app/Contents/Resources/AppIcon.icns" \
