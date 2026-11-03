@@ -120,13 +120,13 @@ To find out which patch causes a problem, turn it off in the Mac Port tab (Optim
 ## Build and test
 
 `./build.sh` builds both assemblies against the KSA it is given, with the shared library and the benchmark
-([`../../../scripts/build-dotnet.sh`](../../../scripts/build-dotnet.sh)): `KSA.dll` and the benchmark's director are
+([`../../../cmake/port-folder.cmake`](../../../cmake/port-folder.cmake)): `KSA.dll` and the benchmark's director are
 references only. Harmony comes from the `Lib.Harmony` package on nuget.org, pinned in
 [`../../../cmake/dependencies.cmake`](../../../cmake/dependencies.cmake).
 
-Before it, the port settings' generator checks the table against the hooks
+Before them, the build runs the port settings' generator's checks of the table against the hooks
 ([`../../shared/settings/`](../../shared/settings/)): the hooks it names exist, and the hooks read the settings it
-says they do and no others; it stops the build when they don't.
+says they do and no others; the build stops when they don't.
 
 For the patches, the benchmark is the test. `--port` changes a port setting for one run, and the report lists the port
 settings and what the hooks did:

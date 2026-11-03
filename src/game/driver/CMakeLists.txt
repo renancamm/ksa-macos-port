@@ -29,6 +29,7 @@ add_custom_command(OUTPUT "${KSA_GENERATED_DIR}/entries.stamp"
     COMMAND "${CMAKE_COMMAND}" -E touch "${KSA_GENERATED_DIR}/entries.stamp"
     DEPENDS "${vulkan_headers_SOURCE_DIR}/registry/vk.xml" ${driver_sources}
         "${CMAKE_CURRENT_SOURCE_DIR}/setup/aliases.txt" "${ENTRIES_GENERATOR}"
+    JOB_POOL dotnet
     COMMENT "Making KSA Metal's entry table" VERBATIM)
 add_custom_target(ksa-metal-entries DEPENDS "${KSA_GENERATED_DIR}/entries.stamp")
 
@@ -74,5 +75,8 @@ endif()
 # An ad-hoc signature of its own, as for everything built here (macOS kills a process that loads a library with an
 # invalid one)
 add_custom_command(TARGET ksa-metal POST_BUILD COMMAND codesign -f -s - "$<TARGET_FILE:ksa-metal>" 2> /dev/null)
+
+# In the app, next to the game, which finds the driver there as its Vulkan loader
+port_folder_copy("${PORT_APP}/Resources" "${KSA_NATIVES_DIR}/libvulkan.1.dylib" "${KSA_NATIVES_DIR}/libvulkan.dylib")
 
 add_subdirectory(tests)

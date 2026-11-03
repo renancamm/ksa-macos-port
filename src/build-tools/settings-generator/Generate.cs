@@ -419,7 +419,7 @@ internal static class Generate
             Console.Error.WriteLine($"    {p}");
         if (problems.Count > 0)
             return 1;
-        Console.WriteLine($"    The port settings: {PortSettings.All.Count} settings, the files made from them current, the code and the READMEs in step.");
+        Console.WriteLine($"    The port settings: {PortSettings.All.Count} settings, the code and the READMEs in step.");
         return 0;
     }
 }

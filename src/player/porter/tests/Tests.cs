@@ -7,7 +7,7 @@ using KsaPort.Common;
 using KsaPort.Porter;
 
 // The tests of the porter that need no game: the shader edits' format and rules on synthetic shaders, the port's own
-// .edits files, the ARM64 mark, the cleanup's ELF check and the versions. scripts/build-dotnet.sh runs them after the
+// .edits files, the ARM64 mark, the cleanup's ELF check and the versions. The build runs them (ctest) after the
 // build; a failure stops it.
 //
 // Usage: dotnet KsaPort.Porter.Tests.dll <repository>

@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 	<!-- The tests of the port settings in the shared library (Tests.cs): the table's rules, port-settings.toml, the
-	     needs, the environment and what the loader sets. scripts/build-dotnet.sh runs them:
+	     needs, the environment and what the loader sets. ctest runs them (cmake/port-folder.cmake):
 	     dotnet KsaPort.Common.Tests.dll <repository> -->
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>

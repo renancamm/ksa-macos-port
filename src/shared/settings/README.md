@@ -49,9 +49,9 @@ that reads it is compiled again only then.
 
 `KsaPort.Tools.SettingsGenerator`
 ([`../../build-tools/settings-generator/Generate.cs`](../../build-tools/settings-generator/Generate.cs)) is a build
-tool, not part of the app, which makes the two typed files and the template. `build.sh` builds it and runs its checks
-first ([`../../../scripts/build-settings.sh`](../../../scripts/build-settings.sh)): it checks the repository against
-the table, and stops the build when it isn't in step:
+tool, not part of the app, which makes the two typed files and the template. Every build runs its checks before the
+.NET projects ([`../../../cmake/port-folder.cmake`](../../../cmake/port-folder.cmake)): it checks the repository
+against the table, and the build stops when it isn't in step:
 
 - each setting's `by` column is what the code does: the driver and the KTX shim use the field of each setting it
   names for them, the hooks the property, and the hook it names is a class marked `[Hook]` and reads it (in its

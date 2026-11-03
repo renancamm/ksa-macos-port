@@ -1,4 +1,4 @@
-# The launcher: launcher.c -> KSA in KSA_NATIVES_DIR, which scripts/make-port-folder.sh puts in the app as
+# The launcher: launcher.c -> KSA in KSA_NATIVES_DIR, which the port folder's app gets as
 # Contents/MacOS/KSA
 #
 # It sets up the game's environment and becomes .NET's dotnet running KSA (see the comment at the top of launcher.c).
@@ -19,3 +19,6 @@ target_link_libraries(launcher PRIVATE "-framework CoreFoundation")
 add_custom_command(TARGET launcher POST_BUILD
     COMMAND codesign -f -s - -i "${BUNDLE_ID}" "-r=designated => identifier \"${BUNDLE_ID}\"" "$<TARGET_FILE:launcher>"
     VERBATIM)
+
+# The app's executable, Contents/MacOS/KSA
+port_folder_copy("${PORT_APP}/MacOS" "$<TARGET_FILE:launcher>")

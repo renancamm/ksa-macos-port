@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-	<!-- The porter's tests (Tests.cs), on synthetic shaders and files: scripts/build-dotnet.sh runs them:
+	<!-- The porter's tests (Tests.cs), on synthetic shaders and files: ctest runs them (cmake/port-folder.cmake):
 	     dotnet KsaPort.Porter.Tests.dll <repository> -->
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>

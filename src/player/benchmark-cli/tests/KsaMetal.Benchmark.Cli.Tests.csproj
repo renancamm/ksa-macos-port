@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 	<!-- The tests of the report program and of the benchmark's results (Tests.cs), which need no game.
-	     scripts/build-dotnet.sh runs them: dotnet KsaMetal.Benchmark.Cli.Tests.dll -->
+	     ctest runs them (cmake/port-folder.cmake): dotnet KsaMetal.Benchmark.Cli.Tests.dll -->
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
 		<AssemblyName>KsaMetal.Benchmark.Cli.Tests</AssemblyName>

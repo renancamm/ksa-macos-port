@@ -2,7 +2,7 @@
 	<!-- What the port's .NET projects share: the hooks and their loader (game/hooks/), the benchmark's director
 	     (game/benchmark/), the porter and its tests (player/porter/), the benchmark's program and its tests
 	     (player/benchmark-cli/), the shared library and its tests (shared/), and the build's tools (build-tools/).
-	     scripts/build-dotnet.sh builds them all, from ksa-macos-port.slnx. -->
+	     The build (cmake/port-folder.cmake) builds them all, from ksa-macos-port.slnx. -->
 	<PropertyGroup>
 		<TargetFramework>net10.0</TargetFramework>
 		<ImplicitUsings>disable</ImplicitUsings>
@@ -21,7 +21,7 @@
 		<HarmonyDll Condition="'$(HarmonyDll)' == ''">$(MSBuildThisFileDirectory)../deps/build/cmake/harmony/lib/net10.0/0Harmony.dll</HarmonyDll>
 	</PropertyGroup>
 
-	<!-- The build's output: with PortBuildDir set (scripts/build-dotnet.sh), each project's in bin/<project>/ and
+	<!-- The build's output: with PortBuildDir set (the build), each project's in bin/<project>/ and
 	     obj/<project>/ there; otherwise bin/ and obj/ next to the project, as an editor builds it. Those of an editor's
 	     build are then no sources of the project. -->
 	<PropertyGroup Condition="'$(PortBuildDir)' != ''">

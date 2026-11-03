@@ -11,7 +11,7 @@ using KsaPort.Common;
 // the conditions it notes, repeats merged into medians, numbers that don't depend on the Mac's region), finish (what
 // the game's log adds, the zip), the comparison of two runs, and the PNG reader and writer it shares with the director.
 // The runs are written with the director's own classes (Results.cs), so the tests also check that the report reads
-// what the director writes. scripts/build-dotnet.sh runs them after building the report program; a failure stops the
+// what the director writes. The build runs them (ctest) after building the report program; a failure stops the
 // build.
 //
 // Usage: dotnet KsaMetal.Benchmark.Cli.Tests.dll

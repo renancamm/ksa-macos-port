@@ -10,7 +10,7 @@ driver, into `deps/build/cmake/src/game/driver/tests/`.
 | `shader-corpus` | every translation of a recorded run again: its key from the recorded inputs, its MSL against the recorded one, Metal's compile of it | by hand, on a recorded corpus |
 
 ```bash
-ctest --test-dir deps/build/cmake -LE corpus    # the smoke test
+ctest --test-dir deps/build/cmake -R driver-smoke # the smoke test
 ctest --test-dir deps/build/cmake -L corpus     # the shader corpus test
 ```
 

@@ -21,3 +21,6 @@ target_compile_definitions(ktx-shim PRIVATE NDEBUG)
 target_link_libraries(ktx-shim PRIVATE brutal-ktx port-settings)
 
 add_custom_command(TARGET ktx-shim POST_BUILD COMMAND codesign -f -s - "$<TARGET_FILE:ktx-shim>" 2> /dev/null)
+
+# In the app, next to the game
+port_folder_copy("${PORT_APP}/Resources" "$<TARGET_FILE:ktx-shim>")

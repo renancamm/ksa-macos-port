@@ -24,3 +24,6 @@ target_compile_definitions(glfw-shim PRIVATE NDEBUG)
 target_link_libraries(glfw-shim PRIVATE brutal-glfw "-framework CoreGraphics" "-framework CoreFoundation")
 
 add_custom_command(TARGET glfw-shim POST_BUILD COMMAND codesign -f -s - "$<TARGET_FILE:glfw-shim>" 2> /dev/null)
+
+# In the app, next to the game
+port_folder_copy("${PORT_APP}/Resources" "$<TARGET_FILE:glfw-shim>")

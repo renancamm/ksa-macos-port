@@ -6,7 +6,7 @@ using KsaPort.Common;
 
 // The tests of the port settings in the shared library: the table (src/shared/settings/port-settings.txt) and the rules
 // its lines keep, reading and writing port-settings.toml, the needs, the values read back from the environment, and the
-// variables the loader sets. scripts/build-dotnet.sh runs them; a failure stops the build. The generator checks the
+// variables the loader sets. The build runs them (ctest); a failure stops it. The generator checks the
 // table against the rest of the repository (the hooks it names, the settings the hooks read).
 //
 // Usage: dotnet KsaPort.Common.Tests.dll <repository>

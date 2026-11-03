@@ -169,11 +169,12 @@ cd ksa-macos-port
 ```
 
 That makes `dist/ksa-macos-port/`, a port folder like a release's; `./build.sh --install` also puts its files into the
-installed app. The native libraries are a CMake project ([`CMakeLists.txt`](CMakeLists.txt)), and the porter, the
-hooks, the benchmark, the shared library and the two generators are .NET projects of one solution
-([`ksa-macos-port.slnx`](ksa-macos-port.slnx)), which an editor can open after a first build. The hooks and the
-benchmark are built against the installed app's KSA, or another one with `--ksa <archive>`, and the port folder is
-made for that KSA version. Everything the build downloads is declared in
+installed app. CMake builds everything ([`CMakeLists.txt`](CMakeLists.txt)): the native libraries, and the porter, the
+hooks, the benchmark, the shared library and the two generators, .NET projects of one solution
+([`ksa-macos-port.slnx`](ksa-macos-port.slnx)), which an editor can open after a first build. `build.sh` runs its four
+steps: configure, build, install (the port folder, [`cmake/port-folder.cmake`](cmake/port-folder.cmake)) and test.
+The hooks and the benchmark are built against the installed app's KSA, or another one with `--ksa <archive>`, and the
+port folder is made for that KSA version. Everything the build downloads is declared in
 [`cmake/dependencies.cmake`](cmake/dependencies.cmake).
 
 Three files are made by the build, in its build tree, and are not in the repository: `port-settings.h` and
@@ -268,8 +269,8 @@ StarMap, and moves the old one to the Trash only at the end; if anything fails, 
 
 ```text
 build.sh, release.sh        make the port folder; make a release of it
-scripts/                    the build's steps, and lib.sh
-CMakeLists.txt, cmake/      the native build, and every external source the build uses (dependencies.cmake)
+scripts/                    the icon, the port folder's check, and lib.sh, which build.sh and release.sh share
+CMakeLists.txt, cmake/      the build, the port folder's layout, and every external source the build uses
 CMakePresets.json           how CMake is run: Ninja, Release, deps/build/cmake/
 ksa-macos-port.slnx         the .NET projects: the porter, the hooks, the benchmark, the shared library, the generators
 global.json                 the .NET SDK version that builds them
