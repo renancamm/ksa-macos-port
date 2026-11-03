@@ -31,7 +31,7 @@ static void writeAtomically(const std::string& path, const std::string& data) {
 
 void kmtlCorpusRecord(uint64_t key, KShaderModule* mod, const char* entry, spv::ExecutionModel model, KPipelineLayout* layout,
                       const VkSpecializationInfo* spec, const KStageOptions& so, const KTranslated& out) {
-    std::string dir = kmtlConfig().corpus;
+    std::string dir = kmtlConfig().shaderCorpus;
     std::string in = dir + "/" + hex64(key) + ".in";
     struct stat st;
     if (stat(in.c_str(), &st) == 0) return;
@@ -50,7 +50,7 @@ void kmtlCorpusRecord(uint64_t key, KShaderModule* mod, const char* entry, spv::
              (int)so.tessFusedInput);
     t += line;
     const char* presets = kmtlConfig().spec;
-    snprintf(line, sizeof(line), "config %d %d ", (int)kmtlConfig().constantArgumentBuffers, (int)kmtlConfig().unlitShadowSkip);
+    snprintf(line, sizeof(line), "config %d %d ", (int)kmtlConfig().shaderConstantMemory, (int)kmtlConfig().skipShadowsOnUnlitSides);
     t += line + std::string(presets ? presets : "-") + "\n";
     if (layout) {
         t += "sets " + std::to_string(layout->sets.size()) + "\n";

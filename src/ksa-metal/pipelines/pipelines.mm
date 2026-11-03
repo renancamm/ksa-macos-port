@@ -493,7 +493,7 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
     // With tessellation the evaluation stage is Metal's (post-tessellation) vertex function
     // Translation here; MSL compile and pipeline state on a worker unless the pipeline is tessellated (its kernels
     // are built above) or asynchronous creation is off
-    bool async = !tess && kmtlConfig().asyncPipelines;
+    bool async = !tess && kmtlConfig().backgroundShaderCompiling;
     std::string vname, fname;
     id<MTLFunction> vfn = nil, ffn = nil;
     if (tess) {
@@ -656,7 +656,7 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
         KLOG(1, "tessellation pipeline: %u -> %u control points, strides vertex %lu control %lu patch %lu%s", p->tessInCP,
              p->tessOutCP, (unsigned long)tessPlain.vertexStride, (unsigned long)tessPlain.controlStride,
              (unsigned long)tessPlain.patchStride, p->tessPassthrough ? ", passthrough control stage" : "");
-        if (kmtlConfig().tessFuse && p->tessPassthrough) buildFusedTess(dev, ci, vs, tcs, tes, layout, tmodes, vso, d, makeState, p);
+        if (kmtlConfig().fusedTessellation && p->tessPassthrough) buildFusedTess(dev, ci, vs, tcs, tes, layout, tmodes, vso, d, makeState, p);
     }
     p->triangleFan = topo == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
     p->vertexUsesDrawId = vtr.usesDrawId;
@@ -773,7 +773,7 @@ KPipeline* kmtlCreateComputeFromStage(KDevice* dev, KPipelineLayout* layout, con
         return ps;
     };
     // Ray tracing kernels translate a module that lives only for this call: they compile here
-    bool async = kmtlConfig().asyncPipelines && !rtLaunch;
+    bool async = kmtlConfig().backgroundShaderCompiling && !rtLaunch;
     id<MTLComputePipelineState> ps = nil;
     if (!async && !(ps = build(tr, name))) return nullptr;
     auto* p = new KPipeline();

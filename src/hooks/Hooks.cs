@@ -31,7 +31,7 @@ public static class Hooks
     {
         Settings.Load();
         // Off (KSA_MTL_HOOKS=0), they load only for a benchmark run, which they start
-        if (!Settings.On("hooks"))
+        if (!Settings.Hooks)
         {
             Log("off, except for the benchmark");
             Run(Documents.Apply);
@@ -39,24 +39,24 @@ public static class Hooks
             return;
         }
         // First, and so before any mod patches
-        Run(GenericDetours.Apply, Settings.On("harmony_generic_detours"));
+        Run(GenericDetours.Apply, Settings.HarmonyGenericDetours);
         Run(WindowOrigin.Apply);
         Run(ExtraWindows.Apply);
-        Run(TerrainCache.Apply, Settings.On("terrain_cache"));
-        Run(OutlineSkip.Apply, Settings.On("skip_unused_outlines"));
-        Run(OverlaySkip.Apply, Settings.On("skip_unused_overlays"));
-        Run(OceanBlending.Apply, Settings.On("skip_unused_ocean_blending"));
+        Run(TerrainCache.Apply, Settings.TerrainCache);
+        Run(OutlineSkip.Apply, Settings.SkipUnusedOutlines);
+        Run(OverlaySkip.Apply, Settings.SkipUnusedOverlays);
+        Run(OceanBlending.Apply, Settings.SkipUnusedOceanBlending);
         Run(CloudShadows.Apply);
-        Run(WarpCloudShadows.Apply, Settings.On("lighter_warp_cloud_shadows"));
+        Run(WarpCloudShadows.Apply, Settings.LighterWarpCloudShadows);
         Run(PlumeShadows.Apply);
-        Run(ShadowSearch.Apply, Settings.On("simpler_pcss_shadows"));
-        Run(MilkyWayBake.Apply, Settings.On("baked_milky_way"));
+        Run(ShadowSearch.Apply, Settings.SimplerPcssShadows);
+        Run(MilkyWayBake.Apply, Settings.BakedMilkyWay);
         Run(CrewPortraits.Apply);
-        Run(WorkerPark.Apply, Settings.On("idle_thread_sleep"));
-        Run(FadedSmoke.Apply, Settings.On("clear_faded_smoke"));
-        Run(TumblingPhysics.Apply, Settings.On("lighter_tumbling_physics"));
-        Run(DebrisSettle.Apply, Settings.On("debris_settles_in_warp"));
-        Run(LoadingPace.Apply, Settings.On("loading_screen_fps_cap"));
+        Run(WorkerPark.Apply, Settings.IdleThreadSleep);
+        Run(FadedSmoke.Apply, Settings.ClearFadedSmoke);
+        Run(TumblingPhysics.Apply, Settings.LighterTumblingPhysics);
+        Run(DebrisSettle.Apply, Settings.DebrisSettlesInWarp);
+        Run(LoadingPace.Apply, Settings.LoadingScreenFpsCap);
         Run(RenderScale.Apply);
         Run(HudLayout.Apply);
         Run(ResolutionList.Apply);
@@ -67,7 +67,7 @@ public static class Hooks
         // After every hook that patches a method Program.RenderGame or RenderEditor call: patching those two compiles
         // them again, and the JIT can inline a small method they call (RenderAaPreparePasses) as it is then, so a patch
         // made on it later never runs from them (MetalFX Spatial drew nothing)
-        Run(HiddenPartsSkip.Apply, Settings.On("skip_hidden_vessel_parts"));
+        Run(HiddenPartsSkip.Apply, Settings.SkipHiddenVesselParts);
         Run(UiViewSize.Apply);
         // The port's own parts of the game
         Run(Documents.Apply);

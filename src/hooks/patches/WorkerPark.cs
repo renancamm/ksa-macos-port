@@ -15,7 +15,7 @@ internal static class WorkerPark
 
     public static string Apply(Harmony harmony)
     {
-        CapSeconds = Settings.Number("worker_park_ms") / 1000.0;
+        CapSeconds = Settings.WorkerParkMs / 1000.0;
         harmony.Patch(Find.Method(typeof(DynamicWorkerPool), nameof(DynamicWorkerPool.SetParkTimeout)),
             prefix: new HarmonyMethod(typeof(WorkerPark), nameof(Prefix)));
         return "on, " + (CapSeconds * 1000).ToString("0.###", CultureInfo.InvariantCulture) + " ms";

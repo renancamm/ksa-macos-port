@@ -79,7 +79,7 @@ void kmtlRecycleTimestamps(id<MTLCounterSampleBuffer> b) {
 static bool profInit(KDevice* dev) {
     static std::once_flag once;
     std::call_once(once, [dev] {
-        const char* path = kmtlConfig().gpuprof;
+        const char* path = kmtlConfig().gpuProfile;
         if (!path) return;
         if (![dev->mtl supportsCounterSampling:MTLCounterSamplingPointAtStageBoundary]) {
             KERR("GPU profiler: no stage-boundary counter sampling");
@@ -87,7 +87,7 @@ static bool profInit(KDevice* dev) {
         }
         if (!timestampSet(dev)) return;
         unsigned long long first, count;
-        if (const char* f = kmtlConfig().gpuprofFrames; f && sscanf(f, "%llu,%llu", &first, &count) == 2) {
+        if (const char* f = kmtlConfig().gpuProfileFrames; f && sscanf(f, "%llu,%llu", &first, &count) == 2) {
             g_profFirst = first;
             g_profCount = count;
         }
@@ -189,7 +189,7 @@ id<MTLBlitCommandEncoder> kmtlProfBlitEncoder(KCommandBuffer* cb) {
 
 // A draw or dispatch with this pipeline in the current encoder
 void kmtlProfNote(KCommandBuffer* cb, KPipeline* p, bool dispatch, uint32_t n) {
-    const KConfig& cfg = kmtlConfig();
+    const PortSettings& cfg = kmtlConfig();
     bool label = cfg.labels || kmtlPassDumpRecording();  // a pass dump names its passes
     if (!cb->prof && !label) return;  // the common case: three predictable branches per draw
     if (label) cb->notePipelineLabel(p);
@@ -203,7 +203,7 @@ void kmtlProfNote(KCommandBuffer* cb, KPipeline* p, bool dispatch, uint32_t n) {
         e.pipelines += p->profName;
         e.lastPipeline = p->profId;
     }
-    if (cfg.gpuprofSplit && !dispatch && cb->render && cb->deferredStores) {
+    if (cfg.gpuProfileSplit && !dispatch && cb->render && cb->deferredStores) {
         cb->suspendRender();
         cb->resumeRender();
     }

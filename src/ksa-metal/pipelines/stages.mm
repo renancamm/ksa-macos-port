@@ -109,7 +109,7 @@ static id<MTLLibrary> compileMSL(KDevice* dev, const std::string& msl, std::stri
     auto t0 = std::chrono::steady_clock::now();
     MTLCompileOptions* o = [MTLCompileOptions new];
     o.languageVersion = MTLLanguageVersion3_2;
-    o.mathMode = kmtlConfig().safeMath ? MTLMathModeSafe : MTLMathModeFast;
+    o.mathMode = kmtlConfig().preciseMath ? MTLMathModeSafe : MTLMathModeFast;
     o.preserveInvariance = YES;
     NSError* e = nil;
     id<MTLLibrary> lib = [dev->mtl newLibraryWithSource:[NSString stringWithUTF8String:msl.c_str()] options:o error:&e];
@@ -283,7 +283,7 @@ static std::string uniformStructRefs(const std::string& msl) {
 
 // A stage's MSL with its uniform structs read in place, or as translated when that doesn't compile
 id<MTLLibrary> kmtlCompileStageMSL(KDevice* dev, const std::string& msl, std::string* err) {
-    if (kmtlConfig().uniformRefs) {
+    if (kmtlConfig().inPlaceShaderParameters) {
         std::string refs = uniformStructRefs(msl);
         if (refs != msl) {
             std::string refErr;
@@ -314,7 +314,7 @@ static char stageChar(spv::ExecutionModel m, KTessRole role) {
 // every translation of a module stage. The replacement keeps the translated interface: same entry point name, same
 // argument buffer bindings (the set layouts fix them). Specialization values come from the translation it replaces
 static void applyOverride(const char* name, uint64_t key, KTranslated* tr) {
-    const char* dir = kmtlConfig().overrides;
+    const char* dir = kmtlConfig().shaderOverrides;
     if (!dir) return;
     char path[1200];
     snprintf(path, sizeof(path), "%s/%016llx.metal", dir, (unsigned long long)key);
@@ -364,7 +364,7 @@ bool kmtlPrepareStage(const VkPipelineShaderStageCreateInfo* st, spv::ExecutionM
     }
     uint64_t key = kmtlTranslationKey(mod, st->pName, model, layout, st->pSpecializationInfo, so);
     // A corpus records this build's translations, not the cache's
-    if (kmtlConfig().corpus || !kmtlCacheLoad(key, tr)) {
+    if (kmtlConfig().shaderCorpus || !kmtlCacheLoad(key, tr)) {
         if (!kmtlTranslate(mod, st->pName, model, layout, st->pSpecializationInfo, so, tr, &err)) {
             KERR("shader %s: %s", name, err.c_str());
             dumpMSL(name, "", err);
@@ -373,7 +373,7 @@ bool kmtlPrepareStage(const VkPipelineShaderStageCreateInfo* st, spv::ExecutionM
         kmtlCacheStore(key, *tr);
     }
     kmtlCacheNoteUsed(key);
-    if (kmtlConfig().corpus) kmtlCorpusRecord(key, mod, st->pName, model, layout, st->pSpecializationInfo, so, *tr);
+    if (kmtlConfig().shaderCorpus) kmtlCorpusRecord(key, mod, st->pName, model, layout, st->pSpecializationInfo, so, *tr);
     applyOverride(name, key, tr);
     return true;
 }
@@ -425,7 +425,7 @@ id<MTLFunction> kmtlCompileStage(KDevice* dev, const KTranslated& t, const std::
         msl.insert(at + 1, "[[early_fragment_tests]] ");
     }
     id<MTLLibrary> lib = nil;
-    if (rtLaunch && kmtlConfig().rtIntersector) {
+    if (rtLaunch && kmtlConfig().ivaRaySearch) {
         std::string rt = kmtlRtIntersectors(msl), rtErr;
         if (rt != msl) {
             if ((lib = kmtlCompileStageMSL(dev, rt, &rtErr))) msl = rt;
@@ -433,7 +433,7 @@ id<MTLFunction> kmtlCompileStage(KDevice* dev, const KTranslated& t, const std::
         }
     }
     if (!lib) lib = kmtlCompileStageMSL(dev, msl, &err);
-    dumpMSL(name, kmtlConfig().uniformRefs ? uniformStructRefs(msl) : msl, err);
+    dumpMSL(name, kmtlConfig().inPlaceShaderParameters ? uniformStructRefs(msl) : msl, err);
     if (!lib) {
         KERR("shader %s: MSL compile failed: %s", name, err.c_str());
         return nil;

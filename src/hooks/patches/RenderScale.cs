@@ -90,7 +90,7 @@ internal static class RenderScale
         string scale = Settings.RenderScale.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
         string upscaler = !Upscale.Wanted ? "filtered stretch"
             : Upscale.Spatial ? "MetalFX spatial, no CMAA2"
-            : Settings.On("skip_game_anti_aliasing") ? "MetalFX temporal, the game's anti-aliasing off" : "MetalFX temporal, no CMAA2";
+            : Settings.SkipGameAntiAliasing ? "MetalFX temporal, the game's anti-aliasing off" : "MetalFX temporal, no CMAA2";
         return $"{scale} of the window, {upscaler}";
     }
 
@@ -104,8 +104,8 @@ internal static class RenderScale
         Output = new int2(output.Width, output.Height);
         int2 points = Program.GetWindow() is { } window ? window.Size : int2.Zero;
         Window = points.X > 0 && points.Y > 0 ? points : Output;
-        var render = new int2(Math.Clamp((int)MathF.Round(Window.X * Settings.RenderScale), 1, Output.X),
-            Math.Clamp((int)MathF.Round(Window.Y * Settings.RenderScale), 1, Output.Y));
+        var render = new int2(Math.Clamp((int)MathF.Round(Window.X * (float)Settings.RenderScale), 1, Output.X),
+            Math.Clamp((int)MathF.Round(Window.Y * (float)Settings.RenderScale), 1, Output.Y));
         Scaled = render != Window;
         _ours = new VkExtent2D(render.X, render.Y);
         __instance.ExtentOverride = _ours;
@@ -278,7 +278,7 @@ internal static class RenderScale
         return code;
     }
 
-    public static float SunRadius(float pixels) => _mainView && Scaled ? pixels * Settings.RenderScale : pixels;
+    public static float SunRadius(float pixels) => _mainView && Scaled ? pixels * (float)Settings.RenderScale : pixels;
 
     // After the camera data of a view is set: the main view's pixel sizes, and MetalFX's jitter and reprojection
     private static void ShaderDataPostfix(IViewport viewport)

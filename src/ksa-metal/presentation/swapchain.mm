@@ -231,7 +231,7 @@ static double pacedEnd(KPresentState& st, uint64_t id) {
 VKFN(VkResult) vkWaitForPresentKHR(VkDevice, VkSwapchainKHR swapchain, uint64_t presentId, uint64_t timeout) {
     KTRACE_FIRST();
     std::shared_ptr<KPresentState> state = ((KSwapchain*)swapchain)->presentState;
-    bool pacing = kmtlConfig().presentPacing;
+    bool pacing = kmtlConfig().vsyncPacing;
     double start = CACurrentMediaTime();
     std::unique_lock<std::mutex> lock(state->m);
     auto deadline = std::chrono::steady_clock::now() +
@@ -283,7 +283,7 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
             id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
             [b waitForFence:q->chain];
             // KSA_MTL_FRAME_INTERPOLATION: a frame between the last one and this one goes to the display first
-            if (kmtlConfig().fxInterpolate) {
+            if (kmtlConfig().frameInterpolation) {
                 [b endEncoding];
                 id<MTLTexture> mid = kmtlPresentInterpolate(q->device, cb, img->mtl);
                 id<CAMetalDrawable> first = mid ? [sc->surface->layer nextDrawable] : nil;

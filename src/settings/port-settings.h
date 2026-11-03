@@ -1,87 +1,140 @@
-// The port settings that set a variable, for the native code (KSA Metal, the KTX shim): made from
-// port-settings.txt by KsaPortSettingsGenerator (README.md in this folder), which build.sh runs. Edit the
-// table, not this.
+// The port settings of the native code, KSA Metal and the KTX shim: made from port-settings.txt by
+// KsaPortSettingsGenerator (README.md in this folder), which build.sh runs. Edit the table, not this.
 //
-// PORT_SETTING_<KEY> is the setting's variable and its default, as the readers take them:
-//   bool          "<variable>", <true | false>
-//   int, number   "<variable>", <default>
-//   others        "<variable>"
+// portSettingsRead() reads each one from its variable, taking the values the settings' library takes: a switch
+// 0 or 1, a number in the table's range, an int of digits only; unset, empty or anything else, the table's
+// default. Text is NULL when unset. A variable set outside the game is taken without its setting's needs,
+// which the hooks' loader applies to those it sets.
 #pragma once
 
 #include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
 
-#define PORT_SETTING_UPSCALING "KSA_MTL_UPSCALING"
-#define PORT_SETTING_RENDER_SCALE "KSA_MTL_RENDER_SCALE"
-#define PORT_SETTING_SKIP_GAME_ANTI_ALIASING "KSA_MTL_SKIP_GAME_ANTI_ALIASING", true
-#define PORT_SETTING_FEWER_CLOUD_SHADOW_UPDATES "KSA_MTL_FEWER_CLOUD_SHADOW_UPDATES", false
-#define PORT_SETTING_LIGHTER_WARP_CLOUD_SHADOWS "KSA_MTL_LIGHTER_WARP_CLOUD_SHADOWS", false
-#define PORT_SETTING_LIGHTER_PLUME_SHADOWS "KSA_MTL_LIGHTER_PLUME_SHADOWS", false
-#define PORT_SETTING_SIMPLER_PCSS_SHADOWS "KSA_MTL_SIMPLER_PCSS_SHADOWS", false
-#define PORT_SETTING_BAKED_MILKY_WAY "KSA_MTL_BAKED_MILKY_WAY", false
-#define PORT_SETTING_CREW_PORTRAITS_AT_15_FPS "KSA_MTL_CREW_PORTRAITS_AT_15_FPS", false
-#define PORT_SETTING_LIGHTER_TUMBLING_PHYSICS "KSA_MTL_LIGHTER_TUMBLING_PHYSICS", false
-#define PORT_SETTING_DEBRIS_SETTLES_IN_WARP "KSA_MTL_DEBRIS_SETTLES_IN_WARP", false
-#define PORT_SETTING_TERRAIN_CACHE "KSA_MTL_TERRAIN_CACHE", true
-#define PORT_SETTING_SKIP_UNUSED_OUTLINES "KSA_MTL_SKIP_UNUSED_OUTLINES", true
-#define PORT_SETTING_SKIP_UNUSED_OVERLAYS "KSA_MTL_SKIP_UNUSED_OVERLAYS", true
-#define PORT_SETTING_SKIP_HIDDEN_VESSEL_PARTS "KSA_MTL_SKIP_HIDDEN_VESSEL_PARTS", true
-#define PORT_SETTING_SKIP_UNUSED_OCEAN_BLENDING "KSA_MTL_SKIP_UNUSED_OCEAN_BLENDING", true
-#define PORT_SETTING_CLEAR_FADED_SMOKE "KSA_MTL_CLEAR_FADED_SMOKE", true
-#define PORT_SETTING_SKIP_HIDDEN_CREW_PORTRAITS "KSA_MTL_SKIP_HIDDEN_CREW_PORTRAITS", true
-#define PORT_SETTING_SKIP_SHADOWS_ON_UNLIT_SIDES "KSA_MTL_SKIP_SHADOWS_ON_UNLIT_SIDES", true
-#define PORT_SETTING_FUSED_TESSELLATION "KSA_MTL_FUSED_TESSELLATION", true
-#define PORT_SETTING_SKIP_GPU_TEXTURE_COMPRESSION "KSA_MTL_SKIP_GPU_TEXTURE_COMPRESSION", true
-#define PORT_SETTING_IVA_RAY_SEARCH "KSA_MTL_IVA_RAY_SEARCH", true
-#define PORT_SETTING_VSYNC_PACING "KSA_MTL_VSYNC_PACING", true
-#define PORT_SETTING_BACKGROUND_SHADER_COMPILING "KSA_MTL_BACKGROUND_SHADER_COMPILING", true
-#define PORT_SETTING_SHADER_CACHE "KSA_MTL_SHADER_CACHE", true
-#define PORT_SETTING_SHADER_CONSTANT_MEMORY "KSA_MTL_SHADER_CONSTANT_MEMORY", true
-#define PORT_SETTING_IN_PLACE_SHADER_PARAMETERS "KSA_MTL_IN_PLACE_SHADER_PARAMETERS", true
-#define PORT_SETTING_TEXTURE_FILE_MAPPING "KSA_MTL_TEXTURE_FILE_MAPPING", true
-#define PORT_SETTING_IDLE_THREAD_SLEEP "KSA_MTL_IDLE_THREAD_SLEEP", true
-#define PORT_SETTING_LOADING_SCREEN_FPS_CAP "KSA_MTL_LOADING_SCREEN_FPS_CAP", true
-#define PORT_SETTING_TESSELLATION "KSA_MTL_TESSELLATION", true
-#define PORT_SETTING_RAY_QUERIES "KSA_MTL_RAY_QUERIES", true
-#define PORT_SETTING_RAY_TRACING "KSA_MTL_RAY_TRACING", true
-#define PORT_SETTING_HDR_OUTPUT "KSA_MTL_HDR_OUTPUT", true
-#define PORT_SETTING_FIT_HUD_TO_DISPLAY "KSA_MTL_FIT_HUD_TO_DISPLAY", true
-#define PORT_SETTING_METAL_PERFORMANCE_HUD "MTL_HUD_ENABLED", false
-#define PORT_SETTING_HOOKS "KSA_MTL_HOOKS", true
-#define PORT_SETTING_HARMONY_GENERIC_DETOURS "KSA_MTL_HARMONY_GENERIC_DETOURS", true
-#define PORT_SETTING_LOG "KSA_MTL_LOG", 0
-#define PORT_SETTING_LOG_FILE "KSA_MTL_LOG_FILE"
-#define PORT_SETTING_STALLS "KSA_MTL_STALLS", 0
-#define PORT_SETTING_FRAMES "KSA_MTL_FRAMES"
-#define PORT_SETTING_LATENCY "KSA_MTL_LATENCY"
-#define PORT_SETTING_LABELS "KSA_MTL_LABELS", false
-#define PORT_SETTING_FRAME_CAPTURE "MTL_CAPTURE_ENABLED", false
-#define PORT_SETTING_GPU_PROFILE "KSA_MTL_GPU_PROFILE"
-#define PORT_SETTING_GPU_PROFILE_FRAMES "KSA_MTL_GPU_PROFILE_FRAMES"
-#define PORT_SETTING_GPU_PROFILE_SPLIT "KSA_MTL_GPU_PROFILE_SPLIT", false
-#define PORT_SETTING_GPU_ERRORS "KSA_MTL_GPU_ERRORS", false
-#define PORT_SETTING_WATCH "KSA_MTL_WATCH"
-#define PORT_SETTING_WATCH_WHITE "KSA_MTL_WATCH_WHITE", 30
-#define PORT_SETTING_DUMP_MSL "KSA_MTL_DUMP_MSL"
-#define PORT_SETTING_DUMP_SPV "KSA_MTL_DUMP_SPV"
-#define PORT_SETTING_SHADER_CORPUS "KSA_MTL_SHADER_CORPUS"
-#define PORT_SETTING_SHADER_OVERRIDES "KSA_MTL_SHADER_OVERRIDES"
-#define PORT_SETTING_SPEC "KSA_MTL_SPEC"
-#define PORT_SETTING_THROTTLE "KSA_MTL_THROTTLE"
-#define PORT_SETTING_TRAIL_CACHES "KSA_MTL_TRAIL_CACHES"
-#define PORT_SETTING_TRAIL_SHADOWS "KSA_MTL_TRAIL_SHADOWS"
-#define PORT_SETTING_STRICT_PIPELINES "KSA_MTL_STRICT_PIPELINES", false
-#define PORT_SETTING_STRICT_SYNC "KSA_MTL_STRICT_SYNC", false
-#define PORT_SETTING_EARLY_FRAGMENT_TESTS "KSA_MTL_EARLY_FRAGMENT_TESTS", true
-#define PORT_SETTING_PRECISE_MATH "KSA_MTL_PRECISE_MATH", false
-#define PORT_SETTING_SHOTS "KSA_MTL_SHOTS"
-#define PORT_SETTING_SHOT_UNIT "KSA_MTL_SHOT_UNIT"
-#define PORT_SETTING_SHOT_DIR "KSA_MTL_SHOT_DIR"
-#define PORT_SETTING_EXIT_AFTER_SHOTS "KSA_MTL_EXIT_AFTER_SHOTS", false
-#define PORT_SETTING_EXIT_AFTER "KSA_MTL_EXIT_AFTER", 0
-#define PORT_SETTING_EXIT_AFTER_S "KSA_MTL_EXIT_AFTER_S", 0
-#define PORT_SETTING_FX_DEBUG "KSA_MTL_FX_DEBUG", false
-#define PORT_SETTING_FX_SHOTS "KSA_MTL_FX_SHOTS"
-#define PORT_SETTING_FRAME_INTERPOLATION "KSA_MTL_FRAME_INTERPOLATION", false
-#define PORT_SETTING_CACHE_DIR "KSA_MTL_CACHE_DIR"
-#define PORT_SETTING_TEXTURE_BUDGET_MB "KSA_MTL_TEXTURE_BUDGET_MB", 0
-#define PORT_SETTING_WORKER_PARK_MS "KSA_MTL_WORKER_PARK_MS", 0.25
+typedef struct PortSettings {
+    bool skipShadowsOnUnlitSides;           // KSA_MTL_SKIP_SHADOWS_ON_UNLIT_SIDES
+    bool fusedTessellation;                 // KSA_MTL_FUSED_TESSELLATION
+    bool skipGpuTextureCompression;         // KSA_MTL_SKIP_GPU_TEXTURE_COMPRESSION
+    bool ivaRaySearch;                      // KSA_MTL_IVA_RAY_SEARCH
+    bool vsyncPacing;                       // KSA_MTL_VSYNC_PACING
+    bool backgroundShaderCompiling;         // KSA_MTL_BACKGROUND_SHADER_COMPILING
+    bool shaderCache;                       // KSA_MTL_SHADER_CACHE
+    bool shaderConstantMemory;              // KSA_MTL_SHADER_CONSTANT_MEMORY
+    bool inPlaceShaderParameters;           // KSA_MTL_IN_PLACE_SHADER_PARAMETERS
+    bool textureFileMapping;                // KSA_MTL_TEXTURE_FILE_MAPPING
+    bool tessellation;                      // KSA_MTL_TESSELLATION
+    bool rayQueries;                        // KSA_MTL_RAY_QUERIES
+    bool rayTracing;                        // KSA_MTL_RAY_TRACING
+    bool hdrOutput;                         // KSA_MTL_HDR_OUTPUT
+    int log;                                // KSA_MTL_LOG
+    const char* logFile;                    // KSA_MTL_LOG_FILE
+    double stalls;                          // KSA_MTL_STALLS
+    const char* frames;                     // KSA_MTL_FRAMES
+    const char* latency;                    // KSA_MTL_LATENCY
+    bool labels;                            // KSA_MTL_LABELS
+    bool frameCapture;                      // MTL_CAPTURE_ENABLED
+    const char* gpuProfile;                 // KSA_MTL_GPU_PROFILE
+    const char* gpuProfileFrames;           // KSA_MTL_GPU_PROFILE_FRAMES
+    bool gpuProfileSplit;                   // KSA_MTL_GPU_PROFILE_SPLIT
+    bool gpuErrors;                         // KSA_MTL_GPU_ERRORS
+    const char* watch;                      // KSA_MTL_WATCH
+    double watchWhite;                      // KSA_MTL_WATCH_WHITE
+    const char* dumpMsl;                    // KSA_MTL_DUMP_MSL
+    const char* dumpSpv;                    // KSA_MTL_DUMP_SPV
+    const char* shaderCorpus;               // KSA_MTL_SHADER_CORPUS
+    const char* shaderOverrides;            // KSA_MTL_SHADER_OVERRIDES
+    const char* spec;                       // KSA_MTL_SPEC
+    const char* throttle;                   // KSA_MTL_THROTTLE
+    bool strictPipelines;                   // KSA_MTL_STRICT_PIPELINES
+    bool strictSync;                        // KSA_MTL_STRICT_SYNC
+    bool earlyFragmentTests;                // KSA_MTL_EARLY_FRAGMENT_TESTS
+    bool preciseMath;                       // KSA_MTL_PRECISE_MATH
+    const char* shots;                      // KSA_MTL_SHOTS
+    const char* shotUnit;                   // KSA_MTL_SHOT_UNIT
+    const char* shotDir;                    // KSA_MTL_SHOT_DIR
+    bool exitAfterShots;                    // KSA_MTL_EXIT_AFTER_SHOTS
+    int exitAfter;                          // KSA_MTL_EXIT_AFTER
+    double exitAfterS;                      // KSA_MTL_EXIT_AFTER_S
+    bool fxDebug;                           // KSA_MTL_FX_DEBUG
+    const char* fxShots;                    // KSA_MTL_FX_SHOTS
+    bool frameInterpolation;                // KSA_MTL_FRAME_INTERPOLATION
+    const char* cacheDir;                   // KSA_MTL_CACHE_DIR
+    int textureBudgetMb;                    // KSA_MTL_TEXTURE_BUDGET_MB
+} PortSettings;
+
+static inline const char* portSettingText(const char* name) {
+    const char* v = getenv(name);
+    return v && *v ? v : NULL;
+}
+static inline bool portSettingOn(const char* name, bool def) {
+    const char* v = portSettingText(name);
+    return v && !strcmp(v, "0") ? false : v && !strcmp(v, "1") ? true : def;
+}
+// A number in [min, max] (none, such as nan, isn't); an int, digits only
+static inline double portSettingNumber(const char* name, double def, double min, double max) {
+    const char* v = portSettingText(name);
+    char* end = NULL;
+    double d = v ? strtod(v, &end) : def;
+    return v && (end == v || *end || !(d >= min && d <= max)) ? def : d;
+}
+static inline int portSettingInt(const char* name, int def, int min, int max) {
+    const char* v = portSettingText(name);
+    if (!v) return def;
+    for (const char* c = v; *c; c++)
+        if (*c < '0' || *c > '9') return def;
+    long n = strtol(v, NULL, 10);
+    return n >= min && n <= max ? (int)n : def;
+}
+
+static inline PortSettings portSettingsRead(void) {
+    PortSettings s;
+    s.skipShadowsOnUnlitSides = portSettingOn("KSA_MTL_SKIP_SHADOWS_ON_UNLIT_SIDES", true);
+    s.fusedTessellation = portSettingOn("KSA_MTL_FUSED_TESSELLATION", true);
+    s.skipGpuTextureCompression = portSettingOn("KSA_MTL_SKIP_GPU_TEXTURE_COMPRESSION", true);
+    s.ivaRaySearch = portSettingOn("KSA_MTL_IVA_RAY_SEARCH", true);
+    s.vsyncPacing = portSettingOn("KSA_MTL_VSYNC_PACING", true);
+    s.backgroundShaderCompiling = portSettingOn("KSA_MTL_BACKGROUND_SHADER_COMPILING", true);
+    s.shaderCache = portSettingOn("KSA_MTL_SHADER_CACHE", true);
+    s.shaderConstantMemory = portSettingOn("KSA_MTL_SHADER_CONSTANT_MEMORY", true);
+    s.inPlaceShaderParameters = portSettingOn("KSA_MTL_IN_PLACE_SHADER_PARAMETERS", true);
+    s.textureFileMapping = portSettingOn("KSA_MTL_TEXTURE_FILE_MAPPING", true);
+    s.tessellation = portSettingOn("KSA_MTL_TESSELLATION", true);
+    s.rayQueries = portSettingOn("KSA_MTL_RAY_QUERIES", true);
+    s.rayTracing = portSettingOn("KSA_MTL_RAY_TRACING", true);
+    s.hdrOutput = portSettingOn("KSA_MTL_HDR_OUTPUT", true);
+    s.log = portSettingInt("KSA_MTL_LOG", 0, 0, 2);
+    s.logFile = portSettingText("KSA_MTL_LOG_FILE");
+    s.stalls = portSettingNumber("KSA_MTL_STALLS", 0, 0, 10000);
+    s.frames = portSettingText("KSA_MTL_FRAMES");
+    s.latency = portSettingText("KSA_MTL_LATENCY");
+    s.labels = portSettingOn("KSA_MTL_LABELS", false);
+    s.frameCapture = portSettingOn("MTL_CAPTURE_ENABLED", false);
+    s.gpuProfile = portSettingText("KSA_MTL_GPU_PROFILE");
+    s.gpuProfileFrames = portSettingText("KSA_MTL_GPU_PROFILE_FRAMES");
+    s.gpuProfileSplit = portSettingOn("KSA_MTL_GPU_PROFILE_SPLIT", false);
+    s.gpuErrors = portSettingOn("KSA_MTL_GPU_ERRORS", false);
+    s.watch = portSettingText("KSA_MTL_WATCH");
+    s.watchWhite = portSettingNumber("KSA_MTL_WATCH_WHITE", 30, 0, 100);
+    s.dumpMsl = portSettingText("KSA_MTL_DUMP_MSL");
+    s.dumpSpv = portSettingText("KSA_MTL_DUMP_SPV");
+    s.shaderCorpus = portSettingText("KSA_MTL_SHADER_CORPUS");
+    s.shaderOverrides = portSettingText("KSA_MTL_SHADER_OVERRIDES");
+    s.spec = portSettingText("KSA_MTL_SPEC");
+    s.throttle = portSettingText("KSA_MTL_THROTTLE");
+    s.strictPipelines = portSettingOn("KSA_MTL_STRICT_PIPELINES", false);
+    s.strictSync = portSettingOn("KSA_MTL_STRICT_SYNC", false);
+    s.earlyFragmentTests = portSettingOn("KSA_MTL_EARLY_FRAGMENT_TESTS", true);
+    s.preciseMath = portSettingOn("KSA_MTL_PRECISE_MATH", false);
+    s.shots = portSettingText("KSA_MTL_SHOTS");
+    s.shotUnit = portSettingText("KSA_MTL_SHOT_UNIT");
+    s.shotDir = portSettingText("KSA_MTL_SHOT_DIR");
+    s.exitAfterShots = portSettingOn("KSA_MTL_EXIT_AFTER_SHOTS", false);
+    s.exitAfter = portSettingInt("KSA_MTL_EXIT_AFTER", 0, 0, 100000000);
+    s.exitAfterS = portSettingNumber("KSA_MTL_EXIT_AFTER_S", 0, 0, 100000);
+    s.fxDebug = portSettingOn("KSA_MTL_FX_DEBUG", false);
+    s.fxShots = portSettingText("KSA_MTL_FX_SHOTS");
+    s.frameInterpolation = portSettingOn("KSA_MTL_FRAME_INTERPOLATION", false);
+    s.cacheDir = portSettingText("KSA_MTL_CACHE_DIR");
+    s.textureBudgetMb = portSettingInt("KSA_MTL_TEXTURE_BUDGET_MB", 0, 0, 1048576);
+    return s;
+}

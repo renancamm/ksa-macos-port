@@ -12,7 +12,7 @@ and test a change.
 | Path | What it holds |
 |---|---|
 | `Hooks.cs` | the list of hooks in the order they apply, and the rule they follow: `Skip`, `Find`, `Fail` |
-| `Settings.cs` | the settings as the hooks read them ([Settings](#settings)) |
+| `Settings.cs`, `Settings.Generated.cs` | the settings as the hooks read them, a typed property each, the second file made from the settings table ([Settings](#settings)) |
 | [`patches/`](patches/) | the patches to the game's rendering and physics ([The patches](#the-patches)) |
 | [`app/`](app/) | the port's part of the game: Restart, the documents folder, windows and UI coordinates, displays, HDR, mods' generic patches, frame captures, the benchmark's runs ([The port's part of the game](#the-ports-part-of-the-game)) |
 | [`tab/`](tab/) | the Mac Port tab and its presets |
@@ -125,9 +125,10 @@ the game starts ([`loader/PortEnvironment.cs`](loader/PortEnvironment.cs), with 
 on. One set before the game starts wins over the file, and the Mac Port tab shows its row as set outside. The loader
 sets each variable twice, for .NET, which keeps its own copy of the environment, and with `setenv` for KSA Metal and
 the shims, which read theirs when the game first uses them. It also sends the game's output to `console.log` and
-copies the file's template for a new player. The hooks read their settings through the library
-([`Settings.cs`](Settings.cs)): a variable that is unset, holds none of the setting's values (`console.log` says
-which), or belongs to a setting whose needs aren't met means the default. The table
+copies the file's template for a new player. The hooks read their settings through the library, each as a typed
+property of [`Settings`](Settings.cs) named after its key (`terrain_cache`: `Settings.TerrainCache`): a variable that
+is unset, holds none of the setting's values (`console.log` says which), or belongs to a setting whose needs aren't
+met means the default. The table
 [`../settings/port-settings.txt`](../settings/port-settings.txt) says which hook does each setting; those of the
 hooks:
 

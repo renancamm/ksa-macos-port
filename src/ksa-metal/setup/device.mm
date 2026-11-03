@@ -12,7 +12,7 @@ std::atomic<int64_t> g_internalBytes{0};  // descriptor pool chunks and upload r
 // KSA_MTL_STALLS: what changed in the set since its last commit, and on which threads, for the log of a slow commit
 static int g_resAdds, g_resRemoves; static int64_t g_resAddBytes, g_resRemoveBytes; static std::string g_resThreads;
 static void noteChange(bool add, id<MTLAllocation> a) {
-    if (kmtlConfig().stallMs <= 0) return;
+    if (kmtlConfig().stalls <= 0) return;
     (add ? g_resAdds : g_resRemoves)++;
     (add ? g_resAddBytes : g_resRemoveBytes) += (int64_t)a.allocatedSize;
     char name[64] = "";
@@ -41,7 +41,7 @@ void KDevice::commitResidency() {
         double t0 = CACurrentMediaTime();
         [residency commit];
         double ms = (CACurrentMediaTime() - t0) * 1000.0;
-        if (kmtlConfig().stallMs > 0 && ms >= kmtlConfig().stallMs) {
+        if (kmtlConfig().stalls > 0 && ms >= kmtlConfig().stalls) {
             char name[64] = "";
             pthread_getname_np(pthread_self(), name, sizeof name);
             KLOG(0, "stall: residency commit %.1f ms on '%s': +%d (%lld MB) -%d (%lld MB), set %llu allocations; changed on %s",
@@ -257,7 +257,7 @@ template <typename F> static VkResult submit(VkQueue queue, uint32_t submitCount
         if (toCommit.empty()) toCommit.push_back([q->mtl commandBuffer]);
         [toCommit.back() addCompletedHandler:^(id<MTLCommandBuffer>) { signalFence(f); }];
     }
-    if (kmtlConfig().stallMs > 0) {
+    if (kmtlConfig().stalls > 0) {
         // KSA_MTL_STALLS: command buffers that started on the GPU long after they were committed
         double now = CACurrentMediaTime();
         uint32_t family = q->family;
@@ -265,7 +265,7 @@ template <typename F> static VkResult submit(VkQueue queue, uint32_t submitCount
             NSString* label = cb.label;
             [cb addCompletedHandler:^(id<MTLCommandBuffer> c) {
                 double delay = (c.GPUStartTime - now) * 1000.0, run = (c.GPUEndTime - c.GPUStartTime) * 1000.0;
-                if (c.GPUStartTime > 0 && delay >= 2 * kmtlConfig().stallMs)
+                if (c.GPUStartTime > 0 && delay >= 2 * kmtlConfig().stalls)
                     KLOG(0, "stall: gpu start %.1f ms after commit (ran %.1f ms) queue %u '%s' at %.3f present %llu", delay,
                          run, family, label ? label.UTF8String : "", now, (unsigned long long)kmtlPresentCount());
             }];

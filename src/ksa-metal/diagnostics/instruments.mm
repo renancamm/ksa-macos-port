@@ -214,7 +214,7 @@ static std::vector<double> parseList(const char* s) {
 }
 
 static void initInstruments() {
-    const KConfig& cfg = kmtlConfig();
+    const PortSettings& cfg = kmtlConfig();
     g_start = g_lastPresent = std::chrono::steady_clock::now();
     if (cfg.frames) {
         g_frameCsv = fopen(cfg.frames, "w");
@@ -231,7 +231,7 @@ static void initInstruments() {
         }
     }
     std::sort(g_shots.begin(), g_shots.end(), [](const Shot& a, const Shot& b) { return a.at < b.at; });
-    g_exitSeconds = cfg.exitAfterSeconds;
+    g_exitSeconds = cfg.exitAfterS;
 }
 
 static void ensureInstruments() {
@@ -367,7 +367,7 @@ void kmtlOnPresent(KDevice* dev, KSwapchain* swapchain, KImage* image, id<MTLCom
     g_lastFrame.drawableWidth = (uint32_t)image->mtl.width;
     g_lastFrame.drawableHeight = (uint32_t)image->mtl.height;
     g_lastFrame.displayMs = g_displayMs.load();
-    if (kmtlConfig().fxInterpolate && g_presents % 600 == 0) {
+    if (kmtlConfig().frameInterpolation && g_presents % 600 == 0) {
         static uint64_t lastShown = 0, lastPresents = 0;
         static auto lastTime = now;
         double secs = std::chrono::duration<double>(now - lastTime).count();

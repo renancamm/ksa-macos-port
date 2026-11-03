@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -16,8 +17,6 @@ using KsaPortSettings;
 // Exits with 1 when a check fails.
 internal static class Generate
 {
-    private const string HeaderName = "port-settings.h";
-
     private static int Main(string[] args)
     {
         try
@@ -123,40 +122,9 @@ internal static class Generate
 
     private static string TomlValue(PortSetting s) => s.Toml(s.Default);
 
-    // The header the native code reads its settings' variables from
-    private static string Header()
-    {
-        var t = new StringBuilder("""
-            // The port settings that set a variable, for the native code (KSA Metal, the KTX shim): made from
-            // port-settings.txt by KsaPortSettingsGenerator (README.md in this folder), which build.sh runs. Edit the
-            // table, not this.
-            //
-            // PORT_SETTING_<KEY> is the setting's variable and its default, as the readers take them:
-            //   bool          "<variable>", <true | false>
-            //   int, number   "<variable>", <default>
-            //   others        "<variable>"
-            #pragma once
-
-            #include <stdbool.h>
-
-            """).Append('\n');
-        foreach (var s in PortSettings.All.Where(s => s.Variable.Length > 0))
-        {
-            var value = s.Kind switch
-            {
-                "bool" => $", {s.Default}",
-                "int" or "number" => $", {(s.Default.Length > 0 ? s.Default : "0")}",
-                _ => "",
-            };
-            t.Append($"#define {Macro(s)} \"{s.Variable}\"{value}\n");
-        }
-        return t.ToString();
-    }
-
-    // Apple's variables, which Metal reads, that the READMEs name besides the table's
-    private static readonly string[] AppleVariables = ["MTL_SHADER_VALIDATION", "MTL_DEBUG_LAYER"];
-
-    private static string Macro(PortSetting s) => "PORT_SETTING_" + s.Key.ToUpperInvariant();
+    // A key as a name in code: PascalCase for C# (fused_tessellation: FusedTessellation), camelCase for C
+    private static string Pascal(string key) => string.Concat(key.Split('_').Select(w => char.ToUpperInvariant(w[0]) + w[1..]));
+    private static string Camel(string key) => char.ToLowerInvariant(Pascal(key)[0]) + Pascal(key)[1..];
 
     // What a by column's entry names: a component that reads the setting, with the README that documents it
     private static readonly Dictionary<string, string> Readers = new()
@@ -166,55 +134,215 @@ internal static class Generate
 
     private static string Reader(string by) => by.StartsWith("hooks:", StringComparison.Ordinal) ? "hooks" : by;
 
-    // The checks: port-settings.h made from the table; each setting's by column what the code does (the driver and
-    // the KTX shim read the settings it names through the header and no others; the hooks read the settings it names,
-    // and run the hooks it names); each setting named by its key in a table row's first column in the README of each
-    // component that reads it; every KSA_MTL_ variable the code names one of the table's; every variable a README
-    // names in the table or in some code
+    private static bool By(PortSetting s, string reader) => s.By.Any(b => Reader(b) == reader);
+
+    // The settings of the native code: those the driver or the KTX shim does
+    private static IEnumerable<PortSetting> Native => PortSettings.All.Where(s => By(s, "driver") || By(s, "ktx-shim"));
+
+    // The header the native code reads its settings with: a field of PortSettings per setting the driver or the KTX
+    // shim does, which portSettingsRead() reads from its variable with the values the settings' library takes (one
+    // that is none of the setting's means its default)
+    private static string Header()
+    {
+        var t = new StringBuilder("""
+            // The port settings of the native code, KSA Metal and the KTX shim: made from port-settings.txt by
+            // KsaPortSettingsGenerator (README.md in this folder), which build.sh runs. Edit the table, not this.
+            //
+            // portSettingsRead() reads each one from its variable, taking the values the settings' library takes: a switch
+            // 0 or 1, a number in the table's range, an int of digits only; unset, empty or anything else, the table's
+            // default. Text is NULL when unset. A variable set outside the game is taken without its setting's needs,
+            // which the hooks' loader applies to those it sets.
+            #pragma once
+
+            #include <stdbool.h>
+            #include <stdlib.h>
+            #include <string.h>
+
+            typedef struct PortSettings {
+
+            """);
+        foreach (var s in Native)
+        {
+            var field = $"    {NativeType(s).Type} {Camel(s.Key)};";
+            t.Append(field).Append(' ', Math.Max(1, 44 - field.Length)).Append($"// {s.Variable}\n");
+        }
+        t.Append("""
+            } PortSettings;
+
+            static inline const char* portSettingText(const char* name) {
+                const char* v = getenv(name);
+                return v && *v ? v : NULL;
+            }
+            static inline bool portSettingOn(const char* name, bool def) {
+                const char* v = portSettingText(name);
+                return v && !strcmp(v, "0") ? false : v && !strcmp(v, "1") ? true : def;
+            }
+            // A number in [min, max] (none, such as nan, isn't); an int, digits only
+            static inline double portSettingNumber(const char* name, double def, double min, double max) {
+                const char* v = portSettingText(name);
+                char* end = NULL;
+                double d = v ? strtod(v, &end) : def;
+                return v && (end == v || *end || !(d >= min && d <= max)) ? def : d;
+            }
+            static inline int portSettingInt(const char* name, int def, int min, int max) {
+                const char* v = portSettingText(name);
+                if (!v) return def;
+                for (const char* c = v; *c; c++)
+                    if (*c < '0' || *c > '9') return def;
+                long n = strtol(v, NULL, 10);
+                return n >= min && n <= max ? (int)n : def;
+            }
+
+            static inline PortSettings portSettingsRead(void) {
+                PortSettings s;
+
+            """);
+        foreach (var s in Native)
+            t.Append($"    s.{Camel(s.Key)} = {NativeType(s).Read};\n");
+        t.Append("    return s;\n}\n");
+        return t.ToString();
+    }
+
+    // A native setting's C type, and how portSettingsRead reads it
+    private static (string Type, string Read) NativeType(PortSetting s)
+    {
+        string Range() => $"{s.Min.ToString(CultureInfo.InvariantCulture)}, {s.Max.ToString(CultureInfo.InvariantCulture)}";
+        return s.Kind switch
+        {
+            "bool" => ("bool", $"portSettingOn(\"{s.Variable}\", {s.Default})"),
+            "int" => ("int", $"portSettingInt(\"{s.Variable}\", {s.Default}, {Range()})"),
+            "number" or "scale" => ("double", $"portSettingNumber(\"{s.Variable}\", {s.Default}, {Range()})"),
+            "text" or "choice" or "numbers" => ("const char*", $"portSettingText(\"{s.Variable}\")"),
+            _ => throw new FormatException($"{s.Key}: the native code can't read a {s.Kind}"),
+        };
+    }
+
+    // The hooks' typed settings: a property of Settings per setting the hooks do
+    private static string HooksSettings()
+    {
+        var t = new StringBuilder("""
+            // The port settings the hooks read, as properties of Settings (Settings.cs): made from
+            // src/settings/port-settings.txt by KsaPortSettingsGenerator (src/settings/README.md), which build.sh runs.
+            // Edit the table, not this. A setting that applies when the game starts is read once, when the hooks load; a
+            // live one each time, since the Mac Port tab's Apply changes it.
+            using KsaPortSettings;
+
+            namespace KsaMetalHooks;
+
+            public static partial class Settings
+            {
+
+            """);
+        var hooks = PortSettings.All.Where(s => By(s, "hooks")).ToList();
+        foreach (var s in hooks.Where(s => s.Live))
+            t.Append($"    private static PortSetting _{Camel(s.Key)} = null!;\n");
+        foreach (var s in hooks)
+        {
+            var (type, read) = HooksType(s);
+            t.Append('\n').Append(s.Live
+                ? $"    public static {type} {Pascal(s.Key)} => {read}(_{Camel(s.Key)});\n"
+                : $"    public static {type} {Pascal(s.Key)} {{ get; private set; }}{type switch { "string" => " = \"\";", "double[]" => " = [];", _ => "" }}\n");
+        }
+        t.Append("\n    private static void Bind()\n    {\n");
+        foreach (var s in hooks)
+            t.Append(s.Live
+                ? $"        _{Camel(s.Key)} = Get(\"{s.Key}\");\n"
+                : $"        {Pascal(s.Key)} = {HooksType(s).Read}(Get(\"{s.Key}\"));\n");
+        t.Append("    }\n}\n");
+        return t.ToString();
+    }
+
+    // A hooks setting's C# type, and the Settings method that reads it
+    private static (string Type, string Read) HooksType(PortSetting s) => s.Kind switch
+    {
+        "bool" => ("bool", "On"),
+        "int" => ("int", "Int"),
+        "number" or "scale" => ("double", "Number"),
+        "numbers" => ("double[]", "Numbers"),
+        _ => ("string", "Text"),
+    };
+
+    // Apple's variables, which Metal reads, that the READMEs name besides the table's
+    private static readonly string[] AppleVariables = ["MTL_SHADER_VALIDATION", "MTL_DEBUG_LAYER"];
+
+    // A read of the native settings: kmtlConfig().x, cfg.x (the driver's local name for it), portSettingsRead().x (the
+    // KTX shim)
+    private const string ConfigRead = @"(?:\)|\bcfg)\.";
+
+    // Code without its comments and strings, where a name is a use
+    private static string Uses(string code) =>
+        Regex.Replace(code, @"//[^\n]*|/\*.*?\*/|@?""(?:\\.|[^""\\\n])*""", " ", RegexOptions.Singleline);
+
+    // A generated file: written again when it differs (generate), or a problem (check)
+    private static void Made(string repo, string path, string text, bool write, List<string> problems)
+    {
+        var full = Path.Combine(repo, path);
+        if ((File.Exists(full) ? File.ReadAllText(full) : "") == text)
+            return;
+        if (write)
+        {
+            File.WriteAllText(full, text);
+            Console.WriteLine($"    {path} made again from the table: commit it with the table.");
+        }
+        else
+        {
+            problems.Add($"{path} is not what the table makes: run ./build.sh and commit it.");
+        }
+    }
+
+    // The files made from the table, in the repository
+    private const string HeaderPath = "src/settings/port-settings.h", HooksPath = "src/hooks/Settings.Generated.cs";
+
+    // The checks: the files made from the table as it makes them; each setting's by column what the code does (the
+    // driver and the KTX shim use the fields of the settings it names for them, the hooks the properties of those it
+    // names for them, the hook it names among those Hooks.Apply runs and reading it, in its class's file or one of
+    // the classes it applies, or by switching it in Hooks.cs); each setting named by its key in a table row's first
+    // column in the README of each component that reads it; every KSA_MTL_ variable the code names one of the
+    // table's; every variable a README names in the table or in some code
     private static int Check(string repo, bool write)
     {
-        string folder = Path.Combine(repo, "src", "settings");
-        Load(folder);
+        Load(Path.Combine(repo, "src", "settings"));
         var problems = new List<string>();
-
-        string headerPath = Path.Combine(folder, HeaderName), header = Header();
-        string current = File.Exists(headerPath) ? File.ReadAllText(headerPath) : "";
-        if (current != header)
-        {
-            if (write)
-            {
-                File.WriteAllText(headerPath, header);
-                Console.WriteLine($"    src/settings/{HeaderName} made again from the table: commit it with the table.");
-            }
-            else
-            {
-                problems.Add($"src/settings/{HeaderName} is not what the table makes: run ./build.sh and commit it.");
-            }
-        }
+        Made(repo, HeaderPath, Header(), write, problems);
+        Made(repo, HooksPath, HooksSettings(), write, problems);
 
         var readmes = Directory.EnumerateFiles(Path.Combine(repo, "src"), "README.md", SearchOption.AllDirectories)
             .Append(Path.Combine(repo, "README.md"))
             .ToDictionary(p => Path.GetRelativePath(repo, p), File.ReadAllText);
-        // The code: the components' sources, and the build's scripts and CMake files
+        // The code: the components' sources, and the build's scripts and CMake files, without the files made here
         var code = Directory.EnumerateFiles(Path.Combine(repo, "src"), "*", SearchOption.AllDirectories)
             .Concat(Directory.EnumerateFiles(Path.Combine(repo, "scripts")))
             .Concat(Directory.EnumerateFiles(Path.Combine(repo, "cmake")))
             .Concat(new[] { "build.sh", "release.sh", "CMakeLists.txt" }.Select(f => Path.Combine(repo, f)))
-            .Where(p => Path.GetExtension(p) is ".cs" or ".c" or ".mm" or ".cpp" or ".h" or ".sh" or ".cmake" or ".txt" &&
-                !p.EndsWith("port-settings.txt") && !p.EndsWith(HeaderName))
-            .ToDictionary(p => Path.GetRelativePath(repo, p), File.ReadAllText);
+            .Where(p => Path.GetExtension(p) is ".cs" or ".c" or ".mm" or ".cpp" or ".h" or ".sh" or ".cmake" or ".txt")
+            .ToDictionary(p => Path.GetRelativePath(repo, p), File.ReadAllText)
+            .Where(c => c.Key is not ("src/settings/port-settings.txt" or HeaderPath or HooksPath))
+            .ToDictionary(c => c.Key, c => c.Value);
         bool Names(string text, string name) => Regex.IsMatch(text, $@"\b{name}\b");
-        string[] In(string component) => code.Where(c => c.Key.StartsWith($"src/{component}/")).Select(c => c.Value).ToArray();
+        string Component(string folder) =>
+            string.Join('\n', code.Where(c => c.Key.StartsWith($"src/{folder}/") && Path.GetExtension(c.Key) is ".c" or ".mm" or ".cpp" or ".h")
+                .Select(c => Uses(c.Value)));
+        var native = new Dictionary<string, string> { ["driver"] = Component("ksa-metal"), ["ktx-shim"] = Component("ktx-shim") };
+        // config.mm adjusts the driver's settings on c: a field on the right of c.x = ... is read (frame_capture turns
+        // labels on), the one it sets isn't
+        foreach (Match m in Regex.Matches(Uses(code["src/ksa-metal/setup/config.mm"]), @"\bc\.(\w+) = ([^;]*);"))
+            native["driver"] += "\n" + Regex.Replace(m.Groups[2].Value, $@"\bc\.(?!{m.Groups[1].Value}\b)", "cfg.");
+        var hooks = code.Where(c => c.Key.StartsWith("src/hooks/") && c.Key.EndsWith(".cs")).ToDictionary(c => c.Key, c => Uses(c.Value));
+        string hooksCode = string.Join('\n', hooks.Values), applying = hooks["src/hooks/Hooks.cs"];
+        // A hook's code: its class's file, and those of the classes it applies (RenderScale applies Upscale)
+        string HookCode(string hook)
+        {
+            var file = hooks.FirstOrDefault(c => Regex.IsMatch(c.Value, $@"\bclass {hook}\b")).Value ?? "";
+            var applied = Regex.Matches(file, @"\b(\w+)\.Apply\(").Select(m => m.Groups[1].Value).Where(c => c != hook);
+            return file + string.Concat(applied.Select(c => hooks.FirstOrDefault(h => Regex.IsMatch(h.Value, $@"\bclass {c}\b")).Value));
+        }
 
-        // The settings each component reads
-        var native = new Dictionary<string, HashSet<string>>();
-        foreach (var (component, folderName) in new[] { ("driver", "ksa-metal"), ("ktx-shim", "ktx-shim") })
-            native[component] = In(folderName).SelectMany(c => Regex.Matches(c, @"\bPORT_SETTING_([A-Z0-9_]+)\b"))
-                .Select(m => m.Groups[1].Value.ToLowerInvariant()).ToHashSet();
-        var hooksCode = code.Where(c => c.Key.StartsWith("src/hooks/") && c.Key.EndsWith(".cs")).Select(c => c.Value).ToArray();
-        var hooksRead = hooksCode.SelectMany(c => Regex.Matches(c, @"\b(?:On|Value|Number|Numbers|Get)\(""([a-z_0-9]+)""\)"))
-            .Select(m => m.Groups[1].Value).ToHashSet();
-        var hooksRun = Regex.Matches(code["src/hooks/Hooks.cs"], @"\bRun\((\w+)\.Apply\b").Select(m => m.Groups[1].Value).ToHashSet();
+        // The other way: a component uses only the fields of its own settings
+        var fields = Native.ToDictionary(s => Camel(s.Key));
+        foreach (var (component, nativeCode) in native)
+            foreach (var field in Regex.Matches(nativeCode, $@"{ConfigRead}(\w+)\b").Select(m => m.Groups[1].Value).Distinct())
+                if (fields.TryGetValue(field, out var s) && !By(s, component))
+                    problems.Add($"{component} uses the field {field}, but {s.Key} isn't by {component} in the table.");
 
         foreach (var s in PortSettings.All)
         {
@@ -222,12 +350,19 @@ internal static class Generate
             {
                 if (!(Readers.ContainsKey(Reader(by)) || by == "tab" || by.StartsWith("metal:", StringComparison.Ordinal)))
                     problems.Add($"{s.Key}: by {by} is none of driver, ktx-shim, hooks, hooks:<hook>, metal:<variable>, tab.");
-                else if (native.TryGetValue(by, out var read) && !read.Contains(s.Key))
-                    problems.Add($"{s.Key}: by {by}, but its code doesn't read {Macro(s)}.");
-                else if (Reader(by) == "hooks" && !hooksRead.Contains(s.Key))
-                    problems.Add($"{s.Key}: by {by}, but no hook reads it.");
-                if (by.StartsWith("hooks:", StringComparison.Ordinal) && !hooksRun.Contains(by[6..]))
-                    problems.Add($"{s.Key}: its hook {by[6..]} isn't one Hooks.Apply runs (src/hooks/Hooks.cs).");
+                else if (native.TryGetValue(by, out var nativeCode) && !Regex.IsMatch(nativeCode, $@"{ConfigRead}{Camel(s.Key)}\b"))
+                    problems.Add($"{s.Key}: by {by}, but its code doesn't use the field {Camel(s.Key)}.");
+                else if (Reader(by) == "hooks" && !Regex.IsMatch(hooksCode, $@"\bSettings\.{Pascal(s.Key)}\b"))
+                    problems.Add($"{s.Key}: by {by}, but no hook reads Settings.{Pascal(s.Key)}.");
+                if (by.StartsWith("hooks:", StringComparison.Ordinal))
+                {
+                    var hook = by[6..];
+                    if (!Regex.IsMatch(applying, $@"\bRun\({hook}\.Apply\b"))
+                        problems.Add($"{s.Key}: its hook {hook} isn't one Hooks.Apply runs (src/hooks/Hooks.cs).");
+                    else if (!Regex.IsMatch(HookCode(hook), $@"\bSettings\.{Pascal(s.Key)}\b") &&
+                             !Regex.IsMatch(applying, $@"\bRun\({hook}\.Apply, Settings\.{Pascal(s.Key)}\)"))
+                        problems.Add($"{s.Key}: its hook {hook} doesn't read it, in its code or where Hooks.Apply runs it.");
+                }
                 if (Readers.TryGetValue(Reader(by), out var readme) &&
                     !Regex.IsMatch(readmes[readme], $@"^\|[^|\n]*`{s.Key}`[^|\n]*\|", RegexOptions.Multiline))
                     problems.Add($"{s.Key}: {readme} doesn't name it, though its code reads it.");
@@ -237,11 +372,6 @@ internal static class Generate
             if (s.Live && !s.By.Any(b => Reader(b) == "hooks" || b == "tab"))
                 problems.Add($"{s.Key} is live, but the hooks don't read it: the tab's Apply only changes what they read.");
         }
-        foreach (var (component, read) in native)
-            foreach (var key in read.Where(k => PortSettings.Get(k) is not { } s || !s.By.Contains(component)))
-                problems.Add($"{component} reads PORT_SETTING_{key.ToUpperInvariant()}, but {key} isn't by {component} in the table.");
-        foreach (var key in hooksRead.Where(k => PortSettings.Get(k) is not { } s || !s.By.Any(b => Reader(b) == "hooks" || b == "tab")))
-            problems.Add($"the hooks read {key}, which isn't by hooks in the table.");
 
         // Variables: the code names only the table's KSA_MTL_ ones (the build's options are in its scripts and CMake
         // files)
@@ -260,7 +390,7 @@ internal static class Generate
             Console.Error.WriteLine($"    {p}");
         if (problems.Count > 0)
             return 1;
-        Console.WriteLine($"    The port settings: {PortSettings.All.Count} settings, {HeaderName} current, the code and the READMEs in step.");
+        Console.WriteLine($"    The port settings: {PortSettings.All.Count} settings, the files made from them current, the code and the READMEs in step.");
         return 0;
     }
 }

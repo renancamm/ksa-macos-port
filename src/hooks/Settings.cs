@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Globalization;
 using KsaPortSettings;
@@ -8,51 +7,33 @@ namespace KsaMetalHooks;
 // The hooks' settings: what the game runs with. The loader sets each setting port-settings.toml changes as an
 // environment variable, and a variable set before the game starts wins over the file; here the settings' library
 // (src/settings/) reads each variable back against the table: unset, holding none of the setting's values (the log
-// says so), or with its needs not met, it means the default. A live setting (the table's "live") changes while the
-// game runs: the Mac Port tab sets its value on Apply.
-public static class Settings
+// says so), or with its needs not met, it means the default. Each setting the hooks do is a property, typed as the
+// table says (Settings.Generated.cs, made from the table): Settings.TerrainCache, Settings.RenderScale. A live setting
+// (the table's "live") changes while the game runs: the Mac Port tab sets its value on Apply.
+public static partial class Settings
 {
     private static readonly Dictionary<string, PortSetting> ByKey = new();
-    // Read every frame
-    private static PortSetting _skipHiddenCrewPortraits = null!, _crewPortraitsAt15Fps = null!, _fitHudToDisplay = null!;
 
-    // Settings that apply when the game starts, read once
-    public static string Upscaler { get; private set; } = "off";
-    // The 3D view's size, as a fraction of the window's size in points: with an upscaler only
-    public static float RenderScale { get; private set; } = 1f;
-
-    // Reads the table, the file and the environment. Throws when the table is missing or wrong, or names none of the
-    // settings read here.
+    // Reads the table, the file and the environment. Throws when the table is missing or wrong, or lacks a setting
+    // the hooks read.
     public static void Load()
     {
-        PortSettings.Load(Hooks.Resources, warning => Hooks.Log(warning));
+        // KsaMetalHooks.Hooks: Hooks here is the hooks setting
+        PortSettings.Load(KsaMetalHooks.Hooks.Resources, warning => KsaMetalHooks.Hooks.Log(warning));
         ByKey.Clear();
         foreach (var s in PortSettings.All)
             ByKey[s.Key] = s;
-        _skipHiddenCrewPortraits = Get("skip_hidden_crew_portraits");
-        _crewPortraitsAt15Fps = Get("crew_portraits_at_15_fps");
-        _fitHudToDisplay = Get("fit_hud_to_display");
-        Upscaler = Value("upscaling");
-        RenderScale = (float)Number("render_scale");
+        Bind();
     }
 
     public static PortSetting Get(string key) =>
         ByKey.TryGetValue(key, out var s) ? s : throw new KeyNotFoundException($"the port settings' table has no {key}");
 
-    // A setting's value as the game runs with it
-    public static string Value(string key) => Get(key).Running;
-
-    public static bool On(string key) => Value(key) == "true";
-
-    public static double Number(string key) => double.Parse(Value(key), CultureInfo.InvariantCulture);
-
+    // A setting's value as the game runs with it, by its type
+    private static bool On(PortSetting s) => s.Running == "true";
+    private static string Text(PortSetting s) => s.Running;
+    private static int Int(PortSetting s) => int.Parse(s.Running, CultureInfo.InvariantCulture);
+    private static double Number(PortSetting s) => double.Parse(s.Running, CultureInfo.InvariantCulture);
     // A numbers setting's numbers (none while it is unset)
-    public static double[] Numbers(string key) => Value(key) is { Length: > 0 } v ? PortSetting.Numbers(v) ?? [] : [];
-
-    // When the crew panel's faces are drawn: only while the panel is shown, and at most 15 times a second
-    public static bool SkipHiddenCrewPortraits => _skipHiddenCrewPortraits.Running == "true";
-    public static bool CrewPortraitsAt15Fps => _crewPortraitsAt15Fps.Running == "true";
-
-    // The flight HUD fitted to the display, or the game's
-    public static bool FitHudToDisplay => _fitHudToDisplay.Running == "true";
+    private static double[] Numbers(PortSetting s) => s.Running is { Length: > 0 } v ? PortSetting.Numbers(v) ?? [] : [];
 }

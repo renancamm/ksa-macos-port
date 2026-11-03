@@ -15,7 +15,7 @@ internal static class TrailCaches
 
     public static string Apply(Harmony harmony)
     {
-        _values = Array.ConvertAll(Settings.Numbers("trail_caches"), v => (int)v);
+        _values = Array.ConvertAll(Settings.TrailCaches, v => (int)v);
         if (_values.Length == 0)
             return "game's";
         harmony.Patch(Find.Method(typeof(VolumetricTrailVolumeCache), "CreateVolumeCacheAtlasResources"),

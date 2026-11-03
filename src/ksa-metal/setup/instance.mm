@@ -99,8 +99,8 @@ VKFN(VkResult) vkEnumerateDeviceExtensionProperties(VkPhysicalDevice, const char
     KTRACE_FIRST();
     if (layer) { *count = 0; return VK_ERROR_LAYER_NOT_PRESENT; }
     std::vector<VkExtensionProperties> all(kDeviceExtensions, kDeviceExtensions + sizeof(kDeviceExtensions) / sizeof(kDeviceExtensions[0]));
-    if (kmtlConfig().rayQuery) all.insert(all.end(), kRayQueryExtensions, kRayQueryExtensions + 3);
-    if (kmtlConfig().rtPipeline) all.push_back({VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME, VK_KHR_RAY_TRACING_PIPELINE_SPEC_VERSION});
+    if (kmtlConfig().rayQueries) all.insert(all.end(), kRayQueryExtensions, kRayQueryExtensions + 3);
+    if (kmtlConfig().rayTracing) all.push_back({VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME, VK_KHR_RAY_TRACING_PIPELINE_SPEC_VERSION});
     return fillExtensions(all.data(), (uint32_t)all.size(), count, props);
 }
 
@@ -546,14 +546,14 @@ VKFN(void) vkGetPhysicalDeviceFeatures2(VkPhysicalDevice, VkPhysicalDeviceFeatur
             break;
         }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR:
-            ((VkPhysicalDeviceAccelerationStructureFeaturesKHR*)s)->accelerationStructure = kmtlConfig().rayQuery;
+            ((VkPhysicalDeviceAccelerationStructureFeaturesKHR*)s)->accelerationStructure = kmtlConfig().rayQueries;
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR:
-            ((VkPhysicalDeviceRayQueryFeaturesKHR*)s)->rayQuery = kmtlConfig().rayQuery;
+            ((VkPhysicalDeviceRayQueryFeaturesKHR*)s)->rayQuery = kmtlConfig().rayQueries;
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR:
             // Pipelines run as compute kernels with ray queries (rtpipeline.mm): no indirect traces, no primitive culling
-            ((VkPhysicalDeviceRayTracingPipelineFeaturesKHR*)s)->rayTracingPipeline = kmtlConfig().rtPipeline;
+            ((VkPhysicalDeviceRayTracingPipelineFeaturesKHR*)s)->rayTracingPipeline = kmtlConfig().rayTracing;
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR:
             ((VkPhysicalDevicePresentIdFeaturesKHR*)s)->presentId = VK_TRUE;
@@ -622,7 +622,7 @@ VKFN(void) vkGetPhysicalDeviceMemoryProperties2(VkPhysicalDevice pd, VkPhysicalD
         memset(b->heapUsage, 0, sizeof(b->heapUsage));
         id<MTLDevice> d = ((KPhysicalDevice*)pd)->mtl;
         // KSA_MTL_TEXTURE_BUDGET_MB overrides the reported budget (the game's texture streamer sizes itself from it)
-        int mb = kmtlConfig().budgetMb;
+        int mb = kmtlConfig().textureBudgetMb;
         b->heapBudget[0] = mb > 0 ? (VkDeviceSize)mb << 20 : d.recommendedMaxWorkingSetSize;
         b->heapUsage[0] = (VkDeviceSize)g_allocatedBytes.load();
     }
@@ -735,7 +735,7 @@ static const VkSurfaceFormatKHR kSurfaceFormats[] = {
 };
 
 static uint32_t surfaceFormatCount(VkSurfaceKHR surface) {
-    bool hdr = kmtlConfig().hdr && surface && kmtlEdrAvailable(((KSurface*)surface)->layer);
+    bool hdr = kmtlConfig().hdrOutput && surface && kmtlEdrAvailable(((KSurface*)surface)->layer);
     return uint32_t(std::size(kSurfaceFormats)) - (hdr ? 0 : 1);
 }
 

@@ -188,7 +188,7 @@ bool kmtlTranslate(KShaderModule* mod, const char* entryName, spv::ExecutionMode
                 // KSA_MTL_SHADER_CONSTANT_MEMORY=0: device everywhere). Ray tracing kernels (rtspirv.cpp) pass their
                 // resources to functions declared for device memory, and the constant address space holds at most 64
                 // KiB
-                if (!kmtlConfig().constantArgumentBuffers || so.rtLaunch || sl->bytes() > 65536)
+                if (!kmtlConfig().shaderConstantMemory || so.rtLaunch || sl->bytes() > 65536)
                     c.set_argument_buffer_device_address_space(s, true);
                 MSLResourceBinding ab;
                 ab.stage = model;
@@ -270,7 +270,7 @@ bool kmtlTranslate(KShaderModule* mod, const char* entryName, spv::ExecutionMode
 
         // KSA_MTL_SKIP_SHADOWS_ON_UNLIT_SIDES=0: the shader edits that skip shadows where there is no light
         // (unlit-shadows.edits) read this constant (PORT_SKIP_UNLIT_SHADOWS, true in the source)
-        if (!kmtlConfig().unlitShadowSkip)
+        if (!kmtlConfig().skipShadowsOnUnlitSides)
             for (auto& sc : c.get_specialization_constants())
                 if (sc.constant_id == kUnlitShadowSkipConstant) c.get_constant(sc.id).m.c[0].r[0].u32 = 0;
 
@@ -324,10 +324,10 @@ uint64_t kmtlTranslationKey(KShaderModule* mod, const char* entry, spv::Executio
     static const uint32_t kTranslatorVersion = 4;
     std::vector<uint32_t> k = {kTranslatorVersion, 0x300681bbu /* SPIRV-Cross pin */, (uint32_t)model, so.fragMask,
         so.sampleRate, so.viewMask, (uint32_t)so.tess, (uint32_t)so.indexType, so.tessControlPoints, so.tessQuads,
-        (uint32_t)mod->hash, (uint32_t)(mod->hash >> 32), so.rtLaunch, (uint32_t)kmtlConfig().constantArgumentBuffers,
+        (uint32_t)mod->hash, (uint32_t)(mod->hash >> 32), so.rtLaunch, (uint32_t)kmtlConfig().shaderConstantMemory,
         so.tessFusedInput};
     if (const char* presets = kmtlConfig().spec) k.push_back((uint32_t)kmtlHash(presets, strlen(presets)));
-    if (!kmtlConfig().unlitShadowSkip && hasSpecId(mod, kUnlitShadowSkipConstant)) k.push_back(kUnlitShadowSkipConstant);
+    if (!kmtlConfig().skipShadowsOnUnlitSides && hasSpecId(mod, kUnlitShadowSkipConstant)) k.push_back(kUnlitShadowSkipConstant);
     for (const char* c = entry; *c; c++) k.push_back((uint8_t)*c);
     if (layout) {
         for (KSetLayout* sl : layout->sets) {

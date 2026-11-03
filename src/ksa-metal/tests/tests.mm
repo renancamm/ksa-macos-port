@@ -161,8 +161,8 @@ static int corpus(const std::string& dir, const std::string& outDir, bool update
                     continue;
                 }
                 // Recorded with other settings: its translation here would differ
-                if (e->constantArgumentBuffers != kmtlConfig().constantArgumentBuffers ||
-                    e->unlitShadowSkip != kmtlConfig().unlitShadowSkip || e->specPresets != presets) {
+                if (e->constantArgumentBuffers != kmtlConfig().shaderConstantMemory ||
+                    e->unlitShadowSkip != kmtlConfig().skipShadowsOnUnlitSides || e->specPresets != presets) {
                     skipped++;
                     continue;
                 }

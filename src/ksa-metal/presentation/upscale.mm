@@ -317,7 +317,7 @@ VKFN(float) vkGetUpscaleMaxScaleKSA(void) {
 VKFN(void) vkCmdMarkUiKSA(VkCommandBuffer commandBuffer) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (!kmtlConfig().fxInterpolate || !cb->inRenderPass || !cb->passDesc) return;
+    if (!kmtlConfig().frameInterpolation || !cb->inRenderPass || !cb->passDesc) return;
     id<MTLTexture> src = cb->passDesc.colorAttachments[0].texture;
     if (!src || src.sampleCount > 1 || src.storageMode == MTLStorageModeMemoryless) return;
     std::lock_guard<std::mutex> lock(g_up.m);

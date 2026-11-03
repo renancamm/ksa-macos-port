@@ -176,11 +176,11 @@ benchmark are built against the installed app's KSA, or another one with `--ksa 
 made for that KSA version. Everything the build downloads is declared in
 [`cmake/dependencies.cmake`](cmake/dependencies.cmake).
 
-Two files are made by the build and committed with what they are made from: `src/settings/port-settings.h`, the
-variables and defaults the native code reads, from the settings table ([`src/settings/`](src/settings/)), and
-`src/ksa-metal/setup/entries.inc`, the driver's entry table, from Vulkan's registry and the driver's sources
-([`src/ksa-metal/entries/`](src/ksa-metal/entries/)). A build makes them again when what they come from changed;
-a release only checks that they match.
+Three files are made by the build and committed with what they are made from: `src/settings/port-settings.h` and
+`src/hooks/Settings.Generated.cs`, the settings the native code and the hooks read, from the settings table
+([`src/settings/`](src/settings/)), and `src/ksa-metal/setup/entries.inc`, the driver's entry table, from Vulkan's
+registry and the driver's sources ([`src/ksa-metal/entries/`](src/ksa-metal/entries/)). A build makes them again
+when what they come from changed; a release only checks that they match.
 
 Warnings are errors in the native libraries and the .NET projects, and the build runs the tests of the driver, the
 porter, the port settings and the benchmark. The scripts run on macOS's own bash 3.2 and are kept clean of

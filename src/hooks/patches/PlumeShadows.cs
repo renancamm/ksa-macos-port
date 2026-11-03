@@ -17,8 +17,8 @@ internal static class PlumeShadows
 
     public static string Apply(Harmony harmony)
     {
-        bool low = Settings.On("lighter_plume_shadows");
-        _shadows = Settings.Numbers("trail_shadows");
+        bool low = Settings.LighterPlumeShadows;
+        _shadows = Settings.TrailShadows;
         if (_shadows.Length == 0 && low)
             _shadows = [4, 128, 3000];
         if (_shadows.Length == 0)
@@ -26,7 +26,7 @@ internal static class PlumeShadows
         harmony.Patch(Find.Method(typeof(VolumetricTrailShadowCascades), "CreateResources"),
             prefix: new HarmonyMethod(typeof(PlumeShadows), nameof(Prefix)));
         string spec = string.Join(',', _shadows.Select(v => v.ToString(CultureInfo.InvariantCulture)));
-        return Settings.Value("trail_shadows").Length == 0 ? $"low, {spec}" : spec;
+        return Settings.TrailShadows.Length == 0 ? $"low, {spec}" : spec;
     }
 
     private static void Prefix(VolumetricTrailShadowCascades __instance)

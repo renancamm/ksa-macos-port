@@ -41,7 +41,7 @@ VKFN(VkResult) vkAllocateMemory(VkDevice device, const VkMemoryAllocateInfo* ai,
     g_allocatedBytes += (int64_t)hd.size;
     g_allocatedByType[std::min(ai->memoryTypeIndex, 2u)] += (int64_t)hd.size;
     KLOG(2, "allocate memory %llu bytes type %u -> %p", (unsigned long long)ai->allocationSize, ai->memoryTypeIndex, m);
-    if (kmtlConfig().stallMs > 0 && ai->allocationSize >= (16u << 20)) {
+    if (kmtlConfig().stalls > 0 && ai->allocationSize >= (16u << 20)) {
         char name[64] = "";
         pthread_getname_np(pthread_self(), name, sizeof name);
         KLOG(0, "stall: memory +%llu MB type %u on '%s' at %.3f present %llu", (unsigned long long)(ai->allocationSize >> 20),
@@ -56,7 +56,7 @@ VKFN(void) vkFreeMemory(VkDevice, VkDeviceMemory memory, const VkAllocationCallb
     auto* m = (KDeviceMemory*)memory;
     if (!m) return;
     kmtlPassDumpForgetMemory(m->whole);
-    if (kmtlConfig().stallMs > 0 && m->size >= (16u << 20))
+    if (kmtlConfig().stalls > 0 && m->size >= (16u << 20))
         KLOG(0, "stall: memory -%llu MB type %u at %.3f present %llu", (unsigned long long)(m->size >> 20), m->typeIndex,
              CACurrentMediaTime(), (unsigned long long)kmtlPresentCount());
     if (g_logLevel >= 2) {

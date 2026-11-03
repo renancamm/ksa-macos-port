@@ -17,7 +17,7 @@ static const char* kFormat = "KSAMTL-TR 2";
 
 static const std::string& cacheDir() {
     static const std::string dir = [] {
-        if (!kmtlConfig().cache) return std::string();
+        if (!kmtlConfig().shaderCache) return std::string();
         std::string d;
         if (const char* e = kmtlConfig().cacheDir) d = e;
         else if (const char* home = getenv("HOME")) d = std::string(home) + "/Library/Caches/ksa-metal";

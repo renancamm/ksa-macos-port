@@ -15,7 +15,7 @@ internal static class CloudShadows
 
     public static string Apply(Harmony harmony)
     {
-        if (!Settings.On("fewer_cloud_shadow_updates"))
+        if (!Settings.FewerCloudShadowUpdates)
             return "off";
         harmony.Patch(Find.Method(typeof(CloudShadowVolume), "UpdateVolumeDensity"),
             transpiler: new HarmonyMethod(typeof(CloudShadows), nameof(Transpiler)));

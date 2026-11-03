@@ -14,8 +14,8 @@ class's name, in the table as in the log.
 |---|---|
 | [`port-settings.txt`](port-settings.txt) | the table |
 | [`PortSettings.cs`](PortSettings.cs), [`PortSetting.cs`](PortSetting.cs) | the library, `KsaPortSettings.dll`: the table, `port-settings.toml`, the needs, and the environment the game runs with |
-| [`generator/`](generator/) | the generator: the file's template, `port-settings.h`, and the checks that keep the repository in step with the table |
-| [`port-settings.h`](port-settings.h) | the variables and defaults the native code reads, made from the table |
+| [`generator/`](generator/) | the generator: the file's template, the native code's and the hooks' typed settings, and the checks that keep the repository in step with the table |
+| [`port-settings.h`](port-settings.h) | the native code's settings, made from the table |
 | [`tests/`](tests/) | the library's tests |
 
 ## The library
@@ -31,40 +31,44 @@ the report program. Who uses it:
 | the benchmark's report program ([`../benchmark/report/`](../benchmark/report/)) | checks `--port` against the table and writes it into the run's file |
 
 A variable already set when the game starts wins over the file. A variable that is unset, holds none of its setting's
-values, or belongs to a setting whose needs aren't met means the default. The native code, KSA Metal
-([`../ksa-metal/setup/config.mm`](../ksa-metal/setup/config.mm)) and the KTX shim, reads each variable and its
-default from [`port-settings.h`](port-settings.h).
+values, or belongs to a setting whose needs aren't met means the default.
+
+## Typed settings
+
+The code reads a setting by a name made from its key, typed as the table says, so a setting that isn't in the table
+doesn't compile. Two files are made from the table:
+
+| File | Holds |
+|---|---|
+| [`port-settings.h`](port-settings.h) | `PortSettings`, a field per setting the driver or the KTX shim does (`fusedTessellation`, a `bool`), and `portSettingsRead()`, which reads them from their variables with the values the library takes (it doesn't apply needs to a variable set outside the game); KSA Metal keeps them in `kmtlConfig()` ([`../ksa-metal/setup/config.mm`](../ksa-metal/setup/config.mm)) |
+| [`../hooks/Settings.Generated.cs`](../hooks/Settings.Generated.cs) | a property of the hooks' `Settings` per setting the hooks do (`Settings.TerrainCache`, a `bool`; `Settings.RenderScale`, a `double`): read once when the hooks load, or each time for a live setting |
 
 ## The generator
 
 `KsaPortSettingsGenerator` ([`generator/Generate.cs`](generator/Generate.cs)) is a build tool, not part of the app.
-`build.sh` builds and runs it first ([`scripts/build-settings.sh`](../../scripts/build-settings.sh)): it writes
-`port-settings.h` again when the table changed (commit the two together), then checks the repository against the
-table, and stops the build when it isn't in step:
+`build.sh` builds and runs it first ([`scripts/build-settings.sh`](../../scripts/build-settings.sh)): it makes the
+two typed files again when the table changed (commit them with it), then checks the repository against the table,
+and stops the build when it isn't in step:
 
-- each setting's `by` column is what the code does: the driver and the KTX shim read the settings it names for them
-  (through `port-settings.h`) and no others, the hooks read those it names for them and no others, and every hook it
-  names is one `Hooks.Apply` runs;
-- each setting is named by its key in the README of every component that reads it;
+- each setting's `by` column is what the code does: the driver and the KTX shim use the field of each setting it
+  names for them, the hooks the property, and the hook it names is one `Hooks.Apply` runs and reads it (in its
+  class's file, in a class it applies, or where `Hooks.Apply` switches it);
+- each setting is named by its key in a table row of the README of every component that reads it;
 - the code names no `KSA_MTL_` variable the table doesn't have, and every `KSA_*` or `MTL_*` variable a README names
   is in the table or in some code (or is one of Apple's that Metal reads);
 - a live setting is read by the hooks, since the tab's Apply only changes what they read.
 
-A release only checks: `port-settings.h` must be what the table makes.
+A release only checks: the two files must be what the table makes.
 
 | Command | Does |
 |---|---|
 | `KsaPortSettingsGenerator template <table>` | writes `port-settings.toml`'s template to standard output |
-| `KsaPortSettingsGenerator generate <repository>` | writes `port-settings.h` again when it differs, then the checks |
-| `KsaPortSettingsGenerator check <repository>` | the checks, with `port-settings.h` as it is |
-
-In `port-settings.h`, `PORT_SETTING_<KEY>` is a setting's variable and its default as the readers take them: a switch
-`"<variable>", true` or `false`, an `int` or `number` `"<variable>", <default>`, the other types `"<variable>"`. A
-setting's default is then written once, in the table.
+| `KsaPortSettingsGenerator generate <repository>` | writes the typed files again when they differ, then the checks |
+| `KsaPortSettingsGenerator check <repository>` | the checks, with the typed files as they are |
 
 ## Changing a setting
 
-Edit its line in the table, then build: `./build.sh` makes the header and the template, the generator checks the
+Edit its line in the table, then build: `./build.sh` makes the typed files and the template, the generator checks the
 repository, and the library's tests check the table's rules (values, needs, the kinds the tab draws). A new row goes
 into the tab's presets in the same change ([`../hooks/tab/Presets.cs`](../hooks/tab/Presets.cs)), and its key into the
 README of the code that reads it.

@@ -137,7 +137,7 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
         [enc dispatchThreads:MTLSizeMake(t.count, t.instances, 1) threadsPerThreadgroup:MTLSizeMake(vw, 1, 1)];
     }
     [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
-    if (kmtlConfig().gpuprofSplit) {
+    if (kmtlConfig().gpuProfileSplit) {
         // Profiling: the control stage in its own encoder
         kmtlProfNote(cb, p, true, 1);
         cb->endEncoder();
@@ -334,7 +334,7 @@ VKFN(void) vkCmdDrawIndexedIndirect(VkCommandBuffer commandBuffer, VkBuffer buff
 static void dispatched(KCommandBuffer* cb) {
     kmtlProfNote(cb, cb->computePipeline, true, 1);
     cb->dispatches++;
-    if (kmtlConfig().gpuprofSplit) cb->endEncoder();
+    if (kmtlConfig().gpuProfileSplit) cb->endEncoder();
 }
 
 VKFN(void) vkCmdDispatch(VkCommandBuffer commandBuffer, uint32_t x, uint32_t y, uint32_t z) {

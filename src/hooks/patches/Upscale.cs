@@ -33,9 +33,9 @@ internal static class Upscale
     // Whether MetalFX runs: it scales the main view up to the swapchain (the display's pixels)
     public static void Configure()
     {
-        Interpolate = Settings.On("frame_interpolation");
-        Wanted = Settings.Upscaler is "metalfx" or "spatial" || Interpolate;
-        Spatial = Settings.Upscaler == "spatial" && !Interpolate;
+        Interpolate = Settings.FrameInterpolation;
+        Wanted = Settings.Upscaling is "metalfx" or "spatial" || Interpolate;
+        Spatial = Settings.Upscaling == "spatial" && !Interpolate;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -85,7 +85,7 @@ internal static class Upscale
         }
         harmony.Patch(Find.Method(typeof(Cmaa2Renderer), "CreateResourcesIfNeeded"),
             transpiler: new HarmonyMethod(typeof(Upscale), nameof(NoCmaa2Transpiler)));
-        if (!Spatial && Settings.On("skip_game_anti_aliasing"))
+        if (!Spatial && Settings.SkipGameAntiAliasing)
         {
             var keep = new HarmonyMethod(typeof(Upscale), nameof(KeepSampleCount));
             harmony.Patch(Find.Method(typeof(ScreenshotCapture), nameof(ScreenshotCapture.OnPostRender)), postfix: keep);

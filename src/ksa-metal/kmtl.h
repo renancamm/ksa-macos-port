@@ -9,6 +9,8 @@
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
 
+#include "port-settings.h"
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -61,59 +63,10 @@ struct KAutoreleasePool {
     if (!s_seen.exchange(true)) kmtlLog(0, "UNIMPLEMENTED: %s", __func__); } while (0)
 
 // ---------------------------------------------------------------------------------------------------------------
-// Configuration: the KSA_MTL_* environment variables, read once (config.mm). README.md documents them in the same two
-// groups. Strings are null when unset.
-struct KConfig {
-    // Switches: turn a feature off or change a default
-    bool tessellation = true;             // KSA_MTL_TESSELLATION=0 hides tessellation from the game
-    bool tessFuse = true;                 // KSA_MTL_FUSED_TESSELLATION=0 tessellates without the fused path
-    bool rayQuery = true;                 // KSA_MTL_RAY_QUERIES=0 hides ray queries and ray tracing
-    bool rtPipeline = true;               // KSA_MTL_RAY_TRACING=0 hides ray tracing pipelines (off with rayQuery)
-    bool asyncPipelines = true;           // KSA_MTL_BACKGROUND_SHADER_COMPILING=0 compiles pipelines on the game's thread
-    bool cache = true;                    // KSA_MTL_SHADER_CACHE=0: no shader cache on disk, no prewarm
-    bool strictSync = false;              // KSA_MTL_STRICT_SYNC=1: all GPU work in submission order
-    bool safeMath = false;                // KSA_MTL_PRECISE_MATH=1: shaders without fast math
-    bool constantArgumentBuffers = true;  // KSA_MTL_SHADER_CONSTANT_MEMORY=0: argument buffers in device memory
-    bool uncompressedTextures = true;     // KSA_MTL_SKIP_GPU_TEXTURE_COMPRESSION=0: lossless compression wherever Metal uses it
-    int budgetMb = 0;                     // KSA_MTL_TEXTURE_BUDGET_MB: GPU memory budget reported (0: Metal's recommendation)
-    bool presentPacing = true;            // KSA_MTL_VSYNC_PACING=0: a present counts only once the display shows it
-    bool fxInterpolate = false;           // KSA_MTL_FRAME_INTERPOLATION=1: a MetalFX frame between every two the game presents
-    bool hdr = true;                      // KSA_MTL_HDR_OUTPUT=0: no HDR output offered (the game's HDR rows stay hidden)
-    // Debugging
-    int logLevel = 0;                     // KSA_MTL_LOG (see Logging above)
-    const char* logFile = nullptr;        // KSA_MTL_LOG_FILE
-    bool strictPipelines = false;         // KSA_MTL_STRICT_PIPELINES=1: pipeline errors go back to the game
-    const char* dumpMsl = nullptr;        // KSA_MTL_DUMP_MSL=<dir>
-    const char* dumpSpv = nullptr;        // KSA_MTL_DUMP_SPV=<dir>
-    const char* corpus = nullptr;         // KSA_MTL_SHADER_CORPUS=<dir>
-    const char* overrides = nullptr;      // KSA_MTL_SHADER_OVERRIDES=<dir>
-    const char* spec = nullptr;           // KSA_MTL_SPEC=<hash>:<id>=<value>,...
-    const char* cacheDir = nullptr;       // KSA_MTL_CACHE_DIR=<dir>
-    const char* shots = nullptr;          // KSA_MTL_SHOTS=<n,...>
-    const char* shotUnit = nullptr;       // KSA_MTL_SHOT_UNIT=presents|frames|seconds
-    const char* shotDir = nullptr;        // KSA_MTL_SHOT_DIR=<dir>
-    int exitAfter = 0;                    // KSA_MTL_EXIT_AFTER=<presents>
-    double exitAfterSeconds = 0;          // KSA_MTL_EXIT_AFTER_S=<seconds>
-    bool exitAfterShots = false;          // KSA_MTL_EXIT_AFTER_SHOTS=1
-    const char* frames = nullptr;         // KSA_MTL_FRAMES=<csv>
-    const char* latency = nullptr;        // KSA_MTL_LATENCY=<csv>
-    double stallMs = 0;                   // KSA_MTL_STALLS=<ms>: log what blocks the game longer than that
-    const char* gpuprof = nullptr;        // KSA_MTL_GPU_PROFILE=<csv>
-    const char* gpuprofFrames = nullptr;  // KSA_MTL_GPU_PROFILE_FRAMES=<first>,<count>
-    bool gpuprofSplit = false;            // KSA_MTL_GPU_PROFILE_SPLIT=1: every draw and dispatch in its own encoder
-    bool labels = false;                  // KSA_MTL_LABELS=1: encoders named after their pipelines
-    bool gpuErrors = false;               // KSA_MTL_GPU_ERRORS=1: a failed command buffer logs each encoder's state
-    const char* watch = nullptr;          // KSA_MTL_WATCH=<dir>: a look at the image a few times a second, a pass dump when it looks broken
-    double watchWhite = 30;               // KSA_MTL_WATCH_WHITE: the share of pure white that counts as broken, in percent
-    bool fxDebug = false;                 // KSA_MTL_FX_DEBUG=1: the upscale shows its motion vectors
-    const char* fxShots = nullptr;        // KSA_MTL_FX_SHOTS=<dir>: PNGs of what MetalFX made now and then
-    const char* throttle = nullptr;       // KSA_MTL_THROTTLE=<hash>:<N>,...: experiment, run a shader every N-th present (0 never)
-    bool uniformRefs = true;              // KSA_MTL_IN_PLACE_SHADER_PARAMETERS=0: helpers get copies of uniform structs, as translated
-    bool rtIntersector = true;            // KSA_MTL_IVA_RAY_SEARCH=0: ray tracing kernels trace with ray queries, as translated
-    bool unlitShadowSkip = true;          // KSA_MTL_SKIP_SHADOWS_ON_UNLIT_SIDES=0: the port's shader edits look up shadows also where unlit
-    bool earlyFragmentTests = true;       // KSA_MTL_EARLY_FRAGMENT_TESTS=0: no early-test states for fragment shaders that store
-};
-const KConfig& kmtlConfig();
+// Configuration: the port settings the driver does, read once from their variables (config.mm) into PortSettings, a
+// field per setting named after its key (src/settings/port-settings.h, made from the settings table). README.md
+// documents them in two groups. Text is null when unset.
+const PortSettings& kmtlConfig();
 // Whether draws bind the early-test states of pipelines that have one (ksaMtlEarlyFragmentTests, pipelines/stages.mm)
 bool kmtlEarlyFragmentTests();
 
@@ -122,11 +75,11 @@ uint64_t kmtlPresentCount();  // instruments.mm
 struct KStallTimer {
     const char* what;
     double start;
-    explicit KStallTimer(const char* w) : what(w), start(kmtlConfig().stallMs > 0 ? CACurrentMediaTime() : 0) {}
+    explicit KStallTimer(const char* w) : what(w), start(kmtlConfig().stalls > 0 ? CACurrentMediaTime() : 0) {}
     ~KStallTimer() {
         if (start == 0) return;
         double ms = (CACurrentMediaTime() - start) * 1000.0;
-        if (ms >= kmtlConfig().stallMs) KLOG(0, "stall: %s %.1f ms at %.3f present %llu", what, ms, start, (unsigned long long)kmtlPresentCount());
+        if (ms >= kmtlConfig().stalls) KLOG(0, "stall: %s %.1f ms at %.3f present %llu", what, ms, start, (unsigned long long)kmtlPresentCount());
     }
 };
 
