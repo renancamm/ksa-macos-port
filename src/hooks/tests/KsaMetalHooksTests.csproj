@@ -7,8 +7,8 @@
 		<AssemblyName>KsaMetalHooksTests</AssemblyName>
 	</PropertyGroup>
 	<ItemGroup>
-		<Compile Include="../PortSettingsTable.cs" />
-		<Compile Include="../PortSettings.cs" />
+		<Compile Include="../settings/PortSettingsTable.cs" />
+		<Compile Include="../settings/PortSettings.cs" />
 		<Compile Include="../loader/PortEnvironment.cs" />
 	</ItemGroup>
 </Project>

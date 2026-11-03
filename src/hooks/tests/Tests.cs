@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using KsaMetalHooks;
 
-// The tests of the port settings' code that runs without the game: the table (src/launcher/port-settings.txt) and the
+// The tests of the port settings' code that runs without the game: the table (src/hooks/settings/port-settings.txt) and the
 // rules its lines keep, reading and writing port-settings.toml, the needs, the values read back from the environment,
 // and the variables the loader sets. scripts/build-dotnet.sh runs them after building the hooks; a failure stops the
 // build.
@@ -77,9 +77,12 @@ internal static class Tests
     private static void Equal<T>(T expected, T actual, string what) =>
         Check(EqualityComparer<T>.Default.Equals(expected, actual), $"{what}: expected '{expected}', got '{actual}'");
 
-    private static void LoadTable() => PortSettings.LoadTable(Path.Combine(_repo, "src", "launcher"));
+    private static void LoadTable() => PortSettings.LoadTable(SettingsFolder);
 
     private static PortSetting Setting(string key) => PortSettings.Get(key) ?? throw new Exception($"no setting {key}");
+
+    // The table's folder in the repository
+    private static string SettingsFolder => Path.Combine(_repo, "src", "hooks", "settings");
 
     private static string Source(params string[] path) => File.ReadAllText(Path.Combine([_repo, "src", "hooks", .. path]));
 
@@ -296,7 +299,7 @@ internal static class Tests
         try
         {
             var warnings = new List<string>();
-            PortSettings.Load(Path.Combine(_repo, "src", "launcher"), warnings.Add);
+            PortSettings.Load(SettingsFolder, warnings.Add);
             Equal(file, PortSettings.FilePath, "the file");
             Equal("false", Setting("fit_hud_to_display").Saved, "saved");
             Equal("false", Setting("fit_hud_to_display").Running, "running");

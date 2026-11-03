@@ -1,6 +1,6 @@
 // The benchmark's director: plays the benchmark's script in one game session and measures it.
 //
-// KSA Metal Hooks start it (src/hooks/BenchmarkRun.cs): when the game starts with the variables below set, which
+// KSA Metal Hooks start it (src/hooks/app/BenchmarkRun.cs): when the game starts with the variables below set, which
 // benchmark.sh in the port folder sets, or with the same options from the Mac Port tab in the game's settings.
 //   KSA_BENCH_SCRIPT  the script (benchmark.txt)
 //   KSA_BENCH_OUT     the folder for the results (results.json, frames.csv) and the screenshots

@@ -129,7 +129,7 @@ static CGError shim_CGDisplaySetDisplayMode(CGDirectDisplayID display, CGDisplay
     return result;
 }
 
-// For the hooks (src/hooks/Displays.cs), which label and size Fullscreen from the same mode the list is made from:
+// For the hooks (src/hooks/app/Displays.cs), which label and size Fullscreen from the same mode the list is made from:
 // a display's desktop mode in points and pixels. 0 when macOS doesn't say.
 __attribute__((visibility("default")))
 int glfwShimDesktopMode(CGDirectDisplayID display, int* width, int* height, int* pixelWidth, int* pixelHeight) {
@@ -171,7 +171,7 @@ static void nativePixels(CFArrayRef all, size_t* width, size_t* height) {
     }
 }
 
-// For the hooks (src/hooks/Displays.cs), which mark the size that fills the display's own pixels. 0 when no mode
+// For the hooks (src/hooks/app/Displays.cs), which mark the size that fills the display's own pixels. 0 when no mode
 // says which are native.
 __attribute__((visibility("default")))
 int glfwShimNativePixels(CGDirectDisplayID display, int* width, int* height) {

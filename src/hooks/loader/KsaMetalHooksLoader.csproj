@@ -5,6 +5,6 @@
 		<AssemblyName>KsaMetalHooksLoader</AssemblyName>
 	</PropertyGroup>
 	<ItemGroup>
-		<Compile Include="../PortSettingsTable.cs" />
+		<Compile Include="../settings/PortSettingsTable.cs" />
 	</ItemGroup>
 </Project>

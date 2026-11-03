@@ -1,10 +1,10 @@
 #!/bin/bash
 # Writes the commented template of port-settings.toml, the copy the hooks put in the player's documents folder,
-# from the table of the port settings (src/launcher/port-settings.txt, which explains its columns).
+# from the table of the port settings (port-settings.txt next to it, which explains its columns).
 #
-# Usage: scripts/make-port-settings.sh <table> > port-settings.toml
+# Usage: src/hooks/settings/make-port-settings.sh <table> > port-settings.toml
 set -eo pipefail
-[ -f "$1" ] || { echo "usage: scripts/make-port-settings.sh <table>" >&2; exit 1; }
+[ -f "$1" ] || { echo "usage: src/hooks/settings/make-port-settings.sh <table>" >&2; exit 1; }
 
 cat << 'EOF'
 # Port settings for Kitten Space Agency (ksa-macos-port)
