@@ -5,10 +5,10 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using KsaMetalHooks;
 
-// The tests of the port settings' code that runs without the game: the table (src/hooks/settings/port-settings.txt) and the
-// rules its lines keep, reading and writing port-settings.toml, the needs, the values read back from the environment,
-// and the variables the loader sets. scripts/build-dotnet.sh runs them after building the hooks; a failure stops the
-// build.
+// The tests of the port settings' code that runs without the game: the table (src/hooks/settings/port-settings.txt) and
+// the rules its lines keep, reading and writing port-settings.toml, the needs, the values read back from the
+// environment, and the variables the loader sets. scripts/build-dotnet.sh runs them after building the hooks; a failure
+// stops the build.
 //
 // Usage: dotnet KsaMetalHooksTests.dll <repository>
 internal static class Tests

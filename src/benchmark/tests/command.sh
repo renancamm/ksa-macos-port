@@ -6,9 +6,9 @@
 # Usage: src/benchmark/tests/command.sh [<port folder>]
 set -uo pipefail
 REPO="$(cd "$(dirname "$0")/../../.." && pwd)"
-KIT="${1:-${REPO}/dist/ksa-macos-port}"
-BENCH="${KIT}/benchmark.sh"
-RESOURCES="${KIT}/payload/app/Contents/Resources"
+PORT_FOLDER="${1:-${REPO}/dist/ksa-macos-port}"
+BENCH="${PORT_FOLDER}/benchmark.sh"
+RESOURCES="${PORT_FOLDER}/payload/app/Contents/Resources"
 
 # benchmark.sh refuses to play beside a real game: then there is nothing to test here, and nothing to disturb
 if pgrep -f "dotnet (KSA|StarMap).dll" > /dev/null 2>&1; then
@@ -49,8 +49,8 @@ cp "${RESOURCES}/port-settings.txt" "${APP}/Contents/Resources/" 2> /dev/null
 cat > "${APP}/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict>
-<key>CFBundleIdentifier</key><string>$(sed -n 's/^BUNDLE_ID="\(.*\)"/\1/p' "${KIT}/lib/common.sh")</string>
-<key>CFBundleShortVersionString</key><string>$(sed -n 's/^ksa=//p' "${KIT}/VERSION")</string>
+<key>CFBundleIdentifier</key><string>$(sed -n 's/^BUNDLE_ID="\(.*\)"/\1/p' "${PORT_FOLDER}/lib/common.sh")</string>
+<key>CFBundleShortVersionString</key><string>$(sed -n 's/^ksa=//p' "${PORT_FOLDER}/VERSION")</string>
 <key>KSAPortVersion</key><string>test</string><key>KSAPortCommit</key><string>test</string>
 </dict></plist>
 PLIST

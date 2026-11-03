@@ -33,7 +33,7 @@ while [ $# -gt 0 ]; do
 done
 
 check_mac
-require_kit
+require_port_folder
 INSTALLED="$(app_version "${APP}")"
 [ -n "${INSTALLED}" ] || die "no app made by this port at ${APP}. Use ./port.sh to make one (or pass --app)."
 

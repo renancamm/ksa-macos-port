@@ -3,20 +3,21 @@
 # deps/build/cmake/_deps/ (cmake/dependencies.cmake).
 #
 # Usage:
-#   scripts/make-kit.sh scripts <version> <KSA version> <commit>
+#   scripts/make-port-folder.sh commands <version> <KSA version> <commit>
 #       Starts the folder anew with the commands, lib/, the notices and VERSION.
-#   scripts/make-kit.sh payload
+#   scripts/make-port-folder.sh payload
 #       Adds payload/: the app without the game (app/Contents/), with the benchmark, and StarMap.
 set -eo pipefail
 source "$(dirname "$0")/lib.sh"
 load_deps
 
-kit_scripts() {
+folder_commands() {
     local version="$1" ksa="$2" commit="$3"
     rm -rf "${OUT}"
     mkdir -p "${OUT}/lib"
-    cp "${REPO}"/src/port/*.sh "${REPO}/src/port/README.md" "${REPO}/src/benchmark/benchmark.sh" "${OUT}/"
-    cp "${REPO}"/src/port/lib/*.sh "${OUT}/lib/"
+    cp "${REPO}"/src/port-folder/*.sh "${REPO}/src/port-folder/README.md" "${REPO}/src/benchmark/benchmark.sh" \
+        "${OUT}/"
+    cp "${REPO}"/src/port-folder/lib/*.sh "${OUT}/lib/"
     chmod +x "${OUT}"/*.sh
     cp "${REPO}/LICENSE" "${REPO}/THIRD_PARTY_NOTICES.md" "${OUT}/"
     # The BRUTAL packages the libraries come from, for lib/convert-dotnet.sh's version check
@@ -25,12 +26,13 @@ kit_scripts() {
         > "${OUT}/VERSION"
 }
 
-kit_payload() {
+folder_payload() {
     local contents="${OUT}/payload/app/Contents" licenses
-    [ -f "${OUT}/VERSION" ] || die "run scripts/make-kit.sh scripts first."
+    [ -f "${OUT}/VERSION" ] || die "run scripts/make-port-folder.sh commands first."
     [ -f "${NATIVES}/libvulkan.1.dylib" ] && [ -x "${NATIVES}/KSA" ] && [ -x "${DOTNET_RUNTIME}/dotnet" ] &&
         [ -f "${BUILD}/icon/AppIcon.icns" ] &&
-        [ -f "${ASSEMBLIES}/bin/KsaMetalBenchmark/KsaMetalBenchmark.dll" ] && [ -f "${ASSEMBLIES}/bin/KsaMetalHooks/KsaMetalHooks.dll" ] ||
+        [ -f "${ASSEMBLIES}/bin/KsaMetalBenchmark/KsaMetalBenchmark.dll" ] &&
+        [ -f "${ASSEMBLIES}/bin/KsaMetalHooks/KsaMetalHooks.dll" ] ||
         die "the pieces of the port are not all built. Run ./build.sh."
     [ -f "${STARMAP}/StarMap.dll" ] && [ -f "${STARMAP}/StarMap.Core.dll" ] || die "the StarMap archive has an unexpected layout."
     step "Assembling ${OUT#"${REPO}/"}"
@@ -53,8 +55,8 @@ kit_payload() {
     cp "${BUILD}/icon/AppIcon.icns" "${contents}/Resources/"
     # KSA Metal Hooks, which the launcher loads and which apply the port settings (src/hooks/), with Harmony
     mkdir -p "${contents}/Resources/Hooks"
-    cp "${ASSEMBLIES}/bin/KsaMetalHooksLoader/KsaMetalHooksLoader.dll" "${ASSEMBLIES}/bin/KsaMetalHooks/KsaMetalHooks.dll" "${HARMONY_DLL}" \
-        "${contents}/Resources/Hooks/"
+    cp "${ASSEMBLIES}/bin/KsaMetalHooksLoader/KsaMetalHooksLoader.dll" \
+        "${ASSEMBLIES}/bin/KsaMetalHooks/KsaMetalHooks.dll" "${HARMONY_DLL}" "${contents}/Resources/Hooks/"
     # The benchmark (src/benchmark/): its director, which the hooks start, the report program, the tour and its vehicles
     local bench="${contents}/Resources/Benchmark"
     mkdir -p "${bench}"
@@ -81,15 +83,17 @@ kit_payload() {
 
     # StarMap's release is its Windows build. Only two of its files are Windows-specific: StarMap.exe, a launcher the
     # app doesn't need (the launcher runs StarMap.dll with the app's .NET runtime), left out, and StarMap.dll's AMD64
-    # mark, changed to ARM64 like KSA.dll's (src/port/lib/mark-arm64.sh). The rest is platform-neutral .NET.
+    # mark, changed to ARM64 like KSA.dll's (src/port-folder/lib/mark-arm64.sh). The rest is platform-neutral .NET.
     ditto "${STARMAP}" "${OUT}/payload/starmap"
     rm -f "${OUT}/payload/starmap/StarMap.exe"
-    run mark-arm64 "${OUT}"/payload/starmap/*.dll
+    bash "${LIB}/mark-arm64.sh" "${OUT}"/payload/starmap/*.dll
     echo "${STARMAP_VERSION}" > "${OUT}/payload/starmap/version.txt"
 }
 
 case "$1" in
-    scripts) [ $# = 4 ] || die "usage: scripts/make-kit.sh scripts <version> <KSA version> <commit>"; kit_scripts "$2" "$3" "$4" ;;
-    payload) kit_payload ;;
-    *) die "usage: scripts/make-kit.sh scripts <version> <KSA version> <commit> | payload" ;;
+    commands)
+        [ $# = 4 ] || die "usage: scripts/make-port-folder.sh commands <version> <KSA version> <commit>"
+        folder_commands "$2" "$3" "$4" ;;
+    payload) folder_payload ;;
+    *) die "usage: scripts/make-port-folder.sh commands <version> <KSA version> <commit> | payload" ;;
 esac

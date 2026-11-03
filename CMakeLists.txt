@@ -7,12 +7,12 @@
 cmake_minimum_required(VERSION 3.30)
 
 # Everything compiled targets the oldest macOS the app supports, dependencies included: MACOS_MIN in
-# src/port/lib/common.sh. Otherwise a binary inherits the build Mac's version.
-file(STRINGS src/port/lib/common.sh macos_min REGEX "^MACOS_MIN=")
+# src/port-folder/lib/common.sh. Otherwise a binary inherits the build Mac's version.
+file(STRINGS src/port-folder/lib/common.sh macos_min REGEX "^MACOS_MIN=")
 string(REGEX REPLACE "^MACOS_MIN=\"(.*)\"$" "\\1" MACOS_MIN "${macos_min}")
 set(CMAKE_OSX_DEPLOYMENT_TARGET "${MACOS_MIN}")
 # The app's identifier, which the launcher's signature names (src/launcher/)
-file(STRINGS src/port/lib/common.sh bundle_id REGEX "^BUNDLE_ID=")
+file(STRINGS src/port-folder/lib/common.sh bundle_id REGEX "^BUNDLE_ID=")
 string(REGEX REPLACE "^BUNDLE_ID=\"(.*)\"$" "\\1" BUNDLE_ID "${bundle_id}")
 set(CMAKE_OSX_ARCHITECTURES arm64)
 

@@ -53,7 +53,7 @@ if [ -z "${KSA_SOURCE}" ]; then
 fi
 
 # KSA's assemblies, for the benchmark and the hooks: an app's are converted already; an archive's or a folder's are copied
-# into deps/build/ksa/ and converted there (lib/convert-dotnet.sh, once the port's scripts are in place)
+# into deps/build/ksa/ and converted there (the port folder's lib/convert-dotnet.sh, once it is in place)
 KSA_DIR="${BUILD}/ksa"
 CONVERT=1
 rm -rf "${KSA_DIR}"
@@ -87,8 +87,8 @@ info "Libraries in ${NATIVES#"${REPO}/"}, CMake's output in ${LOG#"${REPO}/"}"
 # For editors: compile_commands.json at the repository's root, where clangd and VS Code look for it
 ln -sfn "${CMAKE_TREE}/compile_commands.json" "${REPO}/compile_commands.json"
 
-step "[2/5] The port's scripts"
-run make-kit scripts "${VERSION}" "${KSA_VERSION}" "${COMMIT}"
+step "[2/5] The port folder's commands"
+run make-port-folder commands "${VERSION}" "${KSA_VERSION}" "${COMMIT}"
 
 step "[3/5] Icon"
 run build-icon
@@ -99,8 +99,8 @@ load_deps
 run build-dotnet "${KSA_DIR}"
 
 step "[5/5] The port folder"
-run make-kit payload
-run check-kit
+run make-port-folder payload
+run check-port-folder
 bash "${REPO}/src/benchmark/tests/command.sh" "${OUT}"
 
 echo ""

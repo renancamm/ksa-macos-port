@@ -2,16 +2,15 @@
 # Shared by build.sh, release.sh and the scripts in scripts/. Source it; it defines no behaviour of its own.
 #
 # The build runs on the maintainer's Mac and needs the Command Line Tools, cmake, ninja and the .NET 10 SDK. It
-# shares the port folder's helpers in src/port/lib/common.sh (names, versions, messages).
+# shares the port folder's helpers in src/port-folder/lib/common.sh (names, versions, messages).
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPTS="${REPO}/scripts"
-source "${REPO}/src/port/lib/common.sh"
-PORT_LIB="${LIB}"
+source "${REPO}/src/port-folder/lib/common.sh"
 
 # deps/build/: the CMake build tree (cmake/, with every download in cmake/_deps/), the app's libraries (natives/), the
-# .NET projects' output (assemblies/bin/) and the other pieces of the port folder (KSA_BUILD, set by release.sh for a fresh
-# build). dist/: the port folder.
+# .NET projects' build (assemblies/, their output in assemblies/bin/) and the other pieces of the port folder
+# (KSA_BUILD, set by release.sh for a fresh build). dist/: the port folder.
 DEPS="${REPO}/deps"
 BUILD="${KSA_BUILD:-${DEPS}/build}"
 CMAKE_TREE="${BUILD}/cmake"
@@ -20,15 +19,12 @@ ASSEMBLIES="${BUILD}/assemblies"
 DIST="${REPO}/dist"
 OUT="${DIST}/ksa-macos-port"
 
-# run <script name> [args...]: runs scripts/<name>.sh, or a step of the port folder (src/port/lib/<name>.sh)
+# run <step> [args...]: runs a step of the build, scripts/<step>.sh. (A step of the port folder runs from its lib/ in
+# src/port-folder/, as LIB names it.)
 run() {
     local name="$1"
     shift
-    if [ -f "${SCRIPTS}/${name}.sh" ]; then
-        bash "${SCRIPTS}/${name}.sh" "$@"
-    else
-        bash "${PORT_LIB}/${name}.sh" "$@"
-    fi
+    bash "${SCRIPTS}/${name}.sh" "$@"
 }
 
 # require_build_tools: stops with the install command of every missing tool

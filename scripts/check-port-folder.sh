@@ -4,13 +4,13 @@
 # app's libraries, and the launcher's signature requires the app's identifier; StarMap is marked ARM64; every
 # component has its licence; and nothing of the game is in it. Needs otool (Command Line Tools).
 #
-# Usage: scripts/check-kit.sh [port folder]   (default: dist/ksa-macos-port)
+# Usage: scripts/check-port-folder.sh [port folder]   (default: dist/ksa-macos-port)
 set -eo pipefail
 source "$(dirname "$0")/lib.sh"
 
-KIT_DIR="${1:-${OUT}}"
-RES="${KIT_DIR}/payload/app/Contents/Resources"
-step "Checking ${KIT_DIR#"${REPO}/"}"
+FOLDER="${1:-${OUT}}"
+RES="${FOLDER}/payload/app/Contents/Resources"
+step "Checking ${FOLDER#"${REPO}/"}"
 problems=0
 problem() {
     echo "    PROBLEM: $*" >&2
@@ -26,17 +26,17 @@ for f in port.sh starmap.sh benchmark.sh README.md LICENSE THIRD_PARTY_NOTICES.m
     payload/app/Contents/Resources/VERSION \
     payload/app/Contents/Resources/Hooks/KsaMetalHooksLoader.dll \
     payload/app/Contents/Resources/Hooks/KsaMetalHooks.dll payload/app/Contents/Resources/Hooks/0Harmony.dll; do
-    [ -e "${KIT_DIR}/${f}" ] || problem "${f} is missing"
+    [ -e "${FOLDER}/${f}" ] || problem "${f} is missing"
 done
 for f in port.sh starmap.sh benchmark.sh payload/app/Contents/MacOS/KSA \
     payload/app/Contents/Resources/Brutal.Monitor.Subprocess; do
-    [ -x "${KIT_DIR}/${f}" ] || problem "${f} is not executable"
+    [ -x "${FOLDER}/${f}" ] || problem "${f} is not executable"
 done
-if ! grep -q '^version=.' "${KIT_DIR}/VERSION" || ! grep -q '^ksa=20' "${KIT_DIR}/VERSION"; then
+if ! grep -q '^version=.' "${FOLDER}/VERSION" || ! grep -q '^ksa=20' "${FOLDER}/VERSION"; then
     problem "VERSION is incomplete"
 fi
 
-LAUNCHER="${KIT_DIR}/payload/app/Contents/MacOS/KSA"
+LAUNCHER="${FOLDER}/payload/app/Contents/MacOS/KSA"
 for lib in "${RES}"/*.dylib "${RES}/Brutal.Monitor.Subprocess" "${LAUNCHER}"; do
     name="$(basename "${lib}")"
     if [ -L "${lib}" ]; then
@@ -64,10 +64,10 @@ codesign -d -r- "${LAUNCHER}" 2> /dev/null | grep -qx "designated => identifier 
     problem "the launcher's signature doesn't require only the app's identifier"
 
 # StarMap.dll must carry the ARM64 mark (0xAA64) after its PE header signature
-pe=$(od -An -tu4 -j 60 -N 4 "${KIT_DIR}/payload/starmap/StarMap.dll" | tr -d ' ')
-[ "$(od -An -tx1 -j $((pe + 4)) -N 2 "${KIT_DIR}/payload/starmap/StarMap.dll" | tr -d ' \n')" = "64aa" ] ||
+pe=$(od -An -tu4 -j 60 -N 4 "${FOLDER}/payload/starmap/StarMap.dll" | tr -d ' ')
+[ "$(od -An -tx1 -j $((pe + 4)) -N 2 "${FOLDER}/payload/starmap/StarMap.dll" | tr -d ' \n')" = "64aa" ] ||
     problem "StarMap.dll is not marked ARM64"
-[ ! -e "${KIT_DIR}/payload/starmap/StarMap.exe" ] || problem "StarMap.exe is in the folder"
+[ ! -e "${FOLDER}/payload/starmap/StarMap.exe" ] || problem "StarMap.exe is in the folder"
 
 for component in ksa-macos-port brutal spirv-cross spirv-tools spirv-headers vulkan-headers dotnet fmod starmap \
     harmony ksa-icon; do
@@ -76,14 +76,14 @@ done
 
 # Nothing of the game: its assemblies, its content, its Linux binaries
 for pattern in KSA.dll 'Brutal.*.dll' Content '*.so' '*.so.*'; do
-    found="$(find "${KIT_DIR}" -name "${pattern}" | head -1)"
-    [ -z "${found}" ] || problem "game file in the folder: ${found#"${KIT_DIR}/"}"
+    found="$(find "${FOLDER}" -name "${pattern}" | head -1)"
+    [ -z "${found}" ] || problem "game file in the folder: ${found#"${FOLDER}/"}"
 done
 
-hidden="$(find "${KIT_DIR}" -path '*/Contents/MacOS' -prune -o -name '.*' -print | head -1)"
-[ -z "${hidden}" ] || problem "hidden file in the folder: ${hidden#"${KIT_DIR}/"}"
+hidden="$(find "${FOLDER}" -path '*/Contents/MacOS' -prune -o -name '.*' -print | head -1)"
+[ -z "${hidden}" ] || problem "hidden file in the folder: ${hidden#"${FOLDER}/"}"
 
-[ "${problems}" = 0 ] || die "${problems} problem(s) in ${KIT_DIR}"
+[ "${problems}" = 0 ] || die "${problems} problem(s) in ${FOLDER}"
 info "All $(ls "${RES}"/*.dylib | wc -l | tr -d ' ') libraries, the launcher and the crash-dump helper are arm64," \
     "macOS ${MACOS_MIN}+, signed and self-contained;" \
     "licences complete; no game files."

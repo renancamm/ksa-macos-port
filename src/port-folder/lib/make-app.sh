@@ -72,15 +72,15 @@ write_info_plist() {
     <key>LSRequiresNativeExecution</key><true/>
     <key>LSApplicationCategoryType</key><string>public.app-category.simulation-games</string>
     <key>NSHighResolutionCapable</key><true/>
-    <key>KSAPortVersion</key><string>$(kit_value version)</string>
-    <key>KSAPortCommit</key><string>$(kit_value commit)</string>
+    <key>KSAPortVersion</key><string>$(version_file version)</string>
+    <key>KSAPortCommit</key><string>$(version_file commit)</string>
 </dict>
 </plist>
 EOF
     plutil -lint "${contents}/Info.plist" > /dev/null
 }
 
-require_kit
+require_port_folder
 case "$1" in
     create)
         GAME="${2%/}"

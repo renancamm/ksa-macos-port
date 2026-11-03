@@ -118,7 +118,8 @@ So the app is made of three kinds of pieces:
 
 The port folder holds the app without the game, `payload/app/Contents/`: the launcher, the .NET runtime, the native
 libraries, the icon and the licences. `port.sh` extracts the game's archive, converts the game with the scripts in the
-folder's `lib/` and puts it into a copy of that app; in this repository they are in [`src/port/lib/`](src/port/lib/).
+folder's `lib/` and puts it into a copy of that app; in this repository they are in
+[`src/port-folder/lib/`](src/port-folder/lib/).
 
 | Step | Script | What it does |
 |---|---|---|
@@ -260,7 +261,7 @@ CMakeLists.txt, cmake/    the native build, and every external source the build 
 CMakePresets.json         how CMake is run: Ninja, Release, deps/build/cmake/
 scripts/                  the build's other steps, and lib.sh
 global.json               the .NET SDK version that builds the benchmark and the hooks
-src/port/                 the port folder's commands and lib/, its steps
+src/port-folder/          the port folder's commands and lib/, its steps
 src/launcher/             the app's executable
 src/glfw-shim/            the GLFW shim
 src/ktx-shim/             the KTX shim

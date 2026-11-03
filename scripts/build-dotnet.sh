@@ -17,7 +17,7 @@ KSA_DIR="${1%/}"
 [ -f "${HARMONY_DLL}" ] || die "Harmony is missing from the build tree. Run ./build.sh."
 WORK="${ASSEMBLIES}"
 # The output starts anew; obj/ stays, so a second build only compiles what changed
-rm -rf "${WORK}/bin"
+rm -rf "${WORK:?}/bin"
 mkdir -p "${WORK}"
 cd "${REPO}"
 

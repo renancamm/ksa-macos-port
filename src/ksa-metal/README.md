@@ -9,11 +9,12 @@ switches, how to build and test a change, how each Vulkan concept maps onto Meta
 
 ## Configuration
 
-KSA Metal takes its settings from environment variables, which the hooks' loader sets from the port settings
-([The Mac Port tab](../../README.md#the-mac-port-tab)): each variable below has a setting in `port-settings.toml`
-([`../hooks/settings/port-settings.txt`](../hooks/settings/port-settings.txt) says which), the switches in the tab's Optimizations
-and GPU Features sections, the debugging variables in the file's `[developer]` section. A variable can also be set
-where the app's executable starts, from Terminal, where its output stays visible; it then wins over the file:
+KSA Metal takes its settings from environment variables, which the hooks' loader sets from the port settings ([The Mac
+Port tab](../../README.md#the-mac-port-tab)): each variable below has a setting in `port-settings.toml`
+([`../hooks/settings/port-settings.txt`](../hooks/settings/port-settings.txt) says which), the switches in the tab's
+Optimizations and GPU Features sections, the debugging variables in the file's `[developer]` section. A variable can
+also be set where the app's executable starts, from Terminal, where its output stays visible; it then wins over the
+file:
 
 ```bash
 KSA_MTL_TESSELLATION=0 ~/Applications/"Kitten Space Agency.app"/Contents/MacOS/KSA
@@ -77,7 +78,7 @@ KSA_MTL_SHOTS=300,3000 KSA_MTL_SHOT_DIR=/tmp/ksa-shots KSA_MTL_EXIT_AFTER_SHOTS=
 ```
 
 Either way, `MTL_SHADER_VALIDATION=1` and `KSA_MTL_DUMP_MSL` show which shader misbehaves and what Metal source it
-became. The ground clutter's shader fixes in `src/port/lib/convert-shaders.sh` were found this way.
+became. The ground clutter's shader fixes in `src/port-folder/lib/convert-shaders.sh` were found this way.
 
 Vulkan validation layers can't be used, because KSA Metal takes the loader's place. `KSA_MTL_LOG=1` logs its
 warnings and the first call of each Vulkan function, which shows what the game asks for, and `KSA_MTL_STRICT=1`
@@ -166,25 +167,25 @@ fragment shader stores only to that mask (and doesn't discard or write depth) a 
 while `ksaMtlEarlyFragmentTests` says so: the hooks do while no part is selected, when the stores never run, so the
 image is the same. On an M5 at the game's own settings it takes the cockpit's GPU time from 23.9 ms to 21.2.
 
-At port time, `src/port/lib/convert-shaders.sh` also edits the game's GLSL for speed, three times with the same idea.
-The terrain's, the vessels' and the kitten's shaders multiply the sun's light by its soft shadows (32 shadow-map taps
-a pixel) also where that light is already zero, on every surface turned away from the sun; the cockpit's ray tracing
-likewise traces a shadow ray towards a light from surfaces it doesn't light. The grass and the buildings multiply all
-their shadows with the planet's own, so at night they count for nothing, and the grass's soft shadows also in a
-mountain's shadow. The terrain also looks up its own sun shadow, the clouds' and the trails' shadows where its light
-is zero, and the ocean its cloud shadows at night; and where the terrain lies in the planet's own shadow with no lamps
-around, its whole colour is zero, so it is drawn black without its textures; those take derivatives, so the edit skips
-them only where a whole 2x2 quad of pixels is unlit. The godrays' march through the air, which the clouds run too,
-looks up the terrain's, the trails' and the clouds' shadows at every step, also where no sunlight reaches it. Each
-edit looks the shadow up only where there is light (the other shadows per 2x2 quad), with the same image. On an M5 at
-the game's own settings the soft shadows' edit takes the cockpit's GPU time from 44 ms to 24, and the grass's edit
-takes a view of grass at night from 33.5 ms to 28; with IVA Ray Tracing on, the shadow rays' edit takes the cockpit
-from 36 ms to 34.5; the terrain's, in a view across the terminator, from 22.9 ms to 22.0, the ocean's, at sea at
-night, from 20.5 ms to 19.9, and a view of the night side from orbit from 11.9 ms to 10.7; the godrays', at sea at
-night, from 19.9 ms to 18.8; the grass's and the buildings' other shadows at night, a view of grass from 26.5 ms to
-24.9 and one of the launch pad from 23.3 ms to 22.4. All of them test a specialization constant the script declares, `PORT_SKIP_UNLIT_SHADOWS`
-(id 900, true by default), which the driver sets to false in every shader with `KSA_MTL_UNLIT_SHADOW_SKIP=0`: the
-game's code again, without porting the game anew.
+At port time, `src/port-folder/lib/convert-shaders.sh` also edits the game's GLSL for speed, three times with the same
+idea. The terrain's, the vessels' and the kitten's shaders multiply the sun's light by its soft shadows (32 shadow-map
+taps a pixel) also where that light is already zero, on every surface turned away from the sun; the cockpit's ray
+tracing likewise traces a shadow ray towards a light from surfaces it doesn't light. The grass and the buildings
+multiply all their shadows with the planet's own, so at night they count for nothing, and the grass's soft shadows
+also in a mountain's shadow. The terrain also looks up its own sun shadow, the clouds' and the trails' shadows where
+its light is zero, and the ocean its cloud shadows at night; and where the terrain lies in the planet's own shadow
+with no lamps around, its whole colour is zero, so it is drawn black without its textures; those take derivatives, so
+the edit skips them only where a whole 2x2 quad of pixels is unlit. The godrays' march through the air, which the
+clouds run too, looks up the terrain's, the trails' and the clouds' shadows at every step, also where no sunlight
+reaches it. Each edit looks the shadow up only where there is light (the other shadows per 2x2 quad), with the same
+image. On an M5 at the game's own settings the soft shadows' edit takes the cockpit's GPU time from 44 ms to 24, and
+the grass's edit takes a view of grass at night from 33.5 ms to 28; with IVA Ray Tracing on, the shadow rays' edit
+takes the cockpit from 36 ms to 34.5; the terrain's, in a view across the terminator, from 22.9 ms to 22.0, the
+ocean's, at sea at night, from 20.5 ms to 19.9, and a view of the night side from orbit from 11.9 ms to 10.7; the
+godrays', at sea at night, from 19.9 ms to 18.8; the grass's and the buildings' other shadows at night, a view of
+grass from 26.5 ms to 24.9 and one of the launch pad from 23.3 ms to 22.4. All of them test a specialization constant
+the script declares, `PORT_SKIP_UNLIT_SHADOWS` (id 900, true by default), which the driver sets to false in every
+shader with `KSA_MTL_UNLIT_SHADOW_SKIP=0`: the game's code again, without porting the game anew.
 
 Two more edits skip work that changes nothing, with the same image. The clouds' noise blends three lookups of a 3D
 texture at every sample, weighted by where the sample lies in a triangle grid, and near a triangle's edges and corners
@@ -251,7 +252,7 @@ scRGB: the game's 1.0 there is 80 nits, macOS's is SDR white. With an HDR10 swap
 space, EDR, and HDR10 metadata whose optical output scale is the game's HDR Paper White: macOS shows that brightness
 at SDR white, as bright as other windows, and fits the highlights up to HDR Peak Brightness into what the display has
 above it. Paper White then no longer changes how bright the UI is, only how far highlights reach above it. The hooks
-pass both in at every Apply ([`Hdr.cs`](../hooks/Hdr.cs)); `vkSetHdrMetadataEXT` also sets the peak. Screenshots of
+pass both in at every Apply ([`Hdr.cs`](../hooks/app/Hdr.cs)); `vkSetHdrMetadataEXT` also sets the peak. Screenshots of
 HDR frames are SDR PNGs, paper white at white and brighter highlights clipped. In the benchmark's places, HDR output
 takes about 1-5 % more GPU time (M5, one run each).
 

@@ -13,9 +13,9 @@ and test a change.
 |---|---|
 | `Hooks.cs` | the list of hooks in the order they apply, and the rule they follow: `Skip`, `Find`, `Fail` |
 | [`patches/`](patches/) | the patches to the game's rendering and physics ([The patches](#the-patches)) |
-| [`app/`](app/) | the port's part of the game: Restart, the documents folder, windows, displays, HDR, the benchmark's runs ([The port's part of the game](#the-ports-part-of-the-game)) |
+| [`app/`](app/) | the port's part of the game: Restart, the documents folder, windows and UI coordinates, displays, HDR, mods' generic patches, frame captures, the benchmark's runs ([The port's part of the game](#the-ports-part-of-the-game)) |
 | [`tab/`](tab/) | the Mac Port tab and its presets |
-| [`settings/`](settings/) | the settings table, the code that reads it and `port-settings.toml`, and the file's template ([Settings](#settings)) |
+| [`settings/`](settings/) | the settings table, the code that reads it and `port-settings.toml`, and the script that writes the file's template ([Settings](#settings)) |
 | [`loader/`](loader/) | the startup hook, which applies the settings and loads the hooks ([How they load](#how-they-load)) |
 | [`tests/`](tests/) | the tests of the code that needs no game ([Build and test](#build-and-test)) |
 
@@ -114,15 +114,15 @@ The MetalFX entry points are KSA Metal's own ([`../ksa-metal/upscale.mm`](../ksa
 
 ## Settings
 
-The hooks, KSA Metal and its shims read environment variables, which the loader sets from `port-settings.toml` when the
-game starts ([`loader/PortEnvironment.cs`](loader/PortEnvironment.cs), with the table and file reading of
-[`PortSettingsTable.cs`](settings/PortSettingsTable.cs), which the hooks share); one set before the game starts wins over the
-file, and the Mac Port tab shows its row as set outside. The loader sets each variable twice, for .NET, which keeps its
-own copy of the environment, and with `setenv` for KSA Metal and the shims, which read theirs when the game first uses
-them. It also sends the game's output to `console.log` and copies the file's template for a new player. The table
-[`settings/port-settings.txt`](settings/port-settings.txt) lists every setting with its variable, its values and
-its default, and the hooks read their settings against it ([`Settings.cs`](settings/Settings.cs)): a variable that is unset, or
-holds none of the setting's values, means the default (`console.log` says which). Those of the hooks:
+The hooks, KSA Metal and its shims read environment variables, which the loader sets from `port-settings.toml` when
+the game starts ([`loader/PortEnvironment.cs`](loader/PortEnvironment.cs), with the table and file reading of
+[`PortSettingsTable.cs`](settings/PortSettingsTable.cs), which the hooks share); one set before the game starts wins
+over the file, and the Mac Port tab shows its row as set outside. The loader sets each variable twice, for .NET, which
+keeps its own copy of the environment, and with `setenv` for KSA Metal and the shims, which read theirs when the game
+first uses them. It also sends the game's output to `console.log` and copies the file's template for a new player. The
+table [`settings/port-settings.txt`](settings/port-settings.txt) lists every setting with its variable, its values and
+its default, and the hooks read their settings against it ([`Settings.cs`](settings/Settings.cs)): a variable that is
+unset, or holds none of the setting's values, means the default (`console.log` says which). Those of the hooks:
 
 | Variable | Setting |
 |---|---|

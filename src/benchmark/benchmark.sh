@@ -62,6 +62,7 @@
 # KSA Metal Hooks start its director when the game starts with the run's variables set, in a documents folder of its
 # own. The Mac Port tab in the game's settings runs it too.
 set -eo pipefail
+# shellcheck source=../port-folder/lib/common.sh  # next to it in the port folder
 source "$(dirname "$0")/lib/common.sh"
 
 # Presets: fixed settings, the same on every Mac, so reports compare. Without one, your own settings are used.
@@ -181,7 +182,7 @@ list_tests() {
         END { print s places }' "${script}"
 }
 
-require_kit
+require_port_folder
 case "${1:-}" in
     list)
         list_tests

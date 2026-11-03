@@ -46,7 +46,7 @@ json_value() {
 # self_update: replaces this folder with the newest release when it is newer, and starts its port.sh
 self_update() {
     local current latest tag tmp i name url="" digest="" new f
-    current="$(kit_value version)"
+    current="$(version_file version)"
     case "${current}" in
         "" | dev*)
             info "This port folder was built locally (version ${current:-unknown}); it is not updated online."
@@ -99,23 +99,23 @@ self_update() {
 
     # Replace this folder's contents. bash goes on reading this script from the removed file, and the folder itself
     # stays, so a Terminal in it stays there.
-    [ -f "${KIT}/VERSION" ] && [ -f "${KIT}/port.sh" ] && [ -f "${KIT}/lib/common.sh" ] ||
-        die "${KIT} doesn't look like a port folder; not replacing it."
-    for f in "${KIT}"/* "${KIT}"/.[!.]*; do
+    [ -f "${PORT_FOLDER}/VERSION" ] && [ -f "${PORT_FOLDER}/port.sh" ] && [ -f "${PORT_FOLDER}/lib/common.sh" ] ||
+        die "${PORT_FOLDER} doesn't look like a port folder; not replacing it."
+    for f in "${PORT_FOLDER}"/* "${PORT_FOLDER}"/.[!.]*; do
         if [ -e "${f}" ] || [ -L "${f}" ]; then
             rm -rf "${f}"
         fi
     done
     for f in "${new}"/*; do
-        mv "${f}" "${KIT}/"
+        mv "${f}" "${PORT_FOLDER}/"
     done
     rm -rf "${tmp}"
     step "The port is now version ${latest}"
-    exec "${KIT}/port.sh" ${ARGS[@]+"${ARGS[@]}"}
+    exec "${PORT_FOLDER}/port.sh" ${ARGS[@]+"${ARGS[@]}"}
 }
 
 check_mac
-require_kit
+require_port_folder
 [ "${UPDATE}" = 0 ] || self_update
 
 INSTALLED="$(app_version "${APP}")"
@@ -141,7 +141,7 @@ if [ -z "${SOURCE}" ]; then
     run convert-shaders "${RES}"
     run make-app refresh "${APP}"
     echo ""
-    step "Done: ${APP} is up to date (KSA ${INSTALLED}, port $(kit_value version))."
+    step "Done: ${APP} is up to date (KSA ${INSTALLED}, port $(version_file version))."
     info "To update the game itself, download its new Linux version into ~/Downloads and run ./port.sh again."
     exit
 fi

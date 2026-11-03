@@ -12,8 +12,8 @@
 #                                                  dotnet_sdk= (the .NET SDK that built the benchmark)
 
 LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-KIT="$(cd "${LIB}/.." && pwd)"
-PAYLOAD="${KIT}/payload"
+PORT_FOLDER="$(cd "${LIB}/.." && pwd)"
+PAYLOAD="${PORT_FOLDER}/payload"
 SKELETON="${PAYLOAD}/app/Contents"
 
 APP_NAME="Kitten Space Agency"
@@ -37,18 +37,19 @@ run() {
     bash "${LIB}/${name}.sh" "$@"
 }
 
-# kit_value <key>: a value from the folder's VERSION file (version, ksa, commit)
-kit_value() {
-    sed -n "s/^$1=//p" "${KIT}/VERSION" 2> /dev/null
+# version_file <key>: a value from the folder's VERSION file (version, ksa, commit)
+version_file() {
+    sed -n "s/^$1=//p" "${PORT_FOLDER}/VERSION" 2> /dev/null
 }
 
-# require_kit: stops when this is not a built port folder (for example the scripts in the repository's src/port/).
+# require_port_folder: stops when this is not a built port folder (for example the scripts in the repository's
+# src/port-folder/).
 # A browser download marks every file as quarantined, and macOS then holds programs in it, like the .NET runtime the
 # benchmark's report runs on, for a Gatekeeper check: the folder's own files lose that mark.
-require_kit() {
-    [ -f "${KIT}/VERSION" ] && [ -x "${SKELETON}/MacOS/dotnet" ] ||
-        die "${KIT} is not a complete port folder. Download a release, or build one with ./build.sh."
-    xattr -dr com.apple.quarantine "${KIT}" 2> /dev/null || true
+require_port_folder() {
+    [ -f "${PORT_FOLDER}/VERSION" ] && [ -x "${SKELETON}/MacOS/dotnet" ] ||
+        die "${PORT_FOLDER} is not a complete port folder. Download a release, or build one with ./build.sh."
+    xattr -dr com.apple.quarantine "${PORT_FOLDER}" 2> /dev/null || true
 }
 
 # game_version <game dir>: KSA's version from KSA.dll (for example 2026.10.19.5638)
@@ -98,7 +99,7 @@ app_version() {
 # check_ksa_match <KSA version>: warns when it differs from the KSA this port folder was made for
 check_ksa_match() {
     local made_for
-    made_for="$(kit_value ksa)"
+    made_for="$(version_file ksa)"
     [ -n "${made_for}" ] && [ "$1" != "${made_for}" ] || return 0
     if version_newer "$1" "${made_for}"; then
         warn "this version of the port was made for KSA ${made_for}, not ${1}. If something doesn't work, ./port.sh --update" \
