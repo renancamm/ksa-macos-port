@@ -47,6 +47,7 @@ const KConfig& kmtlConfig() {
         if (c.strictPipelines) c.asyncPipelines = false;
         c.dumpMsl = env("KSA_MTL_DUMP_MSL");
         c.dumpSpv = env("KSA_MTL_DUMP_SPV");
+        c.corpus = env("KSA_MTL_CORPUS");
         c.overrides = env("KSA_MTL_OVERRIDES");
         c.spec = env("KSA_MTL_SPEC");
         c.cacheDir = env("KSA_MTL_CACHE_DIR");

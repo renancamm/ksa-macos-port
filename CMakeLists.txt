@@ -57,6 +57,8 @@ foreach(source vulkan_headers spirv_cross spirv_tools spirv_headers)
     file(COPY ${notices} DESTINATION "${KSA_NATIVES_DIR}/licenses/${folder}")
 endforeach()
 
+# The components, each with its README; ctest runs the tests some of them have
+enable_testing()
 add_subdirectory(src/ksa-metal)
 add_subdirectory(src/glfw-shim)
 add_subdirectory(src/ktx-shim)

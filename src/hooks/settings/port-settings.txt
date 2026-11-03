@@ -92,6 +92,7 @@ gpu_profile_frames | text | | KSA_MTL_GPUPROF_FRAMES | gpu_profile | restart | |
 gpu_profile_split | bool | false | KSA_MTL_GPUPROF_SPLIT | gpu_profile | restart | | | Give every draw and dispatch its own encoder, so the profiler times each one (times grow).
 dump_msl | text | | KSA_MTL_DUMP_MSL | | restart | | | A folder: write every translated shader, and the errors of those that fail to compile.
 dump_spv | text | | KSA_MTL_DUMP_SPV | | restart | | | A folder: write every shader module the game creates as <hash>.spv.
+shader_corpus | text | | KSA_MTL_CORPUS | | restart | | | A folder: record every shader translation's inputs and result there, for KSA Metal's shader corpus test.
 shader_overrides | text | | KSA_MTL_OVERRIDES | | restart | | | A folder of hand-written Metal source used in place of translated shaders, named as in dump_msl.
 spec | text | | KSA_MTL_SPEC | | restart | | | <hash>:<id>=<value>,...: replace a specialization constant of a shader module.
 throttle | text | | KSA_MTL_THROTTLE | | restart | | | <hash>:<N>,...: a pipeline whose name holds one of these module hashes runs every N-th present (an experiment, to measure what skipping a pass would save).

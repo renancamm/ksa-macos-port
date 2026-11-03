@@ -85,6 +85,7 @@ struct KConfig {
     bool strictPipelines = false;         // KSA_MTL_STRICT=1: pipeline errors go back to the game
     const char* dumpMsl = nullptr;        // KSA_MTL_DUMP_MSL=<dir>
     const char* dumpSpv = nullptr;        // KSA_MTL_DUMP_SPV=<dir>
+    const char* corpus = nullptr;         // KSA_MTL_CORPUS=<dir>
     const char* overrides = nullptr;      // KSA_MTL_OVERRIDES=<dir>
     const char* spec = nullptr;           // KSA_MTL_SPEC=<hash>:<id>=<value>,...
     const char* cacheDir = nullptr;       // KSA_MTL_CACHE_DIR=<dir>
@@ -712,6 +713,9 @@ struct KTranslated {
 // compile of the previous run's shaders at device creation
 bool kmtlCacheLoad(uint64_t key, KTranslated* out);
 void kmtlCacheStore(uint64_t key, const KTranslated& tr);
+// A translation as the cache stores it (header, entry point, flags, MSL), and read back
+std::string kmtlTranslatedText(const KTranslated& tr);
+bool kmtlTranslatedParse(const std::string& text, KTranslated* out);
 void kmtlCacheNoteUsed(uint64_t key);
 void kmtlCacheFlushRecent();
 void kmtlShaderPrewarm(KDevice* dev);

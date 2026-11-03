@@ -84,6 +84,10 @@ DEBUG_MAP=ON
     -DKSA_MTL_DEBUG_MAP="${DEBUG_MAP}" &&
     cmake --build "${CMAKE_TREE}"; } > "${LOG}" 2>&1 || { grep -v xcrun_db "${LOG}" | tail -40; die "the native build failed (${LOG})."; }
 info "Libraries in ${NATIVES#"${REPO}/"}, CMake's output in ${LOG#"${REPO}/"}"
+# The driver's tests that need no recording (src/ksa-metal/tests/)
+ctest --test-dir "${CMAKE_TREE}" -LE corpus --output-on-failure > "${CMAKE_TREE}/tests.log" 2>&1 ||
+    { tail -20 "${CMAKE_TREE}/tests.log"; die "KSA Metal's tests failed (${CMAKE_TREE#"${REPO}/"}/tests.log)."; }
+info "KSA Metal's tests: passed."
 # For editors: compile_commands.json at the repository's root, where clangd and VS Code look for it
 ln -sfn "${CMAKE_TREE}/compile_commands.json" "${REPO}/compile_commands.json"
 

@@ -1,6 +1,6 @@
 // Shader cache: SPIR-V -> MSL translations on disk, and a background compile of the previous run's shaders.
 //
-// Translations are pure functions of their key (see translationKey in pipeline.mm), so a hit skips SPIRV-Cross. The
+// Translations are pure functions of their key (see kmtlTranslationKey in translate.mm), so a hit skips SPIRV-Cross. The
 // MSL front-end compile is cached by the system shader cache, which macOS flushes on updates; the prewarm compiles
 // the shaders of the previous run on worker threads at device creation, so after such a flush the game's pipeline
 // creation finds them compiled instead of compiling them one by one.
@@ -47,10 +47,15 @@ static bool readFile(const std::string& path, std::string* out) {
     return ok;
 }
 
-bool kmtlCacheLoad(uint64_t key, KTranslated* out) {
-    if (cacheDir().empty()) return false;
-    std::string data;
-    if (!readFile(entryPath(key), &data)) return false;
+std::string kmtlTranslatedText(const KTranslated& t) {
+    char flags[160];
+    snprintf(flags, sizeof(flags), "%d %lu %lu %lu %u %d %d %d %d %d %d\n", (int)t.usesDrawId, (unsigned long)t.workgroup.width,
+             (unsigned long)t.workgroup.height, (unsigned long)t.workgroup.depth, t.outputVertices, (int)t.quads, (int)t.cw,
+             (int)t.partition, (int)t.hasPartition, (int)t.hasWinding, (int)t.hasDomain);
+    return std::string(kFormat) + "\n" + t.entry + "\n" + flags + t.msl;
+}
+
+bool kmtlTranslatedParse(const std::string& data, KTranslated* out) {
     // Header line, then: entry, flags line, MSL (rest of the file)
     size_t a = data.find('\n'), b = a == std::string::npos ? a : data.find('\n', a + 1);
     size_t c = b == std::string::npos ? b : data.find('\n', b + 1);
@@ -77,16 +82,20 @@ bool kmtlCacheLoad(uint64_t key, KTranslated* out) {
     return true;
 }
 
+bool kmtlCacheLoad(uint64_t key, KTranslated* out) {
+    if (cacheDir().empty()) return false;
+    std::string data;
+    return readFile(entryPath(key), &data) && kmtlTranslatedParse(data, out);
+}
+
 void kmtlCacheStore(uint64_t key, const KTranslated& t) {
     if (cacheDir().empty()) return;
     std::string path = entryPath(key);
     std::string tmp = path + ".tmp" + std::to_string((unsigned long)pthread_mach_thread_np(pthread_self()));
     FILE* f = fopen(tmp.c_str(), "wb");
     if (!f) return;
-    fprintf(f, "%s\n%s\n%d %lu %lu %lu %u %d %d %d %d %d %d\n", kFormat, t.entry.c_str(), (int)t.usesDrawId,
-            (unsigned long)t.workgroup.width, (unsigned long)t.workgroup.height, (unsigned long)t.workgroup.depth, t.outputVertices,
-            (int)t.quads, (int)t.cw, (int)t.partition, (int)t.hasPartition, (int)t.hasWinding, (int)t.hasDomain);
-    fwrite(t.msl.data(), 1, t.msl.size(), f);
+    std::string text = kmtlTranslatedText(t);
+    fwrite(text.data(), 1, text.size(), f);
     bool ok = fclose(f) == 0;
     if (ok) rename(tmp.c_str(), path.c_str());
     else unlink(tmp.c_str());

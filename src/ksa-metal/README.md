@@ -64,6 +64,11 @@ CMake's.
 
 ## Test
 
+Two tests run without the game ([`tests/`](tests/)): `build.sh` runs the smoke test, a fill and a copy on the GPU
+through the driver alone, after every build. The shader corpus test translates and compiles again every shader the game
+had the driver translate in a recorded run, and fails when a translation changed or doesn't compile: run it before and
+after a change to the translation or the pipelines.
+
 To see what a change does across the game, run the [benchmark](../benchmark/README.md) before and after it
 (`dist/ksa-macos-port/benchmark.sh`): `--fast` is the quick way, and `--compare` checks the screenshots as well as the
 numbers. To look at one place, play only that place (`--fast jupiter2`) or stay there with `--hold jupiter2`. The
@@ -93,6 +98,7 @@ The debugging variables, used the same way:
 | `KSA_MTL_STRICT=1` | return pipeline errors to the game, instead of skipping the pipeline and continuing (pipelines then compile on the game's thread, so every error can go back) |
 | `KSA_MTL_DUMP_MSL=<dir>` | write every translated shader, and the errors of those that fail to compile |
 | `KSA_MTL_DUMP_SPV=<dir>` | write every shader module the game creates as `<hash>.spv`, and the modules KSA Metal rewrites for tessellation and ray tracing |
+| `KSA_MTL_CORPUS=<dir>` | record every shader translation's inputs and result there, once each, for the shader corpus test ([`tests/`](tests/)) |
 | `KSA_MTL_OVERRIDES=<dir>` | use hand-written Metal source in place of a translated shader: `<dir>/<name>.metal`, named as in `KSA_MTL_DUMP_MSL`; each use keeps its own specialization values |
 | `KSA_MTL_SPEC=<hash>:<id>=<value>,...` | replace a specialization constant of a shader module, whatever the game passes (e.g. fewer iterations of an expensive loop) |
 | `KSA_MTL_CACHE_DIR=<dir>` | where the shader cache goes, and the KTX shim's textures (default: `~/Library/Caches/ksa-metal`) |
@@ -312,8 +318,10 @@ vertex buffer n.
 | `device.mm` | device, queues, memory, buffers, images, samplers, synchronization, submission |
 | `format.mm` | Vulkan formats to Metal pixel and vertex formats |
 | `descriptor.mm` | descriptor sets as argument buffers, pipeline layouts |
-| `pipeline.mm` | shader translation, render passes, graphics and compute pipelines |
+| `pipeline.mm` | shader modules, render passes, graphics and compute pipelines |
+| `translate.mm`, `translate.h` | a shader stage's translation from SPIR-V to MSL |
 | `shadercache.mm` | the translation cache on disk and the background compile |
+| `corpus.mm` | the shader corpus (`KSA_MTL_CORPUS`): translations recorded for the tests |
 | `command.mm` | command buffers, every `vkCmd*`, encoder ordering |
 | `internal.mm` | KSA Metal's own shaders: buffer fills, scaled blits, tessellation helpers |
 | `accel.mm` | acceleration structures for ray queries |
@@ -326,6 +334,7 @@ vertex buffer n.
 | `upscale.mm` | MetalFX: upscaling, motion vectors, frame interpolation |
 | `profile.mm` | the GPU profiler |
 | `CMakeLists.txt`, `exports.txt` | the build: sources, flags, and the symbols the library exports |
+| `tests/` | the tests that run without the game |
 
 ## Not implemented
 
