@@ -8,6 +8,7 @@ namespace KsaMetalHooks.App;
 // The benchmark's runs in the game (src/benchmark/director/Runs.cs): a postfix on Program.OnFrame gives them every
 // frame. They start from benchmark.sh (KSA_BENCH_OUT) or the Mac Port tab, and borrow the hooks' log, the summary of
 // what the hooks applied and the game's restart (Restart.cs).
+[Hook(Phase.PortParts, WithHooksOff = true)]
 internal static class BenchmarkRun
 {
     public static string Apply(Harmony harmony)

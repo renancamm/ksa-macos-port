@@ -12,6 +12,7 @@ namespace KsaMetalHooks.Patches;
 // slices instead, so a single jump of the camera still gets its rebuild. During warp most slices hold another place's
 // shadows; afterwards the sun's are right within about 11 frames and the ambient's within about 32 (4 times that with
 // fewer_cloud_shadow_updates).
+[Hook(Phase.Default, Switch = nameof(Settings.LighterWarpCloudShadows))]
 internal static class WarpCloudShadows
 {
     private static readonly long Recent = Stopwatch.Frequency / 2;

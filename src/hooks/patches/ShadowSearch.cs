@@ -13,6 +13,7 @@ namespace KsaMetalHooks.Patches;
 // no view tried showed it. The shader edit of shadow-search.edits reads the limit from the cascades' data, in its
 // spare _pad1 (0 without this patch: the game's search); a prefix on CascadedShadowMap.UploadCascades sets it before
 // the upload.
+[Hook(Phase.Default, Switch = nameof(Settings.SimplerPcssShadows))]
 internal static class ShadowSearch
 {
     private const float Texels = 32f;

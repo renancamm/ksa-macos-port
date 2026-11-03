@@ -28,6 +28,7 @@ namespace KsaMetalHooks.Patches;
 // panels. A window has the same panels at the same places in proportion to it: a small one overlaps them, and the
 // game's HUD scale at the window's height / the display's gives its layout fitted to the window. "game" leaves the
 // game's layout.
+[Hook(Phase.Default)]
 internal static class HudLayout
 {
     private const float Aspect = 16f / 9f, LayoutHeight = 1440f;

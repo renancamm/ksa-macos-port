@@ -12,6 +12,7 @@ namespace KsaMetalHooks.Patches;
 // without orbit lines too, the copy is skipped and the resolve after it resolves depth only: the copy gave every
 // sample the view's own value, so resolving the colour would give the view back as it was. Other views (the crew
 // portraits) draw their translucent meshes between the copy and the resolve: they keep both. The image is the same.
+[Hook(Phase.Default, Switch = nameof(Settings.SkipUnusedOverlays))]
 internal static class OverlaySkip
 {
     private static AccessTools.FieldRef<RenderTarget, TargetImage?> _color = null!;

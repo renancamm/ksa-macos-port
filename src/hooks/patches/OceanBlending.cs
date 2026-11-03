@@ -21,6 +21,7 @@ namespace KsaMetalHooks.Patches;
 // ocean is drawn with twins of its two pipelines that don't blend: about 10 % less GPU time at sea level with MSAA on an
 // M5, the same image. Wire-frame mode keeps the game's pipelines. The equivalence holds for the stock shader: Apply
 // checks the lines it rests on and skips when they changed.
+[Hook(Phase.Default, Switch = nameof(Settings.SkipUnusedOceanBlending))]
 internal static class OceanBlending
 {
     private const double MaxAltitude = 9000.0;

@@ -21,6 +21,7 @@ namespace KsaMetalHooks.Patches;
 // Picking another Screen leaves the Resolution and Refresh rate of the old one, which the new list may not have:
 // the box then shows a size the list doesn't. A size or rate the new screen doesn't have becomes its native size
 // (else its desktop's) and its highest rate at that size.
+[Hook(Phase.Default)]
 internal static class ResolutionList
 {
     private static FieldInfo _populatedScreen = null!;

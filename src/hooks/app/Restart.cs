@@ -15,6 +15,7 @@ namespace KsaMetalHooks.App;
 // a process this game started itself would be its leftover, which macOS ends right after the game quits when the app
 // was started from the Finder. The new game's launcher waits until this one has quit (KSA_PORT_WAIT), and the new game
 // reads the port settings as any start does. The benchmark restarts the game the same way.
+[Hook(Phase.PortParts)]
 internal static class Restart
 {
     private static MethodInfo _processStart = null!;

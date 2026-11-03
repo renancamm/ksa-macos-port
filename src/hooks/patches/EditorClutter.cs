@@ -7,6 +7,7 @@ namespace KsaMetalHooks.Patches;
 // that pass too, with the clutter of the place it was opened from. The editor draws no clutter in colour, but the
 // light pre-pass lights those pixels, and the walls of the editor's enclosure read that light by screen position: a
 // ghost of the grass and trees on the walls. The clutter's pre-pass is now skipped while the editor is open.
+[Hook(Phase.Default)]
 internal static class EditorClutter
 {
     public static string Apply(Harmony harmony)

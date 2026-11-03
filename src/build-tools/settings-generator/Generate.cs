@@ -286,6 +286,19 @@ internal static class Generate
     private static string Uses(string code) =>
         Regex.Replace(code, @"//[^\n]*|/\*.*?\*/|@?""(?:\\.|[^""\\\n])*""", " ", RegexOptions.Singleline);
 
+    // The class whose body holds the code at index: the one declared before the first unmatched { back from it
+    private static string? Enclosing(string code, int index)
+    {
+        for (int depth = 0, i = index - 1; i >= 0; i--)
+        {
+            if (code[i] == '}')
+                depth++;
+            else if (code[i] == '{' && depth-- == 0)
+                return Regex.Match(code[..i], @"\bclass\s+(\w+)[^;{}]*$").Groups[1] is { Success: true } name ? name.Value : null;
+        }
+        return null;
+    }
+
     // A file made from the table, written only when it differs
     private static void Write(string file, string text)
     {
@@ -295,12 +308,11 @@ internal static class Generate
         File.WriteAllText(file, text);
     }
 
-    // The checks: each setting's by column what the code does (the
-    // driver and the KTX shim use the fields of the settings it names for them, the hooks the properties of those it
-    // names for them, the hook it names among those Hooks.Apply runs and reading it, in its class's file or one of
-    // the classes it applies, or by switching it in Hooks.cs); each setting named by its key in a table row's first
-    // column in the README of each component that reads it; every KSA_MTL_ variable the code names one of the
-    // table's; every variable a README names in the table or in some code
+    // The checks: each setting's by column what the code does (the driver and the KTX shim use the fields of the
+    // settings it names for them, the hooks the properties of those it names for them, the hook it names is a class
+    // marked [Hook] that reads it, in its class's file or one of the classes it applies, or as its switch); each
+    // setting named by its key in a table row's first column in the README of each component that reads it; every
+    // KSA_MTL_ variable the code names one of the table's; every variable a README names in the table or in some code
     private static int Check(string repo)
     {
         Load(Path.Combine(repo, "src", "shared", "settings"));
@@ -330,7 +342,15 @@ internal static class Generate
         foreach (Match m in Regex.Matches(Uses(code["src/ksa-metal/setup/config.mm"]), @"\bc\.(\w+) = ([^;]*);"))
             native["driver"] += "\n" + Regex.Replace(m.Groups[2].Value, $@"\bc\.(?!{m.Groups[1].Value}\b)", "cfg.");
         var hooks = code.Where(c => c.Key.StartsWith("src/hooks/") && c.Key.EndsWith(".cs")).ToDictionary(c => c.Key, c => Uses(c.Value));
-        string hooksCode = string.Join('\n', hooks.Values), applying = hooks["src/hooks/Hooks.cs"];
+        string hooksCode = string.Join('\n', hooks.Values);
+        // The hooks: the classes marked [Hook(...)], with the setting that switches each, if any
+        var marked = Regex.Matches(hooksCode, @"\[Hook\(([^\]]*)\)\]\s*internal\s+(?:\w+\s+)*class\s+(\w+)")
+            .ToDictionary(m => m.Groups[2].Value, m => Regex.Match(m.Groups[1].Value, @"Switch = nameof\(Settings\.(\w+)\)").Groups[1].Value);
+        // A class with a hook's Apply but no mark never applies
+        foreach (var (file, text) in hooks)
+            foreach (Match m in Regex.Matches(text, @"\bstatic\s+string\s+Apply\(Harmony\b"))
+                if (Enclosing(text, m.Index) is { } owner && !marked.ContainsKey(owner))
+                    problems.Add($"{file}: {owner} has a hook's Apply(Harmony) but no [Hook] mark, so it never applies.");
         // A hook's code: its class's file, and those of the classes it applies (RenderScale applies Upscale)
         string HookCode(string hook)
         {
@@ -359,11 +379,10 @@ internal static class Generate
                 if (by.StartsWith("hooks:", StringComparison.Ordinal))
                 {
                     var hook = by[6..];
-                    if (!Regex.IsMatch(applying, $@"\bRun\({hook}\.Apply\b"))
-                        problems.Add($"{s.Key}: its hook {hook} isn't one Hooks.Apply runs (src/hooks/Hooks.cs).");
-                    else if (!Regex.IsMatch(HookCode(hook), $@"\bSettings\.{Pascal(s.Key)}\b") &&
-                             !Regex.IsMatch(applying, $@"\bRun\({hook}\.Apply, Settings\.{Pascal(s.Key)}\)"))
-                        problems.Add($"{s.Key}: its hook {hook} doesn't read it, in its code or where Hooks.Apply runs it.");
+                    if (!marked.TryGetValue(hook, out var hookSwitch))
+                        problems.Add($"{s.Key}: its hook {hook} isn't a class marked [Hook] (src/hooks/Hooks.cs).");
+                    else if (!Regex.IsMatch(HookCode(hook), $@"\bSettings\.{Pascal(s.Key)}\b") && hookSwitch != Pascal(s.Key))
+                        problems.Add($"{s.Key}: its hook {hook} doesn't read it, in its code or as its switch.");
                 }
                 if (Readers.TryGetValue(Reader(by), out var readme) &&
                     !Regex.IsMatch(readmes[readme], $@"^\|[^|\n]*`{s.Key}`[^|\n]*\|", RegexOptions.Multiline))

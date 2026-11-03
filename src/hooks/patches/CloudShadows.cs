@@ -9,6 +9,7 @@ namespace KsaMetalHooks.Patches;
 // Cloud shadow tuning, fewer_cloud_shadow_updates (port-settings.toml). CloudShadowVolume.UpdateVolumeDensity refreshes 24 slices of the cloud
 // shadow volume per frame (8 for ambient light). With 6 (and 2), the volume costs about 1.5 ms less; it converges to
 // the same shadows, but they take about 4 times longer to follow moving clouds.
+[Hook(Phase.Default)]
 internal static class CloudShadows
 {
     private const int Slices = 6, AmbientSlices = 2;

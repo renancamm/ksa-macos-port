@@ -28,6 +28,7 @@ namespace KsaMetalHooks.Patches;
 // ground clutter's level of detail) are converted: the sun's radius here, the rest by the shader edits of
 // src/porter/shader-edits/features/window-size.edits, from the window's height in the camera data. On a display
 // without Retina at a render scale of 1, the three sizes are one and nothing changes.
+[Hook(Phase.Default)]
 internal static class RenderScale
 {
     public static bool Scaled;  // the main view renders at another size than the window's in points

@@ -23,9 +23,9 @@
 #   applies   live: on Apply, in the running game (the hooks read it while the game runs); restart: when the game
 #             starts
 #   by        what does it (comma separated): driver (KSA Metal), ktx-shim, hooks (the hooks and their loader),
-#             hooks:<hook>, a hook of src/hooks/Hooks.cs by its class, which the tab shows the setting as unavailable
-#             without (skipped or failed), metal:<variable>, Apple's variable that Metal reads, which the setting sets
-#             instead of its own, or tab: the tab's own, which sets no variable
+#             hooks:<hook>, a class marked [Hook] (src/hooks/Hooks.cs) by its name, which the tab shows the setting as
+#             unavailable without (skipped or failed), metal:<variable>, Apple's variable that Metal reads, which the
+#             setting sets instead of its own, or tab: the tab's own, which sets no variable
 #   presets   its values in the Mac Port tab's presets Performance, Balanced and Quality, comma separated (Game
 #             Defaults gives it its default); none for a setting the presets leave alone. Every Extra Performance row
 #             is on in Performance

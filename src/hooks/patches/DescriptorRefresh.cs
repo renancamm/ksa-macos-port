@@ -13,6 +13,7 @@ namespace KsaMetalHooks.Patches;
 // every change, so no change can compare equal. Loading runs them hundreds ahead of the frame count. Nothing reads them
 // as frames, but most renderers store the frame count as LastFrameUpdated, so they rewrite their descriptors every
 // frame until it catches up.
+[Hook(Phase.Default)]
 internal static class DescriptorRefresh
 {
     private static readonly object Lock = new();

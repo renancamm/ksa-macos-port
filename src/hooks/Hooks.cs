@@ -4,9 +4,6 @@ using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
 using HarmonyLib;
-using KsaMetalHooks.App;
-using KsaMetalHooks.Patches;
-using KsaMetalHooks.Tab;
 
 namespace KsaMetalHooks;
 
@@ -32,52 +29,61 @@ public static class Hooks
         Settings.Load();
         // Off (KSA_MTL_HOOKS=0), they load only for a benchmark run, which they start
         if (!Settings.Hooks)
-        {
             Log("off, except for the benchmark");
-            Run(Documents.Apply);
-            Run(BenchmarkRun.Apply);
-            return;
+        foreach (var (type, hook) in All())
+        {
+            if (!Settings.Hooks && !hook.WithHooksOff)
+                continue;
+            Func<Harmony, string> apply;
+            bool on;
+            try
+            {
+                apply = type.GetMethod("Apply", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic,
+                        [typeof(Harmony)])?.CreateDelegate<Func<Harmony, string>>() ??
+                    throw new InvalidOperationException("it has no static string Apply(Harmony)");
+                on = hook.Switch == null || Switched(hook.Switch);
+            }
+            catch (Exception e)
+            {
+                // A mistake in a hook's mark fails that hook alone
+                Failed(type.Name, $"failed ({Describe(e)})");
+                continue;
+            }
+            Run(apply, on);
         }
-        // First, and so before any mod patches
-        Run(GenericDetours.Apply, Settings.HarmonyGenericDetours);
-        Run(WindowOrigin.Apply);
-        Run(ExtraWindows.Apply);
-        Run(TerrainCache.Apply, Settings.TerrainCache);
-        Run(OutlineSkip.Apply, Settings.SkipUnusedOutlines);
-        Run(OverlaySkip.Apply, Settings.SkipUnusedOverlays);
-        Run(OceanBlending.Apply, Settings.SkipUnusedOceanBlending);
-        Run(CloudShadows.Apply);
-        Run(WarpCloudShadows.Apply, Settings.LighterWarpCloudShadows);
-        Run(PlumeShadows.Apply);
-        Run(ShadowSearch.Apply, Settings.SimplerPcssShadows);
-        Run(MilkyWayBake.Apply, Settings.BakedMilkyWay);
-        Run(CrewPortraits.Apply);
-        Run(WorkerPark.Apply, Settings.IdleThreadSleep);
-        Run(FadedSmoke.Apply, Settings.ClearFadedSmoke);
-        Run(TumblingPhysics.Apply, Settings.LighterTumblingPhysics);
-        Run(DebrisSettle.Apply, Settings.DebrisSettlesInWarp);
-        Run(LoadingPace.Apply, Settings.LoadingScreenFpsCap);
-        Run(RenderScale.Apply);
-        Run(HudLayout.Apply);
-        Run(ResolutionList.Apply);
-        Run(TrailCaches.Apply);
-        Run(EditorClutter.Apply);
-        Run(ClutterOff.Apply);
-        Run(DescriptorRefresh.Apply);
-        // After every hook that patches a method Program.RenderGame or RenderEditor call: patching those two compiles
-        // them again, and the JIT can inline a small method they call (RenderAaPreparePasses) as it is then, so a patch
-        // made on it later never runs from them (MetalFX Spatial drew nothing)
-        Run(HiddenPartsSkip.Apply, Settings.SkipHiddenVesselParts);
-        Run(UiViewSize.Apply);
-        // The port's own parts of the game
-        Run(Documents.Apply);
-        Run(Restart.Apply);
-        Run(Hdr.Apply);
-        Run(Presets.Apply);
-        Run(MacPortTab.Apply);
-        Run(BenchmarkRun.Apply);
-        Run(FrameCaptureCommand.Apply);
     }
+
+    // The hooks, the classes marked [Hook], in the order they apply: by phase, then by name
+    private static IEnumerable<(Type Type, HookAttribute Hook)> All()
+    {
+        Type?[] types;
+        try
+        {
+            types = typeof(Hooks).Assembly.GetTypes();
+        }
+        catch (ReflectionTypeLoadException e)
+        {
+            // A class that names a type a KSA update removed doesn't load: the others still apply, and the summary
+            // says failed, so the tab and a benchmark run see it
+            var why = string.Join("; ", e.LoaderExceptions.OfType<Exception>().Select(x => x.Message).Distinct());
+            Failed("Hooks", $"failed (a class of the hooks didn't load: {why})");
+            types = e.Types;
+        }
+        return types.OfType<Type>().Select(t => (Type: t, Hook: t.GetCustomAttribute<HookAttribute>()!)).Where(h => h.Hook != null)
+            .OrderBy(h => h.Hook.Phase).ThenBy(h => h.Type.Name, StringComparer.Ordinal).ToList();
+    }
+
+    private static void Failed(string name, string text)
+    {
+        Applied.Add(name);
+        Status[name] = new HookStatus(HookState.Failed, text);
+        Log($"{name}: {text}");
+    }
+
+    // A hook's switch: the bool setting of Settings it names
+    private static bool Switched(string setting) =>
+        typeof(Settings).GetProperty(setting)?.GetValue(null) as bool? ??
+        throw new InvalidOperationException($"Settings.{setting} isn't a switch");
 
     // A hook, its class's Apply, named after the class: apply(harmony) patches and returns what it did ("on", "off",
     // ...); it throws Skip when the game's code isn't what it expects. Either way the hook's patches are undone, and
@@ -137,6 +143,40 @@ public static class Hooks
     }
 
     public static void Log(string message) => Console.WriteLine($"[hooks] {message}");
+}
+
+// When a hook applies. The hooks apply phase by phase, and in a phase in the order of their names: a rule of order
+// between hooks is a phase, and its reason is said here.
+public enum Phase
+{
+    // GenericDetours: it changes how every detour made after it is built, the other hooks' and the mods'
+    First,
+    // The hooks that patch small methods the targets of other hooks call: the JIT can inline a small method into a
+    // caller compiled before its patch, and a patch reaches only code compiled after it (Documents: GameSettings.Save,
+    // which MacPortTab patches, calls Constants.DocumentsFolderPath; WindowOrigin: the windows' and displays'
+    // positions)
+    BeforeCallers,
+    // The hooks no rule of order holds for
+    Default,
+    // After every hook that patches a method Program.RenderGame or RenderEditor call: patching those two compiles them
+    // again, and the JIT can inline a small method they call (RenderAaPreparePasses) as it is then, so a patch made on
+    // it later never runs from them (MetalFX Spatial drew nothing)
+    AfterRenderPatches,
+    // The port's own parts of the game (Restart, HDR, the Mac Port tab and its presets, the benchmark's runs, frame
+    // captures), after the patches: the tab's transpiler on GameSettings.OnDrawUi works on the code ResolutionList's
+    // made of it
+    PortParts,
+}
+
+// A hook: a class whose static string Apply(Harmony), public or not, patches the game and returns what the log says
+// (Run, in Hooks). Switch names the setting that turns it on, a bool of Settings (nameof(Settings.TerrainCache));
+// without one it applies always. WithHooksOff: it applies with the hooks setting off too, for a benchmark run.
+[AttributeUsage(AttributeTargets.Class)]
+internal sealed class HookAttribute(Phase phase) : Attribute
+{
+    public Phase Phase { get; } = phase;
+    public string? Switch { get; set; }
+    public bool WithHooksOff { get; set; }
 }
 
 // What a hook did when the game started: on (Text says how), off, skipped (the game's code it changes has moved) or

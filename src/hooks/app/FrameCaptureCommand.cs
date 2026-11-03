@@ -23,6 +23,7 @@ namespace KsaMetalHooks.App;
 //   state.txt         the time, the note, the camera's place, the warp, the driver's numbers and the switches set
 //   console.log, settings.toml, port-settings.toml
 // If after.png shows the fault too, the fault lasted through those frames, and passes/ shows the first draw that has it.
+[Hook(Phase.PortParts)]
 internal sealed class FrameCaptureCommand
 {
     private enum Step { Idle, Passes, Capturing, After }

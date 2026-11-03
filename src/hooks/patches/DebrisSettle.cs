@@ -33,6 +33,7 @@ namespace KsaMetalHooks.Patches;
 // 2 s steps, too long to dock in, so does everything else.
 // Sunk pieces: one that passes the ground at speed sails on inside the planet at the spin cap and in 1 ms steps, the game
 // hanging for as long as it lasts. Below the lowest terrain, it is removed, at any speed.
+[Hook(Phase.Default, Switch = nameof(Settings.DebrisSettlesInWarp))]
 internal static class DebrisSettle
 {
     private const double MinWarp = 8, TouchWarp = 64, RailsPairWarp = 1024, TouchSeconds = 6, TouchGap = 2;

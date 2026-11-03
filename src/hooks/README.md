@@ -11,7 +11,7 @@ and test a change.
 
 | Path | What it holds |
 |---|---|
-| `Hooks.cs` | the list of hooks in the order they apply, and the rule they follow: `Skip`, `Find`, `Fail` |
+| `Hooks.cs` | how the hooks apply: `[Hook]`, which marks one, the phases that order them, and the rule they follow: `Skip`, `Find`, `Fail` |
 | `Settings.cs` | the settings as the hooks read them, a typed property each, with `Settings.Generated.cs`, which the build makes from the settings table ([Settings](#settings)) |
 | [`patches/`](patches/) | the patches to the game's rendering and physics ([The patches](#the-patches)) |
 | [`app/`](app/) | the port's part of the game: Restart, the documents folder, windows and UI coordinates, displays, HDR, mods' generic patches, frame captures, the benchmark's runs ([The port's part of the game](#the-ports-part-of-the-game)) |
@@ -36,30 +36,32 @@ hooks give every frame, is in `Contents/Resources/Benchmark/`.
 
 ## The rule every hook follows
 
-A hook is a class whose `Apply` `Hooks.cs` runs, and it goes by the class's name, in the log and in the settings
-table. It finds its targets by name and the code it changes by pattern: an instruction it expects exactly once, or the
-call that follows a field it knows. It looks everything up before it changes any of the game's state. When
+A hook is a class marked `[Hook]` ([`Hooks.cs`](Hooks.cs)), and it goes by the class's name, in the log and in the
+settings table. The mark gives its phase and, when a setting turns it on, that setting (`Switch`). The hooks apply
+phase by phase, and in a phase in the order of their names; a rule of order between hooks is a phase, which says why
+(`Phase`). A hook finds its targets by name and the code it changes by pattern: an instruction it expects exactly once, or
+the call that follows a field it knows. It looks everything up before it changes any of the game's state. When
 something isn't where it expects it, typically after a KSA update, the hook throws `Skip`. Everything that hook had
 changed is undone, and `console.log` says so:
 
 ```text
-[hooks] TerrainCache: on
+[hooks] Documents: off
+[hooks] CloudShadows: off
+[hooks] CrewPortraits: on, when shown
+[hooks] LoadingPace: on
+[hooks] OceanBlending: on
 [hooks] OutlineSkip: on
 [hooks] OverlaySkip: on
-[hooks] OceanBlending: on
-[hooks] CloudShadows: off
-[hooks] ShadowSearch: off
-[hooks] CrewPortraits: on, when shown
-[hooks] WorkerPark: on, 0.25 ms
-[hooks] LoadingPace: on
 [hooks] RenderScale: skipped, the game's code changed (the sun's radius not found)
+[hooks] ShadowSearch: off
+[hooks] TerrainCache: on
+[hooks] WorkerPark: on, 0.25 ms
 [hooks] HiddenPartsSkip: on
-[hooks] Documents: off
-[hooks] Restart: on
-[hooks] Hdr: on
-[hooks] Presets: on, Apple M5, 16 GB
-[hooks] MacPortTab: on
 [hooks] BenchmarkRun: ready
+[hooks] Hdr: on
+[hooks] MacPortTab: on
+[hooks] Presets: on, Apple M5, 16 GB
+[hooks] Restart: on
 ```
 
 A hook that throws anything else has a bug of its own: it is undone the same way, and `console.log` says `failed`,

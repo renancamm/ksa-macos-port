@@ -11,6 +11,7 @@ namespace KsaMetalHooks.Patches;
 // such pipelines that tests depth first, without the stores of hidden fragments; at the start of each frame, in flight
 // and in the editor, this tells it whether to draw with them: while no part is selected, when the stores never run.
 // The image is the same.
+[Hook(Phase.AfterRenderPatches, Switch = nameof(Settings.SkipHiddenVesselParts))]
 internal static class HiddenPartsSkip
 {
     private static int _selected;

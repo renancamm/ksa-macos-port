@@ -20,6 +20,7 @@ namespace KsaMetalHooks.App;
 //
 // One transpiler on Program.OnFrame opens and closes that span: patching the UI methods themselves would compile them
 // fully optimised, and a small method they inline would then miss the patch a mod makes on it later.
+[Hook(Phase.AfterRenderPatches)]
 internal static class UiViewSize
 {
     [ThreadStatic]
@@ -74,6 +75,7 @@ internal static class UiViewSize
 // it draws is off by the window's position. Here the desktop starts at the window's corner: every position the game
 // reads of a window or a display is relative to the main window's, and one set through Position on another window is
 // turned back. Only placing the main window itself uses the real ones; a mod can't read those, and no mod moves it.
+[Hook(Phase.BeforeCallers)]
 internal static class WindowOrigin
 {
     private static AccessTools.FieldRef<GlfwWindow, int2> _position = null!;

@@ -22,6 +22,7 @@ namespace KsaMetalHooks.Tab;
 // opens and by Apply, Discard and Reset. The tab's pending values go with that copy: a new copy brings them back to
 // the file's values (Reset: to the defaults), and the copy's Save, the one Apply and the popup make, writes them to
 // port-settings.toml. Live settings then take effect at once; the others when the game starts again.
+[Hook(Phase.PortParts)]
 internal static partial class MacPortTab
 {
     // The tab's value in the game's SettingsTab enum, past the game's own

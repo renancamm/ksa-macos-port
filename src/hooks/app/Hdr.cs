@@ -11,6 +11,7 @@ namespace KsaMetalHooks.App;
 // (HDR Peak Brightness). KSA Metal needs both: the game keeps paper white to itself and sends the peak only when it
 // rebuilds the swapchain. A postfix on GameSettings.ApplyTo(GlfwWindow), where the game hands its Display settings to
 // its renderer when it starts and at every Apply, passes both on.
+[Hook(Phase.PortParts)]
 internal static class Hdr
 {
     [DllImport("libvulkan.1.dylib")]

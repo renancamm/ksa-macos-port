@@ -14,6 +14,7 @@ namespace KsaMetalHooks.Patches;
 // and MoveVertices splits them, up to the 65,536 a body can hold, and the smoke's shadow cascades draw them: 1-3 fps
 // with nothing in the sky. ApplySegmentsAge now removes a segment at the shorter of the two ages. What it removes has no
 // density left; near live smoke it can still shift the raymarch's samples a little, as small as the plume's own flicker.
+[Hook(Phase.Default, Switch = nameof(Settings.ClearFadedSmoke))]
 internal static class FadedSmoke
 {
     public static string Apply(Harmony harmony)

@@ -12,6 +12,7 @@ namespace KsaMetalHooks.Patches;
 // portraits are off; the panel keeps showing the view's last image (skip_hidden_crew_portraits). With
 // crew_portraits_at_15_fps, the portraits are also refreshed at most 15 times a second. With both off, the game draws
 // them as it does without the patch. The Mac Port tab changes the settings while the game runs.
+[Hook(Phase.Default)]
 internal static class CrewPortraits
 {
     private static long _frame, _drawnFrame = -2, _shownSince = -1;

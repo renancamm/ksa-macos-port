@@ -54,8 +54,8 @@ checks first ([`scripts/build-settings.sh`](../../../scripts/build-settings.sh))
 the table, and stops the build when it isn't in step:
 
 - each setting's `by` column is what the code does: the driver and the KTX shim use the field of each setting it
-  names for them, the hooks the property, and the hook it names is one `Hooks.Apply` runs and reads it (in its
-  class's file, in a class it applies, or where `Hooks.Apply` switches it);
+  names for them, the hooks the property, and the hook it names is a class marked `[Hook]` and reads it (in its
+  class's file, in a class it applies, or as the hook's switch);
 - each setting is named by its key in a table row of the README of every component that reads it;
 - the code names no `KSA_MTL_` variable the table doesn't have, and every `KSA_*` or `MTL_*` variable a README names
   is in the table or in some code (or is one of Apple's that Metal reads);

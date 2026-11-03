@@ -29,6 +29,7 @@ namespace KsaMetalHooks.Tab;
 // and Borderless doesn't use it: those keep it. The card reads the Mode as it is then: a Mode set to Fullscreen after it
 // keeps the Resolution, and unless that is the desktop's size the tab then shows no preset in use. An error reading
 // the display makes the presets unavailable, as any (Hooks.Fail), without taking the tab with them.
+[Hook(Phase.PortParts)]
 internal static class Presets
 {
     // A preset: its game settings for a Mac, and its port settings, the table's presets column at this index (-1: the

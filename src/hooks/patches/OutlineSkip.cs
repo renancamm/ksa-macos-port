@@ -6,6 +6,7 @@ namespace KsaMetalHooks.Patches;
 // Outline skip. PartSelectedRenderer.Run draws the outline around selected parts, a compute pass over the whole view
 // (0.5 to 1 ms), every frame, also when nothing is selected. Only selected parts mark the image it outlines, so it now
 // runs only while a part is selected, counted in Part.Selected's setter. The image is the same.
+[Hook(Phase.Default, Switch = nameof(Settings.SkipUnusedOutlines))]
 internal static class OutlineSkip
 {
     private static int _selected;

@@ -27,6 +27,7 @@ namespace KsaMetalHooks.App;
 //
 // Applied before any mod patches. It changes MonoMod's private code in the Harmony the game's context loaded; a mod that
 // brings its own copy of Harmony isn't covered.
+[Hook(Phase.First, Switch = nameof(Settings.HarmonyGenericDetours))]
 internal static unsafe class GenericDetours
 {
     private static readonly Type? Canon = typeof(object).Assembly.GetType("System.__Canon");

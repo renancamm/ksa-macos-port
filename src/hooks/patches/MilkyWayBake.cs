@@ -21,6 +21,7 @@ namespace KsaMetalHooks.Patches;
 // bake, again when the game's Milky Way Quality changes (it sets the clouds' octaves). The shader reads the clouds
 // from the strip when the texture it is given isn't square: nearly the same image, the clouds sampled from the strip
 // instead of worked out at each pixel.
+[Hook(Phase.Default, Switch = nameof(Settings.BakedMilkyWay))]
 internal static class MilkyWayBake
 {
     private const int Width = 8192, Height = 512;

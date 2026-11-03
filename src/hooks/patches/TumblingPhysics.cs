@@ -20,6 +20,7 @@ namespace KsaMetalHooks.Patches;
 // each step costs more than ten times as much. The cap becomes 200 rad/s, above any tumble measured on its own (about
 // 170). The three methods are marked for inlining, so a patch on them wouldn't reach their callers: the callers call
 // changed copies of them instead.
+[Hook(Phase.Default, Switch = nameof(Settings.LighterTumblingPhysics))]
 internal static class TumblingPhysics
 {
     private const double SpinCap = 200, GameSpinCap = 5235.987755982988;

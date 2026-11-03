@@ -10,6 +10,7 @@ namespace KsaMetalHooks.Patches;
 // now drawn at most every 33 ms, and a call in between returns at once, so the steps run on: on an M5 the game loads
 // about 2 s faster. A new label (Loading.State) is always drawn. Other threads' calls are left to the game, which
 // ignores them, so they never take the main thread's turn.
+[Hook(Phase.Default, Switch = nameof(Settings.LoadingScreenFpsCap))]
 internal static class LoadingPace
 {
     private static readonly long Interval = Stopwatch.Frequency * 33 / 1000;

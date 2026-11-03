@@ -18,6 +18,7 @@ namespace KsaMetalHooks.Patches;
 // finalize pass always runs: it moves the mesh to the camera. The normals pass computes normals from those positions,
 // where the camera's translation cancels out: it is skipped too while the mesh's rotation (the snapped billboard and
 // the planet's spin) has turned less than 1e-4 rad since the slot's normals were made. The image is the same.
+[Hook(Phase.Default, Switch = nameof(Settings.TerrainCache))]
 internal static class TerrainCache
 {
     private struct Key

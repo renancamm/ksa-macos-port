@@ -8,6 +8,7 @@ namespace KsaMetalHooks.App;
 // The game's extra windows (detached gauges, pop-outs) are created at macOS's floating level, and GLFW puts a fullscreen
 // window above that: a window detached in Fullscreen mode went behind the game. While the main window is at the
 // floating level or above (Always on Top, Fullscreen), the extra ones are one above it.
+[Hook(Phase.Default)]
 internal static class ExtraWindows
 {
     private const long FloatingLevel = 3;
