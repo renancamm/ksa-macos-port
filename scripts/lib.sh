@@ -10,7 +10,7 @@ source "${REPO}/src/port/lib/common.sh"
 PORT_LIB="${LIB}"
 
 # deps/build/: the CMake build tree (cmake/, with every download in cmake/_deps/), the app's libraries (natives/), the
-# .NET projects' output (assemblies/) and the other pieces of the port folder (KSA_BUILD, set by release.sh for a fresh
+# .NET projects' output (assemblies/bin/) and the other pieces of the port folder (KSA_BUILD, set by release.sh for a fresh
 # build). dist/: the port folder.
 DEPS="${REPO}/deps"
 BUILD="${KSA_BUILD:-${DEPS}/build}"

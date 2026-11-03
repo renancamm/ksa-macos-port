@@ -30,7 +30,7 @@ kit_payload() {
     [ -f "${OUT}/VERSION" ] || die "run scripts/make-kit.sh scripts first."
     [ -f "${NATIVES}/libvulkan.1.dylib" ] && [ -x "${NATIVES}/KSA" ] && [ -x "${DOTNET_RUNTIME}/dotnet" ] &&
         [ -f "${BUILD}/icon/AppIcon.icns" ] &&
-        [ -f "${ASSEMBLIES}/KsaMetalBenchmark/KsaMetalBenchmark.dll" ] && [ -f "${ASSEMBLIES}/KsaMetalHooks/KsaMetalHooks.dll" ] ||
+        [ -f "${ASSEMBLIES}/bin/KsaMetalBenchmark/KsaMetalBenchmark.dll" ] && [ -f "${ASSEMBLIES}/bin/KsaMetalHooks/KsaMetalHooks.dll" ] ||
         die "the pieces of the port are not all built. Run ./build.sh."
     [ -f "${STARMAP}/StarMap.dll" ] && [ -f "${STARMAP}/StarMap.Core.dll" ] || die "the StarMap archive has an unexpected layout."
     step "Assembling ${OUT#"${REPO}/"}"
@@ -53,13 +53,13 @@ kit_payload() {
     cp "${BUILD}/icon/AppIcon.icns" "${contents}/Resources/"
     # KSA Metal Hooks, which the launcher loads and which apply the port settings (src/hooks/), with Harmony
     mkdir -p "${contents}/Resources/Hooks"
-    cp "${ASSEMBLIES}/KsaMetalHooksLoader/KsaMetalHooksLoader.dll" "${ASSEMBLIES}/KsaMetalHooks/KsaMetalHooks.dll" "${HARMONY_DLL}" \
+    cp "${ASSEMBLIES}/bin/KsaMetalHooksLoader/KsaMetalHooksLoader.dll" "${ASSEMBLIES}/bin/KsaMetalHooks/KsaMetalHooks.dll" "${HARMONY_DLL}" \
         "${contents}/Resources/Hooks/"
     # The benchmark (src/benchmark/): its director, which the hooks start, the report program, the tour and its vehicles
     local bench="${contents}/Resources/Benchmark"
     mkdir -p "${bench}"
-    cp "${ASSEMBLIES}/KsaMetalBenchmark/KsaMetalBenchmark.dll" "${ASSEMBLIES}"/KsaMetalBenchmarkReport/*.dll \
-        "${ASSEMBLIES}"/KsaMetalBenchmarkReport/*.json \
+    cp "${ASSEMBLIES}/bin/KsaMetalBenchmark/KsaMetalBenchmark.dll" "${ASSEMBLIES}"/bin/KsaMetalBenchmarkReport/*.dll \
+        "${ASSEMBLIES}"/bin/KsaMetalBenchmarkReport/*.json \
         "${REPO}/src/benchmark/benchmark.txt" "${bench}/"
     for v in "${REPO}"/src/benchmark/vehicles/*/; do
         mkdir -p "${bench}/vehicles/$(basename "${v}")"
