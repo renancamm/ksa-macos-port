@@ -1,5 +1,5 @@
 # The same image, faster: Skip Shadows on Unlit Sides (the tab's Optimizations), which KSA Metal turns off with
-# KSA_MTL_UNLIT_SHADOW_SKIP=0.
+# KSA_MTL_SKIP_SHADOWS_ON_UNLIT_SIDES=0.
 #
 # The terrain's, the vessels', the kitten's and the buildings' shaders multiply the sun's light by the cascaded shadows
 # for every pixel, also where that light is already zero (surfaces turned away from the sun): the soft shadows' 32 taps
@@ -17,9 +17,9 @@
 # the light isn't zero.
 #
 # The edits read PORT_SKIP_UNLIT_SHADOWS, a specialization constant (id 900) that KSA Metal sets to false when
-# KSA_MTL_UNLIT_SHADOW_SKIP is 0. Each shader that uses it declares it first (switch-*), behind a guard, as a shader
-# may include two of the files that declare it. A check (*-uses) makes sure the code that uses what an edit skips still
-# reads as it does here: a KSA version that changed it keeps the game's code, never a different image.
+# KSA_MTL_SKIP_SHADOWS_ON_UNLIT_SIDES is 0. Each shader that uses it declares it first (switch-*), behind a guard, as
+# a shader may include two of the files that declare it. A check (*-uses) makes sure the code that uses what an edit
+# skips still reads as it does here: a KSA version that changed it keeps the game's code, never a different image.
 
 @@ edit switch-cascaded Lighting/CascadedShadows.glsl
 @@ what declared the switch for shadows where there is no light

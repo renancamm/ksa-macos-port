@@ -1,9 +1,14 @@
 # The port settings
 
-One table, [`port-settings.txt`](port-settings.txt), holds every port setting: its key, type and default, the
-variable it sets, what it needs, when it applies, the hook that does it, and its row in the Mac Port tab with its help.
-The table's header explains its columns. Everything else that knows about a setting reads the table or is made from
-it.
+One table, [`port-settings.txt`](port-settings.txt), holds every port setting: its key, type and default, what it
+needs, when it applies, what does it (the driver, the KTX shim, a hook), and its row in the Mac Port tab with its
+help. The table's header explains its columns. Everything else that knows about a setting reads the table or is made
+from it.
+
+A setting has one name, its key, and its environment variable is `KSA_MTL_` and the key in capitals:
+`fused_tessellation` is `KSA_MTL_FUSED_TESSELLATION`. Only two settings set Apple's own variable instead, which Metal
+reads: `metal_performance_hud` (`MTL_HUD_ENABLED`) and `frame_capture` (`MTL_CAPTURE_ENABLED`). A hook goes by its
+class's name, in the table as in the log.
 
 | Path | What it holds |
 |---|---|
@@ -37,12 +42,13 @@ default from [`port-settings.h`](port-settings.h).
 `port-settings.h` again when the table changed (commit the two together), then checks the repository against the
 table, and stops the build when it isn't in step:
 
-- every variable of the table is named in a README; one the driver, the KTX shim or the hooks read in their own
-  README;
-- every `KSA_*` or `MTL_*` variable a README names is in the table or read by some code (or is one of Apple's that
-  Metal reads);
-- every hook the table names is one `Hooks.Apply` runs, every key the hooks read is in the table, and every live
-  setting with a variable is read by the hooks.
+- each setting's `by` column is what the code does: the driver and the KTX shim read the settings it names for them
+  (through `port-settings.h`) and no others, the hooks read those it names for them and no others, and every hook it
+  names is one `Hooks.Apply` runs;
+- each setting is named by its key in the README of every component that reads it;
+- the code names no `KSA_MTL_` variable the table doesn't have, and every `KSA_*` or `MTL_*` variable a README names
+  is in the table or in some code (or is one of Apple's that Metal reads);
+- a live setting is read by the hooks, since the tab's Apply only changes what they read.
 
 A release only checks: `port-settings.h` must be what the table makes.
 
@@ -53,13 +59,12 @@ A release only checks: `port-settings.h` must be what the table makes.
 | `KsaPortSettingsGenerator check <repository>` | the checks, with `port-settings.h` as it is |
 
 In `port-settings.h`, `PORT_SETTING_<KEY>` is a setting's variable and its default as the readers take them: a switch
-`"<variable>", true` or `false` (`"<variable>", "<on value>"` for one whose on value is a word, such as
-`KSA_MTL_SYNC=strict`), an `int` or `number` `"<variable>", <default>`, the other types `"<variable>"`. A setting's
-default is then written once, in the table.
+`"<variable>", true` or `false`, an `int` or `number` `"<variable>", <default>`, the other types `"<variable>"`. A
+setting's default is then written once, in the table.
 
 ## Changing a setting
 
 Edit its line in the table, then build: `./build.sh` makes the header and the template, the generator checks the
 repository, and the library's tests check the table's rules (values, needs, the kinds the tab draws). A new row goes
-into the tab's presets in the same change ([`../hooks/tab/Presets.cs`](../hooks/tab/Presets.cs)), and a new variable
-into the README of the code that reads it.
+into the tab's presets in the same change ([`../hooks/tab/Presets.cs`](../hooks/tab/Presets.cs)), and its key into the
+README of the code that reads it.

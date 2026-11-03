@@ -21,7 +21,7 @@
 #include <set>
 
 // ---------------------------------------------------------------------------------------------------------------
-// Traces as intersector calls (KSA_MTL_RT_INTERSECTOR, on by default)
+// Traces as intersector calls (KSA_MTL_IVA_RAY_SEARCH, on by default)
 //
 // SPIRV-Cross writes each trace of the rewritten kernel as an intersection_query: reset, one next(), then the
 // committed hit's getters. With opaque geometry (the precondition of the whole rewrite: KSA's instances are opaque)

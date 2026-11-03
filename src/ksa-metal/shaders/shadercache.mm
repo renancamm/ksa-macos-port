@@ -5,8 +5,8 @@
 // the shaders of the previous run on worker threads at device creation, so after such a flush the game's pipeline
 // creation finds them compiled instead of compiling them one by one.
 //
-//   KSA_MTL_CACHE=0          no disk cache, no prewarm
-//   KSA_MTL_CACHE_DIR=<dir>  cache location (default ~/Library/Caches/ksa-metal)
+//   KSA_MTL_SHADER_CACHE=0    no disk cache, no prewarm
+//   KSA_MTL_CACHE_DIR=<dir>   cache location (default ~/Library/Caches/ksa-metal)
 #include "kmtl.h"
 #include <dirent.h>
 #include <sys/stat.h>

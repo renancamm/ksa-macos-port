@@ -234,6 +234,6 @@ uint32_t kmtlTessCap(KDevice* dev) {
         return std::max(cap, grown);
     }
     if (st[1]) KERR_ONCE("indirect tessellated draws with firstIndex %u are drawn from index 0", st[1]);
-    if (st[4]) KERR_ONCE("indirect tessellated draws with vertexOffset %u: fused tessellation (KSA_MTL_TESS_FUSE) draws them from vertex 0", st[4]);
+    if (st[4]) KERR_ONCE("indirect tessellated draws with vertexOffset %u: fused tessellation (KSA_MTL_FUSED_TESSELLATION) draws them from vertex 0", st[4]);
     return cap;
 }

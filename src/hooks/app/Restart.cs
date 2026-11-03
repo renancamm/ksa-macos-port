@@ -48,7 +48,7 @@ internal static class Restart
         }
         catch (Exception e)
         {
-            Hooks.Log($"restart: could not start the game again: {e.Message}");
+            Hooks.Log($"Restart: could not start the game again: {e.Message}");
         }
         return null;
     }

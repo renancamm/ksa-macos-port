@@ -62,7 +62,7 @@ internal static class OverlaySkip
         catch (Exception e)
         {
             _failed = true;
-            Hooks.Fail("overlay_skip", e);
+            Hooks.Fail(nameof(OverlaySkip), e);
             return true;
         }
     }
@@ -80,7 +80,7 @@ internal static class OverlaySkip
         catch (Exception e)
         {
             _failed = true;
-            Hooks.Fail("overlay_skip", e);
+            Hooks.Fail(nameof(OverlaySkip), e);
             return true;
         }
         _pending = viewport.OffscreenTarget;

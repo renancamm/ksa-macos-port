@@ -64,7 +64,7 @@ internal static class MilkyWayBake
         catch (Exception e)
         {
             _failed = true;
-            Hooks.Fail("milky_way_bake", e);
+            Hooks.Fail(nameof(MilkyWayBake), e);
             if (!_submitted)
                 _strip?.Dispose();
             _strip = null;
@@ -84,7 +84,7 @@ internal static class MilkyWayBake
         catch (Exception e)
         {
             _failed = true;
-            Hooks.Fail("milky_way_bake", e);
+            Hooks.Fail(nameof(MilkyWayBake), e);
         }
     }
 

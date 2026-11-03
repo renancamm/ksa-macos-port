@@ -90,7 +90,7 @@ internal static class OceanBlending
         catch (Exception e)
         {
             _failed = true;
-            Hooks.Fail("ocean_blending", e);
+            Hooks.Fail(nameof(OceanBlending), e);
         }
     }
 
@@ -105,7 +105,7 @@ internal static class OceanBlending
         catch (Exception e)
         {
             _failed = true;
-            Hooks.Fail("ocean_blending", e);
+            Hooks.Fail(nameof(OceanBlending), e);
         }
         Twins.Clear();
     }
@@ -122,7 +122,7 @@ internal static class OceanBlending
         catch (Exception e)
         {
             _failed = true;
-            Hooks.Fail("ocean_blending", e);
+            Hooks.Fail(nameof(OceanBlending), e);
         }
     }
 

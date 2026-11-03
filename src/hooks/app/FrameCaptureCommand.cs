@@ -61,7 +61,7 @@ internal sealed class FrameCaptureCommand
         }
         catch (Exception e)
         {
-            Hooks.Log($"frame capture command: {e}");
+            Hooks.Log($"FrameCaptureCommand: {e}");
             Instance._step = Step.Idle;
         }
     }

@@ -1,12 +1,12 @@
-// MetalFX upscaling for the hooks' render scale (src/hooks/), behind private entry points the patched
-// game calls: vkCmdUpscaleKSA between its scene and its final composite, vkCmdUpscaleSnapshotKSA before its
-// translucent effects. KSA Metal makes the motion vectors itself from the depth buffer and the matrices the game
-// passes: the scene's motion through the nearby body's frame, and inside a bounding sphere the motion of the vessel
-// the camera follows, through its own frame. What the translucent effects and the bloom changed since the snapshot
-// becomes MetalFX's reactive mask, so that plumes moving with the camera don't smear. Past the temporal upscaler's
-// largest scale (3x on an M5), it upscales as far as it can and MetalFX's spatial upscaler does the rest. The same
-// file has the present's MetalFX pass: frame interpolation (KSA_MTL_FX_INTERPOLATE), for which the game marks where
-// its UI starts (vkCmdMarkUiKSA).
+// MetalFX upscaling for the hooks' render scale (src/hooks/), behind private entry points the patched game calls:
+// vkCmdUpscaleKSA between its scene and its final composite, vkCmdUpscaleSnapshotKSA before its translucent effects.
+// KSA Metal makes the motion vectors itself from the depth buffer and the matrices the game passes: the scene's
+// motion through the nearby body's frame, and inside a bounding sphere the motion of the vessel the camera follows,
+// through its own frame. What the translucent effects and the bloom changed since the snapshot becomes MetalFX's
+// reactive mask, so that plumes moving with the camera don't smear. Past the temporal upscaler's largest scale (3x on
+// an M5), it upscales as far as it can and MetalFX's spatial upscaler does the rest. The same file has the present's
+// MetalFX pass: frame interpolation (KSA_MTL_FRAME_INTERPOLATION), for which the game marks where its UI starts
+// (vkCmdMarkUiKSA).
 #import <MetalFX/MetalFX.h>
 #include "kmtl.h"
 
@@ -84,7 +84,7 @@ struct UpscaleState {
     id<MTLTexture> motionTex = nil;
     id<MTLTexture> reactiveTex = nil;
     id<MTLTexture> snapshotTex = nil;
-    // KSA_MTL_FX_INTERPOLATE=1: the last upscale's inputs, for a frame interpolated at present
+    // KSA_MTL_FRAME_INTERPOLATION=1: the last upscale's inputs, for a frame interpolated at present
     id<MTLFXFrameInterpolator> interpolator = nil;
     id<MTLTexture> frameDepth = nil, interpolated = nil;
     // vkCmdMarkUiKSA: the scene without the UI, this frame's and the last one's
@@ -341,7 +341,7 @@ VKFN(void) vkCmdMarkUiKSA(VkCommandBuffer commandBuffer) {
     g_up.sceneSerial = g_up.frameSerial;
 }
 
-// KSA_MTL_FX_INTERPOLATE=1: a frame between the last presented one and this one, from the scenes without the UI
+// KSA_MTL_FRAME_INTERPOLATION=1: a frame between the last presented one and this one, from the scenes without the UI
 // (vkCmdMarkUiKSA) and the motion and depth of this frame's upscale; MetalFX takes this frame's UI from the presented
 // image, which has it composited, and draws it on top. Returns the texture to present first, or nil.
 id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<MTLTexture> color) {

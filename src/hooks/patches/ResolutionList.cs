@@ -108,7 +108,7 @@ internal static class ResolutionList
         catch (Exception e)
         {
             _failed = true;
-            Hooks.Fail("resolution_list", e);
+            Hooks.Fail(nameof(ResolutionList), e);
         }
     }
 
@@ -178,7 +178,7 @@ internal static class ResolutionList
         catch (Exception e)
         {
             _failed = true;
-            Hooks.Fail("resolution_list", e);
+            Hooks.Fail(nameof(ResolutionList), e);
             return null;
         }
     }

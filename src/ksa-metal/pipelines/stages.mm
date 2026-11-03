@@ -124,13 +124,14 @@ static id<MTLLibrary> compileMSL(KDevice* dev, const std::string& msl, std::stri
     return lib;
 }
 
-// Uniform structs read in place (KSA_MTL_UNIFORM_REFS, on by default). GLSL passes structs by value, and SPIRV-Cross
-// gives every helper that takes a uniform block's struct a copy in a local: "T _N; _N.a = ubo.s.a; ..." field by field,
-// or "T param = p;", at each call, inside raymarch loops too. KSA's trail parameters are 1.2 KB with their arrays, and
-// a copy whose arrays a helper indexes lives on the stack. Here the copies become references to the block (its
-// std140 twin T_1 has the same fields) and the helpers take "constant T_1&". Only copies of an expression rooted in
-// a name declared "constant X& name" are touched; anything this makes invalid (a copy that is written to, a helper
-// also called with a local struct) fails to compile, and kmtlCompileStageMSL then compiles the translation as it was.
+// Uniform structs read in place (KSA_MTL_IN_PLACE_SHADER_PARAMETERS, on by default). GLSL passes structs by value,
+// and SPIRV-Cross gives every helper that takes a uniform block's struct a copy in a local: "T _N; _N.a = ubo.s.a;
+// ..." field by field, or "T param = p;", at each call, inside raymarch loops too. KSA's trail parameters are 1.2 KB
+// with their arrays, and a copy whose arrays a helper indexes lives on the stack. Here the copies become references
+// to the block (its std140 twin T_1 has the same fields) and the helpers take "constant T_1&". Only copies of an
+// expression rooted in a name declared "constant X& name" are touched; anything this makes invalid (a copy that is
+// written to, a helper also called with a local struct) fails to compile, and kmtlCompileStageMSL then compiles the
+// translation as it was.
 static bool isIdent(char c) { return isalnum((unsigned char)c) || c == '_'; }
 
 // Whether T's block twin is a member of a struct that is read as "constant S&" and never as "device S&" (a storage
@@ -308,9 +309,9 @@ static char stageChar(spv::ExecutionModel m, KTessRole role) {
     }
 }
 
-// Hand-written replacements for translated shaders (KSA_MTL_OVERRIDES=<dir>): <dir>/<translation key>.metal for one
-// exact translation, or <dir>/<module hash>_<stage><index type>.metal (the KSA_MTL_DUMP_MSL file name) for every
-// translation of a module stage. The replacement keeps the translated interface: same entry point name, same
+// Hand-written replacements for translated shaders (KSA_MTL_SHADER_OVERRIDES=<dir>): <dir>/<translation key>.metal
+// for one exact translation, or <dir>/<module hash>_<stage><index type>.metal (the KSA_MTL_DUMP_MSL file name) for
+// every translation of a module stage. The replacement keeps the translated interface: same entry point name, same
 // argument buffer bindings (the set layouts fix them). Specialization values come from the translation it replaces
 static void applyOverride(const char* name, uint64_t key, KTranslated* tr) {
     const char* dir = kmtlConfig().overrides;
@@ -410,7 +411,7 @@ bool kmtlStoresFromFragment(const std::string& msl) {
 }
 
 // MSL compile and function of a prepared stage: thread-safe, so asynchronous pipeline creation runs it on workers. A
-// ray tracing kernel traces with intersectors (KSA_MTL_RT_INTERSECTOR), or as translated when that doesn't compile;
+// ray tracing kernel traces with intersectors (KSA_MTL_IVA_RAY_SEARCH), or as translated when that doesn't compile;
 // earlyTests: a fragment function with early fragment tests (kmtlStoresFromFragment)
 id<MTLFunction> kmtlCompileStage(KDevice* dev, const KTranslated& t, const std::string& nameStr, bool rtLaunch,
                                  bool earlyTests) {
@@ -458,9 +459,9 @@ unsigned kmtlWorkerCount() {
     return cores > 2 ? cores - 2 : 1;
 }
 
-// Asynchronous pipeline creation (KSA_MTL_ASYNC_PIPELINES=0 turns it off): KSA creates its pipelines one at a time,
-// so on a cold shader cache the MSL compiles run serially; workers compile them in parallel instead, and the first
-// bind of a pipeline waits for its compile
+// Asynchronous pipeline creation (KSA_MTL_BACKGROUND_SHADER_COMPILING=0 turns it off): KSA creates its pipelines one
+// at a time, so on a cold shader cache the MSL compiles run serially; workers compile them in parallel instead, and
+// the first bind of a pipeline waits for its compile
 void kmtlRunPipelineJob(std::function<void()> job) {
     static dispatch_queue_t queue = dispatch_queue_create("ksa-metal.pipelines", DISPATCH_QUEUE_CONCURRENT);
     static dispatch_semaphore_t slots = dispatch_semaphore_create(kmtlWorkerCount());

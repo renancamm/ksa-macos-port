@@ -132,7 +132,7 @@ run (`--set`, `--settings`), repeated runs, and Apple's tools on the places play
   in the menu bar while the game runs, can write performance reports; they go to `hud/`. It can't be combined with
   `--profile`, since both use the GPU's counters.
 
-With `--trace`, `--capture` and `--hud`, KSA Metal names every encoder after its pipelines (`KSA_MTL_LABELS=1`), so
+With `--trace`, `--capture` and `--hud`, KSA Metal names every encoder after its pipelines (the `labels` setting), so
 the tools show `1280x800 v1658c4ba926081e2+f7e01e1b174a96688 +1` (the render pass's size, the vertex and fragment
 shaders' hashes, how many other pipelines it ran) instead of an anonymous encoder.
 

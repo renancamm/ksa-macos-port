@@ -110,7 +110,7 @@ internal static class BenchmarkRun
         }
         catch (Exception e)
         {
-            Hooks.Log($"benchmark: could not restart the game for it: {e}");
+            Hooks.Log($"BenchmarkRun: could not restart the game for it: {e}");
             TimedAlert.CreateWarning("The benchmark could not start");
         }
     }
@@ -150,7 +150,7 @@ internal static class BenchmarkRun
         }
         catch (Exception e)
         {
-            Hooks.Log($"benchmark: {e}");
+            Hooks.Log($"BenchmarkRun: {e}");
             _run = null;
             try
             {
@@ -162,7 +162,7 @@ internal static class BenchmarkRun
             }
             catch (Exception again)
             {
-                Hooks.Log($"benchmark: the game could not be put back: {again}");
+                Hooks.Log($"BenchmarkRun: the game could not be put back: {again}");
                 TimedAlert.CreateWarning($"The benchmark failed: your game is in the save \"{SafetySave}\"");
             }
             _mode = Mode.None;
@@ -223,7 +223,7 @@ internal static class BenchmarkRun
         }
         catch (Exception e)
         {
-            Hooks.Log($"benchmark: caffeinate: {e.Message}");
+            Hooks.Log($"BenchmarkRun: caffeinate: {e.Message}");
         }
         while (true)
         {
@@ -232,7 +232,7 @@ internal static class BenchmarkRun
                 continue;
             // The director wrote the results of each section it finished; the report comes from them, and the player's game
             // is in the save on disk
-            Hooks.Log($"benchmark: no frame for {HangSeconds:F0} s: stopping the game. Your game is in the save \"{SafetySave}\", the run's results in {_out.Replace(Home, "~")}");
+            Hooks.Log($"BenchmarkRun: no frame for {HangSeconds:F0} s: stopping the game. Your game is in the save \"{SafetySave}\", the run's results in {_out.Replace(Home, "~")}");
             try
             {
                 File.WriteAllLines(Path.Combine(_out, "run.txt"), [$"Game: hung (no frame for {HangSeconds:F0} s): stopped"]);
@@ -248,7 +248,7 @@ internal static class BenchmarkRun
             }
             catch (Exception e)
             {
-                Hooks.Log($"benchmark: the report of the stopped run: {e.Message}");
+                Hooks.Log($"BenchmarkRun: the report of the stopped run: {e.Message}");
             }
             Environment.Exit(1);
         }
@@ -259,7 +259,7 @@ internal static class BenchmarkRun
         var vehicles = Path.Combine(_folder, "vehicles");
         foreach (var dir in Directory.Exists(vehicles) ? Directory.GetDirectories(vehicles) : [])
             if (UncompressedVehicleSave.FromDirectory(dir) == null)
-                Hooks.Log($"benchmark: the vehicle {Path.GetFileName(dir)} could not be read");
+                Hooks.Log($"BenchmarkRun: the vehicle {Path.GetFileName(dir)} could not be read");
     }
 
     // The director's options for a run from the tab
@@ -322,7 +322,7 @@ internal static class BenchmarkRun
         (_system, _sections, _start) = (Universe.CurrentSystem?.Id ?? "?", options["KSA_BENCH_ONLY"], "in the running game, from its settings");
         Console.Out.Flush();
         _logStart = File.Exists(ConsoleLog) ? new FileInfo(ConsoleLog).Length : 0;
-        Hooks.Log($"benchmark: playing in this game, into {_out.Replace(Home, "~")}");
+        Hooks.Log($"BenchmarkRun: playing in this game, into {_out.Replace(Home, "~")}");
 
         _player = new PlayerGame();
         Benchmark.NewWorld();
@@ -418,7 +418,7 @@ internal static class BenchmarkRun
         var options = Options(output);
         options["STARMAP_INSTANCE_PATH"] = instance;
         options["KSA_BENCH_FINISH"] = "1";
-        Hooks.Log($"benchmark: the game starts again for it, into {output.Replace(Home, "~")}");
+        Hooks.Log($"BenchmarkRun: the game starts again for it, into {output.Replace(Home, "~")}");
         Restart.Run(options);
         Program.Instance.RequestExit(0);
     }
@@ -456,10 +456,10 @@ internal static class BenchmarkRun
     private static void Finished()
     {
         if (_finishing?.Exception is { } e)
-            Hooks.Log($"benchmark: the report could not be written: {e.InnerException ?? e}");
+            Hooks.Log($"BenchmarkRun: the report could not be written: {e.InnerException ?? e}");
         _finishing = null;
         _last = ReadResult(_out);
-        Hooks.Log($"benchmark: {(_last.Passed ? "passed" : "done, with problems")}, report in {_out.Replace(Home, "~")}");
+        Hooks.Log($"BenchmarkRun: {(_last.Passed ? "passed" : "done, with problems")}, report in {_out.Replace(Home, "~")}");
         if (_mode == Mode.Restarted)
         {
             Show(_out);
@@ -517,7 +517,7 @@ internal static class BenchmarkRun
         var errors = process.StandardError.ReadToEnd();
         process.WaitForExit();
         if (errors.Length > 0)
-            Hooks.Log($"benchmark: the report program said: {errors.Trim()}");
+            Hooks.Log($"BenchmarkRun: the report program said: {errors.Trim()}");
         _ = output.Result;
     }
 

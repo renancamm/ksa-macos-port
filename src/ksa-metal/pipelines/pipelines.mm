@@ -340,10 +340,11 @@ static bool buildTessKernels(KDevice* dev, const VkGraphicsPipelineCreateInfo* c
     return (passthrough && *passthrough) || buildControl(tcs);
 }
 
-// Fused tessellation (KSA_MTL_TESS_FUSE=0 turns it off; tessspirv.cpp has the rewrites). With a passthrough control stage the
-// vertex kernel's outputs only travel to the evaluation stage through memory: here the evaluation stage computes them
-// itself from the vertex attributes Metal fetches per control point (through the draw's 32-bit index buffer), and the
-// kernels shrink to what the tessellation factors need. Fills p's *Fused members; false leaves the pipeline as it was.
+// Fused tessellation (KSA_MTL_FUSED_TESSELLATION=0 turns it off; tessspirv.cpp has the rewrites). With a passthrough
+// control stage the vertex kernel's outputs only travel to the evaluation stage through memory: here the evaluation
+// stage computes them itself from the vertex attributes Metal fetches per control point (through the draw's 32-bit
+// index buffer), and the kernels shrink to what the tessellation factors need. Fills p's *Fused members; false leaves
+// the pipeline as it was.
 static bool buildFusedTess(KDevice* dev, const VkGraphicsPipelineCreateInfo* ci, const VkPipelineShaderStageCreateInfo* vs,
                            const VkPipelineShaderStageCreateInfo* tcs, const VkPipelineShaderStageCreateInfo* tes,
                            KPipelineLayout* layout, const KTranslated& modes, KStageOptions eso, MTLRenderPipelineDescriptor* d,
@@ -724,7 +725,7 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
 
 // The end of a vkCreate*Pipelines call whose failed pipelines are null in out (each failure logged where it happened).
 // A failed pipeline does not stop the game: it becomes an empty pipeline (no Metal state), whose draws, dispatches and
-// ray traces are skipped. KSA_MTL_STRICT=1 returns the error instead, the failed handles left null.
+// ray traces are skipped. KSA_MTL_STRICT_PIPELINES=1 returns the error instead, the failed handles left null.
 VkResult kmtlFinishPipelines(uint32_t n, VkPipeline* out) {
     bool failed = false;
     for (uint32_t i = 0; i < n; i++) failed |= !out[i];

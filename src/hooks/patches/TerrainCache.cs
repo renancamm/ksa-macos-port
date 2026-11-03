@@ -80,7 +80,7 @@ internal static class TerrainCache
         {
             _skip = _skipNormals = false;
             _failed = true;
-            Hooks.Fail("terrain_cache", e);
+            Hooks.Fail(nameof(TerrainCache), e);
         }
     }
 

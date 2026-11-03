@@ -4,8 +4,8 @@
 //       The driver on its own: an instance, a device, buffers in host-visible memory, a command buffer that fills one
 //       and copies it into the other, a submit and a fence, and the copy read back.
 //   ksa-metal-tests corpus [--update] [--out <dir>] <corpus>
-//       Every translation of a shader corpus (KSA_MTL_CORPUS) again: its key from the recorded inputs (the record
-//       holds everything that shapes it), its MSL against the recorded one, and Metal's compile of it. A changed
+//       Every translation of a shader corpus (KSA_MTL_SHADER_CORPUS) again: its key from the recorded inputs (the
+//       record holds everything that shapes it), its MSL against the recorded one, and Metal's compile of it. A changed
 //       translation goes to <dir> as <key>.recorded.txt and <key>.now.txt (the entry point and flags, then the MSL);
 //       --update records it instead.
 //
@@ -219,11 +219,11 @@ static int corpus(const std::string& dir, const std::string& outDir, bool update
 int main(int argc, char** argv) {
     // Neither the shader cache on disk nor its prewarm: the tests translate and compile everything themselves. The
     // driver reads its settings before main, so the program starts again with the cache off.
-    const char* cache = getenv("KSA_MTL_CACHE");
+    const char* cache = getenv("KSA_MTL_SHADER_CACHE");
     if (!cache || strcmp(cache, "0") != 0) {
         char path[PATH_MAX];
         uint32_t size = sizeof(path);
-        setenv("KSA_MTL_CACHE", "0", 1);
+        setenv("KSA_MTL_SHADER_CACHE", "0", 1);
         if (_NSGetExecutablePath(path, &size) == 0) execv(path, argv);
         return fail("could not start again with the shader cache off");
     }

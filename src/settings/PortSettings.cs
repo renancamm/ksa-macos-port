@@ -62,16 +62,14 @@ public static class PortSettings
                 All[^1].OptionHelp[c[0]] = c[1];
                 continue;
             }
-            if (c.Length < 9)
-                throw new FormatException($"{table}, line {n + 1}: {c.Length} columns, not 9");
+            if (c.Length < 8)
+                throw new FormatException($"{table}, line {n + 1}: {c.Length} columns, not 8");
+            string[] List(string column) => column.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             var s = new PortSetting
             {
-                Section = section, Key = c[0], Type = c[1], Default = c[2], Variable = c[3].Split('=')[0], Live = c[5] == "live",
-                Hook = c[6], Label = c[7], Help = string.Join('|', c[8..]),
-                Needs = c[4].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                Section = section, Key = c[0], Type = c[1], Default = c[2], Needs = List(c[3]), Live = c[4] == "live",
+                By = List(c[5]), Label = c[6], Help = string.Join('|', c[7..]),
             };
-            if (c[3].Contains('='))
-                s.OnValue = c[3][(c[3].IndexOf('=') + 1)..];
             var parts = s.Type.Split(':');
             switch (parts[0])
             {

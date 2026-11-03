@@ -324,7 +324,7 @@ public partial class Benchmark
         DriverStats.Marker(window.Name, true);
         if (_profileFrames > 0 && !DriverStats.ProfileFrames($"{_sectionResult?.Name}/{window.Name}", _profileFrames))
         {
-            _sectionResult?.Errors.Add($"{window.Name}: KSA Metal's GPU profiler is off (does the game have KSA_MTL_GPUPROF=<csv>?)");
+            _sectionResult?.Errors.Add($"{window.Name}: KSA Metal's GPU profiler is off (does the game have KSA_MTL_GPU_PROFILE=<csv>?)");
             _profileFrames = 0;
         }
     }

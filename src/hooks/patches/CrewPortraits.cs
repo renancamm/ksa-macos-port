@@ -63,7 +63,7 @@ internal static class CrewPortraits
         catch (Exception e)
         {
             _failed = true;
-            Hooks.Fail("crew_portraits", e);
+            Hooks.Fail(nameof(CrewPortraits), e);
         }
     }
 }

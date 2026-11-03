@@ -171,7 +171,7 @@ internal static class HudLayout
         catch (Exception e)
         {
             _failed = true;
-            Hooks.Fail("hud_layout", e);
+            Hooks.Fail(nameof(HudLayout), e);
             return false;
         }
         return display.X > 0f && display.Y > 0f && window.Y > 0;

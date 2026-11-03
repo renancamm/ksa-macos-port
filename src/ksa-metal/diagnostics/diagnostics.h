@@ -26,8 +26,8 @@ double kmtlTakeFrameGpuTime();  // one frame's GPU busy time in seconds (since t
 // whose interval since the last one is the frame log's display_ms (interpolated frames only count)
 void kmtlNoteShown(double t, bool timed);
 
-// GPU profiler (profile.mm, KSA_MTL_GPUPROF), and the timestamp sample buffers it shares with the game's timestamp
-// queries: recycled, since Metal caps how many are alive; null (logged a few times) when one can't be made
+// GPU profiler (profile.mm, KSA_MTL_GPU_PROFILE), and the timestamp sample buffers it shares with the game's
+// timestamp queries: recycled, since Metal caps how many are alive; null (logged a few times) when one can't be made
 constexpr uint32_t kTimestampSamples = 4096;
 id<MTLCounterSampleBuffer> kmtlAcquireTimestamps(KDevice* dev, const char* what);
 void kmtlRecycleTimestamps(id<MTLCounterSampleBuffer> b);

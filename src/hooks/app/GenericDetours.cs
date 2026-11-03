@@ -82,7 +82,7 @@ internal static unsafe class GenericDetours
         }
         catch (Exception e)
         {
-            Hooks.Log($"generic detours: {__1} left as it is ({Hooks.Describe(e)})");
+            Hooks.Log($"GenericDetours: {__1} left as it is ({Hooks.Describe(e)})");
         }
     }
 
@@ -131,7 +131,7 @@ internal static unsafe class GenericDetours
             if (shared == null || shared.MetadataToken != method.MetadataToken)
             {
                 LeftOnStub.Add(method);
-                Hooks.Log($"generic detours: {declaring.Name}.{method} stays on its stub, so direct calls skip its patches");
+                Hooks.Log($"GenericDetours: {declaring.Name}.{method} stays on its stub, so direct calls skip its patches");
                 return null;
             }
             SharedHandles[shared] = handle;

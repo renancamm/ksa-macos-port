@@ -13,7 +13,8 @@
 //   @sync                        a checkpoint without a screenshot: the simulation eases to a stop, the game's clock
 //                                catches up with the script's, and the steps after it act at the same game time on
 //                                every Mac (a kitten walking through the slow frames walks differently, though)
-//   @gpuprof <name> <frames>     profile the next frames with KSA Metal's GPU profiler (needs KSA_MTL_GPUPROF=<csv>)
+//   @gpuprof <name> <frames>     profile the next frames with KSA Metal's GPU profiler (needs
+//                                KSA_MTL_GPU_PROFILE=<csv>)
 //   @reset                       the world becomes a new game's (its clock at the start, no vehicles), so the section is
 //                                the same whatever played before it. The game stays stopped for the steps at that time in
 //                                a live section (until its @warp), and runs at real time in another

@@ -56,8 +56,8 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
         maxVerts = (uint64_t)t.count * t.instances;
     }
     uint64_t maxPatches = maxVerts / p->tessInCP;
-    // Fused (KSA_MTL_TESS_FUSE): 32-bit indices, as the control point index buffer, and no instances or base vertex
-    // for direct draws (indirect ones are checked by the prep kernel's statistics)
+    // Fused (KSA_MTL_FUSED_TESSELLATION): 32-bit indices, as the control point index buffer, and no instances or base
+    // vertex for direct draws (indirect ones are checked by the prep kernel's statistics)
     bool fused = p->renderFused && idxType == 2 && t.instances == 1 && (t.indirect || t.vertexOffset == 0);
     const KTessStages& st = fused ? p->tessFused : p->tessPlain;
     if (!maxPatches || !st.vertex[idxType] || !st.control) return;
@@ -329,8 +329,8 @@ VKFN(void) vkCmdDrawIndexedIndirect(VkCommandBuffer commandBuffer, VkBuffer buff
     cb->draws += drawCount;
 }
 
-// After every dispatch, ray traces included: the profiler's note and the count, and with KSA_MTL_GPUPROF_SPLIT=1 the
-// encoder ends, so the profiler times each dispatch alone
+// After every dispatch, ray traces included: the profiler's note and the count, and with KSA_MTL_GPU_PROFILE_SPLIT=1
+// the encoder ends, so the profiler times each dispatch alone
 static void dispatched(KCommandBuffer* cb) {
     kmtlProfNote(cb, cb->computePipeline, true, 1);
     cb->dispatches++;

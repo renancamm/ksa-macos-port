@@ -40,8 +40,8 @@ struct KPipeline {
     MTLPrimitiveType primitive = MTLPrimitiveTypeTriangle;
     bool triangleFan = false;  // emulated with a generated index buffer
     // Tessellation: the plain stages, and, when the control stage is a passthrough, the fused ones (32-bit indexed
-    // draws; KSA_MTL_TESS_FUSE=0 turns them off): their evaluation stage runs the vertex shader on attributes Metal
-    // fetches per control point, so their kernels only write what the tessellation factors need
+    // draws; KSA_MTL_FUSED_TESSELLATION=0 turns them off): their evaluation stage runs the vertex shader on
+    // attributes Metal fetches per control point, so their kernels only write what the tessellation factors need
     bool tess = false;
     KTessStages tessPlain, tessFused;
     id<MTLRenderPipelineState> renderFused = nil;
@@ -111,5 +111,5 @@ KPipeline* kmtlCreateComputeFromStage(KDevice* dev, KPipelineLayout* layout, con
 // have the expected shape
 std::string kmtlRtIntersectors(const std::string& msl);
 
-// The end every vkCreate*Pipelines call shares (pipelines.mm): failed pipelines, KSA_MTL_STRICT
+// The end every vkCreate*Pipelines call shares (pipelines.mm): failed pipelines, KSA_MTL_STRICT_PIPELINES
 VkResult kmtlFinishPipelines(uint32_t n, VkPipeline* out);

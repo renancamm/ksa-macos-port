@@ -202,7 +202,7 @@ internal static partial class MacPortTab
     private static void Failed(Exception e)
     {
         _failed = true;
-        Hooks.Fail("mac_port_tab", e);
+        Hooks.Fail(nameof(MacPortTab), e);
     }
 
     // Apply, or the restart popup's Restart and Continue, saved the game's pending copy: the tab's values go to the file
@@ -231,13 +231,13 @@ internal static partial class MacPortTab
         }
         catch (Exception e)
         {
-            Hooks.Log($"Mac Port tab: could not write {PortSettings.FilePath}: {e.Message}");
+            Hooks.Log($"MacPortTab: could not write {PortSettings.FilePath}: {e.Message}");
             TimedAlert.CreateWarning("The port settings could not be saved");
             return;
         }
         foreach (var s in Shown.Where(s => s.Live && changed.ContainsKey(s.Key)))
             ApplyLive(s, s.Saved);
-        Hooks.Log($"Mac Port tab: saved {string.Join(", ", changed.Select(kv => $"{kv.Key} = {kv.Value}"))}");
+        Hooks.Log($"MacPortTab: saved {string.Join(", ", changed.Select(kv => $"{kv.Key} = {kv.Value}"))}");
     }
 
     // The hooks read a live setting's Running value (Settings) while the game runs
@@ -419,7 +419,7 @@ internal static partial class MacPortTab
     private static void DrawPresets()
     {
         SectionHeader("Presets", "Sets the game's graphics and these settings together.", first: true);
-        var unavailable = Hooks.Status.GetValueOrDefault("presets") is { Unavailable: true } status
+        var unavailable = Hooks.Status.GetValueOrDefault(nameof(Presets)) is { Unavailable: true } status
             ? status.State == HookState.Skipped
                 ? "Unavailable with this KSA version: the game's settings it sets have moved (logs/console.log says more)."
                 : "Unavailable: it ran into an error (logs/console.log says why)."

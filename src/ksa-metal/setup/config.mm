@@ -20,17 +20,10 @@ static bool envOn(const char* name, bool def) {
     const char* v = env(name);
     return v && !strcmp(v, "0") ? false : v && !strcmp(v, "1") ? true : def;
 }
-// A switch whose on value is a word of its own (KSA_MTL_SYNC=strict)
-static bool envIs(const char* name, const char* on) {
-    const char* v = env(name);
-    return v && !strcmp(v, on);
-}
 static double envNumber(const char* name, double def) {
     const char* v = env(name);
     return v ? atof(v) : def;
 }
-// A switch whose default is another's value, not its own in the table
-static bool envOnOr(const char* name, bool /* the table's default */, bool def) { return envOn(name, def); }
 
 const KConfig& kmtlConfig() {
     static const KConfig config = [] {
@@ -42,7 +35,7 @@ const KConfig& kmtlConfig() {
         c.rtPipeline = c.rayQuery && envOn(PORT_SETTING_RAY_TRACING);
         c.asyncPipelines = envOn(PORT_SETTING_BACKGROUND_SHADER_COMPILING);
         c.cache = envOn(PORT_SETTING_SHADER_CACHE);
-        c.strictSync = envIs(PORT_SETTING_STRICT_SYNC);
+        c.strictSync = envOn(PORT_SETTING_STRICT_SYNC);
         c.safeMath = envOn(PORT_SETTING_PRECISE_MATH);
         c.constantArgumentBuffers = envOn(PORT_SETTING_SHADER_CONSTANT_MEMORY);
         c.uncompressedTextures = envOn(PORT_SETTING_SKIP_GPU_TEXTURE_COMPRESSION);
@@ -74,17 +67,18 @@ const KConfig& kmtlConfig() {
         c.gpuprof = env(PORT_SETTING_GPU_PROFILE);
         c.gpuprofFrames = env(PORT_SETTING_GPU_PROFILE_FRAMES);
         c.gpuprofSplit = envOn(PORT_SETTING_GPU_PROFILE_SPLIT);
-        c.labels = envOnOr(PORT_SETTING_LABELS, envOn(PORT_SETTING_FRAME_CAPTURE));
-        c.gpuErrors = envOn("KSA_MTL_GPU_ERRORS", false);
-        c.watch = env("KSA_MTL_WATCH");
-        c.watchWhite = env("KSA_MTL_WATCH_WHITE") ? atof(env("KSA_MTL_WATCH_WHITE")) : 30;
+        // A frame capture names the encoders too
+        c.labels = envOn(PORT_SETTING_LABELS) || envOn(PORT_SETTING_FRAME_CAPTURE);
+        c.gpuErrors = envOn(PORT_SETTING_GPU_ERRORS);
+        c.watch = env(PORT_SETTING_WATCH);
+        c.watchWhite = envNumber(PORT_SETTING_WATCH_WHITE);
         c.fxDebug = envOn(PORT_SETTING_FX_DEBUG);
         c.fxShots = env(PORT_SETTING_FX_SHOTS);
         c.throttle = env(PORT_SETTING_THROTTLE);
         c.uniformRefs = envOn(PORT_SETTING_IN_PLACE_SHADER_PARAMETERS);
         c.rtIntersector = envOn(PORT_SETTING_IVA_RAY_SEARCH);
         c.unlitShadowSkip = envOn(PORT_SETTING_SKIP_SHADOWS_ON_UNLIT_SIDES);
-        c.earlyFragmentTests = envOn("KSA_MTL_EARLY_FRAGMENT_TESTS", true);
+        c.earlyFragmentTests = envOn(PORT_SETTING_EARLY_FRAGMENT_TESTS);
         return c;
     }();
     return config;

@@ -10,11 +10,11 @@ switches, how to build and test a change, how each Vulkan concept maps onto Meta
 ## Configuration
 
 KSA Metal takes its settings from environment variables, which the hooks' loader sets from the port settings ([The Mac
-Port tab](../../README.md#the-mac-port-tab)): each variable below has a setting in `port-settings.toml`
-([`../settings/port-settings.txt`](../settings/port-settings.txt) says which), the switches in the tab's
-Optimizations and GPU Features sections, the debugging variables in the file's `[developer]` section. A variable can
-also be set where the app's executable starts, from Terminal, where its output stays visible; it then wins over the
-file:
+Port tab](../../README.md#the-mac-port-tab)): each setting below is a line of `port-settings.toml`
+([`../settings/port-settings.txt`](../settings/port-settings.txt)), the switches in the tab's Optimizations and GPU
+Features sections, the debugging settings in the file's `[developer]` section. A setting's variable is `KSA_MTL_` and
+its key in capitals, with 0 for off and 1 for on. A variable can also be set where the app's executable starts, from
+Terminal, where its output stays visible; it then wins over the file:
 
 ```bash
 KSA_MTL_TESSELLATION=0 ~/Applications/"Kitten Space Agency.app"/Contents/MacOS/KSA
@@ -22,26 +22,26 @@ KSA_MTL_TESSELLATION=0 ~/Applications/"Kitten Space Agency.app"/Contents/MacOS/K
 
 These switches turn a feature off or change a default, to work around a problem or to find out what causes it:
 
-| Variable | Effect |
+| Setting | Effect |
 |---|---|
-| `KSA_MTL_TESSELLATION=0` | hide tessellation from the game; it draws terrain and ocean without it |
-| `KSA_MTL_TESS_FUSE=0` | tessellate without the fused path ([Tessellation](#from-vulkan-to-metal)): the vertex stage's outputs go through memory (slower; try it when terrain or ocean look wrong) |
-| `KSA_MTL_RAYQUERY=0` | hide ray queries and ray tracing; the game places clutter without them, and ray tracing inside the cockpit (IVA) is unavailable |
-| `KSA_MTL_RTPIPELINE=0` | hide only ray tracing pipelines (the cockpit's ray tracing) |
-| `KSA_MTL_ASYNC_PIPELINES=0` | compile pipelines on the game's thread, when the game creates them |
-| `KSA_MTL_CACHE=0` | don't use the shader cache on disk |
-| `KSA_MTL_SYNC=strict` | run all GPU work strictly in order; slower, but rules out synchronization bugs |
-| `KSA_MTL_SAFE_MATH=1` | compile shaders without fast math; rules out precision problems |
-| `KSA_MTL_AB_CONSTANT=0` | shaders read their resources from device memory instead of constant memory; a bit slower, try it when a shader fails to compile |
-| `KSA_MTL_UNIFORM_REFS=0` | helper functions get their own copy of each uniform struct they take, as SPIRV-Cross writes it ([Shaders](#from-vulkan-to-metal)); slower in the smoke raymarch, try it when a shader looks wrong |
-| `KSA_MTL_UNCOMPRESSED_TEXTURES=0` | textures read at scattered positions (those the game only uploads and samples, 3D images, square power-of-two storage images of 64 to 256 such as the ocean's waves) are lossless-compressed, as Metal does by default; about 2-4 % slower over terrain, up to 10 % over clouds and the sea, try it when the terrain, clouds, smoke or the sea look wrong |
-| `KSA_MTL_RT_INTERSECTOR=0` | the cockpit's ray tracing finds each hit with a ray query, as SPIRV-Cross writes it, instead of Metal's intersector ([Ray tracing](#from-vulkan-to-metal)); slower in the cockpit, try it when the cockpit looks wrong |
-| `KSA_MTL_UNLIT_SHADOW_SKIP=0` | the port's shader edits that skip shadows where there is no light ([Shaders](#from-vulkan-to-metal)) look them up everywhere, as the game does; slower, try it when a shadow looks wrong |
-| `KSA_MTL_EARLY_FRAGMENT_TESTS=0` | no second state that tests depth first for pipelines whose fragment shader stores to an image ([Shaders](#from-vulkan-to-metal)): the hooks' Skip Hidden Vessel Parts has nothing to switch to |
-| `KSA_MTL_BUDGET_MB=<n>` | the GPU memory budget reported to the game, which sizes its texture streaming from it (default: what Metal recommends for this Mac) |
-| `KSA_MTL_FX_INTERPOLATE=1` | frame interpolation ([MetalFX](#from-vulkan-to-metal)) |
-| `KSA_MTL_HDR=0` | offer the game no HDR output ([Presentation](#from-vulkan-to-metal)): its HDR settings (Display) stay hidden |
-| `KSA_MTL_PRESENT_PACING=0` | with Vsync, the game's wait for an earlier frame ends only when the display shows it ([Presentation](#from-vulkan-to-metal)); in a window, frames that take less than about 23 ms on the GPU then run slower |
+| `tessellation` | off: hide tessellation from the game; it draws terrain and ocean without it |
+| `fused_tessellation` | off: tessellate without the fused path ([Tessellation](#from-vulkan-to-metal)): the vertex stage's outputs go through memory (slower; try it when terrain or ocean look wrong) |
+| `ray_queries` | off: hide ray queries and ray tracing; the game places clutter without them, and ray tracing inside the cockpit (IVA) is unavailable |
+| `ray_tracing` | off: hide only ray tracing pipelines (the cockpit's ray tracing) |
+| `background_shader_compiling` | off: compile pipelines on the game's thread, when the game creates them |
+| `shader_cache` | off: don't use the shader cache on disk |
+| `strict_sync` | on: run all GPU work strictly in order; slower, but rules out synchronization bugs |
+| `precise_math` | on: compile shaders without fast math; rules out precision problems |
+| `shader_constant_memory` | off: shaders read their resources from device memory instead of constant memory; a bit slower, try it when a shader fails to compile |
+| `in_place_shader_parameters` | off: helper functions get their own copy of each uniform struct they take, as SPIRV-Cross writes it ([Shaders](#from-vulkan-to-metal)); slower in the smoke raymarch, try it when a shader looks wrong |
+| `skip_gpu_texture_compression` | off: textures read at scattered positions (those the game only uploads and samples, 3D images, square power-of-two storage images of 64 to 256 such as the ocean's waves) are lossless-compressed, as Metal does by default; about 2-4 % slower over terrain, up to 10 % over clouds and the sea, try it when the terrain, clouds, smoke or the sea look wrong |
+| `iva_ray_search` | off: the cockpit's ray tracing finds each hit with a ray query, as SPIRV-Cross writes it, instead of Metal's intersector ([Ray tracing](#from-vulkan-to-metal)); slower in the cockpit, try it when the cockpit looks wrong |
+| `skip_shadows_on_unlit_sides` | off: the port's shader edits that skip shadows where there is no light ([Shaders](#from-vulkan-to-metal)) look them up everywhere, as the game does; slower, try it when a shadow looks wrong |
+| `early_fragment_tests` | off: no second state that tests depth first for pipelines whose fragment shader stores to an image ([Shaders](#from-vulkan-to-metal)): the hooks' Skip Hidden Vessel Parts has nothing to switch to |
+| `texture_budget_mb` | the GPU memory budget in MB reported to the game, which sizes its texture streaming from it (0, the default: what Metal recommends for this Mac) |
+| `frame_interpolation` | on: frame interpolation ([MetalFX](#from-vulkan-to-metal)) |
+| `hdr_output` | off: offer the game no HDR output ([Presentation](#from-vulkan-to-metal)): its HDR settings (Display) stay hidden |
+| `vsync_pacing` | off: with Vsync, the game's wait for an earlier frame ends only when the display shows it ([Presentation](#from-vulkan-to-metal)); in a window, frames that take less than about 23 ms on the GPU then run slower |
 
 ## Build
 
@@ -75,50 +75,54 @@ numbers. To look at one place, play only that place (`--fast jupiter2`) or stay 
 game gets the variables below from the script, so `MTL_SHADER_VALIDATION=1 ./benchmark.sh --hold jupiter2` works too.
 
 For a problem the tests don't reach, reproduce it in a save and start the app's executable from Terminal with the
-debugging variables below, as with the switches above. For example, to save two screenshots and quit:
+debugging settings' variables below, as with the switches above. For example, to save two screenshots and quit:
 
 ```bash
 KSA_MTL_SHOTS=300,3000 KSA_MTL_SHOT_DIR=/tmp/ksa-shots KSA_MTL_EXIT_AFTER_SHOTS=1 \
   ~/Applications/"Kitten Space Agency.app"/Contents/MacOS/KSA
 ```
 
-Either way, `MTL_SHADER_VALIDATION=1` and `KSA_MTL_DUMP_MSL` show which shader misbehaves and what Metal source it
+Either way, `MTL_SHADER_VALIDATION=1` and `dump_msl` show which shader misbehaves and what Metal source it
 became. The ground clutter's shader fixes ([`../porter/shader-edits/fixes/`](../porter/shader-edits/fixes/)) were found this
 way.
 
-Vulkan validation layers can't be used, because KSA Metal takes the loader's place. `KSA_MTL_LOG=1` logs its
-warnings and the first call of each Vulkan function, which shows what the game asks for, and `KSA_MTL_STRICT=1`
-returns pipeline errors to the game instead of skipping the pipeline.
+Vulkan validation layers can't be used, because KSA Metal takes the loader's place. `log` at 1 logs its warnings and
+the first call of each Vulkan function, which shows what the game asks for, and `strict_pipelines` returns pipeline
+errors to the game instead of skipping the pipeline.
 
-The debugging variables, used the same way:
+The debugging settings, used the same way:
 
-| Variable | Effect |
+| Setting | Effect |
 |---|---|
-| `KSA_MTL_LOG=<0-2>` | log detail: 0 errors only (default), 1 also warnings and the first call of each function, 2 also object creation |
-| `KSA_MTL_LOG_FILE=<file>` | write the log to a file instead of the terminal |
-| `KSA_MTL_STRICT=1` | return pipeline errors to the game, instead of skipping the pipeline and continuing (pipelines then compile on the game's thread, so every error can go back) |
-| `KSA_MTL_DUMP_MSL=<dir>` | write every translated shader, and the errors of those that fail to compile |
-| `KSA_MTL_DUMP_SPV=<dir>` | write every shader module the game creates as `<hash>.spv`, and the modules KSA Metal rewrites for tessellation and ray tracing |
-| `KSA_MTL_CORPUS=<dir>` | record every shader translation's inputs and result there, once each, for the shader corpus test ([`tests/`](tests/)) |
-| `KSA_MTL_OVERRIDES=<dir>` | use hand-written Metal source in place of a translated shader: `<dir>/<name>.metal`, named as in `KSA_MTL_DUMP_MSL`; each use keeps its own specialization values |
-| `KSA_MTL_SPEC=<hash>:<id>=<value>,...` | replace a specialization constant of a shader module, whatever the game passes (e.g. fewer iterations of an expensive loop) |
-| `KSA_MTL_CACHE_DIR=<dir>` | where the shader cache goes, and the KTX shim's textures (default: `~/Library/Caches/ksa-metal`) |
-| `KSA_MTL_SHOTS=<n,...>` | save the presented image as `shot_<n>.png` at these points |
-| `KSA_MTL_SHOT_UNIT=<unit>` | count shots in `presents` (default), or in `frames` or `seconds` from the first in-game frame |
-| `KSA_MTL_SHOT_DIR=<dir>` | where shots go (default: the current folder) |
-| `KSA_MTL_EXIT_AFTER=<n>` | quit after n presents (`KSA_MTL_EXIT_AFTER_S=<s>`: s seconds after start) |
-| `KSA_MTL_EXIT_AFTER_SHOTS=1` | quit once the last shot is saved |
-| `KSA_MTL_FRAMES=<file.csv>` | per frame: CPU frame time, GPU busy time, draws, dispatches and allocated memory |
-| `KSA_MTL_FX_DEBUG=1` | the upscaled image shows MetalFX's motion vectors instead (red and green: horizontal and vertical, 32 pixels = full; blue: the followed vessel) |
-| `KSA_MTL_FX_SHOTS=<dir>` | now and then, a PNG of what MetalFX made: an interpolated frame with the frames around it |
-| `KSA_MTL_LATENCY=<file.csv>` | per frame: when it began (when the game's wait for an earlier frame ended), was presented, was done on the GPU and was shown, how long it waited, and whether pacing ended the wait |
-| `KSA_MTL_STALLS=<ms>` | logs what blocks the game longer than that: waits for fences, drawables and submits, residency set commits (with what they added), command buffers that started late on the GPU, and allocations of 16 MB or more, each with the present it falls in |
-| `KSA_MTL_GPUPROF=<file.csv>` | GPU time of every encoder, for 300 frames from present 2000 (`KSA_MTL_GPUPROF_FRAMES=<first>,<count>` changes that) |
-| `KSA_MTL_GPUPROF_SPLIT=1` | give every draw and dispatch its own encoder, so the profiler times each one (times grow: each draw stores and loads its attachments) |
-| `KSA_MTL_LABELS=1` | name every encoder after its pipelines (render pass size, shader hashes), for Instruments, the Metal HUD and Xcode's frame capture; on by default with `MTL_CAPTURE_ENABLED=1` |
-| `KSA_MTL_GPU_ERRORS=1` | a failed command buffer logs each encoder's state (completed, faulted, affected, pending); with `KSA_MTL_LABELS=1` the log names them |
-| `KSA_MTL_WATCH=<dir>` | every 31 presents, a look at a sample of the presented image: at 30 % pure white, 99.9 % pure black for a second, or 0.1 % of pure primary colours or green with no red or blue, it saves the image and a pass dump of the next frame in `<dir>` (at most 3, 10 s apart), `watch.txt` says when each fault began and ended, and `watch.csv` has every look's numbers. Only an image after a clean one counts. `KSA_MTL_WATCH_WHITE=<percent>` changes the white limit: 0 fires on any image, to test it |
-| `KSA_MTL_THROTTLE=<hash>:<n>,...` | experiment: a pipeline whose name holds that shader hash runs only every n-th present (0: never), to see what a shader costs and what it draws |
+| `log` | 0-2, the log's detail: 0 errors only (default), 1 also warnings and the first call of each function, 2 also object creation |
+| `log_file` | a file: write the log there instead of the terminal |
+| `strict_pipelines` | on: return pipeline errors to the game, instead of skipping the pipeline and continuing (pipelines then compile on the game's thread, so every error can go back) |
+| `dump_msl` | a folder: write every translated shader there, and the errors of those that fail to compile |
+| `dump_spv` | a folder: write every shader module the game creates there as `<hash>.spv`, and the modules KSA Metal rewrites for tessellation and ray tracing |
+| `shader_corpus` | a folder: record every shader translation's inputs and result there, once each, for the shader corpus test ([`tests/`](tests/)) |
+| `shader_overrides` | a folder: use hand-written Metal source in place of a translated shader, `<folder>/<name>.metal`, named as `dump_msl` names them; each use keeps its own specialization values |
+| `spec` | `<hash>:<id>=<value>,...`: replace a specialization constant of a shader module, whatever the game passes (e.g. fewer iterations of an expensive loop) |
+| `cache_dir` | a folder: where the shader cache goes, and the KTX shim's textures (default: `~/Library/Caches/ksa-metal`) |
+| `shots` | `<n>,...`: save the presented image as `shot_<n>.png` at these points |
+| `shot_unit` | what `shots` counts: `presents` (default), or `frames` or `seconds` from the first in-game frame |
+| `shot_dir` | a folder: where shots go (default: the current folder) |
+| `exit_after` | quit after this many presents |
+| `exit_after_s` | quit this many seconds after start |
+| `exit_after_shots` | on: quit once the last shot is saved |
+| `frames` | a CSV file: per frame, CPU frame time, GPU busy time, draws, dispatches and allocated memory |
+| `fx_debug` | on: the upscaled image shows MetalFX's motion vectors instead (red and green: horizontal and vertical, 32 pixels = full; blue: the followed vessel) |
+| `fx_shots` | a folder: now and then, a PNG of what MetalFX made, an interpolated frame with the frames around it |
+| `latency` | a CSV file: per frame, when it began (when the game's wait for an earlier frame ended), was presented, was done on the GPU and was shown, how long it waited, and whether pacing ended the wait |
+| `stalls` | milliseconds: log what blocks the game longer than that: waits for fences, drawables and submits, residency set commits (with what they added), command buffers that started late on the GPU, and allocations of 16 MB or more, each with the present it falls in |
+| `gpu_profile` | a CSV file: the GPU time of every encoder, for 300 frames from present 2000 |
+| `gpu_profile_frames` | `<first>,<count>`: other frames for `gpu_profile` |
+| `gpu_profile_split` | on: give every draw and dispatch its own encoder, so the profiler times each one (times grow: each draw stores and loads its attachments) |
+| `labels` | on: name every encoder after its pipelines (render pass size, shader hashes), for Instruments, the Metal HUD and Xcode's frame capture; on with `frame_capture` too |
+| `frame_capture` | on: Xcode frame captures are allowed (it sets Apple's `MTL_CAPTURE_ENABLED`) |
+| `gpu_errors` | on: a failed command buffer logs each encoder's state (completed, faulted, affected, pending); with `labels` the log names them |
+| `watch` | a folder: every 31 presents, a look at a sample of the presented image: at 30 % pure white, 99.9 % pure black for a second, or 0.1 % of pure primary colours or green with no red or blue, it saves the image and a pass dump of the next frame there (at most 3, 10 s apart), `watch.txt` says when each fault began and ended, and `watch.csv` has every look's numbers. Only an image after a clean one counts |
+| `watch_white` | percent: the white limit of `watch` (30); 0 fires on any image, to test it |
+| `throttle` | `<hash>:<n>,...`: an experiment, a pipeline whose name holds that shader hash runs only every n-th present (0: never), to see what a shader costs and what it draws |
 
 Metal's own tools work too: `MTL_HUD_ENABLED=1` shows Apple's performance overlay, and `MTL_DEBUG_LAYER=1` and
 `MTL_SHADER_VALIDATION=1` check API use and catch out-of-bounds memory access in shaders (slow).
@@ -129,13 +133,13 @@ The benchmark's mod and the hooks talk to KSA Metal through the only functions i
 
 | Function | |
 |---|---|
-| `ksaMtlFrameStats` | the latest presented frame: the `KSA_MTL_FRAMES` numbers, thermal state, shaders compiled, memory footprint, drawable size, display interval |
+| `ksaMtlFrameStats` | the latest presented frame: the `frames` numbers, thermal state, shaders compiled, memory footprint, drawable size, display interval |
 | `ksaMtlScreenshot` | a PNG of the next frame |
 | `ksaMtlMarker` | begins or ends a signpost interval, one per measured part, under Points of Interest in Instruments |
 | `ksaMtlPassDump`, `ksaMtlPassDumping` | the next frame's colour attachments after each draw of a render pass (the first 64, then every 16th) and at its end, the images at the frame's end that it can read, as PNGs (NaN magenta, infinity cyan), and the first 64 KB of the buffers bound for each draw, with their numbers and heap places in `passes.txt`, which says why others are left out; that frame's passes don't overlap, so a clean dump doesn't rule out a missing barrier. The second says whether they are still being written |
 | `ksaMtlGpuErrors` | how many command buffers failed; after a hang the GPU refuses the process's work, and pass dumps refuse to start |
 | `ksaMtlCapture`, `ksaMtlCapturing` | an Xcode GPU frame capture of the next frames (with `MTL_CAPTURE_ENABLED=1`), and whether it is still being written |
-| `ksaMtlProfileFrames` | the GPU profiler (`KSA_MTL_GPUPROF`) on the next frames, under a label |
+| `ksaMtlProfileFrames` | the GPU profiler (`gpu_profile`) on the next frames, under a label |
 | `ksaMtlEarlyFragmentTests` | whether draws use the pipelines' states that test depth first (below); the hooks' Skip Hidden Vessel Parts sets it at the start of a frame |
 | `ksaMtlHdrNits` | the game's HDR Paper White and HDR Peak Brightness in nits, which HDR output maps to the display (below); the hooks pass them when the game applies its Display settings |
 
@@ -194,7 +198,7 @@ ocean's, at sea at night, from 20.5 ms to 19.9, and a view of the night side fro
 godrays', at sea at night, from 19.9 ms to 18.8; the grass's and the buildings' other shadows at night, a view of
 grass from 26.5 ms to 24.9 and one of the launch pad from 23.3 ms to 22.4. All of them test a specialization constant
 the script declares, `PORT_SKIP_UNLIT_SHADOWS` (id 900, true by default), which the driver sets to false in every
-shader with `KSA_MTL_UNLIT_SHADOW_SKIP=0`: the game's code again, without porting the game anew.
+shader with `skip_shadows_on_unlit_sides` off: the game's code again, without porting the game anew.
 
 Two more edits skip work that changes nothing, with the same image. The clouds' noise blends three lookups of a 3D
 texture at every sample, weighted by where the sample lies in a triangle grid, and near a triangle's edges and corners
@@ -235,7 +239,7 @@ SPIR-V level, so the evaluation stage runs it for each of its control points on 
 draw's index buffer. The control shader loses its copies, and the vertex and control kernels shrink to what the
 tessellation factors need (for the terrain, 32 bytes per vertex instead of 128). Draws with 16-bit indices or
 instances keep the evaluation stage reading the vertex kernel's output. In the benchmark this takes 5-15% off the GPU
-time of the scenes with terrain; `KSA_MTL_TESS_FUSE=0` turns it off.
+time of the scenes with terrain; `fused_tessellation` turns it off.
 
 **Ray tracing.** KSA uses ray queries for ground clutter placement, and ray tracing pipelines for lighting inside
 the cockpit (IVA). Ray queries and acceleration structures map onto Metal's. Metal has no ray tracing pipelines, so
@@ -283,7 +287,7 @@ The complete mapping:
 | Queues | family 0 does everything, family 1 only transfers (KSA streams textures on it); one `MTLCommandQueue` each |
 | `VkDeviceMemory` | placement `MTLHeap` plus a whole-heap `MTLBuffer` (type 0 private, types 1-2 shared and mapped); all heaps in one `MTLResidencySet` |
 | `VkBuffer` | an offset into the whole-heap buffer |
-| `VkImage` | `MTLTexture` placed in the heap; those read at scattered positions (upload-only, 3D, square power-of-two storage up to 256) without lossless compression (`KSA_MTL_UNCOMPRESSED_TEXTURES`) |
+| `VkImage` | `MTLTexture` placed in the heap; those read at scattered positions (upload-only, 3D, square power-of-two storage up to 256) without lossless compression (`skip_gpu_texture_compression`) |
 | Descriptor set | Metal 3 argument buffer: each binding owns consecutive 8-byte slots (GPU address or resource ID); a trailing slot points at a table of buffer sizes |
 | Dynamic offsets | the set is copied into a per-command-buffer ring with the offsets added |
 | Push constants | `set*Bytes` at buffer index 10 |
@@ -319,7 +323,7 @@ share is in that folder's header too, under a heading that says so (`stages.h` f
 | Folder, file | What it holds |
 |---|---|
 | `kmtl.h` | the core: logging, the configuration, buffer indices, the dispatchable objects (instance, physical device, queue, device), shared helpers; then the layers' headers |
-| `setup/config.mm` | the `KSA_MTL_*` variables above, read once (their names and defaults from `src/settings/port-settings.h`), and the log |
+| `setup/config.mm` | the settings above, read once from their variables (their names and defaults from `src/settings/port-settings.h`), and the log |
 | `setup/entry.mm`, `setup/entries.inc` | the table behind `vkGetInstanceProcAddr` and `vkGetDeviceProcAddr`, made from Vulkan's registry ([`entries/`](entries/)) |
 | `setup/instance.mm` | instance, physical device queries, features and limits, the extensions advertised |
 | `setup/device.mm` | device and queues, residency, fences and semaphores, submission |
@@ -331,7 +335,7 @@ share is in that folder's header too, under a heading that says so (`stages.h` f
 | `resources/accel.mm` | acceleration structures for ray queries |
 | `shaders/translate.mm`, `translate.h` | a shader stage's translation from SPIR-V to MSL |
 | `shaders/shadercache.mm` | the translation cache on disk and the background compile |
-| `shaders/corpus.mm` | the shader corpus (`KSA_MTL_CORPUS`): translations recorded for the tests |
+| `shaders/corpus.mm` | the shader corpus (`shader_corpus`): translations recorded for the tests |
 | `shaders/tessspirv.cpp`, `rtspirv.cpp`, `spvmodule.h` | the SPIR-V rewrites behind passthrough and fused tessellation, and ray tracing as compute kernels; a SPIR-V module as a list of instructions, for them |
 | `pipelines/stages.mm`, `stages.h` | shader modules, MSL compilation, a stage made ready: translated or from the cache, overridden, compiled |
 | `pipelines/pipelines.mm` | render passes, framebuffers, graphics and compute pipelines |

@@ -184,9 +184,10 @@ bool kmtlTranslate(KShaderModule* mod, const char* entryName, spv::ExecutionMode
                 KSetLayout* sl = layout->sets[s];
                 if (!sl) continue;
                 // Shaders read their argument buffers from the constant address space, which lets the compiler load
-                // resource handles as uniforms (2-5% faster across the benchmark than device; KSA_MTL_AB_CONSTANT=0:
-                // device everywhere). Ray tracing kernels (rtspirv.cpp) pass their resources to functions declared for
-                // device memory, and the constant address space holds at most 64 KiB
+                // resource handles as uniforms (2-5% faster across the benchmark than device;
+                // KSA_MTL_SHADER_CONSTANT_MEMORY=0: device everywhere). Ray tracing kernels (rtspirv.cpp) pass their
+                // resources to functions declared for device memory, and the constant address space holds at most 64
+                // KiB
                 if (!kmtlConfig().constantArgumentBuffers || so.rtLaunch || sl->bytes() > 65536)
                     c.set_argument_buffer_device_address_space(s, true);
                 MSLResourceBinding ab;
@@ -267,8 +268,8 @@ bool kmtlTranslate(KShaderModule* mod, const char* entryName, spv::ExecutionMode
             }
         }
 
-        // KSA_MTL_UNLIT_SHADOW_SKIP=0: the shader edits that skip shadows where there is no light (unlit-shadows.edits)
-        // read this constant (PORT_SKIP_UNLIT_SHADOWS, true in the source)
+        // KSA_MTL_SKIP_SHADOWS_ON_UNLIT_SIDES=0: the shader edits that skip shadows where there is no light
+        // (unlit-shadows.edits) read this constant (PORT_SKIP_UNLIT_SHADOWS, true in the source)
         if (!kmtlConfig().unlitShadowSkip)
             for (auto& sc : c.get_specialization_constants())
                 if (sc.constant_id == kUnlitShadowSkipConstant) c.get_constant(sc.id).m.c[0].r[0].u32 = 0;

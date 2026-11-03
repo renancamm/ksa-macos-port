@@ -36,8 +36,8 @@ static const VkExtensionProperties kDeviceExtensions[] = {
     {VK_EXT_HDR_METADATA_EXTENSION_NAME, VK_EXT_HDR_METADATA_SPEC_VERSION},
 };
 
-// Ray query (acceleration structures and ray queries; KSA_MTL_RAYQUERY=0 hides them, the game then uses its software
-// BVH for grass placement) and ray tracing pipelines are advertised by the configuration, as is tessellation
+// Ray query (acceleration structures and ray queries; KSA_MTL_RAY_QUERIES=0 hides them, the game then uses its
+// software BVH for grass placement) and ray tracing pipelines are advertised by the configuration, as is tessellation
 static const VkExtensionProperties kRayQueryExtensions[] = {
     {VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME, VK_KHR_ACCELERATION_STRUCTURE_SPEC_VERSION},
     {VK_KHR_RAY_QUERY_EXTENSION_NAME, VK_KHR_RAY_QUERY_SPEC_VERSION},
@@ -621,7 +621,7 @@ VKFN(void) vkGetPhysicalDeviceMemoryProperties2(VkPhysicalDevice pd, VkPhysicalD
         memset(b->heapBudget, 0, sizeof(b->heapBudget));
         memset(b->heapUsage, 0, sizeof(b->heapUsage));
         id<MTLDevice> d = ((KPhysicalDevice*)pd)->mtl;
-        // KSA_MTL_BUDGET_MB overrides the reported budget (the game's texture streamer sizes itself from it)
+        // KSA_MTL_TEXTURE_BUDGET_MB overrides the reported budget (the game's texture streamer sizes itself from it)
         int mb = kmtlConfig().budgetMb;
         b->heapBudget[0] = mb > 0 ? (VkDeviceSize)mb << 20 : d.recommendedMaxWorkingSetSize;
         b->heapUsage[0] = (VkDeviceSize)g_allocatedBytes.load();

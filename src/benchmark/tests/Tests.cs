@@ -169,7 +169,7 @@ internal static class Tests
 
     private static void Problems()
     {
-        var dir = Run("problems", system: ["Hooks: terrain cache: skipped (KSA's code moved); outline skip: on; HUD layout: failed (NullReferenceException)"],
+        var dir = Run("problems", system: ["Hooks: TerrainCache: skipped (KSA's code moved); OutlineSkip: on; HudLayout: failed (NullReferenceException)"],
             run: ["Game: hung, stopped", "Alongside-2: another game", "Memory pressure: normal"]);
         Results(dir, "results.json", 10, completed: false, section: s => s.Errors.Add("12.0 s: '@launch Rocket at Pad' failed"));
         File.WriteAllLines(Path.Combine(dir, "game.log"),
@@ -186,8 +186,8 @@ internal static class Tests
         Contains(problems, "another game ran at the same time", "a game alongside");
         Contains(problems, "the run did not play to its end", "an incomplete run");
         Contains(problems, "earth: 12.0 s: '@launch Rocket at Pad' failed", "a step that failed");
-        Contains(problems, "the hooks' terrain cache: skipped (KSA's code moved)", "a skipped hook");
-        Contains(problems, "the hooks' HUD layout: failed (NullReferenceException)", "a failed hook");
+        Contains(problems, "the hooks' TerrainCache: skipped (KSA's code moved)", "a skipped hook");
+        Contains(problems, "the hooks' HudLayout: failed (NullReferenceException)", "a failed hook");
         Check(!problems.Any(p => p.Contains("outline skip", StringComparison.Ordinal)), "a hook that is on is no problem");
         Contains(problems, "game.log: [ksa-metal ERROR] pipeline: no function (3 times)", "KSA Metal's errors, counted");
         Contains(problems, "game.log: ERROR Something broke", "the game's own error, without its colours");
@@ -198,14 +198,14 @@ internal static class Tests
 
     private static void Notes()
     {
-        var dir = Run("notes", system: ["Power: Battery Power", "Low Power Mode: on", "KSA Metal switches: KSA_MTL_GPUPROF=x.csv", "Tools: Instruments"],
+        var dir = Run("notes", system: ["Power: Battery Power", "Low Power Mode: on", "KSA Metal switches: KSA_MTL_GPU_PROFILE=x.csv", "Tools: Instruments"],
             run: ["Game: quit normally", "Memory pressure: warning", "Swap used: 100.00 -> 600.00 MB", "GPU before the run: 90 %", "Crash report: dotnet-2026-10-26.ips"]);
         Results(dir, "results.json", 10, section: s => s.Windows[0].ShadersCompiled = 3);
         Equal(0, Report("report", dir).Status, "exit status: notes don't fail a run");
         var notes = Strings(ReportJson(dir)["notes"]);
         Contains(notes, "ran on battery", "battery");
         Contains(notes, "Low Power Mode was on", "Low Power Mode");
-        Contains(notes, "KSA Metal switches were set (KSA_MTL_GPUPROF=x.csv)", "KSA Metal switches");
+        Contains(notes, "KSA Metal switches were set (KSA_MTL_GPU_PROFILE=x.csv)", "KSA Metal switches");
         Contains(notes, "measured with Instruments", "tools");
         Contains(notes, "the GPU was busy before the run (90 %)", "a busy GPU");
         Contains(notes, "crash report, dotnet-2026-10-26.ips", "a crash report");
@@ -263,13 +263,13 @@ internal static class Tests
         var dir = Run("2026-10-26_0100");
         File.WriteAllLines(Path.Combine(dir, "system.txt"), ["Mac: Mac17,2", "Mode: fast"]);
         File.WriteAllLines(Path.Combine(dir, "game.log"),
-            ["==> port settings: render_scale=0.75", "[hooks] terrain cache: skipped (KSA's code moved)", "[hooks] outline skip: on"]);
+            ["==> port settings: render_scale=0.75", "[hooks] TerrainCache: skipped (KSA's code moved)", "[hooks] OutlineSkip: on"]);
         Equal(1, Report("finish", dir).Status, "exit status: a skipped hook fails the run");
         var system = File.ReadAllLines(Path.Combine(dir, "system.txt"));
         Contains(system, "port settings: render_scale=0.75", "system.txt's port settings");
-        Contains(system, "Hooks: terrain cache: skipped (KSA's code moved); outline skip: on", "system.txt's hooks");
+        Contains(system, "Hooks: TerrainCache: skipped (KSA's code moved); OutlineSkip: on", "system.txt's hooks");
         var report = ReportJson(dir);
-        Contains(Strings(report["problems"]), "the hooks' terrain cache: skipped", "the skipped hook");
+        Contains(Strings(report["problems"]), "the hooks' TerrainCache: skipped", "the skipped hook");
         Contains(Strings(report["notes"]), "port settings were changed (render_scale=0.75)", "the port settings");
         using var zip = ZipFile.OpenRead(Path.Combine(dir, "2026-10-26_0100.zip"));
         var names = zip.Entries.Select(e => e.FullName).ToArray();

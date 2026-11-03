@@ -11,7 +11,7 @@
 //   KSA_BENCH_HOLD    optional: <section>_<shot>: stop at that checkpoint for good, the game paused, until it is quit
 //   KSA_BENCH_RUN     optional: a suffix for the results' file names (results-2.json, frames-2.csv), for repeats
 //   KSA_BENCH_PROFILE optional: profile that many frames of every measured part with KSA Metal's GPU profiler (the
-//                     game needs KSA_MTL_GPUPROF=<csv>)
+//                     game needs KSA_MTL_GPU_PROFILE=<csv>)
 //   KSA_BENCH_CAPTURE optional: an Xcode GPU frame capture of the view at every checkpoint, <section>_<shot>.gputrace
 //                     (the game needs MTL_CAPTURE_ENABLED=1)
 //   KSA_BENCH_CATCH   optional: a clean run's folder: after a screenshot under half the size of that run's same screenshot,

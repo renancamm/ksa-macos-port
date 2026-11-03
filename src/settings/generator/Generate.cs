@@ -132,7 +132,7 @@ internal static class Generate
             // table, not this.
             //
             // PORT_SETTING_<KEY> is the setting's variable and its default, as the readers take them:
-            //   bool          "<variable>", <true | false>; with an on value of its own: "<variable>", "<on value>"
+            //   bool          "<variable>", <true | false>
             //   int, number   "<variable>", <default>
             //   others        "<variable>"
             #pragma once
@@ -144,9 +144,6 @@ internal static class Generate
         {
             var value = s.Kind switch
             {
-                "bool" when s.OnValue != "1" => s.Default == "false"
-                    ? $", \"{s.OnValue}\""
-                    : throw new FormatException($"{s.Key}: a setting with an on value of its own must be off by default"),
                 "bool" => $", {s.Default}",
                 "int" or "number" => $", {(s.Default.Length > 0 ? s.Default : "0")}",
                 _ => "",
@@ -161,26 +158,19 @@ internal static class Generate
 
     private static string Macro(PortSetting s) => "PORT_SETTING_" + s.Key.ToUpperInvariant();
 
-    // The hooks against the table: the hook column names hooks that Hooks.Apply runs (otherwise the tab couldn't show
-    // the setting as unavailable), every key the hooks read is in the table (Settings.Load would throw, and no hook
-    // would apply), and every live setting with a variable is read by them (the tab's Apply only changes what they read)
-    private static void HooksCheck(Dictionary<string, string> code, List<string> problems)
+    // What a by column's entry names: a component that reads the setting, with the README that documents it
+    private static readonly Dictionary<string, string> Readers = new()
     {
-        var hooks = Regex.Matches(code["src/hooks/Hooks.cs"], @"Run\(""[^""]+"", ""([a-z_]+)""").Select(m => m.Groups[1].Value).ToHashSet();
-        foreach (var s in PortSettings.All.Where(s => s.Hook.Length > 0 && !hooks.Contains(s.Hook)))
-            problems.Add($"{s.Key}: its hook {s.Hook} isn't one Hooks.Apply runs (src/hooks/Hooks.cs).");
-        var read = code.Where(c => c.Key.StartsWith("src/hooks/") && c.Key.EndsWith(".cs"))
-            .SelectMany(c => Regex.Matches(c.Value, @"(?:Settings\.(?:Value|On|Number|Numbers|Get)|\bGet)\(""([a-z_0-9]+)""\)"))
-            .Select(m => m.Groups[1].Value).ToHashSet();
-        foreach (var key in read.Where(k => PortSettings.Get(k) == null))
-            problems.Add($"the hooks read {key}, which isn't in the table.");
-        foreach (var s in PortSettings.All.Where(s => s.Live && s.Variable.Length > 0 && !read.Contains(s.Key)))
-            problems.Add($"{s.Key} is live, but no hook reads it.");
-    }
+        ["driver"] = "src/ksa-metal/README.md", ["ktx-shim"] = "src/ktx-shim/README.md", ["hooks"] = "src/hooks/README.md",
+    };
 
-    // The checks: port-settings.h made from the table; every variable the table has named in a README, the driver's,
-    // the KTX shim's and the hooks' in their own README when their code reads it; every variable a README names in the
-    // table or named by some code
+    private static string Reader(string by) => by.StartsWith("hooks:", StringComparison.Ordinal) ? "hooks" : by;
+
+    // The checks: port-settings.h made from the table; each setting's by column what the code does (the driver and
+    // the KTX shim read the settings it names through the header and no others; the hooks read the settings it names,
+    // and run the hooks it names); each setting named by its key in a table row's first column in the README of each
+    // component that reads it; every KSA_MTL_ variable the code names one of the table's; every variable a README
+    // names in the table or in some code
     private static int Check(string repo, bool write)
     {
         string folder = Path.Combine(repo, "src", "settings");
@@ -211,28 +201,56 @@ internal static class Generate
             .Concat(Directory.EnumerateFiles(Path.Combine(repo, "cmake")))
             .Concat(new[] { "build.sh", "release.sh", "CMakeLists.txt" }.Select(f => Path.Combine(repo, f)))
             .Where(p => Path.GetExtension(p) is ".cs" or ".c" or ".mm" or ".cpp" or ".h" or ".sh" or ".cmake" or ".txt" &&
-                !p.EndsWith("port-settings.txt"))
+                !p.EndsWith("port-settings.txt") && !p.EndsWith(HeaderName))
             .ToDictionary(p => Path.GetRelativePath(repo, p), File.ReadAllText);
-        var variables = PortSettings.All.Where(s => s.Variable.Length > 0).ToList();
-        bool Names(string text, string variable) => Regex.IsMatch(text, $@"\b{variable}\b");
+        bool Names(string text, string name) => Regex.IsMatch(text, $@"\b{name}\b");
+        string[] In(string component) => code.Where(c => c.Key.StartsWith($"src/{component}/")).Select(c => c.Value).ToArray();
 
-        foreach (var s in variables)
+        // The settings each component reads
+        var native = new Dictionary<string, HashSet<string>>();
+        foreach (var (component, folderName) in new[] { ("driver", "ksa-metal"), ("ktx-shim", "ktx-shim") })
+            native[component] = In(folderName).SelectMany(c => Regex.Matches(c, @"\bPORT_SETTING_([A-Z0-9_]+)\b"))
+                .Select(m => m.Groups[1].Value.ToLowerInvariant()).ToHashSet();
+        var hooksCode = code.Where(c => c.Key.StartsWith("src/hooks/") && c.Key.EndsWith(".cs")).Select(c => c.Value).ToArray();
+        var hooksRead = hooksCode.SelectMany(c => Regex.Matches(c, @"\b(?:On|Value|Number|Numbers|Get)\(""([a-z_0-9]+)""\)"))
+            .Select(m => m.Groups[1].Value).ToHashSet();
+        var hooksRun = Regex.Matches(code["src/hooks/Hooks.cs"], @"\bRun\((\w+)\.Apply\b").Select(m => m.Groups[1].Value).ToHashSet();
+
+        foreach (var s in PortSettings.All)
         {
-            if (!readmes.Values.Any(r => Names(r, s.Variable)))
-                problems.Add($"{s.Key}: no README names {s.Variable}.");
-            // Read by native code through the header, or by the hooks by its key
-            var readers = new List<string>();
-            foreach (var component in new[] { "ksa-metal", "ktx-shim" })
-                if (code.Any(c => c.Key.StartsWith($"src/{component}/") && Regex.IsMatch(c.Value, $@"\b{Macro(s)}\b")))
-                    readers.Add($"src/{component}/README.md");
-            if (code.Any(c => c.Key.StartsWith("src/hooks/") && c.Key.EndsWith(".cs") &&
-                    Regex.IsMatch(c.Value, $@"\b(?:Settings\.)?(?:On|Value|Number|Numbers|Get)\(\s*""{s.Key}""")))
-                readers.Add("src/hooks/README.md");
-            foreach (var readme in readers.Where(r => !Names(readmes[r], s.Variable)))
-                problems.Add($"{s.Key}: {readme} doesn't name {s.Variable}, which its code reads.");
+            foreach (var by in s.By)
+            {
+                if (!(Readers.ContainsKey(Reader(by)) || by == "tab" || by.StartsWith("metal:", StringComparison.Ordinal)))
+                    problems.Add($"{s.Key}: by {by} is none of driver, ktx-shim, hooks, hooks:<hook>, metal:<variable>, tab.");
+                else if (native.TryGetValue(by, out var read) && !read.Contains(s.Key))
+                    problems.Add($"{s.Key}: by {by}, but its code doesn't read {Macro(s)}.");
+                else if (Reader(by) == "hooks" && !hooksRead.Contains(s.Key))
+                    problems.Add($"{s.Key}: by {by}, but no hook reads it.");
+                if (by.StartsWith("hooks:", StringComparison.Ordinal) && !hooksRun.Contains(by[6..]))
+                    problems.Add($"{s.Key}: its hook {by[6..]} isn't one Hooks.Apply runs (src/hooks/Hooks.cs).");
+                if (Readers.TryGetValue(Reader(by), out var readme) &&
+                    !Regex.IsMatch(readmes[readme], $@"^\|[^|\n]*`{s.Key}`[^|\n]*\|", RegexOptions.Multiline))
+                    problems.Add($"{s.Key}: {readme} doesn't name it, though its code reads it.");
+            }
+            if (s.By.Length == 0 || s.By.Contains("tab") && s.By.Length > 1)
+                problems.Add($"{s.Key}: its by column needs one entry or more, and tab alone.");
+            if (s.Live && !s.By.Any(b => Reader(b) == "hooks" || b == "tab"))
+                problems.Add($"{s.Key} is live, but the hooks don't read it: the tab's Apply only changes what they read.");
         }
-        HooksCheck(code, problems);
-        var known = variables.Select(s => s.Variable).Concat(AppleVariables).ToHashSet();
+        foreach (var (component, read) in native)
+            foreach (var key in read.Where(k => PortSettings.Get(k) is not { } s || !s.By.Contains(component)))
+                problems.Add($"{component} reads PORT_SETTING_{key.ToUpperInvariant()}, but {key} isn't by {component} in the table.");
+        foreach (var key in hooksRead.Where(k => PortSettings.Get(k) is not { } s || !s.By.Any(b => Reader(b) == "hooks" || b == "tab")))
+            problems.Add($"the hooks read {key}, which isn't by hooks in the table.");
+
+        // Variables: the code names only the table's KSA_MTL_ ones (the build's options are in its scripts and CMake
+        // files)
+        var variables = PortSettings.All.Select(s => s.Variable).Where(v => v.Length > 0).ToHashSet();
+        foreach (var (path, text) in code.Where(c => Path.GetExtension(c.Key) is ".cs" or ".c" or ".mm" or ".cpp" or ".h"))
+            foreach (var name in Regex.Matches(text, @"\bKSA_MTL_[A-Z0-9_]*[A-Z0-9]\b").Select(m => m.Value).Distinct())
+                if (!variables.Contains(name))
+                    problems.Add($"{path} names {name}, which isn't a variable of the table.");
+        var known = variables.Concat(AppleVariables).ToHashSet();
         foreach (var (path, text) in readmes)
             foreach (var name in Regex.Matches(text, @"\b(?:KSA|MTL)_[A-Z0-9_]*[A-Z0-9]\b").Select(m => m.Value).Distinct())
                 if (!known.Contains(name) && !code.Values.Any(c => Names(c, name)))
@@ -242,7 +260,7 @@ internal static class Generate
             Console.Error.WriteLine($"    {p}");
         if (problems.Count > 0)
             return 1;
-        Console.WriteLine($"    The port settings: {PortSettings.All.Count} settings, {HeaderName} current, the READMEs in step.");
+        Console.WriteLine($"    The port settings: {PortSettings.All.Count} settings, {HeaderName} current, the code and the READMEs in step.");
         return 0;
     }
 }

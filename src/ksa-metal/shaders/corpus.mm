@@ -1,5 +1,5 @@
-// The shader corpus (KSA_MTL_CORPUS=<dir>): every stage translation's inputs and its result, recorded while the game
-// runs, so that the driver's tests (tests/) translate and compile the same stages again without the game.
+// The shader corpus (KSA_MTL_SHADER_CORPUS=<dir>): every stage translation's inputs and its result, recorded while
+// the game runs, so that the driver's tests (tests/) translate and compile the same stages again without the game.
 //
 //   <dir>/<module hash>.spv        a shader module, as the game created it
 //   <dir>/<translation key>.in     the rest of the inputs: entry point, stage, options, set layouts, specialization,

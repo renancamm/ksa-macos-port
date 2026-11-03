@@ -291,7 +291,7 @@ internal static class Presets
         catch (Exception e)
         {
             _displayFailed = true;
-            Hooks.Fail("presets", e);
+            Hooks.Fail(nameof(Presets), e);
             return default;
         }
     }

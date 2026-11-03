@@ -80,7 +80,7 @@ internal static partial class MacPortTab
         }
         catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException)
         {
-            Hooks.Log($"Mac Port tab: no version to show: {e.Message}");
+            Hooks.Log($"MacPortTab: no version to show: {e.Message}");
         }
         return _version;
     }
@@ -479,7 +479,7 @@ internal static partial class MacPortTab
             if (clicked && pending != null)
             {
                 Presets.Use(preset, pending, Pending);
-                Hooks.Log($"Mac Port tab: {preset.Name} preset pending");
+                Hooks.Log($"MacPortTab: {preset.Name} preset pending");
             }
             bool next = shown == preset && shown != inUse, use = inUse == preset;
             uint Colour(uint normal) => ConsoleStyle.ApplyAlpha(next ? ConsoleStyle.PanelU32 : normal);

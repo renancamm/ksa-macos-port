@@ -201,7 +201,7 @@ VKFN(VkResult) vkAcquireNextImageKHR(VkDevice, VkSwapchainKHR swapchain, uint64_
 // in fullscreen) and leave the GPU idle whenever a frame takes less than that delay plus the CPU's part. So a present
 // also counts once its GPU work has ended, the present before it was shown, and the GPU is about to need the next
 // frame: the previous frame's predicted GPU end, less the CPU's part and a 2 ms margin. Frames then start when the GPU
-// can take them instead of queueing up. KSA_MTL_PRESENT_PACING=0: the display only (Vulkan's meaning)
+// can take them instead of queueing up. KSA_MTL_VSYNC_PACING=0: the display only (Vulkan's meaning)
 static double median8(const double* v, uint32_t n) {
     double s[8];
     n = std::min(n, 8u);
@@ -282,7 +282,7 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
             cb.label = @"present";
             id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
             [b waitForFence:q->chain];
-            // KSA_MTL_FX_INTERPOLATE: a frame between the last one and this one goes to the display first
+            // KSA_MTL_FRAME_INTERPOLATION: a frame between the last one and this one goes to the display first
             if (kmtlConfig().fxInterpolate) {
                 [b endEncoding];
                 id<MTLTexture> mid = kmtlPresentInterpolate(q->device, cb, img->mtl);

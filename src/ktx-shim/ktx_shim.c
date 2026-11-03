@@ -14,9 +14,10 @@
  *   once). A copy is dated when used; copies unused for 60 days (from an older version of the game) are deleted when
  *   the game starts.
  *
- * Mapped pages are the file's: macOS drops them when memory runs short and reads them back when the game touches
- * them again, instead of swapping them. The mapping is private and writable, so a write changes only this process's
- * copy of the page. Textures that need transcoding (Basis) stay as libktx made them. KSA_KTX_SHIM=0 turns it off.
+ * Mapped pages are the file's: macOS drops them when memory runs short and reads them back when the game touches them
+ * again, instead of swapping them. The mapping is private and writable, so a write changes only this process's copy
+ * of the page. Textures that need transcoding (Basis) stay as libktx made them. KSA_MTL_TEXTURE_FILE_MAPPING=0 turns
+ * it off.
  */
 #include <dirent.h>
 #include <errno.h>

@@ -24,7 +24,7 @@ internal static class PortEnvironment
     [DllImport("libc")]
     private static extern int dup2(int from, int to);
 
-    // Applies the settings; false when they turn the hooks off (KSA_HOOKS=0)
+    // Applies the settings; false when they turn the hooks off (KSA_MTL_HOOKS=0)
     public static bool Apply(string resources)
     {
         string home = Environment.GetEnvironmentVariable("HOME") ?? "";
@@ -58,7 +58,8 @@ internal static class PortEnvironment
         bool starMap = File.Exists(Path.Combine(AppContext.BaseDirectory, "StarMap.dll"));
         Console.WriteLine($"==> {DateTime.Now.ToString("ddd MMM d HH:mm:ss yyyy", CultureInfo.InvariantCulture)}: starting " +
                           $"{Path.Combine(resources, "KSA.dll")}{(starMap ? $" through StarMap in {AppContext.BaseDirectory.TrimEnd('/')}" : "")}");
-        return Environment.GetEnvironmentVariable("KSA_HOOKS") != "0";
+        return PortSettings.Get("hooks") is not { } hooks ||
+               hooks.FromEnvironment(Environment.GetEnvironmentVariable(hooks.Variable), out _) == "true";
     }
 
     // Sets a variable for both: .NET code reads its own copy of the environment, KSA Metal and the shims read the

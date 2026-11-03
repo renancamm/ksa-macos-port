@@ -83,7 +83,7 @@ public static unsafe class DriverStats
     // Command buffers that failed: after a hang the GPU refuses this process's work, and a dump or capture holds nothing
     public static uint GpuErrors() => Available ? GpuErrorsNative() : 0;
 
-    // The driver's GPU profiler (KSA_MTL_GPUPROF) for the next frames; false when it is off
+    // The driver's GPU profiler (KSA_MTL_GPU_PROFILE) for the next frames; false when it is off
     public static bool ProfileFrames(string label, uint count) => Available && ProfileFramesNative(label, count);
 
     private static bool Probe()

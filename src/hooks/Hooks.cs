@@ -15,13 +15,13 @@ namespace KsaMetalHooks;
 // and the log says so, and the game runs as it would without it. A patch is applied whole or not at all.
 public static class Hooks
 {
-    // What each hook did, by its key: the Mac Port tab shows a setting whose hook is unavailable as such
+    // What each hook did, by its name (its class's): the Mac Port tab shows a setting whose hook is unavailable so
     public static readonly Dictionary<string, HookStatus> Status = new();
-    // The hooks in the order they were applied: name and key
-    private static readonly List<(string Name, string Key)> Applied = new();
+    // The hooks in the order they were applied
+    private static readonly List<string> Applied = new();
 
-    // What every hook did, as the log said it ("terrain cache: on; ...")
-    public static string Summary => string.Join("; ", Applied.Select(h => $"{h.Name}: {Status[h.Key].Text}"));
+    // What every hook did, as the log said it ("TerrainCache: on; ...")
+    public static string Summary => string.Join("; ", Applied.Select(h => $"{h}: {Status[h].Text}"));
 
     // The app's Contents/Resources: the hooks are in its Hooks folder
     public static string Resources => System.IO.Path.GetFullPath(System.IO.Path.Combine(
@@ -30,87 +30,88 @@ public static class Hooks
     public static void Apply()
     {
         Settings.Load();
-        // Off (KSA_HOOKS=0), they load only for a benchmark run, which they start
+        // Off (KSA_MTL_HOOKS=0), they load only for a benchmark run, which they start
         if (!Settings.On("hooks"))
         {
             Log("off, except for the benchmark");
-            Run("documents folder", "documents", true, Documents.Apply);
-            Run("benchmark", "benchmark", true, BenchmarkRun.Apply);
+            Run(Documents.Apply);
+            Run(BenchmarkRun.Apply);
             return;
         }
         // First, and so before any mod patches
-        Run("generic detours", "generic_detours", Settings.On("harmony_generic_detours"), GenericDetours.Apply);
-        Run("window origin", "window_origin", true, WindowOrigin.Apply);
-        Run("extra windows", "extra_windows", true, ExtraWindows.Apply);
-        Run("terrain cache", "terrain_cache", Settings.On("terrain_cache"), TerrainCache.Apply);
-        Run("outline skip", "outline_skip", Settings.On("skip_unused_outlines"), OutlineSkip.Apply);
-        Run("overlay skip", "overlay_skip", Settings.On("skip_unused_overlays"), OverlaySkip.Apply);
-        Run("ocean blending", "ocean_blending", Settings.On("skip_unused_ocean_blending"), OceanBlending.Apply);
-        Run("cloud shadow tuning", "cloud_shadow_tuning", true, CloudShadows.Apply);
-        Run("warp cloud shadows", "warp_cloud_shadows", Settings.On("lighter_warp_cloud_shadows"), WarpCloudShadows.Apply);
-        Run("plume shadow tuning", "plume_shadow_tuning", true, PlumeShadows.Apply);
-        Run("shadow search", "shadow_search", Settings.On("simpler_pcss_shadows"), ShadowSearch.Apply);
-        Run("Milky Way bake", "milky_way_bake", Settings.On("baked_milky_way"), MilkyWayBake.Apply);
-        Run("crew portraits", "crew_portraits", true, CrewPortraits.Apply);
-        Run("worker parking", "worker_park", Settings.On("idle_thread_sleep"), WorkerPark.Apply);
-        Run("faded smoke", "faded_smoke", Settings.On("clear_faded_smoke"), FadedSmoke.Apply);
-        Run("tumbling physics", "tumbling_physics", Settings.On("lighter_tumbling_physics"), TumblingPhysics.Apply);
-        Run("debris settle", "debris_settle", Settings.On("debris_settles_in_warp"), DebrisSettle.Apply);
-        Run("loading pace", "loading_pace", Settings.On("loading_screen_fps_cap"), LoadingPace.Apply);
-        Run("render scale", "render_scale", true, RenderScale.Apply);
-        Run("HUD layout", "hud_layout", true, HudLayout.Apply);
-        Run("resolution list", "resolution_list", true, ResolutionList.Apply);
-        Run("trail caches", "trail_caches", true, TrailCaches.Apply);
-        Run("editor clutter", "editor_clutter", true, EditorClutter.Apply);
-        Run("clutter off", "clutter_off", true, ClutterOff.Apply);
-        Run("descriptor refresh", "descriptor_refresh", true, DescriptorRefresh.Apply);
+        Run(GenericDetours.Apply, Settings.On("harmony_generic_detours"));
+        Run(WindowOrigin.Apply);
+        Run(ExtraWindows.Apply);
+        Run(TerrainCache.Apply, Settings.On("terrain_cache"));
+        Run(OutlineSkip.Apply, Settings.On("skip_unused_outlines"));
+        Run(OverlaySkip.Apply, Settings.On("skip_unused_overlays"));
+        Run(OceanBlending.Apply, Settings.On("skip_unused_ocean_blending"));
+        Run(CloudShadows.Apply);
+        Run(WarpCloudShadows.Apply, Settings.On("lighter_warp_cloud_shadows"));
+        Run(PlumeShadows.Apply);
+        Run(ShadowSearch.Apply, Settings.On("simpler_pcss_shadows"));
+        Run(MilkyWayBake.Apply, Settings.On("baked_milky_way"));
+        Run(CrewPortraits.Apply);
+        Run(WorkerPark.Apply, Settings.On("idle_thread_sleep"));
+        Run(FadedSmoke.Apply, Settings.On("clear_faded_smoke"));
+        Run(TumblingPhysics.Apply, Settings.On("lighter_tumbling_physics"));
+        Run(DebrisSettle.Apply, Settings.On("debris_settles_in_warp"));
+        Run(LoadingPace.Apply, Settings.On("loading_screen_fps_cap"));
+        Run(RenderScale.Apply);
+        Run(HudLayout.Apply);
+        Run(ResolutionList.Apply);
+        Run(TrailCaches.Apply);
+        Run(EditorClutter.Apply);
+        Run(ClutterOff.Apply);
+        Run(DescriptorRefresh.Apply);
         // After every hook that patches a method Program.RenderGame or RenderEditor call: patching those two compiles
         // them again, and the JIT can inline a small method they call (RenderAaPreparePasses) as it is then, so a patch
         // made on it later never runs from them (MetalFX Spatial drew nothing)
-        Run("hidden parts skip", "hidden_parts_skip", Settings.On("skip_hidden_vessel_parts"), HiddenPartsSkip.Apply);
-        Run("UI view size", "ui_view_size", true, UiViewSize.Apply);
+        Run(HiddenPartsSkip.Apply, Settings.On("skip_hidden_vessel_parts"));
+        Run(UiViewSize.Apply);
         // The port's own parts of the game
-        Run("documents folder", "documents", true, Documents.Apply);
-        Run("restart", "restart", true, Restart.Apply);
-        Run("HDR brightness", "hdr", true, Hdr.Apply);
-        Run("presets", "presets", true, Presets.Apply);
-        Run("Mac Port tab", "mac_port_tab", true, MacPortTab.Apply);
-        Run("benchmark", "benchmark", true, BenchmarkRun.Apply);
-        Run("frame capture command", "frame_capture_command", true, FrameCaptureCommand.Apply);
+        Run(Documents.Apply);
+        Run(Restart.Apply);
+        Run(Hdr.Apply);
+        Run(Presets.Apply);
+        Run(MacPortTab.Apply);
+        Run(BenchmarkRun.Apply);
+        Run(FrameCaptureCommand.Apply);
     }
 
-    // apply(harmony) patches and returns what it did ("on", "off", ...); it throws Skip when the game's code isn't what
-    // it expects. Either way the hook's patches are undone, and only those: a hook changes the game's state, when it
-    // does, after its last lookup.
-    private static void Run(string name, string key, bool enabled, Func<Harmony, string> apply)
+    // A hook, its class's Apply, named after the class: apply(harmony) patches and returns what it did ("on", "off",
+    // ...); it throws Skip when the game's code isn't what it expects. Either way the hook's patches are undone, and
+    // only those: a hook changes the game's state, when it does, after its last lookup.
+    private static void Run(Func<Harmony, string> apply, bool enabled = true)
     {
-        Applied.Add((name, key));
+        var name = apply.Method.DeclaringType!.Name;
+        Applied.Add(name);
         if (!enabled)
         {
-            Status[key] = new HookStatus(HookState.Off, "off");
+            Status[name] = new HookStatus(HookState.Off, "off");
             Log($"{name}: off");
             return;
         }
-        var harmony = new Harmony($"io.github.ksa-macos-port.{key}");
+        var harmony = new Harmony($"io.github.ksa-macos-port.{name}");
         Exception? failure = null;
         try
         {
-            Status[key] = new HookStatus(HookState.On, apply(harmony));
+            Status[name] = new HookStatus(HookState.On, apply(harmony));
         }
         catch (Exception e)
         {
             harmony.UnpatchAll(harmony.Id);
             if (Skip.In(e) is { } skip)
             {
-                Status[key] = new HookStatus(HookState.Skipped, $"skipped, the game's code changed ({skip.Message})");
+                Status[name] = new HookStatus(HookState.Skipped, $"skipped, the game's code changed ({skip.Message})");
             }
             else
             {
                 failure = e;
-                Status[key] = new HookStatus(HookState.Failed, $"failed ({Describe(e)})");
+                Status[name] = new HookStatus(HookState.Failed, $"failed ({Describe(e)})");
             }
         }
-        Log($"{name}: {Status[key].Text}");
+        Log($"{name}: {Status[name].Text}");
         if (failure != null)
             Console.WriteLine(failure);
     }
@@ -118,12 +119,12 @@ public static class Hooks
     // An exception in a hook's code while the game runs, caught where handing the game its own behaviour from then on
     // is whole (the caller does that): the hook fails as it would when the game starts, once. A hook that changes how
     // the whole frame is drawn (the render scale) can't hand it back halfway, and lets the exception through.
-    public static void Fail(string key, Exception e)
+    public static void Fail(string name, Exception e)
     {
-        if (Status.GetValueOrDefault(key)?.State == HookState.Failed)
+        if (Status.GetValueOrDefault(name)?.State == HookState.Failed)
             return;
-        Status[key] = new HookStatus(HookState.Failed, $"failed while the game ran ({Describe(e)})");
-        Log($"{Applied.FirstOrDefault(h => h.Key == key).Name ?? key}: {Status[key].Text}");
+        Status[name] = new HookStatus(HookState.Failed, $"failed while the game ran ({Describe(e)})");
+        Log($"{name}: {Status[name].Text}");
         Console.WriteLine(e);
     }
 

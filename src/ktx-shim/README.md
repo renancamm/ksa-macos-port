@@ -15,7 +15,9 @@ Mapped pages belong to the file: macOS drops them when memory runs short and rea
 them again. Textures that need transcoding (Basis) stay as libktx made them. [`ktx_shim.c`](ktx_shim.c) has the
 details; libktx itself, RocketWerkz's build from the `Ahwoo.BRUTAL.Ktx.Native` package, stays unmodified.
 
-| Variable | Setting | Effect |
-|---|---|---|
-| `KSA_KTX_SHIM=0` | `texture_file_mapping` | the shim leaves every texture as libktx made it |
-| `KSA_MTL_CACHE_DIR=<dir>` | `cache_dir` | where the copies go, as KSA Metal's cache (default: `~/Library/Caches/ksa-metal`) |
+Its port settings ([`../settings/`](../settings/); each one's variable is `KSA_MTL_` and its key in capitals):
+
+| Setting | Effect |
+|---|---|
+| `texture_file_mapping` | off: the shim leaves every texture as libktx made it |
+| `cache_dir` | a folder: where the copies go, as KSA Metal's cache (default: `~/Library/Caches/ksa-metal`) |

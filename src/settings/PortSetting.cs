@@ -9,8 +9,8 @@ namespace KsaPortSettings;
 // port-settings.toml holds and the one the game runs with
 public sealed class PortSetting
 {
-    public string Section = "", Key = "", Type = "", Default = "", Variable = "", OnValue = "1", Hook = "", Label = "", Help = "";
-    public string[] Needs = [];
+    public string Section = "", Key = "", Type = "", Default = "", Label = "", Help = "";
+    public string[] Needs = [], By = [];
     public bool Live;
     // A choice's values and their labels (bool: on and off), and what some of them mean
     public (string Value, string Label)[] Choices = [];
@@ -22,6 +22,15 @@ public sealed class PortSetting
     public string? Outside;
 
     public string Kind => Type.Split(':')[0];
+
+    // The variable it sets: KSA_MTL_ and the key in capitals, Apple's for a setting Metal reads (metal:<variable>),
+    // none for the tab's own
+    public string Variable =>
+        By.FirstOrDefault(b => b.StartsWith("metal:", StringComparison.Ordinal)) is { } metal ? metal[6..]
+        : By.Contains("tab") ? "" : "KSA_MTL_" + Key.ToUpperInvariant();
+
+    // The hook that does it (hooks:<hook>, by its class), which the tab shows the setting as unavailable without
+    public string Hook => By.FirstOrDefault(b => b.StartsWith("hooks:", StringComparison.Ordinal)) is { } hook ? hook[6..] : "";
 
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
@@ -80,8 +89,8 @@ public sealed class PortSetting
         switch (Kind)
         {
             case "bool":
-                // 0 is off, and on is 1 or a value of the variable's own (KSA_MTL_SYNC=strict)
-                if (env == "0" || env == OnValue)
+                // 0 is off and 1 on
+                if (env is "0" or "1")
                     return env == "0" ? "false" : "true";
                 valid = false;
                 return Default;
@@ -93,10 +102,10 @@ public sealed class PortSetting
         }
     }
 
-    // The value as the loader sets it in the setting's variable: a switch's 0 or its on value, a path from ~ in home
+    // The value as the loader sets it in the setting's variable: a switch's 0 or 1, a path from ~ in home
     public string ToEnvironment(string value, string home) => Kind switch
     {
-        "bool" => value == "false" ? "0" : OnValue,
+        "bool" => value == "false" ? "0" : "1",
         "text" when value.StartsWith('~') => home + value[1..],
         _ => value,
     };

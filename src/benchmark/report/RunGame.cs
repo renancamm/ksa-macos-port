@@ -88,7 +88,7 @@ public static partial class Program
         {
             var home = PortFolder.Home;
             var switches = string.Join(' ', Environment.GetEnvironmentVariables().Keys.Cast<string>()
-                .Where(k => Regex.IsMatch(k, "^KSA_(MTL_|HOOKS)")).Order(StringComparer.Ordinal)
+                .Where(k => k.StartsWith("KSA_MTL_", StringComparison.Ordinal)).Order(StringComparer.Ordinal)
                 .Select(k => $"{k}={Environment.GetEnvironmentVariable(k)}".Replace(home, "~")));
             var tools = _tools.Count > 0 ? string.Join(", ", _tools) : "none";
             var changed = string.Join(' ', _sets) + (_ports.Count > 0 ? (_sets.Count > 0 ? " " : "") + "port-settings: " + string.Join(' ', _ports) : "");
@@ -184,8 +184,8 @@ public static partial class Program
             if (_profile)
             {
                 // Nothing profiled until the director opens a part
-                env["KSA_MTL_GPUPROF"] = Path.Combine(_out, "gpuprof.csv");
-                env["KSA_MTL_GPUPROF_FRAMES"] = "0,0";
+                env["KSA_MTL_GPU_PROFILE"] = Path.Combine(_out, "gpuprof.csv");
+                env["KSA_MTL_GPU_PROFILE_FRAMES"] = "0,0";
                 env["KSA_BENCH_PROFILE"] = "60";
             }
             if (_hud)

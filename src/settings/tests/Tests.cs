@@ -31,6 +31,7 @@ internal static class Tests
         var tests = new (string Name, Action Run)[]
         {
             ("the table's lines", TableRules),
+            ("the names the by column gives", Names),
             ("a malformed table", MalformedTable),
             ("reading the file", ReadFile),
             ("writing the file", Save),
@@ -139,6 +140,18 @@ internal static class Tests
         return false;
     }
 
+    // A setting's variable is KSA_MTL_ and its key, or Apple's (metal:), or none (tab); its hook the class by hooks:
+    // names
+    private static void Names()
+    {
+        Equal("KSA_MTL_FUSED_TESSELLATION", Setting("fused_tessellation").Variable, "a variable");
+        Equal("MTL_HUD_ENABLED", Setting("metal_performance_hud").Variable, "Apple's variable");
+        Equal("", Setting("restart_for_a_clean_run").Variable, "the tab's own");
+        Equal("TerrainCache", Setting("terrain_cache").Hook, "a hook");
+        Equal("RenderScale", Setting("frame_interpolation").Hook, "a hook with the driver");
+        Equal("", Setting("shader_cache").Hook, "the driver's");
+    }
+
     private static void MalformedTable()
     {
         File.WriteAllText(Path.Combine(_scratch, "port-settings.txt"), "[image] Image\nupscaling | choice:off=Off | off\n");
@@ -236,8 +249,8 @@ internal static class Tests
         Is("terrain_cache", "", "true");
         Is("terrain_cache", "0", "false");
         Is("terrain_cache", "1", "true");
-        Is("strict_sync", "strict", "true");
-        Is("strict_sync", "1", "false", valid: false);
+        Is("strict_sync", "1", "true");
+        Is("strict_sync", "strict", "false", valid: false);
         Is("fit_hud_to_display", "0", "false");
         Is("fit_hud_to_display", "game", "true", valid: false);
         Is("fewer_cloud_shadow_updates", "off", "false", valid: false);
@@ -260,8 +273,8 @@ internal static class Tests
         File.WriteAllLines(file, ["[interface]", "fit_hud_to_display = false", "[image]", "upscaling = \"metalfx\""]);
         var variables = new Dictionary<string, string?>
         {
-            ["KSA_PORT_SETTINGS"] = file, ["KSA_PORT_OUTSIDE"] = "KSA_RENDER_SCALE", ["KSA_RENDER_SCALE"] = "Always",
-            ["KSA_HUD_LAYOUT"] = "0", ["KSA_UPSCALER"] = "metalfx", ["KSA_TERRAIN_CACHE"] = "0", ["KSA_MTL_GPUPROF_SPLIT"] = "1",
+            ["KSA_PORT_SETTINGS"] = file, ["KSA_PORT_OUTSIDE"] = "KSA_MTL_RENDER_SCALE", ["KSA_MTL_RENDER_SCALE"] = "Always",
+            ["KSA_MTL_FIT_HUD_TO_DISPLAY"] = "0", ["KSA_MTL_UPSCALING"] = "metalfx", ["KSA_MTL_TERRAIN_CACHE"] = "0", ["KSA_MTL_GPU_PROFILE_SPLIT"] = "1",
         };
         var before = variables.Keys.ToDictionary(k => k, Environment.GetEnvironmentVariable);
         foreach (var (name, value) in variables)
@@ -275,7 +288,7 @@ internal static class Tests
             Equal("false", Setting("fit_hud_to_display").Running, "running");
             Equal("false", Setting("terrain_cache").Running, "a switch off");
             Equal("1.0", Setting("render_scale").Running, "an invalid variable: the default");
-            Equal("KSA_RENDER_SCALE=Always", Setting("render_scale").Outside, "set outside");
+            Equal("KSA_MTL_RENDER_SCALE=Always", Setting("render_scale").Outside, "set outside");
             Equal(null, Setting("fit_hud_to_display").Outside, "set from the file");
             Equal("false", Setting("gpu_profile_split").Running, "a variable whose setting's needs aren't met: the default");
             Equal(1, warnings.Count, "warnings");
@@ -305,18 +318,18 @@ internal static class Tests
             ["log_file"] = "~/ksa.log", ["fit_hud_to_display"] = "true", ["restart_for_a_clean_run"] = "true",
         });
         var set = plan.Set.ToDictionary(v => v.Name, v => v.Value);
-        Equal("metalfx", set.GetValueOrDefault("KSA_UPSCALER"), "a choice");
-        Equal("0.5", set.GetValueOrDefault("KSA_RENDER_SCALE"), "a scale whose need is met");
-        Equal("0", set.GetValueOrDefault("KSA_TERRAIN_CACHE"), "a switch off");
-        Equal("strict", set.GetValueOrDefault("KSA_MTL_SYNC"), "a switch whose on is a value");
+        Equal("metalfx", set.GetValueOrDefault("KSA_MTL_UPSCALING"), "a choice");
+        Equal("0.5", set.GetValueOrDefault("KSA_MTL_RENDER_SCALE"), "a scale whose need is met");
+        Equal("0", set.GetValueOrDefault("KSA_MTL_TERRAIN_CACHE"), "a switch off");
+        Equal("1", set.GetValueOrDefault("KSA_MTL_STRICT_SYNC"), "a switch on");
         Equal("/home/kitten/ksa.log", set.GetValueOrDefault("KSA_MTL_LOG_FILE"), "a path from ~");
-        Check(!set.ContainsKey("KSA_HUD_LAYOUT"), "a setting at its default set");
+        Check(!set.ContainsKey("KSA_MTL_FIT_HUD_TO_DISPLAY"), "a setting at its default set");
         Equal(5, set.Count, "variables set");
 
-        env["KSA_UPSCALER"] = "spatial";
+        env["KSA_MTL_UPSCALING"] = "spatial";
         plan = Plan(new() { ["upscaling"] = "metalfx" });
         Check(plan.Set.Count == 0, "a variable set outside overwritten");
-        Check(plan.Outside.Contains("KSA_UPSCALER"), "the variable set outside not noted");
-        Check(plan.Changed.Any(c => c.Contains("but KSA_UPSCALER=spatial is set")), "the log doesn't say the variable wins");
+        Check(plan.Outside.Contains("KSA_MTL_UPSCALING"), "the variable set outside not noted");
+        Check(plan.Changed.Any(c => c.Contains("but KSA_MTL_UPSCALING=spatial is set")), "the log doesn't say the variable wins");
     }
 }

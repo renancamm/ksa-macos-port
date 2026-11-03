@@ -202,7 +202,7 @@ void KCommandBuffer::endEncoder() {
             if (!t) continue;
             bool tileOnly = t.storageMode == MTLStorageModeMemoryless;
             if (suspending && tileOnly)
-                KERR_ONCE("render pass suspended with a memoryless attachment (a tessellated draw, or KSA_MTL_GPUPROF_SPLIT=1): "
+                KERR_ONCE("render pass suspended with a memoryless attachment (a tessellated draw, or KSA_MTL_GPU_PROFILE_SPLIT=1): "
                           "its contents are lost");
             MTLStoreAction suspended = dumpResolves && passDesc.colorAttachments[i].resolveTexture ? MTLStoreActionStoreAndMultisampleResolve : MTLStoreActionStore;
             [render setColorStoreAction:suspending && !tileOnly ? suspended : colorStores[i] atIndex:i];

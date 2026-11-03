@@ -168,7 +168,7 @@ uint32_t kmtlTessCap(KDevice* dev);
 // What only the command files share (encoders.mm, state.mm, draws.mm, passes.mm, transfers.mm)
 static const MTLRenderStages kAllRenderStages = MTLRenderStageVertex | MTLRenderStageFragment;
 
-// KSA_MTL_SYNC=strict: every encoder is of every class and every barrier covers every class, so encoders run in
+// KSA_MTL_STRICT_SYNC=1: every encoder is of every class and every barrier covers every class, so encoders run in
 // submission order
 inline bool strictSync() { return kmtlConfig().strictSync; }
 

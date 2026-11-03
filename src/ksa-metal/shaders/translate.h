@@ -34,8 +34,8 @@ void kmtlTessModes(KShaderModule* mod, const char* entry, spv::ExecutionModel mo
 // Translations made so far and the time they took, in microseconds (kmtlReportPipelineTimes)
 void kmtlTranslateStats(int* count, int64_t* us);
 
-// The shader corpus (corpus.mm, KSA_MTL_CORPUS=<dir>): each translation's inputs and result, recorded once per key
-// while the game runs, for the driver's tests
+// The shader corpus (corpus.mm, KSA_MTL_SHADER_CORPUS=<dir>): each translation's inputs and result, recorded once per
+// key while the game runs, for the driver's tests
 void kmtlCorpusRecord(uint64_t key, KShaderModule* mod, const char* entry, spv::ExecutionModel model, KPipelineLayout* layout,
                       const VkSpecializationInfo* spec, const KStageOptions& so, const KTranslated& out);
 
@@ -52,8 +52,8 @@ struct KCorpusEntry {
     VkSpecializationInfo spec{};
     bool hasSpec = false;
     KStageOptions options;
-    // The settings that shape a translation, as they were when it was recorded (KSA_MTL_AB_CONSTANT,
-    // KSA_MTL_UNLIT_SHADOW_SKIP, KSA_MTL_SPEC)
+    // The settings that shape a translation, as they were when it was recorded (KSA_MTL_SHADER_CONSTANT_MEMORY,
+    // KSA_MTL_SKIP_SHADOWS_ON_UNLIT_SIDES, KSA_MTL_SPEC)
     bool constantArgumentBuffers = true, unlitShadowSkip = true;
     std::string specPresets;
     KTranslated recorded;
