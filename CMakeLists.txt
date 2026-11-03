@@ -57,12 +57,58 @@ foreach(source vulkan_headers spirv_cross spirv_tools spirv_headers)
     file(COPY ${notices} DESTINATION "${KSA_NATIVES_DIR}/licenses/${folder}")
 endforeach()
 
+# The build's .NET tools, which make files the native code compiles, built with the SDK as the .NET projects are
+# (scripts/build-dotnet.sh): their output in KSA_ASSEMBLIES_DIR, what they make in the build tree's generated/
+find_program(DOTNET dotnet REQUIRED)
+set(KSA_ASSEMBLIES_DIR "${CMAKE_SOURCE_DIR}/deps/build/assemblies" CACHE PATH "Output folder of the .NET projects")
+set(KSA_GENERATED_DIR "${CMAKE_BINARY_DIR}/generated")
+# port_dotnet_tool(<variable> <project> [<referenced project>...]): builds the tool when its sources or those of the
+# projects it references change, and sets <variable> to its assembly
+function(port_dotnet_tool variable project)
+    get_filename_component(name "${project}" NAME_WLE)
+    set(assembly "${KSA_ASSEMBLIES_DIR}/bin/${name}/${name}.dll")
+    set(sources "${PROJECT_SOURCE_DIR}/src/Directory.Build.props")
+    foreach(each "${project}" ${ARGN})
+        get_filename_component(folder "${each}" DIRECTORY)
+        # A project's own sources: those of its folder, but what an editor's build leaves and its tests' project
+        file(GLOB_RECURSE found RELATIVE "${folder}" CONFIGURE_DEPENDS "${folder}/*.cs")
+        list(FILTER found EXCLUDE REGEX "^(bin|obj|tests)/")
+        list(TRANSFORM found PREPEND "${folder}/")
+        list(APPEND sources "${each}" ${found})
+    endforeach()
+    add_custom_command(OUTPUT "${assembly}"
+        COMMAND "${CMAKE_COMMAND}" -E env DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
+            DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 "DOTNET_CLI_HOME=${KSA_ASSEMBLIES_DIR}/home"
+            "NUGET_PACKAGES=${KSA_ASSEMBLIES_DIR}/nuget"
+            "${DOTNET}" build "${project}" -c Release -nologo -v quiet "-p:PortBuildDir=${KSA_ASSEMBLIES_DIR}"
+            -p:DebugType=none -nodeReuse:false
+        # MSBuild leaves an assembly whose code is the same as it was: dated now, it marks the tool as built
+        COMMAND "${CMAKE_COMMAND}" -E touch "${assembly}"
+        DEPENDS ${sources}
+        COMMENT "Building ${name}" VERBATIM)
+    set(${variable} "${assembly}" PARENT_SCOPE)
+endfunction()
+
 # The components, each with its README; ctest runs the tests some of them have
 enable_testing()
-# The port settings' variables and defaults for the native code: src/shared/settings/port-settings.h, made from the
-# table
+# The port settings' variables and defaults for the native code: port-settings.h, which the settings' generator makes
+# from the table (src/shared/settings/). It writes the header only when it differs, so the code that includes it is
+# compiled again only then; the stamp marks the table as made.
+port_dotnet_tool(SETTINGS_GENERATOR
+    "${PROJECT_SOURCE_DIR}/src/build-tools/settings-generator/KsaPortSettingsGenerator.csproj"
+    "${PROJECT_SOURCE_DIR}/src/shared/KsaPort.Common.csproj")
+set(settings_table "${PROJECT_SOURCE_DIR}/src/shared/settings/port-settings.txt")
+add_custom_command(OUTPUT "${KSA_GENERATED_DIR}/port-settings.stamp"
+    BYPRODUCTS "${KSA_GENERATED_DIR}/port-settings.h"
+    COMMAND "${DOTNET}" "${SETTINGS_GENERATOR}" header "${settings_table}" "${KSA_GENERATED_DIR}/port-settings.h"
+    COMMAND "${CMAKE_COMMAND}" -E touch "${KSA_GENERATED_DIR}/port-settings.stamp"
+    DEPENDS "${settings_table}" "${SETTINGS_GENERATOR}"
+    COMMENT "Making port-settings.h from the settings table" VERBATIM)
+add_custom_target(port-settings-header DEPENDS "${KSA_GENERATED_DIR}/port-settings.stamp")
 add_library(port-settings INTERFACE)
-target_include_directories(port-settings INTERFACE "${PROJECT_SOURCE_DIR}/src/shared/settings")
+target_include_directories(port-settings INTERFACE "${KSA_GENERATED_DIR}")
+# Followed by every target that links it
+add_dependencies(port-settings port-settings-header)
 add_subdirectory(src/ksa-metal)
 add_subdirectory(src/glfw-shim)
 add_subdirectory(src/ktx-shim)

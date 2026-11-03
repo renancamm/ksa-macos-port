@@ -74,9 +74,9 @@ fi
 KSA_VERSION="$(game_version "${KSA_DIR}")"
 step "Building the port ${VERSION} (${COMMIT}) for KSA ${KSA_VERSION}"
 
-# The port settings' header for the native code, and the checks that keep the READMEs with the table
+# The checks that keep the code and the READMEs with the settings table
 step "[1/6] The port settings"
-run build-settings "${VERSION}"
+run build-settings
 
 # The native libraries, and the downloads the other steps use. CMake's output goes to a log, shown when it fails.
 step "[2/6] Native libraries (CMake)"
@@ -84,10 +84,9 @@ mkdir -p "${CMAKE_TREE}"
 LOG="${CMAKE_TREE}/build.log"
 DEBUG_MAP=ON
 [ "${VERSION}" = dev ] || DEBUG_MAP=OFF
-cmake --preset default -B "${CMAKE_TREE}" -DKSA_NATIVES_DIR="${NATIVES}" -DKSA_MTL_OPT="${KSA_MTL_OPT:--O2}" \
-    -DKSA_MTL_DEBUG_MAP="${DEBUG_MAP}" > "${LOG}" 2>&1 || { tail -40 "${LOG}"; die "CMake's configure failed (${LOG})."; }
-# The driver's entry table, from Vulkan's registry the configure downloaded
-run build-entries "${VERSION}"
+cmake --preset default -B "${CMAKE_TREE}" -DKSA_NATIVES_DIR="${NATIVES}" -DKSA_ASSEMBLIES_DIR="${ASSEMBLIES}" \
+    -DKSA_MTL_OPT="${KSA_MTL_OPT:--O2}" -DKSA_MTL_DEBUG_MAP="${DEBUG_MAP}" > "${LOG}" 2>&1 ||
+    { tail -40 "${LOG}"; die "CMake's configure failed (${LOG})."; }
 cmake --build "${CMAKE_TREE}" >> "${LOG}" 2>&1 || { grep -v xcrun_db "${LOG}" | tail -40; die "the native build failed (${LOG})."; }
 info "Libraries in ${NATIVES#"${REPO}/"}, CMake's output in ${LOG#"${REPO}/"}"
 # The driver's tests that need no recording (src/ksa-metal/tests/)

@@ -64,8 +64,8 @@ struct KAutoreleasePool {
 
 // ---------------------------------------------------------------------------------------------------------------
 // Configuration: the port settings the driver does, read once from their variables (config.mm) into PortSettings, a
-// field per setting named after its key (src/shared/settings/port-settings.h, made from the settings table). README.md
-// documents them in two groups. Text is null when unset.
+// field per setting named after its key (port-settings.h, made from the settings table). README.md documents them in
+// two groups. Text is null when unset.
 const PortSettings& kmtlConfig();
 // Whether draws bind the early-test states of pipelines that have one (ksaMtlEarlyFragmentTests, pipelines/stages.mm)
 bool kmtlEarlyFragmentTests();

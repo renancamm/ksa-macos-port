@@ -19,9 +19,10 @@ KSA_DIR="${1%/}"
 [ -f "${KSA_DIR}/KSA.dll" ] || die "usage: scripts/build-dotnet.sh <folder with KSA.dll> [--convert]"
 [ -f "${HARMONY_DLL}" ] || die "Harmony is missing from the build tree. Run ./build.sh."
 WORK="${ASSEMBLIES}"
-# The output starts anew; obj/ stays, so a second build only compiles what changed
-rm -rf "${WORK:?}/bin"
-mkdir -p "${WORK}"
+# The output starts anew, but the build's tools', which the native build made and keeps track of; obj/ stays, so a
+# second build only compiles what changed
+mkdir -p "${WORK}/bin"
+find "${WORK}/bin" -mindepth 1 -maxdepth 1 ! -name KsaMetalEntries ! -name KsaPortSettingsGenerator -exec rm -rf {} +
 cd "${REPO}"
 
 step "Building the .NET projects against KSA $(game_version "${KSA_DIR}")" \

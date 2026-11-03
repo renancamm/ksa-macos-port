@@ -1,16 +1,15 @@
 #!/bin/bash
-# The port settings' generator (src/build-tools/settings-generator/): builds it, then makes port-settings.h again when
-# the table changed and checks that the READMEs name the table's variables. A release (any version but dev) only checks:
-# the header it was tagged with must be what the table makes.
+# The port settings' checks (src/build-tools/settings-generator/): builds the generator, then checks the repository
+# against the settings table: the hooks and the code read what the table says, and the READMEs name the table's
+# variables. The files the generator makes are made where they are compiled (CMakeLists.txt, the hooks' project).
 #
-# Usage: scripts/build-settings.sh <version>
+# Usage: scripts/build-settings.sh
 set -eo pipefail
 source "$(dirname "$0")/lib.sh"
 
-MODE=generate
-[ "${1:-dev}" = dev ] || MODE=check
 mkdir -p "${ASSEMBLIES}"
-dotnet_cli build "${REPO}/src/build-tools/settings-generator/KsaPortSettingsGenerator.csproj" -c Release -nologo -v quiet -p:PortBuildDir="${ASSEMBLIES}" \
-    -p:DebugType=none -nodeReuse:false > "${ASSEMBLIES}/settings-build.log" 2>&1 ||
+dotnet_cli build "${REPO}/src/build-tools/settings-generator/KsaPortSettingsGenerator.csproj" -c Release -nologo -v quiet \
+    -p:PortBuildDir="${ASSEMBLIES}" -p:DebugType=none -nodeReuse:false > "${ASSEMBLIES}/settings-build.log" 2>&1 ||
     { cat "${ASSEMBLIES}/settings-build.log"; die "the port settings' generator didn't build."; }
-dotnet "${ASSEMBLIES}/bin/KsaPortSettingsGenerator/KsaPortSettingsGenerator.dll" "${MODE}" "${REPO}" || die "the port settings' checks failed."
+dotnet "${ASSEMBLIES}/bin/KsaPortSettingsGenerator/KsaPortSettingsGenerator.dll" check "${REPO}" ||
+    die "the port settings' checks failed."

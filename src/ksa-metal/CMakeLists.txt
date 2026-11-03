@@ -14,6 +14,22 @@ set(KSA_MTL_OPT "-O2" CACHE STRING "Optimization flag for KSA Metal")
 set(KSA_MTL_DEBUG_MAP ON CACHE BOOL "Keep the debug map (object file paths) in KSA Metal")
 
 # The driver's code as objects, which the library and the tests (tests/) both link
+# The entry table that vkGetInstanceProcAddr and vkGetDeviceProcAddr answer from (setup/entry.mm): entries.inc, which
+# KsaMetalEntries (entries/) makes from Vulkan's registry and the driver's sources, written only when it differs
+port_dotnet_tool(ENTRIES_GENERATOR "${CMAKE_CURRENT_SOURCE_DIR}/entries/KsaMetalEntries.csproj")
+file(GLOB_RECURSE driver_sources RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" CONFIGURE_DEPENDS "*.mm" "*.cpp")
+list(FILTER driver_sources EXCLUDE REGEX "^tests/")
+list(TRANSFORM driver_sources PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
+add_custom_command(OUTPUT "${KSA_GENERATED_DIR}/entries.stamp"
+    BYPRODUCTS "${KSA_GENERATED_DIR}/entries.inc"
+    COMMAND "${DOTNET}" "${ENTRIES_GENERATOR}" "${vulkan_headers_SOURCE_DIR}/registry/vk.xml"
+        "${CMAKE_CURRENT_SOURCE_DIR}" "${KSA_GENERATED_DIR}/entries.inc"
+    COMMAND "${CMAKE_COMMAND}" -E touch "${KSA_GENERATED_DIR}/entries.stamp"
+    DEPENDS "${vulkan_headers_SOURCE_DIR}/registry/vk.xml" ${driver_sources}
+        "${CMAKE_CURRENT_SOURCE_DIR}/entries/aliases.txt" "${ENTRIES_GENERATOR}"
+    COMMENT "Making KSA Metal's entry table" VERBATIM)
+add_custom_target(ksa-metal-entries DEPENDS "${KSA_GENERATED_DIR}/entries.stamp")
+
 add_library(ksa-metal-objects OBJECT
     setup/config.mm setup/entry.mm setup/instance.mm setup/device.mm
     resources/memory.mm resources/images.mm resources/queries.mm resources/format.mm resources/descriptor.mm resources/accel.mm
@@ -28,8 +44,11 @@ set_target_properties(ksa-metal-objects PROPERTIES
     CXX_VISIBILITY_PRESET hidden
     OBJCXX_VISIBILITY_PRESET hidden)
 target_compile_options(ksa-metal-objects PUBLIC ${KSA_MTL_OPT} -g -Wall -Werror $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
-# Its headers by their path from here ("kmtl.h", "shaders/translate.h"), for its own files and the tests
+# Its headers by their path from here ("kmtl.h", "shaders/translate.h"), for its own files and the tests; the entry
+# table from the build tree
 target_include_directories(ksa-metal-objects PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(ksa-metal-objects PRIVATE "${KSA_GENERATED_DIR}")
+add_dependencies(ksa-metal-objects ksa-metal-entries)
 target_compile_features(ksa-metal-objects PUBLIC cxx_std_17)
 target_link_libraries(ksa-metal-objects PUBLIC
     port-settings Vulkan::Headers spirv-cross-msl spirv-cross-glsl spirv-cross-core SPIRV-Tools-link SPIRV-Tools-opt SPIRV-Tools-static

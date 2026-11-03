@@ -6,7 +6,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
-// KSA Metal's entry table (setup/entries.inc, included by setup/entry.mm): the names vkGetInstanceProcAddr and
+// KSA Metal's entry table (entries.inc, included by setup/entry.mm): the names vkGetInstanceProcAddr and
 // vkGetDeviceProcAddr answer, made from Vulkan's registry (vk.xml, from Vulkan-Headers) and the driver's own sources:
 //
 //   - every Vulkan function the driver defines (VKFN), at the level the registry gives it: global (vkCreateInstance,
@@ -14,32 +14,28 @@ using System.Xml.Linq;
 //   - the other names the registry gives those functions (vkGetPhysicalDeviceProperties2KHR), when one of the
 //     extensions the driver advertises (instance.mm's lists) brings them, and those aliases.txt names besides.
 //
-//   KsaMetalEntries generate <vk.xml> <driver folder>   entries.inc written again when it differs
-//   KsaMetalEntries check <vk.xml> <driver folder>      stale counts as a problem
+//   KsaMetalEntries <vk.xml> <driver folder> <file>
+//
+// The native build runs it (CMakeLists.txt in the driver's folder) and writes the table into its build tree, only when
+// it differs, so that entry.mm is compiled again only then.
 //
 // Exits with 1 on a problem: a function the registry doesn't know, an alias of nothing the driver defines.
 internal static class Generate
 {
     private static int Main(string[] args)
     {
-        if (args.Length != 3 || args[0] is not ("generate" or "check"))
+        if (args.Length != 3)
         {
-            Console.Error.WriteLine("usage: KsaMetalEntries generate | check <vk.xml> <driver folder>");
+            Console.Error.WriteLine("usage: KsaMetalEntries <vk.xml> <driver folder> <file>");
             return 2;
         }
         try
         {
-            string table = Table(args[1], args[2]), path = Path.Combine(args[2], "setup", "entries.inc");
+            string table = Table(args[0], args[1]), path = args[2];
             if (File.Exists(path) && File.ReadAllText(path) == table)
                 return 0;
-            if (args[0] == "check")
-            {
-                Console.Error.WriteLine("    src/ksa-metal/setup/entries.inc is not what the registry and the sources " +
-                    "make: run ./build.sh and commit it.");
-                return 1;
-            }
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
             File.WriteAllText(path, table);
-            Console.WriteLine("    src/ksa-metal/setup/entries.inc made again: commit it with the change.");
             return 0;
         }
         catch (Exception e) when (e is IOException or FormatException or System.Xml.XmlException)
@@ -118,9 +114,9 @@ internal static class Generate
 
         var t = new StringBuilder("""
             // The names vkGetInstanceProcAddr and vkGetDeviceProcAddr answer (entry.mm): made by KsaMetalEntries
-            // (entries/Generate.cs) from Vulkan's registry and the driver's sources, which build.sh runs. Don't edit
-            // it: define the function (VKFN), advertise the extension that brings an alias, or name the alias in
-            // entries/aliases.txt.
+            // (src/ksa-metal/entries/Generate.cs) from Vulkan's registry and the driver's sources, which the native
+            // build runs. Don't edit it: define the function (VKFN), advertise the extension that brings an alias, or
+            // name the alias in src/ksa-metal/entries/aliases.txt.
 
             """);
         var levelMacro = new[] { "G", "I", "D" };

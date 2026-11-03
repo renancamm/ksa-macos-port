@@ -8,11 +8,13 @@ using System.Text.RegularExpressions;
 using KsaPort.Common;
 
 // What is made from the table of the port settings (src/shared/settings/port-settings.txt), and the checks that keep
-// the rest of the repository in step with it (src/shared/settings/README.md):
+// the rest of the repository in step with it (src/shared/settings/README.md). The build runs it; what it makes goes
+// into the build tree, written only when it differs, so that what is compiled from it is compiled again only then:
 //
-//   KsaPortSettingsGenerator template <table>   the commented template of port-settings.toml, to standard output
-//   KsaPortSettingsGenerator generate <repo>    port-settings.h written again when the table changed, then the checks
-//   KsaPortSettingsGenerator check <repo>       the checks, with port-settings.h as it is: stale counts as a problem
+//   KsaPortSettingsGenerator template <table>          the commented template of port-settings.toml, to standard output
+//   KsaPortSettingsGenerator header <table> <file>     the native code's settings (port-settings.h; CMakeLists.txt)
+//   KsaPortSettingsGenerator hooks <table> <file>      the hooks' settings (Settings.Generated.cs; the hooks' project)
+//   KsaPortSettingsGenerator check <repo>              the checks
 //
 // Exits with 1 when a check fails.
 internal static class Generate
@@ -27,10 +29,15 @@ internal static class Generate
                     Load(Path.GetDirectoryName(Path.GetFullPath(table))!);
                     Console.Out.Write(Template());
                     return 0;
-                case ["generate" or "check", var repo]:
-                    return Check(Path.GetFullPath(repo), write: args[0] == "generate");
+                case ["header" or "hooks", var table, var file]:
+                    Load(Path.GetDirectoryName(Path.GetFullPath(table))!);
+                    Write(file, args[0] == "header" ? Header() : HooksSettings());
+                    return 0;
+                case ["check", var repo]:
+                    return Check(Path.GetFullPath(repo));
                 default:
-                    Console.Error.WriteLine("usage: KsaPortSettingsGenerator template <table> | generate <repo> | check <repo>");
+                    Console.Error.WriteLine("usage: KsaPortSettingsGenerator template <table> | header <table> <file> | " +
+                        "hooks <table> <file> | check <repo>");
                     return 2;
             }
         }
@@ -150,8 +157,9 @@ internal static class Generate
     private static string Header()
     {
         var t = new StringBuilder("""
-            // The port settings of the native code, KSA Metal and the KTX shim: made from port-settings.txt by
-            // KsaPortSettingsGenerator (README.md in this folder), which build.sh runs. Edit the table, not this.
+            // The port settings of the native code, KSA Metal and the KTX shim: made from
+            // src/shared/settings/port-settings.txt by KsaPortSettingsGenerator (src/shared/settings/README.md), which
+            // the native build runs. Edit the table, not this.
             //
             // portSettingsRead() reads each one from its variable, taking the values the shared library takes: a switch
             // 0 or 1, a number in the table's range, an int of digits only; unset, empty or anything else, the table's
@@ -228,8 +236,8 @@ internal static class Generate
         var t = new StringBuilder("""
             // The port settings the hooks read, as properties of Settings (Settings.cs): made from
             // src/shared/settings/port-settings.txt by KsaPortSettingsGenerator (src/shared/settings/README.md), which
-            // build.sh runs. Edit the table, not this. A setting that applies when the game starts is read once, when
-            // the hooks load; a live one each time, since the Mac Port tab's Apply changes it.
+            // the hooks' build runs. Edit the table, not this. A setting that applies when the game starts is read
+            // once, when the hooks load; a live one each time, since the Mac Port tab's Apply changes it.
             using KsaPort.Common;
 
             namespace KsaMetalHooks;
@@ -278,51 +286,39 @@ internal static class Generate
     private static string Uses(string code) =>
         Regex.Replace(code, @"//[^\n]*|/\*.*?\*/|@?""(?:\\.|[^""\\\n])*""", " ", RegexOptions.Singleline);
 
-    // A generated file: written again when it differs (generate), or a problem (check)
-    private static void Made(string repo, string path, string text, bool write, List<string> problems)
+    // A file made from the table, written only when it differs
+    private static void Write(string file, string text)
     {
-        var full = Path.Combine(repo, path);
-        if ((File.Exists(full) ? File.ReadAllText(full) : "") == text)
+        if (File.Exists(file) && File.ReadAllText(file) == text)
             return;
-        if (write)
-        {
-            File.WriteAllText(full, text);
-            Console.WriteLine($"    {path} made again from the table: commit it with the table.");
-        }
-        else
-        {
-            problems.Add($"{path} is not what the table makes: run ./build.sh and commit it.");
-        }
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(file))!);
+        File.WriteAllText(file, text);
     }
 
-    // The files made from the table, in the repository
-    private const string HeaderPath = "src/shared/settings/port-settings.h";
-    private const string HooksPath = "src/hooks/Settings.Generated.cs";
-
-    // The checks: the files made from the table as it makes them; each setting's by column what the code does (the
+    // The checks: each setting's by column what the code does (the
     // driver and the KTX shim use the fields of the settings it names for them, the hooks the properties of those it
     // names for them, the hook it names among those Hooks.Apply runs and reading it, in its class's file or one of
     // the classes it applies, or by switching it in Hooks.cs); each setting named by its key in a table row's first
     // column in the README of each component that reads it; every KSA_MTL_ variable the code names one of the
     // table's; every variable a README names in the table or in some code
-    private static int Check(string repo, bool write)
+    private static int Check(string repo)
     {
         Load(Path.Combine(repo, "src", "shared", "settings"));
         var problems = new List<string>();
-        Made(repo, HeaderPath, Header(), write, problems);
-        Made(repo, HooksPath, HooksSettings(), write, problems);
 
         var readmes = Directory.EnumerateFiles(Path.Combine(repo, "src"), "README.md", SearchOption.AllDirectories)
             .Append(Path.Combine(repo, "README.md"))
             .ToDictionary(p => Path.GetRelativePath(repo, p), File.ReadAllText);
-        // The code: the components' sources, and the build's scripts and CMake files, without the files made here
+        // The code: the components' sources, and the build's scripts and CMake files, without the table and what an
+        // editor's build leaves in bin/ and obj/ (the hooks' typed settings among it)
         var code = Directory.EnumerateFiles(Path.Combine(repo, "src"), "*", SearchOption.AllDirectories)
+            .Where(p => !Path.GetRelativePath(repo, p).Split('/').Any(d => d is "bin" or "obj"))
             .Concat(Directory.EnumerateFiles(Path.Combine(repo, "scripts")))
             .Concat(Directory.EnumerateFiles(Path.Combine(repo, "cmake")))
             .Concat(new[] { "build.sh", "release.sh", "CMakeLists.txt" }.Select(f => Path.Combine(repo, f)))
             .Where(p => Path.GetExtension(p) is ".cs" or ".c" or ".mm" or ".cpp" or ".h" or ".sh" or ".cmake" or ".txt")
             .ToDictionary(p => Path.GetRelativePath(repo, p), File.ReadAllText)
-            .Where(c => c.Key is not ("src/shared/settings/port-settings.txt" or HeaderPath or HooksPath))
+            .Where(c => c.Key != "src/shared/settings/port-settings.txt")
             .ToDictionary(c => c.Key, c => c.Value);
         bool Names(string text, string name) => Regex.IsMatch(text, $@"\b{name}\b");
         string Component(string folder) =>

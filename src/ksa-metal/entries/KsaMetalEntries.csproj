@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
-	<!-- The generator of KSA Metal's entry table (Generate.cs), a build tool: build.sh runs it between CMake's configure
-	     and build, with Vulkan's registry from the build tree. -->
+	<!-- The generator of KSA Metal's entry table (Generate.cs), a build tool: the native build runs it (CMakeLists.txt
+	     in the driver's folder), with Vulkan's registry from the build tree. -->
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
 		<AssemblyName>KsaMetalEntries</AssemblyName>

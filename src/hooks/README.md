@@ -12,7 +12,7 @@ and test a change.
 | Path | What it holds |
 |---|---|
 | `Hooks.cs` | the list of hooks in the order they apply, and the rule they follow: `Skip`, `Find`, `Fail` |
-| `Settings.cs`, `Settings.Generated.cs` | the settings as the hooks read them, a typed property each, the second file made from the settings table ([Settings](#settings)) |
+| `Settings.cs` | the settings as the hooks read them, a typed property each, with `Settings.Generated.cs`, which the build makes from the settings table ([Settings](#settings)) |
 | [`patches/`](patches/) | the patches to the game's rendering and physics ([The patches](#the-patches)) |
 | [`app/`](app/) | the port's part of the game: Restart, the documents folder, windows and UI coordinates, displays, HDR, mods' generic patches, frame captures, the benchmark's runs ([The port's part of the game](#the-ports-part-of-the-game)) |
 | [`tab/`](tab/) | the Mac Port tab and its presets |

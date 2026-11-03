@@ -324,8 +324,8 @@ share is in that folder's header too, under a heading that says so (`stages.h` f
 | Folder, file | What it holds |
 |---|---|
 | `kmtl.h` | the core: logging, the configuration, buffer indices, the dispatchable objects (instance, physical device, queue, device), shared helpers; then the layers' headers |
-| `setup/config.mm` | the settings above, read once from their variables (their names and defaults from `src/shared/settings/port-settings.h`), and the log |
-| `setup/entry.mm`, `setup/entries.inc` | the table behind `vkGetInstanceProcAddr` and `vkGetDeviceProcAddr`, made from Vulkan's registry ([`entries/`](entries/)) |
+| `setup/config.mm` | the settings above, read once from their variables (their names and defaults from `port-settings.h`, which the build makes from the settings table), and the log |
+| `setup/entry.mm` | the table behind `vkGetInstanceProcAddr` and `vkGetDeviceProcAddr`, `entries.inc`, which the build makes from Vulkan's registry and the driver's sources ([`entries/`](entries/)) |
 | `setup/instance.mm` | instance, physical device queries, features and limits, the extensions advertised |
 | `setup/device.mm` | device and queues, residency, fences and semaphores, submission |
 | `resources/memory.mm` | device memory, buffers, buffer views |
@@ -352,7 +352,7 @@ share is in that folder's header too, under a heading that says so (`stages.h` f
 | `diagnostics/instruments.mm` | what is measured at each present: frame log, screenshots, exits, the benchmark's interface, frame captures, signposts |
 | `diagnostics/passdump.mm` | one frame's images, pass by pass (`ksaMtlPassDump`) |
 | `diagnostics/profile.mm` | the GPU profiler |
-| `entries/` | the entry table's generator (`KsaMetalEntries`), which `build.sh` runs, and `aliases.txt` |
+| `entries/` | the entry table's generator (`KsaMetalEntries`), which the native build runs, and `aliases.txt` |
 | `tests/` | the tests that run without the game |
 | `CMakeLists.txt`, `exports.txt` | the build: sources, flags, and the symbols the library exports |
 
