@@ -9,7 +9,7 @@ using HarmonyLib;
 using KSA;
 using KsaMetalBenchmark;
 
-namespace KsaMetalHooks;
+namespace KsaMetalHooks.App;
 
 // The console command "framecapture [note]": for a picture that goes wrong now and then, everything that can say where it
 // went wrong, from the moment it is on the screen, in a folder of its own (framecaptures/<date>_<time> in the documents

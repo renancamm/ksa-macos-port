@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using HarmonyLib;
 using KSA;
 
-namespace KsaMetalHooks;
+namespace KsaMetalHooks.Patches;
 
 // Hidden parts skip. The vessels' shaders mark selected parts in the selection outline's mask, a store from the
 // fragment shader, and a shader that stores runs before the depth test: every fragment of a vessel is shaded, also

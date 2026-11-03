@@ -8,8 +8,9 @@ using System.Text;
 using System.Text.RegularExpressions;
 using HarmonyLib;
 using KSA;
+using KsaMetalHooks.App;
 
-namespace KsaMetalHooks;
+namespace KsaMetalHooks.Tab;
 
 // The Mac Port tab's presets: Performance, Balanced and Quality, each a set of the game's own graphics settings and of
 // port settings, made for this Mac's memory and chip, and Game Defaults, the defaults of the same settings. A preset's

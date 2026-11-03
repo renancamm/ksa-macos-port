@@ -3,7 +3,7 @@ using HarmonyLib;
 using KSA;
 using KSA.Rendering;
 
-namespace KsaMetalHooks;
+namespace KsaMetalHooks.Patches;
 
 // A game bug: renderers rewrite a descriptor when LastFrameUpdated < DeviceVector.FullLastFrameMoved, the later of two
 // frame numbers: when the vector last moved and when the shared pool (DeviceHostSharedMemory) last got a new buffer. A

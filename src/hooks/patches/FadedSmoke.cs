@@ -5,7 +5,7 @@ using System.Reflection.Emit;
 using HarmonyLib;
 using KSA;
 
-namespace KsaMetalHooks;
+namespace KsaMetalHooks.Patches;
 
 // Faded smoke. A rocket's plumes that merge into a group's end at a handoff age, not at their lifetime, and
 // GetEntrainedRadiusAge makes that age grow with the cube of the spacing, up to the plume's expanded radius: boosters set

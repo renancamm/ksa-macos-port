@@ -2,7 +2,7 @@ using System.Diagnostics;
 using HarmonyLib;
 using KSA;
 
-namespace KsaMetalHooks;
+namespace KsaMetalHooks.Patches;
 
 // Loading screen pace. While the game loads, Loading.OnFrame draws the loading screen after every step it reports
 // (Loading.Task, and the main thread's waits for parallel loading), and each frame waits for the display (the previous

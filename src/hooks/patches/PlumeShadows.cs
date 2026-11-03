@@ -3,7 +3,7 @@ using System.Linq;
 using HarmonyLib;
 using KSA;
 
-namespace KsaMetalHooks;
+namespace KsaMetalHooks.Patches;
 
 // Plume shadow tuning, lighter_plume_shadows (port-settings.toml): with the game's Plume trail shadows on, the game draws the smoke's
 // density as seen from the sun into 8 shadow cascades of 512^2 out to 20 km, which the raymarch reads beside its own

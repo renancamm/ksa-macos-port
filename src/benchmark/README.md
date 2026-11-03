@@ -182,13 +182,16 @@ The tests are a text file, `benchmark.txt`: sections of steps timed in seconds, 
 of the benchmark's director (`director/Directives.cs` lists them), and a `test` line for each test with the sections
 it plays in each mode. The camera's flight is given by `@key` steps, places the camera passes through
 (`director/Path.cs`); around the vehicles, the camera follows them or stands on the ground (`director/Rig.cs`). The
-director in `director/` plays the steps, moves the camera, measures the parts each section marks, and asks KSA Metal
-for each frame's GPU time and for the screenshots. `./build.sh` compiles it against the KSA version the port is made
-for. `report/` holds the benchmark's program, compiled against nothing of the game: the command that `./benchmark.sh`
-starts on the port folder's .NET runtime (its options and checks, the run's documents folder and settings, the game's session, Ctrl-C:
-`Command.cs`, `Run.cs`), and the report (`Report.cs`), which describes the Mac, writes the report, its page and the zip,
-and compares runs; `shared/` the director's code that the report program and the tests use too: the PNG reader and the classes of
-`results.json`. The build then runs its tests, which need no game, and stops when one fails. Those in
+director in `director/` plays the steps (`Benchmark.cs`), stops at the checkpoints for the screenshots
+(`Checkpoints.cs`) with the world put back the same way at each (`World.cs`), moves the camera, measures the parts each
+section marks, and asks KSA Metal for each frame's GPU time and for the screenshots. `./build.sh` compiles it against
+the KSA version the port is made for. `report/` holds the benchmark's program, compiled against nothing of the game:
+the command that `./benchmark.sh` starts on the port folder's .NET runtime (`Command.cs`; a run's options and checks
+`Run.cs`, its documents folder and settings `RunSettings.cs`, the game's sessions, Ctrl-C and the tools `RunGame.cs`),
+and the report, which describes the Mac and writes the report, its page and the zip (`Report.cs`, `Finish.cs`,
+`Html.cs`, `Terminal.cs`), compares runs (`Compare.cs`) and sums up the tools' output (`Tools.cs`); `shared/` the
+director's code that the report program and the tests use too: the PNG reader and the classes of `results.json`. The
+build then runs its tests, which need no game, and stops when one fails. Those in
 [`tests/`](tests/) check what passes and fails a run, the conditions the report notes, repeats merged into medians,
 numbers the same on a Mac in any region, what `finish` takes from the game's log and puts in the zip, the comparison
 of two runs, the PNG reader, and `benchmark.txt` itself (its tests, sections, directives, screenshots and vehicles).

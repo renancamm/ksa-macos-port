@@ -4,6 +4,9 @@ using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
 using HarmonyLib;
+using KsaMetalHooks.App;
+using KsaMetalHooks.Patches;
+using KsaMetalHooks.Tab;
 
 namespace KsaMetalHooks;
 

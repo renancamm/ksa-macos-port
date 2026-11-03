@@ -3,7 +3,7 @@ using HarmonyLib;
 using KSA;
 using KSA.Rendering;
 
-namespace KsaMetalHooks;
+namespace KsaMetalHooks.Patches;
 
 // Overlay skip. After the bloom, every frame, GizmoPass.Run draws the gizmos in two passes, each a clear of an image
 // of its own and a blend of that image over the whole view, also when there are no gizmos. With MSAA, the main view

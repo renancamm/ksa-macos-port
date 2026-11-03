@@ -3,7 +3,7 @@ using System.Runtime.CompilerServices;
 using HarmonyLib;
 using KSA.Atmosphere.Rendering;
 
-namespace KsaMetalHooks;
+namespace KsaMetalHooks.Patches;
 
 // Lighter warp cloud shadows, lighter_warp_cloud_shadows (port-settings.toml). CloudShadowVolume.MoveVolume asks for a
 // full rebuild, all 256 slices instead of 24, when the camera is more than 75 % of the volume's reach from where the

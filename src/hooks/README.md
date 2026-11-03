@@ -19,6 +19,11 @@ and test a change.
 | [`loader/`](loader/) | the startup hook, which applies the settings and loads the hooks ([How they load](#how-they-load)) |
 | [`tests/`](tests/) | the tests of the code that needs no game ([Build and test](#build-and-test)) |
 
+Each folder of the hooks' assembly is a namespace of its own: `KsaMetalHooks.Patches`, `KsaMetalHooks.App`,
+`KsaMetalHooks.Tab`. `Hooks.cs` and `settings/` are `KsaMetalHooks`, the root: the settings table's reader
+(`PortSettingsTable.cs`) is compiled into the loader, the tests and the settings generator too, and the loader finds
+`KsaMetalHooks.Hooks` by that name.
+
 ## How they load
 
 The launcher names `KsaMetalHooksLoader.dll` in `DOTNET_STARTUP_HOOKS`, so .NET runs it before the program it starts:

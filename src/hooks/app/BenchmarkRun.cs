@@ -13,7 +13,7 @@ using HarmonyLib;
 using KSA;
 using KsaMetalBenchmark;
 
-namespace KsaMetalHooks;
+namespace KsaMetalHooks.App;
 
 // The benchmark in the game (src/benchmark/): its director plays a test after every frame of the game, and starts in
 // one of three ways:

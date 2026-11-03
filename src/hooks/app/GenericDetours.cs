@@ -5,7 +5,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using HarmonyLib;
 
-namespace KsaMetalHooks;
+namespace KsaMetalHooks.App;
 
 // Harmony patches on generic methods, on arm64. Instantiations over reference types share one body, which takes a
 // hidden generic context; a method's own entry point is an instantiating stub that loads the context and jumps there.

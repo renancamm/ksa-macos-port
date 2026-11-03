@@ -6,8 +6,10 @@ using System.Runtime.InteropServices;
 using Brutal.ImGuiApi;
 using Brutal.Numerics;
 using KSA;
+using KsaMetalHooks.App;
+using KsaMetalHooks.Patches;
 
-namespace KsaMetalHooks;
+namespace KsaMetalHooks.Tab;
 
 // What the Mac Port tab draws itself, where the game has no widget for it: the title, the section headers, the render
 // size's boxes, the segmented control, the preset cards and the benchmark's table.

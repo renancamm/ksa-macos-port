@@ -7,8 +7,9 @@ using Brutal.ImGuiApi;
 using Brutal.Numerics;
 using HarmonyLib;
 using KSA;
+using KsaMetalHooks.App;
 
-namespace KsaMetalHooks;
+namespace KsaMetalHooks.Patches;
 
 // Resolution list. The game's Resolution setting (Display) lists the display's sizes in points, the way macOS sizes
 // windows: on a 14" MacBook Pro 1512 x 982 is the whole display, drawn with 3024 x 1964 pixels, and nothing says so.

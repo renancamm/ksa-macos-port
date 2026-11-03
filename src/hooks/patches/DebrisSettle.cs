@@ -7,7 +7,7 @@ using Brutal.Numerics;
 using HarmonyLib;
 using KSA;
 
-namespace KsaMetalHooks;
+namespace KsaMetalHooks.Patches;
 
 // Debris settling in warp, debris_settles_in_warp (port-settings.toml). Time warp stops at what the slowest physics
 // bubble can do, and pieces nobody flies decide that more than anything else: a pile that hasn't come to rest, about x70-100

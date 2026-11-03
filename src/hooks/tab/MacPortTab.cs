@@ -10,7 +10,7 @@ using HarmonyLib;
 using KSA;
 using KSA.Rendering.Lighting;
 
-namespace KsaMetalHooks;
+namespace KsaMetalHooks.Tab;
 
 // The Mac Port tab in the game's settings (Esc). Its rows are the port settings (PortSettings, from the table in
 // Contents/Resources/port-settings.txt), drawn with the game's own widgets, and they take part in the game's pending

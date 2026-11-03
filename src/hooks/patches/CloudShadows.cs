@@ -4,7 +4,7 @@ using System.Reflection.Emit;
 using HarmonyLib;
 using KSA.Atmosphere.Rendering;
 
-namespace KsaMetalHooks;
+namespace KsaMetalHooks.Patches;
 
 // Cloud shadow tuning, fewer_cloud_shadow_updates (port-settings.toml). CloudShadowVolume.UpdateVolumeDensity refreshes 24 slices of the cloud
 // shadow volume per frame (8 for ambient light). With 6 (and 2), the volume costs about 1.5 ms less; it converges to

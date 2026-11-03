@@ -2,7 +2,7 @@ using Brutal.Memory;
 using HarmonyLib;
 using KSA.Rendering.Lighting;
 
-namespace KsaMetalHooks;
+namespace KsaMetalHooks.Patches;
 
 // PCSS shadow search limit. With the game's soft shadows (Cascaded Shadow Filter: Pcss), each pixel looks for what
 // shades it as far as the widest penumbra the sun can cast, 1 m (CascadedShadowSystem.Settings.MaxPenumbraWorld). In

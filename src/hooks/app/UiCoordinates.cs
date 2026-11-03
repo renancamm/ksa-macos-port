@@ -8,8 +8,9 @@ using Brutal.ImGuiApi;
 using Brutal.Numerics;
 using HarmonyLib;
 using KSA;
+using KsaMetalHooks.Patches;
 
-namespace KsaMetalHooks;
+namespace KsaMetalHooks.App;
 
 // The window as UI code sees it, the game's and mods' alike. The main view's size is the render size (RenderScale.cs),
 // smaller than the window below a render scale of 1, while what's drawn on it is in the window's points: a panel placed

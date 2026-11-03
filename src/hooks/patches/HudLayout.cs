@@ -10,7 +10,7 @@ using Brutal.Numerics;
 using HarmonyLib;
 using KSA;
 
-namespace KsaMetalHooks;
+namespace KsaMetalHooks.Patches;
 
 // HUD layout (port-settings.toml, the Mac Port tab changes it while the game runs). The game lays out its flight HUD in
 // fractions of the window's height (ScreenReference's conversions): a panel's size is such a fraction times the HUD

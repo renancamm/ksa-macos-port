@@ -2,7 +2,7 @@ using System;
 using HarmonyLib;
 using KSA;
 
-namespace KsaMetalHooks;
+namespace KsaMetalHooks.Patches;
 
 // Trail volume caches (experiment, the developer setting trail_caches: <large MiB>,<small MiB>,<tiny MiB>[,<minimum
 // segments>]): the
