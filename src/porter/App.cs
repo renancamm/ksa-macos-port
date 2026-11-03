@@ -13,7 +13,7 @@ namespace KsaPorter;
 //   Contents/Resources/Brutal.Monitor.Subprocess   BRUTAL's crash-dump helper, which the game starts
 //   Contents/Resources/Hooks/     KSA Metal Hooks, which the launcher loads, and Harmony; their loader applies the
 //                                 port settings
-//   Contents/Resources/Benchmark/ the benchmark: its director, which the hooks start, the report program, the tour
+//   Contents/Resources/Benchmark/ the benchmark: its director, which the hooks run, the report program, the tour
 //   Contents/Resources/port-settings.txt   the table of the port settings, which the hooks read
 //   Contents/Resources/port-settings.toml  the port settings' template, which the hooks copy for the player
 //   Contents/Resources/VERSION    the port's version, which the Mac Port tab's title shows

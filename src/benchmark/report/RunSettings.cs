@@ -19,7 +19,7 @@ public static partial class Program
     private sealed partial class BenchmarkRun
     {
         // 1. The game's documents folder for the run, made fresh: the game alone (none of your mods, so they neither change
-        //    the numbers nor stop the game from starting; the hooks add the benchmark's vehicles from the app)
+        //    the numbers nor stop the game from starting; the director adds the benchmark's vehicles from the app)
         private void Prepare()
         {
             if (Directory.Exists(Instance))

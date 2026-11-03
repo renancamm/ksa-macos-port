@@ -138,7 +138,7 @@ internal sealed class FrameCaptureCommand
     {
         try
         {
-            Keep(BenchmarkRun.ConsoleLog);
+            Keep(Runs.ConsoleLog);
             Keep(Path.Combine(Constants.DocumentsFolderPath, "settings.toml"));
             Keep(PortSettings.FilePath);
         }

@@ -81,8 +81,8 @@ public static partial class Program
                              tour (@key lines, for benchmark.txt) with benchkey [name] in its console; quit it when done
 
         The benchmark is in the app (Contents/Resources/Benchmark/), built for the KSA version this port folder was made for:
-        KSA Metal Hooks start its director when the game starts with the run's options (run.json in the run's folder), in a
-        documents folder of its own. The Mac Port tab in the game's settings runs it too.
+        Its director reads the run's options (run.json in the run's folder) when the game starts, in a documents folder of
+        its own. The Mac Port tab in the game's settings runs it too.
         """;
 
     // Presets: fixed settings, the same on every Mac, so reports compare. Without one, your own settings are used. All run

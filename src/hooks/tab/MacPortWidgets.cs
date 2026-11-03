@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using Brutal.ImGuiApi;
 using Brutal.Numerics;
 using KSA;
+using KsaMetalBenchmark;
 using KsaMetalHooks.App;
 using KsaMetalHooks.Patches;
 using KsaPort.Common;
@@ -549,8 +550,8 @@ internal static partial class MacPortTab
     {
         var temporary = _temporary.GetValue(null);
         bool changes = temporary != null && (bool)_hasAnyTabChanged.Invoke(null, [temporary])!;
-        var why = changes ? "Apply or discard the changes first." : BenchmarkRun.CannotStart();
-        var last = BenchmarkRun.Last;
+        var why = changes ? "Apply or discard the changes first." : Runs.CannotStart();
+        var last = Runs.Last;
         const string show = "SHOW REPORT";
         float s = ConsoleStyle.EffectiveInterfaceScale, inset = ConsoleWidgets.RowLabelInsetPx, gap = 12f * s;
         Gap(6f * s);
@@ -621,12 +622,12 @@ internal static partial class MacPortTab
             var text = WrapSmall(playing, whatWidth);
             int pressed = Row(name, text, muted, Times(Tests[i]), cine != null ? fast : "RUN", cine != null ? cinematic : null, "MacPort_run_" + test, why ?? help + "\n\nIt plays with the settings above, and writes its report to the benchmarks folder in the game's documents folder. Leave the mouse and keyboard alone until it is done; Esc stops it.", why != null);
             if (pressed > 0)
-                BenchmarkRun.StartFromTab(test, cine == null || pressed == 1, PortSettings.Get("restart_for_a_clean_run")?.Saved == "true");
+                Runs.StartFromTab(test, cine == null || pressed == 1, PortSettings.Get("restart_for_a_clean_run")?.Saved == "true");
             if (i < Tests.Length - 1 || last != null)
                 draw.AddLine(new float2(x, y), new float2(right, y), hairline, ConsoleStyle.WindowBorderThicknessPx);
         }
         if (last != null && Row("Last Run", [last.Outcome], ConsoleStyle.ApplyAlpha(last.Passed || last.Stopped ? ConsoleStyle.TextLabelU32 : ConsoleStyle.DangerU32), last.Date, show, null, "MacPort_show_report", last.Summary, false) > 0)
-            BenchmarkRun.Show(last.Folder);
+            Runs.Show(last.Folder);
         ImGui.SetCursorScreenPos(new float2(x - inset, y));
         Gap(4f * s);
         if (why != null)

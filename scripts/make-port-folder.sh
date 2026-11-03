@@ -63,7 +63,7 @@ folder_payload() {
     mkdir -p "${contents}/Resources/Hooks"
     cp "${ASSEMBLIES}/bin/KsaMetalHooksLoader/KsaMetalHooksLoader.dll" "${ASSEMBLIES}/bin/KsaMetalHooks/KsaMetalHooks.dll" \
         "${ASSEMBLIES}/bin/KsaPort.Common/KsaPort.Common.dll" "${HARMONY_DLL}" "${contents}/Resources/Hooks/"
-    # The benchmark (src/benchmark/): its director, which the hooks start, the report program, the tour and its vehicles
+    # The benchmark (src/benchmark/): its director, which the hooks run, the report program, the tour and its vehicles
     local bench="${contents}/Resources/Benchmark"
     mkdir -p "${bench}"
     cp "${ASSEMBLIES}/bin/KsaMetalBenchmark/KsaMetalBenchmark.dll" "${ASSEMBLIES}"/bin/KsaMetalBenchmarkReport/*.dll \
