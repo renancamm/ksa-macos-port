@@ -9,5 +9,7 @@
 	</PropertyGroup>
 	<ItemGroup>
 		<Reference Include="$(KsaDir)/*.dll" Private="false" />
+		<!-- What the report program and the tests share: the PNG reader and the classes that write results.json -->
+		<Compile Include="../shared/*.cs" />
 	</ItemGroup>
 </Project>

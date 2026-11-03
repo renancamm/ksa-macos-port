@@ -9,6 +9,6 @@
 	</PropertyGroup>
 	<ItemGroup>
 		<!-- The PNG reader and the comparison of screenshots, shared with the director -->
-		<Compile Include="../director/Images.cs" />
+		<Compile Include="../shared/Images.cs" />
 	</ItemGroup>
 </Project>

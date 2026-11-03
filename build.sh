@@ -101,7 +101,7 @@ run build-dotnet "${KSA_DIR}"
 step "[5/5] The port folder"
 run make-kit payload
 run check-kit
-run test-benchmark-script "${OUT}"
+bash "${REPO}/src/benchmark/tests/command.sh" "${OUT}"
 
 echo ""
 step "Done: ${OUT#"${REPO}/"} (port ${VERSION}, KSA ${KSA_VERSION})"

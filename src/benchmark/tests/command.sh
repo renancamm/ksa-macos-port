@@ -3,9 +3,9 @@
 # how a run ends (passed, crashed, hung, stopped with Ctrl-C). No game plays, nothing takes over the screen, and everything
 # happens under a home folder of its own. ./build.sh runs it after making the port folder; a failure stops the build.
 #
-# Usage: scripts/test-benchmark-script.sh [<port folder>]
+# Usage: src/benchmark/tests/command.sh [<port folder>]
 set -uo pipefail
-REPO="$(cd "$(dirname "$0")/.." && pwd)"
+REPO="$(cd "$(dirname "$0")/../../.." && pwd)"
 KIT="${1:-${REPO}/dist/ksa-macos-port}"
 BENCH="${KIT}/benchmark.sh"
 RESOURCES="${KIT}/payload/app/Contents/Resources"

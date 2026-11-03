@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
-	<!-- The tests of the report program (Tests.cs), which needs no game: report/Report.cs with the director's code it
-	     shares (Images.cs) and the classes that write results.json (Results.cs, DriverStats.cs). scripts/build-dotnet.sh
-	     runs them: dotnet KsaMetalBenchmarkTests.dll -->
+	<!-- The tests of the report program (Tests.cs), which needs no game: report/ with the director's code in shared/,
+	     the PNG reader and the classes that write results.json. scripts/build-dotnet.sh runs them:
+	     dotnet KsaMetalBenchmarkTests.dll -->
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
 		<AssemblyName>KsaMetalBenchmarkTests</AssemblyName>
@@ -12,8 +12,6 @@
 		<Compile Include="../report/Report.cs" />
 		<Compile Include="../report/Html.cs" />
 		<Compile Include="../report/Terminal.cs" />
-		<Compile Include="../director/Images.cs" />
-		<Compile Include="../director/Results.cs" />
-		<Compile Include="../director/DriverStats.cs" />
+		<Compile Include="../shared/*.cs" />
 	</ItemGroup>
 </Project>

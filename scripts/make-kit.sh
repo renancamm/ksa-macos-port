@@ -15,7 +15,7 @@ kit_scripts() {
     local version="$1" ksa="$2" commit="$3"
     rm -rf "${OUT}"
     mkdir -p "${OUT}/lib"
-    cp "${REPO}"/src/port/*.sh "${REPO}/src/port/README.md" "${OUT}/"
+    cp "${REPO}"/src/port/*.sh "${REPO}/src/port/README.md" "${REPO}/src/benchmark/benchmark.sh" "${OUT}/"
     cp "${REPO}"/src/port/lib/*.sh "${OUT}/lib/"
     chmod +x "${OUT}"/*.sh
     cp "${REPO}/LICENSE" "${REPO}/THIRD_PARTY_NOTICES.md" "${OUT}/"

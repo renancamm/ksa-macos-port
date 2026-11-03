@@ -178,20 +178,21 @@ save your game, set the world to a new game's (the clock at its start, no vehicl
 end. The hooks add the tests' vehicles to the game's list of vehicles from the app, and write the report of a run from
 the game.
 
-The tests are a text file, `benchmark.txt`: sections of steps timed in seconds, each a console command or a directive of
-the benchmark's director (`director/Directives.cs` lists them), and a `test` line for each test with the sections it plays
-in each mode. The camera's flight is given by `@key` steps, places the
-camera passes through (`director/Path.cs`); around the vehicles, the camera follows them or stands on the ground
-(`director/Rig.cs`). The director in `director/` plays the steps, moves the camera, measures the parts each section
-marks, and asks KSA Metal for each frame's GPU time and for the screenshots. `./build.sh` compiles it against the KSA
-version the port is made for. `report/` holds the small program that describes the Mac, writes the report, its page and the
-zip, and compares runs. The build then runs its tests, which need no game, and stops when one fails. Those in
-[`tests/`](tests/) check what passes and fails a run, the conditions the report notes, repeats merged into medians, numbers
-the same on a Mac in any region, what `finish` takes from the game's log and puts in the zip, the comparison of two runs,
-the PNG reader, and `benchmark.txt` itself (its tests, sections, directives, screenshots and vehicles). They write their
-runs with the director's own classes, so they also check that the report reads what the director writes.
-[`scripts/test-benchmark-script.sh`](../../scripts/test-benchmark-script.sh) plays `benchmark.sh` against a stand-in for the
-game: its commands, what it refuses, and a run that passes, crashes, hangs or is stopped.
+The tests are a text file, `benchmark.txt`: sections of steps timed in seconds, each a console command or a directive
+of the benchmark's director (`director/Directives.cs` lists them), and a `test` line for each test with the sections
+it plays in each mode. The camera's flight is given by `@key` steps, places the camera passes through
+(`director/Path.cs`); around the vehicles, the camera follows them or stands on the ground (`director/Rig.cs`). The
+director in `director/` plays the steps, moves the camera, measures the parts each section marks, and asks KSA Metal
+for each frame's GPU time and for the screenshots. `./build.sh` compiles it against the KSA version the port is made
+for. `report/` holds the small program that describes the Mac, writes the report, its page and the zip, and compares
+runs; `shared/` the director's code that the report program and the tests use too: the PNG reader and the classes of
+`results.json`. The build then runs its tests, which need no game, and stops when one fails. Those in
+[`tests/`](tests/) check what passes and fails a run, the conditions the report notes, repeats merged into medians,
+numbers the same on a Mac in any region, what `finish` takes from the game's log and puts in the zip, the comparison
+of two runs, the PNG reader, and `benchmark.txt` itself (its tests, sections, directives, screenshots and vehicles).
+They write their runs with the director's own classes, so they also check that the report reads what the director
+writes. [`tests/command.sh`](tests/command.sh) plays [`benchmark.sh`](benchmark.sh), the command, against a stand-in
+for the game: its commands, what it refuses, and a run that passes, crashes, hangs or is stopped.
 
 Each screenshot is a checkpoint. The game runs its simulation as fast as the Mac allows, so a slower Mac falls a
 little behind the script. At a checkpoint the script waits for the game to reach the moment it should be at, pauses it
