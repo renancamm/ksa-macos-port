@@ -83,8 +83,9 @@ internal static class Tests
     private static string SettingsFolder => Path.Combine(_repo, "src", "settings");
 
     // Each line of the table: its key and variable are its own, its default is one of its values, its needs name
-    // settings that exist (or the game's that the tab checks) with values they take, without a loop, the tab draws its
-    // kind and its values fit, and its help can be read back. Each of the tab's sections has a caption.
+    // settings that exist (or the game's that the tab checks) with values they take, without a loop, its presets'
+    // values are three of its own (every Extra Performance row on in Performance), the tab draws its kind and its
+    // values fit, and its help can be read back. Each of the tab's sections has a caption.
     private static void TableRules()
     {
         var all = PortSettings.All;
@@ -124,6 +125,14 @@ internal static class Tests
                     Check(other.Valid(value), $"{s.Key} needs {need}, which isn't one of {key}'s values");
             }
             Check(!NeedsLoop(s, []), $"{s.Key}'s needs lead back to it");
+            // The presets: Performance, Balanced and Quality's values, every Extra Performance row on in Performance
+            Check(s.Presets.Length is 0 or 3, $"{s.Key} has {s.Presets.Length} presets' values, not 3");
+            foreach (var value in s.Presets.Where(v => !s.Valid(v)))
+                Check(false, $"{s.Key}'s preset value '{value}' is none of its values");
+            if (s.Section == "performance")
+                Check(s.Presets.FirstOrDefault() is { } performance && performance != s.Default,
+                    $"{s.Key} is an Extra Performance row, but Performance doesn't turn it on");
+            Check(s.Presets.Length == 0 || s.Section != "developer", $"{s.Key} is a developer setting, which the presets leave alone");
         }
     }
 

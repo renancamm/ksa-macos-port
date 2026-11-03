@@ -13,10 +13,11 @@ using KsaPortSettings;
 
 namespace KsaMetalHooks.Tab;
 
-// The Mac Port tab's presets: Performance, Balanced and Quality, each a set of the game's own graphics settings and of
-// port settings, made for this Mac's memory and chip, and Game Defaults, the defaults of the same settings. A preset's
-// card in the tab makes them pending changes, in the game's tabs and in this one, as if the player had set each row;
-// the game's Apply keeps them, Discard drops them. Nothing else ever changes a setting.
+// The Mac Port tab's presets: Performance, Balanced and Quality, each a set of the game's own graphics settings, made
+// for this Mac's memory and chip, and of port settings (the settings table's presets column), and Game Defaults, the
+// defaults of the same settings. A preset's card in the tab makes them pending changes, in the game's tabs and in
+// this one, as if the player had set each row; the game's Apply keeps them, Discard drops them. Nothing else ever
+// changes a setting.
 //
 // Every preset gives every setting any preset sets, so a preset after another leaves nothing of the first, except
 // the port rows the tab can't change (set outside, their hook unavailable) and the render scale without upscaling,
@@ -30,8 +31,10 @@ namespace KsaMetalHooks.Tab;
 // the display makes the presets unavailable, as any (Hooks.Fail), without taking the tab with them.
 internal static class Presets
 {
+    // A preset: its game settings for a Mac, and its port settings, the table's presets column at this index (-1: the
+    // table's defaults, Game Defaults)
     public sealed class Preset(string name, string shortHelp, string help, Func<Mac, Dictionary<string, string>> game,
-        Func<Mac, Dictionary<string, string>> port)
+        int index)
     {
         public string Name => name;
         // What its card says, and its tooltip
@@ -44,7 +47,7 @@ internal static class Presets
         public void For(Mac mac)
         {
             Game = game(mac);
-            Port = port(mac);
+            Port = Port(index);
             if (Port["upscaling"] == "off")
                 Port.Remove("render_scale");
         }
@@ -71,7 +74,7 @@ internal static class Presets
             mac => Game(mac, antiAliasing: "Disabled", filter: "Pcf", cascades: 2048, terrain: 2048,
                 milkyWay: "High", clouds: "Low", cloudShadows: "Medium", effects: "Low", godrays: false,
                 clutterShadows: false, plumeShadows: false, rayTracing: false),
-            mac => Port(upscaling: "spatial", scale: "0.5", tuning: true, milkyWayBake: true, performanceOnly: true)),
+            0),
         new("Balanced", "Faster, with little visible change.",
             "Faster, with little visible change: MetalFX Temporal draws the 3D view at three quarters of the window's size, " +
             "with simpler shadow filtering, clouds and smoke a step lower, and lighter ray tracing in the cockpit where " +
@@ -80,7 +83,7 @@ internal static class Presets
             mac => Game(mac, antiAliasing: "MultisampleX2", filter: "Pcf", cascades: 2048, terrain: 4096,
                 milkyWay: "High", clouds: "Medium", cloudShadows: "Medium", effects: "Medium", godrays: true, clutterShadows: true,
                 plumeShadows: true, rayTracing: mac.RayTracing),
-            mac => Port(upscaling: "metalfx", scale: "0.75", tuning: true, milkyWayBake: true, performanceOnly: false)),
+            1),
         new("Quality", "Window size. Trims what barely shows.",
             "The game's own image at the window's full size, with its anti-aliasing, soft shadows and ray tracing in " +
             "the cockpit where the Mac has it. Only what costs much and barely shows is lower or baked: shadow map " +
@@ -88,7 +91,7 @@ internal static class Presets
             mac => Game(mac, antiAliasing: "MultisampleX2", filter: "Pcss", cascades: 2048, terrain: 4096,
                 milkyWay: "High", clouds: "High", cloudShadows: "High", effects: "High", godrays: true, clutterShadows: true,
                 plumeShadows: true, rayTracing: mac.RayTracing),
-            mac => Port(upscaling: "off", scale: "1.0", tuning: false, milkyWayBake: true, performanceOnly: false)),
+            2),
         new("Game Defaults", "The game's own graphics settings.",
             "The game's own image: its default graphics for every setting the other presets change, and the Image and " +
             "Extra Performance rows at their defaults, without MetalFX. Everything else, such as the Field of View or " +
@@ -99,14 +102,13 @@ internal static class Presets
                 return Defaults(Game(mac, "Disabled", "Pcf", 2048, 2048, "Low", "Low", "Low", "Low", false, false, false, false),
                     name => Text(Field(name).GetValue(Owner(Field(name), defaults))));
             },
-            mac => Defaults(Port("off", "1.0", false, false, false), key => Settings.Get(key).Default)),
+            -1),
     ];
 
     // Not made for this Mac: the game's defaults are the same on every Mac
     public static Preset GameDefaults => All[^1];
 
-    // The settings another preset sets, at their defaults: the game's are a new GameSettings' (the game's Reset), the
-    // port's the table's
+    // The game's settings another preset sets, at their defaults: a new GameSettings' (the game's Reset)
     private static Dictionary<string, string> Defaults(Dictionary<string, string> settings, Func<string, string> value) =>
         settings.Keys.ToDictionary(key => key, value);
 
@@ -154,27 +156,14 @@ internal static class Presets
         return game;
     }
 
-    // The Extra Performance rows (tuning) are on in Performance and Balanced, whose changes to the image are small; the
-    // plume shadows' in Performance too, which turns the game's plume shadows off: they are faster when a player turns
-    // those on. The Milky Way bake, on in Performance, Balanced and Quality, changes sky pixels by at most 1 of 255 and
-    // gives Quality the game's Milky Way High at no cost; otherwise Quality keeps the game's own image. The tumbling
-    // physics and the debris settling, which change the physics and not the image, and the warp cloud shadows, out of
-    // place during warp, are tuning too: warp is too much of the game to leave to Performance. The slower crew portraits
-    // are on in Performance only
-    private static Dictionary<string, string> Port(string upscaling, string scale, bool tuning, bool milkyWayBake, bool performanceOnly) => new()
-    {
-        ["upscaling"] = upscaling,
-        ["render_scale"] = scale,
-        ["skip_game_anti_aliasing"] = "true",
-        ["fewer_cloud_shadow_updates"] = Text(tuning),
-        ["lighter_warp_cloud_shadows"] = Text(tuning),
-        ["lighter_plume_shadows"] = Text(tuning),
-        ["simpler_pcss_shadows"] = "true",
-        ["baked_milky_way"] = Text(milkyWayBake),
-        ["crew_portraits_at_15_fps"] = Text(performanceOnly),
-        ["lighter_tumbling_physics"] = Text(tuning),
-        ["debris_settles_in_warp"] = Text(tuning),
-    };
+    // The port settings a preset gives, from the table's presets column (Performance, Balanced, Quality; -1: the
+    // defaults). Every Extra Performance row is on in Performance, and in Balanced where its change is small; Quality
+    // keeps the game's own image but for what costs much and barely shows: the Milky Way bake (sky pixels at most 1 of
+    // 255 apart, the game's Milky Way High at no cost) and the simpler PCSS search. The tumbling physics, the debris
+    // settling and the warp cloud shadows change warp, not the image, and are on in Balanced too: warp is too much of
+    // the game to leave to Performance. The slower crew portraits are on in Performance only
+    private static Dictionary<string, string> Port(int index) =>
+        PortSettings.All.Where(s => s.Presets.Length > 0).ToDictionary(s => s.Key, s => index < 0 ? s.Default : s.Presets[index]);
 
     private static string Text(int value) => value.ToString(CultureInfo.InvariantCulture);
     private static string Text(bool value) => value ? "true" : "false";

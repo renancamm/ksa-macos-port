@@ -1,9 +1,9 @@
 # The port settings
 
 One table, [`port-settings.txt`](port-settings.txt), holds every port setting: its key, type and default, what it
-needs, when it applies, what does it (the driver, the KTX shim, a hook), and its row in the Mac Port tab with its
-help. The table's header explains its columns. Everything else that knows about a setting reads the table or is made
-from it.
+needs, when it applies, what does it (the driver, the KTX shim, a hook), its values in the Mac Port tab's presets,
+and its row in the tab with its help. The table's header explains its columns. Everything else that knows about a
+setting reads the table or is made from it.
 
 A setting has one name, its key, and its environment variable is `KSA_MTL_` and the key in capitals:
 `fused_tessellation` is `KSA_MTL_FUSED_TESSELLATION`. Only two settings set Apple's own variable instead, which Metal
@@ -69,6 +69,6 @@ A release only checks: the two files must be what the table makes.
 ## Changing a setting
 
 Edit its line in the table, then build: `./build.sh` makes the typed files and the template, the generator checks the
-repository, and the library's tests check the table's rules (values, needs, the kinds the tab draws). A new row goes
-into the tab's presets in the same change ([`../hooks/tab/Presets.cs`](../hooks/tab/Presets.cs)), and its key into the
-README of the code that reads it.
+repository, and the library's tests check the table's rules (values, needs, presets, the kinds the tab draws). A new
+Extra Performance row gets its presets' values in the same line (on in Performance, the tests check), and its key goes
+into the README of the code that reads it.

@@ -62,13 +62,13 @@ public static class PortSettings
                 All[^1].OptionHelp[c[0]] = c[1];
                 continue;
             }
-            if (c.Length < 8)
-                throw new FormatException($"{table}, line {n + 1}: {c.Length} columns, not 8");
+            if (c.Length < 9)
+                throw new FormatException($"{table}, line {n + 1}: {c.Length} columns, not 9");
             string[] List(string column) => column.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             var s = new PortSetting
             {
                 Section = section, Key = c[0], Type = c[1], Default = c[2], Needs = List(c[3]), Live = c[4] == "live",
-                By = List(c[5]), Label = c[6], Help = string.Join('|', c[7..]),
+                By = List(c[5]), Presets = List(c[6]), Label = c[7], Help = string.Join('|', c[8..]),
             };
             var parts = s.Type.Split(':');
             switch (parts[0])

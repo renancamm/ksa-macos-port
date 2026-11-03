@@ -11,6 +11,8 @@ public sealed class PortSetting
 {
     public string Section = "", Key = "", Type = "", Default = "", Label = "", Help = "";
     public string[] Needs = [], By = [];
+    // Its values in the Mac Port tab's presets Performance, Balanced and Quality (none: the presets leave it alone)
+    public string[] Presets = [];
     public bool Live;
     // A choice's values and their labels (bool: on and off), and what some of them mean
     public (string Value, string Label)[] Choices = [];
