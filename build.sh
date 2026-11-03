@@ -84,9 +84,11 @@ mkdir -p "${CMAKE_TREE}"
 LOG="${CMAKE_TREE}/build.log"
 DEBUG_MAP=ON
 [ "${VERSION}" = dev ] || DEBUG_MAP=OFF
-{ cmake --preset default -B "${CMAKE_TREE}" -DKSA_NATIVES_DIR="${NATIVES}" -DKSA_MTL_OPT="${KSA_MTL_OPT:--O2}" \
-    -DKSA_MTL_DEBUG_MAP="${DEBUG_MAP}" &&
-    cmake --build "${CMAKE_TREE}"; } > "${LOG}" 2>&1 || { grep -v xcrun_db "${LOG}" | tail -40; die "the native build failed (${LOG})."; }
+cmake --preset default -B "${CMAKE_TREE}" -DKSA_NATIVES_DIR="${NATIVES}" -DKSA_MTL_OPT="${KSA_MTL_OPT:--O2}" \
+    -DKSA_MTL_DEBUG_MAP="${DEBUG_MAP}" > "${LOG}" 2>&1 || { tail -40 "${LOG}"; die "CMake's configure failed (${LOG})."; }
+# The driver's entry table, from Vulkan's registry the configure downloaded
+run build-entries "${VERSION}"
+cmake --build "${CMAKE_TREE}" >> "${LOG}" 2>&1 || { grep -v xcrun_db "${LOG}" | tail -40; die "the native build failed (${LOG})."; }
 info "Libraries in ${NATIVES#"${REPO}/"}, CMake's output in ${LOG#"${REPO}/"}"
 # The driver's tests that need no recording (src/ksa-metal/tests/)
 ctest --test-dir "${CMAKE_TREE}" -LE corpus --output-on-failure > "${CMAKE_TREE}/tests.log" 2>&1 ||

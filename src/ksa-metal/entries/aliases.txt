@@ -1,0 +1,5 @@
+# Aliases the entry table answers although the driver doesn't advertise the extension that brings them: functions of
+# Vulkan 1.2 under their extension's name, for a caller that asks for that name. One per line; the generator checks each.
+vkCreateRenderPass2KHR       # VK_KHR_create_renderpass2
+vkGetBufferDeviceAddressEXT  # VK_EXT_buffer_device_address
+vkResetQueryPoolEXT          # VK_EXT_host_query_reset

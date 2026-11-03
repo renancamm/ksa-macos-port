@@ -10,7 +10,7 @@
 //       --update records it instead.
 //
 // Exits with 1 when a test fails.
-#include "../translate.h"
+#include "shaders/translate.h"
 #include <mach-o/dyld.h>
 #include <sys/stat.h>
 #include <unistd.h>

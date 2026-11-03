@@ -17,7 +17,7 @@
 // any compute shader. Shader group handles name the group; the shader binding table is not read: the miss index of a
 // trace is the n-th miss group of the pipeline, and the hit group is the first triangles hit group.
 #include "kmtl.h"
-#include "rtspirv.h"
+#include "shaders/rtspirv.h"
 #include <set>
 
 // ---------------------------------------------------------------------------------------------------------------

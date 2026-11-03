@@ -11,7 +11,7 @@ it:
 | the Mac Port tab ([`../hooks/tab/`](../hooks/tab/)) | draws its rows from the table in the app |
 | the hooks ([`../hooks/settings/Settings.cs`](../hooks/settings/Settings.cs)) | read their settings by key, against the table |
 | `port-settings.toml`'s template | made from the table by `KsaPortSettings template`, into the app |
-| the native code: KSA Metal ([`../ksa-metal/config.mm`](../ksa-metal/config.mm)), the KTX shim | read each variable and its default from [`port-settings.h`](port-settings.h), made from the table |
+| the native code: KSA Metal ([`../ksa-metal/setup/config.mm`](../ksa-metal/setup/config.mm)), the KTX shim | read each variable and its default from [`port-settings.h`](port-settings.h), made from the table |
 
 ## The generator
 

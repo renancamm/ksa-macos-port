@@ -15,16 +15,21 @@ set(KSA_MTL_DEBUG_MAP ON CACHE BOOL "Keep the debug map (object file paths) in K
 
 # The driver's code as objects, which the library and the tests (tests/) both link
 add_library(ksa-metal-objects OBJECT
-    config.mm entry.mm instance.mm device.mm format.mm descriptor.mm pipeline.mm translate.mm command.mm swapchain.mm
-    instruments.mm passdump.mm internal.mm accel.mm profile.mm shadercache.mm corpus.mm upscale.mm rtpipeline.mm
-    rtspirv.cpp tessspirv.cpp)
+    setup/config.mm setup/entry.mm setup/instance.mm setup/device.mm
+    resources/memory.mm resources/images.mm resources/queries.mm resources/format.mm resources/descriptor.mm resources/accel.mm
+    commands/encoders.mm commands/state.mm commands/draws.mm commands/passes.mm commands/transfers.mm commands/internal.mm
+    pipelines/stages.mm pipelines/pipelines.mm pipelines/rtpipeline.mm
+    shaders/translate.mm shaders/shadercache.mm shaders/corpus.mm shaders/tessspirv.cpp shaders/rtspirv.cpp
+    presentation/swapchain.mm presentation/upscale.mm
+    diagnostics/instruments.mm diagnostics/passdump.mm diagnostics/profile.mm)
 set_target_properties(ksa-metal-objects PROPERTIES
     CXX_STANDARD 17
     CXX_EXTENSIONS OFF
     CXX_VISIBILITY_PRESET hidden
     OBJCXX_VISIBILITY_PRESET hidden)
 target_compile_options(ksa-metal-objects PUBLIC ${KSA_MTL_OPT} -g -Wall -Werror $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
-target_include_directories(ksa-metal-objects INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}")
+# Its headers by their path from here ("kmtl.h", "shaders/translate.h"), for its own files and the tests
+target_include_directories(ksa-metal-objects PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_features(ksa-metal-objects PUBLIC cxx_std_17)
 target_link_libraries(ksa-metal-objects PUBLIC
     port-settings Vulkan::Headers spirv-cross-msl spirv-cross-glsl spirv-cross-core SPIRV-Tools-link SPIRV-Tools-opt SPIRV-Tools-static

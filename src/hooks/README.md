@@ -94,7 +94,7 @@ the debris settling, off by default, change what the game simulates: a piece tha
 | Clutter off | none (always on) | [`ClutterOff.cs`](patches/ClutterOff.cs) | a game bug since KSA 5707: `PlanetRenderer.RenderClutterDepthNormalPrePass` draws the ground clutter without asking whether there is any, as `RenderClutterDepthPrePass` beside it does. With the game's Ground Clutter off, the first frame near a world ends the game with a `NullReferenceException`. A prefix skips the pass when there is no clutter renderer |
 | Descriptor refresh | none (always on) | [`DescriptorRefresh.cs`](patches/DescriptorRefresh.cs) | a game bug: renderers rewrite a descriptor when `LastFrameUpdated < DeviceVector.FullLastFrameMoved`, comparing frame numbers, so a move of the vector or a new buffer for the shared pool after the rewrite in the same frame goes unseen, and that frame slot keeps an address inside a disposed buffer. The pool grows six times while part thumbnails are collected: with Loading Screen FPS Cap that is about 21 ms after the glow's first rewrite and the first present about 15 ms after it, so about 1 session in 10 misses it and every other frame comes out white. Postfixes on `DeviceHostSharedMemory.Resize` and `DeviceVector.Resize` set `FrameAllocated` and `FrameMoved` to a version that rises with every change |
 
-The MetalFX entry points are KSA Metal's own ([`../ksa-metal/upscale.mm`](../ksa-metal/upscale.mm)).
+The MetalFX entry points are KSA Metal's own ([`../ksa-metal/presentation/upscale.mm`](../ksa-metal/presentation/upscale.mm)).
 
 ## The port's part of the game
 

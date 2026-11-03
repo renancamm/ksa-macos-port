@@ -124,7 +124,8 @@ Metal's own tools work too: `MTL_HUD_ENABLED=1` shows Apple's performance overla
 `MTL_SHADER_VALIDATION=1` check API use and catch out-of-bounds memory access in shaders (slow).
 
 The benchmark's mod and the hooks talk to KSA Metal through the only functions it exports besides Vulkan's, in
-`instruments.mm`, `profile.mm`, `pipeline.mm` and `swapchain.mm`:
+`diagnostics/instruments.mm`, `diagnostics/profile.mm`, `diagnostics/passdump.mm`, `pipelines/stages.mm` and
+`presentation/swapchain.mm`:
 
 | Function | |
 |---|---|
@@ -241,7 +242,7 @@ the cockpit (IVA). Ray queries and acceleration structures map onto Metal's. Met
 KSA Metal rewrites each one into a single compute kernel: every "trace ray" in the ray generation shader becomes a
 ray query, and the hit and miss shaders become functions called from it. The rewrite works on SPIR-V, using
 [SPIRV-Tools](https://github.com/KhronosGroup/SPIRV-Tools) to link the shaders together
-([`rtspirv.cpp`](rtspirv.cpp)).
+([`rtspirv.cpp`](shaders/rtspirv.cpp)).
 
 KSA's instances are opaque, so each of those ray queries stops only at the closest hit (or, for a shadow ray, at
 any hit). Before compiling, KSA Metal turns each of them into one call of Metal's *intersector*, which searches the
@@ -311,32 +312,44 @@ vertex buffer n.
 
 ## Source files
 
-| File | What it holds |
+The driver is in folders by layer, each with a header that `kmtl.h` includes: a file includes `kmtl.h` and sees every
+layer's types and the functions the layers call each other by (named `kmtl*`). A function only the files of one folder
+share is in that folder's header too, under a heading that says so (`stages.h` for the pipelines).
+
+| Folder, file | What it holds |
 |---|---|
-| `kmtl.h` | shared declarations |
-| `config.mm` | the `KSA_MTL_*` variables above, read once, and the log |
-| `entry.mm` | the table behind `vkGetInstanceProcAddr` and `vkGetDeviceProcAddr` |
-| `instance.mm` | instance, physical device queries, features and limits |
-| `device.mm` | device, queues, memory, buffers, images, samplers, synchronization, submission |
-| `format.mm` | Vulkan formats to Metal pixel and vertex formats |
-| `descriptor.mm` | descriptor sets as argument buffers, pipeline layouts |
-| `pipeline.mm` | shader modules, render passes, graphics and compute pipelines |
-| `translate.mm`, `translate.h` | a shader stage's translation from SPIR-V to MSL |
-| `shadercache.mm` | the translation cache on disk and the background compile |
-| `corpus.mm` | the shader corpus (`KSA_MTL_CORPUS`): translations recorded for the tests |
-| `command.mm` | command buffers, every `vkCmd*`, encoder ordering |
-| `internal.mm` | KSA Metal's own shaders: buffer fills, scaled blits, tessellation helpers |
-| `accel.mm` | acceleration structures for ray queries |
-| `rtpipeline.mm`, `rtspirv.cpp`, `rtspirv.h` | ray tracing pipelines rewritten as compute kernels |
-| `tessspirv.cpp`, `tessspirv.h` | the SPIR-V rewrites behind passthrough and fused tessellation |
-| `spvmodule.h` | a SPIR-V module as a list of instructions, for those rewrites |
-| `swapchain.mm` | swapchain and presentation: pacing, HDR, frame interpolation at present, latency |
-| `passdump.mm` | one frame's images, pass by pass (`ksaMtlPassDump`) |
-| `instruments.mm` | what is measured at each present: frame log, screenshots, exits, the benchmark's interface, frame captures, signposts |
-| `upscale.mm` | MetalFX: upscaling, motion vectors, frame interpolation |
-| `profile.mm` | the GPU profiler |
-| `CMakeLists.txt`, `exports.txt` | the build: sources, flags, and the symbols the library exports |
+| `kmtl.h` | the core: logging, the configuration, buffer indices, the dispatchable objects (instance, physical device, queue, device), shared helpers; then the layers' headers |
+| `setup/config.mm` | the `KSA_MTL_*` variables above, read once (their names and defaults from `src/settings/port-settings.h`), and the log |
+| `setup/entry.mm`, `setup/entries.inc` | the table behind `vkGetInstanceProcAddr` and `vkGetDeviceProcAddr`, made from Vulkan's registry ([`entries/`](entries/)) |
+| `setup/instance.mm` | instance, physical device queries, features and limits, the extensions advertised |
+| `setup/device.mm` | device and queues, residency, fences and semaphores, submission |
+| `resources/memory.mm` | device memory, buffers, buffer views |
+| `resources/images.mm` | images, image views, samplers |
+| `resources/queries.mm` | query pools, pipeline caches, debug names |
+| `resources/format.mm` | Vulkan formats to Metal pixel and vertex formats |
+| `resources/descriptor.mm` | descriptor sets as argument buffers, pipeline layouts |
+| `resources/accel.mm` | acceleration structures for ray queries |
+| `shaders/translate.mm`, `translate.h` | a shader stage's translation from SPIR-V to MSL |
+| `shaders/shadercache.mm` | the translation cache on disk and the background compile |
+| `shaders/corpus.mm` | the shader corpus (`KSA_MTL_CORPUS`): translations recorded for the tests |
+| `shaders/tessspirv.cpp`, `rtspirv.cpp`, `spvmodule.h` | the SPIR-V rewrites behind passthrough and fused tessellation, and ray tracing as compute kernels; a SPIR-V module as a list of instructions, for them |
+| `pipelines/stages.mm`, `stages.h` | shader modules, MSL compilation, a stage made ready: translated or from the cache, overridden, compiled |
+| `pipelines/pipelines.mm` | render passes, framebuffers, graphics and compute pipelines |
+| `pipelines/rtpipeline.mm` | ray tracing pipelines rewritten as compute kernels |
+| `commands/encoders.mm` | encoder ordering, the upload ring, the encoders, command pools and buffers |
+| `commands/state.mm` | the state set between draws, and its flush before a draw or dispatch |
+| `commands/draws.mm` | draws and dispatches, tessellated draws |
+| `commands/passes.mm` | barriers, render passes and dynamic rendering |
+| `commands/transfers.mm` | copies, blits, fills, clears, updates, queries, debug labels |
+| `commands/internal.mm` | KSA Metal's own shaders: buffer fills, scaled blits, tessellation helpers |
+| `presentation/swapchain.mm` | swapchain and presentation: pacing, HDR, frame interpolation at present, latency |
+| `presentation/upscale.mm` | MetalFX: upscaling, motion vectors, frame interpolation |
+| `diagnostics/instruments.mm` | what is measured at each present: frame log, screenshots, exits, the benchmark's interface, frame captures, signposts |
+| `diagnostics/passdump.mm` | one frame's images, pass by pass (`ksaMtlPassDump`) |
+| `diagnostics/profile.mm` | the GPU profiler |
+| `entries/` | the entry table's generator (`KsaMetalEntries`), which `build.sh` runs, and `aliases.txt` |
 | `tests/` | the tests that run without the game |
+| `CMakeLists.txt`, `exports.txt` | the build: sources, flags, and the symbols the library exports |
 
 ## Not implemented
 

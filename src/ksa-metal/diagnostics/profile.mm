@@ -8,9 +8,9 @@
 //                           directive moves the window with ksaMtlProfileFrames)
 //   KSA_MTL_GPUPROF_SPLIT=1 end the encoder after every draw call and dispatch (per-draw attribution; adds a store
 //                           and load of the attachments per draw, so absolute times grow)
-//   KSA_MTL_DUMP_SPV=<dir>  every shader module as <hash>.spv (pipelines are named by these hashes; pipeline.mm)
+//   KSA_MTL_DUMP_SPV=<dir>  every shader module as <hash>.spv (pipelines are named by these hashes; pipelines/stages.mm)
 //   KSA_MTL_LABELS=1        name every encoder after its pipelines, for Instruments, the Metal HUD and Xcode's
-//                           frame capture (command.mm)
+//                           frame capture (commands/encoders.mm)
 #include "kmtl.h"
 
 struct KProfEncoder {
@@ -34,7 +34,7 @@ static FILE* g_prof = nullptr;
 static std::atomic<uint64_t> g_profFirst{2000}, g_profCount{300};
 static std::mutex g_profMutex;  // guards the CSV
 
-// Timestamp sample buffers, for the profiler and the game's timestamp queries (command.mm). Metal caps the number of
+// Timestamp sample buffers, for the profiler and the game's timestamp queries (commands/transfers.mm). Metal caps the number of
 // live counter sample buffers: they are recycled once their command buffer completes.
 static std::mutex g_timestampMutex;
 static std::vector<id<MTLCounterSampleBuffer>> g_timestampPool;

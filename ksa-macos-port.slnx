@@ -9,6 +9,9 @@
 		<Project Path="src/hooks/loader/KsaMetalHooksLoader.csproj" />
 		<Project Path="src/hooks/tests/KsaMetalHooksTests.csproj" />
 	</Folder>
+	<Folder Name="/ksa-metal/">
+		<Project Path="src/ksa-metal/entries/KsaMetalEntries.csproj" />
+	</Folder>
 	<Folder Name="/porter/">
 		<Project Path="src/porter/KsaPorter.csproj" />
 		<Project Path="src/porter/tests/KsaPorterTests.csproj" />

@@ -1,4 +1,4 @@
-// SPIR-V rewrites behind passthrough and fused tessellation (tessspirv.cpp; design in command.mm, "Tessellated draws").
+// SPIR-V rewrites behind passthrough and fused tessellation (tessspirv.cpp; design in commands/draws.mm, "Tessellated draws").
 #pragma once
 #include <cstdint>
 #include <string>

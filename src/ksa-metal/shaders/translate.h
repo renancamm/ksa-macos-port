@@ -1,5 +1,5 @@
 // SPIR-V -> MSL translation of one shader stage (translate.mm): the part of pipeline creation that needs no device.
-// pipeline.mm translates every stage with it, and the driver's tests (tests/) run it on recorded inputs.
+// pipelines/stages.mm translates every stage with it, and the driver's tests (tests/) run it on recorded inputs.
 #pragma once
 #include "kmtl.h"
 #include "spirv_msl.hpp"
