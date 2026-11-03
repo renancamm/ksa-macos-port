@@ -9,12 +9,14 @@ SCRIPTS="${REPO}/scripts"
 source "${REPO}/src/port/lib/common.sh"
 PORT_LIB="${LIB}"
 
-# deps/build/: the CMake build tree (cmake/, with every download in cmake/_deps/), the app's libraries (natives/) and
-# the other pieces of the port folder (KSA_BUILD, set by release.sh for a fresh build). dist/: the port folder.
+# deps/build/: the CMake build tree (cmake/, with every download in cmake/_deps/), the app's libraries (natives/), the
+# .NET projects' output (assemblies/) and the other pieces of the port folder (KSA_BUILD, set by release.sh for a fresh
+# build). dist/: the port folder.
 DEPS="${REPO}/deps"
 BUILD="${KSA_BUILD:-${DEPS}/build}"
 CMAKE_TREE="${BUILD}/cmake"
 NATIVES="${BUILD}/natives"
+ASSEMBLIES="${BUILD}/assemblies"
 DIST="${REPO}/dist"
 OUT="${DIST}/ksa-macos-port"
 
@@ -59,19 +61,4 @@ load_deps() {
 # repository
 dotnet_sdk_version() {
     (cd "${REPO}" && dotnet --version)
-}
-
-# dotnet_build <work folder> <project> <output folder> [msbuild arguments...]: a Release build, its SDK state and
-# log in the work folder. No PDB: the port folder doesn't ship them, and a DLL built with one records its path.
-# The SDK is chosen by the global.json of the folder dotnet runs in: run it from ${REPO}.
-dotnet_build() {
-    local work="$1" project="$2" out="$3"
-    shift 3
-    rm -rf "${out}"
-    mkdir -p "${work}"
-    DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 \
-        DOTNET_CLI_HOME="${work}/home" NUGET_PACKAGES="${work}/nuget" \
-        dotnet build "${project}" -c Release -nologo -v quiet -nodeReuse:false -o "${out}" \
-        -p:BaseIntermediateOutputPath="${work}/obj/$(basename "${project}" .csproj)/" -p:DebugType=none "$@" \
-        > "${work}/build.log" 2>&1 || { cat "${work}/build.log"; return 1; }
 }

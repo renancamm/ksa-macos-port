@@ -7,7 +7,7 @@ using KsaMetalHooks;
 
 // The tests of the port settings' code that runs without the game: the table (src/launcher/port-settings.txt) and the
 // rules its lines keep, reading and writing port-settings.toml, the needs, the values read back from the environment,
-// and the variables the loader sets. scripts/build-hooks.sh runs them after building the hooks; a failure stops the
+// and the variables the loader sets. scripts/build-dotnet.sh runs them after building the hooks; a failure stops the
 // build.
 //
 // Usage: dotnet KsaMetalHooksTests.dll <repository>

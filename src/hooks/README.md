@@ -141,8 +141,8 @@ To find out which patch causes a problem, turn it off in the Mac Port tab (Optim
 
 ## Build and test
 
-`./build.sh` builds both assemblies against the KSA it is given, like the benchmark
-([`scripts/build-hooks.sh`](../../scripts/build-hooks.sh)): `KSA.dll` and the benchmark's director are references
+`./build.sh` builds both assemblies against the KSA it is given, with the benchmark
+([`scripts/build-dotnet.sh`](../../scripts/build-dotnet.sh)): `KSA.dll` and the benchmark's director are references
 only. Harmony comes from the `Lib.Harmony` package on nuget.org, pinned in
 [`cmake/dependencies.cmake`](../../cmake/dependencies.cmake).
 

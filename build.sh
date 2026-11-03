@@ -75,7 +75,7 @@ KSA_VERSION="$(game_version "${KSA_DIR}")"
 step "Building the port ${VERSION} (${COMMIT}) for KSA ${KSA_VERSION}"
 
 # The native libraries, and the downloads the other steps use. CMake's output goes to a log, shown when it fails.
-step "[1/6] Native libraries (CMake)"
+step "[1/5] Native libraries (CMake)"
 mkdir -p "${CMAKE_TREE}"
 LOG="${CMAKE_TREE}/build.log"
 DEBUG_MAP=ON
@@ -87,21 +87,18 @@ info "Libraries in ${NATIVES#"${REPO}/"}, CMake's output in ${LOG#"${REPO}/"}"
 # For editors: compile_commands.json at the repository's root, where clangd and VS Code look for it
 ln -sfn "${CMAKE_TREE}/compile_commands.json" "${REPO}/compile_commands.json"
 
-step "[2/6] The port's scripts"
+step "[2/5] The port's scripts"
 run make-kit scripts "${VERSION}" "${KSA_VERSION}" "${COMMIT}"
 
-step "[3/6] Icon"
+step "[3/5] Icon"
 run build-icon
 
-step "[4/6] Benchmark"
+step "[4/5] The hooks and the benchmark (.NET)"
 load_deps
 [ "${CONVERT}" = 0 ] || bash "${OUT}/lib/convert-dotnet.sh" "${KSA_DIR}" "${DOTNET_RUNTIME}" > /dev/null
-run build-benchmark "${KSA_DIR}"
+run build-dotnet "${KSA_DIR}"
 
-step "[5/6] Hooks"
-run build-hooks "${KSA_DIR}"
-
-step "[6/6] The port folder"
+step "[5/5] The port folder"
 run make-kit payload
 run check-kit
 run test-benchmark-script "${OUT}"

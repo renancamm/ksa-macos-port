@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/benchmark/">
+    <Project Path="src/benchmark/director/KsaMetalBenchmark.csproj" />
+    <Project Path="src/benchmark/report/KsaMetalBenchmarkReport.csproj" />
+    <Project Path="src/benchmark/tests/KsaMetalBenchmarkTests.csproj" />
+  </Folder>
+  <Folder Name="/hooks/">
+    <Project Path="src/hooks/KsaMetalHooks.csproj" />
+    <Project Path="src/hooks/loader/KsaMetalHooksLoader.csproj" />
+    <Project Path="src/hooks/tests/KsaMetalHooksTests.csproj" />
+  </Folder>
+</Solution>
