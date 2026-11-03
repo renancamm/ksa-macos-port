@@ -9,9 +9,8 @@
 		<StartupObject>Tests</StartupObject>
 	</PropertyGroup>
 	<ItemGroup>
-		<Compile Include="../report/Report.cs" />
-		<Compile Include="../report/Html.cs" />
-		<Compile Include="../report/Terminal.cs" />
+		<Compile Include="../report/*.cs" />
+		<Compile Include="../../porter/PortFolder.cs" />
 		<Compile Include="../shared/*.cs" />
 	</ItemGroup>
 </Project>

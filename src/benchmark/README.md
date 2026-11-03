@@ -171,7 +171,7 @@ The benchmark is in the app, in `Contents/Resources/Benchmark/`, and [KSA Metal 
 of `./benchmark.sh`, the game starts from a documents folder of its own,
 `~/Library/Caches/ksa-macos-port/benchmark/instance/`. That folder holds a copy of your settings (with the preset on
 top, if any) and of your port settings (the defaults with a preset), and no mods, so your saves, settings and mods are
-never touched. The script changes only the settings that start the game straight into the test (no system menu, the
+never touched. The command changes only the settings that start the game straight into the test (no system menu, the
 chosen system, the game's test vessel in orbit); every quality setting stays yours or the preset's. A run from the
 game with **Restart for a Clean Run** starts the same way. A run in the game you have open keeps its system: the hooks
 save your game, set the world to a new game's (the clock at its start, no vehicles), and load your game again at the
@@ -184,8 +184,10 @@ it plays in each mode. The camera's flight is given by `@key` steps, places the 
 (`director/Path.cs`); around the vehicles, the camera follows them or stands on the ground (`director/Rig.cs`). The
 director in `director/` plays the steps, moves the camera, measures the parts each section marks, and asks KSA Metal
 for each frame's GPU time and for the screenshots. `./build.sh` compiles it against the KSA version the port is made
-for. `report/` holds the small program that describes the Mac, writes the report, its page and the zip, and compares
-runs; `shared/` the director's code that the report program and the tests use too: the PNG reader and the classes of
+for. `report/` holds the benchmark's program, compiled against nothing of the game: the command that `./benchmark.sh`
+starts on the port folder's .NET runtime (its options and checks, the run's documents folder and settings, the game's session, Ctrl-C:
+`Command.cs`, `Run.cs`), and the report (`Report.cs`), which describes the Mac, writes the report, its page and the zip,
+and compares runs; `shared/` the director's code that the report program and the tests use too: the PNG reader and the classes of
 `results.json`. The build then runs its tests, which need no game, and stops when one fails. Those in
 [`tests/`](tests/) check what passes and fails a run, the conditions the report notes, repeats merged into medians,
 numbers the same on a Mac in any region, what `finish` takes from the game's log and puts in the zip, the comparison

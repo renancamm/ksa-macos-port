@@ -10,5 +10,7 @@
 	<ItemGroup>
 		<!-- The PNG reader and the comparison of screenshots, shared with the director -->
 		<Compile Include="../shared/Images.cs" />
+		<!-- benchmark.sh's command (Command.cs): the port folder's names and the apps this port made, shared with the porter -->
+		<Compile Include="../../porter/PortFolder.cs" />
 	</ItemGroup>
 </Project>

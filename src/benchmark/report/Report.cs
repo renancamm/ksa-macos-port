@@ -39,7 +39,7 @@ using KsaMetalBenchmark;
 
 namespace KsaMetalBenchmarkReport;
 
-public static class Program
+public static partial class Program
 {
     // Changes smaller than this are within run-to-run noise (two runs on one Mac differ by 1% in most parts, 4% at most).
     // With repeats on both sides, a change counts when the ranges of the repeats don't overlap and it is over the
@@ -58,6 +58,8 @@ public static class Program
         // the culture is the player's.
         CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
         CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+        if (args.Length >= 1 && args[0] == "command")
+            return Command(args[1..]);
         if (args.Length >= 3 && args[0] == "system")
             return SystemFacts(args[1], args[2], args[3..]);
         if (args.Length == 2 && args[0] == "report")
