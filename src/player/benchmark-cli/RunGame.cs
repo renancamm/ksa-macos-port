@@ -11,6 +11,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using KsaPort.Common;
+using KsaPort.Common.Benchmark;
 
 namespace KsaMetal.Benchmark.Cli;
 
@@ -119,34 +120,11 @@ public static partial class Program
             }
         }
 
-        // The sections played, each with its length on the script's clock, in the script's order
+        // The scenarios played, each with its length on the script's clock, in the lineup's order
         private List<(string Section, double Seconds)> Lengths()
         {
-            var play = " " + string.Join(' ', _only.Select(p => p.Split('_')[0])) + " ";
-            var lengths = new List<(string, double)>();
-            string name = "";
-            double max = 0;
-            bool on = false;
-            foreach (var f in File.ReadLines(_script).Select(Fields))
-            {
-                if (f.Length == 0)
-                    continue;
-                if (f[0] == "section")
-                {
-                    if (on)
-                        lengths.Add((name, max));
-                    name = f.Length > 1 ? f[1] : "";
-                    max = 0;
-                    on = play.Contains($" {name} ");
-                }
-                else if (on && Regex.IsMatch(f[0], "^[0-9.]+$") && double.TryParse(f[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var t) && t > max)
-                {
-                    max = t;
-                }
-            }
-            if (on)
-                lengths.Add((name, max));
-            return lengths;
+            var play = _only.Select(p => p.Split('_')[0]).ToHashSet();
+            return _lineup.Scenarios.Where(s => play.Contains(s.Name)).Select(s => (s.Name, s.Length)).ToList();
         }
 
         // 2. The run
@@ -236,9 +214,8 @@ public static partial class Program
             if (_capture || _catch.Length > 0 || _passes)
                 hang = 180;
             // Time warp can stall a frame for most of a minute before it goes on: past that, the sections played are kept
-            foreach (var p in _only)
-                if (File.ReadLines(_script).Any(l => l.StartsWith($"section {p.Split('_')[0]} live")))
-                    hang = HangLimit(180);
+            if (_only.Any(p => _lineup.Scenario(p.Split('_')[0])?.Kind == Kind.Timed))
+                hang = HangLimit(180);
             int pressure = 1;
             var swapBefore = Swap();
             var tools = _tools.Count > 0 ? string.Join(", ", _tools) : "none";
@@ -249,16 +226,14 @@ public static partial class Program
             }
             else
             {
-                var what = $"about {(length + 60) / 60} minutes";
-                if (_fast)
-                    what = _test switch
-                    {
-                        "mixed" => "about a minute",
-                        "tour" => "about 2 minutes",
-                        "warp" => "about 3 minutes",
-                        "full" => "about 4 minutes",
-                        _ => "fast",
-                    };
+                var what = _test switch
+                {
+                    "mixed" => "about a minute",
+                    "tour" => "about 5 minutes",
+                    "warp" => "about 3 minutes",
+                    "full" => "about 9 minutes",
+                    _ => $"about {(length + 60) / 60} minutes",
+                };
                 if (_test.Length > 0)
                     what = $"{_test}, {what}";
                 if (_repeat != 1)
@@ -362,6 +337,7 @@ public static partial class Program
             // This game's options, in the run's folder (a repeat's after the first's)
             options.Only = string.Join(' ', _only);
             options.Fast = _fast;
+            options.Mode = Mode;
             options.Hold = _hold;
             options.NoShots = _noShots || n > 1;
             options.Suffix = suffix;

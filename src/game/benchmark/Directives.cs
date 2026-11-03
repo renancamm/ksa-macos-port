@@ -1,92 +1,5 @@
-// Script directives: what the console cannot do.
-//
-// Timing and measuring
-//   @measure <name> <seconds>    measure the next seconds as one part of the section
-//   @shot <name> [<limit>]       checkpoint: catch up with the script's game time, pause, save <section>_<name>.png
-//                                (fast mode also measures the view there, as the part <name>). The limit is how much of
-//                                it may change from run to run (percent of its blocks, see Images.cs) for the comparison
-//                                of two runs' screenshots, for views that physics or particles change every time
-//   @warp <speed> [seconds]      run the simulation at that speed (1 is real time, 0 pauses it), moving to it over
-//                                the seconds
-//   @time <seconds>              move the game's clock forward to that many seconds since the start (the clouds drift
-//                                with it), so a section looks the same whether the sections before it played or not
-//   @sync                        a checkpoint without a screenshot: the simulation eases to a stop, the game's clock
-//                                catches up with the script's, and the steps after it act at the same game time on
-//                                every Mac (a kitten walking through the slow frames walks differently, though)
-//   @gpuprof <name> <frames>     profile the next frames with KSA Metal's GPU profiler (needs
-//                                KSA_MTL_GPU_PROFILE=<csv>)
-//   @reset                       the world becomes a new game's (its clock at the start, no vehicles), so the section is
-//                                the same whatever played before it. The game stays stopped for the steps at that time in
-//                                a live section (until its @warp), and runs at real time in another
-//
-// Vehicles and kittens
-// The vehicle steps act on the vehicle chosen last (@vehicle, @control, @launch, @eva), or the controlled one. None of
-// them takes control of a vehicle or moves the camera, except as said.
-//   @launch <save> at <pad>      put a saved vehicle (Documents/.../Vehicles) on a launch pad of the home celestial
-//                                (e.g. CCSFS LC-39A), as the launch menu does; it becomes the controlled vehicle and the
-//                                camera follows it, unless @place or @front holds the camera. @launch <lat> <lon>
-//                                <save> puts it anywhere on the surface. With "as <id>" at the end the vehicle is
-//                                called that (two of one save). A vehicle that is there already stays as it is.
-//   @vehicle <id>                choose that vehicle for the vehicle steps, or the vehicle camera: a vehicle @explode
-//                                blew up too (the camera then aims at the place where it blew up)
-//   @control <id>                make that vehicle the controlled one, the camera following it (at once, unlike the
-//                                console's control)
-//   @crew [name]                 seat a kitten of the benchmark's in the vehicle (always with Hunter's looks, so its
-//                                fur is the same)
-//   @stage [n]                   activate the vehicle's next stage n times (the staging key)
-//   @input <action> press|release  send a key action to the vehicle, e.g. MainEngineStartup (ignite) or
-//                                MainEngineThrottleUp (held until release; the throttle rises by 0.7 a second of the
-//                                Mac's clock, not the game's, to full)
-//   @explode                     destroy the vehicle the way a crash does
-//   @face <yaw> <pitch> <elev>|sun  turn the vehicle so that the cockpit's view from its first crewed seat at that
-//                                yaw and pitch (as @look has them) looks elev degrees above the level (below when
-//                                negative), keeping its heading: a capsule in orbit looking down at the celestial
-//                                through its window; with "sun", at the sun: its light comes in through a window
-//                                there and lies on the cabin's other side. "sun <yaw> <pitch>" also turns it about
-//                                the sun's direction until the celestial's center is at that yaw and pitch from the
-//                                seat: the whole of its attitude. The game turns it a frame later
-//   @kitten <lat> <lon> <name>   put a kitten of the benchmark's (Hunter's looks) out on EVA, standing on the ground
-//                                of the home celestial there (the game stands it there a frame later); it becomes the
-//                                vehicle. "@kitten <lat> <lon> <name> <alt> orbit" makes it on a circular orbit that
-//                                high over there instead (as @fly has it), so its first frame is already up there.
-//                                Only with the game stopped (the start, a @sync, @time or a checkpoint): the game
-//                                can't take a new kitten while its physics step runs
-//   @eva                         send the first kitten aboard the vehicle out on EVA (the crew panel's EVA button); the
-//                                kitten becomes the vehicle and the controlled one, and the camera follows it, unless
-//                                @place or @front holds the camera
-//   @helmet on|off               the helmet of the kitten on EVA (off shows its fur, as in the cockpit)
-//   @spin <x> <y> <z>            set the vehicle's rotation rates (rad/s), stabilization off
-//   @fly <alt> <speed>|orbit     put the vehicle that high above the sea ("km" for kilometres), straight over where it
-//                                stands, climbing at that speed (m/s over the ground), as if it had flown up there: a
-//                                rocket high in the sky without the minutes of its climb. With "orbit", on a circular
-//                                orbit there instead, going east. It keeps its attitude; the game moves it a frame
-//                                later
-//
-// Camera (see Camera.cs and Path.cs). Moves take [<seconds>] on the script's clock and ease in and out; a value "-"
-// keeps the current one and "~<x>" adds x to it.
-//   @key <celestial> <lat> <lon> <alt> <heading> <pitch>  a place of the free camera's flight over and between
-//                                celestials (Path.cs)
-//   @place <celestial> <lat> <lon> <alt> <heading> <pitch>  put the free camera at that place at once (as a key has it)
-//                                and keep it there while vehicles are placed, started and blown up, until a camera step
-//                                moves it
-//   @camera orbit|free|iva       the main view's camera mode
-//   @orbit <az> <el> <dist> [s]  the orbit camera around what it follows: azimuth and elevation in degrees (negative
-//                                elevation is above), the game's distance power (larger is farther)
-//   @rotate <degrees/s>          turn the orbit camera or the chase view around what it follows (0 stops it)
-//   @chase <az> <el> <dist> [s]  the vehicle camera (Rig.cs) going along with the vehicle: from the direction
-//                                az (degrees from north), el degrees above its horizon, dist metres away
-//   @watch <az> <dist> <height> [<frame>] [s]  the vehicle camera standing on the ground dist metres from the vehicle
-//                                towards az, height metres above the ground; with frame, it zooms so that the view is
-//                                that many metres tall at the vehicle
-//   @front <axis> <dist> <up> [<aim>]  the camera dist metres out along the vehicle's own x, y or z axis ("-x" the
-//                                other way), looking back at it, another of its axes up in the view (a kitten: face
-//                                x, head -z): upright whatever the horizon does; aim metres along up from its center.
-//                                "@front ... <aim> <from> <seconds>" comes in from that far out over that many seconds
-//                                of the game's clock
-//   @aim <metres> [s]            aim the vehicle camera that far above the vehicle's center
-//   @look <yaw> <pitch> [s]      turn the cockpit camera from its seat's forward view, in degrees
-//   @fov <degrees>               the camera's field of view, until the camera moves on (the game's comes back then)
-//   @sun <celestial> <lat> <lon> log where the sun stands over that point (to plan the light of a key)
+// The lineup's directives, as the director acts on them: what the game's console can't do. What each one takes and does
+// is in their table (src/shared/benchmark/Directives.cs), which the lineup's parser checks every step against.
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -94,6 +7,7 @@ using System.Reflection;
 using Brutal.Numerics;
 using KSA;
 using KsaPort.Common;
+using KsaPort.Common.Benchmark;
 
 namespace KsaMetal.Benchmark;
 
@@ -117,22 +31,19 @@ public partial class Director
                 CloseWindow();
                 _window = new Window(a[1], _scriptTime + seconds) { Vehicle = FollowedVehicle() };
                 // Fast mode measures the views standing still instead
-                if (!_fast || Live)
+                if (!Fast)
                     Opened(_window);
                 // From this moment, so that a first frame that stalls counts
                 if (Live)
                     _window.AddSim(0, ReadSim());
                 return true;
-            case "@shot" when a.Length is 2 or 3:
+            case "@shot" when a.Length == 2:
             {
-                if (a.Length == 3)
-                {
-                    if (!double.TryParse(a[2], NumberStyles.Float, Inv, out var limit))
-                        return false;
-                    // A paused view comes out the same every time: it gets no allowance for what moves
-                    if (!Paused)
-                        _sectionResult?.ShotLimits[a[1]] = limit;
-                }
+                // How much it may change from run to run (the test's noise profile); a view jumped to, the game paused,
+                // comes out the same every time: it gets no allowance for what moves
+                if (!Paused && _sections[_section] is var playing)
+                    _sectionResult?.ShotLimits[a[1]] = _noise.GetValueOrDefault(playing.Name)?.ShotLimit(a[1], playing.Kind)
+                                                       ?? NoiseProfile.DefaultShotLimit(playing.Kind);
                 // The game stays paused: nothing to keep in step
                 if (Paused && !IsChosen(a[1]))
                     return true;
@@ -147,8 +58,6 @@ public partial class Director
                 Warp(speed, seconds);
                 return true;
             }
-            case "@time" when a.Length == 2 && double.TryParse(a[1], NumberStyles.Float, Inv, out var time):
-                return SkipTo(time);
             case "@sync" when a.Length == 1:
                 Sync();
                 return true;
@@ -158,8 +67,6 @@ public partial class Director
             case "@key" when a.Length == 7:
                 // The camera's flight (Path.cs) is laid out before the run; the step only marks the key's time
                 return true;
-            case "@gpuprof" when a.Length == 3 && uint.TryParse(a[2], out var frames):
-                return DriverStats.ProfileFrames($"{_sectionResult?.Name}/{a[1]}", frames);
             case "@launch" when a.Length >= 4:
                 if (!Held)
                     ReleaseCamera();
@@ -242,37 +149,6 @@ public partial class Director
                     _blown[v.Id] = (v, body, ToCcf(body, v.GetPositionEcl()));
                 return true;
             }
-            case "@eva":
-            {
-                // The crew panel's EVA button, for the first seat with a kitten in it
-                var v = Target;
-                if (v == null)
-                    return false;
-                foreach (var seat in v.Parts.Modules.Get<IVASeat>())
-                {
-                    if (seat.AssignedKittenHash == KeyHash.Zero)
-                        continue;
-                    if (Held)
-                        return EvaInPlace(v, seat);
-                    // The game makes the kitten the controlled vehicle a frame later: the steps act on it from then
-                    _vehicle = null;
-                    return EVADoor.PerformEvaForSeat(v, seat);
-                }
-                Log("@eva: no kitten aboard");
-                return false;
-            }
-            case "@helmet" when a.Length == 2:
-            {
-                // Seated kittens wear no helmet (KittenRenderable); this does the same for one on EVA
-                if (Target is not KittenEva kitten)
-                    return false;
-                const BindingFlags Private = BindingFlags.NonPublic | BindingFlags.Instance;
-                var renderable = typeof(KittenEva).GetField("_renderable", Private)?.GetValue(kitten);
-                if (renderable?.GetType().GetField("_characterAvatar", Private)?.GetValue(renderable) is not CharacterAvatar avatar)
-                    return false;
-                avatar.Attachments.Helmet.Enabled = a[1] == "on";
-                return true;
-            }
             case "@kitten" when a.Length is 4 or 6 && double.TryParse(a[1], NumberStyles.Float, Inv, out var kittenLat)
                 && double.TryParse(a[2], NumberStyles.Float, Inv, out var kittenLon):
             {
@@ -289,23 +165,8 @@ public partial class Director
                 return Face(a);
             case "@fly" when a.Length == 3:
                 return Fly(a);
-            case "@spin" when a.Length == 4:
-            {
-                var v = Target;
-                if (v == null || !TryParse3(a, out var rates))
-                    return false;
-                v.SetStabilization(false);
-                // Teleport also sets the vehicle's own rates; the physics state alone is overwritten from them
-                v.Teleport(null, null, rates);
-                return true;
-            }
             case "@camera" when a.Length == 2:
                 return SetCameraMode(a[1]);
-            case "@orbit" when a.Length is 4 or 5:
-                return Orbit(a);
-            case "@rotate" when a.Length == 2 && double.TryParse(a[1], NumberStyles.Float, Inv, out var degrees):
-                _rotateRadPerSecond = degrees * Math.PI / 180;
-                return true;
             case "@front" when a.Length is 4 or 5 or 7:
                 return StartFront(a);
             case "@chase" when a.Length is 4 or 5:
@@ -337,7 +198,6 @@ public partial class Director
         CloseWindow();
         ReleaseCamera();
         EndRig();
-        _rotateRadPerSecond = 0;
         _vehicle = null;
         _exploded = null;
         _blown.Clear();
@@ -632,37 +492,5 @@ public partial class Director
             return doubleQuat.Identity;
         double angle = Math.Acos(Math.Clamp(double3.Dot(from, to), -1, 1));
         return doubleQuat.CreateFromAxisAngle(double3.Normalize(axis), angle);
-    }
-
-    // @eva with the camera held by @place or @front: the game's EVA (EVADoor.PerformEvaForSeat), with the map's camera
-    // to follow the kitten in place of the main view's, so the camera stays where it is. The game makes the kitten a
-    // frame later, where it applies the crew panel's buttons, and makes it the controlled vehicle: the steps act on it
-    // from then.
-    private bool EvaInPlace(Vehicle vehicle, IVASeat seat)
-    {
-        if (Universe.KittenRoster.Find(seat.AssignedKittenHash) is not { } kitten)
-            return false;
-        vehicle.Parts.EnsureDerived(DerivedData.EvaSeats);
-        EVADoor? door = null;
-        foreach (var d in vehicle.Parts.EVADoors.Modules)
-        {
-            door ??= d;
-            if (d.AlignedSeat == seat)
-            {
-                door = d;
-                break;
-            }
-        }
-        if (door == null)
-        {
-            Log("@eva: no door");
-            return false;
-        }
-        InputEvents.EvaSpawnBuffer.Add(new InputEvents.EvaSpawnData
-        {
-            Door = door, Vehicle = vehicle, Seat = seat, RosterEntry = kitten, Camera = Program.MainViewport.MapCamera
-        });
-        _vehicle = null;
-        return true;
     }
 }

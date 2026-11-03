@@ -147,8 +147,8 @@ set(cli "${bin}/KsaMetal.Benchmark.Cli")
 port_folder_copy("${res}/Benchmark" "${bin}/KsaMetal.Benchmark/KsaMetal.Benchmark.dll"
     "${cli}/KsaMetal.Benchmark.Cli.dll" "${cli}/KsaPort.Common.dll" "${cli}/KsaMetal.Benchmark.Cli.deps.json"
     "${cli}/KsaMetal.Benchmark.Cli.runtimeconfig.json" "${PROJECT_SOURCE_DIR}/src/game/benchmark/lineup/benchmark.txt")
-# The vehicles' folders, without what the checkout keeps hidden in them
-install(CODE "file(COPY \"${PROJECT_SOURCE_DIR}/src/game/benchmark/lineup/vehicles\"
+# The vehicles' folders and the tests' noise profiles, without what the checkout keeps hidden in them
+install(CODE "file(COPY \"${PROJECT_SOURCE_DIR}/src/game/benchmark/lineup/vehicles\" \"${PROJECT_SOURCE_DIR}/src/game/benchmark/lineup/noise\"
     DESTINATION \"\${CMAKE_INSTALL_PREFIX}/${res}/Benchmark\" PATTERN \".*\" EXCLUDE)")
 
 # Every component's licence and notices (THIRD_PARTY_NOTICES.md lists them); those of the sources compiled into the

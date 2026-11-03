@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using KsaPort.Common;
+using KsaPort.Common.Benchmark;
 
 namespace KsaMetal.Benchmark.Cli;
 
@@ -32,7 +33,9 @@ public static partial class Program
         // Ctrl-C (or TERM): the game is stopped, and what it measured is reported
         private volatile bool _stopped;
 
-        private string Mode => _fast ? "fast" : "cinematic";
+        // How it plays (RunOptions.Mode): the kinds of its scenarios, or "jump"
+        private string Mode = "";
+        private Lineup _lineup = null!;
 
         public int Run(string[] args)
         {
@@ -115,8 +118,16 @@ public static partial class Program
             if (!File.Exists(_script) || !File.Exists(Path.Combine(_res, "Hooks", "KsaMetal.Hooks.dll")))
                 Die($"the app at {_app} has no benchmark: update it with ./port.sh.");
 
-            // A test by its name alone, in place of sections or places
-            if (_places.Count == 1 && _hold.Length == 0 && (_places[0] == "full" || TestSections(_script, _places[0], "fast").Length > 0))
+            try
+            {
+                _lineup = Lineup.Read(_script);
+            }
+            catch (LineupException e)
+            {
+                Die($"the app's benchmark can't be read ({e.Message}): update the app with ./port.sh.");
+            }
+            // A test by its name alone, in place of scenarios or places
+            if (_places.Count == 1 && _hold.Length == 0 && (_places[0] == "full" || _lineup.Test(_places[0]) != null))
             {
                 _test = _places[0];
                 _places.Clear();
@@ -125,40 +136,34 @@ public static partial class Program
             {
                 _test = "mixed";
             }
-            // The Warp Test has one form, the short one's system
-            if (_test == "warp")
-                _fast = true;
+            if (_fast && _places.Count == 0 && _hold.Length == 0)
+                Die("--fast jumps to the places named (e.g. --fast earth4 jupiter2): each test has one form now.");
 
             _only = _places.Select(Place).ToList();
-            // --hold <place>: its section up to there, fast
+            // --hold <place>: its scenario up to there, jumped to
             if (_hold.Length > 0)
             {
                 _hold = Place(_hold);
                 if (!Shots().Contains(_hold))
-                    Die("--hold needs a screenshot's place, not a section.");
+                    Die("--hold needs a screenshot's place, not a scenario.");
                 _only = [_hold];
                 _fast = true;
                 _repeat = 1;
             }
             // Places named (the tools that take GB at each place need some)
             Named = _only.Count;
-            Sections = string.Join(' ', _only);
-            // A test: its sections, full mode's the three tests' in the tour's order
+            // A test: its scenarios, full's the three tests' in their order
             if (_test.Length > 0)
-            {
-                var tests = _test == "full" ? new[] { "tour", "mixed", "warp" } : [_test];
-                _only = string.Join(' ', tests.Select(t => TestSections(_script, t, Mode))).Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
-                Sections = string.Join(' ', _only);
-            }
-            // Fast mode plays in Earth's small system when its sections need no other celestial than the Moon
-            if (_system.Length == 0 && _fast)
-            {
-                _system = "earth";
-                foreach (var p in _only)
-                    if (Needs(p.Split('_')[0]).Any(n => n != "Luna"))
-                        _system = "sol";
-            }
-            SystemId = (_system.Length > 0 ? _system : "sol") switch
+                _only = (_test == "full" ? Lineup.Full : [_test]).SelectMany(t => _lineup.Test(t)!.Scenarios).ToList();
+            Sections = string.Join(' ', _only);
+            // In the lineup's order, as the director plays them; a flight's places jumped to are "jump"
+            var names = _only.Select(p => p.Split('_')[0]).ToHashSet();
+            var played = _lineup.Scenarios.Where(s => names.Contains(s.Name)).ToList();
+            Mode = string.Join(' ', played.Select(s => _fast && s.Kind == Kind.Flight ? "jump" : Lineup.Name(s.Kind)).Distinct());
+            // Earth's small system when the scenarios need no other celestial than the Moon
+            if (_system.Length == 0)
+                _system = played.Any(s => s.Needs.Any(n => n != "Luna")) ? "sol" : "earth";
+            SystemId = _system switch
             {
                 "sol" => "Sol",
                 "earth" => "SolLite",
@@ -184,41 +189,21 @@ public static partial class Program
         private int Named;
         private string Sections = "", SystemId = "";
 
-        // Places: a section, <section>_<shot>, or a screenshot's name alone where only one section has it
-        private List<string> Shots()
-        {
-            var shots = new List<string>();
-            string section = "";
-            foreach (var line in File.ReadLines(_script))
-            {
-                var f = Fields(line);
-                if (f.Length >= 2 && f[0] == "section")
-                    section = f[1];
-                if (f.Length >= 3 && f[1] == "@shot")
-                    shots.Add($"{section}_{f[2]}");
-            }
-            return shots;
-        }
+        // Every place, as the director names it: <scenario>_<shot>
+        private List<string> Shots() => _lineup.Scenarios.SelectMany(s => s.Shots.Select(shot => $"{s.Name}_{shot}")).ToList();
 
         private static string[] Fields(string line) => line.Split((char[])[' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
 
+        // A scenario's name, or a place (a screenshot's name, one across the lineup) as <scenario>_<shot>
         private string Place(string name)
         {
-            var shots = Shots();
-            if (File.ReadLines(_script).Any(l => l == $"section {name}" || l.StartsWith($"section {name} ")) || shots.Contains(name))
+            if (_lineup.Scenario(name) != null)
                 return name;
-            var matches = shots.Where(s => s.EndsWith("_" + name)).ToList();
-            if (matches.Count == 0)
-                Die($"no test, section or screenshot '{name}'. ./benchmark.sh list shows them.");
-            if (matches.Count > 1)
-                Die($"more than one screenshot '{name}': {string.Join(' ', matches)}.");
-            return matches[0];
+            if (_lineup.ScenarioOf(name) is { } scenario)
+                return $"{scenario.Name}_{name}";
+            Die($"no test, scenario or screenshot '{name}'. ./benchmark.sh list shows them.");
+            return "";
         }
-
-        // The celestials a section needs besides Earth ("section <name> needs <celestial>...")
-        private IEnumerable<string> Needs(string section) =>
-            File.ReadLines(_script).Select(Fields).Where(f => f.Length >= 3 && f[0] == "section" && f[1] == section && f[2] == "needs")
-                .SelectMany(f => f[3..]);
 
         // The games running on this Mac, by process id
         private static List<int> GamesRunning() =>
@@ -266,7 +251,7 @@ public static partial class Program
                 if (!Ask("xcrun", "xctrace", "list", "templates").Split('\n').Any(l => l == _template))
                     Die($"Instruments has no template '{_template}' (xcrun xctrace list templates).");
                 if (Named == 0)
-                    Die("a trace of a whole test takes tens of GB: choose sections or places (e.g. --fast jupiter2 --trace).");
+                    Die("a trace of a whole test takes tens of GB: choose places (e.g. --fast jupiter2 --trace).");
                 if (FreeGb() < 10)
                     Die($"--trace needs 10 GB free on this disk ({FreeGb()} GB free).");
                 _tools.Add($"Instruments ({_template})");
@@ -310,8 +295,8 @@ public static partial class Program
                     Die("this app's KSA Metal can't dump passes: update it with ./port.sh.");
                 if (_noShots)
                     Die("--passes dumps at the screenshots: it can't go with --no-shots.");
-                if (Named == 0 && !_fast)
-                    Die("--passes takes minutes at every screenshot: choose places, or --fast.");
+                if (Named == 0 && !_fast && _test != "mixed")
+                    Die("--passes takes minutes at every screenshot: choose places (e.g. --fast earth4 jupiter2 --passes), or the Mixed Test.");
                 _tools.Add("pass dumps at every place");
             }
             if (_capture)

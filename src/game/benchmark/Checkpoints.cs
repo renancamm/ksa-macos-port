@@ -1,4 +1,4 @@
-// The checkpoints (Director.cs): the script's clock stopped until the game catches up, @sync and @time, the view
+// The checkpoints (Director.cs): the script's clock stopped until the game catches up, @sync, the view
 // left to settle, the screenshot, the catch of a broken picture, the frame capture, and the measured parts.
 using System;
 using System.Collections.Generic;
@@ -41,13 +41,8 @@ public partial class Director
     // time of that moment, and the camera stands exactly where the script puts it then
     private void BackToStep()
     {
-        double over = _scriptTime - _stepAt;
         _gameTarget -= GameSeconds(_stepAt, _scriptTime);
         _scriptTime = _stepAt;
-        if (Program.MainViewport.OrbitController.View is { } view)
-            view.Azimuth -= _rotateRadPerSecond * over;
-        if (_rig != null)
-            _rig.Spin -= _rotateRadPerSecond * 180 / Math.PI * over;
         UpdateCamera(0);
         if (_window != null && _scriptTime >= _window.EndsAt)
             CloseWindow();
@@ -61,23 +56,7 @@ public partial class Director
 
     private bool IsChosen(string shot) => _only?.GetValueOrDefault(_sectionResult?.Name ?? "") is not { } chosen || chosen.Contains(shot);
 
-    // @time: moves the game's clock forward to that many seconds since the start, the script's clock stopped meanwhile (a
-    // checkpoint without a screenshot), so that a section looks the same (its clouds drift with the game's time) whether
-    // the sections before it played or not
-    private bool SkipTo(double seconds)
-    {
-        BackToStep();
-        double target = _gameStart + seconds;
-        if (_gameTarget > target + Tolerance)
-        {
-            Log(FormattableString.Invariant($"@time {seconds}: the script's game time is already {_gameTarget - _gameStart:F1} s"));
-            return false;
-        }
-        _gameTarget = target;
-        _after = After.Time;
-        _phase = Phase.CatchUp;
-        return true;
-    }
+
 
     private void Checkpoint(double wall, double dt)
     {
@@ -99,8 +78,7 @@ public partial class Director
                     }
                     // Fast while far behind (at least the scripted speed), then half of what is left every frame
                     double warp = Math.Max(_warpTo, 1);
-                    // A jump of @time covers half of what is left every quarter of a second or so
-                    double pace = _after == After.Time ? 0.25 : 2;
+                    const double pace = 2;
                     SetSpeed(left > warp * frame * 2 ? Math.Max(warp, left / pace) : left / (2 * frame));
                     return;
                 }
@@ -111,19 +89,17 @@ public partial class Director
                         $"{_scriptTime - _sectionStart:F1} s: the game's clock is {-behind:F1} s ahead of the script's"));
                 if (_after != After.Shot)
                 {
-                    if (_after == After.Time)
-                        ResetClouds();
                     Resume();
                     return;
                 }
                 // Without screenshots the checkpoint ends here, its clocks in step (fast mode still measures the view), and so
                 // does a checkpoint that isn't one of the places chosen
-                if ((!Chosen || !_shots && (!_fast || Live)) && !Holding)
+                if ((!Chosen || !_shots && !Fast) && !Holding)
                 {
                     Resume();
                     return;
                 }
-                if (_fast && !Live)
+                if (Fast)
                 {
                     ResetClouds(detailOnly: true);
                     ResetSeaFrame();
@@ -131,16 +107,16 @@ public partial class Director
                 }
                 _phase = Phase.Settle;
                 _settleStart = wall;
-                _phaseEnds = wall + (_fast && !Live ? ProbeEvery : SettleSeconds);
+                _phaseEnds = wall + (Fast ? ProbeEvery : SettleSeconds);
                 _phaseFrames = 0;
                 _lastProbe = null;
                 _probe = null;
                 return;
             }
             case Phase.Settle:
-                if (_fast && !Live ? !Settled(wall) : wall < _phaseEnds || ++_phaseFrames < SettleFrames)
+                if (Fast ? !Settled(wall) : wall < _phaseEnds || ++_phaseFrames < SettleFrames)
                     return;
-                if (_fast && !Live && !Holding)
+                if (Fast && !Holding)
                 {
                     _phase = Phase.Measure;
                     return;
@@ -405,7 +381,7 @@ public partial class Director
     private void Resume()
     {
         Log(FormattableString.Invariant(
-            $"{_after switch { After.Time => "@time", After.Sync => "@sync", _ => "checkpoint " + _shotName }}: game time {Universe.GetElapsedSeconds() - _gameStart:F3} s (script {_gameTarget - _gameStart:F3} s)"));
+            $"{(_after == After.Sync ? "@sync" : "checkpoint " + _shotName)}: game time {Universe.GetElapsedSeconds() - _gameStart:F3} s (script {_gameTarget - _gameStart:F3} s)"));
         SetSpeed(Paused ? 0 : SpeedAt(_scriptTime));
         _phase = Phase.Play;
     }
@@ -418,7 +394,7 @@ public partial class Director
         if (_window == null)
             return;
         // Fast mode measures the views standing still instead, so it only watches its parts for vehicles that broke up
-        if (!_fast || Live)
+        if (!Fast)
         {
             DriverStats.Marker(_window.Name, false);
             _sectionResult?.Windows.Add(_window.Summarize());

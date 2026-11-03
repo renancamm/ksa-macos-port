@@ -13,8 +13,10 @@ public sealed class RunOptions
     // What to play (space separated): sections, or places as <section>_<shot> (the section up to that checkpoint, its
     // other checkpoints only keeping the clocks in step); empty: all of it
     public string Only { get; set; } = "";
-    // Fast mode (Director.cs)
+    // The places chosen jumped to, the game paused on the way (a flight's), instead of played: for a close look at a place
     public bool Fast { get; set; }
+    // How it plays, for its report: the kind of its scenarios (views, flight, timed, several for full), "jump" with Fast
+    public string Mode { get; set; } = "";
     // No screenshots (the checkpoints still keep the game's clock in step)
     public bool NoShots { get; set; }
     // <section>_<shot>: stop at that checkpoint for good, the game paused, until it is quit

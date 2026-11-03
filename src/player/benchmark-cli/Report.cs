@@ -458,9 +458,9 @@ public static partial class Program
     {
         var md = new StringBuilder();
         var system = report["system"] as JsonObject ?? new JsonObject();
-        var mode = (string?)report["mode"] == "fast" ? "fast" : "cinematic";
+        var kinds = ((string?)report["mode"] ?? "").Split(' ');
         var test = Html.TestName((string?)system["Test"]);
-        md.AppendLine($"## KSA Metal benchmark: {test}{(test == "Warp Test" ? "" : $", {mode}")}");
+        md.AppendLine($"## KSA Metal benchmark: {test}{(kinds.Contains("jump") ? ", places" : "")}");
         md.AppendLine();
         var problems = (report["problems"] as JsonArray ?? new JsonArray()).Select(p => (string?)p).ToList();
         bool stopped = report["stopped"]?.GetValue<bool>() == true;
@@ -522,10 +522,10 @@ public static partial class Program
                 }
             }
             md.AppendLine();
-            bool anyPlain = Sections(report).OfType<JsonObject>().Any(x => x["live"]?.GetValue<bool>() != true);
-            md.AppendLine(mode == "fast" && anyPlain
-                ? "Fast mode: each part is the view standing still (the game paused) at the screenshot of that name."
-                : "Each part is measured along the way, between two screenshots.");
+            if (kinds.Any(k => k is "views" or "jump" or "fast"))
+                md.AppendLine("A part of the Mixed Test, or of places jumped to, is the view standing still (the game paused) at the screenshot of that name.");
+            if (kinds.Any(k => k is "flight" or "cinematic"))
+                md.AppendLine("A part of the Planetary Tour is measured along the way, between two screenshots.");
             md.AppendLine("Frame: time between two frames (median, 95th percentile). GPU: time the GPU worked on a frame. Hitches: frames longer than twice the median. " +
                           "Memory: the game's footprint at its peak, and what KSA Metal allocated for the GPU. Shaders: compiled while measuring (each one a stutter).");
         }

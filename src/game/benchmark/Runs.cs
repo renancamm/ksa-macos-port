@@ -12,6 +12,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using KSA;
 using KsaPort.Common;
+using KsaPort.Common.Benchmark;
 
 namespace KsaMetal.Benchmark;
 
@@ -44,7 +45,6 @@ public static class Runs
     private static bool _firstFrame = true, _startRequested;
     private static Director? _run;
     private static string _out = "";
-    private static bool _fast;
     private static string _test = "mixed";
     // In the running game: the player's game, which comes back after the run
     private static PlayerGame? _player;
@@ -110,13 +110,20 @@ public static class Runs
             return "No game is loaded.";
         if (PortSettings.Get("restart_for_a_clean_run")?.Saved == "true" && _restart == null)
             return "The game was not started by the app, so it can't start itself again.";
+        try
+        {
+            Lineup.Read(Path.Combine(_folder, Lineup.FileName));
+        }
+        catch (Exception e) when (e is LineupException or IOException)
+        {
+            return $"The benchmark's tests can't be read ({e.Message}): make the app again with port.sh.";
+        }
         return null;
     }
 
-    public static void StartFromTab(string test, bool fast, bool restart)
+    public static void StartFromTab(string test, bool restart)
     {
         _test = test;
-        _fast = fast;
         if (!restart)
         {
             // On the next frame, outside the settings window's drawing
@@ -198,8 +205,7 @@ public static class Runs
             _firstFrame = false;
             if (_mode is Mode.Script or Mode.Restarted)
             {
-                _fast = _options!.Fast;
-                if (_options.Test.Length > 0)
+                if (_options!.Test.Length > 0)
                     _test = _options.Test;
                 _system = Universe.CurrentSystem?.Id ?? "?";
                 _start = "a new game, restarted from the game's settings";
@@ -287,13 +293,15 @@ public static class Runs
     // The director's options for a run from the tab
     private static RunOptions Options(string output)
     {
-        var script = Path.Combine(_folder, "benchmark.txt");
-        // The test's sections: the tour's "test" lines, <name> <fast mode's> | <the cinematic run's>
-        var tests = File.ReadLines(script).Select(l => l.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-            .Where(w => w.Length >= 4 && w[0] == "test").ToDictionary(w => w[1], w => string.Join(' ', w[2..]).Split(" | "));
-        var names = _test == "full" ? new[] { "tour", "mixed", "warp" } : [_test];
-        var only = string.Join(' ', names.Select(t => tests[t][_fast ? 0 : 1]));
-        return new RunOptions { Script = script, Out = output, Only = only, Fast = _fast, Test = _test, Stay = true };
+        var script = Path.Combine(_folder, Lineup.FileName);
+        // The test's scenarios; full plays the three in one game here
+        var lineup = Lineup.Read(script);
+        var tests = (_test == "full" ? Lineup.Full : [_test]).Select(t => lineup.Test(t)!).ToList();
+        return new RunOptions
+        {
+            Script = script, Out = output, Only = string.Join(' ', tests.SelectMany(t => t.Scenarios)), Test = _test, Stay = true,
+            Mode = string.Join(' ', tests.Select(t => Lineup.Name(t.Kind)))
+        };
     }
 
     private static string NewRunFolder()
@@ -317,7 +325,7 @@ public static class Runs
         [
             $"StarMap={(AppDomain.CurrentDomain.GetAssemblies().Any(a => a.GetName().Name == "StarMap.Core") ? "in the app" : "none")}",
             $"System={_system}", $"Test={_test}", $"Sections={_options?.Only ?? _sections}",
-            $"Mode={(_fast ? "fast" : "cinematic")}", $"Start={_start}",
+            $"Mode={_options?.Mode}", $"Start={_start}",
             $"KSA Metal switches={(outside.Count > 0 ? string.Join(' ', outside) : "none")}",
             // What this game ran with: the port settings that aren't at their defaults, and what the hooks did
             $"port settings={(port.Count > 0 ? string.Join(", ", port) : "defaults")}", $"Hooks={_hooksSummary().Replace(Home, "~")}"
@@ -333,7 +341,7 @@ public static class Runs
     {
         _mode = Mode.InGame;
         _out = NewRunFolder();
-        var options = Options(_out);
+        var options = _options = Options(_out);
         options.InGame = true;
         GameSettings.Current.Save();
         File.Copy(Path.Combine(Constants.DocumentsFolderPath, "settings.toml"), Path.Combine(_out, "settings.toml"), true);
@@ -419,7 +427,7 @@ public static class Runs
         // the system menu, the update popup or names: Earth and the Moon alone for what plays only there, as benchmark.sh
         // plays it
         GameSettings.Current.Save();
-        var system = _fast && _test is "mixed" or "warp" ? "SolLite" : "Sol";
+        var system = _test is "mixed" or "warp" ? "SolLite" : "Sol";
         var settings = File.ReadAllLines(Path.Combine(Constants.DocumentsFolderPath, "settings.toml"));
         foreach (var (key, value) in new[] { ("selectSystemOnStart", "false"), ("lastSystemId", $"\"{system}\""),
                      ("startGameType", "\"Testing\""), ("startVehicle", "\"Rocket\""), ("startParent", "\"Earth\""),

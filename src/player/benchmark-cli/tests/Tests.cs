@@ -6,6 +6,7 @@ using System.IO.Compression;
 using System.Linq;
 using System.Text.Json.Nodes;
 using KsaPort.Common;
+using KsaPort.Common.Benchmark;
 
 // The tests of the report program, which runs without the game: the report of a run (what passes and what fails it,
 // the conditions it notes, repeats merged into medians, numbers that don't depend on the Mac's region), finish (what
@@ -103,7 +104,7 @@ internal static class Tests
 
     // A run's folder as the director and benchmark.sh leave it: one section, earth, with one part, earth1, of 100
     // frames (one of them a hitch), and system.txt and run.txt with these lines
-    private static string Run(string name, double frameMs = 10, string mode = "fast", string[]? system = null,
+    private static string Run(string name, double frameMs = 10, string mode = "jump", string[]? system = null,
         string[]? run = null)
     {
         var dir = Path.Combine(_scratch, name);
@@ -116,7 +117,7 @@ internal static class Tests
     }
 
     // A results file the way the director writes it
-    private static Results Results(string dir, string file, double frameMs, string mode = "fast", bool completed = true,
+    private static Results Results(string dir, string file, double frameMs, string mode = "jump", bool completed = true,
         Action<SectionResult>? section = null)
     {
         var window = new Window("earth1", 0);
@@ -261,7 +262,7 @@ internal static class Tests
     private static void Finish()
     {
         var dir = Run("2026-10-26_0100");
-        File.WriteAllLines(Path.Combine(dir, "system.txt"), ["Mac: Mac17,2", "Mode: fast"]);
+        File.WriteAllLines(Path.Combine(dir, "system.txt"), ["Mac: Mac17,2", "Mode: jump"]);
         File.WriteAllLines(Path.Combine(dir, "game.log"),
             ["==> port settings: render_scale=0.75", "[hooks] TerrainCache: skipped (KSA's code moved)", "[hooks] OutlineSkip: on"]);
         Equal(1, Report("finish", dir).Status, "exit status: a skipped hook fails the run");
@@ -314,13 +315,13 @@ internal static class Tests
 
     private static void CompareModes()
     {
-        var a = Run("fast", mode: "fast");
-        var b = Run("cinematic", mode: "cinematic");
+        var a = Run("jump", mode: "jump");
+        var b = Run("flight", mode: "flight");
         Report("report", a);
         Report("report", b);
         var (status, output) = Report("compare", a, b);
         Equal(2, status, "exit status: runs that don't compare");
-        Contains([output], "different modes (fast, cinematic)", "why");
+        Contains([output], "different modes (jump, flight)", "why");
     }
 
     // A window of 20 s at 25 ms a frame: first at the speed asked for after 5 s, or held back all along
@@ -455,16 +456,16 @@ internal static class Tests
     {
         var a = Run("a");
         Report("report", a);
-        Equal(0, Report("comparable", a, "fast", "earth moon").Status, "a section in common");
-        var modes = Report("comparable", a, "cinematic", "earth");
+        Equal(0, Report("comparable", a, "jump", "earth moon").Status, "a section in common");
+        var modes = Report("comparable", a, "flight", "earth");
         Equal(2, modes.Status, "another mode");
-        Contains([modes.Output], "fast mode", "why");
-        var other = Report("comparable", a, "fast", "jupiter");
+        Contains([modes.Output], "jump mode", "why");
+        var other = Report("comparable", a, "jump", "jupiter");
         Equal(2, other.Status, "nothing in common");
         Contains([other.Output], "nothing in common", "why");
         var b = Path.Combine(_scratch, "b");
         Directory.CreateDirectory(b);
-        var results = new Results(gpuTimes: false) { Mode = "fast", Completed = true };
+        var results = new Results(gpuTimes: false) { Mode = "jump", Completed = true };
         results.Sections.Add(new SectionResult("jupiter") { Windows = { Warped(1) } });
         results.Write(Path.Combine(b, "results.json"));
         File.WriteAllLines(Path.Combine(b, "run.txt"), ["Game: quit normally"]);
@@ -498,9 +499,9 @@ internal static class Tests
         Array.Fill(changedPicture.Rgb, (byte)255, 0, changedPicture.Rgb.Length / 2);
         Images.Write(Path.Combine(fresh, "earth_earth1.png"), changedPicture);
         Equal(1, Report("compare", old, fresh).Status, "an old run's loose limit doesn't hide a change");
-        // Fast mode's places have to be among those measured
-        Equal(2, Report("comparable", a, "fast", "earth_earth9").Status, "a place that run didn't measure");
-        Equal(0, Report("comparable", a, "fast", "earth_earth1 earth_earth9").Status, "one that it did");
+        // Places jumped to have to be among those measured
+        Equal(2, Report("comparable", a, "jump", "earth_earth9").Status, "a place that run didn't measure");
+        Equal(0, Report("comparable", a, "jump", "earth_earth1 earth_earth9").Status, "one that it did");
         Contains([File.ReadAllText(Path.Combine(d, "compare.html"))], "status bad", "the page's verdict");
     }
 
@@ -543,54 +544,54 @@ internal static class Tests
             Check(false, "no src/game/benchmark/lineup/benchmark.txt above this folder");
             return;
         }
-        var directives = System.Text.RegularExpressions.Regex.Matches(
-                File.ReadAllText(Path.Combine(root, "src/game/benchmark/Directives.cs")), "case \"(@\\w+)\"")
-            .Select(m => m.Groups[1].Value).ToHashSet();
-        Check(directives.Contains("@shot"), "the director's directives are read");
-        var sections = new Dictionary<string, List<string[]>>();
-        var live = new HashSet<string>();
-        var tests = new List<string[]>();
-        List<string[]>? current = null;
-        var script = Path.Combine(root, "src/game/benchmark/lineup/benchmark.txt");
-        foreach (var line in File.ReadLines(script).Select(l => l.Trim()))
+        var folder = Path.Combine(root, "src/game/benchmark/lineup");
+        Lineup lineup;
+        try
         {
-            var words = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (words.Length >= 2 && words[0] == "section")
+            lineup = Lineup.Read(Path.Combine(folder, Lineup.FileName));
+        }
+        catch (LineupException e)
+        {
+            Check(false, e.Message);
+            return;
+        }
+        Equal("mixed tour warp", string.Join(" ", lineup.Tests.Select(t => t.Name).OrderBy(t => t, StringComparer.Ordinal)), "the tests");
+        Equal(Kind.Views, lineup.Test("mixed")?.Kind, "the Mixed Test's kind");
+        Equal(Kind.Flight, lineup.Test("tour")?.Kind, "the Planetary Tour's kind");
+        Equal(Kind.Timed, lineup.Test("warp")?.Kind, "the Warp Test's kind");
+        foreach (var error in lineup.Validate())
+            Check(false, error);
+        // Each test's noise profile names screenshots and parts the test has
+        foreach (var test in lineup.Tests)
+        {
+            var noise = NoiseProfile.Read(folder, test.Name);
+            var shots = test.Scenarios.SelectMany(s => lineup.Scenario(s)!.Shots).ToHashSet();
+            var parts = test.Scenarios.SelectMany(s => lineup.Scenario(s)!.Parts).ToHashSet();
+            foreach (var shot in noise.Shots.Keys)
+                Check(shots.Contains(shot), $"noise/{test.Name}.json: no screenshot {shot} in the test");
+            foreach (var part in noise.Parts.Keys)
+                Check(parts.Contains(part), $"noise/{test.Name}.json: no part {part} in the test");
+        }
+        // What the parser refuses, with the line
+        foreach (var (text, says) in new[]
+                 {
+                     ("scenario a flight\n0 @shot one 5\n", ":2: @shot <name>"),
+                     ("scenario a flight\n0 @nothing\n", ":2: no directive @nothing"),
+                     ("scenario a sideways\n", ":1: scenario <name> flight|views|timed"),
+                     ("scenario a flight\nscenario a views\n", ":2: scenario a twice"),
+                     ("test t a b\nscenario a flight\n0 @shot x\nscenario b views\n0 @shot y\n", "test t mixes kinds"),
+                     ("scenario a flight\n0 @shot x\nscenario b flight\n0 @shot x\n", "screenshot x in a and b"),
+                 })
+        {
+            try
             {
-                Check(!sections.ContainsKey(words[1]), $"section {words[1]} twice");
-                sections[words[1]] = current = new List<string[]>();
-                if (words.Length > 2 && words[2] == "live")
-                    live.Add(words[1]);
+                Lineup.Parse(text, "t.txt");
+                Check(false, $"refused: {says}");
             }
-            else if (words.Length >= 2 && words[0] == "test")
-                tests.Add(words[1..]);
-            else if (words.Length >= 2 && current != null && double.TryParse(words[0], NumberStyles.Float, CultureInfo.InvariantCulture, out _))
-                current.Add(words);
-        }
-        Equal("mixed tour warp", string.Join(" ", tests.Select(t => t[0]).OrderBy(t => t, StringComparer.Ordinal)), "the tests");
-        foreach (var test in tests)
-        {
-            var forms = string.Join(' ', test[1..]).Split(" | ");
-            Equal(2, forms.Length, $"test {test[0]}: its two forms");
-            foreach (var section in forms.SelectMany(f => f.Split(' ', StringSplitOptions.RemoveEmptyEntries)))
-                Check(sections.ContainsKey(section), $"test {test[0]}: no section {section}");
-        }
-        foreach (var (name, steps) in sections)
-        {
-            var shots = steps.Where(s => s[1] == "@shot").Select(s => s[2]).ToList();
-            Equal(shots.Distinct().Count(), shots.Count, $"{name}: screenshots with one name");
-            foreach (var step in steps.Where(s => s[1].StartsWith('@')))
-                Check(directives.Contains(step[1]), $"{name}: no directive {step[1]}");
-            foreach (var step in steps.Where(s => s[1] == "@shot" && s.Length > 3))
-                Check(double.TryParse(step[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var limit) && limit is > 0 and <= 100, $"{name}: {step[2]}'s limit");
-            foreach (var step in steps.Where(s => s[1] == "@measure"))
-                Check(step.Length == 4 && double.TryParse(step[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds) && seconds > 0, $"{name}: {step[2]}'s time");
-            // A vehicle step's vehicle is launched in the section
-            var named = steps.Where(s => s[1] == "@launch").Select(s => Array.IndexOf(s, "as") is > 0 and var at ? s[at + 1] : s.FirstOrDefault(w => w.StartsWith("benchmark-", StringComparison.Ordinal)) ?? "").ToHashSet();
-            foreach (var step in steps.Where(s => s[1] is "@vehicle" or "@control"))
-                Check(named.Contains(step[2]), $"{name}: {step[1]} {step[2]}, which it doesn't launch");
-            if (live.Contains(name))
-                Check(steps.Where(s => s[1] == "@shot").All(s => s.Length > 3 && s[3] == "100"), $"{name}: a live section's screenshots differ from run to run: limit 100");
+            catch (LineupException e)
+            {
+                Check(e.Message.Contains(says, StringComparison.Ordinal), $"refused with '{says}': {e.Message}");
+            }
         }
     }
 

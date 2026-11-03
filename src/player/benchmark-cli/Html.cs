@@ -111,8 +111,9 @@ public static class Html
         var problems = (report["problems"] as JsonArray ?? new JsonArray()).Select(p => (string?)p ?? "").ToList();
         var notes = (report["notes"] as JsonArray ?? new JsonArray()).Select(p => (string?)p ?? "").ToList();
         var test = TestName(System(report, "Test") is { Length: > 0 } t ? t : null);
-        var mode = (string?)report["mode"] == "fast" ? "fast" : "cinematic";
-        var modeWord = test == "Warp Test" ? "" : mode;
+        var kinds = ((string?)report["mode"] ?? "").Split(' ');
+        var mode = kinds.All(k => k is "fast" or "views" or "jump") ? "fast" : "cinematic";
+        var modeWord = kinds.Contains("jump") ? "places" : "";
         var shots = Directory.GetFiles(dir, "*_*.*").Select(Path.GetFileName).OfType<string>()
             .Where(f => f.EndsWith(".png", StringComparison.Ordinal) || f.EndsWith(".jpg", StringComparison.Ordinal)).Select(f => Path.GetFileNameWithoutExtension(f)).Distinct().ToHashSet();
         var ext = Directory.GetFiles(dir, "*_*.png").Length > 0 ? ".png" : ".jpg";

@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using KsaPort.Common;
+using KsaPort.Common.Benchmark;
 
 namespace KsaMetal.Benchmark.Cli;
 
@@ -23,19 +24,19 @@ public static partial class Program
         in the run's folder to share if you like.
 
         Usage: ./benchmark.sh [options] [mixed | tour | warp | full]
-               ./benchmark.sh [options] <section or place...>
+               ./benchmark.sh [options] <scenario or place...>
                ./benchmark.sh list | runs [n] | report [run] | compare [run] [run] | clean [--keep n] [--yes]
-          mixed      the Mixed Test (the default): rockets, smoke, an explosion, a kitten and a cockpit
-          tour       the Planetary Tour: a flight from Earth to Jupiter
-          warp       the Warp Test: how far time warp gets in a fixed time, a ship alone and with debris around Earth
+          mixed      the Mixed Test (the default, about a minute): rockets, smoke, an explosion, a kitten and a cockpit, each
+                     view standing still, the game paused
+          tour       the Planetary Tour (about 5 minutes): the flight from Earth to Jupiter
+          warp       the Warp Test (about 3 minutes): how far time warp gets in a fixed time, a ship alone and with debris
           full       all three, one after the other
-          All with your own settings. A place is a screenshot of the test (earth4, or giga_pad where a name is in more than one
-          section): its section up to there.
+          All with your own settings. A place is a screenshot of the test (earth4): its scenario up to there.
           The game takes over the screen: leave the mouse and keyboard alone until it is done, or press Ctrl-C here to stop it
           and keep what it measured. The game runs from its own documents folder, with a copy of your settings: your files stay
           untouched. Exits with 1 when the run failed (the game crashed or hung, a step failed, errors in its log).
 
-          list       the tests, their sections and their places
+          list       the tests, their scenarios and their places
           runs       your last runs (15, or n), the newest first
           report     a run's report here, and its page in your browser (default: the last run)
           compare    how the second run differs from the first: a verdict, the Macs, settings, numbers part by part, and
@@ -48,10 +49,8 @@ public static partial class Program
           --preset <name>    low, medium or high: fixed settings in a 1280x800 window, the same on every Mac (default: yours)
           --defaults         the settings of a fresh install instead of yours: the game's own and the port's defaults
           --system <name>    sol (the solar system) or earth (Earth and the Moon only: for Macs with 8 GB of memory)
-                             (default: sol, or earth in fast mode when the places played are all on Earth or the Moon)
-          --fast             the test's short form, each view standing still with the game paused: the Mixed Test's vehicles
-                             set up at one moment, the Planetary Tour's places with the camera jumping between them (with
-                             sections or places: those, vehicles played as written). The Warp Test has one form
+                             (default: earth when what plays is all on Earth or the Moon, otherwise sol)
+          --fast             with places: jump to them, the game paused on the way, instead of flying there
           --no-shots         take no screenshots
           --set <key=value>  change one setting of settings.toml for the run (again for more), on top of the preset;
                              <section>.<key>=<value> adds it to that section when the file has no such key
@@ -191,52 +190,16 @@ public static partial class Program
         return "";
     }
 
-    // The tests (the tour's "test" lines): a test's sections in its fast or cinematic form, empty for no such test
-    private static string TestSections(string script, string test, string form)
-    {
-        foreach (var line in File.ReadLines(script))
-        {
-            var f = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (f.Length >= 2 && f[0] == "test" && f[1] == test)
-            {
-                var forms = Regex.Replace(line, @"^test [^ ]+ ", "").Split(" | ");
-                return form == "fast" ? forms[0] : forms.Length > 1 ? forms[1] : "";
-            }
-        }
-        return "";
-    }
-
-    // list: what can be played, from benchmark.txt
+    // list: what can be played, from the lineup
     private static int ListTests()
     {
+        var lineup = Lineup.Read(FolderScript);
         var o = new StringBuilder();
-        string s = "", places = "";
-        int sections = 0;
-        foreach (var line in File.ReadLines(FolderScript))
-        {
-            var f = line.Split((char[])[' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
-            if (f.Length == 0)
-                continue;
-            if (f[0] == "test" && f.Length >= 2)
-            {
-                var forms = Regex.Replace(line, @"^test [^ ]+ ", "").Split(" | ");
-                o.Append($"{f[1]}\n    fast:      {forms[0]}\n");
-                if (forms.Length > 1 && forms[1] != forms[0])
-                    o.Append($"    cinematic: {forms[1]}\n");
-            }
-            if (f[0] == "section" && sections++ == 0)
-                o.Append("full\n    all three, one after the other\n\nSections and their places:\n");
-            if (f[0] == "section")
-            {
-                if (s.Length > 0)
-                    o.Append(s + places + "\n");
-                s = $"    {(f.Length > 1 ? f[1] : "")}:";
-                places = "";
-            }
-            if (f.Length >= 3 && f[1] == "@shot")
-                places += " " + f[2];
-        }
-        o.Append(s + places + "\n");
+        foreach (var test in lineup.Tests)
+            o.Append($"{test.Name} ({Lineup.Name(test.Kind)})\n    {string.Join(' ', test.Scenarios)}\n");
+        o.Append($"full\n    {string.Join(", ", Lineup.Full)}, one after the other\n\nScenarios and their places:\n");
+        foreach (var scenario in lineup.Scenarios)
+            o.Append($"    {scenario.Name}: {string.Join(' ', scenario.Shots)}\n");
         Console.Write(o);
         return 0;
     }

@@ -10,35 +10,14 @@ namespace KsaMetal.Benchmark;
 
 public partial class Director
 {
-    // Azimuth, elevation (radians) and distance power of the orbit camera, from and to; NaN leaves one alone
-    private record OrbitMove(double3 From, double3 To, double Start, double Seconds);
-
     // Yaw and pitch (degrees) of the cockpit camera from its seat's forward view
     private record LookMove(double2 From, double2 To, double Start, double Seconds);
 
-    private double _rotateRadPerSecond;
-    private OrbitMove? _orbitMove;
     private LookMove? _lookMove;
     private double2? _look;
 
     private void UpdateCamera(double dt)
     {
-        var view = Program.MainViewport.OrbitController.View;
-        if (_orbitMove is { } m && view != null)
-        {
-            double u = Ease(m.Start, m.Seconds);
-            double3 v = m.From + (m.To - m.From) * u;
-            if (!double.IsNaN(v.X))
-                view.Azimuth = v.X;
-            if (!double.IsNaN(v.Y))
-                view.Elevation = v.Y;
-            if (!double.IsNaN(v.Z))
-                view.DistancePower = v.Z;
-            if (u >= 1)
-                _orbitMove = null;
-        }
-        if (_rotateRadPerSecond != 0 && view != null)
-            view.Azimuth += _rotateRadPerSecond * dt;
         // A later flight takes the camera from @place too (@place releases the flight it was on)
         if (UpdatePath())
         {
@@ -175,31 +154,6 @@ public partial class Director
         if (!double.TryParse(s, NumberStyles.Float, Inv, out var x))
             return false;
         value = relative ? current + x * unit * scale : x * unit * scale;
-        return true;
-    }
-
-    private bool Orbit(string[] a)
-    {
-        if (!SetCameraMode("orbit"))
-            return false;
-        // Back to the controlled vehicle after the vehicle camera or a flight left the camera on a celestial
-        if (Program.GetHoveredCamera() is { Following: Celestial } camera && Program.ControlledVehicle is { } vehicle)
-            camera.SetFollow(vehicle, tidalLocking: false, changeControl: false, alert: false);
-        var view = Program.MainViewport.OrbitController.View;
-        if (view == null)
-            return false;
-        const double Deg = Math.PI / 180;
-        var from = new double3(view.Azimuth, view.Elevation, view.DistancePower);
-        if (!TryValue(a[1], from.X, Deg, out var az) || !TryValue(a[2], from.Y, Deg, out var el) || !TryValue(a[3], from.Z, 1, out var dist))
-            return false;
-        double seconds = 0;
-        if (a.Length == 5 && !double.TryParse(a[4], NumberStyles.Float, Inv, out seconds))
-            return false;
-        // A kept value stays out of the move, so @rotate goes on turning a kept azimuth
-        var to = new double3(a[1] == "-" ? double.NaN : az, a[2] == "-" ? double.NaN : el, a[3] == "-" ? double.NaN : dist);
-        _orbitMove = new OrbitMove(new double3(a[1] == "-" ? double.NaN : from.X, a[2] == "-" ? double.NaN : from.Y,
-            a[3] == "-" ? double.NaN : from.Z), to, _scriptTime, seconds);
-        UpdateCamera(0);
         return true;
     }
 

@@ -49,7 +49,7 @@ public static partial class Program
         // Fast mode measures the places chosen: places of a section still have to be among those that run measured
         var parts = Windows(report).Keys.ToHashSet();
         var wanted = sections.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (mode == "fast" && wanted.All(n => n.Contains('_')) &&
+        if (mode is "views" or "jump" && wanted.All(n => n.Contains('_')) &&
             !wanted.Any(n => parts.Contains((n[..n.IndexOf('_')], n[(n.IndexOf('_') + 1)..]))))
         {
             Console.WriteLine($"that run didn't measure {sections}: they have no part in common.");
@@ -147,7 +147,7 @@ public static partial class Program
             body.AppendLine("Screenshots: not compared, a run played in a running game (its clouds and sea are that game's).");
         else
         {
-            (differ, shotsTable) = Screenshots(dirA, dirB, modeA == "fast" ? FastShotLimit : CinematicShotLimit, shots);
+            (differ, shotsTable) = Screenshots(dirA, dirB, modeA is "views" or "jump" ? FastShotLimit : CinematicShotLimit, shots);
             // Nothing compared: the sentence that says why
             if (shots.Count == 0)
                 shotsNote = shotsTable;
@@ -431,7 +431,18 @@ public static partial class Program
             Console.Error.WriteLine($"no report at {path}");
             return null;
         }
-        return JsonNode.Parse(File.ReadAllText(path)) as JsonObject;
+        var report = JsonNode.Parse(File.ReadAllText(path)) as JsonObject;
+        // A run from before each test had one kind: its fast or cinematic mode as the kind it is now
+        if (report?["mode"] is JsonValue m && (string?)m is "fast" or "cinematic")
+        {
+            // By what it played: the mixed section was the Mixed Test's fast form, the warp sections were timed, a fast run
+            // of the flight jumped to its places
+            var played = Sections(report).OfType<JsonObject>().Select(x => (string?)x["name"] ?? "").ToList();
+            report["mode"] = played.Count > 0 && played.All(n => n.StartsWith("warp", StringComparison.Ordinal)) ? "timed"
+                : played.Count > 0 && played.All(n => n == "mixed") ? "views"
+                : (string?)m == "fast" ? "jump" : "flight";
+        }
+        return report;
     }
 
     private static Dictionary<(string section, string part), JsonObject> Windows(JsonObject report)

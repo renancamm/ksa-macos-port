@@ -71,8 +71,7 @@ case "${FAKE_GAME:-pass}" in
     hang) sleep 60; exit 0 ;;
     long) for i in 1 2 3 4 5 6 7 8 9 10; do sleep 1; done; exit 0 ;;
 esac
-mode=cinematic
-[ "$(option fast)" != true ] || mode=fast
+mode="$(option mode)"
 cat > "${KSA_BENCH_OUT}/results$(option suffix).json" <<JSON
 {"gpuTimes":true,"mode":"${mode}","shots":true,"completed":true,"loadSeconds":1.5,"drawable":"100x50",
 "sections":[{"name":"${first}","windows":[{"name":"part1","frames":100,"seconds":2,"averageFps":50,"frameMsMedian":20,"frameMsP95":22,
@@ -137,7 +136,7 @@ expect "--compare: no such run" 1 "no run 'nothing_like_this'"
 [ "$(runs_count)" = 0 ] || fail "a refused run left a folder"
 
 # A run that passes
-FAKE_GAME=pass bench --app "${APP}" --fast
+FAKE_GAME=pass bench --app "${APP}"
 expect "a run that passes" 0 "Passed"
 expect "its numbers, aligned" 0 "part1"
 expect "how to see it" 0 "./benchmark.sh report"
@@ -150,7 +149,7 @@ done
 
 # A relative --app, comparing by name, "last" and "previous"
 sleep 1
-(cd "${T}" && FAKE_GPU=30 HOME="${T}/home" "${BENCH}" --app "Fake Game.app" --fast --compare last > "${T}/second.txt" 2>&1)
+(cd "${T}" && FAKE_GPU=30 HOME="${T}/home" "${BENCH}" --app "Fake Game.app" --compare last > "${T}/second.txt" 2>&1)
 STATUS=$?
 OUTPUT="$(cat "${T}/second.txt")"
 expect "a relative --app with --compare last" 0 "GPU time 100 % higher"
@@ -164,26 +163,26 @@ bench compare "${RUN}"
 expect "compare by a folder's name, against the last" 0 "100 % slower"
 bench compare
 expect "compare, no runs named" 0 "100 % slower"
-bench --app "${APP}" --compare last
-expect "--compare: another mode, refused before the game starts" 1 "fast mode"
+bench --app "${APP}" tour --compare last
+expect "--compare: another kind, refused before the game starts" 1 "views mode"
 [ "$(runs_count)" = 2 ] || fail "--compare refused, yet a run started"
 
 # How a run ends
 sleep 1
-FAKE_GAME=crash bench --app "${APP}" --fast
+FAKE_GAME=crash bench --app "${APP}"
 expect "a crash" 1 "crashed (signal 6) in mixed at 1.5 s"
 expect "a crash: done with problems" 1 "Done, with problems"
 sleep 1
-FAKE_GAME=nothing bench --app "${APP}" --fast
+FAKE_GAME=nothing bench --app "${APP}"
 expect "a game that dies at the start" 1 "before its first frame"
 sleep 1
-KSA_BENCH_HANG_LIMIT=2 FAKE_GAME=hang bench --app "${APP}" --fast
+KSA_BENCH_HANG_LIMIT=2 FAKE_GAME=hang bench --app "${APP}"
 expect "a game that hangs" 1 "hung in mixed at 1.5 s"
 sleep 1
 # As a terminal does it: the signal to the whole process group, once the run has started (a job started with & has SIGINT
 # ignored and shares this script's group: perl gives it a group of its own and puts the signal back)
 before="$(ls -d "${T}/home/Documents/My Games/Kitten Space Agency/benchmarks/"*/run.txt | wc -l)"
-FAKE_GAME=long HOME="${T}/home" perl -e 'setpgrp(0, 0); $SIG{INT} = "DEFAULT"; exec @ARGV' "${BENCH}" --app "${APP}" --fast > "${T}/stopped.txt" 2>&1 &
+FAKE_GAME=long HOME="${T}/home" perl -e 'setpgrp(0, 0); $SIG{INT} = "DEFAULT"; exec @ARGV' "${BENCH}" --app "${APP}" > "${T}/stopped.txt" 2>&1 &
 script=$!
 for _ in $(seq 1 100); do
     [ "$(ls -d "${T}/home/Documents/My Games/Kitten Space Agency/benchmarks/"*/run.txt | wc -l)" -gt "${before}" ] && break

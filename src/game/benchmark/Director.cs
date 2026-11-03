@@ -8,9 +8,9 @@
 // Every frame goes into frames.csv, and every measured part is a signpost interval (KSA Metal's ksaMtlMarker), so an
 // Instruments trace shows the parts.
 //
-// The script is a series of sections. "section <name> [live] [needs <celestial>...]" starts one; a section whose celestials
-// the loaded system lacks is skipped. Each section is a list of "<seconds> <command>" steps timed from its start. A
-// command is a console command or one of the directives in Directives.cs. Other lines are comments.
+// The lineup (src/shared/benchmark/Lineup.cs) is a series of scenarios, each a list of "<seconds> <command>" steps timed
+// from its start; a scenario whose celestials the loaded system lacks is skipped. A command is a console command or a
+// directive (Directives.cs).
 //
 // Two clocks run the script. The script's clock counts the seconds of play: the steps, the camera's moves and the
 // measured parts follow it. The game's clock is the simulation's, which @warp speeds up or pauses. The script says
@@ -20,17 +20,14 @@
 // expects and pauses there, the screenshot is taken once the world has settled, and both clocks go on, the simulation
 // easing back to its speed. So every Mac takes its screenshots at the same moments of the game.
 //
-// Fast mode skips the way between in the sections of the camera's flight alone (@key, @shot and @measure steps only):
-// the game stays paused all along them, and the script's clock jumps from one chosen checkpoint to the next (the light
-// and the clouds stay as they were at the start). Sections with vehicles play as written, as in the cinematic run. At
-// each checkpoint the mod waits until the view stops changing (terrain and textures streaming in after a jump),
-// measures a few seconds of the view standing there (instead of the @measure parts) and takes the screenshot. Its
-// numbers compare only with other fast runs.
-//
-// A live section is the time warp's: it plays the same in both modes, by the Mac's clock alone. Its parts take the time
-// they are given whatever the game gets through in it: the game gets the speed the script asks for, as from a player, and
-// nothing waits for it (no catching up; a checkpoint stops where the game has got to), so a slow Mac or a stuck
-// simulation can't hold it up. @measure measures how far the game's clock got.
+// How a scenario keeps time is its kind. A flight plays as above. A views scenario sets its vehicles up, then the game
+// stays paused and the camera goes from view to view: at each checkpoint the director waits until the view stops
+// changing (terrain and textures streaming in), measures a second of the view standing there and takes the screenshot.
+// Places of a flight can be jumped to the same way (RunOptions.Fast): the game stays paused through the camera's
+// flight, and the script's clock jumps from one chosen checkpoint to the next. A timed scenario plays by the Mac's clock
+// alone: its parts take the time they are given whatever the game gets through in it, the game gets the speed the
+// script asks for, as from a player, and nothing waits for it (no catching up; a checkpoint stops where the game has
+// got to), so a slow Mac or a stuck simulation can't hold it up. @measure measures how far the game's clock got.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -41,6 +38,7 @@ using System.Reflection;
 using KSA;
 using KSA.Atmosphere.Rendering;
 using KsaPort.Common;
+using KsaPort.Common.Benchmark;
 
 namespace KsaMetal.Benchmark;
 
@@ -64,18 +62,14 @@ public partial class Director
     private const double MaxSettleSeconds = 20;
     private const double FastMeasureSeconds = 1.0;
 
-    // A step: its time in the section, its command and the command's words, and its line in the script
-    private record Step(double At, string Command, int Line)
-    {
-        public string[] Words { get; } = Command.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-    }
-
+    // A scenario of the lineup as it plays: its steps, cut short when places are chosen
     private class Section
     {
         public string Name = "";
-        public string[] Needs = Array.Empty<string>();
+        public IReadOnlyList<string> Needs = Array.Empty<string>();
         public readonly List<Step> Steps = new();
         public bool Live;
+        public Kind Kind;
         public double Length => Steps.Count > 0 ? Steps.Max(s => s.At) : 0;
         // Only the camera's flight: no vehicles, nothing that needs the game's clock
         public bool CameraOnly => Steps.All(s => s.Words[0] is "@key" or "@shot" or "@measure");
@@ -83,11 +77,12 @@ public partial class Director
 
     private enum Phase { Play, CatchUp, Settle, Measure, Capture, Shoot, Catch, CatchPasses, CatchCapture, CaughtImage, Hold, NewWorld }
 
-    // What a catch-up of the game's clock leads to: a checkpoint's screenshot, the end of a jump of @time, or the end of
-    // a @sync
-    private enum After { Shot, Time, Sync }
+    // What a catch-up of the game's clock leads to: a checkpoint's screenshot, or the end of a @sync
+    private enum After { Shot, Sync }
 
     private readonly List<Section> _sections = new();
+    // Each scenario's test's noise profile: how much its screenshots may change from run to run
+    private readonly Dictionary<string, NoiseProfile> _noise = new();
     private readonly Stopwatch _wall = new();
     private string _outDir = "";
     // RunOptions.Only: the sections to play, each with the checkpoints chosen in it (null: all of them)
@@ -104,7 +99,8 @@ public partial class Director
     private int _catches;
     private bool _active;
     private Results? _results;
-    private bool _fast, _shots = true;
+    // RunOptions.Fast: the places chosen jumped to, the game paused on the way, instead of played
+    private bool _jump, _shots = true;
     private string? _hold;
     private double _nextBeat;
 
@@ -175,34 +171,26 @@ public partial class Director
             Log($"script {script} not found");
             return;
         }
-        _fast = options.Fast;
+        _jump = options.Fast;
         _shots = !options.NoShots;
         _hold = options.Hold is { Length: > 0 } hold ? hold : null;
-        var lines = File.ReadAllLines(script);
-        for (int i = 0; i < lines.Length; i++)
+        Lineup lineup;
+        try
         {
-            var line = lines[i].Trim();
-            var words = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (words.Length >= 2 && words[0] == "section")
-            {
-                int needs = Array.IndexOf(words, "needs");
-                _sections.Add(new Section
-                {
-                    Name = words[1], Needs = needs > 0 ? words[(needs + 1)..] : Array.Empty<string>(), Live = words.Length > 2 && words[2] == "live"
-                });
-                continue;
-            }
-            var space = line.IndexOf(' ');
-            if (space > 0 && _sections.Count > 0 &&
-                double.TryParse(line[..space], NumberStyles.Float, CultureInfo.InvariantCulture, out var at))
-                _sections[^1].Steps.Add(new Step(at, line[(space + 1)..].Trim(), i + 1));
+            lineup = Lineup.Read(script);
         }
-        // Steps with the same time run in the order they are written
-        foreach (var section in _sections)
+        catch (LineupException e)
         {
-            var ordered = section.Steps.OrderBy(s => s.At).ThenBy(s => s.Line).ToList();
-            section.Steps.Clear();
-            section.Steps.AddRange(ordered);
+            Log(e.Message);
+            return;
+        }
+        foreach (var scenario in lineup.Scenarios)
+        {
+            if (lineup.TestOf(scenario.Name) is { } test)
+                _noise[scenario.Name] = NoiseProfile.Read(Path.GetDirectoryName(script)!, test.Name);
+            var section = new Section { Name = scenario.Name, Needs = scenario.Needs, Live = scenario.Kind == Kind.Timed, Kind = scenario.Kind };
+            section.Steps.AddRange(scenario.Steps);
+            _sections.Add(section);
         }
         var only = options.Only;
         if (!string.IsNullOrWhiteSpace(only))
@@ -244,7 +232,7 @@ public partial class Director
         _filmEvery = options.Film;
         if (_filmEvery > 0)
             Directory.CreateDirectory(Path.Combine(_outDir, "film"));
-        _results = new Results(DriverStats.Available) { Mode = _fast ? "fast" : "cinematic", Shots = _shots };
+        _results = new Results(DriverStats.Available) { Mode = options.Mode, Shots = _shots };
         _active = true;
         Log($"{_sections.Count} sections, {_results.Mode}{(_shots ? "" : ", no screenshots")}{(_hold != null ? $", holding at {_hold}" : "")}, " +
             $"GPU times {(DriverStats.Available ? "available" : "not available")}{(_profileFrames > 0 ? $", profiling {_profileFrames} frames a part" : "")}" +
@@ -283,7 +271,7 @@ public partial class Director
                 FormattableString.Invariant($"{_sectionResult?.Name} {_scriptTime - _sectionStart:F1}\n"));
             _nextBeat = wall + 1;
         }
-        if (_fast)
+        if (Fast)
             SettleSea();
         if (_phase == Phase.Hold)
             return;
@@ -318,7 +306,7 @@ public partial class Director
             if (!Live && (speed > 2 || speed > 0 && Universe.GetElapsedSeconds() > _gameTarget))
                 speed = Math.Max(speed + (_gameTarget - Universe.GetElapsedSeconds()) / WarpCatchUp, 0);
             SetSpeed(speed);
-            if (!_fast || Live)
+            if (!Fast)
                 _window?.Add(dt * 1000, DriverStats.Read());
             if (Live)
                 _window?.AddSim(dt * 1000, sim);
@@ -423,8 +411,12 @@ public partial class Director
             PhysicsStepDiagnostics.Substeps, bubbles?.Count ?? 0, vehicles);
     }
 
-    // Whether the game stays paused: fast mode, in a section of the camera's flight alone (or before the first section)
-    private bool Paused => _fast && (_section < 0 || _sections[_section].CameraOnly);
+    // Whether the views are measured standing still at their checkpoints: a views scenario's, or a flight's places jumped to
+    private bool Fast => !Live && _sections.Count > 0 && (_jump || _sections[Math.Max(_section, 0)].Kind == Kind.Views);
+
+    // Whether the game stays paused: a flight's places jumped to, in a section of the camera's flight alone (or before
+    // the first section)
+    private bool Paused => Fast && (_section < 0 || _sections[_section].CameraOnly);
 
     // Fast mode: where the camera's flight stops next on the script's clock: its next chosen checkpoint, or its end
     private double NextStop()
@@ -465,9 +457,6 @@ public partial class Director
         Program.DrawUI = false;
         _gameStart = _gameTarget = Universe.GetElapsedSeconds();
         _warpFrom = _warpTo = Universe.GetSimulationSpeed();
-        // Fast mode: paused until a section with vehicles
-        if (_fast)
-            SetSpeed(0);
         foreach (var section in _sections)
         {
             var missing = section.Needs.Where(id => Universe.CurrentSystem?.All.TryGet(id, out Astronomical? _) != true).ToList();
@@ -481,6 +470,9 @@ public partial class Director
             section.Name = "";
         }
         _sections.RemoveAll(s => s.Name == "");
+        // Views and places jumped to: paused until a scenario with vehicles
+        if (Fast)
+            SetSpeed(0);
         // A section with chosen places ends at the last of them
         foreach (var section in _sections)
         {

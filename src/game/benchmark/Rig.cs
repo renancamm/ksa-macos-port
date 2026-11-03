@@ -36,9 +36,8 @@ public partial class Director
         public double AimUp;
         public bool FollowVehicle;
         public (double From, double To, double Start, double Seconds)? AimMove;
-        // The view now: a chase view (with @rotate's turn added to its azimuth) or a ground view
+        // The view now: a chase view or a ground view
         public ChaseMove? Chase;
-        public double Spin;
         public GroundView? Ground;
         // The place and field of view the camera flies from, while it goes from one kind of view to the other
         public Func<(double3 position, double fov)>? From;
@@ -74,7 +73,6 @@ public partial class Director
         }
         else
             rig.Chase = new ChaseMove(now, to, _scriptTime, seconds);
-        rig.Spin = 0;
         UpdateRig(0);
         return true;
     }
@@ -156,9 +154,8 @@ public partial class Director
             rig.From = () => GroundPlace(rig, ground);
         else if (rig.Chase is { } chase)
         {
-            var spin = rig.Spin;
             var view = ChaseAt(rig, chase);
-            rig.From = () => (ChasePlace(rig, view + new double3(rig.Spin - spin, 0, 0)), DefaultFov());
+            rig.From = () => (ChasePlace(rig, view), DefaultFov());
         }
         else
         {
@@ -191,7 +188,6 @@ public partial class Director
             if (_scriptTime >= m.Start + m.Seconds)
                 rig.AimMove = null;
         }
-        rig.Spin += _rotateRadPerSecond * 180 / Math.PI * dt;
         var (position, fov) = rig.Ground is { } ground ? GroundPlace(rig, ground) : (ChasePlace(rig, ChaseAt(rig, rig.Chase!)), DefaultFov());
         if (rig.From is { } from)
         {
@@ -217,14 +213,14 @@ public partial class Director
         _fieldOfView = null;
     }
 
-    // The chase view at this moment of its move, with @rotate's turn
+    // The chase view at this moment of its move
     private double3 ChaseAt(Rig rig, ChaseMove m)
     {
         double u = Ease(m.Start, m.Seconds);
         var v = Fill(m.From + (m.To - m.From) * u, m.From);
         if (u >= 1)
             rig.Chase = m with { From = v, To = v };
-        return v + new double3(rig.Spin, 0, 0);
+        return v;
     }
 
     // A move's target with the values it keeps ("-") filled in from where it starts
