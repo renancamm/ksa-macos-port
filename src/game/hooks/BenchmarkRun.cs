@@ -1,10 +1,10 @@
 using System.IO;
 using HarmonyLib;
 using KSA;
-using KsaMetalBenchmark;
-using KsaMetalHooks.Fixes;
+using KsaMetal.Benchmark;
+using KsaMetal.Hooks.Fixes;
 
-namespace KsaMetalHooks;
+namespace KsaMetal.Hooks;
 
 // The benchmark's runs in the game (src/game/benchmark/Runs.cs): a postfix on Program.OnFrame gives them every
 // frame. They start from benchmark.sh (KSA_BENCH_OUT) or the Mac Port tab, and borrow the hooks' log, the summary of

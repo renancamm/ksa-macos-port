@@ -14,7 +14,7 @@ using System.Xml.Linq;
 //   - the other names the registry gives those functions (vkGetPhysicalDeviceProperties2KHR), when one of the
 //     extensions the driver advertises (instance.mm's lists) brings them, and those setup/aliases.txt names besides.
 //
-//   KsaMetalEntries <vk.xml> <driver folder> <file>
+//   KsaPort.Tools.EntriesGenerator <vk.xml> <driver folder> <file>
 //
 // The native build runs it (CMakeLists.txt in the driver's folder) and writes the table into its build tree, only when
 // it differs, so that entry.mm is compiled again only then.
@@ -26,7 +26,7 @@ internal static class Generate
     {
         if (args.Length != 3)
         {
-            Console.Error.WriteLine("usage: KsaMetalEntries <vk.xml> <driver folder> <file>");
+            Console.Error.WriteLine("usage: KsaPort.Tools.EntriesGenerator <vk.xml> <driver folder> <file>");
             return 2;
         }
         try
@@ -113,10 +113,10 @@ internal static class Generate
                 "(a function of KSA Metal's own ends in KSA)");
 
         var t = new StringBuilder("""
-            // The names vkGetInstanceProcAddr and vkGetDeviceProcAddr answer (entry.mm): made by KsaMetalEntries
-            // (src/build-tools/entries-generator/Generate.cs) from Vulkan's registry and the driver's sources, which
-            // the native build runs. Don't edit it: define the function (VKFN), advertise the extension that brings
-            // an alias, or name the alias in src/game/driver/setup/aliases.txt.
+            // The names vkGetInstanceProcAddr and vkGetDeviceProcAddr answer (entry.mm): made by
+            // KsaPort.Tools.EntriesGenerator (src/build-tools/entries-generator/Generate.cs) from Vulkan's registry
+            // and the driver's sources, which the native build runs. Don't edit it: define the function (VKFN),
+            // advertise the extension that brings an alias, or name the alias in src/game/driver/setup/aliases.txt.
 
             """);
         var levelMacro = new[] { "G", "I", "D" };

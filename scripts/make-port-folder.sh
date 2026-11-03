@@ -18,7 +18,7 @@ folder_commands() {
     mkdir -p "${OUT}/lib"
     cp "${REPO}"/src/player/port-folder/*.sh "${REPO}/src/player/port-folder/README.md" \
         "${OUT}/"
-    cp "${REPO}"/src/player/port-folder/lib/*.sh "${OUT}/lib/"
+    cp "${REPO}"/src/player/port-folder/lib/*.sh "${REPO}/src/player/port-folder/lib/port.env" "${OUT}/lib/"
     chmod +x "${OUT}"/*.sh
     cp "${REPO}/LICENSE" "${REPO}/THIRD_PARTY_NOTICES.md" "${OUT}/"
     # The BRUTAL packages the libraries come from, for the porter's version check of the game's
@@ -32,16 +32,16 @@ folder_payload() {
     [ -f "${OUT}/VERSION" ] || die "run scripts/make-port-folder.sh commands first."
     [ -f "${NATIVES}/libvulkan.1.dylib" ] && [ -x "${NATIVES}/KSA" ] && [ -x "${DOTNET_RUNTIME}/dotnet" ] &&
         [ -f "${BUILD}/icon/AppIcon.icns" ] &&
-        [ -f "${ASSEMBLIES}/bin/KsaMetalBenchmark/KsaMetalBenchmark.dll" ] &&
-        [ -f "${ASSEMBLIES}/bin/KsaMetalHooks/KsaMetalHooks.dll" ] &&
-        [ -f "${ASSEMBLIES}/bin/KsaPortSettingsGenerator/KsaPortSettingsGenerator.dll" ] &&
-        [ -f "${ASSEMBLIES}/bin/KsaPorter/KsaPorter.dll" ] ||
+        [ -f "${ASSEMBLIES}/bin/KsaMetal.Benchmark/KsaMetal.Benchmark.dll" ] &&
+        [ -f "${ASSEMBLIES}/bin/KsaMetal.Hooks/KsaMetal.Hooks.dll" ] &&
+        [ -f "${ASSEMBLIES}/bin/KsaPort.Tools.SettingsGenerator/KsaPort.Tools.SettingsGenerator.dll" ] &&
+        [ -f "${ASSEMBLIES}/bin/KsaPort.Porter/KsaPort.Porter.dll" ] ||
         die "the pieces of the port are not all built. Run ./build.sh."
     [ -f "${STARMAP}/StarMap.dll" ] && [ -f "${STARMAP}/StarMap.Core.dll" ] || die "the StarMap archive has an unexpected layout."
     step "Assembling ${OUT#"${REPO}/"}"
     rm -rf "${OUT}/payload" "${OUT}/lib/porter"
     # The port's program, which the commands run (src/player/porter/), with its shader edits
-    ditto "${ASSEMBLIES}/bin/KsaPorter" "${OUT}/lib/porter"
+    ditto "${ASSEMBLIES}/bin/KsaPort.Porter" "${OUT}/lib/porter"
 
     # The app without the game: launcher (src/game/launcher/launcher.c) and .NET runtime (ditto keeps Microsoft's
     # signatures), libraries and BRUTAL's crash-dump helper, icon
@@ -52,7 +52,7 @@ folder_payload() {
     cp "${REPO}/src/shared/settings/port-settings.txt" "${contents}/Resources/"
     # What the tab's title says: the port's version
     cp "${OUT}/VERSION" "${contents}/Resources/VERSION"
-    dotnet "${ASSEMBLIES}/bin/KsaPortSettingsGenerator/KsaPortSettingsGenerator.dll" template "${REPO}/src/shared/settings/port-settings.txt" \
+    dotnet "${ASSEMBLIES}/bin/KsaPort.Tools.SettingsGenerator/KsaPort.Tools.SettingsGenerator.dll" template "${REPO}/src/shared/settings/port-settings.txt" \
         > "${contents}/Resources/port-settings.toml"
     cp -P "${NATIVES}"/*.dylib "${NATIVES}/Brutal.Monitor.Subprocess" "${contents}/Resources/"
     cp "${REPO}/third_party/fmod/libfmod.dylib" "${contents}/Resources/libfmod.dylib"
@@ -61,14 +61,14 @@ folder_payload() {
     # KSA Metal Hooks, which the launcher loads and which apply the port settings (src/game/hooks/), with the shared
     # library (src/shared/) and Harmony
     mkdir -p "${contents}/Resources/Hooks"
-    cp "${ASSEMBLIES}/bin/KsaMetalHooksLoader/KsaMetalHooksLoader.dll" "${ASSEMBLIES}/bin/KsaMetalHooks/KsaMetalHooks.dll" \
+    cp "${ASSEMBLIES}/bin/KsaMetal.Hooks.Loader/KsaMetal.Hooks.Loader.dll" "${ASSEMBLIES}/bin/KsaMetal.Hooks/KsaMetal.Hooks.dll" \
         "${ASSEMBLIES}/bin/KsaPort.Common/KsaPort.Common.dll" "${HARMONY_DLL}" "${contents}/Resources/Hooks/"
     # The benchmark (src/game/benchmark/, src/player/benchmark-cli/): its director, which the hooks run, the report
     # program, the tour and its vehicles
     local bench="${contents}/Resources/Benchmark"
     mkdir -p "${bench}"
-    cp "${ASSEMBLIES}/bin/KsaMetalBenchmark/KsaMetalBenchmark.dll" "${ASSEMBLIES}"/bin/KsaMetalBenchmarkReport/*.dll \
-        "${ASSEMBLIES}"/bin/KsaMetalBenchmarkReport/*.json \
+    cp "${ASSEMBLIES}/bin/KsaMetal.Benchmark/KsaMetal.Benchmark.dll" "${ASSEMBLIES}"/bin/KsaMetal.Benchmark.Cli/*.dll \
+        "${ASSEMBLIES}"/bin/KsaMetal.Benchmark.Cli/*.json \
         "${REPO}/src/game/benchmark/lineup/benchmark.txt" "${bench}/"
     for v in "${REPO}"/src/game/benchmark/lineup/vehicles/*/; do
         mkdir -p "${bench}/vehicles/$(basename "${v}")"
@@ -93,7 +93,7 @@ folder_payload() {
     # mark, changed to ARM64 like KSA.dll's (the porter's mark-arm64). The rest is platform-neutral .NET.
     ditto "${STARMAP}" "${OUT}/payload/starmap"
     rm -f "${OUT}/payload/starmap/StarMap.exe"
-    dotnet "${ASSEMBLIES}/bin/KsaPorter/KsaPorter.dll" mark-arm64 "${OUT}"/payload/starmap/*.dll
+    dotnet "${ASSEMBLIES}/bin/KsaPort.Porter/KsaPort.Porter.dll" mark-arm64 "${OUT}"/payload/starmap/*.dll
     echo "${STARMAP_VERSION}" > "${OUT}/payload/starmap/version.txt"
 }
 

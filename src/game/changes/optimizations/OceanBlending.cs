@@ -10,7 +10,7 @@ using KSA;
 using KSA.Atmosphere.Rendering;
 using KSA.Rendering.Water.Rendering;
 
-namespace KsaMetalHooks.Optimizations;
+namespace KsaMetal.Hooks.Optimizations;
 
 // Ocean blending skip. The ocean is drawn blending into the image behind it (BlendTransmittance: colour = ocean + what
 // is behind x the ocean's alpha, alpha = the ocean's x what is behind), and Ocean.frag writes alpha 0 everywhere except

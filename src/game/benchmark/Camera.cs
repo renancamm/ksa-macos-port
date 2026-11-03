@@ -6,9 +6,9 @@ using System.Globalization;
 using Brutal.Numerics;
 using KSA;
 
-namespace KsaMetalBenchmark;
+namespace KsaMetal.Benchmark;
 
-public partial class Benchmark
+public partial class Director
 {
     // Azimuth, elevation (radians) and distance power of the orbit camera, from and to; NaN leaves one alone
     private record OrbitMove(double3 From, double3 To, double Start, double Seconds);

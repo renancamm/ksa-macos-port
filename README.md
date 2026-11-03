@@ -281,7 +281,7 @@ src/game/                   what runs in the game's process:
   changes/                  the changes to the game: fixes, optimizations, features, with their own README
   benchmark/                the benchmark's director, its tests and vehicles (lineup/), with the benchmark's README
 src/player/                 what the player runs from the port folder:
-  port-folder/              the port folder's commands and lib/common.sh, which they share
+  port-folder/              the port folder's commands and lib/, what they share, with the port's names (port.env)
   porter/                   the porter, the program the commands run, with its own README
   benchmark-cli/            the program benchmark.sh runs: runs, reports, comparisons, with its tests
 src/shared/                 the library the programs share: the port settings (settings/, with their own README),

@@ -7,7 +7,7 @@ using System.Reflection;
 using HarmonyLib;
 using KSA;
 
-namespace KsaMetalHooks.Fixes;
+namespace KsaMetal.Hooks.Fixes;
 
 // Restart. After a change that needs one, the game's settings offer to restart it (RequiresRestartPopup), and the
 // game starts its own executable again, which in the app is .NET's dotnet with no program: it prints its help, and the

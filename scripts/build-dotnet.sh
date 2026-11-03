@@ -22,7 +22,7 @@ WORK="${ASSEMBLIES}"
 # The output starts anew, but the build's tools', which the native build made and keeps track of; obj/ stays, so a
 # second build only compiles what changed
 mkdir -p "${WORK}/bin"
-find "${WORK}/bin" -mindepth 1 -maxdepth 1 ! -name KsaMetalEntries ! -name KsaPortSettingsGenerator -exec rm -rf {} +
+find "${WORK}/bin" -mindepth 1 -maxdepth 1 ! -name KsaPort.Tools.EntriesGenerator ! -name KsaPort.Tools.SettingsGenerator -exec rm -rf {} +
 cd "${REPO}"
 
 step "Building the .NET projects against KSA $(game_version "${KSA_DIR}")" \
@@ -30,15 +30,15 @@ step "Building the .NET projects against KSA $(game_version "${KSA_DIR}")" \
 # No PDB: the port folder doesn't ship them, and a DLL built with one records its path
 BUILD_OPTIONS=(-c Release -nologo -v quiet -p:PortBuildDir="${WORK}" -p:DebugType=none -nodeReuse:false)
 if [ "${2:-}" = --convert ]; then
-    dotnet_cli build "${REPO}/src/player/porter/KsaPorter.csproj" "${BUILD_OPTIONS[@]}" > "${WORK}/build.log" 2>&1 ||
+    dotnet_cli build "${REPO}/src/player/porter/KsaPort.Porter.csproj" "${BUILD_OPTIONS[@]}" > "${WORK}/build.log" 2>&1 ||
         { cat "${WORK}/build.log"; die "the porter didn't build."; }
-    KSA_PORT_FOLDER="${OUT}" dotnet "${WORK}/bin/KsaPorter/KsaPorter.dll" convert-dotnet "${KSA_DIR}" "${DOTNET_RUNTIME}" \
+    KSA_PORT_FOLDER="${OUT}" dotnet "${WORK}/bin/KsaPort.Porter/KsaPort.Porter.dll" convert-dotnet "${KSA_DIR}" "${DOTNET_RUNTIME}" \
         > /dev/null || die "KSA's assemblies could not be converted."
 fi
 dotnet_cli build "${REPO}/ksa-macos-port.slnx" "${BUILD_OPTIONS[@]}" -p:KsaDir="${KSA_DIR}" -p:HarmonyDll="${HARMONY_DLL}" \
     > "${WORK}/build.log" 2>&1 ||
     { cat "${WORK}/build.log"; die "the .NET build failed (does this KSA version still match?)."; }
 
-dotnet "${ASSEMBLIES}/bin/KsaPorterTests/KsaPorterTests.dll" "${REPO}" || die "the porter's tests failed."
+dotnet "${ASSEMBLIES}/bin/KsaPort.Porter.Tests/KsaPort.Porter.Tests.dll" "${REPO}" || die "the porter's tests failed."
 dotnet "${ASSEMBLIES}/bin/KsaPort.Common.Tests/KsaPort.Common.Tests.dll" "${REPO}" || die "the port settings' tests failed."
-dotnet "${ASSEMBLIES}/bin/KsaMetalBenchmarkTests/KsaMetalBenchmarkTests.dll" || die "the benchmark's tests failed."
+dotnet "${ASSEMBLIES}/bin/KsaMetal.Benchmark.Cli.Tests/KsaMetal.Benchmark.Cli.Tests.dll" || die "the benchmark's tests failed."

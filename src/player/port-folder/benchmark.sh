@@ -11,4 +11,4 @@ check_mac
 require_port_folder
 # exec: Ctrl-C at the terminal goes to the program itself, which stops the game and reports what it measured
 KSA_PORT_FOLDER="${PORT_FOLDER}" DOTNET_ROOT="${SKELETON}/MacOS" exec "${SKELETON}/MacOS/dotnet" \
-    "${SKELETON}/Resources/Benchmark/KsaMetalBenchmarkReport.dll" command "$@"
+    "${SKELETON}/Resources/Benchmark/KsaMetal.Benchmark.Cli.dll" command "$@"

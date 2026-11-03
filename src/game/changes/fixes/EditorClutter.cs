@@ -1,7 +1,7 @@
 using HarmonyLib;
 using KSA;
 
-namespace KsaMetalHooks.Fixes;
+namespace KsaMetal.Hooks.Fixes;
 
 // Editor clutter. Since KSA 5707 the depth and normal pre-pass draws the ground clutter, and the Vehicle Editor runs
 // that pass too, with the clutter of the place it was opened from. The editor draws no clutter in colour, but the

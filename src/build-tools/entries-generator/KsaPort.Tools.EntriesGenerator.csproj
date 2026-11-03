@@ -3,7 +3,7 @@
 	     in the driver's folder), with Vulkan's registry from the build tree. -->
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
-		<AssemblyName>KsaMetalEntries</AssemblyName>
+		<AssemblyName>KsaPort.Tools.EntriesGenerator</AssemblyName>
 		<UseAppHost>false</UseAppHost>
 	</PropertyGroup>
 </Project>

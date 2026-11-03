@@ -10,7 +10,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
 
-namespace KsaMetalBenchmarkReport;
+namespace KsaMetal.Benchmark.Cli;
 
 // One screenshot of a comparison: what the program found. State: same, differs, unreadable, or free (a view that may
 // change from run to run as it likes, not compared)

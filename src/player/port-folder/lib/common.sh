@@ -3,11 +3,11 @@
 # its own.
 #
 # Everything here runs on macOS's own bash 3.2 and base tools: the port folder needs nothing else installed. The
-# commands' work is done by the port's program, lib/porter/KsaPorter.dll (src/player/porter/ in the repository), which
-# run_porter starts on the folder's .NET runtime. The folder is what ./build.sh makes (dist/ksa-macos-port/) and what a
-# release contains:
+# commands' work is done by the port's program, lib/porter/KsaPort.Porter.dll (src/player/porter/ in the repository),
+# which run_porter starts on the folder's .NET runtime. The folder is what ./build.sh makes (dist/ksa-macos-port/) and
+# what a release contains:
 #   port.sh, starmap.sh, benchmark.sh              the commands
-#   lib/                                           this file, the porter with its shader edits, brutal.txt
+#   lib/                                           this file, port.env, the porter with its shader edits, brutal.txt
 #   payload/app/Contents/                          the app without the game: launcher, .NET runtime, libraries,
 #                                                  hooks, benchmark, icon, licences
 #   payload/starmap/                               StarMap, which starmap.sh adds to the app
@@ -19,14 +19,10 @@ PORT_FOLDER="$(cd "${LIB}/.." && pwd)"
 PAYLOAD="${PORT_FOLDER}/payload"
 SKELETON="${PAYLOAD}/app/Contents"
 
-APP_NAME="Kitten Space Agency"
-BUNDLE_ID="io.github.ksa-macos-port.ksa"
+# The port's names: APP_NAME, BUNDLE_ID, RELEASES_REPO, MACOS_MIN
+# shellcheck source=port.env
+source "${LIB}/port.env"
 DEFAULT_APP="${HOME}/Applications/${APP_NAME}.app"
-# Where releases are published (port.sh --update)
-RELEASES_REPO="renancamm/ksa-macos-port"
-
-# Oldest macOS the app supports: KSA Metal uses macOS 26 API (MTLSamplerDescriptor.lodBias).
-MACOS_MIN="26.0"
 
 step() { echo "==> $*"; }
 info() { echo "    $*"; }
@@ -35,7 +31,7 @@ die()  { echo "Error: $*" >&2; exit 1; }
 
 # run_porter <command> [args...]: the port's program, on this folder's .NET runtime
 run_porter() {
-    DOTNET_ROOT="${SKELETON}/MacOS" "${SKELETON}/MacOS/dotnet" "${LIB}/porter/KsaPorter.dll" "$@"
+    DOTNET_ROOT="${SKELETON}/MacOS" "${SKELETON}/MacOS/dotnet" "${LIB}/porter/KsaPort.Porter.dll" "$@"
 }
 
 # version_file <key>: a value from the folder's VERSION file (version, ksa, commit)
@@ -48,7 +44,7 @@ version_file() {
 # A browser download marks every file as quarantined, and macOS then holds programs in it, like the .NET runtime the
 # benchmark's report runs on, for a Gatekeeper check: the folder's own files lose that mark.
 require_port_folder() {
-    [ -f "${PORT_FOLDER}/VERSION" ] && [ -x "${SKELETON}/MacOS/dotnet" ] && [ -f "${LIB}/porter/KsaPorter.dll" ] ||
+    [ -f "${PORT_FOLDER}/VERSION" ] && [ -x "${SKELETON}/MacOS/dotnet" ] && [ -f "${LIB}/porter/KsaPort.Porter.dll" ] ||
         die "${PORT_FOLDER} is not a complete port folder. Download a release, or build one with ./build.sh."
     xattr -dr com.apple.quarantine "${PORT_FOLDER}" 2> /dev/null || true
 }

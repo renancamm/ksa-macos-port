@@ -1,4 +1,4 @@
-// The checkpoints (Benchmark.cs): the script's clock stopped until the game catches up, @sync and @time, the view
+// The checkpoints (Director.cs): the script's clock stopped until the game catches up, @sync and @time, the view
 // left to settle, the screenshot, the catch of a broken picture, the frame capture, and the measured parts.
 using System;
 using System.Collections.Generic;
@@ -11,9 +11,9 @@ using KSA;
 using KSA.Atmosphere.Rendering;
 using KsaPort.Common;
 
-namespace KsaMetalBenchmark;
+namespace KsaMetal.Benchmark;
 
-public partial class Benchmark
+public partial class Director
 {
     // Stops the script's clock until the game catches up with the game time it expects, then pauses, lets the world
     // settle and takes the screenshot

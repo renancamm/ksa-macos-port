@@ -1,4 +1,4 @@
-# The benchmark: one session of the game, in sections. See src/game/benchmark/Benchmark.cs for the format
+# The benchmark: one session of the game, in sections. See src/game/benchmark/Director.cs for the format
 # and src/game/benchmark/Directives.cs for the @ directives; other commands are the game's console commands.
 #
 # The tour of the worlds is one flight of the camera (src/game/benchmark/Path.cs): it passes through each @key at its

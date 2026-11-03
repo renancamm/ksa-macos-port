@@ -1,6 +1,6 @@
 # The porter
 
-`KsaPorter.dll` is the port's program: it does what `port.sh` and `starmap.sh` do. The commands are short bash
+`KsaPort.Porter.dll` is the port's program: it does what `port.sh` and `starmap.sh` do. The commands are short bash
 scripts ([`../port-folder/`](../port-folder/)) that check the Mac and the folder, then start the porter on the port
 folder's own .NET runtime (`payload/app/Contents/MacOS/dotnet`, Microsoft's), so a player needs nothing installed. In
 the port folder it is `lib/porter/`, with its shader edits.
@@ -21,7 +21,7 @@ makes are data, `.edits` files with the changes to the game they belong to
 too ([`MilkyWay.cs`](../../game/changes/features/port/MilkyWay.cs)), and the porter compiles it.
 
 The port's names (the app's name and bundle id, the oldest macOS, where releases are) are in
-[`../port-folder/lib/common.sh`](../port-folder/lib/common.sh), which the commands, CMake and the porter all read. File
+[`../port-folder/lib/port.env`](../port-folder/lib/port.env), which the commands, CMake and the porter all read. File
 operations that macOS's tools do best stay theirs: `ditto` keeps Microsoft's signatures and the links in a copy, `tar`
 extracts the game, `plutil` reads and checks `Info.plist`, `xattr` removes the quarantine.
 
@@ -50,7 +50,7 @@ For a change to the edits or the conversion, port the game's archive into a test
 
 ```bash
 dist/ksa-macos-port/port.sh --app /tmp/ksa-test/KSA.app ~/Downloads/ksa_linux_v2026.10.25.5707.tar.gz
-KsaPorter edit-shaders <game folder>    # dotnet deps/build/assemblies/bin/KsaPorter/KsaPorter.dll
+KsaPort.Porter edit-shaders <game folder>    # dotnet deps/build/assemblies/bin/KsaPort.Porter/KsaPort.Porter.dll
 ```
 
 A second run on the same folder must print only `[OK]` lines and change nothing.

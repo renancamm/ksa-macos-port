@@ -12,7 +12,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using KsaPort.Common;
 
-namespace KsaMetalBenchmarkReport;
+namespace KsaMetal.Benchmark.Cli;
 
 public static partial class Program
 {

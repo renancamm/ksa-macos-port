@@ -183,7 +183,7 @@ The tests are a text file, [`lineup/benchmark.txt`](lineup/benchmark.txt), next 
 director (`Directives.cs` lists them), and a `test` line for each test with the sections it plays in each mode. The
 camera's flight is given by `@key` steps, places the camera passes through (`Path.cs`); around the vehicles, the
 camera follows them or stands on the ground (`Rig.cs`). The director, in this folder, starts and ends the runs in the
-game, after every frame the hooks give it (`Runs.cs`), plays the steps (`Benchmark.cs`), stops at the checkpoints for
+game, after every frame the hooks give it (`Runs.cs`), plays the steps (`Director.cs`), stops at the checkpoints for
 the screenshots (`Checkpoints.cs`) with the world put back the same way at each (`World.cs`), moves the camera,
 measures the parts each section marks, and asks KSA Metal for each frame's GPU time and for the screenshots.
 `./build.sh` compiles it against the KSA version the port is made for.

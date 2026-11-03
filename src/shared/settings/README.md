@@ -37,7 +37,7 @@ values, or belongs to a setting whose needs aren't met means the default.
 The code reads a setting by a name made from its key, typed as the table says, so a setting that isn't in the table
 doesn't compile. Two files are made from the table, where they are compiled: the native build makes the header in its
 build tree ([`CMakeLists.txt`](../../../CMakeLists.txt)), the hooks' build the C# in their `obj/`
-([`KsaMetalHooks.csproj`](../../game/hooks/KsaMetalHooks.csproj)). Each is written only when it differs, so the code
+([`KsaMetal.Hooks.csproj`](../../game/hooks/KsaMetal.Hooks.csproj)). Each is written only when it differs, so the code
 that reads it is compiled again only then.
 
 | File | Holds |
@@ -47,7 +47,7 @@ that reads it is compiled again only then.
 
 ## The generator
 
-`KsaPortSettingsGenerator`
+`KsaPort.Tools.SettingsGenerator`
 ([`../../build-tools/settings-generator/Generate.cs`](../../build-tools/settings-generator/Generate.cs)) is a build
 tool, not part of the app, which makes the two typed files and the template. `build.sh` builds it and runs its checks
 first ([`../../../scripts/build-settings.sh`](../../../scripts/build-settings.sh)): it checks the repository against
@@ -63,10 +63,10 @@ the table, and stops the build when it isn't in step:
 
 | Command | Does |
 |---|---|
-| `KsaPortSettingsGenerator template <table>` | writes `port-settings.toml`'s template to standard output |
-| `KsaPortSettingsGenerator header <table> <file>` | writes `port-settings.h` when it differs |
-| `KsaPortSettingsGenerator hooks <table> <file>` | writes `Settings.Generated.cs` when it differs |
-| `KsaPortSettingsGenerator check <repository>` | the checks |
+| `KsaPort.Tools.SettingsGenerator template <table>` | writes `port-settings.toml`'s template to standard output |
+| `KsaPort.Tools.SettingsGenerator header <table> <file>` | writes `port-settings.h` when it differs |
+| `KsaPort.Tools.SettingsGenerator hooks <table> <file>` | writes `Settings.Generated.cs` when it differs |
+| `KsaPort.Tools.SettingsGenerator check <repository>` | the checks |
 
 ## Changing a setting
 

@@ -10,7 +10,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using KsaPort.Common;
 
-namespace KsaMetalBenchmarkReport;
+namespace KsaMetal.Benchmark.Cli;
 
 public static partial class Program
 {
@@ -112,7 +112,7 @@ public static partial class Program
                 Die($"no app made by this port at {_app}. Use ./port.sh to make one (or pass --app).");
             _res = Path.Combine(_app, "Contents", "Resources");
             _script = Path.Combine(_res, "Benchmark", "benchmark.txt");
-            if (!File.Exists(_script) || !File.Exists(Path.Combine(_res, "Hooks", "KsaMetalHooks.dll")))
+            if (!File.Exists(_script) || !File.Exists(Path.Combine(_res, "Hooks", "KsaMetal.Hooks.dll")))
                 Die($"the app at {_app} has no benchmark: update it with ./port.sh.");
 
             // A test by its name alone, in place of sections or places

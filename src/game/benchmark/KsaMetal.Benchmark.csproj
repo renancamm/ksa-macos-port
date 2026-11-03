@@ -3,8 +3,8 @@
 	     src/Directory.Build.props). The game's assemblies and the shared library are references only: the game loads
 	     them, and the shared library is next to the hooks. -->
 	<PropertyGroup>
-		<AssemblyName>KsaMetalBenchmark</AssemblyName>
-		<RootNamespace>KsaMetalBenchmark</RootNamespace>
+		<AssemblyName>KsaMetal.Benchmark</AssemblyName>
+		<RootNamespace>KsaMetal.Benchmark</RootNamespace>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 	</PropertyGroup>
 	<ItemGroup>

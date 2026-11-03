@@ -4,13 +4,13 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using KsaPort.Common;
-using KsaPorter;
+using KsaPort.Porter;
 
 // The tests of the porter that need no game: the shader edits' format and rules on synthetic shaders, the port's own
 // .edits files, the ARM64 mark, the cleanup's ELF check and the versions. scripts/build-dotnet.sh runs them after the
 // build; a failure stops it.
 //
-// Usage: dotnet KsaPorterTests.dll <repository>
+// Usage: dotnet KsaPort.Porter.Tests.dll <repository>
 internal static class Tests
 {
     private static string _repo = "", _test = "", _scratch = "";

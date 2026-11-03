@@ -14,7 +14,7 @@ using KsaPort.Common;
 // what the director writes. scripts/build-dotnet.sh runs them after building the report program; a failure stops the
 // build.
 //
-// Usage: dotnet KsaMetalBenchmarkTests.dll
+// Usage: dotnet KsaMetal.Benchmark.Cli.Tests.dll
 internal static class Tests
 {
     private static string _test = "", _scratch = "";
@@ -92,7 +92,7 @@ internal static class Tests
         Console.SetError(captured);
         try
         {
-            return (KsaMetalBenchmarkReport.Program.Main(args), captured.ToString());
+            return (KsaMetal.Benchmark.Cli.Program.Main(args), captured.ToString());
         }
         finally
         {
@@ -525,7 +525,7 @@ internal static class Tests
 
     private static void Layout()
     {
-        var text = KsaMetalBenchmarkReport.Terminal.Layout("## Title\n\n**Passed**\n\n| A | B |\n|---|---:|\n| long name | 1 |\n| x | 100 |\n");
+        var text = KsaMetal.Benchmark.Cli.Terminal.Layout("## Title\n\n**Passed**\n\n| A | B |\n|---|---:|\n| long name | 1 |\n| x | 100 |\n");
         Contains([text], "Title", "the heading");
         Check(!text.Contains('#') && !text.Contains('*') && !text.Contains('|'), $"no Markdown left: {text}");
         Contains([text], "long name    1", "columns aligned, numbers to the right");

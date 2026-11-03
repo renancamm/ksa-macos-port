@@ -13,7 +13,7 @@ public sealed class RunOptions
     // What to play (space separated): sections, or places as <section>_<shot> (the section up to that checkpoint, its
     // other checkpoints only keeping the clocks in step); empty: all of it
     public string Only { get; set; } = "";
-    // Fast mode (Benchmark.cs)
+    // Fast mode (Director.cs)
     public bool Fast { get; set; }
     // No screenshots (the checkpoints still keep the game's clock in step)
     public bool NoShots { get; set; }

@@ -12,9 +12,9 @@ using System.Globalization;
 using Brutal.Numerics;
 using KSA;
 
-namespace KsaMetalBenchmark;
+namespace KsaMetal.Benchmark;
 
-public partial class Benchmark
+public partial class Director
 {
     // A chase view: azimuth (degrees from north, where the camera is seen from the vehicle), elevation (degrees above
     // the vehicle's horizon) and ln(distance in metres)

@@ -113,7 +113,7 @@ int main(int argc, char** argv) {
     setenv("DYLD_LIBRARY_PATH", res, 1);
     snprintf(path, sizeof path, "%s/libGlfwShim.dylib:%s/libKtxShim.dylib", res, res);
     setenv("DYLD_INSERT_LIBRARIES", path, 1);
-    snprintf(path, sizeof path, "%s/Hooks/KsaMetalHooksLoader.dll", res);
+    snprintf(path, sizeof path, "%s/Hooks/KsaMetal.Hooks.Loader.dll", res);
     if (isFile(path)) prepend("DOTNET_STARTUP_HOOKS", path);
 
     // dotnet and the program, then the arguments, without the process serial number older macOS versions pass to

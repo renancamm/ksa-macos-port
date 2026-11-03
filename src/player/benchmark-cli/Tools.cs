@@ -13,7 +13,7 @@ using System.Xml;
 using System.Xml.Linq;
 using KsaPort.Common;
 
-namespace KsaMetalBenchmarkReport;
+namespace KsaMetal.Benchmark.Cli;
 
 public static partial class Program
 {

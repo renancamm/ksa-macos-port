@@ -14,7 +14,7 @@ using KSA.Rendering;
 using KSA.Rendering.PostProcessing;
 using KSA.Rendering.Raytracing;
 
-namespace KsaMetalHooks.Features;
+namespace KsaMetal.Hooks.Features;
 
 // MetalFX for the render scale (upscaling "metalfx" or "spatial"), and the motion that frame interpolation needs.
 // Before the final composite, KSA Metal's vkCmdUpscaleKSA (src/game/driver/presentation/upscale.mm) scales the main

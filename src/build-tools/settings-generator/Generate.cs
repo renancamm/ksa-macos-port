@@ -9,12 +9,13 @@ using KsaPort.Common;
 
 // What is made from the table of the port settings (src/shared/settings/port-settings.txt), and the checks that keep
 // the rest of the repository in step with it (src/shared/settings/README.md). The build runs it; what it makes goes
-// into the build tree, written only when it differs, so that what is compiled from it is compiled again only then:
+// into the build tree, written only when it differs, so that what is compiled from it is compiled again only then.
+// KsaPort.Tools.SettingsGenerator's commands:
 //
-//   KsaPortSettingsGenerator template <table>          the commented template of port-settings.toml, to standard output
-//   KsaPortSettingsGenerator header <table> <file>     the native code's settings (port-settings.h; CMakeLists.txt)
-//   KsaPortSettingsGenerator hooks <table> <file>      the hooks' settings (Settings.Generated.cs; the hooks' project)
-//   KsaPortSettingsGenerator check <repo>              the checks
+//   template <table>        the commented template of port-settings.toml, to standard output
+//   header <table> <file>   the native code's settings (port-settings.h; CMakeLists.txt)
+//   hooks <table> <file>    the hooks' settings (Settings.Generated.cs; the hooks' project)
+//   check <repo>            the checks
 //
 // Exits with 1 when a check fails.
 internal static class Generate
@@ -36,8 +37,8 @@ internal static class Generate
                 case ["check", var repo]:
                     return Check(Path.GetFullPath(repo));
                 default:
-                    Console.Error.WriteLine("usage: KsaPortSettingsGenerator template <table> | header <table> <file> | " +
-                        "hooks <table> <file> | check <repo>");
+                    Console.Error.WriteLine("usage: KsaPort.Tools.SettingsGenerator template <table> | " +
+                        "header <table> <file> | hooks <table> <file> | check <repo>");
                     return 2;
             }
         }
@@ -159,8 +160,8 @@ internal static class Generate
     {
         var t = new StringBuilder("""
             // The port settings of the native code, KSA Metal and the KTX shim: made from
-            // src/shared/settings/port-settings.txt by KsaPortSettingsGenerator (src/shared/settings/README.md), which
-            // the native build runs. Edit the table, not this.
+            // src/shared/settings/port-settings.txt by KsaPort.Tools.SettingsGenerator
+            // (src/shared/settings/README.md), which the native build runs. Edit the table, not this.
             //
             // portSettingsRead() reads each one from its variable, taking the values the shared library takes: a switch
             // 0 or 1, a number in the table's range, an int of digits only; unset, empty or anything else, the table's
@@ -236,12 +237,13 @@ internal static class Generate
     {
         var t = new StringBuilder("""
             // The port settings the hooks read, as properties of Settings (Settings.cs): made from
-            // src/shared/settings/port-settings.txt by KsaPortSettingsGenerator (src/shared/settings/README.md), which
-            // the hooks' build runs. Edit the table, not this. A setting that applies when the game starts is read
-            // once, when the hooks load; a live one each time, since the Mac Port tab's Apply changes it.
+            // src/shared/settings/port-settings.txt by KsaPort.Tools.SettingsGenerator
+            // (src/shared/settings/README.md), which the hooks' build runs. Edit the table, not this. A setting that
+            // applies when the game starts is read once, when the hooks load; a live one each time, since the Mac
+            // Port tab's Apply changes it.
             using KsaPort.Common;
 
-            namespace KsaMetalHooks;
+            namespace KsaMetal.Hooks;
 
             public static partial class Settings
             {

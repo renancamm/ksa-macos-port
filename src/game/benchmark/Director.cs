@@ -42,9 +42,9 @@ using KSA;
 using KSA.Atmosphere.Rendering;
 using KsaPort.Common;
 
-namespace KsaMetalBenchmark;
+namespace KsaMetal.Benchmark;
 
-public partial class Benchmark
+public partial class Director
 {
     // How close a checkpoint gets to the game time it waits for (game seconds), how far ahead of it the game may be
     // (the clock only goes forward), and how long it lets the world settle (terrain and textures streaming in) before
@@ -154,13 +154,13 @@ public partial class Benchmark
 
     // Starts a run with these options, or null when there is nothing to play. The caller calls OnFrame after every
     // frame of the game.
-    public static Benchmark? Begin(RunOptions options)
+    public static Director? Begin(RunOptions options)
     {
-        var benchmark = new Benchmark(options);
-        return benchmark._active || benchmark._exploring ? benchmark : null;
+        var director = new Director(options);
+        return director._active || director._exploring ? director : null;
     }
 
-    private Benchmark(RunOptions options)
+    private Director(RunOptions options)
     {
         _options = options;
         var script = options.Script;

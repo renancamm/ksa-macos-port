@@ -6,14 +6,19 @@
 # and writes deps.sh into the build tree, which tells build.sh's other steps where each download is.
 cmake_minimum_required(VERSION 3.30)
 
-# Everything compiled targets the oldest macOS the app supports, dependencies included: MACOS_MIN in
-# src/player/port-folder/lib/common.sh. Otherwise a binary inherits the build Mac's version.
-file(STRINGS src/player/port-folder/lib/common.sh macos_min REGEX "^MACOS_MIN=")
-string(REGEX REPLACE "^MACOS_MIN=\"(.*)\"$" "\\1" MACOS_MIN "${macos_min}")
+# The port's names (src/player/port-folder/lib/port.env), each KEY="value": MACOS_MIN, the oldest macOS the app
+# supports, which everything compiled targets, dependencies included (otherwise a binary inherits the build Mac's
+# version), and BUNDLE_ID, the app's identifier, which the launcher's signature names (src/game/launcher/)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS src/player/port-folder/lib/port.env)
+file(STRINGS src/player/port-folder/lib/port.env port_names REGEX "^[A-Z_]+=\"")
+foreach(line ${port_names})
+    string(REGEX REPLACE "^([A-Z_]+)=\"(.*)\"$" "\\1" name "${line}")
+    string(REGEX REPLACE "^([A-Z_]+)=\"(.*)\"$" "\\2" "${name}" "${line}")
+endforeach()
+if(NOT MACOS_MIN OR NOT BUNDLE_ID)
+    message(FATAL_ERROR "src/player/port-folder/lib/port.env gives no MACOS_MIN or BUNDLE_ID")
+endif()
 set(CMAKE_OSX_DEPLOYMENT_TARGET "${MACOS_MIN}")
-# The app's identifier, which the launcher's signature names (src/game/launcher/)
-file(STRINGS src/player/port-folder/lib/common.sh bundle_id REGEX "^BUNDLE_ID=")
-string(REGEX REPLACE "^BUNDLE_ID=\"(.*)\"$" "\\1" BUNDLE_ID "${bundle_id}")
 set(CMAKE_OSX_ARCHITECTURES arm64)
 
 project(ksa-macos-port LANGUAGES C CXX OBJCXX)
@@ -95,7 +100,7 @@ enable_testing()
 # from the table (src/shared/settings/). It writes the header only when it differs, so the code that includes it is
 # compiled again only then; the stamp marks the table as made.
 port_dotnet_tool(SETTINGS_GENERATOR
-    "${PROJECT_SOURCE_DIR}/src/build-tools/settings-generator/KsaPortSettingsGenerator.csproj"
+    "${PROJECT_SOURCE_DIR}/src/build-tools/settings-generator/KsaPort.Tools.SettingsGenerator.csproj"
     "${PROJECT_SOURCE_DIR}/src/shared/KsaPort.Common.csproj")
 set(settings_table "${PROJECT_SOURCE_DIR}/src/shared/settings/port-settings.txt")
 add_custom_command(OUTPUT "${KSA_GENERATED_DIR}/port-settings.stamp"

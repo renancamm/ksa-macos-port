@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using KsaPort.Common;
 
-namespace KsaMetalHooks;
+namespace KsaMetal.Hooks;
 
 // The hooks' settings: what the game runs with. The loader sets each setting port-settings.toml changes as an
 // environment variable, and a variable set before the game starts wins over the file; here the shared library
@@ -18,8 +18,8 @@ public static partial class Settings
     // the hooks read.
     public static void Load()
     {
-        // KsaMetalHooks.Hooks: Hooks here is the hooks setting
-        PortSettings.Load(KsaMetalHooks.Hooks.Resources, warning => KsaMetalHooks.Hooks.Log(warning));
+        // KsaMetal.Hooks.Hooks: Hooks here is the hooks setting
+        PortSettings.Load(KsaMetal.Hooks.Hooks.Resources, warning => KsaMetal.Hooks.Hooks.Log(warning));
         ByKey.Clear();
         foreach (var s in PortSettings.All)
             ByKey[s.Key] = s;

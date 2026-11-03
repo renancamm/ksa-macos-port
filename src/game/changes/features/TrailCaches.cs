@@ -2,7 +2,7 @@ using System;
 using HarmonyLib;
 using KSA;
 
-namespace KsaMetalHooks.Features;
+namespace KsaMetal.Hooks.Features;
 
 // Trail volume caches (experiment, the setting trail_caches of the file's Experiments: <large MiB>,<small MiB>,<tiny
 // MiB>[,<minimum segments>]): the raymarch reads a dense cell of smoke from a baked lattice when the cell has a

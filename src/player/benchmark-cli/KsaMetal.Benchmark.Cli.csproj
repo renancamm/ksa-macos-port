@@ -2,8 +2,8 @@
 	<!-- The report program, which benchmark.sh runs on the port folder's .NET runtime. Needs nothing from the game. -->
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
-		<AssemblyName>KsaMetalBenchmarkReport</AssemblyName>
-		<RootNamespace>KsaMetalBenchmarkReport</RootNamespace>
+		<AssemblyName>KsaMetal.Benchmark.Cli</AssemblyName>
+		<RootNamespace>KsaMetal.Benchmark.Cli</RootNamespace>
 		<GenerateDependencyFile>true</GenerateDependencyFile>
 		<UseAppHost>false</UseAppHost>
 	</PropertyGroup>
@@ -13,6 +13,6 @@
 		<ProjectReference Include="../../shared/KsaPort.Common.csproj" />
 	</ItemGroup>
 	<ItemGroup>
-		<InternalsVisibleTo Include="KsaMetalBenchmarkTests" />
+		<InternalsVisibleTo Include="KsaMetal.Benchmark.Cli.Tests" />
 	</ItemGroup>
 </Project>

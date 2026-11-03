@@ -10,7 +10,7 @@ using KSA.Rendering;
 using RenderCore;
 using RenderCore.Shaders;
 
-namespace KsaMetalHooks.Features;
+namespace KsaMetal.Hooks.Features;
 
 // Milky Way bake. MilkyWay.frag draws the Milky Way's dust clouds for every pixel of the band it covers, from the view
 // direction alone: about 90 lookups of a noise texture each, 1 to 2 ms of a frame with much sky on an M5 (5 to 7 at the game's Milky

@@ -3,8 +3,8 @@
 	     It needs nothing from the game. -->
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
-		<AssemblyName>KsaPorter</AssemblyName>
-		<RootNamespace>KsaPorter</RootNamespace>
+		<AssemblyName>KsaPort.Porter</AssemblyName>
+		<RootNamespace>KsaPort.Porter</RootNamespace>
 		<GenerateDependencyFile>true</GenerateDependencyFile>
 		<UseAppHost>false</UseAppHost>
 		<InvariantGlobalization>true</InvariantGlobalization>
@@ -20,6 +20,6 @@
 		<Compile Include="../../game/changes/**/port/*.cs" />
 	</ItemGroup>
 	<ItemGroup>
-		<InternalsVisibleTo Include="KsaPorterTests" />
+		<InternalsVisibleTo Include="KsaPort.Porter.Tests" />
 	</ItemGroup>
 </Project>

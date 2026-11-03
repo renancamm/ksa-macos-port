@@ -1,10 +1,10 @@
 # The port settings: every setting of port-settings.toml, in the file's order. The hooks' loader
 # (src/game/hooks/loader/) reads this table when the game starts and sets each setting the file changes as the
 # environment variable that KSA Metal, its shims and its hooks read; the Mac Port tab in the game's settings
-# (src/game/hooks/tab/) draws its rows from it; KsaPortSettingsGenerator (README.md in this folder) makes the file's
-# commented template from it, and port-settings.h, the variables and defaults the native code reads. A setting's
-# variable is KSA_MTL_ and its key in capitals (fused_tessellation: KSA_MTL_FUSED_TESSELLATION); one already set when
-# the game starts wins over the file.
+# (src/game/hooks/tab/) draws its rows from it; KsaPort.Tools.SettingsGenerator (README.md in this folder) makes the
+# file's commented template from it, and port-settings.h, the variables and defaults the native code reads. A
+# setting's variable is KSA_MTL_ and its key in capitals (fused_tessellation: KSA_MTL_FUSED_TESSELLATION); one already
+# set when the game starts wins over the file.
 #
 # [<section>] <title> | <caption>: starts a section of the file and of the tab, the caption being the line under its
 # title (and the file's comment); a section whose header ends in "| file" is in the file only, not in the tab. Then one

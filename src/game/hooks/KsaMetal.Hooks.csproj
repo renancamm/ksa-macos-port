@@ -4,8 +4,8 @@
 	     ships Harmony and the shared library next to the hooks and the director in its Benchmark folder. The loader
 	     (loader/) is a project of its own. -->
 	<PropertyGroup>
-		<AssemblyName>KsaMetalHooks</AssemblyName>
-		<RootNamespace>KsaMetalHooks</RootNamespace>
+		<AssemblyName>KsaMetal.Hooks</AssemblyName>
+		<RootNamespace>KsaMetal.Hooks</RootNamespace>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 	</PropertyGroup>
 	<ItemGroup>
@@ -15,9 +15,9 @@
 		<Reference Include="$(KsaDir)/*.dll" Private="false" />
 		<Reference Include="$(HarmonyDll)" Private="false" />
 		<ProjectReference Include="../../shared/KsaPort.Common.csproj" Private="false" />
-		<ProjectReference Include="../benchmark/KsaMetalBenchmark.csproj" Private="false" />
+		<ProjectReference Include="../benchmark/KsaMetal.Benchmark.csproj" Private="false" />
 		<!-- Restored and built with the hooks, for the target below -->
-		<ProjectReference Include="../../build-tools/settings-generator/KsaPortSettingsGenerator.csproj"
+		<ProjectReference Include="../../build-tools/settings-generator/KsaPort.Tools.SettingsGenerator.csproj"
 			ReferenceOutputAssembly="false" Private="false" />
 	</ItemGroup>
 
@@ -33,8 +33,8 @@
 			<SettingsDotnet>$(DOTNET_HOST_PATH)</SettingsDotnet>
 			<SettingsDotnet Condition="'$(SettingsDotnet)' == ''">dotnet</SettingsDotnet>
 		</PropertyGroup>
-		<MSBuild Projects="$(MSBuildThisFileDirectory)../../build-tools/settings-generator/KsaPortSettingsGenerator.csproj"
-			Targets="Build">
+		<MSBuild Targets="Build"
+			Projects="$(MSBuildThisFileDirectory)../../build-tools/settings-generator/KsaPort.Tools.SettingsGenerator.csproj">
 			<Output TaskParameter="TargetOutputs" PropertyName="SettingsGenerator" />
 		</MSBuild>
 		<Exec Command="&quot;$(SettingsDotnet)&quot; &quot;$(SettingsGenerator)&quot; hooks &quot;$(SettingsTable)&quot; &quot;$(SettingsGenerated)&quot;" />

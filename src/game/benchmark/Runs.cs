@@ -13,9 +13,9 @@ using System.Threading.Tasks;
 using KSA;
 using KsaPort.Common;
 
-namespace KsaMetalBenchmark;
+namespace KsaMetal.Benchmark;
 
-// The benchmark's runs in the game: the director (Benchmark.cs) plays a test after every frame of the game, when KSA
+// The benchmark's runs in the game: the director (Director.cs) plays a test after every frame of the game, when KSA
 // Metal Hooks call AfterFrame (src/game/hooks/BenchmarkRun.cs, a postfix on Program.OnFrame). A run starts in one of
 // three ways:
 // - benchmark.sh in the port folder starts the game with KSA_BENCH_OUT naming the run's folder, which holds the run's
@@ -42,7 +42,7 @@ public static class Runs
     private static bool _installed;
     private static Mode _mode;
     private static bool _firstFrame = true, _startRequested;
-    private static Benchmark? _run;
+    private static Director? _run;
     private static string _out = "";
     private static bool _fast;
     private static string _test = "mixed";
@@ -204,7 +204,7 @@ public static class Runs
                 _system = Universe.CurrentSystem?.Id ?? "?";
                 _start = "a new game, restarted from the game's settings";
                 AddVehicles();
-                _run = Benchmark.Begin(_options);
+                _run = Director.Begin(_options);
                 Memory.Start();
             }
         }
@@ -343,12 +343,12 @@ public static class Runs
         Log($"BenchmarkRun: playing in this game, into {_out.Replace(Home, "~")}");
 
         _player = new PlayerGame();
-        Benchmark.NewWorld();
+        Director.NewWorld();
         // The test's view: no names over celestials and places (as benchmark.sh sets them)
         var ui = GameSettings.Current.Interface;
         (ui.CelestialNames, ui.LocationNames) = (false, false);
         AddVehicles();
-        _run = Benchmark.Begin(options);
+        _run = Director.Begin(options);
         Memory.Start();
         if (_run == null)
         {
@@ -522,14 +522,14 @@ public static class Runs
             : "";
     }
 
-    // The report program (KsaMetalBenchmarkReport.dll), on the app's .NET runtime
+    // The report program (KsaMetal.Benchmark.Cli.dll), on the app's .NET runtime
     private static void Report(string[] arguments)
     {
         var start = new ProcessStartInfo(Path.Combine(Resources, "..", "MacOS", "dotnet"))
         {
             UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true
         };
-        start.ArgumentList.Add(Path.Combine(_folder, "KsaMetalBenchmarkReport.dll"));
+        start.ArgumentList.Add(Path.Combine(_folder, "KsaMetal.Benchmark.Cli.dll"));
         foreach (var a in arguments)
             start.ArgumentList.Add(a);
         using var process = Process.Start(start)!;

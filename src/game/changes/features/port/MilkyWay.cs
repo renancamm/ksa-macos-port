@@ -5,7 +5,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using KsaPort.Common;
 
-namespace KsaPorter;
+namespace KsaPort.Porter;
 
 // The edit for the hooks' Milky Way bake (features/milky-way-bake.edits), made by code, which the porter compiles: it
 // moves a whole block of MilkyWay.frag. The clouds' noise moves into a function, portMilkyWayClouds; main reads the

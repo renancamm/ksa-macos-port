@@ -19,22 +19,22 @@ and test a change. What each hook changes in the game is in [`../changes/`](../c
 | [`loader/`](loader/) | the startup hook, which applies the settings and loads the hooks ([How they load](#how-they-load)) |
 | [`../changes/`](../changes/) | the changes to the game they apply: fixes, optimizations and features, with their own README |
 
-Each folder of the hooks' assembly is a namespace of its own: `KsaMetalHooks.Detours`, `KsaMetalHooks.Tab`, and those
-of the changes, `KsaMetalHooks.Fixes`, `KsaMetalHooks.Optimizations`, `KsaMetalHooks.Features`; the files here are
-`KsaMetalHooks`, the root, where the loader finds `KsaMetalHooks.Hooks`. The settings table, `port-settings.toml` and
-the environment are read by the port settings in the port's shared library
+Each folder of the hooks' assembly is a namespace of its own: `KsaMetal.Hooks.Detours`, `KsaMetal.Hooks.Tab`, and
+those of the changes, `KsaMetal.Hooks.Fixes`, `KsaMetal.Hooks.Optimizations`, `KsaMetal.Hooks.Features`; the files
+here are `KsaMetal.Hooks`, the root, where the loader finds `KsaMetal.Hooks.Hooks`. The settings table,
+`port-settings.toml` and the environment are read by the port settings in the port's shared library
 ([`../../shared/settings/`](../../shared/settings/)), which the loader and the hooks share.
 
 ## How they load
 
-The launcher names `KsaMetalHooksLoader.dll` in `DOTNET_STARTUP_HOOKS`, so .NET runs it before the program it starts:
-KSA itself, or StarMap, which loads KSA into a load context of its own. The loader
+The launcher names `KsaMetal.Hooks.Loader.dll` in `DOTNET_STARTUP_HOOKS`, so .NET runs it before the program it
+starts: KSA itself, or StarMap, which loads KSA into a load context of its own. The loader
 ([`loader/Loader.cs`](loader/Loader.cs)) references nothing of the game. First it applies the port settings
-([Settings](#settings)). Then it waits until `KSA.dll` is loaded, loads `KsaMetalHooks.dll` into the same load context
-and applies it; with the `hooks` setting off it stops after the settings, except for a benchmark run. It loads no
-Harmony itself: under StarMap, the hooks use the copy StarMap has already loaded; without StarMap, they find the app's
-copy next to them, in `Contents/Resources/Hooks/`, with the port's shared library. The benchmark's director, which the
-hooks give every frame, is in `Contents/Resources/Benchmark/`.
+([Settings](#settings)). Then it waits until `KSA.dll` is loaded, loads `KsaMetal.Hooks.dll` into the same load
+context and applies it; with the `hooks` setting off it stops after the settings, except for a benchmark run. It loads
+no Harmony itself: under StarMap, the hooks use the copy StarMap has already loaded; without StarMap, they find the
+app's copy next to them, in `Contents/Resources/Hooks/`, with the port's shared library. The benchmark's director,
+which the hooks give every frame, is in `Contents/Resources/Benchmark/`.
 
 ## The rule every hook follows
 

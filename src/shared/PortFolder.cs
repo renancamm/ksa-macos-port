@@ -50,7 +50,7 @@ public static class Tool
 // share: KSA's versions, the archives in ~/Downloads, the apps this port made
 public static class PortFolder
 {
-    // The port's names, from lib/common.sh, which the commands and the build (CMakeLists.txt) read them from too
+    // The port's names, from lib/port.env, which the commands and the build (CMakeLists.txt) read them from too
     public static string AppName => Constant("APP_NAME");
     public static string BundleId => Constant("BUNDLE_ID");
     // Where releases are published (port.sh --update)
@@ -64,13 +64,13 @@ public static class PortFolder
     {
         if (_constants == null)
         {
-            var common = Path.Combine(Lib, "common.sh");
-            if (!File.Exists(common))
-                throw new PortException($"{common} is missing. Download the port again.");
-            _constants = File.ReadAllLines(common).Select(l => Regex.Match(l, @"^([A-Z_]+)=""([^""$]*)""$"))
+            var names = Path.Combine(Lib, "port.env");
+            if (!File.Exists(names))
+                throw new PortException($"{names} is missing. Download the port again.");
+            _constants = File.ReadAllLines(names).Select(l => Regex.Match(l, @"^([A-Z_]+)=""([^""$]*)""$"))
                 .Where(m => m.Success).ToDictionary(m => m.Groups[1].Value, m => m.Groups[2].Value);
         }
-        return _constants.TryGetValue(name, out var value) ? value : throw new PortException($"lib/common.sh has no {name}.");
+        return _constants.TryGetValue(name, out var value) ? value : throw new PortException($"lib/port.env has no {name}.");
     }
 
     public static string Home => Environment.GetEnvironmentVariable("HOME") ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);

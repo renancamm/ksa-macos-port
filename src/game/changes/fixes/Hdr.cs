@@ -4,7 +4,7 @@ using HarmonyLib;
 using KSA;
 using Render;
 
-namespace KsaMetalHooks.Fixes;
+namespace KsaMetal.Hooks.Fixes;
 
 // HDR brightness. The game's HDR10 output is in nits; KSA Metal shows it with EDR, maps the game's paper white
 // (Display > HDR Paper White) to the display's SDR white, the brightness of other windows, and tells macOS the peak

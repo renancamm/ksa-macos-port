@@ -5,7 +5,7 @@ using System.Reflection;
 using System.Reflection.Emit;
 using HarmonyLib;
 
-namespace KsaMetalHooks;
+namespace KsaMetal.Hooks;
 
 // KSA Metal Hooks: changes to KSA's code made in memory with Harmony when the game starts (KSA.dll stays as it is on
 // disk). Each patch finds its targets by name and its code by pattern; when a KSA update moved either, it is skipped

@@ -3,7 +3,7 @@
 	     the typed settings, build.sh for the checks and the port folder's template. -->
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
-		<AssemblyName>KsaPortSettingsGenerator</AssemblyName>
+		<AssemblyName>KsaPort.Tools.SettingsGenerator</AssemblyName>
 		<UseAppHost>false</UseAppHost>
 	</PropertyGroup>
 	<ItemGroup>

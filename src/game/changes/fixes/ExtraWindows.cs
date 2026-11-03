@@ -3,7 +3,7 @@ using Brutal.ImGuiApi;
 using HarmonyLib;
 using KSA;
 
-namespace KsaMetalHooks.Fixes;
+namespace KsaMetal.Hooks.Fixes;
 
 // The game's extra windows (detached gauges, pop-outs) are created at macOS's floating level, and GLFW puts a fullscreen
 // window above that: a window detached in Fullscreen mode went behind the game. While the main window is at the

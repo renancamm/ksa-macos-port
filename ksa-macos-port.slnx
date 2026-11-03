@@ -1,20 +1,20 @@
 <Solution>
 	<Folder Name="/build-tools/">
-		<Project Path="src/build-tools/entries-generator/KsaMetalEntries.csproj" />
-		<Project Path="src/build-tools/settings-generator/KsaPortSettingsGenerator.csproj" />
+		<Project Path="src/build-tools/entries-generator/KsaPort.Tools.EntriesGenerator.csproj" />
+		<Project Path="src/build-tools/settings-generator/KsaPort.Tools.SettingsGenerator.csproj" />
 	</Folder>
 	<Folder Name="/benchmark/">
-		<Project Path="src/game/benchmark/KsaMetalBenchmark.csproj" />
-		<Project Path="src/player/benchmark-cli/KsaMetalBenchmarkReport.csproj" />
-		<Project Path="src/player/benchmark-cli/tests/KsaMetalBenchmarkTests.csproj" />
+		<Project Path="src/game/benchmark/KsaMetal.Benchmark.csproj" />
+		<Project Path="src/player/benchmark-cli/KsaMetal.Benchmark.Cli.csproj" />
+		<Project Path="src/player/benchmark-cli/tests/KsaMetal.Benchmark.Cli.Tests.csproj" />
 	</Folder>
 	<Folder Name="/hooks/">
-		<Project Path="src/game/hooks/KsaMetalHooks.csproj" />
-		<Project Path="src/game/hooks/loader/KsaMetalHooksLoader.csproj" />
+		<Project Path="src/game/hooks/KsaMetal.Hooks.csproj" />
+		<Project Path="src/game/hooks/loader/KsaMetal.Hooks.Loader.csproj" />
 	</Folder>
 	<Folder Name="/porter/">
-		<Project Path="src/player/porter/KsaPorter.csproj" />
-		<Project Path="src/player/porter/tests/KsaPorterTests.csproj" />
+		<Project Path="src/player/porter/KsaPort.Porter.csproj" />
+		<Project Path="src/player/porter/tests/KsaPort.Porter.Tests.csproj" />
 	</Folder>
 	<Folder Name="/shared/">
 		<Project Path="src/shared/KsaPort.Common.csproj" />

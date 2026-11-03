@@ -1,7 +1,7 @@
 using HarmonyLib;
 using KSA;
 
-namespace KsaMetalHooks.Fixes;
+namespace KsaMetal.Hooks.Fixes;
 
 // Clutter off. A game bug since KSA 5707: PlanetRenderer.RenderClutterDepthNormalPrePass draws the ground clutter without
 // asking whether there is any, as RenderClutterDepthPrePass beside it does. With the game's Ground Clutter off there is no

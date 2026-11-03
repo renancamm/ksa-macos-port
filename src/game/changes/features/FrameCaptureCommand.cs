@@ -7,10 +7,10 @@ using System.Text;
 using Brutal.ImGuiApi.Abstractions;
 using HarmonyLib;
 using KSA;
-using KsaMetalBenchmark;
+using KsaMetal.Benchmark;
 using KsaPort.Common;
 
-namespace KsaMetalHooks.Features;
+namespace KsaMetal.Hooks.Features;
 
 // The console command "framecapture [note]": for a picture that goes wrong now and then, everything that can say where it
 // went wrong, from the moment it is on the screen, in a folder of its own (framecaptures/<date>_<time> in the documents
@@ -176,7 +176,7 @@ internal sealed class FrameCaptureCommand
         text.AppendLine($"note: {note}");
         text.AppendLine(FormattableString.Invariant($"game time: {Universe.GetElapsedSeconds():F1} s"));
         text.AppendLine(FormattableString.Invariant($"warp: {Universe.GetSimulationSpeed()}"));
-        text.AppendLine($"camera: {Benchmark.CurrentKey() ?? "near no celestial"}");
+        text.AppendLine($"camera: {Director.CurrentKey() ?? "near no celestial"}");
         if (DriverStats.Read() is { } f)
         {
             text.AppendLine(FormattableString.Invariant(

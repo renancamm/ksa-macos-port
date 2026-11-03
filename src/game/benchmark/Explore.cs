@@ -9,9 +9,9 @@ using Brutal.Numerics;
 using KSA;
 using KsaPort.Common;
 
-namespace KsaMetalBenchmark;
+namespace KsaMetal.Benchmark;
 
-public partial class Benchmark
+public partial class Director
 {
     private bool _exploring;
     private bool _exploreStarted;

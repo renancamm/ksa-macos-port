@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using Brutal.GlfwApi;
 using Brutal.GlfwApi.Cocoa;
 
-namespace KsaMetalHooks;
+namespace KsaMetal.Hooks;
 
 // A display's desktop mode: its size in points and its pixels per point. The GLFW shim answers, as it lists the sizes
 // of the same mode: the display's current one, or, while the game's Fullscreen has it switched to another, the one it

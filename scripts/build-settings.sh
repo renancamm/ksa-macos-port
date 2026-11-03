@@ -8,8 +8,8 @@ set -eo pipefail
 source "$(dirname "$0")/lib.sh"
 
 mkdir -p "${ASSEMBLIES}"
-dotnet_cli build "${REPO}/src/build-tools/settings-generator/KsaPortSettingsGenerator.csproj" -c Release -nologo -v quiet \
+dotnet_cli build "${REPO}/src/build-tools/settings-generator/KsaPort.Tools.SettingsGenerator.csproj" -c Release -nologo -v quiet \
     -p:PortBuildDir="${ASSEMBLIES}" -p:DebugType=none -nodeReuse:false > "${ASSEMBLIES}/settings-build.log" 2>&1 ||
     { cat "${ASSEMBLIES}/settings-build.log"; die "the port settings' generator didn't build."; }
-dotnet "${ASSEMBLIES}/bin/KsaPortSettingsGenerator/KsaPortSettingsGenerator.dll" check "${REPO}" ||
+dotnet "${ASSEMBLIES}/bin/KsaPort.Tools.SettingsGenerator/KsaPort.Tools.SettingsGenerator.dll" check "${REPO}" ||
     die "the port settings' checks failed."

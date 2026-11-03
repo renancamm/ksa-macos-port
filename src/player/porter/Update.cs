@@ -7,7 +7,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using KsaPort.Common;
 
-namespace KsaPorter;
+namespace KsaPort.Porter;
 
 // port.sh --update: the newest release of the port, when it is newer than this folder, downloaded, checked against the
 // checksum GitHub publishes and unpacked into the folder's .update/. port.sh then replaces the folder's contents with
@@ -88,7 +88,8 @@ public static class Update
             App.Remove(staged);
             Tool.Run("ditto", "-x", "-k", zip, staged);
             var folder = Path.Combine(staged, "ksa-macos-port");
-            if (!new[] { "VERSION", "port.sh", "lib/common.sh" }.All(f => File.Exists(Path.Combine(folder, f))))
+            string[] required = ["VERSION", "port.sh", "lib/common.sh", "lib/port.env"];
+            if (!required.All(f => File.Exists(Path.Combine(folder, f))))
             {
                 App.Remove(staged);
                 throw new PortException($"the download of {tag} has an unexpected layout.");

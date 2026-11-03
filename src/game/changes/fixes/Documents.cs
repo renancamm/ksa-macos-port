@@ -3,7 +3,7 @@ using System.Linq;
 using HarmonyLib;
 using KSA;
 
-namespace KsaMetalHooks.Fixes;
+namespace KsaMetal.Hooks.Fixes;
 
 // The game's documents folder (saves, settings, mods, logs) moved elsewhere with STARMAP_INSTANCE_PATH, as StarMap does
 // it, also when the game starts without StarMap: the benchmark plays from a folder of its own this way. With StarMap,

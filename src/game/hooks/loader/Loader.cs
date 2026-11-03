@@ -7,7 +7,7 @@ using System.Threading;
 // KSA Metal Hooks' entry point: the launcher names this assembly in DOTNET_STARTUP_HOOKS, so .NET runs Initialize
 // before the program it starts (KSA, or StarMap, which loads KSA itself). First it applies the port settings
 // (PortEnvironment.cs, with the shared library, KsaPort.Common.dll next to it). It references nothing of the game:
-// it waits until KSA.dll is loaded, then loads KsaMetalHooks.dll from its own folder into the same load context and
+// it waits until KSA.dll is loaded, then loads KsaMetal.Hooks.dll from its own folder into the same load context and
 // applies it, unless the settings turn the hooks off (then only for a benchmark run, KSA_BENCH_OUT, which the hooks
 // start). Harmony is not loaded before that: StarMap loads its own copy at start, and the hooks then use that one.
 internal class StartupHook
@@ -48,7 +48,7 @@ internal class StartupHook
         try
         {
             AssemblyLoadContext context = AssemblyLoadContext.GetLoadContext(assembly)!;
-            // KsaMetalHooks.dll's references that the context can't find are in this folder (Harmony, without StarMap,
+            // KsaMetal.Hooks.dll's references that the context can't find are in this folder (Harmony, without StarMap,
             // and the shared library), or in the benchmark's next to it (its director)
             context.Resolving += (ctx, name) =>
             {
@@ -60,8 +60,8 @@ internal class StartupHook
                 }
                 return null;
             };
-            Assembly hooks = context.LoadFromAssemblyPath(Path.Combine(folder, "KsaMetalHooks.dll"));
-            hooks.GetType("KsaMetalHooks.Hooks", true)!.GetMethod("Apply")!.Invoke(null, null);
+            Assembly hooks = context.LoadFromAssemblyPath(Path.Combine(folder, "KsaMetal.Hooks.dll"));
+            hooks.GetType("KsaMetal.Hooks.Hooks", true)!.GetMethod("Apply")!.Invoke(null, null);
         }
         catch (Exception e)
         {

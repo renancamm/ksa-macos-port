@@ -10,7 +10,7 @@ using HarmonyLib;
 using KSA;
 using KsaPort.Common;
 
-namespace KsaMetalHooks.Tab;
+namespace KsaMetal.Hooks.Tab;
 
 // The Mac Port tab's presets: Performance, Balanced and Quality, each a set of the game's own graphics settings, made
 // for this Mac's memory and chip, and of port settings (the settings table's presets column), and Game Defaults, the

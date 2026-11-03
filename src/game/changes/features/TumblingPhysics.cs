@@ -7,7 +7,7 @@ using BepuPhysics;
 using HarmonyLib;
 using KSA;
 
-namespace KsaMetalHooks.Features;
+namespace KsaMetal.Hooks.Features;
 
 // Tumbling physics. PhysicsStates.ComputeTimestep limits a vehicle's step so that it turns 30 degrees at most, but as
 // (pi/6)^2 / w^2, the square of the time it means: above 16.5 rad/s every step is the 1 ms minimum, for the whole

@@ -14,7 +14,7 @@ using KSA.Rendering;
 using KSA.Rendering.Lighting;
 using KSA.Rendering.PostProcessing;
 
-namespace KsaMetalHooks.Features;
+namespace KsaMetal.Hooks.Features;
 
 // Render scale (port-settings.toml), and the window's three sizes on a Retina display. The app is marked
 // NSHighResolutionCapable, so the swapchain has the display's pixels and the game's UI is drawn at them (ImGui scales

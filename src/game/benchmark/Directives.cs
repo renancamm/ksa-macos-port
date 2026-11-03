@@ -95,9 +95,9 @@ using Brutal.Numerics;
 using KSA;
 using KsaPort.Common;
 
-namespace KsaMetalBenchmark;
+namespace KsaMetal.Benchmark;
 
-public partial class Benchmark
+public partial class Director
 {
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 

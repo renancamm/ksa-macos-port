@@ -33,9 +33,9 @@ using System.Linq;
 using Brutal.Numerics;
 using KSA;
 
-namespace KsaMetalBenchmark;
+namespace KsaMetal.Benchmark;
 
-public partial class Benchmark
+public partial class Director
 {
     private enum Move { Curve, Pan, Zoom }
 

@@ -5,16 +5,16 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using KsaPort.Common;
 
-namespace KsaPorter;
+namespace KsaPort.Porter;
 
 // The port's program: what the port folder's commands do (README.md in this folder). The commands start it on the
 // folder's .NET runtime from lib/common.sh:
 //
-//   KsaPorter port [options] [archive | folder]   port.sh
-//   KsaPorter starmap [--app <path>] [--remove]   starmap.sh
-//   KsaPorter convert-dotnet <game> <runtime>     the build: KSA's assemblies, for the hooks and the benchmark
-//   KsaPorter mark-arm64 <file.dll...>            the build: StarMap.dll
-//   KsaPorter edit-shaders <game>                 the shader edits alone, on a game folder
+//   KsaPort.Porter port [options] [archive | folder]   port.sh
+//   KsaPort.Porter starmap [--app <path>] [--remove]   starmap.sh
+//   KsaPort.Porter convert-dotnet <game> <runtime>     the build: KSA's assemblies, for the hooks and the benchmark
+//   KsaPort.Porter mark-arm64 <file.dll...>            the build: StarMap.dll
+//   KsaPort.Porter edit-shaders <game>                 the shader edits alone, on a game folder
 //
 // Exit codes: 0 done, 1 a problem or a wrong option (the message says which), 75 a newer port folder is in .update/
 // (port --update): port.sh puts it in place and runs again.
@@ -42,7 +42,7 @@ internal static class Program
                     ShaderEdits.Apply(game, ShaderEdits.Read(PortFolder.ShaderEditsFolder), Console.WriteLine);
                     return 0;
                 default:
-                    Console.Error.WriteLine("usage: KsaPorter port | starmap | convert-dotnet <game> <runtime> | " +
+                    Console.Error.WriteLine("usage: KsaPort.Porter port | starmap | convert-dotnet <game> <runtime> | " +
                         "mark-arm64 <file.dll...> | edit-shaders <game>");
                     return 2;
             }

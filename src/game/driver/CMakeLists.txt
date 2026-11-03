@@ -13,11 +13,12 @@ set(KSA_MTL_OPT "-O2" CACHE STRING "Optimization flag for KSA Metal")
 # build folder's path. The symbols stay, for crash reports.
 set(KSA_MTL_DEBUG_MAP ON CACHE BOOL "Keep the debug map (object file paths) in KSA Metal")
 
-# The driver's code as objects, which the library and the tests (tests/) both link
-# The entry table that vkGetInstanceProcAddr and vkGetDeviceProcAddr answer from (setup/entry.mm): entries.inc, which
-# KsaMetalEntries (src/build-tools/entries-generator/) makes from Vulkan's registry, the driver's sources and
-# setup/aliases.txt, written only when it differs
-port_dotnet_tool(ENTRIES_GENERATOR "${PROJECT_SOURCE_DIR}/src/build-tools/entries-generator/KsaMetalEntries.csproj")
+# The driver's code as objects, which the library and the tests (tests/) both link The entry table that
+# vkGetInstanceProcAddr and vkGetDeviceProcAddr answer from (setup/entry.mm): entries.inc, which
+# KsaPort.Tools.EntriesGenerator (src/build-tools/entries-generator/) makes from Vulkan's registry, the driver's
+# sources and setup/aliases.txt, written only when it differs
+port_dotnet_tool(ENTRIES_GENERATOR
+    "${PROJECT_SOURCE_DIR}/src/build-tools/entries-generator/KsaPort.Tools.EntriesGenerator.csproj")
 file(GLOB_RECURSE driver_sources RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" CONFIGURE_DEPENDS "*.mm" "*.cpp")
 list(FILTER driver_sources EXCLUDE REGEX "^tests/")
 list(TRANSFORM driver_sources PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")

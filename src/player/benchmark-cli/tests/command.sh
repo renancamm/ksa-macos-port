@@ -43,13 +43,13 @@ SETTINGS
 # The stand-in: an app by this port's bundle id whose game writes what the director writes, then does what FAKE_GAME says
 APP="${T}/Fake Game.app"
 mkdir -p "${APP}/Contents/MacOS" "${APP}/Contents/Resources/Hooks" "${APP}/Contents/Resources/Benchmark"
-touch "${APP}/Contents/Resources/Hooks/KsaMetalHooks.dll"
+touch "${APP}/Contents/Resources/Hooks/KsaMetal.Hooks.dll"
 cp "${RESOURCES}/Benchmark/benchmark.txt" "${APP}/Contents/Resources/Benchmark/"
 cp "${RESOURCES}/port-settings.txt" "${APP}/Contents/Resources/" 2> /dev/null
 cat > "${APP}/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict>
-<key>CFBundleIdentifier</key><string>$(sed -n 's/^BUNDLE_ID="\(.*\)"/\1/p' "${PORT_FOLDER}/lib/common.sh")</string>
+<key>CFBundleIdentifier</key><string>$(sed -n 's/^BUNDLE_ID="\(.*\)"/\1/p' "${PORT_FOLDER}/lib/port.env")</string>
 <key>CFBundleShortVersionString</key><string>$(sed -n 's/^ksa=//p' "${PORT_FOLDER}/VERSION")</string>
 <key>KSAPortVersion</key><string>test</string><key>KSAPortCommit</key><string>test</string>
 </dict></plist>

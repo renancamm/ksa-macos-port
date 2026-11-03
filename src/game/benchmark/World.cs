@@ -10,9 +10,9 @@ using System.Reflection;
 using KSA;
 using KSA.Atmosphere.Rendering;
 
-namespace KsaMetalBenchmark;
+namespace KsaMetal.Benchmark;
 
-public partial class Benchmark
+public partial class Director
 {
     // Each layer of a celestial's clouds moves its flow and noise on by the simulated time of every frame that draws it,
     // so the clouds stand still while the camera is elsewhere and the same game time looks different after a different

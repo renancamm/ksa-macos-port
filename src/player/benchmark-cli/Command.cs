@@ -10,7 +10,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using KsaPort.Common;
 
-namespace KsaMetalBenchmarkReport;
+namespace KsaMetal.Benchmark.Cli;
 
 // benchmark.sh: the port folder's command, which starts this program from the folder (command <args...>) with
 // KSA_PORT_FOLDER set. It plays a test of the game in one session, in a documents folder of its own, and writes the

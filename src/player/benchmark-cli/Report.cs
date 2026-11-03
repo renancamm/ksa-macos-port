@@ -34,7 +34,7 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using KsaPort.Common;
 
-namespace KsaMetalBenchmarkReport;
+namespace KsaMetal.Benchmark.Cli;
 
 public static partial class Program
 {
