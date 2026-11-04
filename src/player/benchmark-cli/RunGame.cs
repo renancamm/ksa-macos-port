@@ -207,12 +207,8 @@ public static partial class Program
             // KSA_BENCH_HANG_LIMIT: other seconds (not a number: no hang check)
             var limit = Environment.GetEnvironmentVariable("KSA_BENCH_HANG_LIMIT");
             int HangLimit(int otherwise) => limit is not { Length: > 0 } ? otherwise : int.TryParse(limit, out var s) ? s : int.MaxValue;
-            int hang = HangLimit(60);
-            if (_capture || _catch.Length > 0 || _passes)
-                hang = 180;
-            // Time warp can stall a frame for most of a minute before it goes on: past that, the sections played are kept
-            if (_only.Any(p => _lineup.Scenario(p.Split('_')[0])?.Kind == Kind.Timed))
-                hang = HangLimit(180);
+            int hang = HangLimit(Watchdog.Limit(_capture || _catch.Length > 0 || _passes ||
+                                                _only.Any(p => _lineup.Scenario(p.Split('_')[0])?.Kind == Kind.Timed)));
             int pressure = 1;
             var swapBefore = Swap();
             var tools = _tools.Count > 0 ? string.Join(", ", _tools) : "none";
@@ -369,8 +365,8 @@ public static partial class Program
                     pressure = level;
                 if (_stopped)
                     ending = "was stopped with Ctrl-C";
-                else if (beat != null && (DateTime.UtcNow - beat.At).TotalSeconds > hang)
-                    ending = $"hung{Where(beat, false)} (no frame for {hang} s): stopped";
+                else if (Watchdog.Hung(_out, n, hang) is { } stale)
+                    ending = $"hung{Watchdog.Where(stale)} (no frame for {hang} s): stopped";
                 else if (timeout > 0 && elapsed >= timeout)
                     ending = $"did not finish in {timeout} s: stopped";
                 if (ending.Length > 0)
@@ -395,7 +391,7 @@ public static partial class Program
             {
                 // Where the game had got to
                 var beat = EventLog.LastHeartbeat(_out, n);
-                var where = beat != null ? Where(beat, true) : " before its first frame";
+                var where = beat != null ? Watchdog.Where(beat) : " before its first frame";
                 int status = game.ExitCode;
                 ending = status == 0 ? "quit normally"
                     : status is >= 130 and <= 199 ? $"crashed (signal {status - 128}){where}"
@@ -418,11 +414,6 @@ public static partial class Program
             if (File.Exists(log))
                 File.WriteAllText(Path.Combine(_out, n > 1 ? $"game-{n}.log" : "game.log"), File.ReadAllText(log).Replace(PortFolder.Home, "~"));
         }
-
-        // Where the last heartbeat says the game is: " in <scenario> at <seconds> s", or nothing before the first scenario
-        // (or, after the run, while the director waited)
-        private static string Where(RunEvent beat, bool afterTheRun) =>
-            beat.Scenario != null && beat.Value is { } at ? FormattableString.Invariant($" in {beat.Scenario} at {at:0.0} s") : "";
 
         private Process? StartTrace(int pid, EventLog events)
         {

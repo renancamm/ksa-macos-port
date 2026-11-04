@@ -54,10 +54,7 @@ public static class Runs
     // The options of a run that starts with the game (run.json in KSA_BENCH_OUT's folder)
     private static RunOptions? _options;
     private static readonly MemoryWatch Memory = new();
-    // A run from the tab has no script to stop a game that has hung: past this, the game is stopped from a thread of its
-    // own. Time warp can stall a frame for most of a minute before it goes on.
-    private const double HangSeconds = 180;
-    private static long _lastFrame;
+    // A run from the tab has no script to stop a game that has hung: a thread of its own does, by the same rule
     private static bool _watching;
     private static Result? _last;
     private static bool _lastLooked;
@@ -211,7 +208,6 @@ public static class Runs
 
     private static void Frame()
     {
-        Interlocked.Exchange(ref _lastFrame, Stopwatch.GetTimestamp());
         if (_firstFrame)
         {
             _firstFrame = false;
@@ -267,17 +263,18 @@ public static class Runs
         {
             Log($"BenchmarkRun: caffeinate: {e.Message}");
         }
+        // Any test of the tab's may have time warp (full has the Warp Test)
+        int limit = Watchdog.Limit(_test is "warp" or "full");
         while (true)
         {
             Thread.Sleep(1000);
-            if (_run == null || Stopwatch.GetElapsedTime(Interlocked.Read(ref _lastFrame)).TotalSeconds < HangSeconds)
+            if (_run == null || Watchdog.Hung(_out, 1, limit) is not { } stale)
                 continue;
-            // The director wrote the results of each section it finished; the report comes from them, and the player's game
-            // is in the save on disk
-            Log($"BenchmarkRun: no frame for {HangSeconds:F0} s: stopping the game. Your game is in the save \"{SafetySave}\", the run's results in {_out.Replace(Home, "~")}");
+            // What the director measured is in its events and frames, and the player's game is in the save on disk
+            Log($"BenchmarkRun: no frame for {limit} s: stopping the game. Your game is in the save \"{SafetySave}\", the run's results in {_out.Replace(Home, "~")}");
             try
             {
-                new EventLog(_out, 1).Add("ended", text: $"hung (no frame for {HangSeconds:F0} s): stopped");
+                new EventLog(_out, 1).Add("ended", text: $"hung{Watchdog.Where(stale)} (no frame for {limit} s): stopped");
                 CopyLog(_mode);
                 Finish.Run(_out);
             }
