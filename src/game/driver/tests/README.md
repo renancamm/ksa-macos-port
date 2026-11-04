@@ -22,8 +22,8 @@ cache is left out). A benchmark run records the shaders of the places it plays, 
 to it:
 
 ```bash
-dist/ksa-macos-port/benchmark.sh mixed --fast --defaults --port shader_corpus=$HOME/Library/Caches/ksa-metal/corpus
-dist/ksa-macos-port/benchmark.sh tour --fast --defaults --port shader_corpus=$HOME/Library/Caches/ksa-metal/corpus
+dist/ksa-macos-port/benchmark.sh mixed --defaults --port shader_corpus=$HOME/Library/Caches/ksa-metal/corpus
+dist/ksa-macos-port/benchmark.sh tour --defaults --port shader_corpus=$HOME/Library/Caches/ksa-metal/corpus
 ```
 
 `~/Library/Caches/ksa-metal/corpus` is where the test looks (`-DKSA_MTL_CORPUS_DIR=<dir>` changes it). The corpus

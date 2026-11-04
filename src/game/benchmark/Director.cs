@@ -95,6 +95,14 @@ public partial class Director
     private bool _active;
     // RunOptions.Fast: the places chosen jumped to, the game paused on the way, instead of played
     private bool _jump, _shots = true;
+    // Which time the scenarios play in this session (RunOptions.Repeat): 0 the warm-up pass, then 1, 2...; the GPU time of
+    // the warm-up's measured frames
+    private int _pass = 1;
+    private List<double> _warmGpu = new();
+    private ulong _warmPresent;
+
+    // Whether this pass takes screenshots: the first measured one alone (the others measure)
+    private bool TakesShots => _shots && _pass == 1;
     private string? _hold;
     private double _nextBeat;
 
@@ -179,6 +187,8 @@ public partial class Director
         }
         _jump = options.Fast;
         _shots = !options.NoShots;
+        _pass = options.WarmUp ? 0 : 1;
+        _events.Pass = _pass;
         _hold = options.Hold is { Length: > 0 } hold ? hold : null;
         Lineup lineup;
         try
@@ -192,8 +202,11 @@ public partial class Director
         }
         foreach (var scenario in lineup.Scenarios)
         {
+            // benchmark.sh calibrate's profile of the test, if there is one, before the one in the app
             if (lineup.TestOf(scenario.Name) is { } test)
-                _noise[scenario.Name] = NoiseProfile.Read(Path.GetDirectoryName(script)!, test.Name);
+                _noise[scenario.Name] = NoiseProfile.Read(
+                    options.NoiseFolder.Length > 0 && File.Exists(NoiseProfile.PathFor(options.NoiseFolder, test.Name)) ? options.NoiseFolder : Path.GetDirectoryName(script)!,
+                    test.Name);
             var section = new Section { Name = scenario.Name, Needs = scenario.Needs, Live = scenario.Kind == Kind.Timed, Kind = scenario.Kind };
             section.Steps.AddRange(scenario.Steps);
             _sections.Add(section);
@@ -226,7 +239,7 @@ public partial class Director
             _sections.RemoveAll(section => !_only.ContainsKey(section.Name));
         _waitFor = options.WaitForRecording;
         Directory.CreateDirectory(_outDir);
-        _frames = new FrameLog(_outDir, options.Session);
+        _frames = new FrameLog(_outDir, options.Session) { Pass = _pass };
         _probes = Probes.For(options, new ProbeContext(_outDir, Error, Log));
         _active = true;
         // A directive without a handler fails the run at once, before anything plays
@@ -243,7 +256,11 @@ public partial class Director
         FrameBody();
         // The frame's line, once it is known which part its numbers count in
         if (_row is { } r)
+        {
             _frames?.Add(r.Script, r.Scenario, _measured, r.Phase, r.FrameMs, r.Driver, r.Sim);
+            if (_pass == 0 && _measured != null && r.Driver is { GpuMs: > 0 } d && d.Present != _warmPresent)
+                (_warmPresent, _warmGpu) = (d.Present, _warmGpu.Append(d.GpuMs).ToList());
+        }
     }
 
     private void FrameBody()
@@ -462,6 +479,8 @@ public partial class Director
             _sectionStart += _sections[_section].Length;
         _section++;
         _next = 0;
+        if (_section >= _sections.Count && NextPass())
+            return;
         if (_section >= _sections.Count)
         {
             _active = false;
@@ -469,7 +488,6 @@ public partial class Director
             _frames = null;
             foreach (var probe in _probes)
                 probe.End();
-            _events.Add("done");
             if (_clock.ShortSteps > 0)
                 Log($"the setup's steps: the game fell short of {_clock.ShortSteps} of them (slow frames of physics), finished in the frame after");
             Log(FormattableString.Invariant($"done after {_wall.Elapsed.TotalSeconds:F1} s"));
@@ -487,6 +505,35 @@ public partial class Director
         _inScenario = true;
         _events.Add("scenario", ScenarioName, text: Lineup.Name(_sections[_section].Kind));
         Log(FormattableString.Invariant($"scenario {ScenarioName} (game time {Universe.GetElapsedSeconds():F1} s, {_wall.Elapsed.TotalSeconds:F1} s into the run)"));
+    }
+
+    // At the end of the scenarios: the next pass, if there is one (true), from the script's start. A measured pass ends
+    // with "done"; the warm-up says what its GPU time was, which the record sets against the measured passes'
+    private bool NextPass()
+    {
+        if (_pass == 0)
+        {
+            var gpu = _warmGpu.OrderBy(x => x).ToList();
+            double median = gpu.Count > 0 ? gpu[gpu.Count / 2] : double.NaN;
+            _events.Add("warmed", value: double.IsNaN(median) ? null : Math.Round(median, 2));
+            Log(FormattableString.Invariant($"warm-up done after {_wall.Elapsed.TotalSeconds:F1} s (GPU {median:F1} ms a frame)"));
+        }
+        else
+            _events.Add("done");
+        if (_pass >= _options.Repeat)
+            return false;
+        _pass++;
+        _events.Pass = _pass;
+        if (_frames != null)
+            _frames.Pass = _pass;
+        _section = -1;
+        _next = 0;
+        _sectionStart = 0;
+        _clock.Rewind();
+        _camera.Restart();
+        Log($"pass {_pass} of {_options.Repeat}");
+        NextSection();
+        return true;
     }
 
     // Ends the run before the script's end (the player stopped it): the results say why, and that it did not complete

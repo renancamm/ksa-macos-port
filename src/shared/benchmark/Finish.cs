@@ -51,7 +51,11 @@ public static class Finish
             Drawable = events.LastOrDefault(e => e.Type == "drawable")?.Text,
             Scenarios = Scenarios(events, frames),
         };
+        SetLimits(record, options);
         record.Facts = Facts.Gather(dir, options.App, options.Facts, logs.FirstOrDefault().Lines ?? [], asksMac);
+        if (events.FirstOrDefault(e => e.Type == "warmed") is { } warmed)
+            record.Facts.Add(new Fact("Warm-up", warmed.Value is { } gpu
+                ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"a pass first, left out (GPU {gpu:F1} ms a frame)") : "a pass first, left out"));
         var crashes = CrashReports(record.Started.ToUniversalTime());
         record.Findings = Checks.Run(new RunEvidence(dir, record, events, logs, crashes));
         record.Status = events.Any(e => e.Type == "stopped") ? Status.Stopped : record.Problems.Any() ? Status.Failed : Status.Passed;
@@ -61,28 +65,32 @@ public static class Finish
         return record;
     }
 
-    // The scenarios as they played, in order: each part's measurings (sessions, passes) summed up from their frames and
-    // merged, the screenshots of the first pass with their limits
+    // The scenarios as they played, in order: each part's measurings (sessions, passes, but the warm-up's) summed up from
+    // their frames and merged, the screenshots of the first measured pass with their limits. An A/B run's scenarios are
+    // there once for each side, the sessions of each merged
     private static List<ScenarioRecord> Scenarios(List<RunEvent> events, List<FrameRow> frames)
     {
+        var variants = events.Where(e => e.Type == "session").ToDictionary(e => e.Session, e => e.Text is { Length: > 0 } v ? v : null);
+        string? VariantOf(int session) => variants.GetValueOrDefault(session);
         var scenarios = new List<ScenarioRecord>();
         foreach (var e in events.Where(e => e.Type == "scenario" && e.Scenario != null))
         {
-            if (scenarios.Any(s => s.Name == e.Scenario))
+            var variant = VariantOf(e.Session);
+            if (scenarios.Any(s => s.Name == e.Scenario && s.Variant == variant))
                 continue;
             scenarios.Add(new ScenarioRecord
             {
-                Name = e.Scenario!,
+                Name = e.Scenario!, Variant = variant,
                 Kind = Enum.TryParse<Kind>(e.Text, ignoreCase: true, out var kind) ? kind : Kind.Flight
             });
         }
         var rows = frames.Where(r => r.Part.Length > 0).GroupBy(r => (r.Scenario, r.Part, r.Session, r.Pass)).ToDictionary(g => g.Key, g => (IReadOnlyList<FrameRow>)g.ToList());
         foreach (var scenario in scenarios)
         {
-            var parts = events.Where(e => e.Type == "open" && e.Scenario == scenario.Name).Select(e => e.Part!).Distinct().ToList();
-            foreach (var part in parts)
+            var opens = events.Where(e => e.Type == "open" && e.Scenario == scenario.Name && e.Pass > 0 && VariantOf(e.Session) == scenario.Variant).ToList();
+            foreach (var part in opens.Select(e => e.Part!).Distinct().ToList())
             {
-                var measurings = events.Where(e => e.Type == "open" && e.Scenario == scenario.Name && e.Part == part)
+                var measurings = opens.Where(e => e.Part == part)
                     .Select(open => rows.TryGetValue((scenario.Name, part, open.Session, open.Pass), out var r)
                         ? Summary.Of(part, r, scenario.Kind == Kind.Timed ? open.Game : null, (long?)open.Value)
                         : null)
@@ -90,11 +98,40 @@ public static class Finish
                 if (measurings.Count > 0)
                     scenario.Parts.Add(Summary.Merge(measurings));
             }
-            var firstPass = events.Where(e => e.Type == "shot" && e.Scenario == scenario.Name).GroupBy(e => (e.Session, e.Pass)).FirstOrDefault();
+            var firstPass = events.Where(e => e.Type == "shot" && e.Scenario == scenario.Name && e.Pass > 0 && VariantOf(e.Session) == scenario.Variant)
+                .GroupBy(e => (e.Session, e.Pass)).FirstOrDefault();
             foreach (var shot in firstPass ?? Enumerable.Empty<RunEvent>())
                 scenario.Shots.Add(new ShotRecord(shot.Part!, shot.Text!, shot.Value ?? NoiseProfile.DefaultShotLimit(scenario.Kind)));
         }
         return scenarios;
+    }
+
+    // Each part's limit from its test's noise profile: benchmark.sh calibrate's (RunOptions.NoiseFolder) before the one in
+    // the app, next to its lineup
+    private static void SetLimits(RunRecord record, RunOptions options)
+    {
+        if (!File.Exists(options.Script))
+            return;
+        Lineup lineup;
+        try
+        {
+            lineup = Lineup.Read(options.Script);
+        }
+        catch (LineupException)
+        {
+            return;
+        }
+        foreach (var scenario in record.Scenarios)
+        {
+            if (lineup.TestOf(scenario.Name) is not { } test)
+                continue;
+            var folder = options.NoiseFolder.Length > 0 && File.Exists(NoiseProfile.PathFor(options.NoiseFolder, test.Name))
+                ? options.NoiseFolder : Path.GetDirectoryName(options.Script)!;
+            var noise = NoiseProfile.Read(folder, test.Name);
+            foreach (var part in scenario.Parts)
+                if (noise.Parts.ContainsKey(part.Name))
+                    part.Limit = noise.PartLimit(part.Name);
+        }
     }
 
     // The game's log of each session: game.log, game-2.log...

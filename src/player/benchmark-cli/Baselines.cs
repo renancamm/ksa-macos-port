@@ -71,13 +71,13 @@ public static partial class Program
             }
             case ["set", var name, .. var runs]:
             {
-                if (name.StartsWith('-') || name is "last" or "previous")
-                    Die($"a baseline needs a name of its own, not '{name}'.");
+                if (name.StartsWith('-') || name is "last" or "previous" or "mixed" or "tour" or "warp" or "full" || char.IsDigit(name[0]) || name.Contains('/'))
+                    Die($"a baseline needs a name of its own (not a test's, a run's or a path), not '{name}'.");
                 var tests = baselines.GetValueOrDefault(name) ?? [];
                 foreach (var run in runs.Length > 0 ? runs : ["last"])
                 {
                     var dir = RunFolder(run);
-                    if (!Directory.Exists(dir) || Path.GetDirectoryName(Path.GetFullPath(dir)) != Path.GetFullPath(Benchmarks))
+                    if (!Directory.Exists(dir) || !Directory.Exists(Path.Combine(Benchmarks, Path.GetFileName(Path.GetFullPath(dir).TrimEnd('/')))))
                         Die($"a baseline is a run in {Benchmarks}, not {run}.");
                     var record = RunRecord.Read(dir);
                     if (record == null || record.Test is "places" or "full")

@@ -147,6 +147,25 @@ public static class Pages
             md.AppendLine("Frame: time between two frames (median, 95th percentile). GPU: time the GPU worked on a frame. Hitches: frames longer than twice the median. " +
                           "Memory: the game's footprint at its peak, and what KSA Metal allocated for the GPU. Shaders: compiled while measuring (each one a stutter).");
         }
+        var ab = AB(r);
+        if (ab.Count > 0)
+        {
+            md.AppendLine();
+            md.AppendLine($"A/B: B played with {r.Fact("A/B") ?? "the setting changed"}, A without, in sessions taken in turn.");
+            md.AppendLine();
+            md.AppendLine("| Scenario | Part | GPU ms A | GPU ms B | Change |");
+            md.AppendLine("|---|---|---:|---:|---:|");
+            foreach (var (scenario, a, b, moved, change) in ab)
+            {
+                string Range(PartRecord p) => (p.GpuMsMedian ?? p.FrameMsMedian).ToString("0.0", CultureInfo.InvariantCulture) +
+                                              (p.GpuMsRange is [var lo, var hi] ? $" ({F(lo, "0.0")}-{F(hi, "0.0")})" : "");
+                md.AppendLine($"| {scenario} | {a.Name} | {Range(a)} | {Range(b)} | " +
+                              (moved ? $"**{Math.Abs(change) * 100:F0} % {(change < 0 ? "faster" : "slower")}**" : $"{change * 100:+0;-0;0} %") + " |");
+            }
+            md.AppendLine();
+            md.AppendLine("A change is marked past the noise: with several passes or sessions, when the ranges of A's and B's measurings don't overlap and it is over 2 %; " +
+                          "with one, past the part's limit (5 % without a noise profile).");
+        }
         var warp = r.AllParts().Where(x => x.Part.Warp != null).ToList();
         if (warp.Count > 0)
         {
@@ -179,6 +198,27 @@ public static class Pages
         if (r.AllParts().Select(x => x.Part.Runs).DefaultIfEmpty(1).Max() is > 1 and var runs)
             md.AppendLine($"| Runs | {runs}: each number is the median of the runs, Frame ms shows their range |");
         return md.ToString();
+    }
+
+    // An A/B run's parts, B's against A's: whether each moved past the noise, and by how much (GPU time, or frame time)
+    public static List<(string Scenario, PartRecord A, PartRecord B, bool Moved, double Change)> AB(RunRecord r)
+    {
+        var list = new List<(string, PartRecord, PartRecord, bool, double)>();
+        foreach (var a in r.Scenarios.Where(s => s.Variant == "A"))
+        {
+            if (r.Scenarios.FirstOrDefault(s => s.Name == a.Name && s.Variant == "B") is not { } b)
+                continue;
+            foreach (var pa in a.Parts.Where(p => p.Warp == null))
+            {
+                if (b.Part(pa.Name) is not { } pb)
+                    continue;
+                bool gpu = pa.GpuMsMedian != null && pb.GpuMsMedian != null;
+                double x = gpu ? pa.GpuMsMedian!.Value : pa.FrameMsMedian, y = gpu ? pb.GpuMsMedian!.Value : pb.FrameMsMedian;
+                list.Add((a.Name, pa, pb, Noise.Moved(x, y, gpu ? pa.GpuMsRange : pa.FrameMsRange, gpu ? pb.GpuMsRange : pb.FrameMsRange, pa.Limit),
+                    x > 0 ? (y - x) / x : 0));
+            }
+        }
+        return list;
     }
 
     // --- report.html
@@ -236,6 +276,7 @@ public static class Pages
 
         var shown = order.Select(s => Path.GetFileNameWithoutExtension(s.File)).ToHashSet();
         Parts(html, r, shown, ext);
+        ABTable(html, r);
         var timelines = Timelines(dir);
         WarpCharts(html, r, timelines);
         FrameCharts(html, r, timelines);
@@ -290,6 +331,22 @@ public static class Pages
                 html.Append($"<div class=\"bar s2\" style=\"width:{F(100 * g / scale, "0.0")}%\" title=\"GPU {F(g)} ms\"></div>");
             html.Append("</td>");
             html.Append($"<td>{F(p.AverageFps, "0.0")}</td><td>{frame}</td><td>{N(p.GpuMsMedian, "0.0")}</td><td>{F(p.FrameMsP95, "0.0")}</td><td>{F(p.FrameMsMax, "0")}</td><td>{p.Hitches}</td><td>{N(p.DrawsMedian, "0")}</td><td>{p.FootprintPeakMb}</td></tr>");
+        }
+        html.Append("</tbody></table></div></section>");
+    }
+
+    // An A/B run: each part's GPU time with the setting (B) and without (A), and whether it moved past the noise
+    private static void ABTable(StringBuilder html, RunRecord r)
+    {
+        var ab = AB(r);
+        if (ab.Count == 0)
+            return;
+        html.Append($"<section><h2>A/B</h2><p class=\"lead\">B played with {E(r.Fact("A/B") ?? "the setting changed")}, A without, in sessions taken in turn. A change is marked past the noise: ranges that don't overlap, or with one measuring each, the part's limit.</p>");
+        html.Append("<div class=\"table-scroll\"><table class=\"parts\"><thead><tr><th>Part</th><th>A ms</th><th>B ms</th><th>Change</th></tr></thead><tbody>");
+        foreach (var (scenario, a, b, moved, change) in ab)
+        {
+            html.Append($"<tr><td class=\"part\">{E(scenario)} {E(a.Name)}</td><td>{F(a.GpuMsMedian ?? a.FrameMsMedian, "0.0")}</td><td>{F(b.GpuMsMedian ?? b.FrameMsMedian, "0.0")}</td>");
+            html.Append($"<td>{(moved ? Change(change < 0, $"{F(Math.Abs(change) * 100, "0")} % {(change < 0 ? "faster" : "slower")}") : $"<span class=\"quiet\">{F(change * 100, "+0;-0;0")} %</span>")}</td></tr>");
         }
         html.Append("</tbody></table></div></section>");
     }

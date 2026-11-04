@@ -23,8 +23,16 @@ public sealed class RunOptions
     public bool NoShots { get; set; }
     // <section>_<shot>: stop at that checkpoint for good, the game paused, until it is quit
     public string Hold { get; set; } = "";
-    // Which game session of the run this is, from 1
+    // Which game session of the run this is, from 1, and the side of an A/B run it plays (A, B; empty: none)
     public int Session { get; set; } = 1;
+    public string Variant { get; set; } = "";
+    // How many times the scenarios play in the session, measured each time (benchmark.sh measure --repeat), and whether a
+    // pass before them warms the Mac up, its numbers kept apart (pass 0)
+    public int Repeat { get; set; } = 1;
+    public bool WarmUp { get; set; }
+    // A folder whose noise/ holds profiles that a test's own (in the app, next to the lineup) gives way to: the benchmarks
+    // folder, where benchmark.sh calibrate writes them
+    public string NoiseFolder { get; set; } = "";
     // The app played, and what the host says about the run for its record (the test, the settings, the tools...)
     public string App { get; set; } = "";
     public List<Fact> Facts { get; set; } = [];

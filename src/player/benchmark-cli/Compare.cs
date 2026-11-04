@@ -14,10 +14,10 @@ namespace KsaMetal.Benchmark.Cli;
 
 public static partial class Program
 {
-    // Changes smaller than this are within run-to-run noise (two runs on one Mac differ by 1% in most parts, 4% at most).
-    // With repeats on both sides, a change counts when the ranges of the repeats don't overlap and it is over the
-    // smaller threshold.
-    private const double Significant = 0.05, SignificantRepeated = 0.02;
+    // Changes smaller than this are within run-to-run noise (two runs on one Mac differ by 1% in most parts, 4% at most),
+    // unless the test's noise profile gives a part its own limit (Noise.Moved). With repeats on both sides, a change counts
+    // when the ranges of the repeats don't overlap and it is over the smaller threshold.
+    private const double Significant = Noise.Significant, SignificantRepeated = Noise.SignificantRepeated;
 
     // Whether a run about to play will compare with this one: said before the minutes it takes, not after. Null when it
     // will, else why not
@@ -163,21 +163,10 @@ public static partial class Program
                 (x, y, rx, ry) = (ga, gb, pa.GpuMsRange, pb.GpuMsRange);
             else
                 (x, y, rx, ry) = (pa.FrameMsMedian, pb.FrameMsMedian, pa.FrameMsRange, pb.FrameMsRange);
-            changes.Add(new PartChange(key.Scenario, pa, pb, Marked(x, y, rx, ry), x > 0 ? (y - x) / x : 0));
+            var limit = pa.Limit is { } la && pb.Limit is { } lb ? Math.Max(la, lb) : pa.Limit ?? pb.Limit;
+            changes.Add(new PartChange(key.Scenario, pa, pb, Noise.Moved(x, y, rx, ry, warp ? null : limit), x > 0 ? (y - x) / x : 0));
         }
         return changes;
-    }
-
-    // Whether a number moved past the noise: over Significant, or with repeats on both sides, ranges that don't overlap
-    // and over SignificantRepeated
-    public static bool Marked(double a, double b, double[]? rangeA, double[]? rangeB)
-    {
-        if (a <= 0)
-            return false;
-        double change = Math.Abs(b - a) / a;
-        if (rangeA is [var loA, var hiA] && rangeB is [var loB, var hiB])
-            return change > SignificantRepeated && (hiB < loA || loB > hiA);
-        return change > Significant;
     }
 
     // One sentence for two runs: the image, then the GPU time over the parts (each part counts the same), then time warp
@@ -282,7 +271,7 @@ public static partial class Program
             string last = "";
             foreach (var c in plain)
             {
-                var frame = new PartChange(c.Scenario, c.A, c.B, Marked(c.A.FrameMsMedian, c.B.FrameMsMedian, c.A.FrameMsRange, c.B.FrameMsRange),
+                var frame = new PartChange(c.Scenario, c.A, c.B, Noise.Moved(c.A.FrameMsMedian, c.B.FrameMsMedian, c.A.FrameMsRange, c.B.FrameMsRange),
                     c.A.FrameMsMedian > 0 ? (c.B.FrameMsMedian - c.A.FrameMsMedian) / c.A.FrameMsMedian : 0);
                 var gpu = c.A.GpuMsMedian != null && c.B.GpuMsMedian != null ? ChangeText(c) : "";
                 md.AppendLine($"| {(c.Scenario == last ? "" : c.Scenario)} | {c.A.Name} | {Num(c.A.GpuMsMedian, "F1")} | {Num(c.B.GpuMsMedian, "F1")} | {gpu} | " +
@@ -300,8 +289,8 @@ public static partial class Program
             md.AppendLine($"Only in b: {string.Join(", ", come)}.");
         md.AppendLine(repeated
             ? $"Both runs were repeated: a change is marked when the ranges of the repeats don't overlap and it is over {SignificantRepeated:P0}."
-            : $"Changes over {Significant:P0} are marked; smaller ones are within run-to-run noise. Frame times sit on the display's beat: read GPU ms first. " +
-              "A Mac's heat moves GPU time too, about 10 % between a first run after a rest and the next ones: compare runs at the same point of a series, or with --repeat 3 on both sides.");
+            : $"Changes past a part's limit (its test's noise profile, else {Significant:P0}) are marked; smaller ones are within run-to-run noise. Frame times sit on the display's beat: read GPU ms first. " +
+              "A Mac's heat moves GPU time too, about 10 % between a first run after a rest and the next ones: compare runs at the same point of a series, or measure both sides (./benchmark.sh measure).");
         md.AppendLine();
     }
 

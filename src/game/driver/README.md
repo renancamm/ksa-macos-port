@@ -71,9 +71,10 @@ had the driver translate in a recorded run, and fails when a translation changed
 after a change to the translation or the pipelines.
 
 To see what a change does across the game, run the [benchmark](../benchmark/README.md) before and after it
-(`dist/ksa-macos-port/benchmark.sh`): `--fast` is the quick way, and `--compare` checks the screenshots as well as the
-numbers. To look at one place, play only that place (`--fast jupiter2`) or stay there with `--hold jupiter2`. The
-game gets the variables below from the script, so `MTL_SHADER_VALIDATION=1 ./benchmark.sh --hold jupiter2` works too.
+(`dist/ksa-macos-port/benchmark.sh`): `check` is the quick way, the Mixed Test compared with a baseline, screenshots as
+well as numbers; `measure` gives the numbers to judge it by. To look at one place, play only that place (`--fast
+jupiter2`) or stay there with `investigate hold jupiter2`. The game gets the variables below from the script, so
+`MTL_SHADER_VALIDATION=1 ./benchmark.sh investigate hold jupiter2` works too.
 
 For a problem the tests don't reach, reproduce it in a save and start the app's executable from Terminal with the
 debugging settings' variables below, as with the switches above. For example, to save two screenshots and quit:
@@ -144,7 +145,7 @@ The benchmark's mod and the hooks talk to KSA Metal through the only functions i
 | `ksaMtlEarlyFragmentTests` | whether draws use the pipelines' states that test depth first (below); the hooks' Skip Hidden Vessel Parts sets it at the start of a frame |
 | `ksaMtlHdrNits` | the game's HDR Paper White and HDR Peak Brightness in nits, which HDR output maps to the display (below); the hooks pass them when the game applies its Display settings |
 
-The benchmark's `--profile`, `--trace`, `--capture` and `--hud` use the first five.
+The benchmark's tools `profile`, `trace`, `capture` and `hud` use the first five.
 
 ## From Vulkan to Metal
 

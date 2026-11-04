@@ -132,10 +132,10 @@ For the patches, the benchmark is the test. `--port` changes a port setting for 
 settings and what the hooks did:
 
 ```bash
-./benchmark.sh --fast --port hooks=false                  # without the patches
-./benchmark.sh --fast --compare <that run>                 # with them: faster, the same screenshots
-./benchmark.sh --fast --port terrain_cache=false           # without one of them
-./benchmark.sh --fast --port upscaling=metalfx --port render_scale=0.5 --set antialiasing=None
+./benchmark.sh --defaults --port hooks=false              # without the patches
+./benchmark.sh --defaults --compare last                  # with them: faster, the same screenshots
+./benchmark.sh measure --ab terrain_cache=false           # one of them against its absence, part by part
+./benchmark.sh --port upscaling=metalfx --port render_scale=0.5 --set antialiasing=None
 ```
 
 To see the game's code a patch works on, Harmony's `PatchProcessor.GetOriginalInstructions` lists a method's IL.

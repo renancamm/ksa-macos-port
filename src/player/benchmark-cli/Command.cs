@@ -66,6 +66,14 @@ public static partial class Program
                              the standard test of a change: the test (default mixed) at a fresh install's settings, compared
                              with the baseline main of that test (or the last run of it that passed); exits with 1 when
                              screenshots differ
+          ./benchmark.sh measure [test] [--repeat n] [--sessions n] [--ab key=value] [options]
+                             numbers to judge a change by: a warm-up pass first (left out), then n passes (3) in one game
+                             session, each part's median and range; --sessions plays more games of it; --ab plays games with
+                             the port setting key=value (B) and without (A) in turn and sets B against A, part by part
+          ./benchmark.sh calibrate [test] [n]
+                             how much the test moves between runs of the same build on this Mac: n runs (3) at a fresh
+                             install's settings, the spread of each screenshot and part, written as the test's noise profile
+                             (the benchmarks folder's noise/), which comparisons hold each screenshot and part to
           ./benchmark.sh investigate <tool> <places...> [options]
                              a tool on places jumped to (or a whole test): profile (KSA Metal's GPU profiler: profile.md),
                              trace (an Instruments trace; --trace-template <name>), capture (an Xcode GPU frame capture at
@@ -126,6 +134,8 @@ public static partial class Program
                 ["baseline", .. var rest] => BaselineCommand(rest),
                 ["run", .. var rest] => new BenchmarkRun().Run(rest, Purpose.Run),
                 ["check", .. var rest] => new BenchmarkRun().Run(rest, Purpose.Check),
+                ["measure", .. var rest] => new BenchmarkRun().Run(rest, Purpose.Measure),
+                ["calibrate", .. var rest] => Calibrate(rest),
                 ["investigate", .. var rest] => new BenchmarkRun().Run(rest, Purpose.Investigate),
                 ["explore", .. var rest] => new BenchmarkRun().Run(rest, Purpose.Explore),
                 // A player's ./benchmark.sh and ./benchmark.sh tour: a run
@@ -181,7 +191,7 @@ public static partial class Program
             var tests = baseline.Keys.ToList();
             var chosen = test ?? (tests.Count == 1 ? tests[0] : null);
             if (chosen == null)
-                Die($"the baseline {name} has a run of each of {string.Join(", ", tests)}: compare it with a run of one of them.");
+                Die($"the baseline {name} has a run of each of {string.Join(", ", tests)}: name the run itself here (./benchmark.sh baseline lists them).");
             return Baseline(name, chosen!) ?? throw new PortException($"the baseline {name} has no run of the {Pages.TestName(chosen)}.");
         }
         if (name is "last" or "previous")
@@ -257,9 +267,18 @@ public static partial class Program
         string first, second;
         try
         {
-            // b first: a baseline's name for a stands for its run of b's test
-            second = RunFolder(b);
-            first = RunFolder(a, Unpacked(second) is var dir && RunRecord.Read(dir) is { } record ? record.Test : null);
+            // A baseline's name stands for its run of the other run's test: that one first
+            static string? TestOf(string run) => RunRecord.Read(Unpacked(run)) is { } record ? record.Test : null;
+            if (ReadBaselines().ContainsKey(b) && !ReadBaselines().ContainsKey(a))
+            {
+                first = RunFolder(a);
+                second = RunFolder(b, TestOf(first));
+            }
+            else
+            {
+                second = RunFolder(b);
+                first = RunFolder(a, TestOf(second));
+            }
         }
         catch (PortException e)
         {
@@ -299,9 +318,11 @@ public static partial class Program
             Output.Info("No runs.");
             return 0;
         }
+        // A baseline's runs stay, whatever their age
+        var named = ReadBaselines().Values.SelectMany(t => t.Values).ToHashSet();
         var names = Directory.GetFileSystemEntries(Benchmarks).Select(p => Path.GetFileName(p)!)
             .Where(d => Regex.IsMatch(d, @"^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{4}(_[0-9]{2}|_hold)?$"))
-            .OrderDescending(StringComparer.Ordinal).Skip(keep).ToList();
+            .OrderDescending(StringComparer.Ordinal).Skip(keep).Where(n => !named.Contains(n)).ToList();
         var old = names.Select(n => Path.Combine(Benchmarks, n)).Where(Directory.Exists).ToList();
         if (old.Count == 0)
         {

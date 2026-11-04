@@ -78,7 +78,7 @@ public partial class Director
                 }
                 // Without screenshots the checkpoint ends here, its clocks in step (fast mode still measures the view), and so
                 // does a checkpoint that isn't one of the places chosen
-                if ((!Chosen || !_shots && !Fast) && !Holding)
+                if ((!Chosen || !TakesShots && !Fast) && !Holding)
                 {
                     Resume();
                     return;
@@ -244,9 +244,9 @@ public partial class Director
 
     private void Shoot()
     {
-        if (!_shots && !Holding || !DriverStats.Screenshot(ShotPath()))
+        if (!TakesShots && !Holding || !DriverStats.Screenshot(ShotPath()))
         {
-            if (_shots)
+            if (TakesShots)
                 Log($"no screenshot {_shotName}: needs KSA Metal");
             EndCheckpoint();
             return;

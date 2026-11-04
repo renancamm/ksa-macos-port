@@ -61,6 +61,13 @@ internal sealed class Clock
         _limitStop = double.NaN;
     }
 
+    // The script's clock back to its start for another pass, the game's taken as it is
+    public void Rewind()
+    {
+        Script = 0;
+        Resync();
+    }
+
     // The game's clock taken as it is (after a timed scenario, which keeps no time with the script)
     public void Resync()
     {

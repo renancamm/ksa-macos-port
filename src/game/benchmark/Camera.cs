@@ -29,6 +29,17 @@ internal sealed partial class CameraOperator(Clock clock)
             EndRig();
     }
 
+    // Another pass of the scenarios: the camera off its flights, holds and vehicles, to take them again from the start
+    internal void Restart()
+    {
+        _flight = _released = null;
+        Unhold();
+        EndRig();
+        _lookMove = null;
+        _look = null;
+        ForgetUp();
+    }
+
     // A new place of the free camera starts its up afresh
     internal static void ForgetUp() => _lastUp = null;
 

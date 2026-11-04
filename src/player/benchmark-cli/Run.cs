@@ -23,9 +23,10 @@ public static partial class Program
         private string _preset = "", _system = "", _hold = "", _settingsFile = "", _reference = "", _catch = "";
         private string _template = "Metal System Trace", _test = "";
         private bool _defaults, _explore, _fast, _noShots, _profile, _hud, _trace, _capture, _catchCapture, _passes, _cameraLog, _holding;
-        private string _repeatText = "1", _filmText = "0";
+        private string _repeatText = "", _sessionsText = "1", _ab = "", _filmText = "0";
         private double _film;
-        private int _repeat = 1;
+        // measure: the measured passes in each game session, the sessions (taken in turn for A and B with --ab)
+        private int _repeat = 1, _sessions = 1;
         private string _app = PortFolder.DefaultApp, _res = "", _script = "", _installed = "";
         private List<string> _only = [];
         private string _setKeys = " ";
@@ -39,6 +40,10 @@ public static partial class Program
 
         // What the run is for: the verb that started it
         private Purpose _purpose = Purpose.Run;
+
+        // The run's folder once it played, and whether it was stopped (calibrate reads them)
+        public string Folder => _out;
+        public bool Stopped => _stopped;
 
         public int Run(string[] args, Purpose purpose)
         {
@@ -73,12 +78,20 @@ public static partial class Program
                     case "hold": _holding = true; break;
                     case "catch" when i < args.Length: _catch = args[i++]; break;
                     case "film" when i < args.Length: _filmText = args[i++]; break;
+                    case "catch" or "film":
+                        Die($"investigate {args[0]} needs {(args[0] == "catch" ? "a clean run" : "a number of seconds")} after it.");
+                        break;
+                    case "-h" or "--help":
+                        Console.WriteLine(CommandUsage);
+                        status = 0;
+                        return false;
                     case var tool:
                         Die($"no tool '{tool}' (profile, trace, capture, hud, catch <clean run>, passes, film <seconds>, camera-log or hold).");
                         break;
                 }
             }
-            var withValue = new[] { "--set", "--port", "--settings", "--compare", "--app", "--preset", "--system", "--repeat", "--trace-template" };
+            var withValue = new[] { "--set", "--port", "--settings", "--compare", "--app", "--preset", "--system", "--repeat", "--sessions", "--ab",
+                "--trace-template" };
             for (; i < args.Length; i++)
             {
                 var a = args[i];
@@ -99,6 +112,8 @@ public static partial class Program
                     case "--no-shots" when _purpose is Purpose.Run: _noShots = true; break;
                     case "--fast" when _purpose is Purpose.Run: _fast = true; break;
                     case "--repeat" when _purpose is Purpose.Measure: _repeatText = args[++i]; break;
+                    case "--sessions" when _purpose is Purpose.Measure: _sessionsText = args[++i]; break;
+                    case "--ab" when _purpose is Purpose.Measure: _ab = args[++i]; break;
                     case "--trace-template" when _trace: _template = args[++i]; break;
                     case "--catch-capture" when _catch.Length > 0: _catchCapture = true; break;
                     case "-h" or "--help":
@@ -106,7 +121,8 @@ public static partial class Program
                         return false;
                     // A developer's option of before the verbs: said where it went
                     case "--profile" or "--trace" or "--capture" or "--hud" or "--passes" or "--camera-log" or "--catch" or "--film" or "--hold":
-                        Die($"{a} is a tool now: ./benchmark.sh investigate {a[2..]} <places...>.");
+                        Die($"{a} is a tool now: ./benchmark.sh investigate {a[2..]}{a switch { "--catch" => " <clean run>", "--film" => " <seconds>", _ => "" }} " +
+                            $"{(a == "--hold" ? "<place>" : "<places...>")}.");
                         break;
                     case "--repeat":
                         Die("--repeat is for numbers: ./benchmark.sh measure [test] --repeat <n>.");
@@ -132,10 +148,9 @@ public static partial class Program
             // The standard test: a fresh install's settings, compared with the baseline main
             if (_purpose == Purpose.Check)
             {
-                if (_preset.Length == 0)
-                    _defaults = true;
-                if (_places.Count > 1 || _places.Count == 1 && _places[0] != "full" && !LineupHasTest(_places[0]))
-                    Die("check takes one test (mixed, tour or warp; default mixed).");
+                _defaults = true;
+                if (_places.Count > 1 || _places.Count == 1 && !LineupHasTest(_places[0]))
+                    Die("check takes one test (mixed, tour, warp or full; default mixed).");
             }
             // A tool looks at places: jumped to in a flight, the game paused on the way
             if (_purpose == Purpose.Investigate && _places.Count > 0 && !(_places.Count == 1 && LineupHasTest(_places[0])))
@@ -143,11 +158,18 @@ public static partial class Program
             return true;
         }
 
-        // The last run of a test that passed at a fresh install's settings, played the same way, or null
-        private static string? LastPassed(string test, string mode) =>
+        // The last run of a test that passed played as check plays it: the same settings, screenshots, no tools and no KSA
+        // Metal switches; or null
+        private string? LastPassed(string test, string mode) =>
             (Directory.Exists(Benchmarks) ? Directory.GetDirectories(Benchmarks) : []).Where(IsRun).OrderByDescending(d => Path.GetFileName(d), StringComparer.Ordinal)
                 .FirstOrDefault(d => RunRecord.Read(d) is { Status: Status.Passed } r && r.Test == test && r.Mode == mode &&
-                                     r.Fact("Preset") == "none, a fresh install's settings" && r.Fact("Settings changed") == "none");
+                                     r.Fact("Mode") == mode && r.Fact("Preset") == PresetFact && r.Fact("Settings changed") == ChangedFact &&
+                                     r.Fact("Tools") == "none" && r.Fact("KSA Metal switches") == "none" && r.Fact("A/B") == null);
+
+        // The one test what plays belongs to (for a baseline's name): the test, or the test of the places; null for several
+        private string? TestPlayed =>
+            _test.Length > 0 ? _test
+            : _only.Select(p => _lineup.TestOf(p.Split('_')[0])?.Name).Distinct().ToList() is [{ } one] ? one : null;
 
         // Whether a word is a test of the app's lineup (before Check reads it)
         private bool LineupHasTest(string word) => word is "mixed" or "tour" or "warp" or "full";
@@ -160,11 +182,19 @@ public static partial class Program
                 _app = Path.Combine(Environment.CurrentDirectory, _app);
             if (_preset.Length > 0 && !Presets.ContainsKey(_preset))
                 Die($"unknown preset '{_preset}' (low, medium or high).");
+            // measure: three passes unless said
+            if (_repeatText.Length == 0)
+                _repeatText = _purpose == Purpose.Measure ? "3" : "1";
             if (!Regex.IsMatch(_repeatText, "^[1-9][0-9]*$"))
-                Die($"--repeat needs a number of runs, not '{_repeatText}'.");
+                Die($"--repeat needs a number of passes, not '{_repeatText}'.");
             _repeat = int.Parse(_repeatText);
+            if (!Regex.IsMatch(_sessionsText, "^[1-9][0-9]*$"))
+                Die($"--sessions needs a number of game sessions, not '{_sessionsText}'.");
+            _sessions = int.Parse(_sessionsText);
+            if (_ab.Length > 0 && !_ab.Contains('='))
+                Die($"--ab needs a port setting as key=value, not '{_ab}'.");
             if (!double.TryParse(_filmText, NumberStyles.Float, CultureInfo.InvariantCulture, out _film) || _film < 0)
-                Die($"--film needs a number of seconds, not '{_filmText}'.");
+                Die($"film needs a number of seconds, not '{_filmText}'.");
             if (_settingsFile.Length > 0 && !File.Exists(_settingsFile))
                 Die($"no settings file {_settingsFile}.");
             _installed = PortFolder.AppVersion(_app);
@@ -205,7 +235,7 @@ public static partial class Program
                     Die("investigate hold needs a screenshot's place, not a scenario.");
                 _only = [_hold];
                 _fast = true;
-                _repeat = 1;
+                _repeat = _sessions = 1;
             }
             // Places named (the tools that take GB at each place need some)
             Named = _only.Count;
@@ -243,7 +273,7 @@ public static partial class Program
             // --compare: said now, not after the minutes the run takes
             if (_reference.Length > 0)
             {
-                _reference = RunFolder(_reference, _test);
+                _reference = RunFolder(_reference, TestPlayed);
                 if (NotComparable(_reference, Mode, _only) is { } why)
                     Die($"--compare: {why}");
             }
@@ -298,8 +328,6 @@ public static partial class Program
                 Die("the tools look at one test: choose mixed, tour or warp (or places).");
             if (_profile || _hud || _trace || _capture || _catch.Length > 0 || _passes)
             {
-                if (_repeat != 1)
-                    Die("--repeat measures without tools: use --profile, --hud, --trace, --capture, --catch or --passes in a run of their own.");
                 if (!DriverHas("ksaMtlFrameStats"))
                     Die("the tools need the app's KSA Metal driver, which this app doesn't have.");
             }
@@ -320,13 +348,13 @@ public static partial class Program
             if (_trace)
             {
                 if (Tool.Exec("xcrun", ["-f", "xctrace"], out _) != 0)
-                    Die("--trace needs Xcode (from the App Store), not only the Command Line Tools. With Xcode installed: sudo xcode-select -s /Applications/Xcode.app");
+                    Die("a trace needs Xcode (from the App Store), not only the Command Line Tools. With Xcode installed: sudo xcode-select -s /Applications/Xcode.app");
                 if (!Ask("xcrun", "xctrace", "list", "templates").Split('\n').Any(l => l == _template))
                     Die($"Instruments has no template '{_template}' (xcrun xctrace list templates).");
                 if (Named == 0)
-                    Die("a trace of a whole test takes tens of GB: choose places (e.g. --fast jupiter2 --trace).");
+                    Die("a trace of a whole test takes tens of GB: choose places (./benchmark.sh investigate trace jupiter2).");
                 if (FreeGb() < 10)
-                    Die($"--trace needs 10 GB free on this disk ({FreeGb()} GB free).");
+                    Die($"a trace needs 10 GB free on this disk ({FreeGb()} GB free).");
                 _tools.Add($"Instruments ({_template})");
             }
             if (_catch.Length > 0)
@@ -335,18 +363,18 @@ public static partial class Program
                     Die("--catch plays the game with no capture mode, --capture needs it: choose one.");
                 if (!DriverHas("ksaMtlPassDump"))
                     Die("this app's KSA Metal can't dump passes: update it with ./port.sh.");
-                _catch = RunFolder(_catch);
+                _catch = RunFolder(_catch, TestPlayed);
                 if (_noShots)
                     Die("--catch compares screenshots: it can't go with --no-shots.");
                 if (!Directory.Exists(_catch))
-                    Die("--catch needs a run's folder, with its screenshots, not a zip.");
+                    Die("catch needs a clean run's folder, with its screenshots, not a zip.");
                 if (!Directory.GetFiles(_catch, "*_*.png").Any())
                     Die($"--catch: {_catch} has no screenshots to compare with.");
                 _catch = Path.GetFullPath(_catch);  // absolute: the game starts from elsewhere
                 if (NotComparable(_catch, Mode, _only) is { } why)
                     Die($"--catch: {why}");
                 if (FreeGb() < 1)
-                    Die($"--catch needs 1 GB free on this disk ({FreeGb()} GB free).");
+                    Die($"catch needs 1 GB free on this disk ({FreeGb()} GB free).");
                 _tools.Add("pass dumps of broken pictures");
                 if (_catchCapture)
                 {
@@ -368,7 +396,7 @@ public static partial class Program
                 if (_noShots)
                     Die("--passes dumps at the screenshots: it can't go with --no-shots.");
                 if (Named == 0 && !_fast && _test != "mixed")
-                    Die("--passes takes minutes at every screenshot: choose places (e.g. --fast earth4 jupiter2 --passes), or the Mixed Test.");
+                    Die("passes take minutes at every screenshot: choose places (./benchmark.sh investigate passes earth4 jupiter2), or the Mixed Test.");
                 _tools.Add("pass dumps at every place");
             }
             if (_capture)
@@ -376,7 +404,7 @@ public static partial class Program
                 if (!DriverHas("ksaMtlCapture"))
                     Die("this app's KSA Metal can't capture frames: update it with ./port.sh.");
                 if (Named == 0)
-                    Die("--capture takes several GB at every screenshot: choose places (e.g. --fast jupiter2 --capture).");
+                    Die("a capture takes several GB at every screenshot: choose places (./benchmark.sh investigate capture jupiter2).");
                 if (FreeGb() < 20)
                     Die($"--capture needs 20 GB free on this disk ({FreeGb()} GB free).");
                 if (!Directory.Exists("/Applications/Xcode.app"))

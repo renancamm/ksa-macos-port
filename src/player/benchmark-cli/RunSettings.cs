@@ -100,7 +100,7 @@ public static partial class Program
                 File.Copy(template, portSettings);
             else
                 File.WriteAllText(portSettings, "");
-            if (_ports.Count == 0)
+            if (_ports.Count == 0 && _ab.Length == 0)
                 return;
             // --port: checked against the app's table (a key or value the game doesn't take would run an unchanged
             // game that looks like an A/B test), and written as the Mac Port tab writes them
@@ -113,7 +113,7 @@ public static partial class Program
                 Die($"--port: the app's table of the port settings can't be read: {e.Message}");
             }
             var values = new Dictionary<string, string>();
-            foreach (var kv in _ports)
+            foreach (var kv in _ab.Length > 0 ? _ports.Append(_ab) : _ports)
             {
                 if (!kv.Contains('='))
                     Die($"--port needs key=value, not '{kv}'.");
@@ -124,8 +124,26 @@ public static partial class Program
                     Die($"--port {key}={value}: it takes {setting.Values()}.");
                 values[key] = value;
             }
+            // --ab's setting is B's alone: checked here, written before each of B's sessions
+            if (_ab.Length > 0)
+                values.Remove(_ab[.._ab.IndexOf('=')]);
             PortSettings.FilePath = portSettings;
             PortSettings.Save(values);
+        }
+
+        // measure --ab: the port settings of A (the run's) or B (the run's with the setting changed), written before each
+        // session (the launcher reads them when the game starts)
+        private string? _portBase;
+
+        private void PortSettingsFor(bool b)
+        {
+            var file = Path.Combine(Instance, "port-settings.toml");
+            _portBase ??= File.ReadAllText(file);
+            File.WriteAllText(file, _portBase);
+            if (!b)
+                return;
+            PortSettings.FilePath = file;
+            PortSettings.Save(new Dictionary<string, string> { [_ab[.._ab.IndexOf('=')]] = _ab[(_ab.IndexOf('=') + 1)..] });
         }
 
         // One line of settings.toml (keys are unique across its sections). As <section>.<key>, the key in that section,

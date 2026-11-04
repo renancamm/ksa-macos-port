@@ -93,20 +93,33 @@ public static partial class Program
                 .Where(k => k.StartsWith("KSA_MTL_", StringComparison.Ordinal)).Order(StringComparer.Ordinal)
                 .Select(k => $"{k}={Environment.GetEnvironmentVariable(k)}".Replace(home, "~")));
             var tools = _tools.Count > 0 ? string.Join(", ", _tools) : "none";
-            var changed = string.Join(' ', _sets) + (_ports.Count > 0 ? (_sets.Count > 0 ? " " : "") + "port-settings: " + string.Join(' ', _ports) : "");
-            if (_settingsFile.Length > 0)
-                changed = Path.GetFileName(_settingsFile) + (changed.Length > 0 ? " " : "") + changed;
-            var preset = _defaults ? $"{(_preset.Length > 0 ? _preset : "none")}, a fresh install's settings"
-                : _preset.Length > 0 ? _preset : "none, own settings";
+            var preset = PresetFact;
+            var changed = ChangedFact;
             return
             [
                 new("StarMap", Starmap()), new("System", SystemId), new("Test", _test.Length > 0 ? _test : "places"), new("Scenarios", Sections),
-                new("Mode", $"{Mode}{(_noShots ? ", no screenshots" : "")}"), new("Preset", preset), new("Settings changed", changed.Length > 0 ? changed : "none"),
-                new("Start", Start), new("KSA Metal switches", switches.Length > 0 ? switches : "none"), new("Tools", tools)
+                new("Mode", $"{Mode}{(_noShots ? ", no screenshots" : "")}"), new("Preset", preset), new("Settings changed", changed),
+                new("Start", Start), new("KSA Metal switches", switches.Length > 0 ? switches : "none"), new("Tools", tools),
+                .. _ab.Length > 0 ? [new Fact("A/B", $"--port {_ab}")] : Array.Empty<Fact>()
             ];
         }
 
         private const string Start = "a new game, from benchmark.sh";
+
+        // The settings facts of the run: the preset and what changed on top of it
+        private string PresetFact => _defaults ? $"{(_preset.Length > 0 ? _preset : "none")}, a fresh install's settings"
+            : _preset.Length > 0 ? _preset : "none, own settings";
+
+        private string ChangedFact
+        {
+            get
+            {
+                var changed = string.Join(' ', _sets) + (_ports.Count > 0 ? (_sets.Count > 0 ? " " : "") + "port-settings: " + string.Join(' ', _ports) : "");
+                if (_settingsFile.Length > 0)
+                    changed = Path.GetFileName(_settingsFile) + (changed.Length > 0 ? " " : "") + changed;
+                return changed.Length > 0 ? changed : "none";
+            }
+        }
 
         // One of the report's steps after the game: a failure (a full disk, a file cut short) counts as one, as a step
         // of the report program that failed did, and the run goes on to its summary
@@ -199,11 +212,12 @@ public static partial class Program
             options.Trace = _cameraLog;
 
             // Loading takes up to a few minutes on a first start (shader compilation), then the script's own length, plus
-            // the time slower Macs spend catching up at checkpoints. Once playing, the director touches its heartbeat file
-            // every second: a game that stops touching it has hung.
+            // the time slower Macs spend catching up at checkpoints. Once playing, the director writes a heartbeat event
+            // every second: a game whose heartbeat gets old has hung (Watchdog.cs).
             var lengths = Lengths();
             int length = (int)lengths.Sum(l => l.Seconds);
-            int timeout = length * 2 + 300;
+            // measure plays a warm-up pass and its passes in each session
+            int timeout = length * 2 * (_repeat + (_purpose == Purpose.Measure ? 1 : 0)) + 300;
             // KSA_BENCH_HANG_LIMIT: other seconds (not a number: no hang check)
             var limit = Environment.GetEnvironmentVariable("KSA_BENCH_HANG_LIMIT");
             int HangLimit(int otherwise) => limit is not { Length: > 0 } ? otherwise : int.TryParse(limit, out var s) ? s : int.MaxValue;
@@ -229,8 +243,8 @@ public static partial class Program
                 };
                 if (_test.Length > 0)
                     what = $"{_test}, {what}";
-                if (_repeat != 1)
-                    what = $"{_repeat} times, {what} each";
+                if (_purpose == Purpose.Measure)
+                    what = $"{what} a pass, a warm-up and {_repeat} pass{(_repeat > 1 ? "es" : "")} in each of {_sessions * (_ab.Length > 0 ? 2 : 1)} game session{(_sessions * (_ab.Length > 0 ? 2 : 1) > 1 ? "s" : "")}";
                 Output.Step($"Benchmarking KSA {_installed} ({what})");
                 Output.Info("The game takes over the screen. Leave the mouse and keyboard alone until it is done, or press Ctrl-C here to stop it.");
             }
@@ -256,20 +270,17 @@ public static partial class Program
             });
             if (busy.Length > 0)
                 events.Add("gpu", value: int.Parse(busy));
-            // The sessions: each repeat, and in full each test, in a game of its own
+            // The sessions: in full each test in a game of its own; measure's sessions, A and B in turn with --ab
             var groups = _test == "full"
                 ? Lineup.Full.Select(t => _lineup.Test(t)!.Scenarios.ToList()).ToList()
                 : [_only];
+            string[] variants = _ab.Length > 0 ? ["A", "B"] : [""];
             int session = 0;
-            for (int r = 1; r <= _repeat && !_stopped; r++)
-            {
-                foreach (var group in groups)
-                {
-                    PlayOnce(++session, group, r, env, options, lengths, timeout, hang, events, ref pressure);
-                    if (_stopped)
-                        break;
-                }
-            }
+            for (int r = 1; r <= _sessions && !_stopped; r++)
+                foreach (var variant in variants)
+                    foreach (var group in groups)
+                        if (!_stopped)
+                            PlayOnce(++session, group, variant, env, options, lengths, timeout, hang, events, ref pressure);
             Console.CancelKeyPress -= stop;
             term.Dispose();
             // --defaults: the settings as the game saved them, with its defaults filled in
@@ -321,19 +332,26 @@ public static partial class Program
 
         // One game session: its options in the run's folder, the game watched until it ends, hangs or is stopped, its
         // ending and its log
-        private void PlayOnce(int n, List<string> only, int repeat, Dictionary<string, string> env, RunOptions options,
+        private void PlayOnce(int n, List<string> only, string variant, Dictionary<string, string> env, RunOptions options,
             List<(string Section, double Seconds)> lengths, int timeout, int hang, EventLog events, ref int pressure)
         {
-            if (n > 1)
-                Output.Info($"Game {n}");
+            if (n > 1 || variant.Length > 0)
+                Output.Info($"Game {n}{(variant.Length > 0 ? $": {variant}{(variant == "B" ? $", {_ab}" : "")}" : "")}");
             events.Session = n;
-            events.Add("session");
+            events.Add("session", text: variant.Length > 0 ? variant : null);
+            // A/B: B's port settings with the setting changed, A's without
+            if (_ab.Length > 0)
+                PortSettingsFor(variant == "B");
             options.Only = string.Join(' ', only);
             options.Fast = _fast;
             options.Mode = Mode;
             options.Hold = _hold;
-            // Only the first repeat takes screenshots: the others measure
-            options.NoShots = _noShots || repeat > 1;
+            // The first session alone takes screenshots: the others measure (in full, each test's own)
+            options.NoShots = _noShots || n > (_test == "full" ? Lineup.Full.Count : 1);
+            options.Repeat = _repeat;
+            options.WarmUp = _purpose == Purpose.Measure;
+            options.Variant = variant;
+            options.NoiseFolder = Benchmarks;
             options.Session = n;
             options.Test = _test;
             options.Script = _script;

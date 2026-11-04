@@ -78,3 +78,20 @@ public sealed class PartNoise
     public double FrameSpread { get; set; }
     public double Limit { get; set; }
 }
+
+// Whether a number moved past the noise between two runs: past the part's limit (its noise profile's, or 5 %), or with
+// repeats on both sides, ranges that don't overlap and a move past 2 %
+public static class Noise
+{
+    public const double Significant = 0.05, SignificantRepeated = 0.02;
+
+    public static bool Moved(double a, double b, double[]? rangeA, double[]? rangeB, double? limitPercent = null)
+    {
+        if (a <= 0)
+            return false;
+        double change = Math.Abs(b - a) / a;
+        if (rangeA is [var loA, var hiA] && rangeB is [var loB, var hiB])
+            return change > SignificantRepeated && (hiB < loA || loB > hiA);
+        return change > (limitPercent is { } limit ? limit / 100 : Significant);
+    }
+}

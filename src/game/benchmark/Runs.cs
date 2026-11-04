@@ -49,7 +49,7 @@ public static class Runs
     private static PlayerGame? _player;
     private static long _logStart;
     private static Task? _finishing;
-    // What system.txt says about the run (the report program asks macOS about the Mac after the run, not during it)
+    // The system the run plays in, for its record (which asks macOS about the Mac after the run, not during it)
     private static string _system = "";
     // The options of a run that starts with the game (run.json in KSA_BENCH_OUT's folder)
     private static RunOptions? _options;

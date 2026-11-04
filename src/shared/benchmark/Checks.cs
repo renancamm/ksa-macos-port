@@ -30,7 +30,7 @@ public static class Checks
     private static readonly Check[] All =
     [
         Endings, Played, StepErrors, Pictures, HooksApplied, LogErrors, Conditions, MemoryAndGpu, Crashes, PartConditions,
-        TimedErrors, NetworkTrouble,
+        TimedErrors, NetworkTrouble, Heat,
     ];
 
     public static List<Finding> Run(RunEvidence run) => All.SelectMany(c => c(run)).ToList();
@@ -227,6 +227,32 @@ public static class Checks
             yield return Note("timed-errors", $"the game logged {errors.Values.Sum()} errors during the time warp, {errors.Count} kind{(errors.Count > 1 ? "s" : "")}, " +
                                               $"most often \"{(common.Length > 80 ? common[..80] + "..." : common)}\" ({string.Join(", ", logs.Order(StringComparer.Ordinal))})");
         }
+    }
+
+    // A Mac's heat moves GPU time: after a rest a run reads up to about a tenth low until the chip warms. With a warm-up pass
+    // (benchmark.sh measure), what it showed; without one, how long the Mac had rested since the run before ended
+    private static IEnumerable<Finding> Heat(RunEvidence run)
+    {
+        var gpu = run.Record.Headline().GpuMs;
+        if (run.Events.FirstOrDefault(e => e.Type == "warmed") is { } warmed)
+        {
+            if (warmed.Value is { } warm && gpu is { } measured && warm < measured * 0.95)
+                yield return Note("warming", string.Create(CultureInfo.InvariantCulture,
+                    $"the Mac warmed up during the warm-up pass (GPU {warm:F1} ms a frame, then {measured:F1} in the measured passes): it is left out of the numbers"));
+            yield break;
+        }
+        if (run.Events.FirstOrDefault() is not { } first || Path.GetDirectoryName(Path.GetFullPath(run.Dir).TrimEnd('/')) is not { } folder)
+            yield break;
+        var name = Path.GetFileName(Path.GetFullPath(run.Dir).TrimEnd('/'));
+        var before = Directory.GetDirectories(folder).Select(d => Path.GetFileName(d)!)
+            .Where(d => string.CompareOrdinal(d, name) < 0 && File.Exists(Path.Combine(folder, d, EventLog.FileName)))
+            .OrderByDescending(d => d, StringComparer.Ordinal).FirstOrDefault();
+        if (before == null || EventLog.Read(Path.Combine(folder, before)).LastOrDefault() is not { } ended)
+            yield break;
+        double rested = (first.At - ended.At).TotalMinutes;
+        if (rested > 10)
+            yield return Note("rested", string.Create(CultureInfo.InvariantCulture,
+                $"the Mac had rested {rested:F0} minutes since the run before: GPU times read up to about a tenth low until it warms up (benchmark.sh measure warms it up first)"));
     }
 
     // The game couldn't reach its servers: nothing the run measures depends on them

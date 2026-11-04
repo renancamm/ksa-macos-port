@@ -179,6 +179,7 @@ expect "--compare: another kind, refused before the game starts" 1 "views mode"
 [ "$(runs_count)" = 2 ] || fail "--compare refused, yet a run started"
 bench baseline set main
 expect "baseline set" 0 "main's Mixed Test"
+MAIN="$(ls "${T}/home/Documents/My Games/Kitten Space Agency/benchmarks" | grep -E '^20' | sort | tail -1)"
 bench baseline
 expect "baseline, listed" 0 "main"
 sleep 1
@@ -234,6 +235,7 @@ expect "clean" 0 "Deleted."
 [ ! -e "${B}/2020-01-01_0100" ] && [ ! -e "${B}/2020-01-02_0100_hold" ] || fail "clean left old runs"
 [ -d "${B}/${newest}" ] || fail "clean deleted the newest run"
 [ -d "${B}/2020-01-03_0100_explore" ] && [ -d "${B}/a baseline" ] && [ -f "${B}/stray.zip" ] || fail "clean deleted what isn't a run"
+[ -d "${B}/${MAIN}" ] || fail "clean deleted the baseline main's run"
 bench clean --keep 1 --yes
 expect "clean with nothing to do" 0 "Nothing to delete"
 
