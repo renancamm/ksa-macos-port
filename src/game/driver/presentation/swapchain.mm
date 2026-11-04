@@ -153,7 +153,9 @@ VKFN(VkResult) vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfo
     layer.pixelFormat = kmtlPixelFormat(ci->imageFormat);
     layer.framebufferOnly = NO;
     layer.drawableSize = CGSizeMake(ci->imageExtent.width, ci->imageExtent.height);
-    layer.maximumDrawableCount = 3;
+    // KSA_MTL_DRAWABLE_COUNT: 2 holds the display queue to one frame (lower latency with a locked frame_cadence); frame
+    // interpolation takes two drawables in one present, so it needs 3
+    layer.maximumDrawableCount = kmtlConfig().drawableCount == 2 && !kmtlConfig().frameInterpolation ? 2 : 3;
     layer.displaySyncEnabled = ci->presentMode == VK_PRESENT_MODE_FIFO_KHR || ci->presentMode == VK_PRESENT_MODE_FIFO_RELAXED_KHR;
     // The game's extra windows (detached gauges, pop-outs) ask for a see-through one and clear it to alpha 0
     layer.opaque = ci->compositeAlpha == VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -247,6 +249,20 @@ VKFN(VkResult) vkWaitForPresentKHR(VkDevice, VkSwapchainKHR swapchain, uint64_t 
             done = state->presented >= presentId;
             break;
         }
+    }
+    // KSA_MTL_FRAME_CADENCE with KSA_MTL_CADENCE_START_GATE: the game asked for present N-2, and also waits here
+    // until N-1 is done on the GPU (or shown), so at most one finished frame waits for its slot (the game reads input
+    // after this wait): a locked frame rate otherwise queues two frames ahead, each waiting a slot (about 50 ms more
+    // latency at 25 ms). Not until N-1 is shown: that would add the window server's delay to every frame. KSA always
+    // waits for N-2, so N-1 has been presented; a caller waiting for its latest present would wait to its timeout
+    if (done && kmtlConfig().cadenceStartGate && kmtlConfig().frameCadence > 0) {
+        auto previousDone = [&] {
+            if (state->presented >= presentId + 1) return true;
+            for (const KPresentState::Frame& f : state->frames)
+                if (f.id >= presentId + 1 && f.gpuDone) return true;
+            return false;
+        };
+        while (!previousDone() && std::chrono::steady_clock::now() < deadline) state->cv.wait_until(lock, deadline);
     }
     double end = CACurrentMediaTime();
     state->began = end;
