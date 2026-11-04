@@ -126,6 +126,7 @@ The debugging settings, used the same way:
 | `watch_white` | percent: the white limit of `watch` (30); 0 fires on any image, to test it |
 | `throttle` | `<hash>:<n>,...`: an experiment, a pipeline whose name holds that shader hash runs only every n-th present (0: never), to see what a shader costs and what it draws |
 | `frame_cadence` | `<ms>`: an experiment, each frame shown at least that long after the one before (25: 40 fps at 120 Hz), so the frame rate holds one step |
+| `overlap` | `<hash>,...`: an experiment, those compute pipelines start without waiting for earlier work of their command buffer, to see what running them beside it would save; wrong where they read what it wrote, or write what it reads or writes |
 | `threadgroup_hint` | `<n>` or `<hash>:<n>,...`: an experiment, the largest threadgroup compute pipelines are compiled for (never below their own), trading registers for occupancy |
 | `rw_texture_fences` | off: an experiment, no fence before reads of storage images a shader also writes; wrong where it reads what it wrote |
 | `relaxed_math` | on: compile shaders with relaxed math instead of fast math |

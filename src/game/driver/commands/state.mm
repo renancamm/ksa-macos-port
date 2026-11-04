@@ -239,7 +239,8 @@ void kmtlSetDrawId(KCommandBuffer* cb, uint32_t id) {
 bool kmtlFlushCompute(KCommandBuffer* cb) {
     KPipeline* p = cb->computePipeline;
     if (!p || !p->compute) return false;
-    id<MTLComputeCommandEncoder> enc = cb->computeEncoder();
+    if (cb->compute && cb->encOverlap != p->overlap) cb->endEncoder();
+    id<MTLComputeCommandEncoder> enc = p->overlap ? cb->overlapEncoder() : cb->computeEncoder();
     [enc setComputePipelineState:p->compute];
     while (cb->computeSetsDirty) {
         int s = __builtin_ctz(cb->computeSetsDirty);

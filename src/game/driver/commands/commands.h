@@ -57,6 +57,11 @@ struct KCommandBuffer : KDispatchable {
     uint32_t needMask[5] = {};
     uint32_t encRoles = 0;
     std::vector<id<MTLFence>> encWaited;  // fences the open encoder waited on
+    // KSA_MTL_OVERLAP: the open compute encoder waited only for the chain; overlapSkipped is the compute class's
+    // fence it skipped, which work after it waits on too (endEncoder's join)
+    bool encOverlap = false;
+    id<MTLFence> overlapSkipped = nil;
+    id<MTLFence> overlapLast = nil;  // the last overlap encoder's own fence: the next one waits on it
     std::vector<id<MTLFence>> fencePool;
     size_t fenceNext = 0;
     // MSAA resolves: a render pass's fences can signal before its resolve store actions have written the resolve
@@ -146,6 +151,7 @@ struct KCommandBuffer : KDispatchable {
 
     void endEncoder();
     id<MTLComputeCommandEncoder> computeEncoder(uint32_t roles = kClassCompute);
+    id<MTLComputeCommandEncoder> overlapEncoder();
     id<MTLBlitCommandEncoder> blitEncoder();
     void beginRender(MTLRenderPassDescriptor* rp, uint32_t w, uint32_t h, bool resuming = false,
                      uint32_t roles = kClassVertex | kClassFragment);
