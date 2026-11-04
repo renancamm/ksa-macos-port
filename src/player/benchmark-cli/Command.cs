@@ -20,20 +20,19 @@ namespace KsaMetal.Benchmark.Cli;
 public static partial class Program
 {
     private const string CommandUsage = """
-        Measures how KSA runs on this Mac: plays a fixed test of the game in one session and writes a report, and a zip of it
-        in the run's folder to share if you like.
+        Measures how KSA runs on this Mac: plays a test of the game in one session and writes a report, and a zip of it in the
+        run's folder to share if you like.
 
-        Usage: ./benchmark.sh [options] [mixed | tour | warp | full]
-               ./benchmark.sh [options] <scenario or place...>
+        Usage: ./benchmark.sh [run] [options] [mixed | tour | warp | full | <places...>]
                ./benchmark.sh list | runs [n] | report [run] | compare [run] [run] | clean [--keep n] [--yes]
           mixed      the Mixed Test (the default, about a minute): rockets, smoke, an explosion, a kitten and a cockpit, each
                      view standing still, the game paused
           tour       the Planetary Tour (about 5 minutes): the flight from Earth to Jupiter
           warp       the Warp Test (about 3 minutes): how far time warp gets in a fixed time, a ship alone and with debris
-          full       all three, one after the other
-          All with your own settings. A place is a screenshot of the test (earth4): its scenario up to there.
-          The game takes over the screen: leave the mouse and keyboard alone until it is done, or press Ctrl-C here to stop it
-          and keep what it measured. The game runs from its own documents folder, with a copy of your settings: your files stay
+          full       all three, one after the other, each in a game of its own
+          A place is a screenshot of a test (earth4): its scenario up to there. All with your own settings. The game takes
+          over the screen: leave the mouse and keyboard alone until it is done, or press Ctrl-C here to stop it and keep
+          what it measured. The game runs from its own documents folder, with a copy of your settings: your files stay
           untouched. Exits with 1 when the run failed (the game crashed or hung, a step failed, errors in its log).
 
           list       the tests, their scenarios and their places
@@ -43,15 +42,14 @@ public static partial class Program
                      screenshots (exits with 1 when screenshots differ), and a page to see them side by side (with one run:
                      against the last; with none: the last against the one before it)
           clean      delete all but your last runs (30, or n), after asking (--yes: without asking)
-          A run is a run's folder, its zip, the folder's name in your benchmarks folder, "last" or "previous".
+          A run is a run's folder, its zip, the folder's name in your benchmarks folder, "last", "previous", or a
+          baseline's name (below).
 
         Options:
           --preset <name>    low, medium or high: fixed settings in a 1280x800 window, the same on every Mac (default: yours)
           --defaults         the settings of a fresh install instead of yours: the game's own and the port's defaults
           --system <name>    sol (the solar system) or earth (Earth and the Moon only: for Macs with 8 GB of memory)
                              (default: earth when what plays is all on Earth or the Moon, otherwise sol)
-          --fast             with places: jump to them, the game paused on the way, instead of flying there
-          --no-shots         take no screenshots
           --set <key=value>  change one setting of settings.toml for the run (again for more), on top of the preset;
                              <section>.<key>=<value> adds it to that section when the file has no such key
           --settings <file>  change the settings in that file ("key = value" lines, as in settings.toml; a bare word
@@ -59,29 +57,30 @@ public static partial class Program
           --port <key=value>  change one setting of port-settings.toml for the run (again for more), on top of yours (with
                              a preset or --defaults: on top of the defaults)
           --compare <run>    compare with that run at the end (and fail when screenshots differ); checked before the game starts
+          --no-shots         take no screenshots
+          --fast             with places: jump to them, the game paused on the way, instead of flying there
           --app <path>       the app to measure (default: ~/Applications/Kitten Space Agency.app)
 
         For work on the port (see the benchmark's README):
-          --hold <place>     go to that place fast and stay there, the game paused, until you quit it
-          --repeat <n>       play it n times, one game session each, and report the median and range of each number
-          --profile          KSA Metal's GPU profiler on every measured part: profile.md, the encoders that cost the most
-          --hud              Apple's Metal Performance HUD over the game, its per-frame log, and its reports (started from
-                             its menu) in the run folder
-          --trace            record an Instruments trace (Metal System Trace) of the run, parts marked; needs Xcode
-          --trace-template <name>  another Instruments template for --trace (xcrun xctrace list templates)
-          --capture          an Xcode GPU frame capture of the view at each place played (.gputrace, to open in Xcode)
-          --catch <run>      for a picture that goes wrong now and then: KSA Metal watches the image, and a screenshot is compared
-                             with that clean run's; a broken one gets a pass dump in caught/ (at most 3 each); needs 1 GB free
-          --catch-capture    with --catch: an Xcode GPU frame capture after each pass dump (needs capture mode and 40 GB free)
-          --passes           the pass dump at every place played: the clean run a caught one is compared with (needs places)
-          --film <seconds>   a screenshot every that many seconds of the script's clock, in film/, to see the camera's moves
-          --camera-log       the camera's place every frame in trace.csv, to check its moves are smooth
-          --explore          start the benchmark's game paused, to fly the free camera around and capture places for the
+          ./benchmark.sh check [test] [options]
+                             the standard test of a change: the test (default mixed) at a fresh install's settings, compared
+                             with the baseline main of that test (or the last run of it that passed); exits with 1 when
+                             screenshots differ
+          ./benchmark.sh investigate <tool> <places...> [options]
+                             a tool on places jumped to (or a whole test): profile (KSA Metal's GPU profiler: profile.md),
+                             trace (an Instruments trace; --trace-template <name>), capture (an Xcode GPU frame capture at
+                             each place), hud (Apple's Metal Performance HUD), catch <clean run> (a pass dump of a picture
+                             that goes wrong now and then; --catch-capture adds a frame capture), passes (a pass dump at every
+                             place: a clean run for catch), film <seconds> (screenshots along the way), camera-log (the
+                             camera's place every frame), hold (stay at one place, paused, until you quit the game)
+          ./benchmark.sh baseline [set <name> [run...] | remove <name>]
+                             name runs to compare with, one of each test (check compares with main)
+          ./benchmark.sh explore
+                             start the benchmark's game paused, to fly the free camera around and capture places for the
                              tour (@key lines, for benchmark.txt) with benchkey [name] in its console; quit it when done
 
-        The benchmark is in the app (Contents/Resources/Benchmark/), built for the KSA version this port folder was made for:
-        Its director reads the run's options (run.json in the run's folder) when the game starts, in a documents folder of
-        its own. The Mac Port tab in the game's settings runs it too.
+        The benchmark is in the app (Contents/Resources/Benchmark/), built for the KSA version this port folder was made for.
+        The Mac Port tab in the game's settings runs it too.
         """;
 
     // Presets: fixed settings, the same on every Mac, so reports compare. Without one, your own settings are used. All run
@@ -124,7 +123,13 @@ public static partial class Program
                 ["report", .. var run] => ReportCommand(run.Length > 0 ? run[0] : "last"),
                 ["compare", .. var runs] => CompareCommand(runs),
                 ["clean", .. var rest] => Clean(rest),
-                _ => new BenchmarkRun().Run(args),
+                ["baseline", .. var rest] => BaselineCommand(rest),
+                ["run", .. var rest] => new BenchmarkRun().Run(rest, Purpose.Run),
+                ["check", .. var rest] => new BenchmarkRun().Run(rest, Purpose.Check),
+                ["investigate", .. var rest] => new BenchmarkRun().Run(rest, Purpose.Investigate),
+                ["explore", .. var rest] => new BenchmarkRun().Run(rest, Purpose.Explore),
+                // A player's ./benchmark.sh and ./benchmark.sh tour: a run
+                _ => new BenchmarkRun().Run(args, Purpose.Run),
             };
         }
         catch (PortException e)
@@ -163,10 +168,22 @@ public static partial class Program
     private static string Ask(string tool, params string[] args) =>
         Tool.Exec(tool, args, out var output) == 0 ? output.Trim() : "";
 
-    // The folder or zip a run's name stands for: a path, a folder's name in the benchmarks folder, "last" or "previous"
-    private static string RunFolder(string run)
+    // What a command does
+    private enum Purpose { Run, Check, Measure, Investigate, Calibrate, Explore }
+
+    // The folder or zip a run's name stands for: a path, a folder's name in the benchmarks folder, "last" or "previous", or
+    // a baseline's name (its run of that test)
+    private static string RunFolder(string run, string? test = null)
     {
         var name = run.TrimEnd('/');
+        if (ReadBaselines().GetValueOrDefault(name) is { } baseline)
+        {
+            var tests = baseline.Keys.ToList();
+            var chosen = test ?? (tests.Count == 1 ? tests[0] : null);
+            if (chosen == null)
+                Die($"the baseline {name} has a run of each of {string.Join(", ", tests)}: compare it with a run of one of them.");
+            return Baseline(name, chosen!) ?? throw new PortException($"the baseline {name} has no run of the {Pages.TestName(chosen)}.");
+        }
         if (name is "last" or "previous")
         {
             int skip = name == "last" ? 0 : 1;
@@ -240,8 +257,9 @@ public static partial class Program
         string first, second;
         try
         {
-            first = RunFolder(a);
+            // b first: a baseline's name for a stands for its run of b's test
             second = RunFolder(b);
+            first = RunFolder(a, Unpacked(second) is var dir && RunRecord.Read(dir) is { } record ? record.Test : null);
         }
         catch (PortException e)
         {

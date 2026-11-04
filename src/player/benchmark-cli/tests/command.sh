@@ -117,7 +117,7 @@ expect "runs, not a number" 1 "takes a number of runs"
 bench report
 expect "report, no run yet" 1 "there is no last run"
 bench compare
-expect "compare, no run yet" 2 "there is no previous run"
+expect "compare, no run yet" 2 "there is no last run"
 
 # Refused before a game starts
 bench --app "${APP}" mxied
@@ -138,6 +138,12 @@ if [ -f "${RESOURCES}/port-settings.txt" ]; then
 fi
 bench --app "${APP}" --compare nothing_like_this
 expect "--compare: no such run" 1 "no run 'nothing_like_this'"
+bench --app "${APP}" --profile
+expect "a tool's option of before the verbs" 1 "investigate profile"
+bench investigate sharpen earth4
+expect "investigate: no such tool" 1 "no tool 'sharpen'"
+bench check tour mixed
+expect "check: one test" 1 "check takes one test"
 [ "$(runs_count)" = 0 ] || fail "a refused run left a folder"
 
 # A run that passes
@@ -171,6 +177,13 @@ expect "compare, no runs named" 0 "100 % slower"
 bench --app "${APP}" tour --compare last
 expect "--compare: another kind, refused before the game starts" 1 "views mode"
 [ "$(runs_count)" = 2 ] || fail "--compare refused, yet a run started"
+bench baseline set main
+expect "baseline set" 0 "main's Mixed Test"
+bench baseline
+expect "baseline, listed" 0 "main"
+sleep 1
+FAKE_GAME=pass bench check --app "${APP}"
+expect "check: against the baseline main (the run at 30 ms)" 0 "GPU time 50 % lower"
 
 # How a run ends
 sleep 1

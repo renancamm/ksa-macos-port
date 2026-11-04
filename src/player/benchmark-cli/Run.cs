@@ -22,7 +22,7 @@ public static partial class Program
         private readonly List<string> _places = [], _sets = [], _ports = [], _tools = [];
         private string _preset = "", _system = "", _hold = "", _settingsFile = "", _reference = "", _catch = "";
         private string _template = "Metal System Trace", _test = "";
-        private bool _defaults, _explore, _fast, _noShots, _profile, _hud, _trace, _capture, _catchCapture, _passes, _cameraLog;
+        private bool _defaults, _explore, _fast, _noShots, _profile, _hud, _trace, _capture, _catchCapture, _passes, _cameraLog, _holding;
         private string _repeatText = "1", _filmText = "0";
         private double _film;
         private int _repeat = 1;
@@ -37,8 +37,12 @@ public static partial class Program
         private string Mode = "";
         private Lineup _lineup = null!;
 
-        public int Run(string[] args)
+        // What the run is for: the verb that started it
+        private Purpose _purpose = Purpose.Run;
+
+        public int Run(string[] args, Purpose purpose)
         {
+            _purpose = purpose;
             if (!Parse(args, out int status))
                 return status;
             Check();
@@ -48,52 +52,105 @@ public static partial class Program
             return Play();
         }
 
+        // Each verb's options: the player's settings for every one, the rest as the verb has them
         private bool Parse(string[] args, out int status)
         {
             status = 0;
-            var withValue = new[] { "--hold", "--set", "--port", "--settings", "--compare", "--catch", "--app", "--preset", "--system",
-                "--repeat", "--trace-template", "--film" };
-            for (int i = 0; i < args.Length; i++)
+            _explore = _purpose == Purpose.Explore;
+            int i = 0;
+            if (_purpose == Purpose.Investigate)
+            {
+                if (args.Length == 0)
+                    Die("investigate <tool> <places...>: profile, trace, capture, hud, catch <clean run>, passes, film <seconds>, camera-log or hold.");
+                switch (args[i++])
+                {
+                    case "profile": _profile = true; break;
+                    case "trace": _trace = true; break;
+                    case "capture": _capture = true; break;
+                    case "hud": _hud = true; break;
+                    case "passes": _passes = true; break;
+                    case "camera-log": _cameraLog = true; break;
+                    case "hold": _holding = true; break;
+                    case "catch" when i < args.Length: _catch = args[i++]; break;
+                    case "film" when i < args.Length: _filmText = args[i++]; break;
+                    case var tool:
+                        Die($"no tool '{tool}' (profile, trace, capture, hud, catch <clean run>, passes, film <seconds>, camera-log or hold).");
+                        break;
+                }
+            }
+            var withValue = new[] { "--set", "--port", "--settings", "--compare", "--app", "--preset", "--system", "--repeat", "--trace-template" };
+            for (; i < args.Length; i++)
             {
                 var a = args[i];
                 if (withValue.Contains(a) && i + 1 >= args.Length)
                     Die($"{a} needs a value. ./benchmark.sh --help lists the options.");
                 switch (a)
                 {
-                    case "--fast": _fast = true; break;
-                    case "--no-shots": _noShots = true; break;
-                    case "--hold": _hold = args[++i]; break;
+                    // The player's settings
                     case "--set": _sets.Add(args[++i]); break;
                     case "--port": _ports.Add(args[++i]); break;
                     case "--settings": _settingsFile = args[++i]; break;
-                    case "--compare": _reference = args[++i]; break;
                     case "--app": _app = args[++i].TrimEnd('/'); break;
                     case "--preset": _preset = args[++i]; break;
                     case "--defaults": _defaults = true; break;
                     case "--system": _system = args[++i]; break;
-                    case "--repeat": _repeatText = args[++i]; break;
-                    case "--profile": _profile = true; break;
-                    case "--hud": _hud = true; break;
-                    case "--trace": _trace = true; break;
-                    case "--trace-template": _trace = true; _template = args[++i]; break;
-                    case "--capture": _capture = true; break;
-                    case "--catch": _catch = args[++i]; break;
-                    case "--catch-capture": _catchCapture = true; break;
-                    case "--passes": _passes = true; break;
-                    case "--film": _filmText = args[++i]; break;
-                    case "--camera-log": _cameraLog = true; break;
-                    case "--explore": _explore = true; break;
+                    // What each verb adds
+                    case "--compare" when _purpose is Purpose.Run or Purpose.Check or Purpose.Measure: _reference = args[++i]; break;
+                    case "--no-shots" when _purpose is Purpose.Run: _noShots = true; break;
+                    case "--fast" when _purpose is Purpose.Run: _fast = true; break;
+                    case "--repeat" when _purpose is Purpose.Measure: _repeatText = args[++i]; break;
+                    case "--trace-template" when _trace: _template = args[++i]; break;
+                    case "--catch-capture" when _catch.Length > 0: _catchCapture = true; break;
                     case "-h" or "--help":
                         Console.WriteLine(CommandUsage);
                         return false;
+                    // A developer's option of before the verbs: said where it went
+                    case "--profile" or "--trace" or "--capture" or "--hud" or "--passes" or "--camera-log" or "--catch" or "--film" or "--hold":
+                        Die($"{a} is a tool now: ./benchmark.sh investigate {a[2..]} <places...>.");
+                        break;
+                    case "--repeat":
+                        Die("--repeat is for numbers: ./benchmark.sh measure [test] --repeat <n>.");
+                        break;
+                    case "--explore":
+                        Die("explore is a command now: ./benchmark.sh explore.");
+                        break;
                     case var o when o.StartsWith('-'):
-                        Die($"no option {o}. ./benchmark.sh --help lists the options.");
+                        Die($"no option {o} for {_purpose.ToString().ToLowerInvariant()}. ./benchmark.sh --help lists the options.");
                         break;
                     default: _places.Add(a); break;
                 }
             }
+            if (_purpose == Purpose.Explore && _places.Count > 0)
+                Die("explore takes no test or places.");
+            if (_holding)
+            {
+                if (_places.Count != 1)
+                    Die("investigate hold <place>: one place, where it stays.");
+                _hold = _places[0];
+                _places.Clear();
+            }
+            // The standard test: a fresh install's settings, compared with the baseline main
+            if (_purpose == Purpose.Check)
+            {
+                if (_preset.Length == 0)
+                    _defaults = true;
+                if (_places.Count > 1 || _places.Count == 1 && _places[0] != "full" && !LineupHasTest(_places[0]))
+                    Die("check takes one test (mixed, tour or warp; default mixed).");
+            }
+            // A tool looks at places: jumped to in a flight, the game paused on the way
+            if (_purpose == Purpose.Investigate && _places.Count > 0 && !(_places.Count == 1 && LineupHasTest(_places[0])))
+                _fast = true;
             return true;
         }
+
+        // The last run of a test that passed at a fresh install's settings, played the same way, or null
+        private static string? LastPassed(string test, string mode) =>
+            (Directory.Exists(Benchmarks) ? Directory.GetDirectories(Benchmarks) : []).Where(IsRun).OrderByDescending(d => Path.GetFileName(d), StringComparer.Ordinal)
+                .FirstOrDefault(d => RunRecord.Read(d) is { Status: Status.Passed } r && r.Test == test && r.Mode == mode &&
+                                     r.Fact("Preset") == "none, a fresh install's settings" && r.Fact("Settings changed") == "none");
+
+        // Whether a word is a test of the app's lineup (before Check reads it)
+        private bool LineupHasTest(string word) => word is "mixed" or "tour" or "warp" or "full";
 
         // Everything that can stop the run, checked before the game starts
         private void Check()
@@ -137,7 +194,7 @@ public static partial class Program
                 _test = "mixed";
             }
             if (_fast && _places.Count == 0 && _hold.Length == 0)
-                Die("--fast jumps to the places named (e.g. --fast earth4 jupiter2): each test has one form now.");
+                Die("--fast jumps to the places named (e.g. --fast earth4 jupiter2): a test plays its one form.");
 
             _only = _places.Select(Place).ToList();
             // --hold <place>: its scenario up to there, jumped to
@@ -145,7 +202,7 @@ public static partial class Program
             {
                 _hold = Place(_hold);
                 if (!Shots().Contains(_hold))
-                    Die("--hold needs a screenshot's place, not a scenario.");
+                    Die("investigate hold needs a screenshot's place, not a scenario.");
                 _only = [_hold];
                 _fast = true;
                 _repeat = 1;
@@ -169,10 +226,24 @@ public static partial class Program
                 "earth" => "SolLite",
                 _ => throw new PortException($"unknown system '{_system}' (sol or earth)."),
             };
+            // check: compared with the baseline main of its test, or the last run of the test that passed at the defaults
+            if (_purpose == Purpose.Check && _reference.Length == 0)
+            {
+                if (Baseline("main", _test) is { } main)
+                    _reference = main;
+                else if (LastPassed(_test, Mode) is { } last)
+                {
+                    _reference = last;
+                    Output.Info($"No baseline main for the {Pages.TestName(_test)}: compared with the last run of it that passed, {Path.GetFileName(last)} " +
+                                "(./benchmark.sh baseline set main <run> names one).");
+                }
+                else
+                    Output.Info($"Nothing to compare with yet: this run of the {Pages.TestName(_test)} can be the baseline (./benchmark.sh baseline set main).");
+            }
             // --compare: said now, not after the minutes the run takes
             if (_reference.Length > 0)
             {
-                _reference = RunFolder(_reference);
+                _reference = RunFolder(_reference, _test);
                 if (NotComparable(_reference, Mode, _only) is { } why)
                     Die($"--compare: {why}");
             }
