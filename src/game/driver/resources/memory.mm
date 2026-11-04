@@ -114,7 +114,7 @@ static void bufferRequirements(VkDevice device, KBuffer* b, VkMemoryRequirements
     r->alignment = 256;
     // Acceleration structures are placed in their buffer's heap (accel.mm), at Metal's alignment for them (1024 on
     // the M5)
-    if (b->accelStorage)
+    if (b->accelStorage && kmtlConfig().compactRayTracingMemory)
         r->alignment = std::max<VkDeviceSize>(256, [((KDevice*)device)->mtl heapAccelerationStructureSizeAndAlignWithSize:256].align);
     r->memoryTypeBits = 0x7;
 }

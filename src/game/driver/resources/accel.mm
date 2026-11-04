@@ -163,10 +163,11 @@ VKFN(VkResult) vkCreateAccelerationStructureKHR(VkDevice device, const VkAcceler
     auto* dev = (KDevice*)device;
     // In the Vulkan buffer's heap at its offset, as Vulkan places it (KSA's terrain structures are ~170 MB each);
     // standalone when that can't be: Metal places structures only in private heaps, at its alignment, and the
-    // structure must fit the buffer
+    // structure must fit the buffer. compact_ray_tracing_memory off: always standalone
     auto* a = new KAccel();
     auto* buf = (KBuffer*)ci->buffer;
-    if (buf && buf->mtl && buf->mtl.heap && buf->mtl.heap.storageMode == MTLStorageModePrivate) {
+    if (kmtlConfig().compactRayTracingMemory && buf && buf->mtl && buf->mtl.heap &&
+        buf->mtl.heap.storageMode == MTLStorageModePrivate) {
         MTLSizeAndAlign sa = [dev->mtl heapAccelerationStructureSizeAndAlignWithSize:std::max<VkDeviceSize>(ci->size, 256)];
         NSUInteger offset = (NSUInteger)(buf->offset + ci->offset);
         if (offset % sa.align == 0 && ci->offset + sa.size <= buf->size) {
@@ -182,7 +183,7 @@ VKFN(VkResult) vkCreateAccelerationStructureKHR(VkDevice device, const VkAcceler
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
     if (!a->placed) dev->addResident(a->mtl);
-    if (!a->placed && ci->size >= (1u << 20))
+    if (!a->placed && kmtlConfig().compactRayTracingMemory && ci->size >= (1u << 20))
         KLOG(1, "acceleration structure of %llu MB in memory of its own, not its buffer", (unsigned long long)(ci->size >> 20));
     // The structure's address is its buffer's device address at the offset, as on other drivers: KSA's IVA ray
     // tracing writes that buffer address (not vkGetAccelerationStructureDeviceAddressKHR's) into TLAS instances

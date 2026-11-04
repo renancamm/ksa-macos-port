@@ -37,6 +37,7 @@ These switches turn a feature off or change a default, to work around a problem 
 | `in_place_shader_parameters` | off: helper functions get their own copy of each uniform struct they take, as SPIRV-Cross writes it ([Shaders](#from-vulkan-to-metal)); slower in the smoke raymarch, try it when a shader looks wrong |
 | `skip_gpu_texture_compression` | off: textures read at scattered positions (those the game only uploads and samples, 3D images, square power-of-two storage images of 64 to 256 such as the ocean's waves) are lossless-compressed, as Metal does by default; about 2-4 % slower over terrain, up to 10 % over clouds and the sea, try it when the terrain, clouds, smoke or the sea look wrong |
 | `iva_ray_search` | off: the cockpit's ray tracing finds each hit with a ray query, as SPIRV-Cross writes it, instead of Metal's intersector ([Ray tracing](#from-vulkan-to-metal)); slower in the cockpit, try it when the cockpit looks wrong |
+| `compact_ray_tracing_memory` | off: every acceleration structure gets memory of its own and the buffer the game made for it stays unused, about 0.4 GB more in the solar system (the terrain's structures for clutter placement are about 170 MB each); try it when grass or the cockpit look wrong |
 | `skip_shadows_on_unlit_sides` | off: the port's shader edits that skip shadows where there is no light ([Shaders](#from-vulkan-to-metal)) look them up everywhere, as the game does; slower, try it when a shadow looks wrong |
 | `early_fragment_tests` | off: no second state that tests depth first for pipelines whose fragment shader stores to an image ([Shaders](#from-vulkan-to-metal)): the hooks' Skip Hidden Vessel Parts has nothing to switch to |
 | `texture_budget_mb` | the GPU memory budget in MB reported to the game, which sizes its texture streaming from it (0, the default: what Metal recommends for this Mac) |
@@ -244,9 +245,10 @@ instances keep the evaluation stage reading the vertex kernel's output. In the b
 time of the scenes with terrain; `fused_tessellation` turns it off.
 
 **Ray tracing.** KSA uses ray queries for ground clutter placement, and ray tracing pipelines for lighting inside
-the cockpit (IVA). Ray queries and acceleration structures map onto Metal's. Metal has no ray tracing pipelines, so
-KSA Metal rewrites each one into a single compute kernel: every "trace ray" in the ray generation shader becomes a
-ray query, and the hit and miss shaders become functions called from it. The rewrite works on SPIR-V, using
+the cockpit (IVA). Ray queries and acceleration structures map onto Metal's; each structure is placed in the heap of
+the buffer the game made for it, as Vulkan places it, so it takes no memory of its own. Metal has no ray tracing
+pipelines, so KSA Metal rewrites each one into a single compute kernel: every "trace ray" in the ray generation shader
+becomes a ray query, and the hit and miss shaders become functions called from it. The rewrite works on SPIR-V, using
 [SPIRV-Tools](https://github.com/KhronosGroup/SPIRV-Tools) to link the shaders together
 ([`rtspirv.cpp`](shaders/rtspirv.cpp)).
 
@@ -300,7 +302,7 @@ The complete mapping:
 | Render pass, dynamic rendering | `MTLRenderPassDescriptor` |
 | Multiview | one draw per view |
 | Tessellation | vertex and control stages as compute kernels into scratch buffers, `drawPatches` with the evaluation shader as post-tessellation vertex function; with a passthrough control stage, the vertex shader linked into the evaluation shader and `drawIndexedPatches` with the index buffer as control point index buffer |
-| Acceleration structures, ray query | Metal acceleration structures; instances converted on the CPU to indirect instance descriptors |
+| Acceleration structures, ray query | Metal acceleration structures placed in their buffer's heap (`compact_ray_tracing_memory`; private heaps only, else standalone); instances converted on the CPU to indirect instance descriptors |
 | Ray tracing pipeline | one compute kernel with ray queries (`rtspirv.cpp`) |
 | Triangle fans | a shared (0, i, i+1) index buffer |
 | Semaphores | in-order within a queue; `MTLSharedEvent` across queues |
