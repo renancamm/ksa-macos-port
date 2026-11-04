@@ -147,7 +147,7 @@ public static partial class Program
             body.AppendLine("Screenshots: not compared, a run played in a running game (its clouds and sea are that game's).");
         else
         {
-            (differ, shotsTable) = Screenshots(dirA, dirB, modeA is "views" or "jump" ? FastShotLimit : CinematicShotLimit, shots);
+            (differ, shotsTable) = Screenshots(dirA, dirB, modeA == "views" ? FastShotLimit : CinematicShotLimit, shots);
             // Nothing compared: the sentence that says why
             if (shots.Count == 0)
                 shotsNote = shotsTable;

@@ -41,6 +41,7 @@ public partial class Director
     // time of that moment, and the camera stands exactly where the script puts it then
     private void BackToStep()
     {
+        _limitStop = double.NaN;
         _gameTarget -= GameSeconds(_stepAt, _scriptTime);
         _scriptTime = _stepAt;
         UpdateCamera(0);
@@ -67,19 +68,9 @@ public partial class Director
                 double behind = _gameTarget - Universe.GetElapsedSeconds();
                 if (behind > Tolerance)
                 {
-                    // The game takes a new speed a frame late: the frame under way still runs at the speed sent last,
-                    // which at a time-lapse's speed covers minutes
-                    double frame = Math.Max(dt, 1.0 / 240);
-                    double left = behind - (double.IsNaN(_speedSent) ? 0 : _speedSent) * frame;
-                    if (left <= Tolerance)
-                    {
-                        SetSpeed(0);
-                        return;
-                    }
-                    // Fast while far behind (at least the scripted speed), then half of what is left every frame
-                    double warp = Math.Max(_warpTo, 1);
-                    const double pace = 2;
-                    SetSpeed(left > warp * frame * 2 ? Math.Max(warp, left / pace) : left / (2 * frame));
+                    // At least the scripted speed, more while far behind: the step limit (BeforeStep) lands the game on
+                    // the moment itself
+                    SetSpeed(Math.Max(Math.Max(_warpTo, 1), behind / CatchUpSeconds));
                     return;
                 }
                 SetSpeed(0);
@@ -99,13 +90,8 @@ public partial class Director
                     Resume();
                     return;
                 }
-                if (Fast)
-                {
-                    ResetClouds(detailOnly: true);
-                    ResetSeaFrame();
-                    OpenEyes();
-                }
                 _phase = Phase.Settle;
+                _retakes = 0;
                 _settleStart = wall;
                 _phaseEnds = wall + (Fast ? ProbeEvery : SettleSeconds);
                 _phaseFrames = 0;
@@ -159,19 +145,49 @@ public partial class Director
             {
                 // The image is the next presented one: give it a few frames, and a moment more to be written
                 var path = ShotPath();
-                if (++_phaseFrames < 3 || !File.Exists(path) && _phaseFrames < 120)
+                // (a view standing still reads it whole, to compare it)
+                if (++_phaseFrames < 3 || (Fast ? Images.Read(path) == null : !File.Exists(path)) && _phaseFrames < 120)
                     return;
-                if (File.Exists(path))
-                    _sectionResult?.Screenshots.Add(_shotName);
-                else
-                    _sectionResult?.Errors.Add($"{_shotName}: no screenshot");
-                if ((_catchAgainst != null || _passesEverywhere) && File.Exists(path))
+                // A view standing still: the screenshot counts once a look right after it shows the same, so that
+                // something passing (a kitten's blink, which runs by the Mac's clock) gets it taken again
+                if (Fast && File.Exists(path) && _retakes < MaxRetakes)
                 {
-                    _phase = Phase.Catch;
-                    _phaseEnds = wall + 30;
+                    _probe = ProbePath();
+                    File.Delete(_probe);
+                    DriverStats.Screenshot(_probe);
+                    _phase = Phase.Confirm;
+                    _phaseEnds = wall + 5;
                     return;
                 }
-                EndCheckpoint();
+                ShotTaken(wall);
+                return;
+            }
+            case Phase.Confirm:
+            {
+                var look = _probe != null ? Images.Read(_probe) : null;
+                if (look == null && wall < _phaseEnds)
+                    return;
+                if (_probe != null)
+                    File.Delete(_probe);
+                _probe = null;
+                var shot = Images.Read(ShotPath());
+                double changed = look == null || shot == null ? 0 : Images.Compare(shot, look).ChangedPercent;
+                if (changed > StillPercent)
+                {
+                    _retakes++;
+                    Log(FormattableString.Invariant($"{_shotName}: {changed:F2}% changed right after the screenshot: taken again"));
+                    File.Delete(ShotPath());
+                    if (!DriverStats.Screenshot(ShotPath()))
+                    {
+                        _sectionResult?.Errors.Add($"{_shotName}: the screenshot could not be taken again");
+                        EndCheckpoint();
+                        return;
+                    }
+                    _phase = Phase.Shoot;
+                    _phaseFrames = 0;
+                    return;
+                }
+                ShotTaken(wall);
                 return;
             }
             case Phase.Catch:
@@ -306,6 +322,25 @@ public partial class Director
         }
     }
 
+    // The screenshot is there, or isn't: noted, then the catch of a broken picture or the checkpoint's end
+    private void ShotTaken(double wall)
+    {
+        var path = ShotPath();
+        if (File.Exists(path))
+            _sectionResult?.Screenshots.Add(_shotName);
+        else
+            _sectionResult?.Errors.Add($"{_shotName}: no screenshot");
+        if ((_catchAgainst != null || _passesEverywhere) && File.Exists(path))
+        {
+            _phase = Phase.Catch;
+            _phaseEnds = wall + 30;
+            return;
+        }
+        EndCheckpoint();
+    }
+
+    private static string ProbePath() => Path.Combine(Path.GetTempPath(), "ksa-metal-benchmark-probe.png");
+
     private void Shoot()
     {
         if (!_shots && !Holding || !DriverStats.Screenshot(ShotPath()))
@@ -335,7 +370,7 @@ public partial class Director
         {
             if (wall < _phaseEnds)
                 return false;
-            _probe = Path.Combine(Path.GetTempPath(), "ksa-metal-benchmark-probe.png");
+            _probe = ProbePath();
             File.Delete(_probe);
             DriverStats.Screenshot(_probe);
             _probeTaken = wall;

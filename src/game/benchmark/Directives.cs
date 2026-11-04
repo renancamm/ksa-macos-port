@@ -39,9 +39,9 @@ public partial class Director
                 return true;
             case "@shot" when a.Length == 2:
             {
-                // How much it may change from run to run (the test's noise profile); a view jumped to, the game paused,
-                // comes out the same every time: it gets no allowance for what moves
-                if (!Paused && _sections[_section] is var playing)
+                // How much it may change from run to run: the test's noise profile, or a flight's when its places were jumped
+                // to (the clouds and the sea there depend on the way the camera came, which the places chosen change)
+                if (_sections[_section] is var playing)
                     _sectionResult?.ShotLimits[a[1]] = _noise.GetValueOrDefault(playing.Name)?.ShotLimit(a[1], playing.Kind)
                                                        ?? NoiseProfile.DefaultShotLimit(playing.Kind);
                 // The game stays paused: nothing to keep in step

@@ -280,8 +280,8 @@ internal static class Tests
 
     private static void Compare()
     {
-        var a = Run("a", frameMs: 10);
-        var b = Run("b", frameMs: 11);
+        var a = Run("a", frameMs: 10, mode: "views");
+        var b = Run("b", frameMs: 11, mode: "views");
         var view = Gradient(64, 48);
         Images.Write(Path.Combine(a, "earth_earth1.png"), view);
         Images.Write(Path.Combine(b, "earth_earth1.png"), view);
@@ -307,7 +307,7 @@ internal static class Tests
         Check(File.Exists(Path.Combine(b, "diff", "earth_earth1.png")), "the marked copy in b/diff/");
 
         // Within noise
-        var c = Run("c", frameMs: 10.2);
+        var c = Run("c", frameMs: 10.2, mode: "views");
         Report("report", c);
         Report("compare", a, c);
         Contains([File.ReadAllText(Path.Combine(c, "compare.md"))], "| 10.0 | 10.2 | +2 % |", "a change within noise, unmarked");

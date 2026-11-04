@@ -44,17 +44,22 @@ namespace KsaMetal.Benchmark;
 
 public partial class Director
 {
-    // How close a checkpoint gets to the game time it waits for (game seconds), how far ahead of it the game may be
-    // (the clock only goes forward), and how long it lets the world settle (terrain and textures streaming in) before
-    // its screenshot
-    private const double Tolerance = 0.002;
+    // How close a checkpoint gets to the game time it waits for (game seconds: the game's own step limit lands it there),
+    // how far ahead of it the game may be (the clock only goes forward), and how long it lets the world settle (terrain
+    // and textures streaming in) before its screenshot
+    private const double Tolerance = 1e-4;
     private const double AheadLimit = 0.5;
     private const double SettleSeconds = 1.0;
     private const int SettleFrames = 10;
     // How long the simulation takes to ease to a stop at a checkpoint, and back to its speed after it
     private const double ShotEase = 0.75;
-    // While the script warps, how many seconds the game takes to make up what it fell behind
-    private const double WarpCatchUp = 0.5;
+    // While the script warps, how many seconds the game takes to make up what it fell behind, and how many a checkpoint
+    // takes to catch up with its moment
+    private const double WarpCatchUp = 0.5, CatchUpSeconds = 2;
+    // A views scenario's setup: the script's clock goes on by this much a frame, and the game's by what the script asks
+    // for in it, so every Mac runs the same steps of the simulation (a frame covers a step this small unless the game's
+    // physics slowed it down: BeforeStep then finishes the step in the next frame)
+    private const double SetupStep = 1.0 / 240;
     // Fast mode: how often it looks whether the view still changes (seconds), how much of it may change between two
     // looks to count as still (percent of its blocks, see Images.cs), the longest it waits, and how long it measures
     private const double ProbeEvery = 0.25;
@@ -75,7 +80,7 @@ public partial class Director
         public bool CameraOnly => Steps.All(s => s.Words[0] is "@key" or "@shot" or "@measure");
     }
 
-    private enum Phase { Play, CatchUp, Settle, Measure, Capture, Shoot, Catch, CatchPasses, CatchCapture, CaughtImage, Hold, NewWorld }
+    private enum Phase { Play, CatchUp, Settle, Measure, Capture, Shoot, Confirm, Catch, CatchPasses, CatchCapture, CaughtImage, Hold, NewWorld }
 
     // What a catch-up of the game's clock leads to: a checkpoint's screenshot, or the end of a @sync
     private enum After { Shot, Sync }
@@ -118,6 +123,14 @@ public partial class Director
     // The simulation speed the script asks for: @warp moves it from one speed to another over some seconds
     private double _warpFrom = 1, _warpTo = 1, _warpStart, _warpSeconds;
     private double _speedSent = double.NaN;
+    // A views scenario's setup: the script's time the steps have gone on by since the last frame, and the steps the game
+    // fell short of (it runs a step at under the speed asked when its physics took most of the frame before)
+    private double _setupAdvanced;
+    private int _shortSteps;
+    private bool _waited;
+    // The next checkpoint's or @sync's game time in a flight (StepLimit), worked out again only when the script's speeds
+    // or its game time change otherwise than by playing on
+    private double _limitStop = double.NaN, _limitGame;
     // The times of the checkpoints and @sync steps on the script's clock, where the simulation eases to a stop, and the
     // time of the step running
     private readonly List<double> _stopTimes = new();
@@ -132,6 +145,9 @@ public partial class Director
     private Image? _lastProbe;
     private string? _probe;
     private double _probeTaken;
+    // A view standing still: how many times its screenshot was taken again, as something passed in it, and at most
+    private int _retakes;
+    private const int MaxRetakes = 3;
 
     private Window? _window;
     // Fast mode's measurement of the view standing at a checkpoint
@@ -215,6 +231,9 @@ public partial class Director
                 shots?.Add(name[(section.Name.Length + 1)..]);
             }
         }
+        // Only the scenarios chosen, so that the first one is the first played
+        if (_only != null)
+            _sections.RemoveAll(section => !_only.ContainsKey(section.Name));
         _resultsFile = $"results{options.Suffix}.json";
         _profileFrames = options.Profile;
         _capture = options.Capture;
@@ -247,6 +266,10 @@ public partial class Director
             return;
         if (!_wall.IsRunning && _waitFor != null)
         {
+            // Views: the game paused from its first frame, so that the wait leaves nothing behind in the clouds and the sea
+            if (Fast)
+                SetSpeed(0);
+            _waited = true;
             // Up in the game: the heartbeat tells the script, which starts its tool and then makes the file
             if (!_waiting.IsRunning || _waiting.Elapsed.TotalSeconds >= _nextBeat)
             {
@@ -293,17 +316,21 @@ public partial class Director
             dt = NextStop() - _scriptTime;
             _scriptTime += dt;
         }
+        else if (InSetup)
+        {
+            // The steps went on before the game's step (BeforeStep)
+            dt = _setupAdvanced;
+            _setupAdvanced = 0;
+        }
         else
         {
             _gameTarget += GameSeconds(_scriptTime, _scriptTime + dt);
             _scriptTime += dt;
             double speed = SpeedAt(_scriptTime);
             // The game keeps a little under the speed it is asked for (about 12% here), which adds up to hours over a
-            // time-lapse, and takes a new speed a frame late, so a fast warp easing down overshoots by minutes: while
-            // the script warps, it asks for more as the game falls behind and for less as it gets ahead. Coming out of
-            // a warp the game can end up ahead (tens of milliseconds at the speed of the frame before): below a warp
-            // it only asks for less, until the game is back in step
-            if (!Live && (speed > 2 || speed > 0 && Universe.GetElapsedSeconds() > _gameTarget))
+            // time-lapse: while the script warps, it asks for more as the game falls behind (the step limit keeps it
+            // from passing the next checkpoint)
+            if (!Live && speed > 2)
                 speed = Math.Max(speed + (_gameTarget - Universe.GetElapsedSeconds()) / WarpCatchUp, 0);
             SetSpeed(speed);
             if (!Fast)
@@ -339,6 +366,67 @@ public partial class Director
         }
     }
 
+    // Before the game works out its next step of the simulation (the hooks call it from Universe.GetJobSimStep): the
+    // game time that step may not pass, through the game's own limit (Universe.LimitNextStep), so the game lands on a
+    // checkpoint's moment exactly instead of easing towards it. A timed scenario's game runs free.
+    public void BeforeStep()
+    {
+        if (!_active || !_wall.IsRunning || Live || _phase == Phase.Hold)
+            return;
+        double now = Universe.GetElapsedSeconds();
+        if (InSetup)
+        {
+            // The last step fell short of where it was to end: this one ends there instead
+            if (now < _gameTarget - Tolerance)
+                _shortSteps++;
+            else
+            {
+                // Up to the next step's time at most, which the frame then plays
+                var section = _sections[_section];
+                double next = _sectionStart + (_next < section.Steps.Count ? section.Steps[_next].At : section.Length);
+                double h = Math.Min(SetupStep, Math.Max(next - _scriptTime, 0));
+                _gameTarget += GameSeconds(_scriptTime, _scriptTime + h);
+                _scriptTime += h;
+                _setupAdvanced += h;
+            }
+            // Asked now, for this step, as a player's request would be
+            Universe.SetSimulationSpeed(SpeedAt(_scriptTime), alert: false);
+            _speedSent = double.NaN;
+        }
+        if (StepLimit() is not { } limit)
+            return;
+        if (limit - now <= Tolerance)
+        {
+            // There already: no step at all, whatever speed was asked last
+            Universe.SetSimulationSpeed(0, alert: false);
+            _speedSent = double.NaN;
+            return;
+        }
+        Universe.LimitNextStep(Universe.GetElapsedTime() + (limit - now));
+    }
+
+    // Whether a views scenario is setting up: its steps play at a fixed pace (SetupStep) until the game pauses for its views
+    private bool InSetup => _phase == Phase.Play && !Paused && !Live && _section >= 0 && _sections[_section].Kind == Kind.Views;
+
+    // The game time the next step may not pass: the checkpoint's or @sync's being caught up with, the script's in a views
+    // scenario's setup, the next checkpoint's or @sync's in a flight; null when the game is paused or free
+    private double? StepLimit()
+    {
+        if (_phase == Phase.CatchUp || InSetup)
+            return _gameTarget;
+        if (_phase != Phase.Play || Paused)
+            return null;
+        foreach (double stop in _stopTimes)
+        {
+            if (stop < _scriptTime)
+                continue;
+            if (stop != _limitStop)
+                (_limitStop, _limitGame) = (stop, _gameTarget + GameSeconds(_scriptTime, stop));
+            return _limitGame;
+        }
+        return null;
+    }
+
     private void Trace(double wall)
     {
         if (_trace == null || Program.GetHoveredCamera() is not { } camera)
@@ -358,7 +446,7 @@ public partial class Director
     }
 
     // The simulation speed the script asks for at a time of its clock: @warp's, eased to a stop around checkpoints and
-    // @sync steps (arriving at full speed, the game would run a frame past them)
+    // @sync steps, so that the world comes to rest at them as the camera does
     private double SpeedAt(double t)
     {
         double warp = _warpTo;
@@ -436,6 +524,7 @@ public partial class Director
     // made up at the new one
     private void Warp(double speed, double seconds)
     {
+        _limitStop = double.NaN;
         double after = GameSeconds(_stepAt, _scriptTime);
         _warpFrom = SpeedAt(_stepAt);
         _warpTo = speed;
@@ -456,14 +545,13 @@ public partial class Director
         // The scene alone, without the game's interface (F2)
         Program.DrawUI = false;
         _gameStart = _gameTarget = Universe.GetElapsedSeconds();
-        _warpFrom = _warpTo = Universe.GetSimulationSpeed();
+        // A views run paused while it waited (for a tool) plays at real time until its first @warp, as one that didn't wait
+        _warpFrom = _warpTo = _waited && Fast ? 1 : Universe.GetSimulationSpeed();
         foreach (var section in _sections)
         {
             var missing = section.Needs.Where(id => Universe.CurrentSystem?.All.TryGet(id, out Astronomical? _) != true).ToList();
             if (missing.Count > 0)
                 Log($"skipping section {section.Name}: no {string.Join(", ", missing)} in this system");
-            else if (_only != null && !_only.ContainsKey(section.Name))
-                Log($"skipping section {section.Name}");
             else
                 continue;
             section.Steps.Clear();
@@ -502,6 +590,7 @@ public partial class Director
         // After a live section the game's clock is wherever it got to
         if (Live)
             _gameTarget = Universe.GetElapsedSeconds();
+        _limitStop = double.NaN;
         if (_section >= 0)
             _sectionStart += _sections[_section].Length;
         _section++;
@@ -512,6 +601,8 @@ public partial class Director
             _trace?.Dispose();
             _frames?.Dispose();
             _results!.Completed = true;
+            if (_shortSteps > 0)
+                Log($"the setup's steps: the game fell short of {_shortSteps} of them (slow frames of physics), finished in the frame after");
             _results.Write(Path.Combine(_outDir, _resultsFile));
             Log(FormattableString.Invariant($"done after {_wall.Elapsed.TotalSeconds:F1} s"));
             // The camera's field of view and the game's explosions as they were
@@ -521,6 +612,14 @@ public partial class Director
             if (!_options.Stay)
                 Program.TerminalInterface.Execute("exit");
             return;
+        }
+        // A flight plays at real time, wherever the scenario before it left the speed (the Mixed Test ends paused)
+        if (_sections[_section].Kind == Kind.Flight && !Paused)
+        {
+            _gameTarget = Universe.GetElapsedSeconds();
+            _warpFrom = _warpTo = 1;
+            _warpSeconds = 0;
+            SetSpeed(1);
         }
         _sectionResult = new SectionResult(_sections[_section].Name) { Live = Live };
         _results!.Sections.Add(_sectionResult);

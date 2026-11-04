@@ -197,6 +197,19 @@ public static class Runs
         }
     }
 
+    // Before each step of the simulation: the director's limit on it
+    public static void BeforeStep()
+    {
+        try
+        {
+            _run?.BeforeStep();
+        }
+        catch (Exception e)
+        {
+            Log($"BenchmarkRun: {e}");
+        }
+    }
+
     private static void Frame()
     {
         Interlocked.Exchange(ref _lastFrame, Stopwatch.GetTimestamp());
