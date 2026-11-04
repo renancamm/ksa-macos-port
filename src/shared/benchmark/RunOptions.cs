@@ -1,11 +1,13 @@
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 
-namespace KsaPort.Common;
+namespace KsaPort.Common.Benchmark;
 
-// A run's options: what the director plays and how. benchmark.sh's report program writes them, or the hooks for a run
-// from the Mac Port tab, as run.json in the run's folder, which the game gets as KSA_BENCH_OUT; the director and the
-// hooks read them there when the game starts.
+// A run's options: what the director plays and how, and what the run's host says about it for the record. benchmark.sh's
+// program writes them for each game session, or the hooks for a run from the Mac Port tab, as options.json in the run's
+// folder, which the game gets as KSA_BENCH_OUT; the director and the hooks read them there when the game starts, and
+// Finish.cs when the run ends.
 public sealed class RunOptions
 {
     // The script (benchmark.txt)
@@ -21,8 +23,11 @@ public sealed class RunOptions
     public bool NoShots { get; set; }
     // <section>_<shot>: stop at that checkpoint for good, the game paused, until it is quit
     public string Hold { get; set; } = "";
-    // A suffix for the results' file names (results-2.json, frames-2.csv), for repeats
-    public string Suffix { get; set; } = "";
+    // Which game session of the run this is, from 1
+    public int Session { get; set; } = 1;
+    // The app played, and what the host says about the run for its record (the test, the settings, the tools...)
+    public string App { get; set; } = "";
+    public List<Fact> Facts { get; set; } = [];
     // Profile that many frames of every measured part with KSA Metal's GPU profiler (the game needs
     // KSA_MTL_GPU_PROFILE=<csv>)
     public uint Profile { get; set; }
@@ -38,9 +43,9 @@ public sealed class RunOptions
     public bool CatchCapture { get; set; }
     // The same pass dump and image at every checkpoint, broken or not: a clean run's, to compare a caught one with
     public bool Passes { get; set; }
-    // A file to wait for in the game before playing (up to a minute), so that a tool started once the game is up (an
-    // Instruments trace) sees the whole run
-    public string Wait { get; set; } = "";
+    // Wait in the game before playing (up to a minute) for the "recording" event, so that a tool started once the game is
+    // up (an Instruments trace) sees the whole run
+    public bool WaitForRecording { get; set; }
     // Write the camera's place every frame to trace.csv, to check its moves are smooth
     public bool Trace { get; set; }
     // A screenshot every that many seconds of the script's clock, into film/, to see moves
@@ -60,7 +65,7 @@ public sealed class RunOptions
     [System.Text.Json.Serialization.JsonIgnore]
     public string Out { get; set; } = "";
 
-    public const string FileName = "run.json";
+    public const string FileName = "options.json";
 
     private static readonly JsonSerializerOptions Json =
         new() { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };

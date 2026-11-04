@@ -1,6 +1,7 @@
-// The benchmark's pages: report.html, what a run measured with its screenshots, and compare.html, two runs side by side.
-// Each is one file with its style and script inside, needing nothing from the network. Images are the run folder's
-// screenshots by relative path: PNG in a run folder, JPEG in a shared zip, so an image that isn't there tries the other.
+// The benchmark's pages, all from a run's record (Record.cs): report.md and report.html, what a run measured with its
+// screenshots, and compare.html, two runs side by side. Each page is one file with its style and script inside, needing
+// nothing from the network. Images are the run folder's screenshots by relative path: PNG in a run folder, JPEG in a
+// shared zip, so an image that isn't there tries the other.
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -8,16 +9,24 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Text;
-using System.Text.Json.Nodes;
 
-namespace KsaMetal.Benchmark.Cli;
+namespace KsaPort.Common.Benchmark;
 
-// One screenshot of a comparison: what the program found. State: same, differs, unreadable, or free (a view that may
-// change from run to run as it likes, not compared)
+// One screenshot of a comparison: what was found. State: same, differs, unreadable, or free (a view that may change from
+// run to run as it likes, not compared)
 public sealed record ShotResult(string Name, double ChangedPercent, double MeanChange, double Allowed, string State);
 
-public static class Html
+// One part of both runs of a comparison: its numbers in each, and whether it changed past the noise
+public sealed record PartChange(string Scenario, PartRecord A, PartRecord B, bool Marked, double Change);
+
+public static class Pages
 {
+    private static string E(string? text) => WebUtility.HtmlEncode(text ?? "");
+
+    private static string F(double x, string format = "0.#") => x.ToString(format, CultureInfo.InvariantCulture);
+
+    private static string N(double? x, string format) => x is { } v ? F(v, format) : "";
+
     public static string TestName(string? test) => test switch
     {
         "mixed" => "Mixed Test",
@@ -27,35 +36,16 @@ public static class Html
         _ => "Chosen Places"
     };
 
-    private static string E(string? text) => WebUtility.HtmlEncode(text ?? "");
+    // A test's name, with "places" when it jumped to places
+    public static string Title(RunRecord r) => TestName(r.Test) + (r.Mode.Split(' ').Contains("jump") ? ", places" : "");
 
-    private static string N(JsonNode? node, string format) =>
-        node is JsonValue v && v.TryGetValue<double>(out var d) ? d.ToString(format, CultureInfo.InvariantCulture) : "";
-
-    private static double D(JsonNode? node) =>
-        node is JsonValue v && v.TryGetValue<double>(out var d) ? d : double.NaN;
-
-    private static string F(double x, string format = "0.#") => x.ToString(format, CultureInfo.InvariantCulture);
-
-    private static IEnumerable<JsonObject> SectionsOf(JsonObject report) => (report["sections"] as JsonArray ?? new JsonArray()).OfType<JsonObject>();
-
-    private static IEnumerable<JsonObject> WindowsOf(JsonObject section) => (section["windows"] as JsonArray ?? new JsonArray()).OfType<JsonObject>();
-
-    // When a run was, from its folder's name: 2026-10-31_0545 is "Oct 31, 2026, 05:45"
-    private static string When(string dir)
-    {
-        var name = Path.GetFileName(Path.GetFullPath(dir).TrimEnd('/'));
-        return DateTime.TryParseExact(name.Length >= 15 ? name[..15] : name, "yyyy-MM-dd_HHmm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
-            ? date.ToString("MMM d, yyyy, HH:mm", CultureInfo.InvariantCulture)
-            : name;
-    }
-
-    private static string System(JsonObject report, string key) => (string?)report["system"]?[key] ?? "";
+    // When a run was: "Oct 31, 2026, 05:45"
+    public static string When(RunRecord r) => r.Started.ToString("MMM d, yyyy, HH:mm", CultureInfo.InvariantCulture);
 
     // The Mac and the version in one line
-    private static string MacLine(JsonObject report)
+    private static string MacLine(RunRecord r)
     {
-        var parts = new[] { System(report, "Chip"), System(report, "Memory"), System(report, "macOS") is { Length: > 0 } m ? "macOS " + m.Split(' ')[0] : "", System(report, "KSA") is { Length: > 0 } k ? "KSA " + k : "" };
+        var parts = new[] { r.Fact("Chip") ?? "", r.Fact("Memory") ?? "", r.Fact("macOS") is { Length: > 0 } m ? "macOS " + m.Split(' ')[0] : "", r.Fact("KSA") is { Length: > 0 } k ? "KSA " + k : "" };
         return string.Join(" · ", parts.Where(p => p.Length > 0));
     }
 
@@ -69,98 +59,170 @@ public static class Html
                $"data-other=\"{E(other)}\" onerror=\"this.onerror=null;this.src=this.dataset.other\">";
     }
 
-    // Parts' shared numbers across a run: frames over seconds, so a long part counts for its length
-    public static (double Fps, double GpuMs, JsonObject? Slowest, string SlowestSection, double MemoryMb) Headline(JsonObject report)
+    // --- report.md: the same as the page, as text (benchmark.sh prints it up to the facts)
+
+    public const string FactsHeading = "### This Mac and the run";
+
+    public static string Markdown(RunRecord r)
     {
-        double frames = 0, seconds = 0, gpuWeighted = 0, gpuSeconds = 0, memory = 0, slowest = double.MaxValue;
-        JsonObject? worst = null;
-        string worstSection = "";
-        foreach (var section in SectionsOf(report))
+        var culture = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+        try
         {
-            foreach (var w in WindowsOf(section))
-            {
-                memory = Math.Max(memory, D(w["footprintPeakMb"]) is var f && !double.IsNaN(f) ? f : 0);
-                // Time warp's parts are about the speed they reach
-                if (w["gameDays"] is not null)
-                    continue;
-                double s = D(w["seconds"]), fps = D(w["averageFps"]), gpu = D(w["gpuMsMedian"]);
-                if (double.IsNaN(s) || s <= 0 || double.IsNaN(fps))
-                    continue;
-                frames += fps * s;
-                seconds += s;
-                if (!double.IsNaN(gpu))
-                {
-                    gpuWeighted += gpu * s;
-                    gpuSeconds += s;
-                }
-                if (fps < slowest)
-                    (slowest, worst, worstSection) = (fps, w, (string?)section["name"] ?? "");
-            }
+            return MarkdownOf(r);
         }
-        return (seconds > 0 ? frames / seconds : double.NaN, gpuSeconds > 0 ? gpuWeighted / gpuSeconds : double.NaN, worst, worstSection, memory);
+        finally
+        {
+            CultureInfo.CurrentCulture = culture;
+        }
     }
 
-    public static double WarpDays(JsonObject report) =>
-        SectionsOf(report).SelectMany(WindowsOf).Where(w => w["gameDays"] is not null).Sum(w => D(w["gameDays"]));
+    private static string MarkdownOf(RunRecord r)
+    {
+        var md = new StringBuilder();
+        md.AppendLine($"## KSA Metal benchmark: {Title(r)}");
+        md.AppendLine();
+        var problems = r.Problems.ToList();
+        if (r.Status == Benchmark.Status.Stopped)
+            md.AppendLine(r.AllParts().Any()
+                ? "**Stopped**: you stopped the run. Below is what it measured until then."
+                : "**Stopped**: you stopped the run before it finished measuring a part.");
+        else if (problems.Count == 0)
+            md.AppendLine("**Passed**: the run played to its end without errors.");
+        if (problems.Count > 0)
+        {
+            md.AppendLine($"**Failed**: {problems.Count} problem{(problems.Count > 1 ? "s" : "")} (the parts they concern may not compare with other runs):");
+            md.AppendLine();
+            foreach (var p in problems)
+                md.AppendLine($"- {p.Text}");
+        }
+        var h = r.Headline();
+        var headline = new List<string>();
+        if (h.Fps is { } fps)
+            headline.Add($"**{fps:F0} FPS** across the parts{(h.GpuMs is { } gpu ? $", GPU {gpu:F1} ms a frame" : "")}");
+        if (h.Slowest is { } slowest)
+            headline.Add($"slowest {slowest.Scenario.Name} {slowest.Part.Name}, {slowest.Part.AverageFps:F0} FPS");
+        if (h.WarpDays > 0)
+            headline.Add($"**{h.WarpDays:F1} game days** in time warp");
+        if (h.MemoryMb > 0)
+            headline.Add($"memory peak {h.MemoryMb / 1024:F1} GB");
+        if (headline.Count > 0)
+        {
+            md.AppendLine();
+            md.AppendLine(string.Join("; ", headline) + ".");
+        }
+        var notes = r.Notes.ToList();
+        if (notes.Count > 0)
+        {
+            md.AppendLine();
+            md.AppendLine("Conditions worth knowing:");
+            md.AppendLine();
+            foreach (var n in notes)
+                md.AppendLine($"- {n.Text}");
+        }
+        md.AppendLine();
+        var plain = r.Scenarios.Where(s => s.Parts.Count > 0).ToList();
+        if (plain.Count > 0)
+        {
+            md.AppendLine("| Scenario | Part | FPS | Frame ms | p95 ms | GPU ms | Hitches | Worst ms | Draws | Memory MB | GPU memory MB | Shaders |");
+            md.AppendLine("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
+            foreach (var s in plain)
+            {
+                string name = s.Name;
+                foreach (var p in s.Parts)
+                {
+                    string frame = F(p.FrameMsMedian, "0.0");
+                    if (p.FrameMsRange is [var lo, var hi])
+                        frame += $" ({F(lo, "0.0")}-{F(hi, "0.0")})";
+                    md.AppendLine($"| {name} | {p.Name} | {F(p.AverageFps, "0.0")} | {frame} | {F(p.FrameMsP95, "0.0")} | {N(p.GpuMsMedian, "0.0")} | {p.Hitches} | " +
+                                  $"{F(p.FrameMsMax, "0")} | {N(p.DrawsMedian, "0")} | {p.FootprintPeakMb} | {p.GpuMemoryPeakMb} | {p.ShadersCompiled} |");
+                    name = "";
+                }
+            }
+            md.AppendLine();
+            if (plain.Any(s => s.Kind == Kind.Views) || r.Mode.Contains("jump"))
+                md.AppendLine("A part of the Mixed Test, or of places jumped to, is the view standing still (the game paused) at the screenshot of that name.");
+            if (plain.Any(s => s.Kind == Kind.Flight) && !r.Mode.Contains("jump"))
+                md.AppendLine("A part of the Planetary Tour is measured along the way, between two screenshots.");
+            md.AppendLine("Frame: time between two frames (median, 95th percentile). GPU: time the GPU worked on a frame. Hitches: frames longer than twice the median. " +
+                          "Memory: the game's footprint at its peak, and what KSA Metal allocated for the GPU. Shaders: compiled while measuring (each one a stutter).");
+        }
+        var warp = r.AllParts().Where(x => x.Part.Warp != null).ToList();
+        if (warp.Count > 0)
+        {
+            md.AppendLine();
+            md.AppendLine($"Time warp: {h.WarpDays:F1} game days in the {warp.Sum(x => x.Part.Seconds):F0} s of its {warp.Count} parts.");
+            md.AppendLine();
+            md.AppendLine("Speed: game seconds per second, against what was asked (1 is real time). To 90 %: seconds until it ran at 90 % of what was asked. Physics: the slowest vehicle job. A speed far under what was asked means the simulation held it back.");
+            md.AppendLine();
+            md.AppendLine("| Scenario | Part | Game days | Speed | Asked | To 90 % s | GPU ms | Worst ms | Physics ms | Substeps | Vehicles | Bubbles |");
+            md.AppendLine("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
+            foreach (var (s, p) in warp)
+            {
+                var w = p.Warp!;
+                var speed = $"x{w.Speed:F0}" + (w.SpeedRange is [var lo, var hi] ? $" ({lo:F0}-{hi:F0})" : "");
+                md.AppendLine($"| {s.Name} | {p.Name} | {F(w.GameDays, "0.##")} | {speed} | x{w.SpeedAsked:F0} | {(w.SecondsToSpeed is { } t ? F(t, "0.0") : "never")} | " +
+                              $"{N(p.GpuMsMedian, "0.0")} | {F(p.FrameMsMax, "0")} | {F(w.SimMsMax, "0.0")} | {w.Substeps} | {w.VehiclesMax} | {w.BubblesMax} |");
+            }
+        }
+        md.AppendLine();
+        md.AppendLine(FactsHeading);
+        md.AppendLine();
+        md.AppendLine("| | |");
+        md.AppendLine("|---|---|");
+        foreach (var f in r.Facts)
+            md.AppendLine($"| {f.Key} | {f.Value} |");
+        if (r.Drawable != null)
+            md.AppendLine($"| Drawn | {r.Drawable} pixels |");
+        if (r.LoadSeconds is > 0 and var load)
+            md.AppendLine($"| Loading | {F(load, "0.0")} s |");
+        if (r.AllParts().Select(x => x.Part.Runs).DefaultIfEmpty(1).Max() is > 1 and var runs)
+            md.AppendLine($"| Runs | {runs}: each number is the median of the runs, Frame ms shows their range |");
+        return md.ToString();
+    }
 
     // --- report.html
 
-    public static void WriteReport(string dir, JsonObject report)
+    public static void WriteReport(string dir, RunRecord r)
     {
-        bool passed = report["passed"]?.GetValue<bool>() == true;
-        var problems = (report["problems"] as JsonArray ?? new JsonArray()).Select(p => (string?)p ?? "").ToList();
-        var notes = (report["notes"] as JsonArray ?? new JsonArray()).Select(p => (string?)p ?? "").ToList();
-        var test = TestName(System(report, "Test") is { Length: > 0 } t ? t : null);
-        var kinds = ((string?)report["mode"] ?? "").Split(' ');
-        var mode = kinds.All(k => k is "fast" or "views" or "jump") ? "fast" : "cinematic";
-        var modeWord = kinds.Contains("jump") ? "places" : "";
-        var shots = Directory.GetFiles(dir, "*_*.*").Select(Path.GetFileName).OfType<string>()
-            .Where(f => f.EndsWith(".png", StringComparison.Ordinal) || f.EndsWith(".jpg", StringComparison.Ordinal)).Select(f => Path.GetFileNameWithoutExtension(f)).Distinct().ToHashSet();
+        File.WriteAllText(Path.Combine(dir, "report.md"), Markdown(r));
         var ext = Directory.GetFiles(dir, "*_*.png").Length > 0 ? ".png" : ".jpg";
-        // The screenshots in the order played
-        var order = new List<(string Section, string Shot)>();
-        foreach (var section in SectionsOf(report))
-        {
-            var name = (string?)section["name"] ?? "";
-            foreach (var shot in (section["screenshots"] as JsonArray ?? new JsonArray()).Select(s => (string?)s ?? ""))
-                if (shots.Contains($"{name}_{shot}"))
-                    order.Add((name, shot));
-        }
-        var (fps, gpu, slowest, slowestSection, memory) = Headline(report);
-        double days = WarpDays(report);
+        var order = r.Scenarios.SelectMany(s => s.Shots).Where(s => File.Exists(Path.Combine(dir, s.File)) || File.Exists(Path.Combine(dir, Path.ChangeExtension(s.File, ".jpg")))).ToList();
+        var h = r.Headline();
+        var problems = r.Problems.ToList();
+        var notes = r.Notes.ToList();
 
         var html = new StringBuilder();
-        Open(html, $"{test}: {When(dir)}", (string?)report["drawable"]);
+        Open(html, $"{Title(r)}: {When(r)}", r.Drawable);
         html.Append("<header class=\"hero\">");
         if (Banner(dir, order, ext) is { } banner)
             html.Append(Image(banner, "", "hero-image"));
         html.Append("<div class=\"hero-text\"><div class=\"eyebrow\">KSA Metal benchmark</div>");
-        html.Append($"<h1>{E(test)}{(modeWord.Length > 0 ? $" <span>{E(modeWord)}</span>" : "")}</h1>");
-        html.Append($"<p>{E(When(dir))} · {E(MacLine(report))}</p>");
-        bool stopped = report["stopped"]?.GetValue<bool>() == true;
-        html.Append(Status(passed, stopped ? "Stopped" : passed ? "Passed" : "Failed"));
+        html.Append($"<h1>{E(TestName(r.Test))}{(r.Mode.Split(' ').Contains("jump") ? " <span>places</span>" : "")}</h1>");
+        html.Append($"<p>{E(When(r))} · {E(MacLine(r))}</p>");
+        html.Append(Status(r.Status == Benchmark.Status.Passed, r.Status.ToString()));
         html.Append("</div></header><main>");
 
         if (problems.Count > 0)
         {
             html.Append($"<section class=\"callout bad\"><h2>{problems.Count} problem{(problems.Count > 1 ? "s" : "")}</h2><p>The parts they concern may not compare with other runs.</p><ul>");
             foreach (var p in problems)
-                html.Append($"<li>{E(p)}</li>");
+                html.Append($"<li>{E(p.Text)}</li>");
             html.Append("</ul></section>");
         }
 
         html.Append("<section class=\"tiles\">");
-        if (!double.IsNaN(fps))
+        if (h.Fps is { } fps)
             Tile(html, F(fps, "0"), "FPS", "across the measured parts");
-        if (!double.IsNaN(gpu))
+        if (h.GpuMs is { } gpu)
             Tile(html, F(gpu), "ms", "GPU time a frame");
-        if (slowest != null)
-            Tile(html, N(slowest["averageFps"], "0"), "FPS", $"slowest part: {PartName(slowestSection, (string?)slowest["name"])}");
-        if (days > 0)
-            Tile(html, F(days, days >= 100 ? "0" : "0.#"), "days", "game time in the Warp Test");
-        if (memory > 0)
-            Tile(html, F(memory / 1024), "GB", "memory at its peak");
-        if (D(report["loadSeconds"]) is var load && !double.IsNaN(load) && load > 0)
+        if (h.Slowest is { } slowest)
+            Tile(html, F(slowest.Part.AverageFps, "0"), "FPS", $"slowest part: {slowest.Scenario.Name} {slowest.Part.Name}");
+        if (h.WarpDays > 0)
+            Tile(html, F(h.WarpDays, h.WarpDays >= 100 ? "0" : "0.#"), "days", "game time in the Warp Test");
+        if (h.MemoryMb > 0)
+            Tile(html, F(h.MemoryMb / 1024), "GB", "memory at its peak");
+        if (r.LoadSeconds is > 0 and var load)
             Tile(html, F(load, "0"), "s", "loading");
         html.Append("</section>");
 
@@ -168,33 +230,32 @@ public static class Html
         {
             html.Append("<section class=\"callout\"><h2>Worth knowing</h2><ul>");
             foreach (var n in notes)
-                html.Append($"<li>{E(n)}</li>");
+                html.Append($"<li>{E(n.Text)}</li>");
             html.Append("</ul></section>");
         }
 
-        Parts(html, report, shots, ext);
+        var shown = order.Select(s => Path.GetFileNameWithoutExtension(s.File)).ToHashSet();
+        Parts(html, r, shown, ext);
         var timelines = Timelines(dir);
-        WarpCharts(html, report, timelines);
-        FrameCharts(html, report, timelines, mode);
-        Gallery(html, report, order, ext);
-        Facts(html, report);
-        html.Append($"<footer>Every frame's numbers are in <code>frames.csv</code>, the same numbers as text in <code>report.md</code>, the game's log in <code>game.log</code>.</footer>");
+        WarpCharts(html, r, timelines);
+        FrameCharts(html, r, timelines);
+        Gallery(html, r, order, ext);
+        FactsTable(html, r);
+        html.Append("<footer>Every frame's numbers are in <code>frames.csv</code>, the run's record in <code>run.json</code>, the same numbers as text in <code>report.md</code>, the game's log in <code>game.log</code>.</footer>");
         html.Append("</main>");
         Close(html);
         File.WriteAllText(Path.Combine(dir, "report.html"), html.ToString());
     }
 
     // The banner: the first screenshot of the run with some detail, by its file's size, not a view of black space
-    private static string? Banner(string dir, List<(string Section, string Shot)> order, string ext)
+    private static string? Banner(string dir, List<ShotRecord> order, string ext)
     {
-        var files = order.Select(s => $"{s.Section}_{s.Shot}{ext}").Where(f => File.Exists(Path.Combine(dir, f))).ToList();
+        var files = order.Select(s => Path.ChangeExtension(s.File, ext)).Where(f => File.Exists(Path.Combine(dir, f))).ToList();
         if (files.Count == 0)
             return null;
         var sizes = files.Select(f => new FileInfo(Path.Combine(dir, f)).Length).OrderBy(x => x).ToList();
         return files.First(f => new FileInfo(Path.Combine(dir, f)).Length >= sizes[sizes.Count / 2]);
     }
-
-    private static string PartName(string section, string? part) => part == section || part?.StartsWith(section, StringComparison.Ordinal) == true ? part ?? "" : $"{section} {part}";
 
     private static void Tile(StringBuilder html, string value, string unit, string what) =>
         html.Append($"<div class=\"tile\"><div class=\"value\">{E(value)}<small>{E(unit)}</small></div><div class=\"what\">{E(what)}</div></div>");
@@ -203,90 +264,77 @@ public static class Html
         $"<span class=\"status {(good ? "good" : "bad")}\"><svg viewBox=\"0 0 16 16\" aria-hidden=\"true\"><path d=\"{(good ? "M3 8.5l3.2 3.2L13 4.8" : "M4 4l8 8M12 4l-8 8")}\"/></svg>{E(text)}</span>";
 
     // The parts as a table, a bar for each one's frame time on one scale
-    private static void Parts(StringBuilder html, JsonObject report, HashSet<string> shots, string ext)
+    private static void Parts(StringBuilder html, RunRecord r, HashSet<string> shots, string ext)
     {
-        var parts = SectionsOf(report).SelectMany(s => WindowsOf(s).Where(w => w["gameDays"] is null).Select(w => (Section: (string?)s["name"] ?? "", Window: w))).ToList();
+        var parts = r.AllParts().Where(x => x.Part.Warp == null).ToList();
         if (parts.Count == 0)
             return;
-        double scale = Math.Max(parts.Max(p => Math.Max(D(p.Window["frameMsMedian"]), D(p.Window["gpuMsMedian"]) is var g && !double.IsNaN(g) ? g : 0)), 1);
+        double scale = Math.Max(parts.Max(x => Math.Max(x.Part.FrameMsMedian, x.Part.GpuMsMedian ?? 0)), 1);
         html.Append("<section><h2>Part by part</h2><p class=\"lead\">Frame: the time between two frames. GPU: the time the GPU worked on one. A hitch is a frame longer than twice the usual one.</p>");
         html.Append("<div class=\"key\"><i class=\"s1\"></i>Frame ms<i class=\"s2\"></i>GPU ms</div>");
         html.Append("<div class=\"table-scroll\"><table class=\"parts\"><thead><tr><th>Part</th><th class=\"bar-cell\"></th><th>FPS</th><th>Frame ms</th><th>GPU ms</th><th>p95 ms</th><th>Worst ms</th><th>Hitches</th><th>Draws</th><th>Memory MB</th></tr></thead><tbody>");
         string last = "";
-        foreach (var (section, w) in parts)
+        foreach (var (s, p) in parts)
         {
-            if (section != last && SectionsOf(report).Count() > 1)
-                html.Append($"<tr class=\"group\"><th colspan=\"10\">{E(section)}</th></tr>");
-            last = section;
-            var name = (string?)w["name"] ?? "";
-            var shot = $"{section}_{name}";
-            string frame = N(w["frameMsMedian"], "0.0");
-            if (w["frameMsRange"] is JsonArray range)
-                frame += $" <small>{N(range[0], "0.0")}-{N(range[1], "0.0")}</small>";
-            double a = D(w["frameMsMedian"]), b = D(w["gpuMsMedian"]);
-            html.Append($"<tr><td class=\"part\">{(shots.Contains(shot) ? $"<a href=\"#{E(shot)}\">{Image(shot + ext, "")}</a>" : "<span class=\"no-thumb\"></span>")}{E(name)}</td>");
+            if (s.Name != last && r.Scenarios.Count > 1)
+                html.Append($"<tr class=\"group\"><th colspan=\"10\">{E(s.Name)}</th></tr>");
+            last = s.Name;
+            var shot = $"{s.Name}_{p.Name}";
+            string frame = F(p.FrameMsMedian, "0.0");
+            if (p.FrameMsRange is [var lo, var hi])
+                frame += $" <small>{F(lo, "0.0")}-{F(hi, "0.0")}</small>";
+            html.Append($"<tr><td class=\"part\">{(shots.Contains(shot) ? $"<a href=\"#{E(shot)}\">{Image(shot + ext, "")}</a>" : "<span class=\"no-thumb\"></span>")}{E(p.Name)}</td>");
             html.Append("<td class=\"bar-cell\">");
-            html.Append($"<div class=\"bar s1\" style=\"width:{F(100 * a / scale, "0.0")}%\" title=\"Frame {F(a)} ms\"></div>");
-            if (!double.IsNaN(b))
-                html.Append($"<div class=\"bar s2\" style=\"width:{F(100 * b / scale, "0.0")}%\" title=\"GPU {F(b)} ms\"></div>");
+            html.Append($"<div class=\"bar s1\" style=\"width:{F(100 * p.FrameMsMedian / scale, "0.0")}%\" title=\"Frame {F(p.FrameMsMedian)} ms\"></div>");
+            if (p.GpuMsMedian is { } g)
+                html.Append($"<div class=\"bar s2\" style=\"width:{F(100 * g / scale, "0.0")}%\" title=\"GPU {F(g)} ms\"></div>");
             html.Append("</td>");
-            html.Append($"<td>{N(w["averageFps"], "0.0")}</td><td>{frame}</td><td>{N(w["gpuMsMedian"], "0.0")}</td><td>{N(w["frameMsP95"], "0.0")}</td><td>{N(w["frameMsMax"], "0")}</td><td>{N(w["hitches"], "0")}</td><td>{N(w["drawsMedian"], "0")}</td><td>{N(w["footprintPeakMb"], "0")}</td></tr>");
+            html.Append($"<td>{F(p.AverageFps, "0.0")}</td><td>{frame}</td><td>{N(p.GpuMsMedian, "0.0")}</td><td>{F(p.FrameMsP95, "0.0")}</td><td>{F(p.FrameMsMax, "0")}</td><td>{p.Hitches}</td><td>{N(p.DrawsMedian, "0")}</td><td>{p.FootprintPeakMb}</td></tr>");
         }
         html.Append("</tbody></table></div></section>");
     }
 
-    // frames.csv by section: for each frame the seconds since the section began, the part, frame and GPU ms, the game's clock
-    // and the speed asked for
+    // frames.csv by scenario (the first session and pass that played it): for each frame the seconds since the scenario
+    // began, the part, frame and GPU ms, the game's clock and the speed asked for
     private sealed record Sample(double T, string Part, double FrameMs, double GpuMs, double Game, double Asked);
 
     private static Dictionary<string, List<Sample>> Timelines(string dir)
     {
         var all = new Dictionary<string, List<Sample>>();
-        var file = Path.Combine(dir, "frames.csv");
-        if (!File.Exists(file))
-            return all;
-        int[]? c = null;
         var starts = new Dictionary<string, double>();
-        foreach (var line in File.ReadLines(file))
+        var first = new Dictionary<string, (int, int)>();
+        foreach (var f in FrameLog.Read(dir).Where(f => f.Scenario.Length > 0))
         {
-            var f = line.Split(',');
-            if (c == null)
-            {
-                c = new[] { "time", "section", "part", "frame_ms", "gpu_ms", "game_s", "asked" }.Select(n => Array.IndexOf(f, n)).ToArray();
-                if (c.Any(i => i < 0))
-                    return all;
+            if (!first.TryGetValue(f.Scenario, out var played))
+                first[f.Scenario] = played = (f.Session, f.Pass);
+            if (played != (f.Session, f.Pass))
                 continue;
-            }
-            if (f.Length <= c.Max() || f[c[1]].Length == 0)
-                continue;
-            static double Parse(string s) => double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : double.NaN;
-            double t = Parse(f[c[0]]);
-            if (!starts.TryGetValue(f[c[1]], out var start))
-                starts[f[c[1]]] = start = t;
-            if (!all.TryGetValue(f[c[1]], out var list))
-                all[f[c[1]]] = list = new List<Sample>();
-            list.Add(new Sample(t - start, f[c[2]], Parse(f[c[3]]), Parse(f[c[4]]), Parse(f[c[5]]), Parse(f[c[6]])));
+            if (!starts.TryGetValue(f.Scenario, out var start))
+                starts[f.Scenario] = start = f.Time;
+            if (!all.TryGetValue(f.Scenario, out var list))
+                all[f.Scenario] = list = new List<Sample>();
+            list.Add(new Sample(f.Time - start, f.Part, f.FrameMs, f.GpuMs ?? double.NaN, f.GameSeconds ?? double.NaN, f.Asked ?? double.NaN));
         }
         return all;
     }
 
     // Time warp's parts: the speed the game's clock ran at, second by second, on a log scale, one small chart a part
-    private static void WarpCharts(StringBuilder html, JsonObject report, Dictionary<string, List<Sample>> timelines)
+    private static void WarpCharts(StringBuilder html, RunRecord r, Dictionary<string, List<Sample>> timelines)
     {
-        var parts = SectionsOf(report).SelectMany(s => WindowsOf(s).Where(w => w["gameDays"] is not null).Select(w => (Section: (string?)s["name"] ?? "", Window: w))).ToList();
+        var parts = r.AllParts().Where(x => x.Part.Warp != null).ToList();
         if (parts.Count == 0)
             return;
-        double days = parts.Sum(p => D(p.Window["gameDays"]));
-        html.Append($"<section><h2>Time warp</h2><p class=\"lead\">The game got through <b>{F(days, days >= 100 ? "0" : "0.#")} days</b> in the {F(parts.Sum(p => D(p.Window["seconds"])), "0")} s of the parts. Each chart shows how fast the game's clock ran, against the speed asked for.</p>");
+        double days = parts.Sum(x => x.Part.Warp!.GameDays);
+        html.Append($"<section><h2>Time warp</h2><p class=\"lead\">The game got through <b>{F(days, days >= 100 ? "0" : "0.#")} days</b> in the {F(parts.Sum(x => x.Part.Seconds), "0")} s of the parts. Each chart shows how fast the game's clock ran, against the speed asked for.</p>");
         html.Append("<div class=\"key\"><i class=\"s1\"></i>Speed reached<i class=\"line\"></i>Speed asked</div><div class=\"multiples\">");
-        foreach (var (section, w) in parts)
+        foreach (var (s, p) in parts)
         {
-            var name = (string?)w["name"] ?? "";
-            var samples = timelines.GetValueOrDefault(section)?.Where(s => s.Part == name).ToList() ?? new List<Sample>();
-            html.Append($"<figure><figcaption><b>{E(name)}</b><span>{Count(D(w["gameDays"]), "day", "0.#")}</span></figcaption>");
+            var w = p.Warp!;
+            var samples = timelines.GetValueOrDefault(s.Name)?.Where(x => x.Part == p.Name).ToList() ?? new List<Sample>();
+            html.Append($"<figure><figcaption><b>{E(p.Name)}</b><span>{Count(w.GameDays, "day", "0.#")}</span></figcaption>");
             html.Append(SpeedChart(samples));
-            string reached = w["secondsToSpeed"] is null ? "never reached the speed" : $"reached it in {N(w["secondsToSpeed"], "0.0")} s";
-            html.Append($"<p class=\"small\">x{Compact(D(w["speed"]))} of x{Compact(D(w["speedAsked"]))}, {reached}; GPU {N(w["gpuMsMedian"], "0.0")} ms a frame, worst frame {Compact(D(w["frameMsMax"]))} ms, {Count(D(w["vehiclesMax"]), "vehicle")}, {Count(D(w["bubblesMax"]), "physics bubble")}</p></figure>");
+            string reached = w.SecondsToSpeed is { } t ? $"reached it in {F(t, "0.0")} s" : "never reached the speed";
+            html.Append($"<p class=\"small\">x{Compact(w.Speed)} of x{Compact(w.SpeedAsked)}, {reached}; GPU {N(p.GpuMsMedian, "0.0")} ms a frame, worst frame {Compact(p.FrameMsMax)} ms, {Count(w.VehiclesMax, "vehicle")}, {Count(w.BubblesMax, "physics bubble")}</p></figure>");
         }
         html.Append("</div></section>");
     }
@@ -348,21 +396,16 @@ public static class Html
         return svg.ToString();
     }
 
-    // A cinematic run: frame and GPU time along each section, in steps a chart can show, its parts marked along the top
-    private static void FrameCharts(StringBuilder html, JsonObject report, Dictionary<string, List<Sample>> timelines, string mode)
+    // A flight: frame and GPU time along each scenario, in steps a chart can show, its parts marked along the top
+    private static void FrameCharts(StringBuilder html, RunRecord r, Dictionary<string, List<Sample>> timelines)
     {
-        if (mode == "fast")
-            return;
-        var sections = SectionsOf(report).Where(s => s["live"]?.GetValue<bool>() != true && timelines.ContainsKey((string?)s["name"] ?? "")).ToList();
-        if (sections.Count == 0)
+        var flights = r.Scenarios.Where(s => s.Kind == Kind.Flight && !r.Mode.Contains("jump") && timelines.ContainsKey(s.Name)).ToList();
+        if (flights.Count == 0)
             return;
         html.Append("<section><h2>Along the flight</h2><p class=\"lead\">Frame and GPU time as the camera goes, with the slowest frame of each moment. Spikes are hitches.</p>");
         html.Append("<div class=\"key\"><i class=\"s1\"></i>Frame ms<i class=\"s2\"></i>GPU ms</div>");
-        foreach (var section in sections)
-        {
-            var name = (string?)section["name"] ?? "";
-            html.Append($"<figure class=\"wide\"><figcaption><b>{E(name)}</b></figcaption>{FrameChart(timelines[name])}</figure>");
-        }
+        foreach (var s in flights)
+            html.Append($"<figure class=\"wide\"><figcaption><b>{E(s.Name)}</b></figcaption>{FrameChart(timelines[s.Name])}</figure>");
         html.Append("</section>");
     }
 
@@ -430,44 +473,44 @@ public static class Html
     }
 
     // The screenshots: click one to see it whole, the arrow keys go through them
-    private static void Gallery(StringBuilder html, JsonObject report, List<(string Section, string Shot)> order, string ext)
+    private static void Gallery(StringBuilder html, RunRecord r, List<ShotRecord> order, string ext)
     {
         if (order.Count == 0)
             return;
-        var windows = SectionsOf(report).SelectMany(s => WindowsOf(s).Select(w => ($"{s["name"]}_{w["name"]}", w))).GroupBy(x => x.Item1).ToDictionary(g => g.Key, g => g.First().w);
-        html.Append($"<section><h2>Screenshots</h2><div class=\"gallery\">");
-        foreach (var (section, shot) in order)
+        html.Append("<section><h2>Screenshots</h2><div class=\"gallery\">");
+        foreach (var shot in order)
         {
-            var id = $"{section}_{shot}";
-            windows.TryGetValue(id, out var w);
-            string numbers = w is { } && w["gameDays"] is null && N(w["averageFps"], "0") is { Length: > 0 } f ? $"<span>{f} FPS</span>" : "";
-            html.Append($"<figure id=\"{E(id)}\"><a href=\"{E(Url(id + ext))}\" class=\"shot\" data-caption=\"{E(shot)}\">{Image(id + ext, shot)}</a><figcaption><b>{E(shot)}</b>{numbers}</figcaption></figure>");
+            var id = Path.GetFileNameWithoutExtension(shot.File);
+            var part = r.Scenarios.FirstOrDefault(s => s.Shots.Contains(shot))?.Part(shot.Name);
+            string numbers = part is { Warp: null } ? $"<span>{F(part.AverageFps, "0")} FPS</span>" : "";
+            html.Append($"<figure id=\"{E(id)}\"><a href=\"{E(Url(id + ext))}\" class=\"shot\" data-caption=\"{E(shot.Name)}\">{Image(id + ext, shot.Name)}</a><figcaption><b>{E(shot.Name)}</b>{numbers}</figcaption></figure>");
         }
         html.Append("</div></section>");
     }
 
     // The run's facts, folded
-    private static void Facts(StringBuilder html, JsonObject report)
+    private static void FactsTable(StringBuilder html, RunRecord r)
     {
         html.Append("<section><details><summary>This Mac and the run</summary><table class=\"facts\"><tbody>");
-        foreach (var (key, value) in report["system"] as JsonObject ?? new JsonObject())
-            html.Append($"<tr><th>{E(key)}</th><td>{E(value?.ToString())}</td></tr>");
-        if (report["drawable"] is { } drawable)
-            html.Append($"<tr><th>Drawn</th><td>{E(drawable.ToString())} pixels</td></tr>");
-        if (D(report["runs"]) is > 1 and var runs)
-            html.Append($"<tr><th>Runs</th><td>{F(runs, "0")}: each number is the median of the runs</td></tr>");
+        foreach (var f in r.Facts)
+            html.Append($"<tr><th>{E(f.Key)}</th><td>{E(f.Value)}</td></tr>");
+        if (r.Drawable != null)
+            html.Append($"<tr><th>Drawn</th><td>{E(r.Drawable)} pixels</td></tr>");
+        if (r.AllParts().Select(x => x.Part.Runs).DefaultIfEmpty(1).Max() is > 1 and var runs)
+            html.Append($"<tr><th>Runs</th><td>{runs}: each number is the median of the runs</td></tr>");
         html.Append("</tbody></table></details></section>");
     }
 
     // --- compare.html
 
-    public static void WriteCompare(string a, string b, JsonObject ra, JsonObject rb, IReadOnlyList<ShotResult> shots, string verdict, bool? good, IReadOnlyList<(string Key, string A, string B)> differences, string shotsNote)
+    public static void WriteCompare(string a, string b, RunRecord ra, RunRecord rb, IReadOnlyList<PartChange> parts, IReadOnlyList<PartChange> warp,
+        IReadOnlyList<ShotResult> shots, string verdict, bool? good, IReadOnlyList<(string Key, string A, string B)> differences, string shotsNote)
     {
         var html = new StringBuilder();
-        var test = TestName(System(rb, "Test") is { Length: > 0 } t ? t : null);
-        Open(html, $"{test}: {When(a)} and {When(b)}", (string?)rb["drawable"]);
+        var test = TestName(rb.Test);
+        Open(html, $"{test}: {When(ra)} and {When(rb)}", rb.Drawable);
         html.Append("<header class=\"hero slim\"><div class=\"hero-text\"><div class=\"eyebrow\">KSA Metal benchmark · comparison</div>");
-        html.Append($"<h1>{E(test)}</h1><p><b>A</b> {E(When(a))} &nbsp; <b>B</b> {E(When(b))}</p>");
+        html.Append($"<h1>{E(test)}</h1><p><b>A</b> {E(When(ra))} &nbsp; <b>B</b> {E(When(rb))}</p>");
         html.Append(good is { } better ? Status(better, verdict) : $"<span class=\"status\">{E(verdict)}</span>");
         html.Append("</div></header><main>");
         if (differences.Count > 0)
@@ -481,47 +524,33 @@ public static class Html
             html.Append("<section><p class=\"lead\">Same Mac, same version, same settings.</p></section>");
 
         // GPU time decides: frame times sit on the display's beat
-        var after = new Dictionary<(string, string), JsonObject>();
-        foreach (var s in SectionsOf(rb))
-            foreach (var w in WindowsOf(s))
-                after[((string?)s["name"] ?? "", (string?)w["name"] ?? "")] = w;
-        var both = SectionsOf(ra).SelectMany(s => WindowsOf(s).Select(w => (Section: (string?)s["name"] ?? "", Window: w)))
-            .Where(p => p.Window["gameDays"] is null && after.ContainsKey((p.Section, (string?)p.Window["name"] ?? ""))).ToList();
-        if (both.Count > 0)
+        if (parts.Count > 0)
         {
-            string Measure(JsonObject w) => D(w["gpuMsMedian"]) is var g && !double.IsNaN(g) ? "gpuMsMedian" : "frameMsMedian";
-            double scale = Math.Max(both.Max(p => Math.Max(D(p.Window[Measure(p.Window)]), D(after[(p.Section, (string?)p.Window["name"] ?? "")][Measure(p.Window)]))), 1);
-            html.Append($"<section><h2>Part by part</h2><p class=\"lead\">GPU time a frame. Small changes are within run-to-run noise and go unmarked.</p>");
+            static double Measure(PartRecord p) => p.GpuMsMedian ?? p.FrameMsMedian;
+            double scale = Math.Max(parts.Max(p => Math.Max(Measure(p.A), Measure(p.B))), 1);
+            html.Append("<section><h2>Part by part</h2><p class=\"lead\">GPU time a frame. Small changes are within run-to-run noise and go unmarked.</p>");
             html.Append("<div class=\"key\"><i class=\"s0\"></i>A<i class=\"s1\"></i>B</div><div class=\"table-scroll\"><table class=\"parts\"><thead><tr><th>Part</th><th class=\"bar-cell\"></th><th>A ms</th><th>B ms</th><th>Change</th><th>Frame ms A</th><th>Frame ms B</th></tr></thead><tbody>");
             string last = "";
-            foreach (var (section, wa) in both)
+            foreach (var p in parts)
             {
-                if (section != last && SectionsOf(ra).Count() > 1)
-                    html.Append($"<tr class=\"group\"><th colspan=\"7\">{E(section)}</th></tr>");
-                last = section;
-                var name = (string?)wa["name"] ?? "";
-                var wb = after[(section, name)];
-                var m = Measure(wa);
-                double x = D(wa[m]), y = D(wb[m]), change = x > 0 ? (y - x) / x : 0;
-                bool changed = Program.Marked(wa[m], wb[m], wa[m == "gpuMsMedian" ? "gpuMsRange" : "frameMsRange"], wb[m == "gpuMsMedian" ? "gpuMsRange" : "frameMsRange"]);
-                html.Append($"<tr><td class=\"part\">{E(name)}</td><td class=\"bar-cell\"><div class=\"bar s0\" style=\"width:{F(100 * x / scale, "0.0")}%\"></div><div class=\"bar s1\" style=\"width:{F(100 * y / scale, "0.0")}%\"></div></td>");
-                html.Append($"<td>{F(x, "0.0")}</td><td>{F(y, "0.0")}</td><td>{(changed ? Change(change < 0, $"{F(Math.Abs(change) * 100, "0")} % {(change < 0 ? "faster" : "slower")}") : $"<span class=\"quiet\">{F(change * 100, "+0;-0;0")} %</span>")}</td>");
-                html.Append($"<td>{N(wa["frameMsMedian"], "0.0")}</td><td>{N(wb["frameMsMedian"], "0.0")}</td></tr>");
+                if (p.Scenario != last && ra.Scenarios.Count > 1)
+                    html.Append($"<tr class=\"group\"><th colspan=\"7\">{E(p.Scenario)}</th></tr>");
+                last = p.Scenario;
+                double x = Measure(p.A), y = Measure(p.B);
+                html.Append($"<tr><td class=\"part\">{E(p.A.Name)}</td><td class=\"bar-cell\"><div class=\"bar s0\" style=\"width:{F(100 * x / scale, "0.0")}%\"></div><div class=\"bar s1\" style=\"width:{F(100 * y / scale, "0.0")}%\"></div></td>");
+                html.Append($"<td>{F(x, "0.0")}</td><td>{F(y, "0.0")}</td><td>{(p.Marked ? Change(p.Change < 0, $"{F(Math.Abs(p.Change) * 100, "0")} % {(p.Change < 0 ? "faster" : "slower")}") : $"<span class=\"quiet\">{F(p.Change * 100, "+0;-0;0")} %</span>")}</td>");
+                html.Append($"<td>{F(p.A.FrameMsMedian, "0.0")}</td><td>{F(p.B.FrameMsMedian, "0.0")}</td></tr>");
             }
             html.Append("</tbody></table></div></section>");
         }
 
-        var warp = SectionsOf(ra).SelectMany(s => WindowsOf(s).Select(w => (Section: (string?)s["name"] ?? "", Window: w)))
-            .Where(p => p.Window["gameDays"] is not null && after.TryGetValue((p.Section, (string?)p.Window["name"] ?? ""), out var w) && w["gameDays"] is not null).ToList();
         if (warp.Count > 0)
         {
             html.Append("<section><h2>Time warp</h2><div class=\"table-scroll\"><table class=\"parts\"><thead><tr><th>Part</th><th>Days A</th><th>Days B</th><th>Speed A</th><th>Speed B</th><th>Change</th><th>GPU ms A</th><th>GPU ms B</th></tr></thead><tbody>");
-            foreach (var (section, wa) in warp)
+            foreach (var p in warp)
             {
-                var name = (string?)wa["name"] ?? "";
-                var wb = after[(section, name)];
-                double x = D(wa["speed"]), y = D(wb["speed"]), change = x > 0 ? (y - x) / x : 0;
-                html.Append($"<tr><td class=\"part\">{E(name)}</td><td>{N(wa["gameDays"], "0.#")}</td><td>{N(wb["gameDays"], "0.#")}</td><td>x{Compact(x)}</td><td>x{Compact(y)}</td><td>{(Program.Marked(wa["speed"], wb["speed"], wa["speedRange"], wb["speedRange"]) ? Change(change > 0, $"{F(Math.Abs(change) * 100, "0")} % {(change > 0 ? "faster" : "slower")}") : $"<span class=\"quiet\">{F(change * 100, "+0;-0;0")} %</span>")}</td><td>{N(wa["gpuMsMedian"], "0.0")}</td><td>{N(wb["gpuMsMedian"], "0.0")}</td></tr>");
+                var (wa, wb) = (p.A.Warp!, p.B.Warp!);
+                html.Append($"<tr><td class=\"part\">{E(p.A.Name)}</td><td>{F(wa.GameDays, "0.#")}</td><td>{F(wb.GameDays, "0.#")}</td><td>x{Compact(wa.Speed)}</td><td>x{Compact(wb.Speed)}</td><td>{(p.Marked ? Change(p.Change > 0, $"{F(Math.Abs(p.Change) * 100, "0")} % {(p.Change > 0 ? "faster" : "slower")}") : $"<span class=\"quiet\">{F(p.Change * 100, "+0;-0;0")} %</span>")}</td><td>{N(p.A.GpuMsMedian, "0.0")}</td><td>{N(p.B.GpuMsMedian, "0.0")}</td></tr>");
             }
             html.Append("</tbody></table></div></section>");
         }

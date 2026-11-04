@@ -173,9 +173,8 @@ public static partial class Program
             if (_reference.Length > 0)
             {
                 _reference = RunFolder(_reference);
-                var (ok, why) = Quiet(() => Comparable(_reference, Mode, string.Join(' ', _only)));
-                if (ok != 0)
-                    Die($"--compare: {why.Trim()}");
+                if (NotComparable(_reference, Mode, _only) is { } why)
+                    Die($"--compare: {why}");
             }
 
             if (!File.Exists(Path.Combine(Docs, "settings.toml")))
@@ -223,6 +222,9 @@ public static partial class Program
         // The tools for work on the port, each checked before the game starts: they may run on a Mac without them
         private void CheckTools()
         {
+            // Each game session of full would write over the one before
+            if (_test == "full" && (_profile || _hud || _trace || _capture || _catch.Length > 0 || _passes || _film > 0 || _cameraLog))
+                Die("the tools look at one test: choose mixed, tour or warp (or places).");
             if (_profile || _hud || _trace || _capture || _catch.Length > 0 || _passes)
             {
                 if (_repeat != 1)
@@ -270,9 +272,8 @@ public static partial class Program
                 if (!Directory.GetFiles(_catch, "*_*.png").Any())
                     Die($"--catch: {_catch} has no screenshots to compare with.");
                 _catch = Path.GetFullPath(_catch);  // absolute: the game starts from elsewhere
-                var (ok, why) = Quiet(() => Comparable(_catch, Mode, string.Join(' ', _only)));
-                if (ok != 0)
-                    Die($"--catch: {why.Trim()}");
+                if (NotComparable(_catch, Mode, _only) is { } why)
+                    Die($"--catch: {why}");
                 if (FreeGb() < 1)
                     Die($"--catch needs 1 GB free on this disk ({FreeGb()} GB free).");
                 _tools.Add("pass dumps of broken pictures");

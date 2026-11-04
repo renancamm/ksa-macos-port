@@ -50,12 +50,12 @@ public partial class Director
     }
 
     // Whether the run stops for good at this checkpoint
-    private bool Holding => _hold == $"{_sectionResult?.Name}_{_shotName}";
+    private bool Holding => _hold == $"{ScenarioName}_{_shotName}";
 
     // Whether this checkpoint is one of the places chosen (or all are): the others only keep the clocks in step
     private bool Chosen => IsChosen(_shotName);
 
-    private bool IsChosen(string shot) => _only?.GetValueOrDefault(_sectionResult?.Name ?? "") is not { } chosen || chosen.Contains(shot);
+    private bool IsChosen(string shot) => _only?.GetValueOrDefault(ScenarioName ?? "") is not { } chosen || chosen.Contains(shot);
 
 
 
@@ -76,7 +76,7 @@ public partial class Director
                 SetSpeed(0);
                 // The game ran past the moment the script expects: what follows plays later than written
                 if (-behind > AheadLimit && !Live)
-                    _sectionResult?.Errors.Add(FormattableString.Invariant(
+                    Error(FormattableString.Invariant(
                         $"{_scriptTime - _sectionStart:F1} s: the game's clock is {-behind:F1} s ahead of the script's"));
                 if (_after != After.Shot)
                 {
@@ -114,18 +114,15 @@ public partial class Director
                 // thread (about 150 ms at 6 MP), and its time is the dt of the frame after it
                 if (_still == null)
                 {
-                    _still = new Window(_shotName, double.NaN);
+                    _still = new Window(_shotName, double.NaN, null);
                     Opened(_still);
                     _phaseEnds = wall + FastMeasureSeconds;
                     return;
                 }
-                _still.Add(dt * 1000, DriverStats.Read());
+                _measured = _still.Name;
                 if (wall < _phaseEnds)
                     return;
-                DriverStats.Marker(_still.Name, false);
-                _sectionResult?.Windows.Add(_still.Summarize());
-                _results?.Write(Path.Combine(_outDir, _resultsFile));
-                Log($"measured {_still.Name}: {_still.Frames} frames");
+                Closed(_still);
                 _still = null;
                 CaptureThenShoot(wall);
                 return;
@@ -137,7 +134,7 @@ public partial class Director
                 if (Directory.Exists(path) || File.Exists(path))
                     Log($"{_shotName}: frame capture {Path.GetFileName(path)}");
                 else
-                    _sectionResult?.Errors.Add($"{_shotName}: no frame capture");
+                    Error($"{_shotName}: no frame capture");
                 Shoot();
                 return;
             }
@@ -179,7 +176,7 @@ public partial class Director
                     File.Delete(ShotPath());
                     if (!DriverStats.Screenshot(ShotPath()))
                     {
-                        _sectionResult?.Errors.Add($"{_shotName}: the screenshot could not be taken again");
+                        Error($"{_shotName}: the screenshot could not be taken again");
                         EndCheckpoint();
                         return;
                     }
@@ -250,9 +247,9 @@ public partial class Director
         }
     }
 
-    private string ShotPath() => Path.Combine(_outDir, $"{_sectionResult?.Name}_{_shotName}.png");
+    private string ShotPath() => Path.Combine(_outDir, $"{ScenarioName}_{_shotName}.png");
 
-    private string CapturePath() => Path.Combine(_outDir, $"{_sectionResult?.Name}_{_shotName}.gputrace");
+    private string CapturePath() => Path.Combine(_outDir, $"{ScenarioName}_{_shotName}.gputrace");
 
     private string CaughtImagePath() => Path.Combine(_outDir, "caught", Path.GetFileName(ShotPath()));
 
@@ -306,18 +303,21 @@ public partial class Director
                 _phaseEnds = wall + 120;
                 return;
             }
-            _sectionResult?.Errors.Add($"{_shotName}: KSA Metal could not capture a frame (does the game have MTL_CAPTURE_ENABLED=1?)");
+            Error($"{_shotName}: KSA Metal could not capture a frame (does the game have MTL_CAPTURE_ENABLED=1?)");
         }
         Shoot();
     }
 
-    // A measured part opens: a signpost interval for traces, and the GPU profiler's frames with RunOptions.Profile
+    // A measured part opens: its event (with the game's clock and the physics' substeps then, where a timed part's numbers
+    // start from), a signpost interval for traces, and the GPU profiler's frames with RunOptions.Profile
     private void Opened(Window window)
     {
+        var sim = ReadSim();
+        _events.Add("open", ScenarioName, window.Name, window.Vehicle, sim.GameSeconds, sim.Substeps);
         DriverStats.Marker(window.Name, true);
-        if (_profileFrames > 0 && !DriverStats.ProfileFrames($"{_sectionResult?.Name}/{window.Name}", _profileFrames))
+        if (_profileFrames > 0 && !DriverStats.ProfileFrames($"{ScenarioName}/{window.Name}", _profileFrames))
         {
-            _sectionResult?.Errors.Add($"{window.Name}: KSA Metal's GPU profiler is off (does the game have KSA_MTL_GPU_PROFILE=<csv>?)");
+            Error($"{window.Name}: KSA Metal's GPU profiler is off (does the game have KSA_MTL_GPU_PROFILE=<csv>?)");
             _profileFrames = 0;
         }
     }
@@ -327,9 +327,9 @@ public partial class Director
     {
         var path = ShotPath();
         if (File.Exists(path))
-            _sectionResult?.Screenshots.Add(_shotName);
+            _events.Add("shot", ScenarioName, _shotName, Path.GetFileName(path), value: _shotLimit);
         else
-            _sectionResult?.Errors.Add($"{_shotName}: no screenshot");
+            Error($"{_shotName}: no screenshot");
         if ((_catchAgainst != null || _passesEverywhere) && File.Exists(path))
         {
             _phase = Phase.Catch;
@@ -363,7 +363,7 @@ public partial class Director
             return wall >= _settleStart + 5;
         if (wall >= _settleStart + MaxSettleSeconds)
         {
-            _sectionResult?.Errors.Add(FormattableString.Invariant($"{_shotName}: the view still changed after {MaxSettleSeconds:F0} s"));
+            Error(FormattableString.Invariant($"{_shotName}: the view still changed after {MaxSettleSeconds:F0} s"));
             return true;
         }
         if (_probe == null)
@@ -382,7 +382,7 @@ public partial class Director
         {
             if (wall < _probeTaken + 2)
                 return false;
-            _sectionResult?.Errors.Add($"{_shotName}: no probe screenshot to see whether the view stopped changing");
+            Error($"{_shotName}: no probe screenshot to see whether the view stopped changing");
             _probe = null;
             return true;
         }
@@ -410,11 +410,12 @@ public partial class Director
         _phase = Phase.Hold;
         // The game's interface (F2) and console stay usable
         Log($"holding at {_hold}: quit the game when done");
-        _results!.Write(Path.Combine(_outDir, _resultsFile));
     }
 
     private void Resume()
     {
+        _events.Add("checkpoint", ScenarioName, _after == After.Sync ? "@sync" : _shotName, game: Universe.GetElapsedSeconds() - _gameStart,
+            value: _gameTarget - _gameStart);
         Log(FormattableString.Invariant(
             $"{(_after == After.Sync ? "@sync" : "checkpoint " + _shotName)}: game time {Universe.GetElapsedSeconds() - _gameStart:F3} s (script {_gameTarget - _gameStart:F3} s)"));
         SetSpeed(Paused ? 0 : SpeedAt(_scriptTime));
@@ -430,16 +431,20 @@ public partial class Director
             return;
         // Fast mode measures the views standing still instead, so it only watches its parts for vehicles that broke up
         if (!Fast)
-        {
-            DriverStats.Marker(_window.Name, false);
-            _sectionResult?.Windows.Add(_window.Summarize());
-            _results?.Write(Path.Combine(_outDir, _resultsFile));
-            Log($"measured {_window.Name}: {_window.Frames} frames");
-        }
+            Closed(_window);
         var followed = FollowedVehicle();
         if (_window.Vehicle != null && followed != _window.Vehicle && _window.Vehicle != _exploded)
-            _sectionResult?.Errors.Add($"{_window.Name}: '{_window.Vehicle}' broke up (the camera follows '{followed ?? "nothing"}')");
+            Error($"{_window.Name}: '{_window.Vehicle}' broke up (the camera follows '{followed ?? "nothing"}')");
         _window = null;
+    }
+
+    // A measured part ends: its event, and the end of its signpost interval
+    private void Closed(Window window)
+    {
+        DriverStats.Marker(window.Name, false);
+        _frames?.Flush();
+        _events.Add("close", ScenarioName, window.Name);
+        Log($"measured {window.Name}");
     }
 
     private static string? FollowedVehicle() => Program.GetHoveredCamera()?.Following is Vehicle v ? v.Id : null;

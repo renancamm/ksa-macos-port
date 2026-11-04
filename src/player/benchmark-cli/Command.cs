@@ -132,7 +132,7 @@ public static partial class Program
             Console.Error.WriteLine($"Error: {e.Message}");
             return e.Data["exit"] is int code ? code : 1;
         }
-        // A run the report can't read (its report.json cut short), a full disk: said as a problem, not as a crash
+        // A run the report can't read (its record cut short), a full disk: said as a problem, not as a crash
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or FormatException
                                        or InvalidOperationException or NullReferenceException)
         {
@@ -175,18 +175,18 @@ public static partial class Program
                 .OrderDescending(StringComparer.Ordinal);
             foreach (var d in dated)
             {
-                if (!File.Exists(Path.Combine(Benchmarks, d!, "report.json")))
+                if (!IsRun(Path.Combine(Benchmarks, d!)))
                     continue;
                 if (skip-- == 0)
                     return Path.Combine(Benchmarks, d!);
             }
             Die($"there is no {name} run in {Benchmarks}.");
         }
-        if (File.Exists(Path.Combine(name, "report.json")) || File.Exists(name))
+        if (HasRecord(name) || File.Exists(name))
             return name;
-        if (File.Exists(Path.Combine(Benchmarks, name, "report.json")))
+        if (HasRecord(Path.Combine(Benchmarks, name)))
             return Path.Combine(Benchmarks, name);
-        Die($"no run '{name}' (no report.json there, and not a zip). ./benchmark.sh runs lists your runs.");
+        Die($"no run '{name}' (no record there, and not a zip). ./benchmark.sh runs lists your runs.");
         return "";
     }
 
@@ -219,8 +219,8 @@ public static partial class Program
         var run = RunFolder(name);
         if (!Directory.Exists(run))
             Die("report takes a run's folder, not its zip.");
-        if (!File.Exists(Path.Combine(run, "report.html")))
-            Page(run);
+        if (!File.Exists(Path.Combine(run, "report.html")) && RunRecord.Read(run) is { } record)
+            Pages.WriteReport(run, record);
         Show(run);
         Console.WriteLine();
         Output.Info($"The page: {run}/report.html");

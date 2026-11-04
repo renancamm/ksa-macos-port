@@ -6,7 +6,6 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -20,11 +19,11 @@ namespace KsaMetal.Benchmark;
 // Metal Hooks call AfterFrame (src/game/hooks/BenchmarkRun.cs, a postfix on Program.OnFrame). A run starts in one of
 // three ways:
 // - benchmark.sh in the port folder starts the game with KSA_BENCH_OUT naming the run's folder, which holds the run's
-//   options (RunOptions, run.json), in a documents folder of its own (STARMAP_INSTANCE_PATH): the director begins with
+//   options (RunOptions, options.json), in a documents folder of its own (STARMAP_INSTANCE_PATH): the director begins with
 //   the game's first frame and quits the game at the end, and the script writes the report.
 // - The Mac Port tab's RUN buttons, in the running game: the player's game is saved (to disk, in case the game doesn't
 //   survive the run, and in memory), the world becomes a new game's (its clock at the start, no vehicles), the test
-//   plays, and the player's game comes back; Esc stops it. The benchmark writes the report.
+//   plays, and the player's game comes back; Esc stops it. The benchmark writes the record and the report (Finish.cs).
 // - The same with "Restart for a Clean Run": the player's game is saved, the game starts again for it the way
 //   benchmark.sh starts it (a documents folder of its own with a copy of the settings, a new game, none of the
 //   player's mods), and at the end the benchmark writes the report, opens its folder and quits the game.
@@ -51,7 +50,7 @@ public static class Runs
     private static long _logStart;
     private static Task? _finishing;
     // What system.txt says about the run (the report program asks macOS about the Mac after the run, not during it)
-    private static string _system = "", _start = "", _sections = "";
+    private static string _system = "";
     // The options of a run that starts with the game (run.json in KSA_BENCH_OUT's folder)
     private static RunOptions? _options;
     private static readonly MemoryWatch Memory = new();
@@ -152,7 +151,7 @@ public static class Runs
                 _lastLooked = true;
                 var runs = Path.Combine(Constants.DocumentsFolderPath, "benchmarks");
                 var newest = Directory.Exists(runs)
-                    ? Directory.GetDirectories(runs).Where(d => Regex.IsMatch(Path.GetFileName(d), @"^\d{4}-\d{2}-\d{2}_\d{4}") && File.Exists(Path.Combine(d, "report.json")))
+                    ? Directory.GetDirectories(runs).Where(d => Regex.IsMatch(Path.GetFileName(d), @"^\d{4}-\d{2}-\d{2}_\d{4}") && (File.Exists(Path.Combine(d, RunRecord.FileName)) || File.Exists(Path.Combine(d, "report.json"))))
                         .OrderBy(d => d, StringComparer.Ordinal).LastOrDefault()
                     : null;
                 if (newest != null)
@@ -221,7 +220,9 @@ public static class Runs
                 if (_options!.Test.Length > 0)
                     _test = _options.Test;
                 _system = Universe.CurrentSystem?.Id ?? "?";
-                _start = "a new game, restarted from the game's settings";
+                // benchmark.sh says what it did itself; a restart from the tab says it here
+                if (_mode == Mode.Restarted)
+                    Hosted(_options, "a new game, restarted from the game's settings");
                 AddVehicles();
                 _run = Director.Begin(_options);
                 Memory.Start();
@@ -276,16 +277,9 @@ public static class Runs
             Log($"BenchmarkRun: no frame for {HangSeconds:F0} s: stopping the game. Your game is in the save \"{SafetySave}\", the run's results in {_out.Replace(Home, "~")}");
             try
             {
-                File.WriteAllLines(Path.Combine(_out, "run.txt"), [$"Game: hung (no frame for {HangSeconds:F0} s): stopped"]);
-                Console.Out.Flush();
-                if (File.Exists(ConsoleLog))
-                {
-                    using var log = new FileStream(ConsoleLog, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                    log.Seek(_mode == Mode.InGame ? Math.Min(_logStart, log.Length) : 0, SeekOrigin.Begin);
-                    File.WriteAllText(Path.Combine(_out, "game.log"), new StreamReader(log).ReadToEnd().Replace(Home, "~"));
-                }
-                Report(["system", _out, App, .. SystemFacts()]);
-                Report(["finish", _out]);
+                new EventLog(_out, 1).Add("ended", text: $"hung (no frame for {HangSeconds:F0} s): stopped");
+                CopyLog(_mode);
+                Finish.Run(_out);
             }
             catch (Exception e)
             {
@@ -328,20 +322,19 @@ public static class Runs
         return folder;
     }
 
-    // system.txt's facts about the run, for the report program, which adds the Mac's (and the defaults of those left
-    // out: no preset, no settings changed, no tools)
-    private static string[] SystemFacts()
+    // What a run from the tab says about itself for its record, which adds the Mac's (and the defaults of those left out:
+    // no preset, no settings changed, no tools)
+    private static List<Fact> HostFacts(RunOptions options, string start)
     {
         var outside = PortSettings.All.Where(s => s.Outside != null).Select(s => s.Outside!.Replace(Home, "~")).ToList();
         var port = PortSettings.All.Where(s => s.Variable.Length > 0 && s.Running != s.Default).Select(s => $"{s.Key} = {s.Running}").ToList();
         return
         [
-            $"StarMap={(AppDomain.CurrentDomain.GetAssemblies().Any(a => a.GetName().Name == "StarMap.Core") ? "in the app" : "none")}",
-            $"System={_system}", $"Test={_test}", $"Sections={_options?.Only ?? _sections}",
-            $"Mode={_options?.Mode}", $"Start={_start}",
-            $"KSA Metal switches={(outside.Count > 0 ? string.Join(' ', outside) : "none")}",
+            new("StarMap", AppDomain.CurrentDomain.GetAssemblies().Any(a => a.GetName().Name == "StarMap.Core") ? "in the app" : "none"),
+            new("System", Universe.CurrentSystem?.Id ?? _system), new("Test", _test), new("Scenarios", options.Only), new("Mode", options.Mode),
+            new("Start", start), new("KSA Metal switches", outside.Count > 0 ? string.Join(' ', outside) : "none"),
             // What this game ran with: the port settings that aren't at their defaults, and what the hooks did
-            $"port settings={(port.Count > 0 ? string.Join(", ", port) : "defaults")}", $"Hooks={_hooksSummary().Replace(Home, "~")}"
+            new("port settings", port.Count > 0 ? string.Join(", ", port) : "defaults"), new("Hooks", _hooksSummary().Replace(Home, "~"))
         ];
     }
 
@@ -350,6 +343,17 @@ public static class Runs
     public static string ConsoleLog => Path.Combine(Path.GetDirectoryName(PortSettings.FilePath) ?? Constants.DocumentsFolderPath, "logs", "console.log");
 
     // In the running game
+    // A run the game hosts itself: its options as the record will read them, and its start
+    private static void Hosted(RunOptions options, string start)
+    {
+        options.App = App;
+        options.Facts = HostFacts(options, start);
+        options.Write(_out);
+        var events = new EventLog(_out, 1);
+        events.Add("start", text: start);
+        events.Add("session");
+    }
+
     private static void BeginInGame()
     {
         _mode = Mode.InGame;
@@ -358,7 +362,8 @@ public static class Runs
         options.InGame = true;
         GameSettings.Current.Save();
         File.Copy(Path.Combine(Constants.DocumentsFolderPath, "settings.toml"), Path.Combine(_out, "settings.toml"), true);
-        (_system, _sections, _start) = (Universe.CurrentSystem?.Id ?? "?", options.Only, "in the running game, from its settings");
+        _system = Universe.CurrentSystem?.Id ?? "?";
+        Hosted(options, "in the running game, from its settings");
         Console.Out.Flush();
         _logStart = File.Exists(ConsoleLog) ? new FileInfo(ConsoleLog).Length : 0;
         Log($"BenchmarkRun: playing in this game, into {_out.Replace(Home, "~")}");
@@ -464,34 +469,31 @@ public static class Runs
         Program.Instance.RequestExit(0);
     }
 
-    // The run has ended: the player's game comes back, then the report is written in the background
+    // The run has ended: the player's game comes back, then the record and the report are made in the background
     private static void End()
     {
         var mode = _mode;
         _run = null;
         if (mode == Mode.InGame)
             PutBack();
-        var run = new List<string> { mode == Mode.InGame ? "Game: kept running" : "Game: quit normally" };
-        run.AddRange(Memory.Lines());
-        File.WriteAllLines(Path.Combine(_out, "run.txt"), run);
-        File.Delete(Path.Combine(_out, "heartbeat"));
-        // The game's log of the run, without the home folder's name
-        Console.Out.Flush();
-        if (File.Exists(ConsoleLog))
-        {
-            using var log = new FileStream(ConsoleLog, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            log.Seek(mode == Mode.InGame ? Math.Min(_logStart, log.Length) : 0, SeekOrigin.Begin);
-            File.WriteAllText(Path.Combine(_out, "game.log"), new StreamReader(log).ReadToEnd().Replace(Home, "~"));
-        }
-        // system.txt now (asking macOS about the Mac takes a moment, which the run doesn't measure), the report after
+        var events = new EventLog(_out, 1);
+        events.Add("ended", text: mode == Mode.InGame ? "kept running" : "quit normally");
+        events.Add("memory", text: Memory.Text());
+        CopyLog(mode);
         var output = _out;
-        string[] facts = ["system", output, App, .. SystemFacts()];
-        _finishing = Task.Run(() =>
-        {
-            Report(facts);
-            Report(["finish", output]);
-        });
+        _finishing = Task.Run(() => Finish.Run(output));
         Log("BenchmarkRun: writing the report");
+    }
+
+    // The game's log of the run, without the home folder's name (in the running game, from where the run began)
+    private static void CopyLog(Mode mode)
+    {
+        Console.Out.Flush();
+        if (!File.Exists(ConsoleLog))
+            return;
+        using var log = new FileStream(ConsoleLog, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        log.Seek(mode == Mode.InGame ? Math.Min(_logStart, log.Length) : 0, SeekOrigin.Begin);
+        File.WriteAllText(Path.Combine(_out, "game.log"), new StreamReader(log).ReadToEnd().Replace(Home, "~"));
     }
 
     private static void Finished()
@@ -514,24 +516,17 @@ public static class Runs
 
     private static Result ReadResult(string folder)
     {
-        try
-        {
-            var report = JsonNode.Parse(File.ReadAllText(Path.Combine(folder, "report.json")))!;
-            bool passed = report["passed"]?.GetValue<bool>() == true;
-            var problems = (report["problems"] as JsonArray ?? new JsonArray()).Select(p => (string?)p).OfType<string>().ToList();
-            var summary = $"{Path.GetFileName(folder)}: " + (passed ? "passed." : problems.Count == 0 ? "stopped." : "problems: " + string.Join("; ", problems.Take(3)) +
-                (problems.Count > 3 ? $" and {problems.Count - 3} more." : "."));
-            bool stopped = report["stopped"]?.GetValue<bool>() == true;
-            var outcome = passed ? "Passed" : stopped ? "Stopped" : problems.Count == 1 ? "1 problem" : $"{problems.Count} problems";
-            // Its main number: "Passed, 30 FPS"
-            if ((string?)report["headline"] is { Length: > 0 } headline)
-                outcome += $", {headline}";
-            return new Result(folder, passed, stopped, summary + " Opens its page, with its numbers and screenshots.", outcome, RunDate(folder));
-        }
-        catch (Exception)
-        {
+        if (RunRecord.Read(folder) is not { } record)
             return new Result(folder, false, false, $"{Path.GetFileName(folder)}: no report (the run did not finish).", "Did not finish", RunDate(folder));
-        }
+        bool passed = record.Status == Status.Passed, stopped = record.Status == Status.Stopped;
+        var problems = record.Problems.Select(p => p.Text).ToList();
+        var summary = $"{Path.GetFileName(folder)}: " + (passed ? "passed." : problems.Count == 0 ? "stopped." : "problems: " + string.Join("; ", problems.Take(3)) +
+            (problems.Count > 3 ? $" and {problems.Count - 3} more." : "."));
+        var outcome = passed ? "Passed" : stopped ? "Stopped" : problems.Count == 1 ? "1 problem" : $"{problems.Count} problems";
+        // Its main number: "Passed, 30 FPS"
+        if (record.Headline().Short() is { Length: > 0 } headline)
+            outcome += $", {headline}";
+        return new Result(folder, passed, stopped, summary + " Opens its page, with its numbers and screenshots.", outcome, RunDate(folder));
     }
 
     // When a run was, from its folder's name: 2026-10-31_0545 is "Oct 31, 05:45"
@@ -541,25 +536,6 @@ public static class Runs
         return DateTime.TryParseExact(name.Length >= 15 ? name[..15] : name, "yyyy-MM-dd_HHmm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
             ? date.ToString("MMM d, HH:mm", CultureInfo.InvariantCulture)
             : "";
-    }
-
-    // The report program (KsaMetal.Benchmark.Cli.dll), on the app's .NET runtime
-    private static void Report(string[] arguments)
-    {
-        var start = new ProcessStartInfo(Path.Combine(Resources, "..", "MacOS", "dotnet"))
-        {
-            UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true
-        };
-        start.ArgumentList.Add(Path.Combine(_folder, "KsaMetal.Benchmark.Cli.dll"));
-        foreach (var a in arguments)
-            start.ArgumentList.Add(a);
-        using var process = Process.Start(start)!;
-        var output = process.StandardOutput.ReadToEndAsync();
-        var errors = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-        if (errors.Length > 0)
-            Log($"BenchmarkRun: the report program said: {errors.Trim()}");
-        _ = output.Result;
     }
 
     // macOS's memory pressure during a run (1 normal, 2 warning, 4 critical), sampled once a second, and the swap used
@@ -586,12 +562,9 @@ public static class Runs
             _pressure = Math.Max(_pressure, Sysctl("kern.memorystatus_vm_pressure_level"));
         }
 
-        // run.txt's lines
-        public string[] Lines() =>
-        [
-            $"Memory pressure: {(_pressure <= 1 ? "normal" : _pressure == 2 ? "warning" : "critical")}",
-            FormattableString.Invariant($"Swap used: {_swapBefore:F2} -> {SwapUsedMb():F2} MB")
-        ];
+        // The memory event's text
+        public string Text() =>
+            FormattableString.Invariant($"pressure {(_pressure <= 1 ? "normal" : _pressure == 2 ? "warning" : "critical")}, swap {_swapBefore:F2} -> {SwapUsedMb():F2} MB");
 
         [DllImport("libc", EntryPoint = "sysctlbyname")]
         private static extern int SysctlByName(string name, ref long value, ref nint size, nint newValue, nint newSize);

@@ -1,12 +1,12 @@
 // The benchmark's director: plays the benchmark's script in one game session and measures it.
 //
 // The runs in the game start it (Runs.cs, after every frame the hooks give them) with a run's options (RunOptions, in
-// src/shared/): when the game starts with KSA_BENCH_OUT naming a run's folder that holds them as run.json, which
-// benchmark.sh's report program writes, or with the same options from the Mac Port tab in the game's settings.
-// Without a folder and a script (or explore mode) there is nothing to play. While it plays, it touches the file
-// "heartbeat" in the results' folder every second, so the script can tell a game that hangs from one that is busy.
-// Every frame goes into frames.csv, and every measured part is a signpost interval (KSA Metal's ksaMtlMarker), so an
-// Instruments trace shows the parts.
+// src/shared/benchmark/): when the game starts with KSA_BENCH_OUT naming a run's folder that holds them as options.json,
+// which benchmark.sh's program writes, or with the same options from the Mac Port tab in the game's settings. Without a
+// folder and a script (or explore mode) there is nothing to play. It measures nothing itself: what happens goes into
+// events.jsonl (Events.cs; a heartbeat every second, so a game that hangs shows), every frame into frames.csv
+// (Frames.cs), marked with the part it counts in, and the run's record is made from them when it ends (Finish.cs). Every
+// measured part is a signpost interval (KSA Metal's ksaMtlMarker), so an Instruments trace shows the parts.
 //
 // The lineup (src/shared/benchmark/Lineup.cs) is a series of scenarios, each a list of "<seconds> <command>" steps timed
 // from its start; a scenario whose celestials the loaded system lacks is skipped. A command is a console command or a
@@ -92,8 +92,11 @@ public partial class Director
     private string _outDir = "";
     // RunOptions.Only: the sections to play, each with the checkpoints chosen in it (null: all of them)
     private Dictionary<string, HashSet<string>?>? _only;
-    private string _resultsFile = "results.json";
     private FrameLog? _frames;
+    private EventLog _events = null!;
+    // This frame's line of frames.csv, and the part its numbers count in (none: null)
+    private (double Script, string? Scenario, string Phase, double FrameMs, FrameStats? Driver, SimSample Sim)? _row;
+    private string? _measured;
     private uint _profileFrames;
     private bool _capture;
     // RunOptions.Catch: the clean run, and the captures taken so far (each several GB)
@@ -103,7 +106,6 @@ public partial class Director
     private bool _catchCapture, _passesEverywhere;
     private int _catches;
     private bool _active;
-    private Results? _results;
     // RunOptions.Fast: the places chosen jumped to, the game paused on the way, instead of played
     private bool _jump, _shots = true;
     private string? _hold;
@@ -113,7 +115,10 @@ public partial class Director
     private int _section = -1;
     private int _next;
     private double _sectionStart;
-    private SectionResult? _sectionResult;
+    // The screenshot limit of the checkpoint under way (the test's noise profile)
+    private double _shotLimit;
+    // Whether a scenario is playing (between two, and before the first, none is)
+    private bool _inScenario;
 
     private double _lastWall;
     private double _scriptTime;
@@ -149,6 +154,8 @@ public partial class Director
     private int _retakes;
     private const int MaxRetakes = 3;
 
+    // A measured part open: its name, when it ends on the script's clock, the vehicle the camera followed when it opened
+    private sealed record Window(string Name, double EndsAt, string? Vehicle);
     private Window? _window;
     // Fast mode's measurement of the view standing at a checkpoint
     private Window? _still;
@@ -156,7 +163,9 @@ public partial class Director
     private string? _exploded;
     private StreamWriter? _trace;
     private double _filmEvery, _nextFilm;
-    private string? _waitFor;
+    // RunOptions.WaitForRecording, and when it last looked for the event
+    private bool _waitFor;
+    private double _lookedForRecording = -1;
     private readonly Stopwatch _waiting = new();
 
     private readonly RunOptions _options;
@@ -179,6 +188,7 @@ public partial class Director
         _outDir = options.Out;
         if (string.IsNullOrEmpty(_outDir))
             return;
+        _events = new EventLog(_outDir, options.Session);
         StartExplore();
         if (_exploring || string.IsNullOrEmpty(script))
             return;
@@ -234,15 +244,14 @@ public partial class Director
         // Only the scenarios chosen, so that the first one is the first played
         if (_only != null)
             _sections.RemoveAll(section => !_only.ContainsKey(section.Name));
-        _resultsFile = $"results{options.Suffix}.json";
         _profileFrames = options.Profile;
         _capture = options.Capture;
         _catchAgainst = options.Catch is { Length: > 0 } clean ? clean : null;
         _catchCapture = options.CatchCapture;
         _passesEverywhere = options.Passes;
-        _waitFor = options.Wait is { Length: > 0 } wait ? wait : null;
+        _waitFor = options.WaitForRecording;
         Directory.CreateDirectory(_outDir);
-        _frames = new FrameLog(Path.Combine(_outDir, $"frames{options.Suffix}.csv"));
+        _frames = new FrameLog(_outDir, options.Session);
         if (options.Trace)
         {
             _trace = new StreamWriter(Path.Combine(_outDir, "trace.csv"));
@@ -251,20 +260,30 @@ public partial class Director
         _filmEvery = options.Film;
         if (_filmEvery > 0)
             Directory.CreateDirectory(Path.Combine(_outDir, "film"));
-        _results = new Results(DriverStats.Available) { Mode = options.Mode, Shots = _shots };
+
         _active = true;
-        Log($"{_sections.Count} sections, {_results.Mode}{(_shots ? "" : ", no screenshots")}{(_hold != null ? $", holding at {_hold}" : "")}, " +
+        Log($"{_sections.Count} scenarios, {options.Mode}{(_shots ? "" : ", no screenshots")}{(_hold != null ? $", holding at {_hold}" : "")}, " +
             $"GPU times {(DriverStats.Available ? "available" : "not available")}{(_profileFrames > 0 ? $", profiling {_profileFrames} frames a part" : "")}" +
             $"{(_capture ? ", capturing a frame at each checkpoint" : "")}");
     }
 
     public void OnFrame()
     {
+        _row = null;
+        _measured = null;
+        FrameBody();
+        // The frame's line, once it is known which part its numbers count in
+        if (_row is { } r)
+            _frames?.Add(r.Script, r.Scenario, _measured, r.Phase, r.FrameMs, r.Driver, r.Sim);
+    }
+
+    private void FrameBody()
+    {
         if (_exploring)
             ExploreFrame();
         if (!_active)
             return;
-        if (!_wall.IsRunning && _waitFor != null)
+        if (!_wall.IsRunning && _waitFor)
         {
             // Views: the game paused from its first frame, so that the wait leaves nothing behind in the clouds and the sea
             if (Fast)
@@ -273,14 +292,14 @@ public partial class Director
             // Up in the game: the heartbeat tells the script, which starts its tool and then makes the file
             if (!_waiting.IsRunning || _waiting.Elapsed.TotalSeconds >= _nextBeat)
             {
-                File.WriteAllText(Path.Combine(_outDir, "heartbeat"), "waiting 0\n");
+                _events.Add("heartbeat", text: "waiting");
                 _nextBeat = _waiting.Elapsed.TotalSeconds + 1;
             }
             _waiting.Start();
-            if (!File.Exists(_waitFor) && _waiting.Elapsed.TotalSeconds < 60)
+            if (_waiting.Elapsed.TotalSeconds < 60 && !Recording())
                 return;
-            Log(FormattableString.Invariant($"waited {_waiting.Elapsed.TotalSeconds:F1} s for {Path.GetFileName(_waitFor)}"));
-            _waitFor = null;
+            Log(FormattableString.Invariant($"waited {_waiting.Elapsed.TotalSeconds:F1} s for the recording"));
+            _waitFor = false;
             _nextBeat = 0;
         }
         if (!_wall.IsRunning)
@@ -290,8 +309,8 @@ public partial class Director
         _lastWall = wall;
         if (wall >= _nextBeat)
         {
-            File.WriteAllText(Path.Combine(_outDir, "heartbeat"),
-                FormattableString.Invariant($"{_sectionResult?.Name} {_scriptTime - _sectionStart:F1}\n"));
+            _events.Add("heartbeat", ScenarioName, value: Math.Round(_scriptTime - _sectionStart, 1));
+            _frames?.Flush();
             _nextBeat = wall + 1;
         }
         if (Fast)
@@ -300,9 +319,7 @@ public partial class Director
             return;
         // The game's messages stay in its log, off the screen
         Program.ConsoleWindow.ClearConsole();
-        var sim = ReadSim();
-        _frames?.Add(_scriptTime - _sectionStart, _sectionResult?.Name, _window?.Name ?? _still?.Name, _phase.ToString(), dt * 1000,
-            DriverStats.Read(), sim);
+        _row = (_scriptTime - _sectionStart, ScenarioName, _phase.ToString(), dt * 1000, DriverStats.Read(), ReadSim());
 
         if (_phase != Phase.Play)
         {
@@ -334,9 +351,7 @@ public partial class Director
                 speed = Math.Max(speed + (_gameTarget - Universe.GetElapsedSeconds()) / WarpCatchUp, 0);
             SetSpeed(speed);
             if (!Fast)
-                _window?.Add(dt * 1000, DriverStats.Read());
-            if (Live)
-                _window?.AddSim(dt * 1000, sim);
+                _measured = _window?.Name;
         }
         if (_window != null && _scriptTime >= _window.EndsAt)
             CloseWindow();
@@ -364,6 +379,15 @@ public partial class Director
             _stepAt = _sectionStart + step.At;
             Run(step);
         }
+    }
+
+    // Whether benchmark.sh said its tool records (the "recording" event), looked for twice a second
+    private bool Recording()
+    {
+        if (_waiting.Elapsed.TotalSeconds < _lookedForRecording + 0.5)
+            return false;
+        _lookedForRecording = _waiting.Elapsed.TotalSeconds;
+        return EventLog.Read(_outDir).Any(e => e.Type == "recording" && e.Session == _options.Session);
     }
 
     // Before the game works out its next step of the simulation (the hooks call it from Universe.GetJobSimStep): the
@@ -539,8 +563,9 @@ public partial class Director
         // A run in a running game has no loading of its own
         if (!_options.InGame)
         {
-            _results!.LoadSeconds = Math.Round((DateTime.Now - Process.GetCurrentProcess().StartTime).TotalSeconds - _waiting.Elapsed.TotalSeconds, 1);
-            Log(FormattableString.Invariant($"first in-game frame after {_results.LoadSeconds:F1} s"));
+            double load = Math.Round((DateTime.Now - Process.GetCurrentProcess().StartTime).TotalSeconds - _waiting.Elapsed.TotalSeconds, 1);
+            _events.Add("loaded", value: load);
+            Log(FormattableString.Invariant($"first in-game frame after {load:F1} s"));
         }
         // The scene alone, without the game's interface (F2)
         Program.DrawUI = false;
@@ -600,10 +625,10 @@ public partial class Director
             _active = false;
             _trace?.Dispose();
             _frames?.Dispose();
-            _results!.Completed = true;
+            _frames = null;
+            _events.Add("done");
             if (_shortSteps > 0)
                 Log($"the setup's steps: the game fell short of {_shortSteps} of them (slow frames of physics), finished in the frame after");
-            _results.Write(Path.Combine(_outDir, _resultsFile));
             Log(FormattableString.Invariant($"done after {_wall.Elapsed.TotalSeconds:F1} s"));
             // The camera's field of view and the game's explosions as they were
             Unhold();
@@ -621,9 +646,9 @@ public partial class Director
             _warpSeconds = 0;
             SetSpeed(1);
         }
-        _sectionResult = new SectionResult(_sections[_section].Name) { Live = Live };
-        _results!.Sections.Add(_sectionResult);
-        Log(FormattableString.Invariant($"section {_sectionResult.Name} (game time {Universe.GetElapsedSeconds():F1} s, {_wall.Elapsed.TotalSeconds:F1} s into the run)"));
+        _inScenario = true;
+        _events.Add("scenario", ScenarioName, text: Lineup.Name(_sections[_section].Kind));
+        Log(FormattableString.Invariant($"scenario {ScenarioName} (game time {Universe.GetElapsedSeconds():F1} s, {_wall.Elapsed.TotalSeconds:F1} s into the run)"));
     }
 
     // Ends the run before the script's end (the player stopped it): the results say why, and that it did not complete
@@ -631,12 +656,12 @@ public partial class Director
     {
         if (Done)
             return;
-        _sectionResult?.Errors.Add(why);
+        _events.Add("stopped", ScenarioName, text: why);
         EndSection();
         _active = false;
         _trace?.Dispose();
         _frames?.Dispose();
-        _results?.Write(Path.Combine(_outDir, _resultsFile));
+        _frames = null;
         Log($"stopped: {why}");
         Unhold();
         EndRig();
@@ -645,13 +670,12 @@ public partial class Director
 
     private void EndSection()
     {
-        if (_sectionResult == null)
+        if (ScenarioName == null)
             return;
         CloseWindow();
         if (DriverStats.Read() is { DrawableWidth: > 0 } d)
-            _results!.Drawable = $"{d.DrawableWidth}x{d.DrawableHeight}";
-        _results!.Write(Path.Combine(_outDir, _resultsFile));
-        _sectionResult = null;
+            _events.Add("drawable", ScenarioName, text: $"{d.DrawableWidth}x{d.DrawableHeight}");
+        _inScenario = false;
     }
 
     private void Run(Step step)
@@ -667,9 +691,9 @@ public partial class Director
             ok = false;
         }
         double t = _stepAt - _sectionStart;
-        Log(FormattableString.Invariant($"{_sectionResult?.Name} {t:F1} s: '{step.Command}' -> {(ok ? "ok" : "failed")}"));
+        Log(FormattableString.Invariant($"{ScenarioName} {t:F1} s: '{step.Command}' -> {(ok ? "ok" : "failed")}"));
         if (!ok)
-            _sectionResult?.Errors.Add(FormattableString.Invariant($"{t:F1} s: '{step.Command}' failed"));
+            Error(FormattableString.Invariant($"{t:F1} s: '{step.Command}' failed"));
     }
 
     // A console command. Those that move the camera elsewhere end the directives' hold on it.
@@ -687,6 +711,16 @@ public partial class Director
             return;
         _speedSent = speed;
         InputEvents.SimSpeedBuffer.Add(new InputEvents.SimSpeedData { Speed = new SimSpeed(speed) });
+    }
+
+    // The scenario playing, or null between them
+    private string? ScenarioName => _section >= 0 && _section < _sections.Count && _inScenario ? _sections[_section].Name : null;
+
+    // Something went wrong in the scenario playing: the run fails
+    private void Error(string text)
+    {
+        _events.Add("error", ScenarioName, text: text);
+        Log(text);
     }
 
     private static void Log(string message)

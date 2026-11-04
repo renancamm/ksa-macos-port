@@ -29,21 +29,17 @@ public partial class Director
         {
             case "@measure" when a.Length == 3 && double.TryParse(a[2], NumberStyles.Float, Inv, out var seconds):
                 CloseWindow();
-                _window = new Window(a[1], _scriptTime + seconds) { Vehicle = FollowedVehicle() };
-                // Fast mode measures the views standing still instead
+                _window = new Window(a[1], _scriptTime + seconds, FollowedVehicle());
+                // Views are measured standing still instead
                 if (!Fast)
                     Opened(_window);
-                // From this moment, so that a first frame that stalls counts
-                if (Live)
-                    _window.AddSim(0, ReadSim());
                 return true;
             case "@shot" when a.Length == 2:
             {
                 // How much it may change from run to run: the test's noise profile, or a flight's when its places were jumped
                 // to (the clouds and the sea there depend on the way the camera came, which the places chosen change)
-                if (_sections[_section] is var playing)
-                    _sectionResult?.ShotLimits[a[1]] = _noise.GetValueOrDefault(playing.Name)?.ShotLimit(a[1], playing.Kind)
-                                                       ?? NoiseProfile.DefaultShotLimit(playing.Kind);
+                var playing = _sections[_section];
+                _shotLimit = _noise.GetValueOrDefault(playing.Name)?.ShotLimit(a[1], playing.Kind) ?? NoiseProfile.DefaultShotLimit(playing.Kind);
                 // The game stays paused: nothing to keep in step
                 if (Paused && !IsChosen(a[1]))
                     return true;

@@ -61,23 +61,28 @@ echo "==> port settings: defaults" > "${STARMAP_INSTANCE_PATH}/logs/console.log"
 case "${FAKE_GAME:-pass}" in
     nothing) exit 134 ;;
 esac
-# The run's options, which the report program writes for the director
-option() { plutil -extract "$1" raw -o - "${KSA_BENCH_OUT}/run.json"; }
+# The run's options, which benchmark.sh's program writes for the director
+option() { plutil -extract "$1" raw -o - "${KSA_BENCH_OUT}/options.json"; }
 only="$(option only)"
 first="${only%% *}"
-echo "${first} 1.5" > "${KSA_BENCH_OUT}/heartbeat"
+session="$(option session)"
+events="${KSA_BENCH_OUT}/events.jsonl"
+event() { echo "{\"at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"session\":${session},\"pass\":1,$1}" >> "${events}"; }
+event "\"type\":\"heartbeat\",\"scenario\":\"${first}\",\"value\":1.5"
 case "${FAKE_GAME:-pass}" in
     crash) kill -ABRT $$ ;;
     hang) sleep 60; exit 0 ;;
-    long) for i in 1 2 3 4 5 6 7 8 9 10; do sleep 1; done; exit 0 ;;
+    long) for i in 1 2 3 4 5 6 7 8 9 10; do sleep 1; event "\"type\":\"heartbeat\",\"scenario\":\"${first}\",\"value\":1.5"; done; exit 0 ;;
 esac
-mode="$(option mode)"
-cat > "${KSA_BENCH_OUT}/results$(option suffix).json" <<JSON
-{"gpuTimes":true,"mode":"${mode}","shots":true,"completed":true,"loadSeconds":1.5,"drawable":"100x50",
-"sections":[{"name":"${first}","windows":[{"name":"part1","frames":100,"seconds":2,"averageFps":50,"frameMsMedian":20,"frameMsP95":22,
-"frameMsP99":23,"frameMsMax":30,"hitches":0,"gpuMsMedian":${FAKE_GPU:-15},"gpuMsP95":16,"drawsMedian":100,"gpuMemoryPeakMb":1000,"footprintPeakMb":2000,
-"thermalMax":0,"shadersCompiled":0,"pipelinesCreated":0}],"screenshots":[],"shotLimits":{},"errors":[],"live":false}]}
-JSON
+event "\"type\":\"scenario\",\"scenario\":\"${first}\",\"text\":\"views\""
+event "\"type\":\"open\",\"scenario\":\"${first}\",\"part\":\"part1\",\"game\":0,\"value\":0"
+frames="${KSA_BENCH_OUT}/frames.csv"
+[ -s "${frames}" ] || echo "time,session,pass,script,scenario,part,phase,frame_ms,present,gpu_ms,cpu_ms,draws,passes,metal_mb,footprint_mb,thermal,shaders,pipelines,display_ms,game_s,asked,sim_ms,substeps,bubbles,vehicles" > "${frames}"
+for i in $(seq 1 100); do
+    echo "${i},${session},1,0,${first},part1,Measure,20,${i},${FAKE_GPU:-15},1,100,4,1000,2000,0,0,0,8.3,,,,,," >> "${frames}"
+done
+event "\"type\":\"close\",\"scenario\":\"${first}\",\"part\":\"part1\""
+event "\"type\":\"done\""
 exit 0
 GAME
 chmod +x "${APP}/Contents/MacOS/KSA"
@@ -143,7 +148,7 @@ expect "how to see it" 0 "./benchmark.sh report"
 case "${OUTPUT}" in *"|---"*) fail "Markdown in the terminal: ${OUTPUT}" ;; esac
 RUN="$(ls "${T}/home/Documents/My Games/Kitten Space Agency/benchmarks" | sort | tail -1)"
 DIR="${T}/home/Documents/My Games/Kitten Space Agency/benchmarks/${RUN}"
-for f in report.md report.json report.html run.txt system.txt settings.toml "${RUN}.zip"; do
+for f in report.md run.json report.html events.jsonl frames.csv options.json settings.toml "${RUN}.zip"; do
     [ -f "${DIR}/${f}" ] || fail "a run that passes: no ${f}"
 done
 
@@ -181,11 +186,11 @@ expect "a game that hangs" 1 "hung in mixed at 1.5 s"
 sleep 1
 # As a terminal does it: the signal to the whole process group, once the run has started (a job started with & has SIGINT
 # ignored and shares this script's group: perl gives it a group of its own and puts the signal back)
-before="$(ls -d "${T}/home/Documents/My Games/Kitten Space Agency/benchmarks/"*/run.txt | wc -l)"
+before="$(ls -d "${T}/home/Documents/My Games/Kitten Space Agency/benchmarks/"*/options.json | wc -l)"
 FAKE_GAME=long HOME="${T}/home" perl -e 'setpgrp(0, 0); $SIG{INT} = "DEFAULT"; exec @ARGV' "${BENCH}" --app "${APP}" > "${T}/stopped.txt" 2>&1 &
 script=$!
 for _ in $(seq 1 100); do
-    [ "$(ls -d "${T}/home/Documents/My Games/Kitten Space Agency/benchmarks/"*/run.txt | wc -l)" -gt "${before}" ] && break
+    [ "$(ls -d "${T}/home/Documents/My Games/Kitten Space Agency/benchmarks/"*/options.json | wc -l)" -gt "${before}" ] && break
     sleep 0.2
 done
 sleep 1
@@ -201,7 +206,7 @@ pgrep -f "${APP}/Contents/MacOS/KSA" > /dev/null
 B="${T}/home/Documents/My Games/Kitten Space Agency/benchmarks"
 mkdir "${B}/2020-01-01_0100" "${B}/2020-01-02_0100_hold" "${B}/2020-01-03_0100_explore" "${B}/a baseline" "${B}/zz renamed"
 # A renamed run isn't the last one
-cp "${DIR}/report.json" "${B}/zz renamed/"
+cp "${DIR}/run.json" "${B}/zz renamed/"
 bench report last
 case "${OUTPUT}" in *"zz renamed"*) fail "last took a folder that isn't named by its date: ${OUTPUT}" ;; esac
 touch "${B}/stray.zip"

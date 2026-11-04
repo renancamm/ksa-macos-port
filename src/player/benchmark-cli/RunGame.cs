@@ -85,8 +85,8 @@ public static partial class Program
             : File.Exists(Path.Combine(_res, "StarMap", "version.txt")) ? File.ReadAllText(Path.Combine(_res, "StarMap", "version.txt")).Trim()
             : "in the app";
 
-        // system.txt, with the window from the run's settings.toml
-        private int WriteSystemFacts()
+        // What the run says about itself for its record, which adds the Mac's, the app's and the window
+        private List<Fact> HostFacts()
         {
             var home = PortFolder.Home;
             var switches = string.Join(' ', Environment.GetEnvironmentVariables().Keys.Cast<string>()
@@ -98,11 +98,15 @@ public static partial class Program
                 changed = Path.GetFileName(_settingsFile) + (changed.Length > 0 ? " " : "") + changed;
             var preset = _defaults ? $"{(_preset.Length > 0 ? _preset : "none")}, a fresh install's settings"
                 : _preset.Length > 0 ? _preset : "none, own settings";
-            return Quiet(() => SystemFacts(_out, _app, [$"StarMap={Starmap()}", $"System={SystemId}", $"Test={(_test.Length > 0 ? _test : "places")}",
-                $"Sections={Sections}", $"Mode={Mode}{(_noShots ? ", no screenshots" : "")}", $"Preset={preset}",
-                $"Settings changed={(changed.Length > 0 ? changed : "none")}", "Start=a new game, from benchmark.sh",
-                $"KSA Metal switches={(switches.Length > 0 ? switches : "none")}", $"Tools={tools}"])).Status;
+            return
+            [
+                new("StarMap", Starmap()), new("System", SystemId), new("Test", _test.Length > 0 ? _test : "places"), new("Scenarios", Sections),
+                new("Mode", $"{Mode}{(_noShots ? ", no screenshots" : "")}"), new("Preset", preset), new("Settings changed", changed.Length > 0 ? changed : "none"),
+                new("Start", Start), new("KSA Metal switches", switches.Length > 0 ? switches : "none"), new("Tools", tools)
+            ];
         }
+
+        private const string Start = "a new game, from benchmark.sh";
 
         // One of the report's steps after the game: a failure (a full disk, a file cut short) counts as one, as a step
         // of the report program that failed did, and the run goes on to its summary
@@ -144,15 +148,8 @@ public static partial class Program
                 _out += "_" + DateTime.Now.ToString("ss", CultureInfo.InvariantCulture);
             Directory.CreateDirectory(_out);
             File.Copy(_settings, Path.Combine(_out, "settings.toml"));
-            try
-            {
-                if (WriteSystemFacts() != 0)
-                    Die("the report program did not run.");
-            }
-            catch (Exception e) when (e is not PortException)
-            {
-                Die("the report program did not run.");
-            }
+            var events = new EventLog(_out);
+            events.Add("start", text: Start);
             // Keeps the display awake while the run lasts (the game needs it), and wakes it now: a display that went to
             // sleep makes the game fail at start
             Process.Start("caffeinate", ["-d", "-i", "-w", Environment.ProcessId.ToString(CultureInfo.InvariantCulture)]);
@@ -178,7 +175,7 @@ public static partial class Program
             }
             if (_trace)
             {
-                options.Wait = Path.Combine(_out, ".recording");
+                options.WaitForRecording = true;
                 env["KSA_MTL_LABELS"] = "1";
             }
             if (_capture)
@@ -261,28 +258,31 @@ public static partial class Program
                 c.Cancel = true;
                 _stopped = true;
             });
-            File.WriteAllText(Path.Combine(_out, "run.txt"), "");
-            for (int n = 1; n <= _repeat; n++)
+            if (busy.Length > 0)
+                events.Add("gpu", value: int.Parse(busy));
+            // The sessions: each repeat, and in full each test, in a game of its own
+            var groups = _test == "full"
+                ? Lineup.Full.Select(t => _lineup.Test(t)!.Scenarios.ToList()).ToList()
+                : [_only];
+            int session = 0;
+            for (int r = 1; r <= _repeat && !_stopped; r++)
             {
-                PlayOnce(n, env, options, lengths, timeout, hang, ref pressure);
-                if (_stopped)
-                    break;
+                foreach (var group in groups)
+                {
+                    PlayOnce(++session, group, r, env, options, lengths, timeout, hang, events, ref pressure);
+                    if (_stopped)
+                        break;
+                }
             }
             Console.CancelKeyPress -= stop;
             term.Dispose();
-            var runTxt = new StringBuilder();
-            if (busy.Length > 0)
-                runTxt.Append($"GPU before the run: {busy} %\n");
             // --defaults: the settings as the game saved them, with its defaults filled in
             if (_defaults)
-            {
                 File.Copy(_settings, Path.Combine(_out, "settings.toml"), true);
-                Soft(() => WriteSystemFacts());
-            }
             var swapAfter = Swap();
-            runTxt.Append($"Memory pressure: {pressure switch { 1 => "normal", 2 => "warning", _ => "critical" }}\n");
-            runTxt.Append($"Swap used: {(swapBefore.Length > 0 ? swapBefore : "?")} -> {(swapAfter.Length > 0 ? swapAfter : "?")} MB\n");
-            File.AppendAllText(Path.Combine(_out, "run.txt"), runTxt.ToString());
+            events.Session = 0;
+            events.Add("memory", text: $"pressure {pressure switch { 1 => "normal", 2 => "warning", _ => "critical" }}, " +
+                                       $"swap {(swapBefore.Length > 0 ? swapBefore : "?")} -> {(swapAfter.Length > 0 ? swapAfter : "?")} MB");
 
             ToolsOutput();
             if (_hold.Length > 0)
@@ -290,18 +290,17 @@ public static partial class Program
                 Output.Step($"Done: {_out}");
                 return 0;
             }
-
-            // The report, then the zip to share (finish): the report, every frame's numbers, the logs and crash reports of
-            // the run, the settings, and the screenshots as JPEG; your home folder's name replaced by ~
-            int failed = 0;
-            var (finished, said) = Soft(() => Quiet(() => Finish(_out)), (1, ""));
-            var zip = said.TrimEnd('\n').Split('\n')[^1];
-            if (finished != 0)
-                failed = 1;
             if (_profile)
                 Soft(() => Quiet(() => Profile(_out)));
+
+            // The record, the report and the zip to share: the report, every frame's numbers, the logs and crash reports of
+            // the run, the settings, and the screenshots as JPEG; your home folder's name replaced by ~
+            int failed = 0;
+            var record = Soft(() => Finish.Run(_out));
+            if (record?.Status != Status.Passed)
+                failed = 1;
             if (!File.Exists(Path.Combine(_out, "report.md")))
-                Die($"the report program did not write the report. What the run left is in {_out}");
+                Die($"the run's report could not be written. What the run left is in {_out}");
             Console.WriteLine();
             Show(_out);
             Console.WriteLine();
@@ -312,6 +311,7 @@ public static partial class Program
                 Console.WriteLine();
             }
 
+            var zip = Path.Combine(_out, Path.GetFileName(_out) + ".zip");
             Output.Step(_stopped ? $"Stopped: {_out}" : failed == 0 ? $"Done: {_out}" : $"Done, with problems: {_out}");
             Output.Info($"See it, with its pictures: ./benchmark.sh report {Path.GetFileName(_out)}");
             Output.Info($"Compare with another run: ./benchmark.sh compare <other run> {Path.GetFileName(_out)}");
@@ -323,39 +323,41 @@ public static partial class Program
             return failed;
         }
 
-        // One game session; its ending goes to run.txt
-        private void PlayOnce(int n, Dictionary<string, string> env, RunOptions options, List<(string Section, double Seconds)> lengths, int timeout, int hang,
-            ref int pressure)
+        // One game session: its options in the run's folder, the game watched until it ends, hangs or is stopped, its
+        // ending and its log
+        private void PlayOnce(int n, List<string> only, int repeat, Dictionary<string, string> env, RunOptions options,
+            List<(string Section, double Seconds)> lengths, int timeout, int hang, EventLog events, ref int pressure)
         {
-            string suffix = n > 1 ? $"-{n}" : "", label = n > 1 ? $"Game {n}" : "Game";
             if (n > 1)
-                Output.Info($"Run {n} of {_repeat}");
-            var heartbeat = Path.Combine(_out, "heartbeat");
-            var recording = Path.Combine(_out, ".recording");
-            File.Delete(heartbeat);
-            File.Delete(recording);
-            // This game's options, in the run's folder (a repeat's after the first's)
-            options.Only = string.Join(' ', _only);
+                Output.Info($"Game {n}");
+            events.Session = n;
+            events.Add("session");
+            options.Only = string.Join(' ', only);
             options.Fast = _fast;
             options.Mode = Mode;
             options.Hold = _hold;
-            options.NoShots = _noShots || n > 1;
-            options.Suffix = suffix;
+            // Only the first repeat takes screenshots: the others measure
+            options.NoShots = _noShots || repeat > 1;
+            options.Session = n;
+            options.Test = _test;
             options.Script = _script;
+            options.App = _app;
+            options.Facts = HostFacts();
             options.Write(_out);
             using var game = Process.Start(Game(new Dictionary<string, string>(env) { ["KSA_BENCH_OUT"] = _out }))!;
             var started = DateTime.UtcNow;
             string ending = "";
             bool alongside = false;
             Process? tracer = null;
-            var progress = new ProgressLine(lengths);
+            var progress = new ProgressLine(lengths.Where(l => only.Any(o => o.Split('_')[0] == l.Section)).ToList());
             while (!game.HasExited)
             {
                 int elapsed = (int)(DateTime.UtcNow - started).TotalSeconds;
-                progress.Show(heartbeat, elapsed);
+                var beat = EventLog.LastHeartbeat(_out, n);
+                progress.Show(beat, elapsed);
                 // --trace: once the game is up (its first heartbeat), Instruments attaches, and the run starts when it records
-                if (_trace && tracer == null && File.Exists(heartbeat))
-                    tracer = StartTrace(game.Id, recording);
+                if (_trace && tracer == null && beat != null)
+                    tracer = StartTrace(game.Id, events);
                 // Another game at the same time shares the Mac's GPU and memory (and may be the end of this one)
                 if (!alongside && GamesRunning().Any(pid => pid != game.Id))
                 {
@@ -367,8 +369,8 @@ public static partial class Program
                     pressure = level;
                 if (_stopped)
                     ending = "was stopped with Ctrl-C";
-                else if (File.Exists(heartbeat) && (DateTime.UtcNow - File.GetLastWriteTimeUtc(heartbeat)).TotalSeconds > hang)
-                    ending = $"hung{Where(heartbeat, false)} (no frame for {hang} s): stopped";
+                else if (beat != null && (DateTime.UtcNow - beat.At).TotalSeconds > hang)
+                    ending = $"hung{Where(beat, false)} (no frame for {hang} s): stopped";
                 else if (timeout > 0 && elapsed >= timeout)
                     ending = $"did not finish in {timeout} s: stopped";
                 if (ending.Length > 0)
@@ -392,16 +394,18 @@ public static partial class Program
             if (ending.Length == 0)
             {
                 // Where the game had got to
-                var where = File.Exists(heartbeat) ? Where(heartbeat, true) : " before its first frame";
+                var beat = EventLog.LastHeartbeat(_out, n);
+                var where = beat != null ? Where(beat, true) : " before its first frame";
                 int status = game.ExitCode;
                 ending = status == 0 ? "quit normally"
                     : status is >= 130 and <= 199 ? $"crashed (signal {status - 128}){where}"
                     : $"quit with status {status}{where}";
             }
-            var run = new StringBuilder($"{label}: {ending}\n");
+            if (_stopped)
+                events.Add("stopped", text: "stopped with Ctrl-C");
+            events.Add("ended", text: ending);
             if (alongside)
-                run.Append($"Alongside{suffix}: another game\n");
-            File.AppendAllText(Path.Combine(_out, "run.txt"), run.ToString());
+                events.Add("alongside");
             // Instruments stops recording when the game quits; it then writes the trace
             if (tracer != null)
             {
@@ -409,31 +413,18 @@ public static partial class Program
                 Tool.Exec("kill", ["-INT", tracer.Id.ToString(CultureInfo.InvariantCulture)], out _);
                 tracer.WaitForExit();
             }
-            File.Delete(heartbeat);
-            File.Delete(recording);
             // The game's log, without your home folder's name
             var log = Path.Combine(Instance, "logs", "console.log");
             if (File.Exists(log))
-                File.WriteAllText(Path.Combine(_out, $"game{suffix}.log"), File.ReadAllText(log).Replace(PortFolder.Home, "~"));
+                File.WriteAllText(Path.Combine(_out, n > 1 ? $"game-{n}.log" : "game.log"), File.ReadAllText(log).Replace(PortFolder.Home, "~"));
         }
 
-        // Where the heartbeat says the game is: " in <section> at <seconds> s", or nothing before the first section (or,
-        // after the run, while the director waited)
-        private static string Where(string heartbeat, bool afterTheRun)
-        {
-            string[] f;
-            try
-            {
-                f = Fields(File.ReadAllText(heartbeat).Split('\n')[0]);
-            }
-            catch (IOException)
-            {
-                return "";
-            }
-            return f.Length == 2 && !(afterTheRun && f[0] == "waiting") ? $" in {f[0]} at {f[1]} s" : "";
-        }
+        // Where the last heartbeat says the game is: " in <scenario> at <seconds> s", or nothing before the first scenario
+        // (or, after the run, while the director waited)
+        private static string Where(RunEvent beat, bool afterTheRun) =>
+            beat.Scenario != null && beat.Value is { } at ? FormattableString.Invariant($" in {beat.Scenario} at {at:0.0} s") : "";
 
-        private Process? StartTrace(int pid, string recording)
+        private Process? StartTrace(int pid, EventLog events)
         {
             var log = Path.Combine(_out, "xctrace.log");
             // Points of Interest holds the parts (KSA Metal's signposts)
@@ -452,7 +443,10 @@ public static partial class Program
             if (tracer.HasExited)
                 Output.Warn($"Instruments did not start: {string.Join(' ', File.ReadAllLines(log).TakeLast(3))}");
             Thread.Sleep(2000);
-            File.WriteAllText(recording, "");
+            // Twice, a second apart: the game writes its heartbeat to the same file, and two writes at one moment can lose one
+            events.Add("recording");
+            Thread.Sleep(1000);
+            events.Add("recording");
             return tracer;
         }
 
@@ -495,20 +489,11 @@ public static partial class Program
         private readonly bool _terminal = !Console.IsOutputRedirected;
         private string _lastShown = "";
 
-        public void Show(string heartbeat, int elapsed)
+        public void Show(RunEvent? beat, int elapsed)
         {
-            string section = "", at = "";
-            try
-            {
-                var f = File.Exists(heartbeat) ? File.ReadAllText(heartbeat).Split('\n')[0].Split(' ', StringSplitOptions.RemoveEmptyEntries) : [];
-                (section, at) = (f.ElementAtOrDefault(0) ?? "", f.ElementAtOrDefault(1) ?? "");
-            }
-            catch (IOException)
-            {
-            }
-            // Before the first section the heartbeat has the time alone
-            if (at.Length == 0 || section == "waiting")
-                section = "";
+            // Before the first scenario the heartbeat has no scenario
+            string section = beat?.Scenario ?? "";
+            double atSeconds = beat?.Value ?? 0;
             if (!_terminal)
             {
                 if (section.Length > 0 && section != _lastShown)
@@ -524,7 +509,6 @@ public static partial class Program
                 return;
             }
             double total = lengths.Sum(l => l.Seconds), done = 0;
-            double.TryParse(at, NumberStyles.Float, CultureInfo.InvariantCulture, out var atSeconds);
             foreach (var (name, seconds) in lengths)
             {
                 if (name == section)
