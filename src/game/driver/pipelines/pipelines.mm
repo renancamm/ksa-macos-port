@@ -764,7 +764,8 @@ KPipeline* kmtlCreateComputeFromStage(KDevice* dev, KPipelineLayout* layout, con
         if (!fn) return nil;
         MTLComputePipelineDescriptor* d = [MTLComputePipelineDescriptor new];
         d.computeFunction = fn;
-        d.maxTotalThreadsPerThreadgroup = t.workgroup.width * t.workgroup.height * t.workgroup.depth;
+        NSUInteger threads = t.workgroup.width * t.workgroup.height * t.workgroup.depth;
+        d.maxTotalThreadsPerThreadgroup = std::max<NSUInteger>(threads, kmtlThreadgroupHintFor(csHash));
         NSError* err = nil;
         auto tp = std::chrono::steady_clock::now();
         id<MTLComputePipelineState> ps = [dev->mtl newComputePipelineStateWithDescriptor:d options:MTLPipelineOptionNone reflection:nil error:&err];

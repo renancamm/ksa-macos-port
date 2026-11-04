@@ -38,6 +38,29 @@ int kmtlThrottleFor(const std::string& profName) {
     return -1;
 }
 
+// KSA_MTL_THREADGROUP_HINT=<n> or <hash>:<n>,...: the largest threadgroup a compute pipeline is compiled for (0: none)
+// (clamped to 1024, the most a threadgroup has on Apple GPUs; a value of 0 or less is none)
+static uint32_t threadgroupHint(const char* value) { return (uint32_t)std::max(0, std::min(1024, atoi(value))); }
+
+uint32_t kmtlThreadgroupHintFor(uint64_t hash) {
+    const char* t = kmtlConfig().threadgroupHint;
+    if (!t) return 0;
+    if (!strchr(t, ':')) return threadgroupHint(t);
+    char name[17];
+    snprintf(name, sizeof(name), "%016llx", (unsigned long long)hash);
+    std::string list = t;
+    size_t pos = 0;
+    while (pos < list.size()) {
+        size_t end = list.find(',', pos);
+        if (end == std::string::npos) end = list.size();
+        std::string item = list.substr(pos, end - pos);
+        size_t colon = item.find(':');
+        if (colon != std::string::npos && item.compare(0, colon, name) == 0) return threadgroupHint(item.c_str() + colon + 1);
+        pos = end + 1;
+    }
+    return 0;
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // The log
 

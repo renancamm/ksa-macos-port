@@ -109,7 +109,7 @@ static id<MTLLibrary> compileMSL(KDevice* dev, const std::string& msl, std::stri
     auto t0 = std::chrono::steady_clock::now();
     MTLCompileOptions* o = [MTLCompileOptions new];
     o.languageVersion = MTLLanguageVersion3_2;
-    o.mathMode = kmtlConfig().preciseMath ? MTLMathModeSafe : MTLMathModeFast;
+    o.mathMode = kmtlConfig().preciseMath ? MTLMathModeSafe : kmtlConfig().relaxedMath ? MTLMathModeRelaxed : MTLMathModeFast;
     o.preserveInvariance = YES;
     NSError* e = nil;
     id<MTLLibrary> lib = [dev->mtl newLibraryWithSource:[NSString stringWithUTF8String:msl.c_str()] options:o error:&e];

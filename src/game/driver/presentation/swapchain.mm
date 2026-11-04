@@ -266,6 +266,15 @@ static void present(id<MTLBlitCommandEncoder> b, id<MTLTexture> image, id<MTLTex
              toTexture:drawable destinationSlice:0 destinationLevel:0 destinationOrigin:MTLOriginMake(0, 0, 0)];
 }
 
+// KSA_MTL_FRAME_CADENCE=<ms>: each drawable is shown at least that long after the one before (with frame
+// interpolation two are shown per game frame, so half as long), so the frame rate holds one step of the display's
+// refresh instead of moving between them
+static void presentPaced(id<MTLCommandBuffer> cb, id<CAMetalDrawable> d, bool interpolated) {
+    double ms = kmtlConfig().frameCadence;
+    if (ms > 0) [cb presentDrawable:d afterMinimumDuration:(interpolated ? ms / 2 : ms) / 1000.0];
+    else [cb presentDrawable:d];
+}
+
 VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
     KTRACE_FIRST();
     KStallTimer stall("vkQueuePresentKHR");
@@ -283,16 +292,17 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
             id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
             [b waitForFence:q->chain];
             // KSA_MTL_FRAME_INTERPOLATION: a frame between the last one and this one goes to the display first
+            id<CAMetalDrawable> first = nil;
             if (kmtlConfig().frameInterpolation) {
                 [b endEncoding];
                 id<MTLTexture> mid = kmtlPresentInterpolate(q->device, cb, img->mtl);
-                id<CAMetalDrawable> first = mid ? [sc->surface->layer nextDrawable] : nil;
+                first = mid ? [sc->surface->layer nextDrawable] : nil;
                 if (first) {
                     id<MTLBlitCommandEncoder> copy = [cb blitCommandEncoder];
                     present(copy, mid, first.texture);
                     [copy endEncoding];
                     [first addPresentedHandler:^(id<MTLDrawable> d) { if (d.presentedTime > 0) kmtlNoteShown(d.presentedTime, false); }];
-                    [cb presentDrawable:first];
+                    presentPaced(cb, first, true);
                 }
                 b = [cb blitCommandEncoder];
                 [b waitForFence:q->chain];
@@ -344,7 +354,7 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
                 // When the display showed it (0 for an image it never showed)
                 [drawable addPresentedHandler:^(id<MTLDrawable> d) { if (d.presentedTime > 0) kmtlNoteShown(d.presentedTime, true); }];
                 if (kmtlConfig().latency) latencyAtPresent(drawable, cb);
-                [cb presentDrawable:drawable];
+                presentPaced(cb, drawable, first != nil);
             }
             [cb commit];
             if (pi->pResults) pi->pResults[i] = r;

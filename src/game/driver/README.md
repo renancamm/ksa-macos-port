@@ -125,6 +125,10 @@ The debugging settings, used the same way:
 | `watch` | a folder: every 31 presents, a look at a sample of the presented image: at 30 % pure white, 99.9 % pure black for a second, or 0.1 % of pure primary colours or green with no red or blue, it saves the image and a pass dump of the next frame there (at most 3, 10 s apart), `watch.txt` says when each fault began and ended, and `watch.csv` has every look's numbers. Only an image after a clean one counts |
 | `watch_white` | percent: the white limit of `watch` (30); 0 fires on any image, to test it |
 | `throttle` | `<hash>:<n>,...`: an experiment, a pipeline whose name holds that shader hash runs only every n-th present (0: never), to see what a shader costs and what it draws |
+| `frame_cadence` | `<ms>`: an experiment, each frame shown at least that long after the one before (25: 40 fps at 120 Hz), so the frame rate holds one step |
+| `threadgroup_hint` | `<n>` or `<hash>:<n>,...`: an experiment, the largest threadgroup compute pipelines are compiled for (never below their own), trading registers for occupancy |
+| `rw_texture_fences` | off: an experiment, no fence before reads of storage images a shader also writes; wrong where it reads what it wrote |
+| `relaxed_math` | on: compile shaders with relaxed math instead of fast math |
 
 Metal's own tools work too: `MTL_HUD_ENABLED=1` shows Apple's performance overlay, and `MTL_DEBUG_LAYER=1` and
 `MTL_SHADER_VALIDATION=1` check API use and catch out-of-bounds memory access in shaders (slow).
