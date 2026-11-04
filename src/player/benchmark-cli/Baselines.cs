@@ -77,11 +77,13 @@ public static partial class Program
                 foreach (var run in runs.Length > 0 ? runs : ["last"])
                 {
                     var dir = RunFolder(run);
-                    if (!Directory.Exists(dir) || !Directory.Exists(Path.Combine(Benchmarks, Path.GetFileName(Path.GetFullPath(dir).TrimEnd('/')))))
+                    if (!Directory.Exists(dir) || Path.GetDirectoryName(Path.GetFullPath(dir).TrimEnd('/')) != Path.GetFullPath(Benchmarks).TrimEnd('/'))
                         Die($"a baseline is a run in {Benchmarks}, not {run}.");
                     var record = RunRecord.Read(dir);
                     if (record == null || record.Test is "places" or "full")
                         throw new PortException($"{run} is not a run of one test (mixed, tour or warp): a baseline stands for one test.");
+                    if (record.Scenarios.Any(s => s.Variant != null))
+                        Die($"{run} is an A/B run, two settings at once: a baseline is a run of one.");
                     if (record.Status != Status.Passed)
                         Output.Warn($"{Path.GetFileName(dir)} did not pass: it is the baseline all the same.");
                     tests[record.Test] = Path.GetFileName(dir);

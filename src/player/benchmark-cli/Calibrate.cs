@@ -24,14 +24,16 @@ public static partial class Program
         var passOn = new List<string>();
         foreach (var a in args)
         {
-            if (a is "mixed" or "tour" or "warp")
+            if (a is "mixed" or "tour")
                 test = a;
+            else if (a == "warp")
+                Die("the Warp Test has no noise profile: its screenshots are not compared, and its parts are the speed reached in time warp.");
             else if (int.TryParse(a, NumberStyles.Integer, CultureInfo.InvariantCulture, out var count) && count is >= 2 and <= 20)
                 n = count;
             else if (a is "--app" or "--system" || passOn.LastOrDefault() is "--app" or "--system")
                 passOn.Add(a);
             else
-                Die($"calibrate [mixed | tour | warp] [runs, 2 to 20] [--app <path>] [--system <name>], not '{a}'.");
+                Die($"calibrate [mixed | tour] [runs, 2 to 20] [--app <path>] [--system <name>], not '{a}'.");
         }
         Output.Step($"Calibrating the {Pages.TestName(test)}: {n} runs at a fresh install's settings, each a game of its own");
         var runs = new List<(string Dir, RunRecord Record)>();
@@ -91,10 +93,12 @@ public static partial class Program
                 return v.Length < 2 || v[v.Length / 2] <= 0 ? 0 : (v[^1] - v[0]) / v[v.Length / 2] * 100;
             }
             double gpu = Spread(mine.Select(p => p.GpuMsMedian).OfType<double>()), frame = Spread(mine.Select(p => p.FrameMsMedian));
-            // Never under what two runs of anything differ by: 2 %
+            // A comparison judges GPU time where the runs have it, frame time where they don't; never under what two
+            // runs of anything differ by: 2 %
+            var judged = mine.All(p => p.GpuMsMedian != null) ? gpu : frame;
             profile.Parts[part.Name] = new PartNoise
             {
-                GpuSpread = Math.Round(gpu, 2), FrameSpread = Math.Round(frame, 2), Limit = Math.Round(Math.Max(NoiseProfile.Margin * gpu, 2), 1)
+                GpuSpread = Math.Round(gpu, 2), FrameSpread = Math.Round(frame, 2), Limit = Math.Round(Math.Max(NoiseProfile.Margin * judged, 2), 1)
             };
         }
         return profile;

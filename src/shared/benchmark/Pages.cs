@@ -128,7 +128,7 @@ public static class Pages
             md.AppendLine("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
             foreach (var s in plain)
             {
-                string name = s.Name;
+                string name = Label(s);
                 foreach (var p in s.Parts)
                 {
                     string frame = F(p.FrameMsMedian, "0.0");
@@ -151,7 +151,7 @@ public static class Pages
         if (ab.Count > 0)
         {
             md.AppendLine();
-            md.AppendLine($"A/B: B played with {r.Fact("A/B") ?? "the setting changed"}, A without, in sessions taken in turn.");
+            md.AppendLine($"A/B: B played with {r.Fact("A/B") ?? "the setting changed"}, A with the run's own value of it, in sessions taken in turn.");
             md.AppendLine();
             md.AppendLine("| Scenario | Part | GPU ms A | GPU ms B | Change |");
             md.AppendLine("|---|---|---:|---:|---:|");
@@ -317,9 +317,9 @@ public static class Pages
         string last = "";
         foreach (var (s, p) in parts)
         {
-            if (s.Name != last && r.Scenarios.Count > 1)
-                html.Append($"<tr class=\"group\"><th colspan=\"10\">{E(s.Name)}</th></tr>");
-            last = s.Name;
+            if (Label(s) != last && r.Scenarios.Count > 1)
+                html.Append($"<tr class=\"group\"><th colspan=\"10\">{E(Label(s))}</th></tr>");
+            last = Label(s);
             var shot = $"{s.Name}_{p.Name}";
             string frame = F(p.FrameMsMedian, "0.0");
             if (p.FrameMsRange is [var lo, var hi])
@@ -335,13 +335,17 @@ public static class Pages
         html.Append("</tbody></table></div></section>");
     }
 
-    // An A/B run: each part's GPU time with the setting (B) and without (A), and whether it moved past the noise
+    // A scenario's name, with its side in an A/B run
+    private static string Label(ScenarioRecord s) => s.Variant is { } v ? $"{s.Name} ({v})" : s.Name;
+
+    // An A/B run: each part's GPU time with the setting changed (B) and as the run had it (A), and whether it moved
+    // past the noise
     private static void ABTable(StringBuilder html, RunRecord r)
     {
         var ab = AB(r);
         if (ab.Count == 0)
             return;
-        html.Append($"<section><h2>A/B</h2><p class=\"lead\">B played with {E(r.Fact("A/B") ?? "the setting changed")}, A without, in sessions taken in turn. A change is marked past the noise: ranges that don't overlap, or with one measuring each, the part's limit.</p>");
+        html.Append($"<section><h2>A/B</h2><p class=\"lead\">B played with {E(r.Fact("A/B") ?? "the setting changed")}, A with the run's own value of it, in sessions taken in turn. A change is marked past the noise: ranges that don't overlap, or with one measuring each, the part's limit.</p>");
         html.Append("<div class=\"table-scroll\"><table class=\"parts\"><thead><tr><th>Part</th><th>A ms</th><th>B ms</th><th>Change</th></tr></thead><tbody>");
         foreach (var (scenario, a, b, moved, change) in ab)
         {
@@ -351,8 +355,8 @@ public static class Pages
         html.Append("</tbody></table></div></section>");
     }
 
-    // frames.csv by scenario (the first session and pass that played it): for each frame the seconds since the scenario
-    // began, the part, frame and GPU ms, the game's clock and the speed asked for
+    // frames.csv by scenario (the first session and measured pass that played it, not the warm-up): for each frame
+    // the seconds since the scenario began, the part, frame and GPU ms, the game's clock and the speed asked for
     private sealed record Sample(double T, string Part, double FrameMs, double GpuMs, double Game, double Asked);
 
     private static Dictionary<string, List<Sample>> Timelines(string dir)
@@ -360,7 +364,7 @@ public static class Pages
         var all = new Dictionary<string, List<Sample>>();
         var starts = new Dictionary<string, double>();
         var first = new Dictionary<string, (int, int)>();
-        foreach (var f in FrameLog.Read(dir).Where(f => f.Scenario.Length > 0))
+        foreach (var f in FrameLog.Read(dir).Where(f => f.Scenario.Length > 0 && f.Pass > 0))
         {
             if (!first.TryGetValue(f.Scenario, out var played))
                 first[f.Scenario] = played = (f.Session, f.Pass);

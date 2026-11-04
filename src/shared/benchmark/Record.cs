@@ -21,6 +21,10 @@ public sealed record Finding(Severity Severity, string Code, string Text);
 // A fact about the Mac or the run, in the order the report lists them
 public sealed record Fact(string Key, string Value);
 
+// GPU ms a frame over the measured parts, weighted by their length as the headline is: in the warm-up pass, and in
+// the measured passes of the same game
+public sealed record WarmUpRecord(double? GpuMs, double? MeasuredGpuMs);
+
 public sealed class RunRecord
 {
     public const int CurrentSchema = 3;
@@ -47,6 +51,9 @@ public sealed class RunRecord
     // The size in pixels of the images the game presented
     public string? Drawable { get; set; }
     public List<ScenarioRecord> Scenarios { get; set; } = [];
+    // benchmark.sh measure's warm-up pass, left out of the numbers: its GPU time and the measured passes' in the same
+    // game
+    public WarmUpRecord? WarmUp { get; set; }
 
     [JsonIgnore]
     public bool InGame => Start.StartsWith("in the running game", StringComparison.Ordinal);

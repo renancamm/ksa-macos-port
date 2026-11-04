@@ -25,6 +25,8 @@ public static partial class Program
     {
         if (Load(Unpacked(run)) is not { } record)
             return $"no run's record in {run}";
+        if (record.Scenarios.Any(s => s.Variant != null))
+            return "that run is an A/B run: its report sets its two sides against each other.";
         if (record.Mode != mode)
             return $"that run played in {record.Mode} mode and this one plays in {mode} mode: neither their numbers nor their screenshots would compare.";
         var scenarios = record.Scenarios.Select(s => s.Name).ToHashSet();
@@ -44,6 +46,12 @@ public static partial class Program
         var (ra, rb) = (Load(a), Load(b));
         if (ra == null || rb == null)
             return 2;
+        // An A/B run's two sides are set against each other in its own report
+        if (new[] { (a, ra), (b, rb) }.FirstOrDefault(x => x.Item2.Scenarios.Any(s => s.Variant != null)) is ({ } ab, not null))
+        {
+            Console.Error.WriteLine($"{Path.GetFileName(ab.TrimEnd('/'))} is an A/B run: its report sets its two sides against each other (./benchmark.sh report {Path.GetFileName(ab.TrimEnd('/'))}).");
+            return 2;
+        }
         var (warpA, warpB) = (Parts(ra, warp: true), Parts(rb, warp: true));
         if (ra.Mode != rb.Mode)
         {

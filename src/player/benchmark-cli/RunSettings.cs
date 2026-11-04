@@ -113,7 +113,7 @@ public static partial class Program
                 Die($"--port: the app's table of the port settings can't be read: {e.Message}");
             }
             var values = new Dictionary<string, string>();
-            foreach (var kv in _ab.Length > 0 ? _ports.Append(_ab) : _ports)
+            foreach (var kv in _ab.Length > 0 ? _ports.Prepend(_ab) : _ports)
             {
                 if (!kv.Contains('='))
                     Die($"--port needs key=value, not '{kv}'.");
@@ -124,12 +124,37 @@ public static partial class Program
                     Die($"--port {key}={value}: it takes {setting.Values()}.");
                 values[key] = value;
             }
-            // --ab's setting is B's alone: checked here, written before each of B's sessions
-            if (_ab.Length > 0)
-                values.Remove(_ab[.._ab.IndexOf('=')]);
+            // --ab's setting is B's alone: checked here, written before each of B's sessions. A plays it as --port
+            // gives it, or the run's settings have it, or its default, and that must differ from B's
+            string abKey = _ab.Length > 0 ? _ab[.._ab.IndexOf('=')] : "";
+            if (_ab.Length > 0 && !_ports.Any(kv => kv.StartsWith(abKey + "=", StringComparison.Ordinal)))
+                values.Remove(abKey);
             PortSettings.FilePath = portSettings;
             PortSettings.Save(values);
+            if (_ab.Length == 0)
+                return;
+            // As the game plays them: a setting whose needs the run's settings don't meet plays its default on both
+            // sides
+            var abSetting = PortSettings.Get(abKey)!;
+            var file = PortSettings.ReadFile();
+            string ValueOf(PortSetting s) => file.GetValueOrDefault(s.Key) ?? s.Default;
+            string a = ValueOf(abSetting), b = _ab[(abKey.Length + 1)..];
+            if (!PortSettings.Met(abSetting, ValueOf, _ => true))
+                Die($"--ab {_ab}: {abKey} needs {string.Join(" and ", abSetting.Needs)}, which the run's settings don't have, so A " +
+                    "and B would play the same. Add it with --port.");
+            if (SameValue(abSetting, a, b))
+                Die($"--ab {_ab}: A has {abKey} = {a} too, so A and B would play the same. Give A another value with " +
+                    $"--port {abKey}=<value>, or B another with --ab.");
         }
+
+        // Whether two values of a setting are the same to the game: numbers by their value ("1" and "1.0")
+        private static bool SameValue(PortSetting setting, string a, string b) => setting.Kind switch
+        {
+            "int" or "scale" or "number" => double.TryParse(a, NumberStyles.Float, CultureInfo.InvariantCulture, out var x) &&
+                                            double.TryParse(b, NumberStyles.Float, CultureInfo.InvariantCulture, out var y) && x == y,
+            "numbers" => PortSetting.Numbers(a) is { } na && PortSetting.Numbers(b) is { } nb && na.SequenceEqual(nb),
+            _ => a == b,
+        };
 
         // measure --ab: the port settings of A (the run's) or B (the run's with the setting changed), written before each
         // session (the launcher reads them when the game starts)

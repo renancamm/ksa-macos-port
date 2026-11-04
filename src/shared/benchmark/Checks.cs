@@ -67,7 +67,7 @@ public static class Checks
 
     // A step that failed, a vehicle that broke up, a screenshot missing, a view that didn't settle
     private static IEnumerable<Finding> StepErrors(RunEvidence run) =>
-        run.Events.Where(e => e.Type == "error").Select(e => Fail("step", $"{(e.Pass > 1 ? $"pass {e.Pass}: " : "")}{e.Scenario}: {e.Text}"));
+        run.Events.Where(e => e.Type == "error").Select(e => Fail("step", $"{(e.Pass == 0 ? "warm-up: " : e.Pass > 1 ? $"pass {e.Pass}: " : "")}{e.Scenario}: {e.Text}"));
 
     // Screenshots that show something went wrong with no other sign of it, which a comparison would only catch against a
     // run that had a picture: one colour from edge to edge, or mostly pure white
@@ -229,19 +229,20 @@ public static class Checks
         }
     }
 
-    // A Mac's heat moves GPU time: after a rest a run reads up to about a tenth low until the chip warms. With a warm-up pass
-    // (benchmark.sh measure), what it showed; without one, how long the Mac had rested since the run before ended
+    // A Mac's heat moves GPU time: after a rest a run reads up to about a tenth low until the chip warms. With a
+    // warm-up pass (benchmark.sh measure), what it showed; without one, how long the Mac had rested since the run
+    // before ended (a run from the Mac Port tab follows the player's own playing, not a rest)
     private static IEnumerable<Finding> Heat(RunEvidence run)
     {
-        var gpu = run.Record.Headline().GpuMs;
-        if (run.Events.FirstOrDefault(e => e.Type == "warmed") is { } warmed)
+        if (run.Record.WarmUp is { } warmUp)
         {
-            if (warmed.Value is { } warm && gpu is { } measured && warm < measured * 0.95)
+            if (warmUp is { GpuMs: { } warm, MeasuredGpuMs: { } measured } && warm < measured * 0.95)
                 yield return Note("warming", string.Create(CultureInfo.InvariantCulture,
                     $"the Mac warmed up during the warm-up pass (GPU {warm:F1} ms a frame, then {measured:F1} in the measured passes): it is left out of the numbers"));
             yield break;
         }
-        if (run.Events.FirstOrDefault() is not { } first || Path.GetDirectoryName(Path.GetFullPath(run.Dir).TrimEnd('/')) is not { } folder)
+        if (run.Record.InGame || run.Record.Start.StartsWith("a new game, restarted", StringComparison.Ordinal) ||
+            run.Events.FirstOrDefault() is not { } first || Path.GetDirectoryName(Path.GetFullPath(run.Dir).TrimEnd('/')) is not { } folder)
             yield break;
         var name = Path.GetFileName(Path.GetFullPath(run.Dir).TrimEnd('/'));
         var before = Directory.GetDirectories(folder).Select(d => Path.GetFileName(d)!)

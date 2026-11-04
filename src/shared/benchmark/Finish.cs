@@ -54,8 +54,11 @@ public static class Finish
         SetLimits(record, options);
         record.Facts = Facts.Gather(dir, options.App, options.Facts, logs.FirstOrDefault().Lines ?? [], asksMac);
         if (events.FirstOrDefault(e => e.Type == "warmed") is { } warmed)
-            record.Facts.Add(new Fact("Warm-up", warmed.Value is { } gpu
-                ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"a pass first, left out (GPU {gpu:F1} ms a frame)") : "a pass first, left out"));
+        {
+            record.WarmUp = WarmUp(record, frames, warmed.Session);
+            record.Facts.Add(new Fact("Warm-up", record.WarmUp.GpuMs is { } gpu
+                ? $"a pass first, left out (GPU {gpu:F1} ms a frame)" : "a pass first, left out"));
+        }
         var crashes = CrashReports(record.Started.ToUniversalTime());
         record.Findings = Checks.Run(new RunEvidence(dir, record, events, logs, crashes));
         record.Status = events.Any(e => e.Type == "stopped") ? Status.Stopped : record.Problems.Any() ? Status.Failed : Status.Passed;
@@ -66,11 +69,12 @@ public static class Finish
     }
 
     // The scenarios as they played, in order: each part's measurings (sessions, passes, but the warm-up's) summed up from
-    // their frames and merged, the screenshots of the first measured pass with their limits. An A/B run's scenarios are
-    // there once for each side, the sessions of each merged
+    // their frames and merged, the screenshots of the first pass (a warm-up's too) with their limits. An A/B run's
+    // scenarios are there once for each side, the sessions of each merged
     private static List<ScenarioRecord> Scenarios(List<RunEvent> events, List<FrameRow> frames)
     {
-        var variants = events.Where(e => e.Type == "session").ToDictionary(e => e.Session, e => e.Text is { Length: > 0 } v ? v : null);
+        var variants = events.Where(e => e.Type == "session").GroupBy(e => e.Session)
+            .ToDictionary(g => g.Key, g => g.First().Text is { Length: > 0 } v ? v : null);
         string? VariantOf(int session) => variants.GetValueOrDefault(session);
         var scenarios = new List<ScenarioRecord>();
         foreach (var e in events.Where(e => e.Type == "scenario" && e.Scenario != null))
@@ -98,12 +102,29 @@ public static class Finish
                 if (measurings.Count > 0)
                     scenario.Parts.Add(Summary.Merge(measurings));
             }
-            var firstPass = events.Where(e => e.Type == "shot" && e.Scenario == scenario.Name && e.Pass > 0 && VariantOf(e.Session) == scenario.Variant)
+            var firstPass = events.Where(e => e.Type == "shot" && e.Scenario == scenario.Name && VariantOf(e.Session) == scenario.Variant)
                 .GroupBy(e => (e.Session, e.Pass)).FirstOrDefault();
             foreach (var shot in firstPass ?? Enumerable.Empty<RunEvent>())
                 scenario.Shots.Add(new ShotRecord(shot.Part!, shot.Text!, shot.Value ?? NoiseProfile.DefaultShotLimit(scenario.Kind)));
         }
         return scenarios;
+    }
+
+    // The warm-up pass's GPU time against the measured passes' in the game it warmed, both as the headline weighs its
+    // parts
+    private static WarmUpRecord WarmUp(RunRecord record, List<FrameRow> frames, int session)
+    {
+        var timed = record.Scenarios.Where(s => s.Kind == Kind.Timed).Select(s => s.Name).ToHashSet();
+        var first = frames.Where(f => f.Part.Length > 0 && !timed.Contains(f.Scenario) && f.Session == session).ToList();
+        static double? Gpu(IEnumerable<FrameRow> rows)
+        {
+            double weighted = 0, seconds = 0;
+            foreach (var part in rows.GroupBy(r => (r.Scenario, r.Part, r.Pass)))
+                if (Summary.Of(part.Key.Part, part.ToList(), null, null) is { GpuMsMedian: { } gpu, Seconds: > 0 } p)
+                    (weighted, seconds) = (weighted + gpu * p.Seconds, seconds + p.Seconds);
+            return seconds > 0 ? Math.Round(weighted / seconds, 2) : null;
+        }
+        return new WarmUpRecord(Gpu(first.Where(f => f.Pass == 0)), Gpu(first.Where(f => f.Pass > 0)));
     }
 
     // Each part's limit from its test's noise profile: benchmark.sh calibrate's (RunOptions.NoiseFolder) before the one in

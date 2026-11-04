@@ -355,9 +355,9 @@ a texture is loaded, so macOS can page them out when memory runs short and read 
 
 ### The benchmark
 
-The benchmark measures how the game runs on your Mac with three tests, each played in a game of its own: the Mixed Test
-(rockets, smoke, an explosion, a kitten and a cockpit, each view standing still), the Planetary Tour (a flight from
-Earth to Jupiter) and the Warp Test (how far time warp gets in a fixed time). It writes a report you can compare with
+The benchmark measures how the game runs on your Mac with three tests, each starting in a new game's world: the
+Mixed Test (rockets, smoke, an explosion, a kitten and a cockpit, each view standing still), the Planetary Tour (a
+flight from Earth to Jupiter) and the Warp Test (how far time warp gets in a fixed time). It writes a report you can compare with
 another run or share. Run it from the Mac Port tab (**RUN** on a test's row), or from the port folder:
 
 ```bash

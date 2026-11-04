@@ -1,6 +1,6 @@
 # Benchmark
 
-The port's benchmark measures how KSA runs on your Mac. It has three tests, each played in a game of its own. It
+The port's benchmark measures how KSA runs on your Mac. It has three tests, each starting in a new game's world. It
 measures each part and writes a report you can compare with another run or share.
 
 | Test | What it plays | What it is for |
@@ -108,7 +108,7 @@ The same tests are the project's tool for looking into the driver, the shaders a
 | Command | What it does |
 |---|---|
 | `check [test]` | the standard test of a change: the test (default `mixed`) at a fresh install's settings, compared with the baseline `main` of that test, or else the last run of it that passed played the same way; exits with 1 when screenshots differ |
-| `measure [test] [--repeat n] [--sessions n] [--ab key=value]` | numbers to judge a change by: a warm-up pass first, left out of the numbers, then `n` passes (3) in one game session; the report shows each part's median and range; `--sessions` plays more games of it; `--ab` plays games with the port setting `key=value` (B) and without (A) in turn, and sets B against A part by part |
+| `measure [test] [--repeat n] [--sessions n] [--ab key=value]` | numbers to judge a change by: a warm-up pass first, left out of the numbers, then `n` passes (3) in one game session; the report shows each part's median and range; `--sessions` plays more games of it; `--ab` plays games with the port setting `key=value` (B) and as the run has it (A, `--port` can give its value) in turn, and sets B against A part by part |
 | `investigate <tool> <places...>` | a tool on places jumped to, or a whole test (below) |
 | `calibrate [test] [n]` | how much a test moves between runs of the same build on this Mac: `n` runs (3) at a fresh install's settings, written as the test's noise profile |
 | `baseline [set <name> [run...] \| remove <name>]` | names runs, one of each test, to compare with; a baseline's name stands for its run wherever a run is named, and `clean` keeps it |
@@ -123,15 +123,18 @@ The same tests are the project's tool for looking into the driver, the shaders a
 ```
 
 A Mac's heat moves GPU time: after a rest a run reads up to about a tenth low until the chip warms up. `measure`'s
-warm-up pass takes care of that, and every run notes how long the Mac had rested before it.
+warm-up pass takes care of that. A `benchmark.sh` run without one notes when the Mac had rested more than ten minutes
+before it.
 
 ### Noise profiles
 
-Each test has a noise profile, `lineup/noise/<test>.json`: how much each screenshot and each part's GPU time moved
-between runs of the same build, and the limit a comparison holds it to (three times that). `calibrate` measures it on
-your Mac and writes it to the benchmarks folder's `noise/`, which runs and comparisons on that Mac use from then on;
-copied into `lineup/noise/` it ships with the app. A view standing still gets at least 1 % of its blocks, a view of the
-flight 3 %; the Warp Test's screenshots are not compared, since the game's clock is wherever it got to.
+The Mixed Test and the Planetary Tour have a noise profile, `lineup/noise/<test>.json`: how much each screenshot and
+each part's GPU time moved between runs of the same build, and the limit a comparison holds it to (three times that,
+2 % at least). `calibrate` measures it on your Mac and writes it to the benchmarks folder's `noise/`, which runs and
+comparisons on that Mac use from then on, the Mac Port tab's runs too; copied into `lineup/noise/` it ships with the
+app. A view standing still gets at least 1 % of its blocks, a view of the flight 3 %. The Warp Test has no profile:
+its screenshots are not compared, since the game's clock is wherever it got to, and its parts are the speed time warp
+reached.
 
 ### The tools
 
@@ -226,6 +229,10 @@ table when it starts. Around it:
 A test starts in a game of its own and goes through its views and places in the same order, so the clouds and the sea,
 which change with where the camera has been, look the same every run without being put back.
 
+One thing still moves between runs: how the giga rocket breaks up comes from the game's physics, and with it whether
+about 25 of its boosters' exhaust lights still burn in the explosion view. Their shadows add about 3,800 draws, up to
+2 ms of GPU time, and nothing the screenshot shows; a noise profile calibrated on your Mac allows for it.
+
 ### A run's record
 
 The director measures nothing itself. It writes what happens to `events.jsonl` (a scenario starting, a part opened and
@@ -235,7 +242,7 @@ memory pressure). When the run ends, one step makes its record, `run.json`, from
 ([`../../shared/benchmark/Finish.cs`](../../shared/benchmark/Finish.cs)): each part's numbers from its frames, the facts
 about the Mac and the settings, and one list of checks that decides what fails the run and what is worth knowing. The
 report, its page, the comparison and the list of runs all read records. `benchmark.sh` and the Mac Port tab's runs make
-it the same way; a run made before this record had its report read into one.
+it the same way; for a run with a `report.json` and no `run.json`, the report is read into a record.
 
 A game counts as hung when its last heartbeat is a minute old, three in the Warp Test or with a tool that holds a
 checkpoint ([`Watchdog.cs`](../../shared/benchmark/Watchdog.cs)): `benchmark.sh` and the tab's runs stop it the same way,
@@ -279,7 +286,8 @@ The rockets and the capsule in `lineup/vehicles/` were built for the tests.
 `./benchmark.sh explore` starts the benchmark's game as a run would, with its clock paused so the light matches the
 flight's. Fly the free camera to a place, open the console (`\`) and type `benchkey <name>`: the place is written as a
 `@key` line to `keys.txt` in a new run folder and copied to the clipboard, ready to paste into `benchmark.txt`.
-`./build.sh --install` puts the tests into the app. After a change to a scenario, `calibrate` its test again.
+`./build.sh --install` puts the tests into the app. After a change to a scenario of the Mixed Test or the Tour,
+`calibrate` its test again.
 
 ## Options and files
 
@@ -302,7 +310,7 @@ flight's. Fly the free camera to a place, open the console (`\`) and type `bench
 |---|---|
 | `list` | the tests, their scenarios and their places |
 | `runs [n]` | your last runs (15, or n), the newest first |
-| `report [run]` | a run's report in the terminal, and its page in your browser (default: the last run) |
+| `report [run] [test]` | a run's report in the terminal, and its page in your browser (default: the last run; a baseline with runs of several tests needs the test) |
 | `compare [run] [run]` | how the second run differs from the first (with one run: against the last; with none: the last against the one before it); exits with 1 when screenshots differ, 2 when the runs don't compare |
 | `clean [--keep n] [--yes]` | delete all but your last runs (30, or n) and the baselines' runs, after asking (`--yes`: without asking); only folders a run leaves |
 | `check`, `measure`, `investigate`, `calibrate`, `baseline`, `explore` | for work on the port (above) |

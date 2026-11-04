@@ -215,9 +215,15 @@ public static partial class Program
             // the time slower Macs spend catching up at checkpoints. Once playing, the director writes a heartbeat event
             // every second: a game whose heartbeat gets old has hung (Watchdog.cs).
             var lengths = Lengths();
-            int length = (int)lengths.Sum(l => l.Seconds);
+            // A pass on a slow Mac: a flight or a timed scenario plays its length, twice it with catching up; a views
+            // scenario runs its setup in small steps, a few times slower than its length, and each of its views waits
+            // up to 20 s to settle before it is measured and shot
+            static double Pass(Scenario s) => s.Kind == Kind.Views
+                ? s.Length * 10 + 30 * s.Steps.Count(st => st.Words[0] is "@shot" or "@measure")
+                : s.Length * 2;
+            int pass = (int)lengths.Sum(l => _lineup.Scenario(l.Section) is { } s ? Pass(s) : l.Seconds * 2);
             // measure plays a warm-up pass and its passes in each session
-            int timeout = length * 2 * (_repeat + (_purpose == Purpose.Measure ? 1 : 0)) + 300;
+            int timeout = pass * (_repeat + (_purpose == Purpose.Measure ? 1 : 0)) + 300;
             // KSA_BENCH_HANG_LIMIT: other seconds (not a number: no hang check)
             var limit = Environment.GetEnvironmentVariable("KSA_BENCH_HANG_LIMIT");
             int HangLimit(int otherwise) => limit is not { Length: > 0 } ? otherwise : int.TryParse(limit, out var s) ? s : int.MaxValue;
@@ -239,12 +245,13 @@ public static partial class Program
                     "tour" => "about 5 minutes",
                     "warp" => "about 3 minutes",
                     "full" => "about 9 minutes",
-                    _ => $"about {(length + 60) / 60} minutes",
+                    _ => $"about {((int)lengths.Sum(l => l.Seconds) + 60) / 60} minutes",
                 };
                 if (_test.Length > 0)
                     what = $"{_test}, {what}";
+                int games = _sessions * (_ab.Length > 0 ? 2 : 1);
                 if (_purpose == Purpose.Measure)
-                    what = $"{what} a pass, a warm-up and {_repeat} pass{(_repeat > 1 ? "es" : "")} in each of {_sessions * (_ab.Length > 0 ? 2 : 1)} game session{(_sessions * (_ab.Length > 0 ? 2 : 1) > 1 ? "s" : "")}";
+                    what = $"{what} a pass, a warm-up and {_repeat} pass{(_repeat > 1 ? "es" : "")} {(games > 1 ? $"in each of {games} game sessions" : "in one game session")}";
                 Output.Step($"Benchmarking KSA {_installed} ({what})");
                 Output.Info("The game takes over the screen. Leave the mouse and keyboard alone until it is done, or press Ctrl-C here to stop it.");
             }

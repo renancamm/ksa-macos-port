@@ -24,7 +24,7 @@ public static partial class Program
         run's folder to share if you like.
 
         Usage: ./benchmark.sh [run] [options] [mixed | tour | warp | full | <places...>]
-               ./benchmark.sh list | runs [n] | report [run] | compare [run] [run] | clean [--keep n] [--yes]
+               ./benchmark.sh list | runs [n] | report [run] [test] | compare [run] [run] | clean [--keep n] [--yes]
           mixed      the Mixed Test (the default, about a minute): rockets, smoke, an explosion, a kitten and a cockpit, each
                      view standing still, the game paused
           tour       the Planetary Tour (about 5 minutes): the flight from Earth to Jupiter
@@ -69,7 +69,7 @@ public static partial class Program
           ./benchmark.sh measure [test] [--repeat n] [--sessions n] [--ab key=value] [options]
                              numbers to judge a change by: a warm-up pass first (left out), then n passes (3) in one game
                              session, each part's median and range; --sessions plays more games of it; --ab plays games with
-                             the port setting key=value (B) and without (A) in turn and sets B against A, part by part
+                             the port setting key=value (B) and as the run has it (A) in turn and sets B against A, part by part
           ./benchmark.sh calibrate [test] [n]
                              how much the test moves between runs of the same build on this Mac: n runs (3) at a fresh
                              install's settings, the spread of each screenshot and part, written as the test's noise profile
@@ -128,7 +128,7 @@ public static partial class Program
             {
                 ["list", ..] => ListTests(),
                 ["runs", .. var n] => RunsCommand(n.Take(1).ToArray()),
-                ["report", .. var run] => ReportCommand(run.Length > 0 ? run[0] : "last"),
+                ["report", .. var run] => ReportCommand(run.Length > 0 ? run[0] : "last", run.Length > 1 ? run[1] : null),
                 ["compare", .. var runs] => CompareCommand(runs),
                 ["clean", .. var rest] => Clean(rest),
                 ["baseline", .. var rest] => BaselineCommand(rest),
@@ -241,9 +241,10 @@ public static partial class Program
         return status;
     }
 
-    private static int ReportCommand(string name)
+    // A run, or a baseline's run of a test
+    private static int ReportCommand(string name, string? test)
     {
-        var run = RunFolder(name);
+        var run = RunFolder(name, test);
         if (!Directory.Exists(run))
             Die("report takes a run's folder, not its zip.");
         if (!File.Exists(Path.Combine(run, "report.html")) && RunRecord.Read(run) is { } record)

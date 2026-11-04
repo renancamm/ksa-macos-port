@@ -304,7 +304,9 @@ public static class Runs
         return new RunOptions
         {
             Script = script, Out = output, Only = string.Join(' ', tests.SelectMany(t => t.Scenarios)), Test = _test, Stay = true,
-            Mode = string.Join(' ', tests.Select(t => Lineup.Name(t.Kind)))
+            Mode = string.Join(' ', tests.Select(t => Lineup.Name(t.Kind))),
+            // The noise profiles benchmark.sh calibrate measured on this Mac, next to the runs
+            NoiseFolder = Path.GetDirectoryName(output) ?? ""
         };
     }
 

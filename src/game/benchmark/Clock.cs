@@ -66,6 +66,7 @@ internal sealed class Clock
     {
         Script = 0;
         Resync();
+        GameStart = GameTarget;
     }
 
     // The game's clock taken as it is (after a timed scenario, which keeps no time with the script)

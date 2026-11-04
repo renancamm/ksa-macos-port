@@ -95,14 +95,12 @@ public partial class Director
     private bool _active;
     // RunOptions.Fast: the places chosen jumped to, the game paused on the way, instead of played
     private bool _jump, _shots = true;
-    // Which time the scenarios play in this session (RunOptions.Repeat): 0 the warm-up pass, then 1, 2...; the GPU time of
-    // the warm-up's measured frames
-    private int _pass = 1;
-    private List<double> _warmGpu = new();
-    private ulong _warmPresent;
+    // Which time the scenarios play in this session (RunOptions.Repeat): 0 the warm-up pass, then 1, 2...
+    private int _pass = 1, _firstPass = 1;
 
-    // Whether this pass takes screenshots: the first measured one alone (the others measure)
-    private bool TakesShots => _shots && _pass == 1;
+    // Whether this pass takes screenshots: the first alone, which plays as a run's does (a warm-up's too); the others
+    // measure
+    private bool TakesShots => _shots && _pass == _firstPass;
     private string? _hold;
     private double _nextBeat;
 
@@ -187,7 +185,7 @@ public partial class Director
         }
         _jump = options.Fast;
         _shots = !options.NoShots;
-        _pass = options.WarmUp ? 0 : 1;
+        _pass = _firstPass = options.WarmUp ? 0 : 1;
         _events.Pass = _pass;
         _hold = options.Hold is { Length: > 0 } hold ? hold : null;
         Lineup lineup;
@@ -258,8 +256,6 @@ public partial class Director
         if (_row is { } r)
         {
             _frames?.Add(r.Script, r.Scenario, _measured, r.Phase, r.FrameMs, r.Driver, r.Sim);
-            if (_pass == 0 && _measured != null && r.Driver is { GpuMs: > 0 } d && d.Present != _warmPresent)
-                (_warmPresent, _warmGpu) = (d.Present, _warmGpu.Append(d.GpuMs).ToList());
         }
     }
 
@@ -508,15 +504,13 @@ public partial class Director
     }
 
     // At the end of the scenarios: the next pass, if there is one (true), from the script's start. A measured pass ends
-    // with "done"; the warm-up says what its GPU time was, which the record sets against the measured passes'
+    // with "done", the warm-up with "warmed" (the record sets its frames against the measured passes')
     private bool NextPass()
     {
         if (_pass == 0)
         {
-            var gpu = _warmGpu.OrderBy(x => x).ToList();
-            double median = gpu.Count > 0 ? gpu[gpu.Count / 2] : double.NaN;
-            _events.Add("warmed", value: double.IsNaN(median) ? null : Math.Round(median, 2));
-            Log(FormattableString.Invariant($"warm-up done after {_wall.Elapsed.TotalSeconds:F1} s (GPU {median:F1} ms a frame)"));
+            _events.Add("warmed");
+            Log(FormattableString.Invariant($"warm-up done after {_wall.Elapsed.TotalSeconds:F1} s"));
         }
         else
             _events.Add("done");

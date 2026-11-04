@@ -121,14 +121,14 @@ public static partial class Program
                         return false;
                     // A developer's option of before the verbs: said where it went
                     case "--profile" or "--trace" or "--capture" or "--hud" or "--passes" or "--camera-log" or "--catch" or "--film" or "--hold":
-                        Die($"{a} is a tool now: ./benchmark.sh investigate {a[2..]}{a switch { "--catch" => " <clean run>", "--film" => " <seconds>", _ => "" }} " +
+                        Die($"{a} is a tool of investigate: ./benchmark.sh investigate {a[2..]}{a switch { "--catch" => " <clean run>", "--film" => " <seconds>", _ => "" }} " +
                             $"{(a == "--hold" ? "<place>" : "<places...>")}.");
                         break;
                     case "--repeat":
                         Die("--repeat is for numbers: ./benchmark.sh measure [test] --repeat <n>.");
                         break;
                     case "--explore":
-                        Die("explore is a command now: ./benchmark.sh explore.");
+                        Die("explore is a command of its own: ./benchmark.sh explore.");
                         break;
                     case var o when o.StartsWith('-'):
                         Die($"no option {o} for {_purpose.ToString().ToLowerInvariant()}. ./benchmark.sh --help lists the options.");
@@ -164,7 +164,8 @@ public static partial class Program
             (Directory.Exists(Benchmarks) ? Directory.GetDirectories(Benchmarks) : []).Where(IsRun).OrderByDescending(d => Path.GetFileName(d), StringComparer.Ordinal)
                 .FirstOrDefault(d => RunRecord.Read(d) is { Status: Status.Passed } r && r.Test == test && r.Mode == mode &&
                                      r.Fact("Mode") == mode && r.Fact("Preset") == PresetFact && r.Fact("Settings changed") == ChangedFact &&
-                                     r.Fact("Tools") == "none" && r.Fact("KSA Metal switches") == "none" && r.Fact("A/B") == null);
+                                     r.Fact("Tools") == "none" && r.Fact("KSA Metal switches") == "none" && r.Fact("A/B") == null &&
+                                     r.WarmUp == null && r.Fact("Warm-up") == null && r.Passes == 1);
 
         // The one test what plays belongs to (for a baseline's name): the test, or the test of the places; null for several
         private string? TestPlayed =>
@@ -273,6 +274,8 @@ public static partial class Program
             // --compare: said now, not after the minutes the run takes
             if (_reference.Length > 0)
             {
+                if (_ab.Length > 0)
+                    Die("--compare: an A/B run sets its two sides against each other in its own report.");
                 _reference = RunFolder(_reference, TestPlayed);
                 if (NotComparable(_reference, Mode, _only) is { } why)
                     Die($"--compare: {why}");
