@@ -1,37 +1,42 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Brutal;
 using Brutal.VulkanApi;
 using Brutal.VulkanApi.Abstractions;
+using Core;
 using HarmonyLib;
 using KSA;
 using KSA.Rendering;
 using KSA.Rendering.Planet;
+using KSA.Rendering.Raytracing;
 using RenderCore;
 using RenderCore.Mesh;
 
 namespace KsaMetal.Hooks.Optimizations;
 
 // Far terrain. A view draws the terrain of one body only, the one within 80,000 km of its surface
-// (Camera.GetEffectiveNearbyCelestial), at one level of detail, yet PlanetMeshLibrary.GenerateInUse builds every level
-// of every terrain mesh collection the system uses (18 levels of 20-60 MB each, 1.4 GB in the solar system) and keeps
-// them all. Now, as soon as loading has built a collection, it keeps only its finest level, which holds the
-// acceleration structure ground clutter is placed with (clutter's own sets name it), except the collection of the
-// system's home body; its other levels point at the finest's buffers, so whatever is written with them meanwhile stays
-// valid. A collection is built again on worker threads when one of its bodies comes within 150,000 km of a camera,
-// and swapped in at the start of a frame (Program.OnFrameCelestials, before the frame's views are prepared); one a
-// view is about to draw that isn't built (a jump: a vessel switch, a benchmark place) is built there and waited for. A
-// collection whose bodies have all been farther than 300,000 km for 5 s, and that no view drew for more frames than
-// the GPU can have in flight (PlanetViewportData.OnPreRender says which it draws), is let go again. The two kinds of
-// per-level sets the game writes once, when its planet renderer is built (PlanetRenderer._meshGeometrySets,
-// PlanetFrustumCulling._cullingDescriptorSets), are written again each time, while no frame in flight uses them; a
-// collection drawn while let go (the camera moved after the frame's start) draws its finest level at every level, and
-// is swapped in after the GPU is idle. Ocean collections stay as loading built them.
+// (Camera.GetEffectiveNearbyCelestial), at one level of detail, and ground clutter is placed on that body only, by ray
+// queries against its collection's finest level; yet PlanetMeshLibrary.GenerateInUse builds every level of every
+// terrain mesh collection the system uses (18 levels of 12-60 MB each, 1.4 GB in the solar system) and an acceleration
+// structure of the finest level for each one with clutter (~170 MB), and keeps them all. Now, as soon as loading has
+// built a collection, it keeps only its smallest level, except the collection of the system's home body; its other
+// levels point at the smallest's buffers, so whatever is written with them meanwhile stays valid, and loading doesn't
+// build its acceleration structure: the finest level holds one without a handle, which clutter's sets take as none
+// (clutter never places on a body no view is near, and GroundClutterRenderer.GenerateGroundClutter is skipped on a
+// body whose finest level holds it, after a failure). A collection is built again on worker threads, the acceleration
+// structure with it, when one of its bodies comes within 150,000 km of a camera, and swapped in at the start of a frame
+// (Program.OnFrameCelestials, before the frame's views are prepared); one a view is about to draw that isn't built (a
+// jump: a vessel switch, a benchmark place) is built there and waited for, and so is one the camera reached after the
+// frame's start, before the planet renderer prepares its views. A collection whose bodies have all been farther than
+// 300,000 km for 5 s, and that no view drew for more frames than the GPU can have in flight
+// (PlanetViewportData.OnPreRender says which it draws), is let go again. The sets the game writes once with a
+// collection's buffers (PlanetRenderer._meshGeometrySets, PlanetFrustumCulling._cullingDescriptorSets, the generate sets
+// of each ClutterCubeCellGrid) are written again each time, while no frame in flight uses them. Ocean collections stay
+// as loading built them. Without ray queries clutter places with a BVH of the finest level, which then stays as before.
 //
 // CubeMesh.Generate runs on worker threads only: on the main thread, its Loading.Task draws and presents a whole
 // loading screen frame (Loading.OnFrame), in the middle of the game's frame. The game's adjacency build isn't
@@ -45,16 +50,25 @@ internal static class FarTerrain
     // More frames than the GPU can have in flight (the game's MaxFramesInFlight, its compute pool's frame)
     private const long QuietFrames = 10;
 
-    private sealed class Collection(PlanetMeshCollection meshes, List<Celestial> bodies)
+    private sealed class Collection(PlanetMeshCollection meshes, List<Celestial> bodies, bool raytraced, bool home)
     {
         public readonly PlanetMeshCollection Meshes = meshes;
         public List<Celestial> Bodies = bodies;
+        // Loading asked for an acceleration structure of the finest level (a body with ground clutter)
+        public readonly bool Raytraced = raytraced;
+        public readonly bool Home = home;
+        // The level a let-go collection keeps, its smallest; the finest when clutter places with a BVH
+        public int Kept;
         public bool Built = true;
-        public Task<CubeMesh[]>? Building;
+        public Task<CubeMesh?[]>? Building;
         public long NeededFrame = -1;  // the last frame a view was about to draw it, at the frame's start
         public long DrawnFrame = -1;  // the last frame a view drew it
         public long FarSince = -1;  // ms on Clock
     }
+
+    // ClutterCubeCellGrid.CreateRayQueriesGenerateWrites
+    private delegate void GenerateWrites(ClutterCubeCellGrid grid, Renderer renderer, Celestial celestial, CubeMesh finest,
+        int shaderSlot, int frameIndex, ref Span<VkWriteDescriptorSet> writes);
 
     private static readonly Dictionary<PlanetMeshCollection, Collection> Collections = new();
     private static readonly HashSet<Collection> Needed = new();
@@ -63,6 +77,7 @@ internal static class FarTerrain
     private static CelestialSystem? _system;
     private static long _frame;
     private static FieldInfo? _geometrySets, _culling, _cullingSets;
+    private static GenerateWrites? _clutterWrites;
     private static bool _failed;  // every collection built again, and nothing freed from then on (Hooks.Fail)
     private static bool _restored;
 
@@ -72,19 +87,26 @@ internal static class FarTerrain
         var celestials = Find.Method(typeof(Program), "OnFrameCelestials");
         var disposeAll = Find.Method(typeof(PlanetMeshLibrary), nameof(PlanetMeshLibrary.DisposeAll));
         var prepare = Find.Method(typeof(PlanetViewportData), nameof(PlanetViewportData.OnPreRender));
+        var planets = Find.Method(typeof(PlanetRenderer), nameof(PlanetRenderer.OnPreRender));
+        var clutter = Find.Method(typeof(GroundClutterRenderer), "GenerateGroundClutter");
         _geometrySets = Find.Field(typeof(PlanetRenderer), "_meshGeometrySets");
         _culling = Find.Field(typeof(PlanetRenderer), "_planetFrustumCulling");
         _cullingSets = Find.Field(typeof(PlanetFrustumCulling), "_cullingDescriptorSets");
-        harmony.Patch(generate, postfix: new HarmonyMethod(typeof(FarTerrain), nameof(CollectionLoaded)));
+        _clutterWrites = AccessTools.MethodDelegate<GenerateWrites>(
+            Find.Method(typeof(ClutterCubeCellGrid), "CreateRayQueriesGenerateWrites"));
+        harmony.Patch(generate, prefix: new HarmonyMethod(typeof(FarTerrain), nameof(CollectionLoading)),
+            postfix: new HarmonyMethod(typeof(FarTerrain), nameof(CollectionLoaded)));
         harmony.Patch(celestials, postfix: new HarmonyMethod(typeof(FarTerrain), nameof(Frame)));
+        harmony.Patch(planets, prefix: new HarmonyMethod(typeof(FarTerrain), nameof(ViewsPreparing)));
         harmony.Patch(prepare, postfix: new HarmonyMethod(typeof(FarTerrain), nameof(ViewPrepared)));
         harmony.Patch(disposeAll, prefix: new HarmonyMethod(typeof(FarTerrain), nameof(DisposeAllPrefix)));
+        harmony.Patch(clutter, prefix: new HarmonyMethod(typeof(FarTerrain), nameof(ClutterClear)));
         return "on";
     }
 
-    // Loading built a whole collection: a terrain collection of a body other than the home body keeps its finest level
-    // only, before the next collection is built
-    private static void CollectionLoaded(PlanetMeshCollection __instance)
+    // Loading is about to build a collection: a terrain collection of a body other than the home body is built without
+    // its acceleration structure, when clutter places with ray queries
+    private static void CollectionLoading(PlanetMeshCollection __instance, ref PlanetMeshLibrary.GenerateFlags flags)
     {
         if (_failed)
             return;
@@ -96,10 +118,12 @@ internal static class FarTerrain
             var bodies = Bodies(system, __instance);
             if (bodies.Count == 0)
                 return;
-            var collection = Collections[__instance] = new Collection(__instance, bodies);
+            bool raytraced = (flags & PlanetMeshLibrary.GenerateFlags.AccelerationStructure) != 0;
+            bool home = (system.HomeBody as Celestial)?.BodyTemplate?.MeshCollection == __instance;
+            Collections[__instance] = new Collection(__instance, bodies, raytraced, home);
             _system = system;
-            if ((system.HomeBody as Celestial)?.BodyTemplate?.MeshCollection != __instance)
-                Free(collection);
+            if (!home && RayQueries)
+                flags &= ~PlanetMeshLibrary.GenerateFlags.AccelerationStructure;
         }
         catch (Exception e)
         {
@@ -107,6 +131,62 @@ internal static class FarTerrain
             Hooks.Fail(nameof(FarTerrain), e);
         }
     }
+
+    // Loading built it: one of a body other than the home body keeps its smallest level only, before the next
+    // collection is built
+    private static void CollectionLoaded(PlanetMeshCollection __instance)
+    {
+        if (_failed || !Collections.TryGetValue(__instance, out var collection))
+            return;
+        try
+        {
+            collection.Kept = KeptLevel(__instance);
+            if (!collection.Home)
+                Free(collection);
+        }
+        catch (Exception e)
+        {
+            _failed = true;
+            Hooks.Fail(nameof(FarTerrain), e);
+            // Loading was told to skip the acceleration structure: clutter's sets need one (ClutterClear keeps clutter
+            // off this body)
+            var finest = __instance.Items[^1];
+            if (!collection.Home && collection.Raytraced && RayQueries && finest.TopLevelAccelerationStructure == null)
+                finest.TopLevelAccelerationStructure = default(AccelerationStructure);
+        }
+    }
+
+    // Clutter's one dispatch with its generate sets: none on a body whose finest level holds no acceleration structure
+    // (a collection let go, which no view is near, or one not built again after a failure)
+    private static bool ClutterClear(Celestial nearbyCelestial)
+    {
+        try
+        {
+            return !(nearbyCelestial?.BodyTemplate?.MeshCollection is { } meshes && Collections.TryGetValue(meshes, out var c) &&
+                c.Raytraced && RayQueries && !Real(meshes.Items[^1].TopLevelAccelerationStructure));
+        }
+        catch (Exception e)
+        {
+            Hooks.Log($"{nameof(FarTerrain)}: clutter check, {Hooks.Describe(e)}");
+            return true;
+        }
+    }
+
+    private static bool RayQueries => Program.GetRenderer().RayQueriesSupported;
+
+    private static int KeptLevel(PlanetMeshCollection meshes)
+    {
+        var levels = meshes.Items;
+        if (!RayQueries)
+            return levels.Count - 1;
+        int kept = 0;
+        for (int i = 1; i < levels.Count; i++)
+            if (Size(levels[i].Mesh) < Size(levels[kept].Mesh))
+                kept = i;
+        return kept;
+    }
+
+    private static long Size(SimpleVkMesh mesh) => (long)mesh.VertexCount * 16 + (long)mesh.IndexCount * 4;
 
     // A view's terrain for this frame: its nearby body, at one of its collection's levels
     private static void ViewPrepared(PlanetViewportData __instance)
@@ -135,9 +215,56 @@ internal static class FarTerrain
         }
         catch (Exception e)
         {
-            _failed = _restored = true;
-            Hooks.Fail(nameof(FarTerrain), e);
-            Restore();
+            Failed(e);
+        }
+    }
+
+    private static void Failed(Exception e)
+    {
+        _failed = _restored = true;
+        Hooks.Fail(nameof(FarTerrain), e);
+        Restore();
+    }
+
+    // The planet renderer is about to prepare the views and place their clutter: a collection the camera reached after
+    // the frame's start is built now, before anything this frame binds its sets
+    private static void ViewsPreparing()
+    {
+        if (Collections.Count == 0 || _failed)
+            return;
+        try
+        {
+            if (Universe.CurrentSystem == null)
+                return;
+            CollectNeeded();
+            foreach (var c in Needed)
+            {
+                if (!c.Built)
+                    BuildNow(c, "late");
+                c.NeededFrame = _frame;
+            }
+        }
+        catch (Exception e)
+        {
+            Failed(e);
+        }
+    }
+
+    // The collections the views draw this frame: the views PlanetRenderer.OnPreRender prepares, the main one and the
+    // visible secondary ones that show terrain, and their cameras
+    private static void CollectNeeded()
+    {
+        Needed.Clear();
+        Cameras.Clear();
+        foreach (var view in ViewportRegistry.Views)
+        {
+            if (!(view.IsMain() || view.Type == ViewportType.Secondary && view.Visible && view.HasAny(ViewportOptionFlags.RenderTerrain)) ||
+                view.GetCamera() is not { } camera)
+                continue;
+            Cameras.Add(camera);
+            if (camera.GetEffectiveNearbyCelestial()?.BodyTemplate?.MeshCollection is { } meshes &&
+                Collections.TryGetValue(meshes, out var needed))
+                Needed.Add(needed);
         }
     }
 
@@ -153,20 +280,8 @@ internal static class FarTerrain
             foreach (var c in Collections.Values)
                 c.Bodies = Bodies(system, c.Meshes);
         }
-        // The collections the views draw this frame: the views PlanetRenderer.OnPreRender prepares, the main one and the
-        // visible secondary ones that show terrain (the UI, which opens and closes views, runs before this)
-        Needed.Clear();
-        Cameras.Clear();
-        foreach (var view in ViewportRegistry.Views)
-        {
-            if (!(view.IsMain() || view.Type == ViewportType.Secondary && view.Visible && view.HasAny(ViewportOptionFlags.RenderTerrain)) ||
-                view.GetCamera() is not { } camera)
-                continue;
-            Cameras.Add(camera);
-            if (camera.GetEffectiveNearbyCelestial()?.BodyTemplate?.MeshCollection is { } meshes &&
-                Collections.TryGetValue(meshes, out var needed))
-                Needed.Add(needed);
-        }
+        // The UI, which opens and closes views, has run
+        CollectNeeded();
         long now = Clock.ElapsedMilliseconds;
         foreach (var c in Needed)
         {
@@ -230,42 +345,66 @@ internal static class FarTerrain
         return false;
     }
 
-    // Every level but the finest gives its buffers back and points at the finest's; the sets written with them, when
-    // the planet renderer exists, are written again first. No frame in flight uses the collection
+    // An acceleration structure with buffers, not the stand-in of a let-go collection
+    private static bool Real(AccelerationStructure? structure) => structure is { } s && !s.Buffer.IsNull();
+
+    // Every level but the kept one gives its buffers back and points at the kept one's, the finest its acceleration
+    // structures too; the sets written with them, when the planet renderer exists, are written again first. No frame in
+    // flight uses the collection
     private static void Free(Collection c)
     {
         var levels = c.Meshes.Items;
+        var kept = levels[c.Kept];
         var finest = levels[^1];
         var freed = new List<(SimpleVkMesh Mesh, BufferEx Adjacency, BufferEx Distances)>();
-        for (int i = 0; i < levels.Count - 1; i++)
+        var structures = new List<AccelerationStructure>();
+        for (int i = 0; i < levels.Count; i++)
         {
+            if (i == c.Kept)
+                continue;
             var level = levels[i];
-            if (level.Mesh != finest.Mesh)
+            if (level.Mesh != kept.Mesh)
                 freed.Add((level.Mesh, level.AdjacencyBuffer, level.AverageNeighborDistanceBuffer));
-            level.Mesh = finest.Mesh;
-            level.AdjacencyBuffer = finest.AdjacencyBuffer;
-            level.AverageNeighborDistanceBuffer = finest.AverageNeighborDistanceBuffer;
+            level.Mesh = kept.Mesh;
+            level.AdjacencyBuffer = kept.AdjacencyBuffer;
+            level.AverageNeighborDistanceBuffer = kept.AverageNeighborDistanceBuffer;
             // The collection then reads as not loaded: the game's exit leaves it to DisposeAllPrefix
             level.IsLoaded = false;
         }
+        if (c.Raytraced && c.Kept != levels.Count - 1)
+        {
+            if (Real(finest.TopLevelAccelerationStructure))
+                structures.Add(finest.TopLevelAccelerationStructure!.Value);
+            if (Real(finest.BottomLevelAccelerationStructure))
+                structures.Add(finest.BottomLevelAccelerationStructure!.Value);
+            // Clutter's sets need one (ClutterCubeCellGrid.BuildFrameResources throws without); no handle reads as none
+            finest.TopLevelAccelerationStructure = default(AccelerationStructure);
+            finest.BottomLevelAccelerationStructure = null;
+        }
         c.Built = false;
         c.FarSince = -1;
-        WriteSets(c.Meshes);
+        WriteSets(c);
         foreach (var (mesh, adjacency, distances) in freed)
         {
             mesh.Dispose();
             adjacency.Dispose();
             distances.Dispose();
         }
+        var device = Program.GetRenderer().Device;
+        foreach (var structure in structures)
+            structure.Dispose(device);
         Hooks.Log($"{nameof(FarTerrain)}: {c.Meshes.Id} let go");
     }
 
-    // Its levels but the finest, made on a thread of its own and the thread pool, never the main thread
-    private static Task<CubeMesh[]> Build(Collection c)
+    // Its levels but the kept one, the finest with its acceleration structure, made on a thread of its own and the
+    // thread pool, never the main thread
+    private static Task<CubeMesh?[]> Build(Collection c)
     {
-        var levels = c.Meshes.Items.Take(c.Meshes.Items.Count - 1).ToArray();
+        var levels = c.Meshes.Items.ToArray();
+        int kept = c.Kept, finest = levels.Length - 1;
+        bool raytraced = c.Raytraced;
         var renderer = Program.GetRenderer();
-        var result = new TaskCompletionSource<CubeMesh[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var result = new TaskCompletionSource<CubeMesh?[]>(TaskCreationOptions.RunContinuationsAsynchronously);
         var thread = new Thread(() =>
         {
             var built = new CubeMesh?[levels.Length];
@@ -273,10 +412,12 @@ internal static class FarTerrain
             {
                 Parallel.For(0, levels.Length, i =>
                 {
+                    if (i == kept)
+                        return;
                     built[i] = new CubeMesh { Mesh = null!, Id = levels[i].Id, BaseLayer = levels[i].BaseLayer, Layers = levels[i].Layers };
-                    built[i]!.Generate(renderer, false);
+                    built[i]!.Generate(renderer, raytraced && i == finest);
                 });
-                result.SetResult(built!);
+                result.SetResult(built);
             }
             catch (Exception e)
             {
@@ -290,6 +431,7 @@ internal static class FarTerrain
                     if (!level.AverageNeighborDistanceBuffer.IsNull())
                         level.AverageNeighborDistanceBuffer.Dispose();
                     level.Mesh?.Dispose();
+                    DisposeStructures(level, renderer);
                 }
                 result.SetException(e);
             }
@@ -323,14 +465,21 @@ internal static class FarTerrain
         var levels = c.Meshes.Items;
         for (int i = 0; i < built.Length; i++)
         {
-            levels[i].Mesh = built[i].Mesh;
-            levels[i].AdjacencyBuffer = built[i].AdjacencyBuffer;
-            levels[i].AverageNeighborDistanceBuffer = built[i].AverageNeighborDistanceBuffer;
+            if (built[i] is not { } level)
+                continue;
+            levels[i].Mesh = level.Mesh;
+            levels[i].AdjacencyBuffer = level.AdjacencyBuffer;
+            levels[i].AverageNeighborDistanceBuffer = level.AverageNeighborDistanceBuffer;
+            if (Real(level.TopLevelAccelerationStructure))
+            {
+                levels[i].TopLevelAccelerationStructure = level.TopLevelAccelerationStructure;
+                levels[i].BottomLevelAccelerationStructure = level.BottomLevelAccelerationStructure;
+            }
             levels[i].IsLoaded = true;
         }
         c.Built = true;
         c.FarSince = -1;
-        WriteSets(c.Meshes);
+        WriteSets(c);
         Hooks.Log($"{nameof(FarTerrain)}: {c.Meshes.Id} built ({why})");
     }
 
@@ -348,25 +497,26 @@ internal static class FarTerrain
             catch (Exception e)
             {
                 c.Building = null;
-                Hooks.Log($"{nameof(FarTerrain)}: {c.Meshes.Id} not built again ({Hooks.Describe(e)}); its terrain is drawn from its finest level");
+                Hooks.Log($"{nameof(FarTerrain)}: {c.Meshes.Id} not built again ({Hooks.Describe(e)}); its terrain is drawn from its smallest level, without ground clutter");
             }
         }
     }
 
-    // The planet renderer's and frustum culling's per-level sets, from the levels' buffers as they are now. Without a
-    // planet renderer (loading), it writes them itself when it is built
-    private static void WriteSets(PlanetMeshCollection meshes)
+    // The sets written with the collection's buffers, as they are now: the planet renderer's and frustum culling's per
+    // level, and clutter's generate sets of its bodies. Without a planet renderer (loading), they are written when it is
+    // built
+    private static void WriteSets(Collection c)
     {
         if (Program.GetPlanetRenderer() is not { } planets)
             return;
+        var meshes = c.Meshes;
         var renderer = Program.GetRenderer();
         var geometry = (Dictionary<KeyHash, VkDescriptorSet>)_geometrySets!.GetValue(planets)!;
         var culling = (Dictionary<KeyHash, VkDescriptorSet[]>)_cullingSets!.GetValue(_culling!.GetValue(planets))!;
         static VkDescriptorBufferInfo Info(VkBuffer buffer) => new() { Buffer = buffer, Offset = ByteSize.Zero, Range = VK.WHOLE_SIZE };
         Span<VkDescriptorBufferInfo> infos = stackalloc VkDescriptorBufferInfo[4];
-        for (int i = 0; i < meshes.Items.Count - 1; i++)
+        foreach (var level in meshes.Items)
         {
-            var level = meshes.Items[i];
             // As PlanetRenderer.BuildFrameResources writes them
             if (geometry.TryGetValue(level.Hash, out var set))
             {
@@ -387,6 +537,25 @@ internal static class FarTerrain
                     Utils.WriteDescriptorSets(sets[f], default, default, default, default, infos, renderer);
                 }
         }
+        // As ClutterCubeCellGrid.BuildFrameResources writes them, one per view slot and frame slot
+        if (!c.Raytraced || !renderer.RayQueriesSupported || planets.GroundClutterRenderer is not { } clutter)
+            return;
+        var finest = meshes.Items[^1];
+        Span<VkWriteDescriptorSet> writes = stackalloc VkWriteDescriptorSet[13];
+        foreach (var body in c.Bodies)
+        {
+            if (!clutter.PlanetEcotypeRenderData.TryGetValue(body.Hash, out var ecotypes))
+                continue;
+            foreach (var ecotype in ecotypes)
+            {
+                var grid = ecotype.CubeCellGrid;
+                if (!grid.RenderDataInitialized)
+                    continue;
+                for (int slot = 0; slot < grid.GenerateDescriptorSets.Length; slot++)
+                    for (int f = 0; f < grid.GenerateDescriptorSets[slot].Length; f++)
+                        _clutterWrites!(grid, renderer, body, finest, slot, f, ref writes);
+            }
+        }
     }
 
     private static void Dispose(CubeMesh level)
@@ -396,7 +565,23 @@ internal static class FarTerrain
         level.AverageNeighborDistanceBuffer.Dispose();
     }
 
-    // The game's exit skips a collection that reads as not loaded: a let-go collection's finest level goes here, as
+    // As PlanetMeshCollection.DisposeMeshes disposes the finest level's
+    private static void DisposeStructures(CubeMesh level, Renderer renderer)
+    {
+        if (renderer.RayQueriesSupported)
+        {
+            if (Real(level.TopLevelAccelerationStructure))
+                level.TopLevelAccelerationStructure!.Value.Dispose(renderer.Device);
+            if (Real(level.BottomLevelAccelerationStructure))
+                level.BottomLevelAccelerationStructure!.Value.Dispose(renderer.Device);
+        }
+        else
+        {
+            level.Bvh?.Dispose();
+        }
+    }
+
+    // The game's exit skips a collection that reads as not loaded: a let-go collection's kept level goes here, as
     // PlanetMeshCollection.DisposeMeshes would dispose it, and so does a build nobody swapped in
     private static void DisposeAllPrefix()
     {
@@ -411,7 +596,12 @@ internal static class FarTerrain
                     try
                     {
                         foreach (var level in building.Result)
+                        {
+                            if (level == null)
+                                continue;
                             Dispose(level);
+                            DisposeStructures(level, renderer);
+                        }
                     }
                     catch (AggregateException)
                     {
@@ -420,17 +610,9 @@ internal static class FarTerrain
                 }
                 if (c.Built)
                     continue;
-                var finest = c.Meshes.Items[^1];
-                Dispose(finest);
-                if (renderer.RayQueriesSupported)
-                {
-                    finest.TopLevelAccelerationStructure?.Dispose(renderer.Device);
-                    finest.BottomLevelAccelerationStructure?.Dispose(renderer.Device);
-                }
-                else
-                {
-                    finest.Bvh?.Dispose();
-                }
+                Dispose(c.Meshes.Items[c.Kept]);
+                // The finest level's structures, when it is the kept one (a BVH); otherwise it holds the stand-in
+                DisposeStructures(c.Meshes.Items[^1], renderer);
             }
         }
         catch (Exception e)
