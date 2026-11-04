@@ -68,12 +68,13 @@ internal static class Presets
         new("Performance", "Fastest. Softer, with rougher edges.",
             "The fastest the game gets: MetalFX Spatial draws the 3D view at half the window's size with the " +
             "game's Anti-Aliasing off; shadows, clouds, smoke and effects are drawn the simple way, without " +
-            "cockpit ray tracing. Softer and plainer, with rougher edges and slower crew portraits. Time warp slows down " +
+            "cockpit ray tracing, and planets and grass get less detailed textures, for less memory. Softer and " +
+            "plainer, with rougher edges and slower crew portraits. Time warp slows down " +
             "less: lighter physics for tumbling pieces, debris that settles and stays where it lies, and cloud shadows " +
             "that fall out of place during very high warp.",
             mac => Game(mac, antiAliasing: "Disabled", filter: "Pcf", cascades: 2048, terrain: 2048,
                 milkyWay: "High", clouds: "Low", cloudShadows: "Medium", effects: "Low", godrays: false,
-                clutterShadows: false, plumeShadows: false, rayTracing: false),
+                clutterShadows: false, plumeShadows: false, rayTracing: false, planetTextures: 2048),
             0),
         new("Balanced", "Faster, with little visible change.",
             "Faster, with little visible change: MetalFX Temporal draws the 3D view at three quarters of the window's size, " +
@@ -99,7 +100,7 @@ internal static class Presets
             mac =>
             {
                 var defaults = new GameSettings();
-                return Defaults(Game(mac, "Disabled", "Pcf", 2048, 2048, "Low", "Low", "Low", "Low", false, false, false, false),
+                return Defaults(Game(mac, "Disabled", "Pcf", 2048, 2048, "Low", "Low", "Low", "Low", false, false, false, false, 0),
                     name => Text(Field(name).GetValue(Owner(Field(name), defaults))));
             },
             -1),
@@ -116,7 +117,7 @@ internal static class Presets
     // off), the rest in GameSettings.Graphics
     private static Dictionary<string, string> Game(Mac mac, string antiAliasing, string filter, int cascades, int terrain,
         string milkyWay, string clouds, string cloudShadows, string effects, bool godrays, bool clutterShadows,
-        bool plumeShadows, bool rayTracing)
+        bool plumeShadows, bool rayTracing, int planetTextures = 0)
     {
         // With the Milky Way bake (Performance, Balanced and Quality), Milky Way High costs what Low and Medium do (M5,
         // fast run: every view within 0.1 ms). Cloud Shadows Low costs what Medium does, so no preset goes below Medium.
@@ -150,9 +151,15 @@ internal static class Presets
             ["RaytracedShadowResolutionScale"] = "50",
             ["RaytracedReflectionBounces"] = "1",
         };
-        // 8 GB: the textures at most 2048 pixels wide too
+        // The game's terrain textures at most this many pixels wide (0: the game's, none), in every preset, so that each
+        // one sets it: the planets' textures loaded whole (Earth's clouds, tiling and biome maps, the moons' rock), the
+        // finest level the streamer gives the planets' colour maps (Earth, the Moon, Mars; not their heights and
+        // normals), ground clutter and rock particles. Performance's 2048 saves about 0.3 GB of graphics memory in the
+        // solar system (M5, Mixed Test views, at an 8 GB Mac's texture budget). 8 GB: the vessels' textures too, and the
+        // terrain's in every preset
+        game["TerrainTextureCap"] = Text(mac.SmallMemory ? 2048 : planetTextures);
         if (mac.SmallMemory)
-            game["TerrainTextureCap"] = game["VesselTextureCap"] = "2048";
+            game["VesselTextureCap"] = "2048";
         return game;
     }
 
