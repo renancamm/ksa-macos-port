@@ -9,7 +9,7 @@ sources when it makes the app, or both: a hook and the edit it needs sit side by
 
 | Folder | Holds | Without them |
 |---|---|---|
-| [`fixes/`](fixes/) | what the game needs on the port: bugs fixed, and the port's part of the game (Restart, the documents folder, HDR, windows and UI coordinates); no row in the Mac Port tab | the game breaks: GPU hangs, crashes, clutter corrupted or striped, windows and panels misplaced |
+| [`fixes/`](fixes/) | what the game needs on the port: bugs fixed, and the port's part of the game (Restart, the documents folder, HDR, windows and UI coordinates); no row in the Mac Port tab | the game breaks: GPU hangs, crashes, clutter corrupted or striped, ring rocks missing, windows and panels misplaced |
 | [`optimizations/`](optimizations/) | the same image, faster: the rows of the tab's Optimizations | the game's own code and shaders, slower |
 | [`features/`](features/) | a player's choice: the rows of Image, Extra Performance and Interface, the file's Experiments, the Resolution list, frame captures | the game's own behaviour; with its row off, a feature's edit changes nothing |
 
@@ -38,6 +38,7 @@ follows](../hooks/README.md#the-rule-every-hook-follows)).
 |---|---|
 | [`ground-clutter.edits`](fixes/ground-clutter.edits) | two bugs in the ground clutter's shaders: its ecotype block misses a member (clutter pops, the GPU can hang), and its depth pre-pass and colour pass need `invariant` positions (black stripes) |
 | [`light-clusters.edits`](fixes/light-clusters.edits) | a light cluster tile whose depth range comes out inverted loops about 4 billion times: the GPU hangs |
+| [`ring-draw-args.edits`](fixes/ring-draw-args.edits) | the ring rocks' indirect draws never get their first index and vertex offset written: where their buffer's memory held something before, Saturn's rocks are drawn out of range and vanish |
 
 ## Optimizations
 

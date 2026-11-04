@@ -1,0 +1,29 @@
+# BuildDrawCommands.comp: the ring rocks' indirect draws (five mesh levels, then the impostors) are written with their
+# index or vertex count, instance count and, for the meshes, first instance, but never their first index and vertex
+# offset (for the impostors' non-indexed draw: first vertex and first instance). The buffer is made once and never
+# cleared, so those fields keep whatever the memory held before: zero in fresh memory, but where the game or the port
+# freed something earlier the rocks are drawn out of range and vanish. The fix writes them as zero.
+
+@@ edit ring-draw-args-meshes Rings/Culling/BuildDrawCommands.comp
+@@ what wrote the first index and vertex offset of the ring rocks' draws
+@@ find
+        drawArgsBuffer.DrawArgs[localId].firstInstance = lodStartOffsets[localId];
+@@ replace
+        drawArgsBuffer.DrawArgs[localId].firstInstance = lodStartOffsets[localId];
+        // macOS port: never written otherwise, so the buffer's old memory
+        drawArgsBuffer.DrawArgs[localId].firstIndex = 0;
+        drawArgsBuffer.DrawArgs[localId].vertexOffset = 0;
+
+@@ edit ring-draw-args-impostors Rings/Culling/BuildDrawCommands.comp
+@@ what wrote the first vertex and first instance of the ring impostors' draw
+@@ find
+        drawArgsBuffer.DrawArgs[localId].instanceCount = atomicCountsBuffer.Counts[localId];
+    }
+    else if (localId == RING_MAX_MESH_LODS + 1)
+@@ replace
+        drawArgsBuffer.DrawArgs[localId].instanceCount = atomicCountsBuffer.Counts[localId];
+        // macOS port: never written otherwise; the impostors' non-indexed draw reads these as firstVertex and firstInstance
+        drawArgsBuffer.DrawArgs[localId].firstIndex = 0;
+        drawArgsBuffer.DrawArgs[localId].vertexOffset = 0;
+    }
+    else if (localId == RING_MAX_MESH_LODS + 1)
