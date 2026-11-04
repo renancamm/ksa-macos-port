@@ -108,7 +108,7 @@ setting; those of the hooks:
 | `skip_game_anti_aliasing` | off: with MetalFX, the game's anti-aliasing setting applies (but CMAA2) |
 | `fewer_cloud_shadow_updates`, `lighter_warp_cloud_shadows`, `lighter_plume_shadows`, `simpler_pcss_shadows`, `baked_milky_way`, `crew_portraits_at_15_fps`, `lighter_tumbling_physics`, `debris_settles_in_warp` | on: the Extra Performance rows |
 | `skip_hidden_crew_portraits`, `fit_hud_to_display` | off: the game's own crew portraits and flight HUD; both change while the game runs |
-| `terrain_cache`, `skip_unused_outlines`, `skip_unused_overlays`, `skip_hidden_vessel_parts`, `skip_unused_ocean_blending`, `idle_thread_sleep`, `loading_screen_fps_cap`, `clear_faded_smoke`, `unload_far_terrain`, `load_textures_once` | off: leave out that patch |
+| `terrain_cache`, `skip_unused_outlines`, `skip_unused_overlays`, `skip_hidden_vessel_parts`, `skip_unused_ocean_blending`, `idle_thread_sleep`, `loading_screen_fps_cap`, `clear_faded_smoke`, `unload_far_terrain`, `load_textures_once`, `unload_far_textures` | off: leave out that patch |
 | `worker_park_ms` | milliseconds: how long an idle job worker spins before it sleeps (0.25) |
 | `trail_caches` | `<large>,<small>,<tiny>[,<segments>]`: the smoke's volume cache budgets in MiB (Experiments; unset: the game's) |
 | `trail_shadows` | `<cascades>,<resolution>,<metres>`: the smoke's sun shadow cascades (Experiments; wins over `lighter_plume_shadows`; unset: the game's) |
