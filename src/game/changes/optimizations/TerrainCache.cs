@@ -26,6 +26,7 @@ internal static class TerrainCache
         public object? Buffer;
         public Celestial? Body;
         public int Mesh;
+        public object? Buffers;  // the level's mesh: FarTerrain gives a level new buffers under the same hash
         public float4x4 Texture;
         public long Time;
     }
@@ -94,13 +95,15 @@ internal static class TerrainCache
             (uint)frameIndex >= Keys.Length)
             return;
         object? buffer = (_buffers!.GetValue(__instance) as Array)?.GetValue(frameIndex);
-        int mesh = meshes.Get(data.MeshLodIndex).Hash.GetHashCode();
+        var level = meshes.Get(data.MeshLodIndex);
+        int mesh = level.Hash.GetHashCode();
         float4x4 texture = data.MeshPushConst.TextureMatrix;
         texture.M44 = 1f;  // the modifier loop passes its index there
         long now = Environment.TickCount64;
         ref Key key = ref Keys[frameIndex];
         float4x4 rotation = data.MeshPushConst.MeshMatrix;
-        if (buffer != null && Equals(key.Buffer, buffer) && key.Body == body && key.Mesh == mesh && key.Texture == texture &&
+        if (buffer != null && Equals(key.Buffer, buffer) && key.Body == body && key.Mesh == mesh && ReferenceEquals(key.Buffers, level.Mesh) &&
+            key.Texture == texture &&
             now - key.Time < RefreshMs)
         {
             _skip = true;
@@ -109,7 +112,7 @@ internal static class TerrainCache
                 NormalRotations[frameIndex] = rotation;
             return;
         }
-        key = new Key { Buffer = buffer, Body = body, Mesh = mesh, Texture = texture, Time = now };
+        key = new Key { Buffer = buffer, Body = body, Mesh = mesh, Buffers = level.Mesh, Texture = texture, Time = now };
         NormalRotations[frameIndex] = rotation;
     }
 
