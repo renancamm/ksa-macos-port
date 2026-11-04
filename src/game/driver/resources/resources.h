@@ -18,6 +18,7 @@ struct KBuffer {
     VkDeviceSize offset = 0;
     id<MTLBuffer> mtl = nil;  // = memory->whole
     bool inDescriptor = false;  // written to a descriptor: destroying it looks for those left behind
+    bool accelStorage = false;  // holds acceleration structures: aligned for placing them in its heap
     uint64_t gpuAddress() const { return mtl ? mtl.gpuAddress + offset : 0; }
 };
 

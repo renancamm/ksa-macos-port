@@ -97,6 +97,7 @@ VKFN(VkResult) vkCreateBuffer(VkDevice device, const VkBufferCreateInfo* ci, con
     KTRACE_FIRST();
     auto* b = new KBuffer();
     b->size = ci->size;
+    b->accelStorage = (ci->usage & VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR) != 0;
     *out = (VkBuffer)b;
     return VK_SUCCESS;
 }
@@ -108,15 +109,19 @@ VKFN(void) vkDestroyBuffer(VkDevice, VkBuffer buffer, const VkAllocationCallback
     delete b;
 }
 
-static void bufferRequirements(KBuffer* b, VkMemoryRequirements* r) {
+static void bufferRequirements(VkDevice device, KBuffer* b, VkMemoryRequirements* r) {
     r->size = kmtlAlignUp<VkDeviceSize>(b->size, 256);
     r->alignment = 256;
+    // Acceleration structures are placed in their buffer's heap (accel.mm), at Metal's alignment for them (1024 on
+    // the M5)
+    if (b->accelStorage)
+        r->alignment = std::max<VkDeviceSize>(256, [((KDevice*)device)->mtl heapAccelerationStructureSizeAndAlignWithSize:256].align);
     r->memoryTypeBits = 0x7;
 }
 
-VKFN(void) vkGetBufferMemoryRequirements(VkDevice, VkBuffer buffer, VkMemoryRequirements* r) {
+VKFN(void) vkGetBufferMemoryRequirements(VkDevice device, VkBuffer buffer, VkMemoryRequirements* r) {
     KTRACE_FIRST();
-    bufferRequirements((KBuffer*)buffer, r);
+    bufferRequirements(device, (KBuffer*)buffer, r);
 }
 
 void kmtlFillDedicated(void* pNext, bool prefer) {
@@ -126,16 +131,17 @@ void kmtlFillDedicated(void* pNext, bool prefer) {
     }
 }
 
-VKFN(void) vkGetBufferMemoryRequirements2(VkDevice, const VkBufferMemoryRequirementsInfo2* info, VkMemoryRequirements2* r) {
+VKFN(void) vkGetBufferMemoryRequirements2(VkDevice device, const VkBufferMemoryRequirementsInfo2* info, VkMemoryRequirements2* r) {
     KTRACE_FIRST();
-    bufferRequirements((KBuffer*)info->buffer, &r->memoryRequirements);
+    bufferRequirements(device, (KBuffer*)info->buffer, &r->memoryRequirements);
     kmtlFillDedicated(r->pNext, false);
 }
 
 VKFN(void) vkGetDeviceBufferMemoryRequirements(VkDevice device, const VkDeviceBufferMemoryRequirements* info, VkMemoryRequirements2* r) {
     KBuffer tmp;
     tmp.size = info->pCreateInfo->size;
-    bufferRequirements(&tmp, &r->memoryRequirements);
+    tmp.accelStorage = (info->pCreateInfo->usage & VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR) != 0;
+    bufferRequirements(device, &tmp, &r->memoryRequirements);
     kmtlFillDedicated(r->pNext, false);
 }
 

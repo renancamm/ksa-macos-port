@@ -11,6 +11,7 @@
 struct KAccel {
     id<MTLAccelerationStructure> mtl = nil;
     uint64_t address = 0;  // what vkGetAccelerationStructureDeviceAddressKHR hands out
+    bool placed = false;   // in the heap of its Vulkan buffer (resident with it), not memory of its own
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -150,7 +151,8 @@ VKFN(void) vkGetAccelerationStructureBuildSizesKHR(VkDevice device, VkAccelerati
     MTLAccelerationStructureDescriptor* d = describe(info, maxPrimitiveCounts, false, nullptr, dev->mtl, &unused);
     if (!d) { sizes->accelerationStructureSize = sizes->buildScratchSize = sizes->updateScratchSize = 0; return; }
     MTLAccelerationStructureSizes s = [dev->mtl accelerationStructureSizesWithDescriptor:d];
-    sizes->accelerationStructureSize = s.accelerationStructureSize;
+    // The size a structure takes in a heap (the same as its own on the M5), so that the app's buffer can hold it
+    sizes->accelerationStructureSize = [dev->mtl heapAccelerationStructureSizeAndAlignWithSize:s.accelerationStructureSize].size;
     sizes->buildScratchSize = std::max<NSUInteger>(s.buildScratchBufferSize, 256);
     sizes->updateScratchSize = std::max<NSUInteger>(s.refitScratchBufferSize, 256);
 }
@@ -159,19 +161,31 @@ VKFN(VkResult) vkCreateAccelerationStructureKHR(VkDevice device, const VkAcceler
                                                 const VkAllocationCallbacks*, VkAccelerationStructureKHR* out) {
     KTRACE_FIRST();
     auto* dev = (KDevice*)device;
-    // A standalone structure (KSA's are small); the Vulkan buffer it sits in stays unused
+    // In the Vulkan buffer's heap at its offset, as Vulkan places it (KSA's terrain structures are ~170 MB each);
+    // standalone when that can't be: Metal places structures only in private heaps, at its alignment, and the
+    // structure must fit the buffer
     auto* a = new KAccel();
-    a->mtl = [dev->mtl newAccelerationStructureWithSize:std::max<VkDeviceSize>(ci->size, 256)];
+    auto* buf = (KBuffer*)ci->buffer;
+    if (buf && buf->mtl && buf->mtl.heap && buf->mtl.heap.storageMode == MTLStorageModePrivate) {
+        MTLSizeAndAlign sa = [dev->mtl heapAccelerationStructureSizeAndAlignWithSize:std::max<VkDeviceSize>(ci->size, 256)];
+        NSUInteger offset = (NSUInteger)(buf->offset + ci->offset);
+        if (offset % sa.align == 0 && ci->offset + sa.size <= buf->size) {
+            a->mtl = [buf->mtl.heap newAccelerationStructureWithSize:sa.size offset:offset];
+            a->placed = a->mtl != nil;
+        }
+    }
+    if (!a->mtl) a->mtl = [dev->mtl newAccelerationStructureWithSize:std::max<VkDeviceSize>(ci->size, 256)];
     if (!a->mtl) {
         KERR("vkCreateAccelerationStructureKHR: structure of %llu bytes failed", (unsigned long long)ci->size);
         delete a;
         // The only memory code Vulkan allows here: its structures live in the app's buffer, Metal's in their own
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
-    dev->addResident(a->mtl);
+    if (!a->placed) dev->addResident(a->mtl);
+    if (!a->placed && ci->size >= (1u << 20))
+        KLOG(1, "acceleration structure of %llu MB in memory of its own, not its buffer", (unsigned long long)(ci->size >> 20));
     // The structure's address is its buffer's device address at the offset, as on other drivers: KSA's IVA ray
     // tracing writes that buffer address (not vkGetAccelerationStructureDeviceAddressKHR's) into TLAS instances
-    auto* buf = (KBuffer*)ci->buffer;
     a->address = buf && buf->mtl ? buf->gpuAddress() + ci->offset : a->mtl.gpuResourceID._impl;
     {
         std::lock_guard<std::mutex> lock(g_addrMutex);
@@ -190,7 +204,7 @@ VKFN(void) vkDestroyAccelerationStructureKHR(VkDevice device, VkAccelerationStru
         auto it = g_accels.find(a->address);
         if (it != g_accels.end() && it->second == a) g_accels.erase(it);
     }
-    ((KDevice*)device)->removeResident(a->mtl);
+    if (!a->placed) ((KDevice*)device)->removeResident(a->mtl);
     delete a;
 }
 
