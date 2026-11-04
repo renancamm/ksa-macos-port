@@ -127,11 +127,6 @@ The debugging settings, used the same way:
 | `throttle` | `<hash>:<n>,...`: an experiment, a pipeline whose name holds that shader hash runs only every n-th present (0: never), to see what a shader costs and what it draws |
 | `frame_cadence` | `<ms>`: an experiment, each frame shown at least that long after the one before (25: 40 fps at 120 Hz), so the frame rate holds one step |
 | `drawable_count` | `2` or `3`: an experiment, how many images the window keeps to show; 2 lets fewer frames wait to be shown (latency; 3 with frame interpolation) |
-| `cadence_start_gate` | on: an experiment, with `frame_cadence` the game waits until the frame before is done on the GPU before starting the next, so frames don't queue up for their slot (latency; CPU and GPU no longer overlap) |
-| `overlap` | `<hash>,...`: an experiment, those compute pipelines start without waiting for earlier work of their command buffer, to see what running them beside it would save; wrong where they read what it wrote, or write what it reads or writes |
-| `threadgroup_hint` | `<n>` or `<hash>:<n>,...`: an experiment, the largest threadgroup compute pipelines are compiled for (never below their own), trading registers for occupancy |
-| `rw_texture_fences` | off: an experiment, no fence before reads of storage images a shader also writes; wrong where it reads what it wrote |
-| `relaxed_math` | on: compile shaders with relaxed math instead of fast math |
 
 Metal's own tools work too: `MTL_HUD_ENABLED=1` shows Apple's performance overlay, and `MTL_DEBUG_LAYER=1` and
 `MTL_SHADER_VALIDATION=1` check API use and catch out-of-bounds memory access in shaders (slow).

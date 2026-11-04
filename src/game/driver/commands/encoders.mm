@@ -52,7 +52,6 @@ void KCommandBuffer::beginCommands() {
     encRoles = 0;
     encWaited.clear();
     fenceNext = 0;
-    overlapLast = nil;
     resolveWaited = resolveSignaled;
     passResolves = false;
 }
@@ -114,8 +113,6 @@ void KCommandBuffer::barrierClasses(uint32_t src, uint32_t dst) {
     if (blit && (dst & kClassTransfer)) { endEncoder(); return; }  // blit commands of one encoder may overlap
     if (!compute) return;
     if (!(dst & encRoles)) return;
-    // KSA_MTL_OVERLAP: the overlapped pass's own dispatches stay in order; the barrier stays pending for the rest
-    if (encOverlap) { [compute memoryBarrierWithScope:MTLBarrierScopeBuffers | MTLBarrierScopeTextures]; return; }
     // Later work in the open compute encoder needs the sources: fine if they are this encoder's own earlier work
     // (a memory barrier orders it) or encoders it already waited on
     bool reopen = false;
@@ -239,27 +236,13 @@ void KCommandBuffer::endEncoder() {
         }
     }
     if (compute) {
-        id<MTLFence> own = encOverlap ? newFence() : finishFence(encRoles);
-        [compute updateFence:own];
+        [compute updateFence:finishFence(encRoles)];
         nameEncoder(compute);
         std::string dumpName = !dump ? "" : compute.label ? std::string(compute.label.UTF8String)
             : computePipeline ? computePipeline->profName : "compute";
         [compute endEncoding];
         compute = nil;
         if (dump) kmtlPassDumpEncoder(this, dumpName, nil);
-        if (encOverlap) {
-            // The join: later work waits for this encoder and for the work it didn't wait for, and for the MSAA
-            // resolves this encoder didn't wait for (render passes after it rely on a compute encoder's wait)
-            overlapLast = own;
-            waitForResolves(kClassCompute);
-            id<MTLBlitCommandEncoder> join = [mtl blitCommandEncoder];
-            [join waitForFence:own];
-            if (overlapSkipped) [join waitForFence:overlapSkipped];
-            [join updateFence:finishFence(kClassCompute)];
-            [join endEncoding];
-            encOverlap = false;
-            overlapSkipped = nil;
-        }
     }
     if (blit) {
         [blit updateFence:finishFence(encRoles)];
@@ -292,28 +275,11 @@ void KCommandBuffer::waitForAllResolves() {
 }
 
 id<MTLComputeCommandEncoder> KCommandBuffer::computeEncoder(uint32_t roles) {
-    if (compute && !encOverlap && (encRoles & roles) == roles) return compute;
+    if (compute && (encRoles & roles) == roles) return compute;
     endEncoder();
     waitForResolves(roles);
     compute = kmtlProfComputeEncoder(this);
     waitForRoles(compute, roles);
-    computeSetsDirty = ~0u;
-    computePushDirty = true;
-    return compute;
-}
-
-// KSA_MTL_OVERLAP: an encoder of its own that waits only for the previous command buffers (the chain), so it runs
-// beside the work recorded before it; the barriers pending for compute stay pending for the next compute encoder
-id<MTLComputeCommandEncoder> KCommandBuffer::overlapEncoder() {
-    if (compute && encOverlap) return compute;
-    endEncoder();
-    compute = kmtlProfComputeEncoder(this);
-    [compute waitForFence:queue->chain];
-    if (overlapLast) [compute waitForFence:overlapLast];
-    encRoles = kClassCompute;
-    encWaited.assign(1, queue->chain);
-    encOverlap = true;
-    overlapSkipped = lastFence[classIndex(kClassCompute)];
     computeSetsDirty = ~0u;
     computePushDirty = true;
     return compute;

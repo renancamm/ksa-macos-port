@@ -135,7 +135,6 @@ bool kmtlTranslate(KShaderModule* mod, const char* entryName, spv::ExecutionMode
         mo.dynamic_offsets_buffer_index = kDynamicOffsetBufferIndex;
         mo.draw_id_buffer_index = kDrawIdBufferIndex;
         mo.agx_manual_cube_grad_fixup = true;
-        mo.readwrite_texture_fences = kmtlConfig().rwTextureFences;
         mo.enable_frag_output_mask = fragOutputMask;
         mo.force_sample_rate_shading = sampleRate;
         // Multiview: the driver draws once per view with spvViewMask = {view, 1} (indirect draws cannot have their
@@ -328,7 +327,6 @@ uint64_t kmtlTranslationKey(KShaderModule* mod, const char* entry, spv::Executio
         (uint32_t)mod->hash, (uint32_t)(mod->hash >> 32), so.rtLaunch, (uint32_t)kmtlConfig().shaderConstantMemory,
         so.tessFusedInput};
     if (const char* presets = kmtlConfig().spec) k.push_back((uint32_t)kmtlHash(presets, strlen(presets)));
-    if (!kmtlConfig().rwTextureFences) k.push_back(0x52574630u /* no read_write fences */);
     if (!kmtlConfig().skipShadowsOnUnlitSides && hasSpecId(mod, kUnlitShadowSkipConstant)) k.push_back(kUnlitShadowSkipConstant);
     for (const char* c = entry; *c; c++) k.push_back((uint8_t)*c);
     if (layout) {

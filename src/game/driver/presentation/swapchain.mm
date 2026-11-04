@@ -25,7 +25,7 @@ static void latencyAtPresent(id<CAMetalDrawable> drawable, id<MTLCommandBuffer> 
     static uint64_t presents = 0;
     // The handler is added after the mutex is released: Core Animation runs presented handlers while it holds the
     // drawable's lock, which addPresentedHandler takes too, and the handler takes this mutex (a deadlock otherwise:
-    // the game hung in vkQueuePresentKHR, 2026-11-04)
+    // the game hung in vkQueuePresentKHR)
     double now, began, waited;
     uint64_t n;
     bool paced;
@@ -260,20 +260,6 @@ VKFN(VkResult) vkWaitForPresentKHR(VkDevice, VkSwapchainKHR swapchain, uint64_t 
             done = state->presented >= presentId;
             break;
         }
-    }
-    // KSA_MTL_FRAME_CADENCE with KSA_MTL_CADENCE_START_GATE: the game asked for present N-2, and also waits here
-    // until N-1 is done on the GPU (or shown), so at most one finished frame waits for its slot (the game reads input
-    // after this wait): a locked frame rate otherwise queues two frames ahead, each waiting a slot (about 50 ms more
-    // latency at 25 ms). Not until N-1 is shown: that would add the window server's delay to every frame. KSA always
-    // waits for N-2, so N-1 has been presented; a caller waiting for its latest present would wait to its timeout
-    if (done && kmtlConfig().cadenceStartGate && kmtlConfig().frameCadence > 0) {
-        auto previousDone = [&] {
-            if (state->presented >= presentId + 1) return true;
-            for (const KPresentState::Frame& f : state->frames)
-                if (f.id >= presentId + 1 && f.gpuDone) return true;
-            return false;
-        };
-        while (!previousDone() && std::chrono::steady_clock::now() < deadline) state->cv.wait_until(lock, deadline);
     }
     double end = CACurrentMediaTime();
     state->began = end;

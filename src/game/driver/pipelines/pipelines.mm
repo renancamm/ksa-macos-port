@@ -673,7 +673,6 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
         }
         p->profId = kmtlHash(p->profName.data(), p->profName.size());
         p->throttle = kmtlThrottleFor(p->profName);
-        p->overlap = kmtlOverlapFor(p->profName);
     }
     if (rs) {
         p->cull = rs->cullMode == VK_CULL_MODE_FRONT_BIT ? MTLCullModeFront
@@ -765,8 +764,7 @@ KPipeline* kmtlCreateComputeFromStage(KDevice* dev, KPipelineLayout* layout, con
         if (!fn) return nil;
         MTLComputePipelineDescriptor* d = [MTLComputePipelineDescriptor new];
         d.computeFunction = fn;
-        NSUInteger threads = t.workgroup.width * t.workgroup.height * t.workgroup.depth;
-        d.maxTotalThreadsPerThreadgroup = std::max<NSUInteger>(threads, kmtlThreadgroupHintFor(csHash));
+        d.maxTotalThreadsPerThreadgroup = t.workgroup.width * t.workgroup.height * t.workgroup.depth;
         NSError* err = nil;
         auto tp = std::chrono::steady_clock::now();
         id<MTLComputePipelineState> ps = [dev->mtl newComputePipelineStateWithDescriptor:d options:MTLPipelineOptionNone reflection:nil error:&err];
@@ -799,7 +797,6 @@ KPipeline* kmtlCreateComputeFromStage(KDevice* dev, KPipelineLayout* layout, con
         p->profName = nm;
         p->profId = kmtlHash(nm, strlen(nm));
         p->throttle = kmtlThrottleFor(p->profName);
-        p->overlap = kmtlOverlapFor(p->profName);
     }
     return p;
 }

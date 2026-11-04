@@ -85,14 +85,9 @@ struct KPipeline {
     uint64_t profId = 0;
     std::string profName;
     int throttle = -1;  // KSA_MTL_THROTTLE: run every N-th present (0 never, -1 always)
-    bool overlap = false;  // KSA_MTL_OVERLAP: a compute pipeline that doesn't wait for earlier work
 };
 // KSA_MTL_THROTTLE (setup/config.mm): a pipeline whose name holds one of its module hashes runs every N-th present
 int kmtlThrottleFor(const std::string& profName);
-// KSA_MTL_OVERLAP (setup/config.mm): whether a pipeline's name holds one of its module hashes
-bool kmtlOverlapFor(const std::string& profName);
-// KSA_MTL_THREADGROUP_HINT for a compute module (config.mm): at least this many threads per threadgroup, 0 = none
-uint32_t kmtlThreadgroupHintFor(uint64_t hash);
 inline bool kmtlThrottled(const KPipeline* p) {
     if (!p || p->throttle < 0) return false;
     return p->throttle == 0 || kmtlPresentCount() % (uint64_t)p->throttle != 0;
