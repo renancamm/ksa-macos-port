@@ -10,7 +10,7 @@ using System;
 using System.IO;
 using System.IO.Compression;
 
-namespace KsaPort.Common;
+namespace KsaPort.Common.Benchmark;
 
 public sealed class Image(int width, int height, byte[] rgb)
 {

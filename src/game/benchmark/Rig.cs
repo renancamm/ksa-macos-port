@@ -14,7 +14,7 @@ using KSA;
 
 namespace KsaMetal.Benchmark;
 
-public partial class Director
+internal sealed partial class CameraOperator
 {
     // A chase view: azimuth (degrees from north, where the camera is seen from the vehicle), elevation (degrees above
     // the vehicle's horizon) and ln(distance in metres)
@@ -54,7 +54,7 @@ public partial class Director
     private float? _fieldOfView;
 
     // @chase <az> <el> <dist> [<seconds>]
-    private bool StartChase(string[] a)
+    internal bool StartChase(string[] a)
     {
         if (!TryRig(out var rig))
             return false;
@@ -69,17 +69,17 @@ public partial class Director
             // From the ground or another camera: fly from there to the chase view
             StartBlend(rig, seconds);
             rig.Ground = null;
-            rig.Chase = new ChaseMove(now, Fill(to, now), _scriptTime, 0);
+            rig.Chase = new ChaseMove(now, Fill(to, now), Now, 0);
         }
         else
-            rig.Chase = new ChaseMove(now, to, _scriptTime, seconds);
+            rig.Chase = new ChaseMove(now, to, Now, seconds);
         UpdateRig(0);
         return true;
     }
 
     // @watch <az> <dist> <height> [<frame>] [<seconds>]: the camera's place on the ground, dist metres from the vehicle
     // in the direction az, height metres above the ground there
-    private bool StartWatch(string[] a)
+    internal bool StartWatch(string[] a)
     {
         if (!TryRig(out var rig) || !double.TryParse(a[1], NumberStyles.Float, Inv, out var az) ||
             !double.TryParse(a[2], NumberStyles.Float, Inv, out var dist) || !double.TryParse(a[3], NumberStyles.Float, Inv, out var height))
@@ -100,11 +100,11 @@ public partial class Director
     }
 
     // @aim <metres> [<seconds>]: aim that far above the vehicle's center (a kitten's face, say)
-    private bool StartAim(string[] a)
+    internal bool StartAim(string[] a)
     {
         if (!TryRig(out var rig) || !TryValue(a[1], rig.AimUp, 1, out var up) || !TrySeconds(a, 2, out var seconds))
             return false;
-        rig.AimMove = (rig.AimUp, up, _scriptTime, seconds);
+        rig.AimMove = (rig.AimUp, up, Now, seconds);
         UpdateRig(0);
         return true;
     }
@@ -123,13 +123,13 @@ public partial class Director
             return true;
         Celestial? body = null;
         double3 anchor = default;
-        if (Target is { } v && v.IsDisposed && _blown.TryGetValue(v.Id, out var blown))
+        if (vehicles.Target is { } v && v.IsDisposed && vehicles.Blown.TryGetValue(v.Id, out var blown))
             (body, anchor) = (blown.Body, blown.PlaceCcf);
-        else if (Target is { Parent: Celestial c } w)
+        else if (vehicles.Target is { Parent: Celestial c } w)
             (body, anchor) = (c, ToCcf(c, w.GetPositionEcl()));
-        if (body == null || Target is not { } target)
+        if (body == null || vehicles.Target is not { } target)
         {
-            Log("the vehicle camera needs a vehicle on or near a celestial");
+            Director.Log("the vehicle camera needs a vehicle on or near a celestial");
             return false;
         }
         ReleaseCamera();
@@ -162,7 +162,7 @@ public partial class Director
             var view = CameraAsChase(rig);
             rig.From = () => (ChasePlace(rig, view), DefaultFov());
         }
-        rig.FromStart = _scriptTime;
+        rig.FromStart = Now;
         rig.FromSeconds = seconds;
     }
 
@@ -185,7 +185,7 @@ public partial class Director
         if (rig.AimMove is { } m)
         {
             rig.AimUp = m.From + (m.To - m.From) * Ease(m.Start, m.Seconds);
-            if (_scriptTime >= m.Start + m.Seconds)
+            if (Now >= m.Start + m.Seconds)
                 rig.AimMove = null;
         }
         var (position, fov) = rig.Ground is { } ground ? GroundPlace(rig, ground) : (ChasePlace(rig, ChaseAt(rig, rig.Chase!)), DefaultFov());
@@ -205,7 +205,7 @@ public partial class Director
             camera.SetFieldOfView((float)fov);
     }
 
-    private void EndRig()
+    internal void EndRig()
     {
         _rig = null;
         if (_fieldOfView is { } fov && Program.GetHoveredCamera() is { } camera)
@@ -266,7 +266,7 @@ public partial class Director
         return center + double3.Normalize(center - rig.Body.GetPositionEcl()) * rig.AimUp;
     }
 
-    private static double3 ToCcf(Celestial body, double3 positionEcl) => (positionEcl - body.GetPositionEcl()).Transform(body.GetCce2Ccf());
+    internal static double3 ToCcf(Celestial body, double3 positionEcl) => (positionEcl - body.GetPositionEcl()).Transform(body.GetCce2Ccf());
 
     private double DefaultFov() => (_fieldOfView ?? Program.GetHoveredCamera()?.GetFieldOfView() ?? 0.87266463f) * 180 / Math.PI;
 }

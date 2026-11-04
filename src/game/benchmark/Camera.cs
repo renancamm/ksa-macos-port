@@ -1,6 +1,7 @@
-// The camera directives for vehicles and the cockpit: moves on the script's clock, so a move ends where the script
-// says on every Mac, whatever its frame rate, and holds still while a checkpoint stops the clock. The free camera's
-// flights over and between celestials are in Path.cs.
+// The benchmark's camera, which the director moves: the free camera's flights over and between celestials (Path.cs),
+// the vehicle camera (Rig.cs), and here the views for vehicles and the cockpit. Its moves follow the script's clock, so
+// a move ends where the script says on every Mac, whatever its frame rate, and holds still while a checkpoint stops the
+// clock.
 using System;
 using System.Globalization;
 using Brutal.Numerics;
@@ -8,15 +9,36 @@ using KSA;
 
 namespace KsaMetal.Benchmark;
 
-public partial class Director
+internal sealed partial class CameraOperator(Clock clock)
 {
+    private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
+
+    // The script's clock, which every move follows, and the vehicles the vehicle camera looks at (set once both exist)
+    private double Now => clock.Script;
+    private Vehicles vehicles = null!;
+
+    internal void Watch(Vehicles all) => vehicles = all;
+
+    // @fov: the game's field of view, kept to put back when the camera moves on
+    internal void KeepFieldOfView(float fov) => _fieldOfView ??= fov;
+
+    // The vehicle camera leaves a vehicle the steps no longer act on: it goes to the new one with the next camera step
+    internal void Leave(Vehicle chosen)
+    {
+        if (_rig is { } rig && rig.Target != chosen)
+            EndRig();
+    }
+
+    // A new place of the free camera starts its up afresh
+    internal static void ForgetUp() => _lastUp = null;
+
     // Yaw and pitch (degrees) of the cockpit camera from its seat's forward view
     private record LookMove(double2 From, double2 To, double Start, double Seconds);
 
     private LookMove? _lookMove;
     private double2? _look;
 
-    private void UpdateCamera(double dt)
+    internal void UpdateCamera(double dt)
     {
         // A later flight takes the camera from @place too (@place releases the flight it was on)
         if (UpdatePath())
@@ -56,10 +78,10 @@ public partial class Director
             "x" => new double3(1, 0, 0), "y" => new double3(0, 1, 0), "z" => new double3(0, 0, 1), _ => (double3?)null
         };
 
-    private bool StartFront(string[] a)
+    internal bool StartFront(string[] a)
     {
         double aim = 0, from = 0, seconds = 0;
-        if (Target is not { Parent: Celestial } v || BodyAxis(a[1]) is not { } axis || BodyAxis(a[3]) is not { } up ||
+        if (vehicles.Target is not { Parent: Celestial } v || BodyAxis(a[1]) is not { } axis || BodyAxis(a[3]) is not { } up ||
             Math.Abs(double3.Dot(axis, up)) > 0.5 || !TryValue(a[2], 0, 1, out var dist) ||
             a.Length >= 5 && !TryValue(a[4], 0, 1, out aim) ||
             a.Length == 7 && (!TryValue(a[5], 0, 1, out from) || !TryValue(a[6], 0, 1, out seconds)))
@@ -93,7 +115,7 @@ public partial class Director
     // How far along a move is (0 to 1), eased in and out
     private double Ease(double start, double seconds)
     {
-        double u = seconds > 0 ? Math.Clamp((_scriptTime - start) / seconds, 0, 1) : 1;
+        double u = seconds > 0 ? Math.Clamp((Now - start) / seconds, 0, 1) : 1;
         return u * u * (3 - 2 * u);
     }
 
@@ -108,7 +130,7 @@ public partial class Director
     }
 
     // A direction from a cockpit seat, yaw and pitch in degrees from its forward view, and the seat's up
-    private static (double3 direction, double3 up) SeatView(Vehicle vehicle, IVASeat seat, double2 look)
+    internal static (double3 direction, double3 up) SeatView(Vehicle vehicle, IVASeat seat, double2 look)
     {
         var seat2Cce = vehicle.Asmb2Cce * seat.Parent.Asmb2VehicleAsmb;
         var forward = seat.ForwardAxisAsmb.Transform(seat2Cce).Normalized();
@@ -118,7 +140,7 @@ public partial class Director
         return ((forward * Math.Cos(yaw) + right * Math.Sin(yaw)) * Math.Cos(pitch) + up * Math.Sin(pitch), up);
     }
 
-    private bool SetCameraMode(string mode)
+    internal bool SetCameraMode(string mode)
     {
         if (Program.MainViewport is not GameViewport viewport)
             return false;
@@ -137,7 +159,7 @@ public partial class Director
     }
 
     // A value of a move: "-" keeps the current one, "~<x>" adds to it, anything else replaces it; "km" for kilometres
-    private static bool TryValue(string s, double current, double scale, out double value)
+    internal static bool TryValue(string s, double current, double scale, out double value)
     {
         value = current;
         if (s == "-")
@@ -157,11 +179,11 @@ public partial class Director
         return true;
     }
 
-    private bool LookIva(string[] a)
+    internal bool LookIva(string[] a)
     {
         if (Program.MainViewport is not GameViewport { Mode: CameraMode.IVA })
         {
-            Log("@look: needs the cockpit camera (@camera iva)");
+            Director.Log("@look: needs the cockpit camera (@camera iva)");
             return false;
         }
         var from = _look ?? default;
@@ -170,13 +192,13 @@ public partial class Director
         double seconds = 0;
         if (a.Length == 4 && !double.TryParse(a[3], NumberStyles.Float, Inv, out seconds))
             return false;
-        _lookMove = new LookMove(from, new double2(yaw, pitch), _scriptTime, seconds);
+        _lookMove = new LookMove(from, new double2(yaw, pitch), Now, seconds);
         UpdateCamera(0);
         return true;
     }
 
     // Logs where the sun stands over a surface point of a celestial (to plan the light of a key)
-    private static bool Sun(string[] a)
+    internal static bool Sun(string[] a)
     {
         var sun = Universe.CurrentSystem?.GetWorldSun();
         if (Universe.CurrentSystem?.All.TryGet(a[1], out Celestial? body) != true || body == null || sun == null ||
@@ -186,7 +208,7 @@ public partial class Director
         var d = double3.Normalize(sun.GetPositionEcl() - body.GetPositionEcl());
         double elevation = Math.Asin(Math.Clamp(double3.Dot(d, up), -1, 1)) * 180 / Math.PI;
         double azimuth = Math.Atan2(double3.Dot(d, east), double3.Dot(d, north)) * 180 / Math.PI;
-        Log(FormattableString.Invariant(
+        Director.Log(FormattableString.Invariant(
             $"@sun {body.Id} {lat} {lon}: elevation {elevation:F1}, azimuth {azimuth:F0} (game time {Universe.GetElapsedSeconds():F0} s, speed {Universe.GetSimulationSpeed():F0})"));
         return true;
     }

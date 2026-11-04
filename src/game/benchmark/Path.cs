@@ -35,13 +35,13 @@ using KSA;
 
 namespace KsaMetal.Benchmark;
 
-public partial class Director
+internal sealed partial class CameraOperator
 {
-    private enum Move { Curve, Pan, Zoom }
+    internal enum Move { Curve, Pan, Zoom }
 
     // A key's values: latitude, longitude, ln(height above its floor), heading, pitch (longitude and heading unwrapped
     // along the flight); its floor's altitude
-    private record Key(double T, Celestial Body, double Floor, double[] C, bool Stop)
+    internal record Key(double T, Celestial Body, double Floor, double[] C, bool Stop)
     {
         public double[] Slope = new double[5];
         // How the camera moves from this key to the next
@@ -67,11 +67,11 @@ public partial class Director
     private static double3? _lastUp;
 
     // Builds the flights from the sections that will play, with their keys' times on the script's clock
-    private void BuildPaths()
+    internal void BuildPaths(IReadOnlyList<Director.Section> sections)
     {
         double start = 0;
         List<Key>? path = null;
-        foreach (var section in _sections)
+        foreach (var section in sections)
         {
             var shots = section.Steps.Where(s => s.Words[0] == "@shot").Select(s => s.At).ToHashSet();
             var keys = section.Steps.Where(s => s.Words[0] == "@key").ToList();
@@ -82,7 +82,7 @@ public partial class Director
                 var key = ParseKey(start + step.At, step.Words, shots.Contains(step.At));
                 if (key == null)
                 {
-                    Log($"bad key at line {step.Line}: '{step.Command}'");
+                    Director.Log($"bad key at line {step.Line}: '{step.Command}'");
                     continue;
                 }
                 if (path == null)
@@ -98,7 +98,7 @@ public partial class Director
             Prepare(p);
     }
 
-    private static Key? ParseKey(double t, string[] a, bool stop)
+    internal static Key? ParseKey(double t, string[] a, bool stop)
     {
         if (a.Length != 7 || Universe.CurrentSystem?.All.TryGet(a[1], out Celestial? body) != true || body == null)
             return null;
@@ -115,7 +115,7 @@ public partial class Director
     }
 
     // The height of the ground above sea level (on a celestial with an ocean, the sea's surface where it covers it)
-    private static double Ground(Celestial body, double3 up)
+    internal static double Ground(Celestial body, double3 up)
     {
         double ground = body.GetTerrainHeightFromDirCce(up);
         return body.BodyTemplate.OceanReference != null ? Math.Max(ground, 0) : ground;
@@ -169,13 +169,13 @@ public partial class Director
     // Puts the free camera on its flight, if it is on one; false when it is not
     private bool UpdatePath()
     {
-        var path = _paths.LastOrDefault(p => p[0].T <= _scriptTime);
+        var path = _paths.LastOrDefault(p => p[0].T <= Now);
         if (path == null || path == _released)
             return false;
         if (path != _flight)
             _lastUp = null;
         _flight = path;
-        int i = path.FindLastIndex(k => k.T <= _scriptTime);
+        int i = path.FindLastIndex(k => k.T <= Now);
         if (i == path.Count - 1)
         {
             var last = path[^1];
@@ -183,7 +183,7 @@ public partial class Director
             return true;
         }
         Key a = path[i], b = path[i + 1];
-        double s = Math.Clamp((_scriptTime - a.T) / (b.T - a.T), 0, 1);
+        double s = Math.Clamp((Now - a.T) / (b.T - a.T), 0, 1);
         if (a.Body != b.Body)
         {
             Transfer(a, b, s);
@@ -208,7 +208,7 @@ public partial class Director
     }
 
     // The directives' hold on the free camera ends when something else moves it
-    private void ReleaseCamera()
+    internal void ReleaseCamera()
     {
         _released = _flight;
         Unhold();
@@ -216,9 +216,9 @@ public partial class Director
     }
 
     // Whether @place or @front holds the camera: vehicles made, started and blown up meanwhile leave it where it is
-    private bool Held => _placed != null || _front != null;
+    internal bool Held => _placed != null || _front != null;
 
-    private void Place(Key key)
+    internal void Place(Key key)
     {
         _placed = key;
         Hold();
@@ -233,7 +233,7 @@ public partial class Director
         ExplosionSystem.PerceptualCullRadians = 0;
     }
 
-    private void Unhold()
+    internal void Unhold()
     {
         _placed = null;
         _front = null;
@@ -359,7 +359,7 @@ public partial class Director
     }
 
     // The ground point's frame at a latitude and longitude of a celestial: up, north and east, in its ecliptic axes
-    private static (double3 up, double3 north, double3 east) Frame(Celestial body, double lat, double lon)
+    internal static (double3 up, double3 north, double3 east) Frame(Celestial body, double lat, double lon)
     {
         var ccf2cce = body.GetCcf2Cce();
         var up = body.GetDirCcfFromLatLon(lat, lon).Transform(ccf2cce);
@@ -370,7 +370,7 @@ public partial class Director
     }
 
     // A place's latitude, longitude and altitude above sea level over a celestial
-    private static (double lat, double lon, double alt) Place(Celestial body, double3 positionEcl)
+    internal static (double lat, double lon, double alt) Place(Celestial body, double3 positionEcl)
     {
         var offset = positionEcl - body.GetPositionEcl();
         var dirCcf = double3.Normalize(offset).Transform(body.GetCce2Ccf());
@@ -446,7 +446,7 @@ public partial class Director
     }
 
     // Eases u from 0 to 1: smoothly in and out, the speed too (smoothstep, and quintic smootherstep)
-    private static double Smooth(double u) => u * u * (3 - 2 * u);
+    internal static double Smooth(double u) => u * u * (3 - 2 * u);
     private static double Quintic(double u) => u * u * u * (u * (6 * u - 15) + 10);
 
     // Turns unit vector a towards unit vector b by the fraction w of the angle between them, ending exactly on b. When

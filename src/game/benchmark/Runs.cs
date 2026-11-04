@@ -369,7 +369,7 @@ public static class Runs
         Log($"BenchmarkRun: playing in this game, into {_out.Replace(Home, "~")}");
 
         _player = new PlayerGame();
-        Director.NewWorld();
+        World.NewWorld();
         // The test's view: no names over celestials and places (as benchmark.sh sets them)
         var ui = GameSettings.Current.Interface;
         (ui.CelestialNames, ui.LocationNames) = (false, false);

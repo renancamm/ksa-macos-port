@@ -176,7 +176,7 @@ internal sealed class FrameCaptureCommand
         text.AppendLine($"note: {note}");
         text.AppendLine(FormattableString.Invariant($"game time: {Universe.GetElapsedSeconds():F1} s"));
         text.AppendLine(FormattableString.Invariant($"warp: {Universe.GetSimulationSpeed()}"));
-        text.AppendLine($"camera: {Director.CurrentKey() ?? "near no celestial"}");
+        text.AppendLine($"camera: {Explorer.CurrentKey() ?? "near no celestial"}");
         if (DriverStats.Read() is { } f)
         {
             text.AppendLine(FormattableString.Invariant(

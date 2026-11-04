@@ -11,29 +11,28 @@ using KsaPort.Common;
 
 namespace KsaMetal.Benchmark;
 
-public partial class Director
+public sealed class Explorer
 {
-    private bool _exploring;
-    private bool _exploreStarted;
-    private int _exploreFrames;
+    private readonly string _outDir;
+    private bool _started;
+    private int _frames;
     private int _keys;
 
-    private void StartExplore()
+    internal Explorer(string outDir)
     {
-        _exploring = _options.Explore;
-        if (_exploring)
-            Log("explore mode: capture places with benchkey [name] in the console");
+        _outDir = outDir;
+        Director.Log("explore mode: capture places with benchkey [name] in the console");
     }
 
     // Pauses the clock through the first frames of play, so the game cannot start it again as it finishes loading (the
     // tour's light: its sections start within minutes of the game's start), and adds the console command
-    private void ExploreFrame()
+    internal void Frame()
     {
-        if (++_exploreFrames <= 300)
+        if (++_frames <= 300)
             InputEvents.SimSpeedBuffer.Add(new InputEvents.SimSpeedData { Speed = new SimSpeed(0) });
-        if (_exploreStarted)
+        if (_started)
             return;
-        _exploreStarted = true;
+        _started = true;
         Program.TerminalInterface.RegisterCommand(new Action<string>(CaptureKey), this);
         Program.ConsoleWindow.Print("benchmark: capture the camera's place with benchkey [name]");
     }
@@ -63,8 +62,8 @@ public partial class Director
         var body = camera?.Following as Celestial ?? Program.GetNearbyCelestial();
         if (camera == null || body == null)
             return null;
-        var (lat, lon, alt) = Place(body, camera.PositionEcl);
-        var (up, north, east) = Frame(body, lat, lon);
+        var (lat, lon, alt) = CameraOperator.Place(body, camera.PositionEcl);
+        var (up, north, east) = CameraOperator.Frame(body, lat, lon);
         var forward = camera.GetForwardEcl();
         double heading = Math.Atan2(double3.Dot(forward, east), double3.Dot(forward, north)) * 180 / Math.PI;
         double pitch = Math.Asin(Math.Clamp(double3.Dot(forward, up), -1, 1)) * 180 / Math.PI;
