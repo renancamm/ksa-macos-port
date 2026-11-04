@@ -23,19 +23,30 @@ static void latencyBegin(double waited, bool paced) {
 
 static void latencyAtPresent(id<CAMetalDrawable> drawable, id<MTLCommandBuffer> cb) {
     static uint64_t presents = 0;
-    std::lock_guard<std::mutex> lock(g_latencyMutex);
-    if (!g_latencyCsv) {
-        g_latencyCsv = fopen(kmtlConfig().latency, "w");
-        if (!g_latencyCsv) return;
-        fprintf(g_latencyCsv, "present,began,presented,gpu_end,shown,waited_ms,paced\n");
+    // The handler is added after the mutex is released: Core Animation runs presented handlers while it holds the
+    // drawable's lock, which addPresentedHandler takes too, and the handler takes this mutex (a deadlock otherwise:
+    // the game hung in vkQueuePresentKHR, 2026-11-04)
+    double now, began, waited;
+    uint64_t n;
+    bool paced;
+    FILE* csv;
+    {
+        std::lock_guard<std::mutex> lock(g_latencyMutex);
+        if (!g_latencyCsv) {
+            g_latencyCsv = fopen(kmtlConfig().latency, "w");
+            if (!g_latencyCsv) return;
+            fprintf(g_latencyCsv, "present,began,presented,gpu_end,shown,waited_ms,paced\n");
+        }
+        now = CACurrentMediaTime();
+        began = g_frameBegan ? g_frameBegan : now;
+        waited = g_frameWaited * 1e3;
+        n = ++presents;
+        paced = g_framePaced;
+        g_frameBegan = now;
+        g_frameWaited = 0;
+        g_framePaced = false;
+        csv = g_latencyCsv;
     }
-    double now = CACurrentMediaTime(), began = g_frameBegan ? g_frameBegan : now, waited = g_frameWaited * 1e3;
-    uint64_t n = ++presents;
-    bool paced = g_framePaced;
-    g_frameBegan = now;
-    g_frameWaited = 0;
-    g_framePaced = false;
-    FILE* csv = g_latencyCsv;
     [drawable addPresentedHandler:^(id<MTLDrawable> d) {
         std::lock_guard<std::mutex> lock(g_latencyMutex);
         fprintf(csv, "%llu,%.6f,%.6f,%.6f,%.6f,%.3f,%d\n", (unsigned long long)n, began, now, cb.GPUEndTime,
