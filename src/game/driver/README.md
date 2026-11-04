@@ -38,6 +38,7 @@ These switches turn a feature off or change a default, to work around a problem 
 | `skip_gpu_texture_compression` | off: textures read at scattered positions (those the game only uploads and samples, 3D images, square power-of-two storage images of 64 to 256 such as the ocean's waves) are lossless-compressed, as Metal does by default; about 2-4 % slower over terrain, up to 10 % over clouds and the sea, try it when the terrain, clouds, smoke or the sea look wrong |
 | `iva_ray_search` | off: the cockpit's ray tracing finds each hit with a ray query, as SPIRV-Cross writes it, instead of Metal's intersector ([Ray tracing](#from-vulkan-to-metal)); slower in the cockpit, try it when the cockpit looks wrong |
 | `compact_ray_tracing_memory` | off: every acceleration structure gets memory of its own and the buffer the game made for it stays unused, about 0.4 GB more in the solar system (the terrain's structures for clutter placement are about 170 MB each); try it when grass or the cockpit look wrong |
+| `return_freed_memory` | off: buffers of 4 MB or more share Vulkan Memory Allocator's blocks (up to 256 MB) like smaller ones, so memory the game frees stays in its block; try it when something looks wrong |
 | `skip_shadows_on_unlit_sides` | off: the port's shader edits that skip shadows where there is no light ([Shaders](#from-vulkan-to-metal)) look them up everywhere, as the game does; slower, try it when a shadow looks wrong |
 | `early_fragment_tests` | off: no second state that tests depth first for pipelines whose fragment shader stores to an image ([Shaders](#from-vulkan-to-metal)): the hooks' Skip Hidden Vessel Parts has nothing to switch to |
 | `texture_budget_mb` | the GPU memory budget in MB reported to the game, which sizes its texture streaming from it (0, the default: what Metal recommends for this Mac) |
@@ -157,7 +158,8 @@ possible. These are the main pieces:
 images inside them. KSA does this through Vulkan Memory Allocator. KSA Metal backs each block with a Metal heap
 (`MTLHeap`) and one Metal buffer that spans the whole heap. A Vulkan buffer is then just an offset into that heap
 buffer, with no Metal object of its own, and a Vulkan image is a Metal texture placed in the heap at its offset.
-All heaps are in one residency set, so Metal keeps them resident for every command buffer.
+Images of 64 MB or more and buffers of 4 MB or more ask for a block of their own, so memory the game frees goes back
+to macOS. All heaps are in one residency set, so Metal keeps them resident for every command buffer.
 
 **Shaders.** KSA compiles its GLSL shaders to SPIR-V, Vulkan's shader format. Metal only accepts its own shading
 language (MSL). KSA Metal translates each shader with [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross)

@@ -109,6 +109,14 @@ VKFN(void) vkDestroyBuffer(VkDevice, VkBuffer buffer, const VkAllocationCallback
     delete b;
 }
 
+// Buffers of 4 MB or more ask for memory of their own (return_freed_memory), so that freeing one gives its memory back
+// to macOS instead of leaving a hole in one of VMA's shared blocks (up to 256 MB); KSA's terrain levels are 20-60 MB
+// each. Measured in the solar system with far terrain let go: VMA's unused block space 0.98 GB, 0.58 at 16 MB, 0.11 at
+// 4 MB
+static bool preferDedicatedBuffer(VkDeviceSize size) {
+    return kmtlConfig().returnFreedMemory && size >= (4u << 20);
+}
+
 static void bufferRequirements(VkDevice device, KBuffer* b, VkMemoryRequirements* r) {
     r->size = kmtlAlignUp<VkDeviceSize>(b->size, 256);
     r->alignment = 256;
@@ -134,7 +142,7 @@ void kmtlFillDedicated(void* pNext, bool prefer) {
 VKFN(void) vkGetBufferMemoryRequirements2(VkDevice device, const VkBufferMemoryRequirementsInfo2* info, VkMemoryRequirements2* r) {
     KTRACE_FIRST();
     bufferRequirements(device, (KBuffer*)info->buffer, &r->memoryRequirements);
-    kmtlFillDedicated(r->pNext, false);
+    kmtlFillDedicated(r->pNext, preferDedicatedBuffer(((KBuffer*)info->buffer)->size));
 }
 
 VKFN(void) vkGetDeviceBufferMemoryRequirements(VkDevice device, const VkDeviceBufferMemoryRequirements* info, VkMemoryRequirements2* r) {
@@ -142,7 +150,7 @@ VKFN(void) vkGetDeviceBufferMemoryRequirements(VkDevice device, const VkDeviceBu
     tmp.size = info->pCreateInfo->size;
     tmp.accelStorage = (info->pCreateInfo->usage & VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR) != 0;
     bufferRequirements(device, &tmp, &r->memoryRequirements);
-    kmtlFillDedicated(r->pNext, false);
+    kmtlFillDedicated(r->pNext, preferDedicatedBuffer(tmp.size));
 }
 
 static VkResult bindBuffer(VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize offset) {
