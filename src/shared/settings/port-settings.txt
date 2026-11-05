@@ -38,7 +38,7 @@
 #   label     its row in the tab; help: the row's tooltip and the file's comment, which the values' help follows
 
 [presets] Presets | Sets the game's graphics and these settings together.
-auto_memory_saving | bool | true | | live | tab | | | Auto Memory Saving | Sets the Memory rows for this Mac's memory: on with 16 GB or less, and with 8 GB or less also Fewer Effects at Once, textures and shadow maps at most 2048 wide and a smaller texture budget. Off is the game's own.
+auto_memory_saving | bool | true | | live | tab | | | Auto Memory Saving | Based on this Mac's memory, turns on the Memory rows if needed and, where memory is short, lowers texture and shadow sizes and the texture budget. Off is the game's own.
 
 [image] Image | How the 3D view is drawn and scaled to the display.
 upscaling | choice:off=Off/metalfx=Temporal/spatial=Spatial | off | | restart | hooks:RenderScale | spatial,metalfx,off | | MetalFX | Draws the 3D view at the Render Scale below and scales it up to the display with Apple's MetalFX.

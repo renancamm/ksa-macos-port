@@ -480,8 +480,9 @@ internal static partial class MacPortTab
 
     private static bool? _presetsSaving;
 
-    // Auto Memory Saving: a banner under the presets' cards, on the MetalFX boxes' panel, its name and what it does
-    // here on the left and its switch on the right. Switched, its values become pending changes, as a card's do
+    // Auto Memory Saving: a banner under the presets' cards, on the MetalFX boxes' panel, its name and what it is on
+    // the left, the same either way but for a count of settings that differ, and its switch on the right. Switched,
+    // its values become pending changes, as a card's do
     private static void DrawMemoryBanner(PortSetting memory, GameSettings? pending)
     {
         float s = ConsoleStyle.EffectiveInterfaceScale, inset = ConsoleWidgets.RowLabelInsetPx;
@@ -493,12 +494,10 @@ internal static partial class MacPortTab
         ConsoleStyle.PushValueFont();
         float control = ConsoleStyle.FrameHeightPx * 1.1538461f + ConsoleWidgets.CheckboxStateGapPx + ImGui.CalcTextSize("OFF").X;
         ConsoleStyle.PopFont();
-        var mac = Presets.ThisMac;
         bool on = Value(memory) == "true";
         string Port(string key) => Value(PortSettings.Get(key)!);
         int count = pending != null && PresetsAvailable ? Presets.MemoryDifferences(pending, Port, on) : 0;
-        var note = (on ? $"For this Mac's {mac.MemoryGb} GB of memory." : "The game's own memory use.") +
-            (count > 0 ? $" {count} setting{(count == 1 ? " differs" : "s differ")} from {(on ? "this Mac's values" : "the game's own")}." : "");
+        var note = "Memory optimization preset for this Mac." + (count > 0 ? $" {count} setting{(count == 1 ? " differs" : "s differ")}." : "");
         // The switch past the panel's right edge rather than over the name, with a very large interface scale
         float left = MathF.Max(width - padX * 2f - gap - control, LabelWidth(memory.Label));
         var lines = WrapSmall(note, left);
@@ -543,7 +542,7 @@ internal static partial class MacPortTab
         ImGui.SetCursorScreenPos(new float2(at.X - inset, end.Y));
         Gap(4f * s);
         if (hovered)
-            Tooltip(memory.Help + "\n\nSwitching it makes its values pending changes, here and in the game's tabs; Apply keeps them.");
+            Tooltip(memory.Help);
     }
 
     // Auto Memory Saving's values for this Mac (on) or the game's own (off) become the pending changes, here and,
