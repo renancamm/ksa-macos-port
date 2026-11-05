@@ -165,6 +165,11 @@ public static class Pages
             md.AppendLine();
             md.AppendLine("A change is marked past the noise: with several passes or sessions, when the ranges of A's and B's measurings don't overlap and it is over 2 %; " +
                           "with one, past the part's limit (5 % without a noise profile).");
+            if (r.Fact("While A played") is { } memoryA && r.Fact("While B played") is { } memoryB)
+            {
+                md.AppendLine();
+                md.AppendLine($"macOS's memory while each side played: A {memoryA}; B {memoryB}.");
+            }
         }
         var warp = r.AllParts().Where(x => x.Part.Warp != null).ToList();
         if (warp.Count > 0)
@@ -352,7 +357,10 @@ public static class Pages
             html.Append($"<tr><td class=\"part\">{E(scenario)} {E(a.Name)}</td><td>{F(a.GpuMsMedian ?? a.FrameMsMedian, "0.0")}</td><td>{F(b.GpuMsMedian ?? b.FrameMsMedian, "0.0")}</td>");
             html.Append($"<td>{(moved ? Change(change < 0, $"{F(Math.Abs(change) * 100, "0")} % {(change < 0 ? "faster" : "slower")}") : $"<span class=\"quiet\">{F(change * 100, "+0;-0;0")} %</span>")}</td></tr>");
         }
-        html.Append("</tbody></table></div></section>");
+        html.Append("</tbody></table></div>");
+        if (r.Fact("While A played") is { } memoryA && r.Fact("While B played") is { } memoryB)
+            html.Append($"<p class=\"lead\">macOS's memory while each side played: A {E(memoryA)}; B {E(memoryB)}.</p>");
+        html.Append("</section>");
     }
 
     // frames.csv by scenario (the first session and measured pass that played it, not the warm-up): for each frame

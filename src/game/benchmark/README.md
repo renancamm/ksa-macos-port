@@ -108,7 +108,7 @@ The same tests are the project's tool for looking into the driver, the shaders a
 | Command | What it does |
 |---|---|
 | `check [test]` | the standard test of a change: the test (default `mixed`) at a fresh install's settings, compared with the baseline `main` of that test, or else the last run of it that passed played the same way; exits with 1 when screenshots differ |
-| `measure [test] [--repeat n] [--sessions n] [--ab key=value]` | numbers to judge a change by: a warm-up pass first, left out of the numbers, then `n` passes (3) in one game session; the report shows each part's median and range; `--sessions` plays more games of it; `--ab` plays games with the port setting `key=value` (B) and as the run has it (A, `--port` can give its value) in turn, and sets B against A part by part |
+| `measure [test] [--repeat n] [--sessions n] [--ab key=value]` | numbers to judge a change by: a warm-up pass first, left out of the numbers, then `n` passes (3) in one game session; the report shows each part's median and range; `--sessions` plays more games of it; `--ab` plays games with the port setting `key=value` (B) and as the run has it (A, `--port` can give its value) in turn, and sets B against A part by part, with macOS's memory pressure and swap while each side played |
 | `investigate <tool> <places...>` | a tool on places jumped to, or a whole test (below) |
 | `calibrate [test] [n]` | how much a test moves between runs of the same build on this Mac: `n` runs (3) at a fresh install's settings, written as the test's noise profile |
 | `baseline [set <name> [run...] \| remove <name>]` | names runs, one of each test, to compare with; a baseline's name stands for its run wherever a run is named, and `clean` keeps it |
@@ -237,8 +237,9 @@ about 25 of its boosters' exhaust lights still burn in the explosion view. Their
 
 The director measures nothing itself. It writes what happens to `events.jsonl` (a scenario starting, a part opened and
 closed, a screenshot, a checkpoint's moment, an error, a heartbeat every second) and every frame to `frames.csv`, marked
-with the part its numbers count in; `benchmark.sh` adds its own events around the game (a session, how it ended, the
-memory pressure). When the run ends, one step makes its record, `run.json`, from them
+with the part its numbers count in; `benchmark.sh` adds its own events around the game (a session, how it ended, and
+macOS's memory pressure and swap, over the run and in each game session: an A/B run's report shows them for each
+side). When the run ends, one step makes its record, `run.json`, from them
 ([`../../shared/benchmark/Finish.cs`](../../shared/benchmark/Finish.cs)): each part's numbers from its frames, the facts
 about the Mac and the settings, and one list of checks that decides what fails the run and what is worth knowing. The
 report, its page, the comparison and the list of runs all read records. `benchmark.sh` and the Mac Port tab's runs make

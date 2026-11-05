@@ -31,6 +31,7 @@ internal static class Tests
             ("a run with problems", Problems),
             ("the conditions noted", Notes),
             ("repeats", Repeats),
+            ("an A/B run's memory on each side", SideMemory),
             ("numbers in any region", AnyRegion),
             ("finish", FinishZip),
             ("comparing two runs", Compare),
@@ -128,10 +129,10 @@ internal static class Tests
 
     // One game session of the scenario earth: its part's frames, and its ending
     private static void Session(string dir, EventLog events, int session, double frameMs, double? gpuMs, Kind kind, string ending = "quit normally",
-        bool done = true, Action<EventLog>? during = null, uint shaders = 0)
+        bool done = true, Action<EventLog>? during = null, uint shaders = 0, string? variant = null)
     {
         events.Session = session;
-        events.Add("session");
+        events.Add("session", text: variant);
         events.Add("loaded", value: 1.5);
         events.Add("scenario", "earth", text: Lineup.Name(kind));
         events.Add("open", "earth", "earth1", game: 0, value: 0);
@@ -300,6 +301,25 @@ internal static class Tests
         // A part that never got to its speed in one repeat never did
         var merged = Summary.Merge([Summary.Of("debris", Warped(1), 1000, 0), Summary.Of("debris", Warped(0.5), 1000, 0), Summary.Of("debris", Warped(1), 1000, 0)]);
         Equal<double?>(null, merged.Warp?.SecondsToSpeed, "seconds to speed: never, in one of the runs");
+    }
+
+    // Each side's sessions: the worst pressure, the swap grown in all of them
+    private static void SideMemory()
+    {
+        var dir = Run("side-memory", sessions: 0);
+        var events = new EventLog(dir);
+        Action<EventLog> Memory(string text) => e => e.Add("session-memory", text: text);
+        Session(dir, events, 1, 10, 10, Kind.Views, variant: "A", during: Memory("pressure normal, swap 100.00 -> 100.00 MB"));
+        Session(dir, events, 2, 10, 10, Kind.Views, variant: "B", during: Memory("pressure warning, swap 100.00 -> 400.00 MB"));
+        Session(dir, events, 3, 10, 10, Kind.Views, variant: "A", during: Memory("pressure normal, swap 400.00 -> 450.00 MB"));
+        Session(dir, events, 4, 10, 10, Kind.Views, variant: "B", during: Memory("pressure normal, swap 450.00 -> 650.00 MB"));
+        Session(dir, events, 5, 10, 10, Kind.Views, variant: "A", during: Memory("pressure critical, swap ? -> ? MB"));
+        var record = Finished(dir);
+        Equal("worst memory pressure critical, swap grew 50 MB in 3 game sessions", record.Fact("While A played"), "side A");
+        Equal("worst memory pressure warning, swap grew 500 MB in 2 game sessions", record.Fact("While B played"), "side B");
+        Contains([File.ReadAllText(Path.Combine(dir, "report.md"))], "macOS's memory while each side played: A worst memory pressure critical",
+            "report.md's line");
+        Equal<string?>(null, Finished(Run("plain-memory")).Fact("While A played"), "a run without sides");
     }
 
     // A Mac whose region writes 16,7 for 16.7: the record's numbers stay the same

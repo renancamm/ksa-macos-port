@@ -4,6 +4,7 @@
 // again when a summary or a check improves.
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -59,6 +60,7 @@ public static class Finish
             record.Facts.Add(new Fact("Warm-up", record.WarmUp.GpuMs is { } gpu
                 ? $"a pass first, left out (GPU {gpu:F1} ms a frame)" : "a pass first, left out"));
         }
+        record.Facts.AddRange(SideMemory(events));
         var crashes = CrashReports(record.Started.ToUniversalTime());
         record.Findings = Checks.Run(new RunEvidence(dir, record, events, logs, crashes));
         record.Status = events.Any(e => e.Type == "stopped") ? Status.Stopped : record.Problems.Any() ? Status.Failed : Status.Passed;
@@ -66,6 +68,35 @@ public static class Finish
         Pages.WriteReport(dir, record);
         Package(dir, crashes);
         return record;
+    }
+
+    // An A/B run's memory on each side, from its sessions: macOS's worst memory pressure and the swap the Mac grew while
+    // they played ("While A played", "While B played"). A session whose swap couldn't be read counts its pressure
+    private static IEnumerable<Fact> SideMemory(List<RunEvent> events)
+    {
+        var variants = events.Where(e => e.Type == "session" && e.Text is { Length: > 0 }).GroupBy(e => e.Session)
+            .ToDictionary(g => g.Key, g => g.First().Text!);
+        foreach (var side in variants.Values.Distinct().Order())
+        {
+            string worst = "normal";
+            double grew = 0;
+            int sessions = 0;
+            foreach (var e in events.Where(e => e.Type == "session-memory" && variants.GetValueOrDefault(e.Session) == side))
+            {
+                var m = Regex.Match(e.Text ?? "", @"pressure (\w+), swap (\S+) -> (\S+) MB");
+                if (!m.Success)
+                    continue;
+                sessions++;
+                if (m.Groups[1].Value == "critical" || m.Groups[1].Value == "warning" && worst == "normal")
+                    worst = m.Groups[1].Value;
+                if (double.TryParse(m.Groups[2].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var before) &&
+                    double.TryParse(m.Groups[3].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var after))
+                    grew += Math.Max(0, after - before);
+            }
+            if (sessions > 0)
+                yield return new Fact($"While {side} played", FormattableString.Invariant(
+                    $"worst memory pressure {worst}, swap grew {grew:F0} MB in {sessions} game session{(sessions == 1 ? "" : "s")}"));
+        }
     }
 
     // The scenarios as they played, in order: each part's measurings (sessions, passes, but the warm-up's) summed up from

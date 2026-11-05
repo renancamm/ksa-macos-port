@@ -80,6 +80,9 @@ public static partial class Program
 
         private static string Swap() => Regex.Match(Ask("sysctl", "-n", "vm.swapusage"), @"used = ([0-9.]*)M").Groups[1].Value;
 
+        // macOS's memory pressure level by its name: 1 normal, 2 warning, 4 critical
+        private static string Pressure(int level) => level switch { 1 => "normal", 2 => "warning", _ => "critical" };
+
         private string Starmap() =>
             !File.Exists(Path.Combine(_res, "StarMap", "StarMap.dll")) ? "none"
             : File.Exists(Path.Combine(_res, "StarMap", "version.txt")) ? File.ReadAllText(Path.Combine(_res, "StarMap", "version.txt")).Trim()
@@ -295,7 +298,7 @@ public static partial class Program
                 File.Copy(_settings, Path.Combine(_out, "settings.toml"), true);
             var swapAfter = Swap();
             events.Session = 0;
-            events.Add("memory", text: $"pressure {pressure switch { 1 => "normal", 2 => "warning", _ => "critical" }}, " +
+            events.Add("memory", text: $"pressure {Pressure(pressure)}, " +
                                        $"swap {(swapBefore.Length > 0 ? swapBefore : "?")} -> {(swapAfter.Length > 0 ? swapAfter : "?")} MB");
 
             ToolsOutput();
@@ -342,6 +345,10 @@ public static partial class Program
         private void PlayOnce(int n, List<string> only, string variant, Dictionary<string, string> env, RunOptions options,
             List<(string Section, double Seconds)> lengths, int timeout, int hang, EventLog events, ref int pressure)
         {
+            // This session's memory pressure at its worst and the swap at its start: an A/B run's report gives each side
+            // its own
+            int sessionPressure = 1;
+            var swapStart = Swap();
             if (n > 1 || variant.Length > 0)
                 Output.Info($"Game {n}{(variant.Length > 0 ? $": {variant}{(variant == "B" ? $", {_ab}" : "")}" : "")}");
             events.Session = n;
@@ -386,8 +393,11 @@ public static partial class Program
                     Output.Warn("another game is running at the same time: this run's numbers won't count.");
                 }
                 // macOS's memory pressure: 1 normal, 2 warning, 4 critical
-                if (int.TryParse(Ask("sysctl", "-n", "kern.memorystatus_vm_pressure_level"), out var level) && level > pressure)
-                    pressure = level;
+                if (int.TryParse(Ask("sysctl", "-n", "kern.memorystatus_vm_pressure_level"), out var level))
+                {
+                    pressure = Math.Max(pressure, level);
+                    sessionPressure = Math.Max(sessionPressure, level);
+                }
                 if (_stopped)
                     ending = "was stopped with Ctrl-C";
                 else if (Watchdog.Hung(_out, n, hang) is { } stale)
@@ -425,6 +435,9 @@ public static partial class Program
             if (_stopped)
                 events.Add("stopped", text: "stopped with Ctrl-C");
             events.Add("ended", text: ending);
+            var swapEnd = Swap();
+            events.Add("session-memory", text: $"pressure {Pressure(sessionPressure)}, swap " +
+                                               $"{(swapStart.Length > 0 ? swapStart : "?")} -> {(swapEnd.Length > 0 ? swapEnd : "?")} MB");
             if (alongside)
                 events.Add("alongside");
             // Instruments stops recording when the game quits; it then writes the trace

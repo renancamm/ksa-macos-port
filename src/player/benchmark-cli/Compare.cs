@@ -232,7 +232,7 @@ public static partial class Program
     private static List<(string Key, string A, string B)> Macs(RunRecord ra, RunRecord rb)
     {
         var rows = ra.Facts.Select(f => f.Key).Union(rb.Facts.Select(f => f.Key))
-            .Where(k => k is not ("Displays" or "Scenarios" or "Settings changed") && ra.Fact(k) != rb.Fact(k))
+            .Where(k => k is not ("Displays" or "Scenarios" or "Settings changed" or "While A played" or "While B played") && ra.Fact(k) != rb.Fact(k))
             .Select(k => (k, ra.Fact(k) ?? "", rb.Fact(k) ?? "")).ToList();
         if (ra.Mode != rb.Mode)
             rows.Add(("Mode", ra.Mode, rb.Mode));

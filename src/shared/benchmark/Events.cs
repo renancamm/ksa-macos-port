@@ -19,6 +19,7 @@
 //   ended      a game session ended: Session, Text how ("quit normally", "crashed (signal 6) in mixed at 1.5 s"...)
 //   alongside  another game ran during the session: Session
 //   memory     macOS's memory pressure at its worst and the swap used before and after: Text
+//   session-memory  the same for one game session: Session, Text
 //   gpu        the GPU was busy before the run: Value its utilisation in percent
 using System;
 using System.Collections.Generic;
