@@ -21,8 +21,8 @@ public static class MemoryUse
     // The memory savers, the table's Memory section
     public static readonly string[] Rows =
     [
-        "texture_file_mapping", "release_freed_memory", "compact_ray_tracing_memory", "load_textures_once", "unload_far_terrain",
-        "unload_far_textures", "load_terrain_by_altitude",
+        "texture_file_mapping", "sound_file_mapping", "release_freed_memory", "compact_ray_tracing_memory",
+        "load_textures_once", "unload_far_terrain", "unload_far_textures", "load_terrain_by_altitude",
     ];
 
     // The game's settings with 8 GB or less: the field of GameSettings or GameSettings.Graphics, its key in
