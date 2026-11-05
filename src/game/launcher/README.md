@@ -10,4 +10,4 @@ the launcher reads its one setting from `port-settings.toml` itself (the game's 
 
 | Setting | Effect |
 |---|---|
-| `release_freed_memory` | on (Memory Use turns it on with 16 GB of memory or less, also at a fresh install's first start, before the file exists): `MallocLargeCache=0`, so blocks of 128 KB or more the game frees go back to macOS at once instead of staying in the allocator's cache, dirty (about 0.8 GB with the solar system). The hooks' `FreedMemory` does the game's half ([`../changes/`](../changes/)) |
+| `release_freed_memory` | on: `MallocLargeCache=0`, so blocks of 128 KB or more the game frees go back to macOS at once instead of staying in the allocator's cache, dirty (about 0.8 GB with the solar system); with no file yet, a fresh install's first start, on with 16 GB of memory or less, as Memory Use is about to write it. The hooks' `FreedMemory` does the game's half ([`../changes/`](../changes/)) |

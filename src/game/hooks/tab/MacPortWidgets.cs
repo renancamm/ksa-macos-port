@@ -435,39 +435,45 @@ internal static partial class MacPortTab
     // What each preset's card shows: the presets are made once, when the hooks start
     private static (string Label, string Value)[][]? _summaries;
 
-    // The cards, four on a row, or two when what they show doesn't fit. Returns the one under the mouse
-    private static Presets.Preset? DrawCards(Presets.Preset? inUse, Presets.Preset? shown, GameSettings? pending)
+    // A card: a preset's name, its one-line description and what it sets
+    private sealed record Card(string Name, string Short, (string Label, string Value)[] Lines, string Id);
+
+    // The cards, wanted on a row, or half as many when what they show doesn't fit. The one in use (inUse) has a soft
+    // fill, and the one the pending changes make (next) is gold, as the game's Apply is then. Returns the one under
+    // the mouse and the one clicked, -1 for none
+    private static (int Hovered, int Clicked) DrawCards(Card[] cards, int inUse, int next, int wanted)
     {
         float s = ConsoleStyle.EffectiveInterfaceScale, inset = ConsoleWidgets.RowLabelInsetPx, gap = 8f * s, pad = 10f * s;
         var at = ImGui.GetCursorScreenPos() + new float2(inset, 0f);
         float avail = ConsoleStyle.ContentAvailWidth() - inset;
-        var values = _summaries ??= Presets.All.Select(Presets.Summary).ToArray();
         ConsoleStyle.PushSignatureFont();
         float small = ImGui.GetFontSize(), noteLine = MathF.Round(small), rowLine = noteLine;
-        float need = values.SelectMany(v => v).Max(r => ImGui.CalcTextSize(r.Label).X + ImGui.CalcTextSize(r.Value).X) + gap + pad * 2f;
+        float need = cards.SelectMany(c => c.Lines).Max(r => ImGui.CalcTextSize(r.Label).X + ImGui.CalcTextSize(r.Value).X) + gap + pad * 2f;
         ConsoleStyle.PopFont();
-        need = MathF.Max(need, Presets.All.Max(p => LabelWidth(p.Name.ToUpperInvariant())) + pad * 2f);
-        int columns = (avail - gap * 3f) / 4f >= need ? 4 : 2;
+        need = MathF.Max(need, cards.Max(c => LabelWidth(c.Name.ToUpperInvariant())) + pad * 2f);
+        int columns = wanted;
+        while (columns > 1 && (avail - gap * (columns - 1)) / columns < need)
+            columns /= 2;
         float width = (avail - gap * (columns - 1)) / columns;
-        var notes = Presets.All.Select(p => WrapSmall(p.Short, width - pad * 2f)).ToArray();
+        var notes = cards.Select(c => WrapSmall(c.Short, width - pad * 2f)).ToArray();
         int noteLines = notes.Max(n => n.Length);
         float nameHeight = LabelHeight();
-        int rows = values[0].Length;
+        int rows = cards.Max(c => c.Lines.Length);
         float space = 7f * s, rule = pad + nameHeight + space + noteLine * noteLines + space;
         float height = rule + space + rowLine * rows + pad;
         var draw = ImGui.GetWindowDrawList();
         bool enabled = ImGui.GetStyle().Alpha >= 1f;
-        Presets.Preset? hovered = null;
-        for (int i = 0; i < Presets.All.Length; i++)
+        int hovered = -1, clicked = -1;
+        for (int i = 0; i < cards.Length; i++)
         {
-            var preset = Presets.All[i];
+            var card = cards[i];
             var pos = at + new float2((width + gap) * (i % columns), (height + gap) * (i / columns));
             var size = new float2(width, height);
             var end = pos + size;
             ImGui.SetCursorScreenPos(in pos);
-            bool clicked = false;
+            bool pressed = false;
             if (enabled)
-                clicked = ImGui.InvisibleButton($"##MacPort_preset_{preset.Name}", in size);
+                pressed = ImGui.InvisibleButton($"##{card.Id}", in size);
             else
                 ImGui.Dummy(in size);
             // Not while the mouse has left it, as letting go there doesn't click
@@ -475,23 +481,20 @@ internal static partial class MacPortTab
             // A greyed-out card still has its tooltip
             bool over = ImGui.IsMouseHoveringRect(in pos, in end) && ImGui.IsWindowHovered();
             if (over)
-                hovered = preset;
-            if (clicked && pending != null)
-            {
-                Presets.Use(preset, pending, Pending);
-                Hooks.Log($"MacPortTab: {preset.Name} preset pending");
-            }
-            bool next = shown == preset && shown != inUse, use = inUse == preset;
-            uint Colour(uint normal) => ConsoleStyle.ApplyAlpha(next ? ConsoleStyle.PanelU32 : normal);
+                hovered = i;
+            if (pressed)
+                clicked = i;
+            bool isNext = i == next && next != inUse, use = i == inUse;
+            uint Colour(uint normal) => ConsoleStyle.ApplyAlpha(isNext ? ConsoleStyle.PanelU32 : normal);
             // Raised, in the colour of the game's raised panels, and pressed in while the mouse holds it. The shadow is a few
             // layers, as ImGui has no blur, and stays within the gap between the cards
             if (!down)
                 for (float layer = 3f; layer >= 1f; layer--)
                     draw.AddRectFilled(pos - new float2(layer * 0.5f * s, 0f), end + new float2(layer * 0.5f * s, layer * s), ConsoleStyle.ApplyAlpha(ConsoleStyle.ApplyAlpha(ConsoleStyle.BottomShadeU32, 0.6f)), ConsoleStyle.FrameRoundingPx);
-            draw.AddRectFilled(in pos, in end, ConsoleStyle.ApplyAlpha(next ? ConsoleStyle.PendingU32 : down ? ConsoleStyle.InsetU32 : ConsoleStyle.PanelRaisedU32), ConsoleStyle.FrameRoundingPx);
-            if (!next && !down && (use || over && enabled))
+            draw.AddRectFilled(in pos, in end, ConsoleStyle.ApplyAlpha(isNext ? ConsoleStyle.PendingU32 : down ? ConsoleStyle.InsetU32 : ConsoleStyle.PanelRaisedU32), ConsoleStyle.FrameRoundingPx);
+            if (!isNext && !down && (use || over && enabled))
                 draw.AddRectFilled(in pos, in end, ConsoleStyle.ApplyAlpha(use ? ConsoleStyle.ApplyAlpha(ConsoleStyle.ActiveToolU32, 0.1f) : ConsoleStyle.RowHoverWashU32), ConsoleStyle.FrameRoundingPx);
-            uint border = next ? ConsoleStyle.PendingU32 : use ? ConsoleStyle.ActiveToolU32 : (over || down) && enabled ? ConsoleStyle.TextMutedU32 : ConsoleStyle.FrameU32;
+            uint border = isNext ? ConsoleStyle.PendingU32 : use ? ConsoleStyle.ActiveToolU32 : (over || down) && enabled ? ConsoleStyle.TextMutedU32 : ConsoleStyle.FrameU32;
             draw.AddRect(in pos, in end, ConsoleStyle.ApplyAlpha(border), ConsoleStyle.FrameRoundingPx, ImDrawFlags.None, ConsoleStyle.WindowBorderThicknessPx);
             if (!down)
             {
@@ -507,7 +510,7 @@ internal static partial class MacPortTab
             float top = pos.Y + (down ? ConsoleStyle.BezelInsetPx : 0f);
             float y = top + pad, left = pos.X + pad, right = end.X - pad;
             ConsoleStyle.PushLabelFont();
-            draw.AddText(new float2(left, y), Colour(use ? ConsoleStyle.TextPrimaryU32 : ConsoleStyle.TextLabelU32), preset.Name.ToUpperInvariant());
+            draw.AddText(new float2(left, y), Colour(use ? ConsoleStyle.TextPrimaryU32 : ConsoleStyle.TextLabelU32), card.Name.ToUpperInvariant());
             ConsoleStyle.PopFont();
             y += nameHeight + space;
             ConsoleStyle.PushSignatureFont();
@@ -518,9 +521,9 @@ internal static partial class MacPortTab
             }
             y = top + rule;
             draw.AddLine(new float2(left, y), new float2(right, y),
-                next ? ConsoleStyle.ApplyAlpha(ConsoleStyle.ApplyAlpha(ConsoleStyle.PanelU32, 0.45f)) : ConsoleStyle.ApplyAlpha(ConsoleStyle.HairlineU32), ConsoleStyle.WindowBorderThicknessPx);
+                isNext ? ConsoleStyle.ApplyAlpha(ConsoleStyle.ApplyAlpha(ConsoleStyle.PanelU32, 0.45f)) : ConsoleStyle.ApplyAlpha(ConsoleStyle.HairlineU32), ConsoleStyle.WindowBorderThicknessPx);
             y += space;
-            foreach (var (label, value) in values[i])
+            foreach (var (label, value) in card.Lines)
             {
                 draw.AddText(new float2(left, y), Colour(use ? ConsoleStyle.TextLabelU32 : ConsoleStyle.TextMutedU32), label);
                 draw.AddText(new float2(right - ImGui.CalcTextSize(value).X, y), Colour(use ? ConsoleStyle.TextPrimaryU32 : ConsoleStyle.TextLabelU32), value);
@@ -528,10 +531,10 @@ internal static partial class MacPortTab
             }
             ConsoleStyle.PopFont();
         }
-        int lines = (Presets.All.Length + columns - 1) / columns;
+        int lines = (cards.Length + columns - 1) / columns;
         ImGui.SetCursorScreenPos(new float2(at.X - inset, at.Y + (height + gap) * lines - gap));
         Gap(7f * s);
-        return hovered;
+        return (hovered, clicked);
     }
 
     // The benchmark's tests, in the order full plays them

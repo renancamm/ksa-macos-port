@@ -12,13 +12,14 @@ using KsaPort.Common;
 namespace KsaMetal.Hooks.Tab;
 
 // The Mac Port tab's presets: Performance, Balanced and Quality, each a set of the game's own graphics settings and of
-// port settings (the settings table's presets column), and Game Defaults, the defaults of the same settings. With
-// Memory Use on Auto (MemoryUse, in the shared library), every preset also gives the Memory rows for this Mac's memory,
-// and with 8 GB or less the game's textures and shadow maps at most 2048 pixels wide and its texture streaming budget
-// at most 512 MB. A preset's card in the tab makes them pending changes, in the game's tabs and in this one, as if
-// the player had set each row; the game's Apply keeps them, Discard drops them. Nothing else changes a setting, but a
-// fresh install's first start, which Memory Use on Auto gives its values (the loader the port settings, FirstStart
-// here the game's).
+// port settings (the settings table's presets column), and Game Defaults, the defaults of the same settings. Memory
+// Use (MemoryUse, in the shared library) is the second preset beside them: the Memory rows are its own, which these
+// leave alone (Fewer Effects at Once it shares with Performance), but with Memory Use on Auto on a Mac with 8 GB of
+// memory or less every preset's textures and shadow maps are at most 2048 pixels wide and its texture streaming
+// budget at most 512 MB. A preset's card in the tab makes its values pending changes, in the game's tabs and in this
+// one, as if the player had set each row; the
+// game's Apply keeps them, Discard drops them. Nothing else changes a setting, but a fresh install's first start,
+// which Memory Use on Auto gives its values (the loader the port settings, FirstStart here the game's).
 //
 // Every preset gives every setting any preset sets, so a preset after another leaves nothing of the first, except
 // the port rows the tab can't change (set outside, their hook unavailable) and the render scale without upscaling,
@@ -54,13 +55,10 @@ internal static class Presets
             Port = Port(index);
             if (Port["upscaling"] == "off")
                 Port.Remove("render_scale");
-            if (memoryAuto)
-                foreach (var (key, value) in MemoryUse.Port(mac.Tier))
-                    Port[key] = value;
         }
     }
 
-    // What the presets go by, with Memory Use on Auto: this Mac's memory
+    // What Memory Use goes by on Auto: this Mac's memory
     public sealed record Mac(string Chip, int MemoryGb)
     {
         public MemoryUse.Tier Tier => MemoryUse.TierOf(MemoryGb);
@@ -76,8 +74,8 @@ internal static class Presets
             "The fastest the game gets: MetalFX Spatial draws the 3D view at half the window's size with the " +
             "game's Anti-Aliasing off; shadows, clouds, smoke and effects are drawn the simple way, without " +
             "cockpit ray tracing, and planets and grass get less detailed textures, for less memory. Softer and " +
-            "plainer, with rougher edges and slower crew portraits. With Vsync the frame rate holds steady at half the " +
-            "display's refresh rate. Time warp slows down " +
+            "plainer, with rougher edges, slower crew portraits and room for fewer effects at once. With Vsync the frame rate " +
+            "holds steady at half the display's refresh rate: 60 FPS on a 120 Hz display, 30 on a 60 Hz one. Time warp slows down " +
             "less: lighter physics for tumbling pieces, debris that settles and stays where it lies, and cloud shadows " +
             "that fall out of place during very high warp.",
             mac => Game(mac, antiAliasing: "Disabled", filter: "Pcf", cascades: 2048, terrain: 2048,
@@ -253,25 +251,37 @@ internal static class Presets
         }
     }
 
+    // The game's own settings, as its Reset makes them: read, never changed
+    private static GameSettings? _gameDefaults;
+    private static GameSettings GameDefaultSettings => _gameDefaults ??= new GameSettings();
+
     // Memory Use on Off, 8 GB or less: the game's own values for the limits its tabs can't change
     public static void UseGameMemory(GameSettings game)
     {
         if (ThisMac.Tier != MemoryUse.Tier.Small)
             return;
-        var defaults = new GameSettings();
         foreach (var name in MemoryUse.OffRestores)
         {
             var field = Field(name);
-            field.SetValue(Owner(field, game), field.GetValue(Owner(field, defaults)));
+            field.SetValue(Owner(field, game), field.GetValue(Owner(field, GameDefaultSettings)));
         }
     }
 
-    // How many of Memory Use's values for this Mac have another value here (Auto)
-    public static int MemoryDifferences(GameSettings game, Func<string, string> port) =>
-        MemoryUse.Port(ThisMac.Tier).Where(kv => Settable(kv.Key)).Count(kv => port(kv.Key) != kv.Value) +
-        (ThisMac.Tier != MemoryUse.Tier.Small ? 0 : MemoryUse.SmallGame.Count(g =>
-            Convert.ToInt32(Fields[g.Field].GetValue(Owner(Fields[g.Field], game)), CultureInfo.InvariantCulture) is var v &&
-            MemoryUse.Limit(v, g.AtMost) != v));
+    // How many of Memory Use's values (Auto's for this Mac, or Off's) have another value here: its rows, and with 8 GB
+    // or less the game's limits (Auto) or the budget Off gives back
+    public static int MemoryDifferences(GameSettings game, Func<string, string> port, bool auto)
+    {
+        var rows = auto ? MemoryUse.Port(ThisMac.Tier) : MemoryUse.Off();
+        int count = rows.Where(kv => Settable(kv.Key)).Count(kv => port(kv.Key) != kv.Value);
+        if (ThisMac.Tier != MemoryUse.Tier.Small)
+            return count;
+        if (auto)
+            return count + MemoryUse.SmallGame.Count(g =>
+                Convert.ToInt32(Fields[g.Field].GetValue(Owner(Fields[g.Field], game)), CultureInfo.InvariantCulture) is var v &&
+                MemoryUse.Limit(v, g.AtMost) != v);
+        return count + MemoryUse.OffRestores.Count(name =>
+            Field(name) is var field && !Equals(field.GetValue(Owner(field, game)), field.GetValue(Owner(field, GameDefaultSettings))));
+    }
 
     private static void Check(Preset preset)
     {
@@ -327,9 +337,9 @@ internal static class Presets
         preset.Port.Where(kv => Settable(kv.Key)).Count(kv => !Same(Settings.Get(kv.Key), port(kv.Key), kv.Value)) +
         (FullscreenSize(game) is { Width: > 0 } size && (game.ScreenWidth != size.Width || game.ScreenHeight != size.Height) ? 1 : 0);
 
-    // A port setting the tab can change: not set outside, its hook not skipped or failed
+    // A port setting the tab can change: not set outside, none of its hooks skipped or failed
     public static bool Settable(string key) =>
-        Settings.Get(key) is var s && s.Outside == null && Hooks.Status.GetValueOrDefault(s.Hook) is not { Unavailable: true };
+        Settings.Get(key) is var s && s.Outside == null && !s.Hooks.Any(h => Hooks.Status.GetValueOrDefault(h) is { Unavailable: true });
 
     // A preset's card: its values become the pending changes of the game's copy of its settings and of the tab
     public static void Use(Preset preset, GameSettings pending, IDictionary<string, string> port)

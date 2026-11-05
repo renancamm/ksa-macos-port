@@ -5,35 +5,31 @@ using System.Runtime.InteropServices;
 
 namespace KsaPort.Common;
 
-// Memory Use, the Presets section's row (memory_use): on Auto, the memory savers (the table's Memory section) and the
-// game's texture and shadow sizes follow this Mac's memory, in three tiers. With 16 GB or less the savers are on; with
-// 8 GB or less the game's textures and shadow maps are also at most 2048 pixels wide (the solar system doesn't fit an
-// 8 GB Mac's GPU memory otherwise) and the savers that can change what it shows in rare cases are on too (SmallOnly); with more than 16 GB the game keeps its own memory use: nothing gained, no part of
-// the port's left in the way. Auto acts as a preset does: when the player picks it in the tab, with every preset card,
-// on a fresh install's first start (the hooks' loader, as it writes port-settings.toml) and in a benchmark run with
-// --defaults. A row changed by hand afterwards keeps its value.
+// Memory Use, the Presets section's second preset (memory_use), beside the graphics presets. On Auto it gives the
+// rows with values in the table's memory column the values for this Mac's memory, in three tiers: with 8 GB or less
+// it also limits the game's texture and shadow sizes and its texture streaming budget (the solar system doesn't fit
+// an 8 GB Mac's GPU memory otherwise); with more than 16 GB the game keeps its own memory use, nothing gained, no
+// part of the port's left in the way. Off gives the rows their defaults, the game's own, and the budget back. The
+// Memory section's rows are its own, which the graphics presets never touch; Fewer Effects at Once it shares with the
+// Performance preset: on with 8 GB or less, the preset's otherwise (an empty tier value). Picked like a preset: in
+// the tab, on a fresh install's first start (the hooks' loader, as it writes port-settings.toml), on the game's
+// Reset, and in a benchmark run with --defaults. A row changed by hand afterwards keeps its value; with 8 GB or less
+// every graphics preset's texture and shadow sizes take the limits.
 public static class MemoryUse
 {
     public const string Key = "memory_use";
 
+    // In the order of the table's memory column: 8 GB or less, 16 GB or less, more
     public enum Tier { Small, Medium, Large }
 
-    // The memory savers, the table's Memory section
-    public static readonly string[] Rows =
-    [
-        "texture_file_mapping", "sound_file_mapping", "release_freed_memory", "compact_ray_tracing_memory",
-        "load_textures_once", "unload_far_terrain", "unload_far_textures", "load_terrain_by_altitude",
-        "smaller_particle_pool",
-    ];
-
-    // The savers on Auto with 8 GB or less only: they can change what the game shows in rare cases
-    public static readonly string[] SmallOnly = ["smaller_particle_pool"];
+    // The rows Memory Use sets: those with values in the table's memory column
+    public static IEnumerable<PortSetting> Rows => PortSettings.All.Where(s => s.Memory.Length > 0);
 
     // The game's settings with 8 GB or less: the field of GameSettings or GameSettings.Graphics, its key in
     // settings.toml, and the largest value it keeps (0, none or automatic, becomes it). The texture streamer's budget,
     // on automatic, is worked out once from the GPU memory free at its first frame (90 % of it, in powers of two,
-    // 512 MB at least): an 8 GB Mac gets 512, and memory the savers free at load would only grow it (to 1024 MB in the
-    // solar system with Smaller Particle Pool, more than the pool saves)
+    // 512 MB at least): an 8 GB Mac gets 512, and memory the rows free at load would only grow it (to 1024 MB in the
+    // solar system with Fewer Effects at Once, more than it saves)
     public static readonly (string Field, string Key, int AtMost)[] SmallGame =
     [
         ("TerrainTextureCap", "celestialTextureCap", 2048),
@@ -44,7 +40,7 @@ public static class MemoryUse
     ];
 
     // Of those, the ones the game's tabs can't change (its Graphics tab shows the streaming budget, without a control):
-    // Off gives them the game's own values again, as it does the Memory rows
+    // Off gives them the game's own values again, as it does the rows
     public static readonly string[] OffRestores = ["TextureStreamingBudget"];
 
     // This Mac's memory in GB (hw.memsize, rounded); KSA_PORT_MEMORY_GB stands in for it, to try another tier
@@ -57,7 +53,8 @@ public static class MemoryUse
         return SysctlByName("hw.memsize", ref value, ref size, 0, 0) == 0 ? (int)Math.Round(value / 1073741824.0) : 0;
     }
 
-    // Unknown memory (0) counts as plenty: the game as it is
+    // Unknown memory (0) counts as plenty: the game as it is. The launcher applies the same rule to its one setting
+    // before the file exists (src/game/launcher/launcher.c)
     public static Tier TierOf(int gb) => gb is > 0 and <= 8 ? Tier.Small : gb is > 0 and <= 16 ? Tier.Medium : Tier.Large;
 
     public static Tier ThisMac() => TierOf(MemoryGb());
@@ -69,12 +66,13 @@ public static class MemoryUse
         _ => "more than 16 GB",
     };
 
-    // The savers' values on Auto
-    public static Dictionary<string, string> Port(Tier tier) => Rows.ToDictionary(key => key,
-        key => tier == Tier.Small || tier == Tier.Medium && !SmallOnly.Contains(key) ? "true" : "false");
+    // The rows' values on Auto, for a tier: those with a value for it (an empty one leaves the row to its preset)
+    public static Dictionary<string, string> Port(Tier tier) =>
+        Rows.Where(s => s.Memory[(int)tier].Length > 0).ToDictionary(s => s.Key, s => s.Memory[(int)tier]);
 
-    // The savers' values on Off: the game as it is
-    public static Dictionary<string, string> Off() => Rows.ToDictionary(key => key, _ => "false");
+    // The rows' values on Off: the default, the game's own, of every row Auto sets on a Mac with memory to spare
+    public static Dictionary<string, string> Off() =>
+        Rows.Where(s => s.Memory[(int)Tier.Large].Length > 0).ToDictionary(s => s.Key, s => s.Default);
 
     // A size or cap with the small tier's limit
     public static int Limit(int value, int atMost) => value == 0 || value > atMost ? atMost : value;

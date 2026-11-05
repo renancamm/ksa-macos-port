@@ -300,8 +300,10 @@ internal static partial class MacPortTab
             note = "set outside";
             return $"{s.Outside} is set where the game was started, and it decides this setting instead of the file.";
         }
-        if (Hooks.Status.GetValueOrDefault(s.Hook) is { Unavailable: true } status)
+        foreach (var hook in s.Hooks)
         {
+            if (Hooks.Status.GetValueOrDefault(hook) is not { Unavailable: true } status)
+                continue;
             note = "unavailable";
             return status.State == HookState.Skipped
                 ? "Unavailable with this KSA version: the game's code it changes has moved, so it is left out (logs/console.log says more)."
@@ -419,11 +421,12 @@ internal static partial class MacPortTab
         }
     }
 
-    // The presets: one card each, with what it sets, making its values the pending changes here and in the game's tabs.
-    // The one in use has a soft fill, and the one the pending changes make is gold, as the game's Apply is then
+    // The presets: one card each, with what it sets, making its values the pending changes here and in the game's tabs,
+    // then Memory Use, the second preset, as two cards. The one in use has a soft fill, and the one the pending changes
+    // make is gold, as the game's Apply is then
     private static void DrawPresets()
     {
-        SectionHeader("Presets", "Sets the game's graphics and these settings together.", first: true);
+        SectionHeader("Presets", PortSettings.Sections.First(s => s.Key == "presets").Caption, first: true);
         var unavailable = Hooks.Status.GetValueOrDefault(nameof(Presets)) is { Unavailable: true } status
             ? status.State == HookState.Skipped
                 ? "Unavailable with this KSA version: the game's settings it sets have moved (logs/console.log says more)."
@@ -431,11 +434,11 @@ internal static partial class MacPortTab
             : null;
         var pending = _temporary.GetValue(null) as GameSettings;
         var memory = PortSettings.Get(MemoryUse.Key)!;
-        // Without the presets' values there is nothing for the cards to show; Memory Use still sets the Memory rows
+        // Without the presets' values there is nothing for the cards to show; Memory Use still sets its rows
         if (unavailable != null || Presets.All.Any(p => p.Port.Count == 0))
         {
             Caption(unavailable ?? "Unavailable.", ConsoleWidgets.RowLabelInsetPx);
-            DrawMemoryUse(memory, pending);
+            DrawMemoryCards(memory, pending);
             return;
         }
         var mac = Presets.ThisMac;
@@ -446,15 +449,22 @@ internal static partial class MacPortTab
             _summaries = null;
             _presetsAuto = auto;
         }
-        var forMac = auto ? $"With Memory Use on Auto, for this Mac's {mac.MemoryGb} GB of memory: {MemoryEffect(mac.Tier)}. " : "";
+        var limits = auto && mac.Tier == MemoryUse.Tier.Small
+            ? $"With Memory Use on Auto on this {mac.MemoryGb} GB Mac, its textures and shadow maps are at most 2048 wide. " : "";
         var inUse = Presets.All.FirstOrDefault(p => Presets.Matches(p, GameSettings.Current, key => PortSettings.Get(key)!.Saved));
         var shown = pending == null ? inUse : Presets.All.FirstOrDefault(p => Presets.Matches(p, pending, key => Value(PortSettings.Get(key)!)));
+        var summaries = _summaries ??= Presets.All.Select(Presets.Summary).ToArray();
+        var cards = Presets.All.Select((p, i) => new Card(p.Name, p.Short, summaries[i], "MacPort_preset_" + p.Name)).ToArray();
         ConsoleStyle.PushDisabled(pending == null);
-        var hovered = DrawCards(inUse, shown, pending);
+        var (hovered, clicked) = DrawCards(cards, Array.IndexOf(Presets.All, inUse), Array.IndexOf(Presets.All, shown), 4);
         ConsoleStyle.PopDisabled();
-        if (hovered != null)
-            Tooltip(hovered.Help + "\n\n" + (hovered == Presets.GameDefaults ? "" : forMac) +
-                "This makes them pending changes, here and in the game's tabs; Apply keeps them.");
+        if (clicked >= 0 && pending != null)
+        {
+            Presets.Use(Presets.All[clicked], pending, Pending);
+            Hooks.Log($"MacPortTab: {Presets.All[clicked].Name} preset pending");
+        }
+        if (hovered >= 0)
+            Tooltip(Presets.All[hovered].Help + "\n\n" + limits + "This makes them pending changes, here and in the game's tabs; Apply keeps them.");
         string Port(string key) => Value(PortSettings.Get(key)!);
         if (shown == null && pending != null)
         {
@@ -462,23 +472,7 @@ internal static partial class MacPortTab
             int count = Presets.Differences(closest, pending, Port);
             Caption($"Own settings: {count} setting{(count == 1 ? " differs" : "s differ")} from {closest.Name}.", ConsoleWidgets.RowLabelInsetPx);
         }
-        DrawMemoryUse(memory, pending);
-    }
-
-    // Memory Use, picked here: its values become pending changes, as a preset's do
-    private static void DrawMemoryUse(PortSetting memory, GameSettings? pending)
-    {
-        string before = Value(memory);
-        DrawRow(memory);
-        if (Value(memory) != before)
-            MemoryUsePicked(Value(memory), pending);
-        if (Value(memory) == "auto" && pending != null)
-        {
-            string Port(string key) => Value(PortSettings.Get(key)!);
-            int count = PresetsAvailable ? Presets.MemoryDifferences(pending, Port) : 0;
-            Caption($"This Mac has {Presets.ThisMac.MemoryGb} GB of memory: {MemoryEffect(Presets.ThisMac.Tier)}." +
-                (count > 0 ? $" {count} setting{(count == 1 ? " differs" : "s differ")} from it." : ""), ConsoleWidgets.RowLabelInsetPx);
-        }
+        DrawMemoryCards(memory, pending);
     }
 
     // The presets know the game's settings they set (unavailable: a KSA update moved one)
@@ -487,12 +481,63 @@ internal static partial class MacPortTab
 
     private static bool? _presetsAuto;
 
-    private static string MemoryEffect(MemoryUse.Tier tier) => tier switch
+    // Memory Use: Auto, for this Mac's memory, and Off, the game's own, each a card with what it sets, under the
+    // presets' cards. A card picked makes its values pending changes, as a preset's does
+    private static void DrawMemoryCards(PortSetting memory, GameSettings? pending)
     {
-        MemoryUse.Tier.Small => "the Memory rows on, textures and shadow maps at most 2048 pixels wide, texture streaming at most 512 MB",
-        MemoryUse.Tier.Medium => "the Memory rows on but Smaller Particle Pool",
-        _ => "the Memory rows off",
-    };
+        float s = ConsoleStyle.EffectiveInterfaceScale, inset = ConsoleWidgets.RowLabelInsetPx;
+        Gap(14f * s);
+        ImGui.SetCursorScreenPos(ImGui.GetCursorScreenPos() + new float2(inset, 0f));
+        ConsoleStyle.PushLabelFont();
+        ImGui.TextColored(in ConsoleStyle.TextPrimary, memory.Label.Replace("%", "%%"));
+        ConsoleStyle.PopFont();
+        Gap(6f * s);
+        var mac = Presets.ThisMac;
+        string value = Value(memory), saved = memory.Saved;
+        var cards = memory.Choices.Select(c => new Card(c.Label,
+            c.Value == "auto" ? $"For this Mac's {mac.MemoryGb} GB of memory." : "The game's own memory use.",
+            MemoryLines(c.Value), "MacPort_memory_" + c.Value)).ToArray();
+        int inUse = Array.FindIndex(memory.Choices, c => c.Value == saved), shown = Array.FindIndex(memory.Choices, c => c.Value == value);
+        ConsoleStyle.PushDisabled(pending == null);
+        var (hovered, clicked) = DrawCards(cards, inUse, shown, 2);
+        ConsoleStyle.PopDisabled();
+        // The card shown again too: its values come back after rows changed by hand, as a preset's do
+        if (clicked >= 0 && pending != null)
+        {
+            Pending[memory.Key] = memory.Choices[clicked].Value;
+            MemoryUsePicked(Pending[memory.Key], pending);
+            Hooks.Log($"MacPortTab: Memory Use {memory.Choices[clicked].Label} pending");
+        }
+        if (hovered >= 0)
+            Tooltip(memory.OptionHelp.GetValueOrDefault(memory.Choices[hovered].Value, memory.Help) +
+                "\n\nThis makes them pending changes, here and in the game's tabs; Apply keeps them.");
+        string Port(string key) => Value(PortSettings.Get(key)!);
+        int count = pending != null && PresetsAvailable ? Presets.MemoryDifferences(pending, Port, value == "auto") : 0;
+        Caption($"This Mac has {mac.MemoryGb} GB of memory." +
+            (count > 0 ? $" {count} setting{(count == 1 ? " differs" : "s differ")} from {memory.LabelOf(value)}." : ""), inset);
+    }
+
+    // What a Memory Use card shows for this Mac: the Memory section's rows as one line, each other row it sets there
+    // by its label, and the game's limits with 8 GB or less
+    private static (string Label, string Value)[] MemoryLines(string value)
+    {
+        var tier = Presets.ThisMac.Tier;
+        bool auto = value == "auto", small = auto && tier == MemoryUse.Tier.Small;
+        var values = auto ? MemoryUse.Port(tier) : MemoryUse.Off();
+        var rows = MemoryUse.Rows.ToList();
+        var section = rows.Where(r => r.Section == "memory").ToList();
+        int on = section.Count(r => values.GetValueOrDefault(r.Key) == "true");
+        var lines = new List<(string, string)>
+        {
+            ("Memory Rows", on == 0 ? "Off" : on == section.Count ? "On" : $"{on} of {section.Count} on"),
+        };
+        foreach (var row in rows.Where(r => r.Section != "memory"))
+            if (values.TryGetValue(row.Key, out var v))
+                lines.Add((row.Label, row.LabelOf(v)));
+        lines.Add(("Texture Sizes", small ? "At most 2048" : auto ? "The game's" : "As they are"));
+        lines.Add(("Texture Budget", small ? "Smaller" : "The game's"));
+        return lines.ToArray();
+    }
 
     // Memory Use's values for this Mac (Auto) or the game's own (Off) become the pending changes, here and, with 8 GB or
     // less, in the game's tabs (Off: only the texture streaming budget, which those tabs can't change)

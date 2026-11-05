@@ -119,7 +119,7 @@ public static partial class Program
             PortSettings.FilePath = portSettings;
             // --defaults is a fresh install's first start, with Memory Use on Auto: this Mac's Memory rows, under --port.
             // A preset's run gets them too (without them an 8 GB Mac runs out of memory; with 8 GB or less they include
-            // Smaller Particle Pool), not the game's limits, which change the image
+            // Fewer Effects at Once), not the game's limits, which change the image
             if (_defaults || _preset.Length > 0)
                 PortSettings.Save(MemoryUse.Port(MemoryUse.ThisMac()));
             if (_ports.Count == 0 && _ab.Length == 0)
@@ -134,7 +134,7 @@ public static partial class Program
                     Die($"--port: there is no setting '{key}' in port-settings.toml.");
                 else if (key == MemoryUse.Key)
                     Die($"--port {key}: Memory Use sets other rows when the game first starts, which a run's game never is; " +
-                        $"set the Memory rows themselves ({string.Join(", ", MemoryUse.Rows)}).");
+                        $"set the Memory rows themselves ({string.Join(", ", MemoryUse.Rows.Select(r => r.Key))}).");
                 else if (!setting.Valid(value))
                     Die($"--port {key}={value}: it takes {setting.Values()}.");
                 values[key] = value;

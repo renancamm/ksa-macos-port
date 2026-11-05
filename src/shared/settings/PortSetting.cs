@@ -13,6 +13,9 @@ public sealed class PortSetting
     public string[] Needs = [], By = [];
     // Its values in the Mac Port tab's presets Performance, Balanced and Quality (none: the presets leave it alone)
     public string[] Presets = [];
+    // Its values with Memory Use on Auto, for 8 GB of memory or less, 16 GB or less, and more (none: Memory Use leaves it
+    // alone; an empty one: its preset's there)
+    public string[] Memory = [];
     // Applies while the game runs (the table's "live"); shown in the Mac Port tab (its section's)
     public bool Live, InTab;
     // A choice's values and their labels (bool: on and off), and what some of them mean
@@ -34,6 +37,9 @@ public sealed class PortSetting
 
     // The hook that does it (hooks:<hook>, by its class), which the tab shows the setting as unavailable without
     public string Hook => By.FirstOrDefault(b => b.StartsWith("hooks:", StringComparison.Ordinal)) is { } hook ? hook[6..] : "";
+
+    // All of them, for a setting more than one hook does (Unload Far Terrain)
+    public IEnumerable<string> Hooks => By.Where(b => b.StartsWith("hooks:", StringComparison.Ordinal)).Select(b => b[6..]);
 
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 

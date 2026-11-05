@@ -17,9 +17,11 @@ namespace KsaMetal.Hooks.Optimizations;
 // the file's path, size and date and FMOD's version), and gives FMOD that copy mapped from the file
 // (Mode.OpenMemoryPoint and OpenRaw, with the PCM's format, channels and rate): FMOD plays it in place, the same
 // samples, and macOS can let go of the pages and read them back. Later starts map the copy without decoding. A sound
-// the prefix can't do that for loads as the game loads it, and its copy is made again at the next start. Copies
-// unused for 60 days (an older game) are deleted when the game starts, as the KTX shim's are.
-[Hook(Phase.Default, Switch = nameof(Settings.SoundFileMapping))]
+// whose copy can't be written or read, doesn't match, or that FMOD won't take mapped loads as the game loads it (the
+// first is logged), and its copy is made again at the next start; an error of the hook's own fails it, and that sound
+// and every one after it load as the game loads them. Copies unused for 60 days (an older game) are deleted when the
+// game starts, as the KTX shim's are.
+[Hook(Phase.Default, Switch = nameof(Settings.SoundsKeptOnDisk))]
 internal static class SoundFiles
 {
     private const int HeaderBytes = 32;

@@ -75,9 +75,10 @@ internal static class PortEnvironment
         if ((PortSettings.ReadFile().GetValueOrDefault(MemoryUse.Key) ?? PortSettings.Get(MemoryUse.Key)?.Default) != "auto")
             return;
         var tier = MemoryUse.ThisMac();
-        PortSettings.Save(MemoryUse.Port(tier));
+        var rows = MemoryUse.Port(tier);
+        PortSettings.Save(rows);
         Console.WriteLine($"==> first start: Memory Use on Auto, {MemoryUse.MemoryGb()} GB ({MemoryUse.Describe(tier)}): " +
-                          $"Memory rows {(tier == MemoryUse.Tier.Large ? "off" : tier == MemoryUse.Tier.Medium ? "on but the 8 GB ones" : "on")}");
+                          (rows.Count(kv => kv.Value != PortSettings.Get(kv.Key)!.Default) is var on && on == 0 ? "its rows off" : $"{on} of its {rows.Count} rows on"));
     }
 
     // Sets a variable for both: .NET code reads its own copy of the environment, KSA Metal and the shims read the

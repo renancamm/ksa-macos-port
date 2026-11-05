@@ -1,9 +1,9 @@
 # The port settings
 
 One table, [`port-settings.txt`](port-settings.txt), holds every port setting: its key, type and default, what it
-needs, when it applies, what does it (the driver, the KTX shim, a hook), its values in the Mac Port tab's presets,
-and its row in the tab with its help. The table's header explains its columns. Everything else that knows about a
-setting reads the table or is made from it.
+needs, when it applies, what does it (the driver, the KTX shim, a hook), its values in the Mac Port tab's presets and
+with Memory Use on Auto, and its row in the tab with its help. The table's header explains its columns. Everything
+else that knows about a setting reads the table or is made from it.
 
 A setting has one name, its key, and its environment variable is `KSA_MTL_` and the key in capitals:
 `fused_tessellation` is `KSA_MTL_FUSED_TESSELLATION`. Only two settings set Apple's own variable instead, which Metal
@@ -13,6 +13,7 @@ class's name, in the table as in the log.
 | Path | What it holds |
 |---|---|
 | [`port-settings.txt`](port-settings.txt) | the table |
+| [`MemoryUse.cs`](MemoryUse.cs) | Memory Use, the second preset ([below](#memory-use)): the rows the table's `memory` column marks, the tiers, the game's limits with 8 GB or less |
 | [`PortSettings.cs`](PortSettings.cs), [`PortSetting.cs`](PortSetting.cs) | the settings in the port's shared library, `KsaPort.Common.dll` ([`../`](../)): the table, `port-settings.toml`, the needs, and the environment the game runs with |
 | [`../../build-tools/settings-generator/`](../../build-tools/settings-generator/) | the generator: the file's template, the native code's and the hooks' typed settings, and the checks that keep the repository in step with the table |
 | [`../tests/`](../tests/) | the settings' tests |
@@ -31,6 +32,28 @@ report program, and in the port folder's `lib/port-cli/`. Who reads the settings
 
 A variable already set when the game starts wins over the file. A variable that is unset, holds none of its setting's
 values, or belongs to a setting whose needs aren't met means the default.
+
+## Memory Use
+
+Memory Use (`memory_use`, [`MemoryUse.cs`](MemoryUse.cs)) is the Presets section's second preset, beside the graphics
+presets. The Memory section's rows are its own, which the graphics presets never touch; Fewer Effects at Once it
+shares with the Performance preset. On Auto it gives the rows with values in the table's `memory` column the values
+for this Mac's memory, in three tiers by `hw.memsize`
+(`KSA_PORT_MEMORY_GB` stands in for it, to try another tier): 8 GB or less, 16 GB or less, more. With 8 GB or less it
+also limits the game's own settings, the terrain and vessel texture caps and both shadow map sizes to 2048 and the
+texture streaming budget to 512 MB (`MemoryUse.SmallGame`; on automatic the budget is set once from the memory free
+at the first frame, and what the rows free at load would only grow it). Off gives the rows their defaults, the game's
+own, and the budget back (`OffRestores`); the texture and shadow sizes stay as they are, the game's tabs change those.
+
+It acts as a preset does: when picked in the Mac Port tab (its values become pending changes, kept by the game's
+Apply), on a fresh install's first start (the loader writes the rows as it makes `port-settings.toml`, and the hooks'
+presets limit the game's settings just loaded), on the game's Reset, and in a benchmark run with `--defaults`. A row
+changed by hand afterwards keeps its value; the tab says how many differ. The launcher, which runs before the file
+exists, applies the tier rule to its one setting itself ([`../../game/launcher/`](../../game/launcher/)).
+
+A row Memory Use sets has three values in the `memory` column, one per tier, the last its default; an empty value
+leaves the row to its preset in that tier (Fewer Effects at Once: `true,,`, on with 8 GB or less, Performance's
+otherwise, and Off leaves it alone). The tests check them, and that every row of the Memory section has all three.
 
 ## Typed settings
 
@@ -72,5 +95,5 @@ against the table, and the build stops when it isn't in step:
 
 Edit its line in the table, then build: `./build.sh` makes the typed files and the template, the generator checks the
 repository, and the library's tests check the table's rules (values, needs, presets, the kinds the tab draws). A new
-Extra Performance row gets its presets' values in the same line (on in Performance, the tests check), and its key goes
-into the README of the code that reads it.
+Extra Performance row gets its presets' values in the same line (on in Performance, the tests check), a row Memory Use
+sets its three tier values in the `memory` column, and its key goes into the README of the code that reads it.

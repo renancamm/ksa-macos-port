@@ -109,12 +109,12 @@ VKFN(void) vkDestroyBuffer(VkDevice, VkBuffer buffer, const VkAllocationCallback
     delete b;
 }
 
-// Buffers of 4 MB or more ask for memory of their own (return_freed_memory), so that freeing one gives its memory back
+// Buffers of 4 MB or more ask for memory of their own (dedicated_large_buffers), so that freeing one gives its memory back
 // to macOS instead of leaving a hole in one of VMA's shared blocks (up to 256 MB); KSA's terrain levels are 20-60 MB
 // each. Measured in the solar system with far terrain let go: VMA's unused block space 0.98 GB, 0.58 at 16 MB, 0.11 at
 // 4 MB
 static bool preferDedicatedBuffer(VkDeviceSize size) {
-    return kmtlConfig().returnFreedMemory && size >= (4u << 20);
+    return kmtlConfig().dedicatedLargeBuffers && size >= (4u << 20);
 }
 
 static void bufferRequirements(VkDevice device, KBuffer* b, VkMemoryRequirements* r) {

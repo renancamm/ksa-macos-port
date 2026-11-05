@@ -17,7 +17,7 @@
  *
  * Mapped pages are the file's: macOS drops them when memory runs short and reads them back when the game touches them
  * again, instead of swapping them. The mapping is private and writable, so a write changes only this process's copy
- * of the page. Textures that need transcoding (Basis) stay as libktx made them. KSA_MTL_TEXTURE_FILE_MAPPING=0 turns
+ * of the page. Textures that need transcoding (Basis) stay as libktx made them. KSA_MTL_TEXTURES_KEPT_ON_DISK=0 turns
  * it off.
  */
 #include <dirent.h>
@@ -86,7 +86,7 @@ static int g_enabled = -1;
 
 static bool enabled(void) {
     if (g_enabled < 0) {
-        g_enabled = portSettingsRead().textureFileMapping;
+        g_enabled = portSettingsRead().texturesKeptOnDisk;
     }
     return g_enabled;
 }

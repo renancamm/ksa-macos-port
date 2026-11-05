@@ -39,7 +39,7 @@ namespace KsaMetal.Hooks.Optimizations;
 // views. A level nothing wants for 5 s, that no frame the GPU may still be working on draws (PlanetViewportData.OnPreRender
 // says which), is let go; a collection whose bodies are all farther than 300,000 km wants only its smallest level.
 //
-// Load Terrain by Altitude (Memory Use turns it on with 16 GB or less) wants, near a body, only the levels around each
+// Load Terrain by Altitude wants, near a body, only the levels around each
 // camera's altitude instead of all of them: the level drawn and the ones above and below it, one more below while the
 // camera descends, the small coarse ones, and the finest with its acceleration structure only below three
 // times the height where clutter is placed (there it must be built: a clutter cell is marked loaded whether or not it

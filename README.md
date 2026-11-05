@@ -324,12 +324,12 @@ tabs; each row's tooltip says what it changes and what it costs.
 
 | Section | What's there |
 |---|---|
-| Presets | Performance, Balanced and Quality: the game's graphics settings and the port's, changed together; Game Defaults sets them back. Memory Use, on Auto from the first start, sets the Memory rows and texture sizes to suit the Mac's memory |
-| Image | Apple's MetalFX and what needs it, off by default: the MetalFX choice, how the 3D view's size compares with the window's pixels, render scale, MetalFX's anti-aliasing in place of the game's |
-| Extra Performance | a small trade for speed, with the game's own as the default: fewer cloud shadow updates, lighter warp cloud shadows, lighter plume shadows, simpler PCSS shadows, a baked Milky Way, lighter tumbling physics, debris settling in warp, a steady frame rate |
+| Presets | Performance, Balanced and Quality, and Game Defaults, which sets them back: the game's graphics settings and the port's, changed together. Memory Use, a second preset beside them, sets the Memory rows to suit the Mac's memory, on Auto from the first start |
+| Image | Apple's MetalFX and what needs it, off by default, with a picture of the 3D view's size against the window's |
+| Extra Performance | faster or steadier, with small trade-offs you can see; off by default, on in Performance |
 | Optimizations | the same image, faster, on by default |
-| Memory | less memory with the same image, for Macs short of it: on or off as Memory Use sets them |
-| GPU Features | what the Mac's GPU and display offer the game, with the game's own settings still deciding: tessellation, ray queries, ray tracing, HDR output |
+| Memory | less memory with the same image, for Macs short of it; Memory Use sets them |
+| GPU Features | what the Mac's GPU and display offer the game, with the game's own settings still deciding |
 | Interface | the flight HUD fitted to the display, and Apple's Metal Performance HUD over the game |
 | Benchmark | the [benchmark](#the-benchmark)'s tests and the last run's report |
 
@@ -352,7 +352,7 @@ load and apply.
 
 The game keeps every texture's pixels in memory for the whole session. The KTX shim maps them from files instead once
 a texture is loaded, so macOS can page them out when memory runs short and read them back later. It is the tab's
-**Texture File Mapping** row; [`ktx_shim.c`](src/game/shims/ktx/ktx_shim.c) has the details.
+**Textures Kept on Disk** row; [`ktx_shim.c`](src/game/shims/ktx/ktx_shim.c) has the details.
 
 ### The benchmark
 
