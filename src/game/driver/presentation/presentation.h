@@ -38,6 +38,9 @@ struct KSwapchain {
     std::vector<KImage*> images;
     uint32_t next = 0;
     VkExtent2D extent{};
+    bool vsync = false;
+    double cadenceMs = 0;  // each image shown at least this long after the one before (0: as soon as Vsync allows)
+    NSArray* observers = nil;  // display changes that set the cadence again (swapchain.mm)
 };
 
 // upscale.mm: the present's MetalFX passes

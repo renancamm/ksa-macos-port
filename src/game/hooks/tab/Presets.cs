@@ -76,7 +76,8 @@ internal static class Presets
             "The fastest the game gets: MetalFX Spatial draws the 3D view at half the window's size with the " +
             "game's Anti-Aliasing off; shadows, clouds, smoke and effects are drawn the simple way, without " +
             "cockpit ray tracing, and planets and grass get less detailed textures, for less memory. Softer and " +
-            "plainer, with rougher edges and slower crew portraits. Time warp slows down " +
+            "plainer, with rougher edges and slower crew portraits. With Vsync the frame rate holds steady at half the " +
+            "display's refresh rate. Time warp slows down " +
             "less: lighter physics for tumbling pieces, debris that settles and stays where it lies, and cloud shadows " +
             "that fall out of place during very high warp.",
             mac => Game(mac, antiAliasing: "Disabled", filter: "Pcf", cascades: 2048, terrain: 2048,

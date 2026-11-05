@@ -86,6 +86,38 @@ bool kmtlEdrAvailable(CAMetalLayer* layer) {
     return false;
 }
 
+// The window a layer is in (AppKit calls, on the game's main thread)
+static NSWindow* layerWindow(CAMetalLayer* layer) {
+    for (NSWindow* window in NSApp.windows) {
+        if (window.contentView.layer == layer) return window;
+    }
+    return nil;
+}
+
+// The highest refresh rate of the display the layer's window is on (a ProMotion display: 120), else the main display's
+static double displayRefresh(CAMetalLayer* layer) {
+    @autoreleasepool {
+        NSScreen* screen = layerWindow(layer).screen ?: NSScreen.mainScreen;
+        NSInteger hz = screen.maximumFramesPerSecond;
+        return hz > 0 ? (double)hz : 60.0;
+    }
+}
+
+// A swapchain's cadence and drawables. KSA_MTL_STEADY_FRAME_RATE (with Vsync): half the refresh rate of the display the
+// window is on, 60 fps at 120 Hz, again whenever the window moves to another display or a display changes;
+// KSA_MTL_FRAME_CADENCE sets the interval itself. 2 drawables hold the display queue to one frame: at 25 ms a frame or
+// more (40 fps or less), one frame less latency with the same cadence; at 60 fps the game blocks on a drawable and
+// misses slots, so 3 (KSA_MTL_DRAWABLE_COUNT=2 or 3 decides instead). Frame interpolation takes two drawables in one
+// present, so it needs 3
+static void applyCadence(KSwapchain* sc) {
+    CAMetalLayer* layer = sc->surface->layer;
+    sc->cadenceMs = kmtlConfig().frameCadence > 0 ? kmtlConfig().frameCadence
+                  : kmtlConfig().steadyFrameRate && sc->vsync ? 2000.0 / displayRefresh(layer) : 0;
+    int forced = kmtlConfig().drawableCount;
+    bool two = forced == 2 || (forced != 3 && sc->cadenceMs >= 25);
+    layer.maximumDrawableCount = two && !kmtlConfig().frameInterpolation ? 2 : 3;
+}
+
 static void applyHdrMetadata() {  // g_hdrMutex held
     if (!g_hdrLayer) return;
     g_hdrLayer.EDRMetadata = [CAEDRMetadata HDR10MetadataWithMinLuminance:g_hdrMin maxLuminance:g_hdrPeak
@@ -164,16 +196,30 @@ VKFN(VkResult) vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfo
     layer.pixelFormat = kmtlPixelFormat(ci->imageFormat);
     layer.framebufferOnly = NO;
     layer.drawableSize = CGSizeMake(ci->imageExtent.width, ci->imageExtent.height);
-    // KSA_MTL_DRAWABLE_COUNT: 2 holds the display queue to one frame (lower latency with a locked frame_cadence); frame
-    // interpolation takes two drawables in one present, so it needs 3
-    layer.maximumDrawableCount = kmtlConfig().drawableCount == 2 && !kmtlConfig().frameInterpolation ? 2 : 3;
-    layer.displaySyncEnabled = ci->presentMode == VK_PRESENT_MODE_FIFO_KHR || ci->presentMode == VK_PRESENT_MODE_FIFO_RELAXED_KHR;
+    sc->vsync = ci->presentMode == VK_PRESENT_MODE_FIFO_KHR || ci->presentMode == VK_PRESENT_MODE_FIFO_RELAXED_KHR;
+    applyCadence(sc);
+    if (kmtlConfig().steadyFrameRate && kmtlConfig().frameCadence <= 0 && sc->vsync) {
+        // The game makes a new swapchain only when the window's size changes. Both on the main thread, as the presents
+        NSNotificationCenter* center = NSNotificationCenter.defaultCenter;
+        auto again = ^(NSNotification*) {
+            applyCadence(sc);
+            KLOG(1, "swapchain: cadence %.2f ms, %lu drawables", sc->cadenceMs, (unsigned long)layer.maximumDrawableCount);
+        };
+        sc->observers = @[
+            [center addObserverForName:NSWindowDidChangeScreenNotification object:layerWindow(layer)
+                                 queue:NSOperationQueue.mainQueue usingBlock:again],
+            [center addObserverForName:NSApplicationDidChangeScreenParametersNotification object:nil
+                                 queue:NSOperationQueue.mainQueue usingBlock:again],
+        ];
+    }
+    layer.displaySyncEnabled = sc->vsync;
     // The game's extra windows (detached gauges, pop-outs) ask for a see-through one and clear it to alpha 0
     layer.opaque = ci->compositeAlpha == VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     kmtlSetHdr(sc->surface, ci->imageColorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT);
     dev->commitResidency();
-    KLOG(1, "swapchain %ux%u format %d colour space %d present mode %d, %u images", ci->imageExtent.width,
-         ci->imageExtent.height, ci->imageFormat, ci->imageColorSpace, ci->presentMode, count);
+    KLOG(1, "swapchain %ux%u format %d colour space %d present mode %d, %u images, %lu drawables, cadence %.2f ms",
+         ci->imageExtent.width, ci->imageExtent.height, ci->imageFormat, ci->imageColorSpace, ci->presentMode, count,
+         (unsigned long)layer.maximumDrawableCount, sc->cadenceMs);
     *out = (VkSwapchainKHR)sc;
     return VK_SUCCESS;
 }
@@ -182,6 +228,7 @@ VKFN(void) vkDestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain, cons
     auto* sc = (KSwapchain*)swapchain;
     if (!sc) return;
     vkDeviceWaitIdle(device);
+    for (id observer in sc->observers) [NSNotificationCenter.defaultCenter removeObserver:observer];
     kmtlOnSwapchainDestroyed(sc);
     for (auto* img : sc->images) kmtlDestroyImage(img);
     delete sc;
@@ -279,11 +326,11 @@ static void present(id<MTLBlitCommandEncoder> b, id<MTLTexture> image, id<MTLTex
              toTexture:drawable destinationSlice:0 destinationLevel:0 destinationOrigin:MTLOriginMake(0, 0, 0)];
 }
 
-// KSA_MTL_FRAME_CADENCE=<ms>: each drawable is shown at least that long after the one before (with frame
-// interpolation two are shown per game frame, so half as long), so the frame rate holds one step of the display's
-// refresh instead of moving between them
-static void presentPaced(id<MTLCommandBuffer> cb, id<CAMetalDrawable> d, bool interpolated) {
-    double ms = kmtlConfig().frameCadence;
+// The swapchain's cadence (steady_frame_rate, frame_cadence): each drawable is shown at least that long after the one
+// before (with frame interpolation two are shown per game frame, so half as long), so the frame rate holds one step of
+// the display's refresh instead of moving between them
+static void presentPaced(KSwapchain* sc, id<MTLCommandBuffer> cb, id<CAMetalDrawable> d, bool interpolated) {
+    double ms = sc->cadenceMs;
     if (ms > 0) [cb presentDrawable:d afterMinimumDuration:(interpolated ? ms / 2 : ms) / 1000.0];
     else [cb presentDrawable:d];
 }
@@ -315,7 +362,7 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
                     present(copy, mid, first.texture);
                     [copy endEncoding];
                     [first addPresentedHandler:^(id<MTLDrawable> d) { if (d.presentedTime > 0) kmtlNoteShown(d.presentedTime, false); }];
-                    presentPaced(cb, first, true);
+                    presentPaced(sc, cb, first, true);
                 }
                 b = [cb blitCommandEncoder];
                 [b waitForFence:q->chain];
@@ -367,7 +414,7 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
                 // When the display showed it (0 for an image it never showed)
                 [drawable addPresentedHandler:^(id<MTLDrawable> d) { if (d.presentedTime > 0) kmtlNoteShown(d.presentedTime, true); }];
                 if (kmtlConfig().latency) latencyAtPresent(drawable, cb);
-                presentPaced(cb, drawable, first != nil);
+                presentPaced(sc, cb, drawable, first != nil);
             }
             [cb commit];
             if (pi->pResults) pi->pResults[i] = r;

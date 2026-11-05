@@ -45,6 +45,7 @@ These switches turn a feature off or change a default, to work around a problem 
 | `frame_interpolation` | on: frame interpolation ([MetalFX](#from-vulkan-to-metal)) |
 | `hdr_output` | off: offer the game no HDR output ([Presentation](#from-vulkan-to-metal)): its HDR settings (Display) stay hidden |
 | `vsync_pacing` | off: with Vsync, the game's wait for an earlier frame ends only when the display shows it ([Presentation](#from-vulkan-to-metal)); in a window, frames that take less than about 23 ms on the GPU then run slower |
+| `steady_frame_rate` | on, with Vsync: each game frame shown at least two refreshes of the display the window is on after the one before, set again when the window moves to another display; at 40 fps or less with two drawables instead of three, one frame less latency (three with frame interpolation) ([Presentation](#from-vulkan-to-metal)) |
 
 ## Build
 
@@ -127,8 +128,8 @@ The debugging settings, used the same way:
 | `watch` | a folder: every 31 presents, a look at a sample of the presented image: at 30 % pure white, 99.9 % pure black for a second, or 0.1 % of pure primary colours or green with no red or blue, it saves the image and a pass dump of the next frame there (at most 3, 10 s apart), `watch.txt` says when each fault began and ended, and `watch.csv` has every look's numbers. Only an image after a clean one counts |
 | `watch_white` | percent: the white limit of `watch` (30); 0 fires on any image, to test it |
 | `throttle` | `<hash>:<n>,...`: an experiment, a pipeline whose name holds that shader hash runs only every n-th present (0: never), to see what a shader costs and what it draws |
-| `frame_cadence` | `<ms>`: an experiment, each frame shown at least that long after the one before (25: 40 fps at 120 Hz), so the frame rate holds one step |
-| `drawable_count` | `2` or `3`: an experiment, how many images the window keeps to show; 2 lets fewer frames wait to be shown (latency; 3 with frame interpolation) |
+| `frame_cadence` | `<ms>`: an experiment, each frame shown at least that long after the one before (25: 40 fps at 120 Hz), so the frame rate holds one step; wins over `steady_frame_rate` |
+| `drawable_count` | `2` or `3`: an experiment, how many images the window keeps to show; 2 lets fewer frames wait to be shown (latency; 3 with frame interpolation). `0`, the default: 2 at a cadence of 25 ms or more, else 3 |
 
 Metal's own tools work too: `MTL_HUD_ENABLED=1` shows Apple's performance overlay, and `MTL_DEBUG_LAYER=1` and
 `MTL_SHADER_VALIDATION=1` check API use and catch out-of-bounds memory access in shaders (slow).
@@ -265,7 +266,10 @@ the window's `CAMetalLayer` drawable. With Vsync, KSA waits for the frame before
 reads input. In a window, macOS shows a frame about 21 ms after the GPU finishes it, so waiting for the display
 would leave the GPU idle whenever a frame takes less than that. KSA Metal also ends the wait once that frame is done
 on the GPU, the one before it is on screen, and the GPU is about to need the next frame (predicted from the last
-frames' GPU and CPU times). Frames then start when the GPU can take them, without queueing up.
+frames' GPU and CPU times). Frames then start when the GPU can take them, without queueing up. With
+`steady_frame_rate`, each drawable is presented with a minimum duration (two refreshes, one with frame
+interpolation's frame in between), so the frame rate holds one step of the display's refresh instead of moving between
+them.
 
 **HDR.** On a display with EDR (brighter than SDR white), the surface also offers HDR10: `A2B10G10R10` in PQ with Rec.
 2020 primaries, which holds the game's absolute nits, and the game then shows its HDR settings (Display). Not scRGB:
