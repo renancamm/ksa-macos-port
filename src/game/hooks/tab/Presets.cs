@@ -5,18 +5,19 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Text.RegularExpressions;
 using HarmonyLib;
 using KSA;
 using KsaPort.Common;
 
 namespace KsaMetal.Hooks.Tab;
 
-// The Mac Port tab's presets: Performance, Balanced and Quality, each a set of the game's own graphics settings, made
-// for this Mac's memory and chip, and of port settings (the settings table's presets column), and Game Defaults, the
-// defaults of the same settings. A preset's card in the tab makes them pending changes, in the game's tabs and in
-// this one, as if the player had set each row; the game's Apply keeps them, Discard drops them. Nothing else ever
-// changes a setting.
+// The Mac Port tab's presets: Performance, Balanced and Quality, each a set of the game's own graphics settings and of
+// port settings (the settings table's presets column), and Game Defaults, the defaults of the same settings. With
+// Memory Use on Auto (MemoryUse, in the shared library), every preset also gives the Memory rows for this Mac's memory,
+// and with 8 GB or less the game's textures and shadow maps at most 2048 pixels wide. A preset's card in the tab makes
+// them pending changes, in the game's tabs and in this one, as if the player had set each row; the game's Apply keeps
+// them, Discard drops them. Nothing else changes a setting, but a fresh install's first start, which Memory Use on Auto
+// gives its values (the loader the port settings, FirstStart here the game's).
 //
 // Every preset gives every setting any preset sets, so a preset after another leaves nothing of the first, except
 // the port rows the tab can't change (set outside, their hook unavailable) and the render scale without upscaling,
@@ -44,19 +45,24 @@ internal static class Presets
         public Dictionary<string, string> Game { get; private set; } = new();
         public Dictionary<string, string> Port { get; private set; } = new();
 
-        public void For(Mac mac)
+        public void For(Mac mac, bool memoryAuto)
         {
             Game = game(mac);
+            if (memoryAuto && mac.Tier == MemoryUse.Tier.Small)
+                Limit(Game);
             Port = Port(index);
             if (Port["upscaling"] == "off")
                 Port.Remove("render_scale");
+            if (memoryAuto)
+                foreach (var (key, value) in MemoryUse.Port(mac.Tier))
+                    Port[key] = value;
         }
     }
 
-    // What the presets go by: memory, and whether the GPU traces rays in hardware (from the M3 on)
-    public sealed record Mac(string Chip, int MemoryGb, bool RayTracing)
+    // What the presets go by, with Memory Use on Auto: this Mac's memory
+    public sealed record Mac(string Chip, int MemoryGb)
     {
-        public bool SmallMemory => MemoryGb is > 0 and <= 8;
+        public MemoryUse.Tier Tier => MemoryUse.TierOf(MemoryGb);
     }
 
     public static readonly Preset[] All =
@@ -78,20 +84,20 @@ internal static class Presets
             0),
         new("Balanced", "Faster, with little visible change.",
             "Faster, with little visible change: MetalFX Temporal draws the 3D view at three quarters of the window's size, " +
-            "with simpler shadow filtering, clouds and smoke a step lower, and lighter ray tracing in the cockpit where " +
-            "the Mac has it. Time warp slows down less: lighter physics for tumbling pieces, debris that settles and stays " +
+            "with simpler shadow filtering, clouds and smoke a step lower, and lighter ray tracing in the cockpit. " +
+            "Time warp slows down less: lighter physics for tumbling pieces, debris that settles and stays " +
             "where it lies, and cloud shadows that fall out of place during very high warp.",
             mac => Game(mac, antiAliasing: "MultisampleX2", filter: "Pcf", cascades: 2048, terrain: 4096,
                 milkyWay: "High", clouds: "Medium", cloudShadows: "Medium", effects: "Medium", godrays: true, clutterShadows: true,
-                plumeShadows: true, rayTracing: mac.RayTracing),
+                plumeShadows: true, rayTracing: true),
             1),
         new("Quality", "Window size. Trims what barely shows.",
             "The game's own image at the window's full size, with its anti-aliasing, soft shadows and ray tracing in " +
-            "the cockpit where the Mac has it. Only what costs much and barely shows is lower or baked: shadow map " +
+            "the cockpit. Only what costs much and barely shows is lower or baked: shadow map " +
             "sizes, soft shadows near the camera, cockpit ray tracing, the Milky Way.",
             mac => Game(mac, antiAliasing: "MultisampleX2", filter: "Pcss", cascades: 2048, terrain: 4096,
                 milkyWay: "High", clouds: "High", cloudShadows: "High", effects: "High", godrays: true, clutterShadows: true,
-                plumeShadows: true, rayTracing: mac.RayTracing),
+                plumeShadows: true, rayTracing: true),
             2),
         new("Game Defaults", "The game's own graphics settings.",
             "The game's own image: its default graphics for every setting the other presets change, and the Image and " +
@@ -106,7 +112,7 @@ internal static class Presets
             -1),
     ];
 
-    // Not made for this Mac: the game's defaults are the same on every Mac
+    // The game's defaults are the same on every Mac, but for Memory Use's
     public static Preset GameDefaults => All[^1];
 
     // The game's settings another preset sets, at their defaults: a new GameSettings' (the game's Reset)
@@ -129,7 +135,7 @@ internal static class Presets
             ["AntiAliasingMethod"] = antiAliasing,
             ["CascadedShadowMapFilter"] = filter,
             ["CascadedShadowMapSize"] = Text(cascades),
-            ["TerrainShadowMapSize"] = Text(mac.SmallMemory ? Math.Min(terrain, 2048) : terrain),
+            ["TerrainShadowMapSize"] = Text(terrain),
             ["MilkyWayQuality"] = milkyWay,
             ["CloudUpscaling"] = clouds,
             ["CloudShadows"] = cloudShadows,
@@ -155,12 +161,17 @@ internal static class Presets
         // one sets it: the planets' textures loaded whole (Earth's clouds, tiling and biome maps, the moons' rock), the
         // finest level the streamer gives the planets' colour maps (Earth, the Moon, Mars; not their heights and
         // normals), ground clutter and rock particles. Performance's 2048 saves about 0.3 GB of graphics memory in the
-        // solar system (M5, Mixed Test views, at an 8 GB Mac's texture budget). 8 GB: the vessels' textures too, and the
-        // terrain's in every preset
-        game["TerrainTextureCap"] = Text(mac.SmallMemory ? 2048 : planetTextures);
-        if (mac.SmallMemory)
-            game["VesselTextureCap"] = "2048";
+        // solar system (M5, Mixed Test views, at an 8 GB Mac's texture budget). With 8 GB or less, Memory Use limits it
+        // in every preset, and the vessels' textures and the shadow maps too (Limit)
+        game["TerrainTextureCap"] = Text(planetTextures);
         return game;
+    }
+
+    // Memory Use's limits with 8 GB or less, on a preset's game settings: those it gives, and the vessels' textures
+    private static void Limit(Dictionary<string, string> game)
+    {
+        foreach (var (field, _, atMost) in MemoryUse.SmallGame)
+            game[field] = Text(MemoryUse.Limit(game.TryGetValue(field, out var v) ? int.Parse(v, CultureInfo.InvariantCulture) : 0, atMost));
     }
 
     // The port settings a preset gives, from the table's presets column (Performance, Balanced, Quality; -1: the
@@ -176,7 +187,7 @@ internal static class Presets
     private static string Text(bool value) => value ? "true" : "false";
     private static string Text(object? value) => value is bool b ? Text(b) : Convert.ToString(value, CultureInfo.InvariantCulture) ?? "";
 
-    public static Mac ThisMac { get; private set; } = new("", 0, true);
+    public static Mac ThisMac { get; private set; } = new("", MemoryUse.MemoryGb());
     private static readonly Dictionary<string, FieldInfo> Fields = new();
 
     public static string Apply(Harmony harmony)
@@ -184,14 +195,68 @@ internal static class Presets
         ThisMac = Detect();
         foreach (var preset in All)
         {
-            // An 8 GB Mac's values are checked on every Mac
-            preset.For(ThisMac with { MemoryGb = 8 });
-            Check(preset);
-            preset.For(ThisMac);
+            // Every tier's values are checked on every Mac
+            foreach (int gb in new[] { 8, 16, 32 })
+            {
+                preset.For(ThisMac with { MemoryGb = gb }, true);
+                Check(preset);
+            }
+            preset.For(ThisMac, false);
             Check(preset);
         }
-        return $"on, {ThisMac.Chip}, {ThisMac.MemoryGb} GB";
+        Refresh(Settings.Get(MemoryUse.Key).Saved == "auto");
+        foreach (var (field, _, _) in MemoryUse.SmallGame)
+            Field(field);
+        harmony.Patch(Find.Method(typeof(GameSettings), nameof(GameSettings.LoadFromFile)),
+            postfix: new HarmonyMethod(typeof(Presets), nameof(FirstStart)));
+        return $"on, {ThisMac.Chip}, {ThisMac.MemoryGb} GB, memory {MemoryUse.Describe(ThisMac.Tier)}";
     }
+
+    // The presets' values with Memory Use on Auto or not
+    public static void Refresh(bool memoryAuto)
+    {
+        foreach (var preset in All)
+            preset.For(ThisMac, memoryAuto);
+    }
+
+    // A fresh install's first start (the loader made port-settings.toml, KSA_PORT_FRESH), Memory Use on Auto, 8 GB or
+    // less: the game's settings, just loaded, take the limits before anything is drawn, and are saved with them
+    private static void FirstStart()
+    {
+        try
+        {
+            if (Environment.GetEnvironmentVariable("KSA_PORT_FRESH") != "1" || Settings.Get(MemoryUse.Key).Saved != "auto" ||
+                ThisMac.Tier != MemoryUse.Tier.Small)
+                return;
+            UseMemory(GameSettings.Current);
+            GameSettings.Current.Save();
+            Hooks.Log($"{nameof(Presets)}: first start, textures and shadow maps at most 2048 pixels wide for {ThisMac.MemoryGb} GB");
+        }
+        catch (Exception e)
+        {
+            Hooks.Log($"{nameof(Presets)}: first start, {Hooks.Describe(e)}");
+        }
+    }
+
+    // Memory Use's limits for this Mac on these game settings (8 GB or less); the Memory rows' values on Auto
+    public static void UseMemory(GameSettings game)
+    {
+        if (ThisMac.Tier != MemoryUse.Tier.Small)
+            return;
+        foreach (var (name, _, atMost) in MemoryUse.SmallGame)
+        {
+            var field = Fields[name];
+            int value = Convert.ToInt32(field.GetValue(Owner(field, game)), CultureInfo.InvariantCulture);
+            field.SetValue(Owner(field, game), Parse(field, Text(MemoryUse.Limit(value, atMost))));
+        }
+    }
+
+    // How many of Memory Use's values for this Mac have another value here (Auto)
+    public static int MemoryDifferences(GameSettings game, Func<string, string> port) =>
+        MemoryUse.Port(ThisMac.Tier).Where(kv => Settable(kv.Key)).Count(kv => port(kv.Key) != kv.Value) +
+        (ThisMac.Tier != MemoryUse.Tier.Small ? 0 : MemoryUse.SmallGame.Count(g =>
+            Convert.ToInt32(Fields[g.Field].GetValue(Owner(Fields[g.Field], game)), CultureInfo.InvariantCulture) is var v &&
+            MemoryUse.Limit(v, g.AtMost) != v));
 
     private static void Check(Preset preset)
     {
@@ -248,7 +313,7 @@ internal static class Presets
         (FullscreenSize(game) is { Width: > 0 } size && (game.ScreenWidth != size.Width || game.ScreenHeight != size.Height) ? 1 : 0);
 
     // A port setting the tab can change: not set outside, its hook not skipped or failed
-    private static bool Settable(string key) =>
+    public static bool Settable(string key) =>
         Settings.Get(key) is var s && s.Outside == null && Hooks.Status.GetValueOrDefault(s.Hook) is not { Unavailable: true };
 
     // A preset's card: its values become the pending changes of the game's copy of its settings and of the tab
@@ -314,28 +379,11 @@ internal static class Presets
         return null;
     }
 
-    // The chip's name ("Apple M2 Pro"), its memory, and whether it traces rays in hardware: an M1 or M2 doesn't, a
-    // chip whose name isn't "Apple M<n>" is taken to
-    private static Mac Detect()
-    {
-        var chip = SysctlText("machdep.cpu.brand_string");
-        var m = Regex.Match(chip, @"^Apple M(\d+)");
-        long memory = SysctlLong("hw.memsize");
-        return new Mac(chip, (int)Math.Round(memory / 1073741824.0), !m.Success || int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture) >= 3);
-    }
-
-    [DllImport("libc", EntryPoint = "sysctlbyname")]
-    private static extern int SysctlByName(string name, ref long value, ref nint size, nint newValue, nint newSize);
+    // The chip's name ("Apple M2 Pro", for the log) and the memory (KSA_PORT_MEMORY_GB stands in for it)
+    private static Mac Detect() => new(SysctlText("machdep.cpu.brand_string"), MemoryUse.MemoryGb());
 
     [DllImport("libc", EntryPoint = "sysctlbyname")]
     private static extern int SysctlByName(string name, [Out] byte[]? value, ref nint size, nint newValue, nint newSize);
-
-    internal static long SysctlLong(string name)
-    {
-        long value = 0;
-        nint size = sizeof(long);
-        return SysctlByName(name, ref value, ref size, 0, 0) == 0 ? value : 0;
-    }
 
     private static string SysctlText(string name)
     {

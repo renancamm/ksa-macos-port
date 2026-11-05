@@ -38,6 +38,10 @@ public static partial class Program
                 "displayChangelogOnChange=false", "celestialNames=false", "locationNames=false" };
             if (_preset.Length > 0)
                 start.AddRange(PresetCommon.Concat(Presets[_preset]));
+            // --defaults is a fresh install's first start, with Memory Use on Auto: with 8 GB or less, the game's textures
+            // and shadow maps at most 2048 pixels wide (the hooks do it on a player's first start)
+            else if (_defaults && MemoryUse.ThisMac() == MemoryUse.Tier.Small)
+                start.AddRange(MemoryUse.SmallGame.Select(g => $"{g.Key}={g.AtMost}"));
             foreach (var kv in start)
                 SetSetting(kv[..kv.IndexOf('=')], kv[(kv.IndexOf('=') + 1)..]);
             // --settings: its "key = value" lines
@@ -100,7 +104,7 @@ public static partial class Program
                 File.Copy(template, portSettings);
             else
                 File.WriteAllText(portSettings, "");
-            if (_ports.Count == 0 && _ab.Length == 0)
+            if (_ports.Count == 0 && _ab.Length == 0 && !_defaults && _preset.Length == 0)
                 return;
             // --port: checked against the app's table (a key or value the game doesn't take would run an unchanged
             // game that looks like an A/B test), and written as the Mac Port tab writes them
@@ -112,6 +116,14 @@ public static partial class Program
             {
                 Die($"--port: the app's table of the port settings can't be read: {e.Message}");
             }
+            PortSettings.FilePath = portSettings;
+            // --defaults is a fresh install's first start, with Memory Use on Auto: this Mac's Memory rows, under --port.
+            // A preset's run gets them too (the same image; without them an 8 GB Mac runs out of memory), not the game's
+            // limits, which change it
+            if (_defaults || _preset.Length > 0)
+                PortSettings.Save(MemoryUse.Port(MemoryUse.ThisMac()));
+            if (_ports.Count == 0 && _ab.Length == 0)
+                return;
             var values = new Dictionary<string, string>();
             foreach (var kv in _ab.Length > 0 ? _ports.Prepend(_ab) : _ports)
             {
@@ -120,6 +132,9 @@ public static partial class Program
                 string key = kv[..kv.IndexOf('=')], value = kv[(kv.IndexOf('=') + 1)..];
                 if (PortSettings.Get(key) is not { } setting)
                     Die($"--port: there is no setting '{key}' in port-settings.toml.");
+                else if (key == MemoryUse.Key)
+                    Die($"--port {key}: Memory Use sets other rows when the game first starts, which a run's game never is; " +
+                        $"set the Memory rows themselves ({string.Join(", ", MemoryUse.Rows)}).");
                 else if (!setting.Valid(value))
                     Die($"--port {key}={value}: it takes {setting.Values()}.");
                 values[key] = value;
@@ -129,7 +144,6 @@ public static partial class Program
             string abKey = _ab.Length > 0 ? _ab[.._ab.IndexOf('=')] : "";
             if (_ab.Length > 0 && !_ports.Any(kv => kv.StartsWith(abKey + "=", StringComparison.Ordinal)))
                 values.Remove(abKey);
-            PortSettings.FilePath = portSettings;
             PortSettings.Save(values);
             if (_ab.Length == 0)
                 return;

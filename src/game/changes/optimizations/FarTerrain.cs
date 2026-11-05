@@ -38,7 +38,7 @@ namespace KsaMetal.Hooks.Optimizations;
 // views. A level nothing wants for 5 s, that no frame the GPU may still be working on draws (PlanetViewportData.OnPreRender
 // says which), is let go; a collection whose bodies are all farther than 300,000 km wants only its smallest level.
 //
-// Load Terrain by Altitude (on by default on Macs with 8 GB or less) wants, near a body, only the levels around each
+// Load Terrain by Altitude (Memory Use turns it on with 16 GB or less) wants, near a body, only the levels around each
 // camera's altitude instead of all of them: the level drawn and the ones above and below it, one more below while the
 // camera descends, the small coarse ones, and the finest with its acceleration structure only below three
 // times the height where clutter is placed (there it must be built: a clutter cell is marked loaded whether or not it
@@ -119,13 +119,7 @@ internal static class FarTerrain
         _cullingSets = Find.Field(typeof(PlanetFrustumCulling), "_cullingDescriptorSets");
         _clutterWrites = AccessTools.MethodDelegate<GenerateWrites>(
             Find.Method(typeof(ClutterCubeCellGrid), "CreateRayQueriesGenerateWrites"));
-        // Auto: on with 8 GB or less (the presets' line)
-        _window = Settings.LoadTerrainByAltitude switch
-        {
-            "on" => true,
-            "off" => false,
-            _ => Math.Round(Tab.Presets.SysctlLong("hw.memsize") / 1073741824.0) is > 0 and <= 8,
-        };
+        _window = Settings.LoadTerrainByAltitude;
         harmony.Patch(generate, prefix: new HarmonyMethod(typeof(FarTerrain), nameof(CollectionLoading)),
             postfix: new HarmonyMethod(typeof(FarTerrain), nameof(CollectionLoaded)));
         harmony.Patch(celestials, postfix: new HarmonyMethod(typeof(FarTerrain), nameof(Frame)));

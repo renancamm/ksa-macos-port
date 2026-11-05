@@ -12,7 +12,7 @@ switches, how to build and test a change, how each Vulkan concept maps onto Meta
 KSA Metal takes its settings from environment variables, which the hooks' loader sets from the port settings ([The Mac
 Port tab](../../../README.md#the-mac-port-tab)): each setting below is a line of `port-settings.toml`
 ([`../../shared/settings/port-settings.txt`](../../shared/settings/port-settings.txt)), the switches in the tab's
-Optimizations and GPU Features sections, the debugging settings in the file's Troubleshooting, Diagnostics and
+Optimizations, Memory and GPU Features sections, the debugging settings in the file's Troubleshooting, Diagnostics and
 Experiments sections. A setting's variable is `KSA_MTL_` and its key in capitals, with 0 for off and 1 for on. A
 variable can also be set where the app's executable starts, from Terminal, where its output stays visible; it then
 wins over the file:
@@ -37,7 +37,7 @@ These switches turn a feature off or change a default, to work around a problem 
 | `in_place_shader_parameters` | off: helper functions get their own copy of each uniform struct they take, as SPIRV-Cross writes it ([Shaders](#from-vulkan-to-metal)); slower in the smoke raymarch, try it when a shader looks wrong |
 | `skip_gpu_texture_compression` | off: textures read at scattered positions (those the game only uploads and samples, 3D images, square power-of-two storage images of 64 to 256 such as the ocean's waves) are lossless-compressed, as Metal does by default; about 2-4 % slower over terrain, up to 10 % over clouds and the sea, try it when the terrain, clouds, smoke or the sea look wrong |
 | `iva_ray_search` | off: the cockpit's ray tracing finds each hit with a ray query, as SPIRV-Cross writes it, instead of Metal's intersector ([Ray tracing](#from-vulkan-to-metal)); slower in the cockpit, try it when the cockpit looks wrong |
-| `compact_ray_tracing_memory` | off: every acceleration structure gets memory of its own and the buffer the game made for it stays unused (the terrain's structures for clutter placement are about 170 MB each); try it when grass or the cockpit look wrong |
+| `compact_ray_tracing_memory` | on (Memory Use turns it on with 16 GB of memory or less): each acceleration structure sits in the buffer the game made for it, instead of memory of its own while that buffer stays unused (the terrain's structures for clutter placement are about 170 MB each); off: try it when grass or the cockpit look wrong |
 | `return_freed_memory` | off: buffers of 4 MB or more share Vulkan Memory Allocator's blocks (up to 256 MB) like smaller ones, so memory the game frees stays in its block (the Planetary Tour: about 0.1 GB more at its peak, 0.4 GB more from leaving Earth until another world's terrain is built); try it when something looks wrong |
 | `skip_shadows_on_unlit_sides` | off: the port's shader edits that skip shadows where there is no light ([Shaders](#from-vulkan-to-metal)) look them up everywhere, as the game does; slower, try it when a shadow looks wrong |
 | `early_fragment_tests` | off: no second state that tests depth first for pipelines whose fragment shader stores to an image ([Shaders](#from-vulkan-to-metal)): the hooks' Skip Hidden Vessel Parts has nothing to switch to |

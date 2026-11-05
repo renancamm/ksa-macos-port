@@ -261,6 +261,9 @@ internal static partial class MacPortTab
         // Reset leaves alone what the tab doesn't let the player change: the file's own settings, those set outside
         foreach (var s in PortSettings.All)
             Pending[s.Key] = _reset && s.InTab && s.Outside == null ? s.Default : s.Saved;
+        // Reset gives Memory Use on Auto, as a fresh install has it
+        if (_reset && Pending[MemoryUse.Key] == "auto")
+            MemoryUsePicked("auto", temporary as GameSettings);
         _reset = false;
     }
 
@@ -334,7 +337,8 @@ internal static partial class MacPortTab
         DrawPresets();
         foreach (var (section, title, caption, inTab) in PortSettings.Sections)
         {
-            if (!inTab)
+            // The Presets section's row is under the presets' cards
+            if (!inTab || section == "presets")
                 continue;
             SectionHeader(title, caption);
             foreach (var s in PortSettings.All.Where(s => s.Section == section))
@@ -425,16 +429,24 @@ internal static partial class MacPortTab
                 ? "Unavailable with this KSA version: the game's settings it sets have moved (logs/console.log says more)."
                 : "Unavailable: it ran into an error (logs/console.log says why)."
             : null;
-        // Without the presets' values there is nothing for the cards to show
+        var pending = _temporary.GetValue(null) as GameSettings;
+        var memory = PortSettings.Get(MemoryUse.Key)!;
+        // Without the presets' values there is nothing for the cards to show; Memory Use still sets the Memory rows
         if (unavailable != null || Presets.All.Any(p => p.Port.Count == 0))
         {
             Caption(unavailable ?? "Unavailable.", ConsoleWidgets.RowLabelInsetPx);
+            DrawMemoryUse(memory, pending);
             return;
         }
-        var pending = _temporary.GetValue(null) as GameSettings;
         var mac = Presets.ThisMac;
-        var forMac = (mac.SmallMemory ? $"For this Mac's {mac.MemoryGb} GB of memory, the shadow maps and textures are at most 2048 pixels wide. " : "") +
-            (mac.RayTracing ? "" : "The M1 and M2 have no ray tracing hardware, so the cockpit is drawn without it. ");
+        bool auto = Value(memory) == "auto";
+        if (auto != _presetsAuto)
+        {
+            Presets.Refresh(auto);
+            _summaries = null;
+            _presetsAuto = auto;
+        }
+        var forMac = auto ? $"With Memory Use on Auto, for this Mac's {mac.MemoryGb} GB of memory: {MemoryEffect(mac.Tier)}. " : "";
         var inUse = Presets.All.FirstOrDefault(p => Presets.Matches(p, GameSettings.Current, key => PortSettings.Get(key)!.Saved));
         var shown = pending == null ? inUse : Presets.All.FirstOrDefault(p => Presets.Matches(p, pending, key => Value(PortSettings.Get(key)!)));
         ConsoleStyle.PushDisabled(pending == null);
@@ -443,12 +455,54 @@ internal static partial class MacPortTab
         if (hovered != null)
             Tooltip(hovered.Help + "\n\n" + (hovered == Presets.GameDefaults ? "" : forMac) +
                 "This makes them pending changes, here and in the game's tabs; Apply keeps them.");
+        string Port(string key) => Value(PortSettings.Get(key)!);
         if (shown == null && pending != null)
         {
-            string Port(string key) => Value(PortSettings.Get(key)!);
             var closest = Presets.All.MinBy(p => Presets.Differences(p, pending, Port))!;
             int count = Presets.Differences(closest, pending, Port);
             Caption($"Own settings: {count} setting{(count == 1 ? " differs" : "s differ")} from {closest.Name}.", ConsoleWidgets.RowLabelInsetPx);
         }
+        DrawMemoryUse(memory, pending);
+    }
+
+    // Memory Use, picked here: its values become pending changes, as a preset's do
+    private static void DrawMemoryUse(PortSetting memory, GameSettings? pending)
+    {
+        string before = Value(memory);
+        DrawRow(memory);
+        if (Value(memory) != before)
+            MemoryUsePicked(Value(memory), pending);
+        if (Value(memory) == "auto" && pending != null)
+        {
+            string Port(string key) => Value(PortSettings.Get(key)!);
+            int count = PresetsAvailable ? Presets.MemoryDifferences(pending, Port) : 0;
+            Caption($"This Mac has {Presets.ThisMac.MemoryGb} GB of memory: {MemoryEffect(Presets.ThisMac.Tier)}." +
+                (count > 0 ? $" {count} setting{(count == 1 ? " differs" : "s differ")} from it." : ""), ConsoleWidgets.RowLabelInsetPx);
+        }
+    }
+
+    // The presets know the game's settings they set (unavailable: a KSA update moved one)
+    private static bool PresetsAvailable =>
+        Hooks.Status.GetValueOrDefault(nameof(Presets)) is not { Unavailable: true } && Presets.All.All(p => p.Port.Count > 0);
+
+    private static bool? _presetsAuto;
+
+    private static string MemoryEffect(MemoryUse.Tier tier) => tier switch
+    {
+        MemoryUse.Tier.Small => "the Memory rows on, textures and shadow maps at most 2048 pixels wide",
+        MemoryUse.Tier.Medium => "the Memory rows on",
+        _ => "the Memory rows off",
+    };
+
+    // Memory Use's values for this Mac (Auto) or the game's own (Off) become the pending changes, here and, with 8 GB or
+    // less, in the game's tabs
+    private static void MemoryUsePicked(string value, GameSettings? pending)
+    {
+        var rows = value == "auto" ? MemoryUse.Port(Presets.ThisMac.Tier) : MemoryUse.Off();
+        foreach (var (key, v) in rows)
+            if (Presets.Settable(key))
+                Pending[key] = v;
+        if (value == "auto" && pending != null && PresetsAvailable)
+            Presets.UseMemory(pending);
     }
 }

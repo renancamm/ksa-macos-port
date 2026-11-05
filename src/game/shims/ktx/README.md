@@ -20,5 +20,5 @@ key in capitals):
 
 | Setting | Effect |
 |---|---|
-| `texture_file_mapping` | off: the shim leaves every texture as libktx made it |
+| `texture_file_mapping` | on (Memory Use turns it on with 16 GB of memory or less): the shim maps textures' pixels from their files; off, the default: it leaves every texture as libktx made it |
 | `cache_dir` | a folder: where the copies go, as KSA Metal's cache (default: `~/Library/Caches/ksa-metal`) |

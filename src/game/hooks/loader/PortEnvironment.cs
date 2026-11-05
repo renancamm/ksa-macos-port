@@ -12,7 +12,9 @@ using KsaPort.Common;
 // A variable already set when the game starts wins over the file.
 //
 // It also puts the game's output in console.log in the documents folder's logs (unless it goes to a terminal), copies
-// the commented template there when the player has no port-settings.toml. For the Mac Port tab it sets
+// the commented template there when the player has no port-settings.toml: a fresh install's first start, which
+// Memory Use on Auto gives this Mac's Memory rows (MemoryUse) and tells the hooks of (KSA_PORT_FRESH: the game's own
+// settings, Presets.FirstStart). For the Mac Port tab it sets
 // KSA_PORT_SETTINGS (the file) and KSA_PORT_OUTSIDE (the variables set already), and for Restart KSA_PORT_SET (those
 // it set, which the new game sets again).
 internal static class PortEnvironment
@@ -34,12 +36,16 @@ internal static class PortEnvironment
 
         PortSettings.LoadTable(resources);
         PortSettings.FilePath = Path.Combine(documents, "port-settings.toml");
+        // Only the start that makes the file is a first start: a game started again (Restart) inherits this game's
+        // environment
+        Set("KSA_PORT_FRESH", "0");
         if (!File.Exists(PortSettings.FilePath) && File.Exists(PortSettings.TemplatePath))
         {
             try
             {
                 Directory.CreateDirectory(documents);
                 File.Copy(PortSettings.TemplatePath, PortSettings.FilePath);
+                FirstStart();
             }
             catch (Exception e)
             {
@@ -60,6 +66,18 @@ internal static class PortEnvironment
                           $"{Path.Combine(resources, "KSA.dll")}{(starMap ? $" through StarMap in {AppContext.BaseDirectory.TrimEnd('/')}" : "")}");
         return PortSettings.Get("hooks") is not { } hooks ||
                hooks.FromEnvironment(Environment.GetEnvironmentVariable(hooks.Variable), out _) == "true";
+    }
+
+    // A fresh install's first start: Memory Use on Auto (the template's) sets the Memory rows for this Mac's memory
+    private static void FirstStart()
+    {
+        Set("KSA_PORT_FRESH", "1");
+        if ((PortSettings.ReadFile().GetValueOrDefault(MemoryUse.Key) ?? PortSettings.Get(MemoryUse.Key)?.Default) != "auto")
+            return;
+        var tier = MemoryUse.ThisMac();
+        PortSettings.Save(MemoryUse.Port(tier));
+        Console.WriteLine($"==> first start: Memory Use on Auto, {MemoryUse.MemoryGb()} GB ({MemoryUse.Describe(tier)}): " +
+                          $"Memory rows {(tier == MemoryUse.Tier.Large ? "off" : "on")}");
     }
 
     // Sets a variable for both: .NET code reads its own copy of the environment, KSA Metal and the shims read the
