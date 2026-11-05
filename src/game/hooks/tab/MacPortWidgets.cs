@@ -245,14 +245,33 @@ internal static partial class MacPortTab
         var then = ViewSize(Running("upscaling"), Running("render_scale"));
         bool changed = now != then;
         float s = ConsoleStyle.EffectiveInterfaceScale, inset = ConsoleWidgets.RowLabelInsetPx;
-        float padX = 24f * s, padTop = 22f * s, padBottom = 20f * s, gap = 14f * s;
+        float padX = 20f * s, padTop = 14f * s, padBottom = 12f * s, gap = 14f * s;
         var at = ImGui.GetCursorScreenPos() + new float2(inset, 4f * s);
         float width = ConsoleStyle.ContentAvailWidth() - inset;
-        float boxWidth = MathF.Min(196f * s, (width - padX * 2f - gap * 2f) * 0.3f);
+        float boxWidth = MathF.Min(150f * s, (width - padX * 2f - gap * 2f) * 0.3f);
         float k = boxWidth / RenderScale.Output.X;
         float boxHeight = RenderScale.Output.Y * k;
         float small = SmallHeight(), captionLine = MathF.Round(small);
-        float height = padTop + boxHeight + 8f * s + captionLine * 2f + padBottom;
+        // How one becomes the other, between the boxes: the panel is tall enough for it on a wide, short display too
+        float x = (float)RenderScale.Output.X / now.Width;
+        float mostTemporal = TemporalMax();
+        var note = $"{Math.Round(100.0 * now.Width * now.Height / (RenderScale.Output.X * RenderScale.Output.Y))} % of the window's pixels." +
+            (mode == "metalfx" && mostTemporal > 0f && x > mostTemporal + 0.001f ? $" Past Temporal's largest scale (x{mostTemporal.ToString("0.#", Inv)}), Spatial does the rest." : "");
+        var how = mode switch
+        {
+            "metalfx" => "METALFX TEMPORAL",
+            "spatial" => "METALFX SPATIAL",
+            _ => now.Width == RenderScale.Output.X && now.Height == RenderScale.Output.Y ? "SHOWN AS IS" : "THE GAME STRETCHES IT",
+        };
+        var noteLines = WrapSmall(note, width - padX * 2f - boxWidth * 2f - gap * 2f);
+        ConsoleStyle.PushNavRailFont();
+        float large = ImGui.GetFontSize();
+        var factor = $"x{x.ToString("0.#", Inv)}";
+        float factorWidth = ImGui.CalcTextSize(factor).X;
+        ConsoleStyle.PopFont();
+        float space = 6f * s, arrowHeight = 9f * s;
+        float content = small + space + arrowHeight + space + large + space + captionLine * noteLines.Length;
+        float height = padTop + MathF.Max(boxHeight + 6f * s + captionLine * 2f, content) + padBottom;
         var draw = ImGui.GetWindowDrawList();
         var panelEnd = at + new float2(width, height);
         draw.AddRectFilled(in at, in panelEnd, ConsoleStyle.ApplyAlpha(ConsoleStyle.InsetU32), ConsoleStyle.FrameRoundingPx);
@@ -288,33 +307,15 @@ internal static partial class MacPortTab
         draw.AddRectFilled(in shown, in shownEnd, ConsoleStyle.ApplyAlpha(ConsoleStyle.ApplyAlpha(ConsoleStyle.ActiveToolU32, 0.18f)));
         draw.AddRect(in shown, in shownEnd, fill, 0f, ImDrawFlags.None, ConsoleStyle.WindowBorderThicknessPx);
         // The boxes' captions, and how one becomes the other between them
-        float text = boxEnd.Y + 8f * s;
+        float text = boxEnd.Y + 6f * s;
         uint primary = ConsoleStyle.ApplyAlpha(ConsoleStyle.TextPrimaryU32), label = ConsoleStyle.ApplyAlpha(ConsoleStyle.TextLabelU32);
-        float x = (float)RenderScale.Output.X / now.Width;
-        float mostTemporal = TemporalMax();
-        var note = $"{Math.Round(100.0 * now.Width * now.Height / (RenderScale.Output.X * RenderScale.Output.Y))} % of the window's pixels." +
-            (mode == "metalfx" && mostTemporal > 0f && x > mostTemporal + 0.001f ? $" Past Temporal's largest scale (x{mostTemporal.ToString("0.#", Inv)}), Spatial does the rest." : "");
         float midLeft = boxEnd.X + gap, midRight = shown.X - gap, mid = (midLeft + midRight) * 0.5f;
         ConsoleStyle.PushSignatureFont();
         draw.AddText(new float2(box.X, text), muted, "DRAWN");
         draw.AddText(new float2(box.X, text + captionLine), primary, $"{now.Width} x {now.Height}");
         draw.AddText(new float2(shown.X, text), muted, "SHOWN ON");
         draw.AddText(new float2(shown.X, text + captionLine), primary, $"{RenderScale.Output.X} x {RenderScale.Output.Y}");
-        var how = mode switch
-        {
-            "metalfx" => "METALFX TEMPORAL",
-            "spatial" => "METALFX SPATIAL",
-            _ => now.Width == RenderScale.Output.X && now.Height == RenderScale.Output.Y ? "SHOWN AS IS" : "THE GAME STRETCHES IT",
-        };
         ConsoleStyle.PopFont();
-        var noteLines = WrapSmall(note, midRight - midLeft);
-        ConsoleStyle.PushNavRailFont();
-        float large = ImGui.GetFontSize();
-        var factor = $"x{x.ToString("0.#", Inv)}";
-        float factorWidth = ImGui.CalcTextSize(factor).X;
-        ConsoleStyle.PopFont();
-        float space = 6f * s, arrowHeight = 9f * s;
-        float content = small + space + arrowHeight + space + large + space + captionLine * noteLines.Length;
         float y = box.Y + MathF.Max(0f, (boxHeight - content) * 0.5f);
         ConsoleStyle.PushSignatureFont();
         draw.AddText(new float2(mid - ImGui.CalcTextSize(how).X * 0.5f, y), label, how);
@@ -349,8 +350,8 @@ internal static partial class MacPortTab
         return (widest + 20f * ConsoleStyle.EffectiveInterfaceScale) * s.Choices.Length;
     }
 
-    // Returns the help of the option under the mouse
-    private static string? DrawSegmented(PortSetting s, string id, string value, bool pending)
+    // Returns the help of the option under the mouse, and the option clicked (the one shown too)
+    private static string? DrawSegmented(PortSetting s, string id, string value, bool pending, out string? picked)
     {
         float total = SegmentedWidth(s), each = total / s.Choices.Length, height = ConsoleStyle.FrameHeightPx;
         var at = ImGui.GetCursorScreenPos();
@@ -358,6 +359,7 @@ internal static partial class MacPortTab
         var end = at + new float2(total, height);
         bool enabled = ImGui.GetStyle().Alpha >= 1f;
         string? hovered = null;
+        picked = null;
         draw.AddRectFilled(in at, in end, ConsoleStyle.ApplyAlpha(ConsoleStyle.InsetU32), ConsoleStyle.FrameRoundingPx);
         for (int i = 0; i < s.Choices.Length; i++)
         {
@@ -374,7 +376,7 @@ internal static partial class MacPortTab
             if (over)
                 hovered = s.OptionHelp.GetValueOrDefault(choice);
             if (clicked)
-                Pending[s.Key] = choice;
+                Pending[s.Key] = picked = choice;
             bool active = choice == value;
             var corners = i == 0 ? ImDrawFlags.RoundCornersLeft : i == s.Choices.Length - 1 ? ImDrawFlags.RoundCornersRight : ImDrawFlags.RoundCornersNone;
             if (active)
