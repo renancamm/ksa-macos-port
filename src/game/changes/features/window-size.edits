@@ -1,0 +1,53 @@
+# For upscaling's render scale (the hooks' RenderScale.cs), where the shaders' screen size is the size the 3D view is
+# drawn at: the sizes that mean pixels on the window use the window's size, which the hooks put in the camera data's
+# spare int (0 without render scale: then nothing changes). The level of detail of ground clutter and of ring rocks,
+# the size of star and planet discs and the starfield's glow. The last four need the first: without its definitions
+# they would not compile.
+
+@@ edit window-size Common/Global.glsl
+@@ what defined the window's size
+@@ find
+    int pad0;
+    mat4 galacticPlane;
+@@ replace
+    int pad0;
+    mat4 galacticPlane;
+// macOS port: the window's size (render scale)
+#define KSA_WINDOW_HEIGHT (global.camera.pad0 > 0 ? float(global.camera.pad0) : float(global.camera.screenHeight))
+#define KSA_WINDOW_WIDTH (global.camera.pad0 > 0 ? float(global.camera.pad0) * global.camera.aspectRatio : float(global.camera.screenWidth))
+
+@@ edit window-size-clutter Planet/GroundClutter/CullInstances.comp
+@@ what made the level of detail use the window's height
+@@ needs window-size
+@@ find
+projRadius * global.camera.screenHeight)
+@@ replace
+projRadius * KSA_WINDOW_HEIGHT)
+
+@@ edit window-size-ring-rocks Rings/Culling/RingMeshCulling.comp
+@@ what made the ring rocks' level of detail use the window's height
+@@ needs window-size
+@@ find
+projRadius * global.camera.screenHeight * 0.5;
+@@ replace
+projRadius * KSA_WINDOW_HEIGHT * 0.5;
+
+@@ edit window-size-discs StaticCelestialDistance.vert
+@@ what made the disc sizes use the window's size
+@@ needs window-size
+@@ find
+scalePixel / global.camera.screenWidth;
+    vertPosition.y *= instanceData.scalePixel / global.camera.screenHeight;
+@@ replace
+scalePixel / KSA_WINDOW_WIDTH;
+    vertPosition.y *= instanceData.scalePixel / KSA_WINDOW_HEIGHT;
+
+@@ edit window-size-starfield Star.frag
+@@ what made the starfield's glow use the window's size
+@@ needs window-size
+@@ find
+    float screenWidth = global.camera.screenWidth;
+    float screenHeight = global.camera.screenHeight;
+@@ replace
+    float screenWidth = KSA_WINDOW_WIDTH;
+    float screenHeight = KSA_WINDOW_HEIGHT;

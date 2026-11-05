@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<!-- The startup hook (Loader.cs) and the port settings it applies (PortEnvironment.cs, with the shared library,
+	     src/shared/). References nothing of the game. -->
+	<PropertyGroup>
+		<AssemblyName>KsaMetal.Hooks.Loader</AssemblyName>
+	</PropertyGroup>
+	<ItemGroup>
+		<ProjectReference Include="../../../shared/KsaPort.Common.csproj" />
+	</ItemGroup>
+</Project>

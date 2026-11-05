@@ -1,0 +1,24 @@
+{
+  "test": "tour",
+  "made": "seeded 2026-11-04 from the allowances the @shot lines had (about 3 x the spread of repeated runs, 2026-11-02); benchmark.sh calibrate replaces it",
+  "runs": [],
+  "shots": {
+    "earth3": {
+      "spread": 8.33,
+      "limit": 25
+    },
+    "earth4": {
+      "spread": 23.33,
+      "limit": 70
+    },
+    "earth8": {
+      "spread": 2.67,
+      "limit": 8
+    },
+    "saturn3": {
+      "spread": 1.67,
+      "limit": 5
+    }
+  },
+  "parts": {}
+}

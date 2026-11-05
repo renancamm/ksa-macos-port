@@ -3,9 +3,9 @@
 # release (dist/ksa-macos-port/port.sh, ...); ./release.sh zips it.
 #
 # Usage: ./build.sh [options]
-#   Needs the Command Line Tools, cmake, ninja and the .NET 10 SDK. The native libraries are built by CMake
-#   (CMakeLists.txt), with every download pinned in cmake/dependencies.cmake; everything goes to deps/build/, and a
-#   second build only compiles what changed.
+#   Needs the Command Line Tools, cmake, ninja and the .NET 10 SDK. CMake builds everything (CMakeLists.txt), with
+#   every download pinned in cmake/dependencies.cmake, installs the port folder and runs the tests; everything goes to
+#   deps/build/, and a second build only compiles what changed.
 #
 # Options:
 #   --ksa <archive | folder | app>  the KSA the benchmark and the hooks are built against and the folder
@@ -53,14 +53,12 @@ if [ -z "${KSA_SOURCE}" ]; then
 fi
 
 # KSA's assemblies, for the benchmark and the hooks: an app's are converted already; an archive's or a folder's are copied
-# into deps/build/ksa/ and converted there (lib/convert-dotnet.sh, once the port's scripts are in place)
+# into deps/build/ksa/, and the build converts them there (KsaPort.Cli convert-dotnet)
 KSA_DIR="${BUILD}/ksa"
-CONVERT=1
 rm -rf "${KSA_DIR}"
 mkdir -p "${KSA_DIR}"
 if [ -f "${KSA_SOURCE}/Contents/Resources/KSA.dll" ]; then
     KSA_DIR="$(CDPATH='' cd -- "${KSA_SOURCE}/Contents/Resources" && pwd)"  # absolute: MSBuild reads a relative one from the project
-    CONVERT=0
 elif [ -f "${KSA_SOURCE}/KSA.dll" ]; then
     cp "${KSA_SOURCE}"/*.dll "${KSA_DIR}/"
 elif [ -f "${KSA_SOURCE}" ]; then
@@ -74,37 +72,40 @@ fi
 KSA_VERSION="$(game_version "${KSA_DIR}")"
 step "Building the port ${VERSION} (${COMMIT}) for KSA ${KSA_VERSION}"
 
-# The native libraries, and the downloads the other steps use. CMake's output goes to a log, shown when it fails.
-step "[1/6] Native libraries (CMake)"
+# CMake builds everything (CMakeLists.txt): its output goes to a log, shown when a step fails
 mkdir -p "${CMAKE_TREE}"
 LOG="${CMAKE_TREE}/build.log"
 DEBUG_MAP=ON
 [ "${VERSION}" = dev ] || DEBUG_MAP=OFF
-{ cmake --preset default -B "${CMAKE_TREE}" -DKSA_NATIVES_DIR="${NATIVES}" -DKSA_MTL_OPT="${KSA_MTL_OPT:--O2}" \
-    -DKSA_MTL_DEBUG_MAP="${DEBUG_MAP}" &&
-    cmake --build "${CMAKE_TREE}"; } > "${LOG}" 2>&1 || { grep -v xcrun_db "${LOG}" | tail -40; die "the native build failed (${LOG})."; }
-info "Libraries in ${NATIVES#"${REPO}/"}, CMake's output in ${LOG#"${REPO}/"}"
+step "[1/4] Configure (CMake; the downloads of cmake/dependencies.cmake)"
+cmake --preset default -B "${CMAKE_TREE}" -DKSA_NATIVES_DIR="${NATIVES}" -DKSA_ASSEMBLIES_DIR="${ASSEMBLIES}" \
+    -DKSA_DIR="${KSA_DIR}" -DPORT_VERSION="${VERSION}" -DPORT_COMMIT="${COMMIT}" -DPORT_FOLDER="${OUT}" \
+    -DKSA_MTL_OPT="${KSA_MTL_OPT:--O2}" -DKSA_MTL_DEBUG_MAP="${DEBUG_MAP}" > "${LOG}" 2>&1 ||
+    { tail -40 "${LOG}"; die "CMake's configure failed (${LOG})."; }
+
+step "[2/4] Build: the native libraries, the .NET projects, the icon"
+cmake --build "${CMAKE_TREE}" >> "${LOG}" 2>&1 ||
+    { grep -v xcrun_db "${LOG}" | tail -40
+      ! grep -q 'error CS' "${LOG}" ||
+          info "Does this KSA version still match? The hooks and the benchmark are built against its code."
+      die "the build failed (${LOG})."; }
+# What the settings' checks found (cmake/port-folder.cmake)
+grep -h -E '^    The port settings:' "${LOG}" | tail -1 || true
+info "CMake's output in ${LOG#"${REPO}/"}"
 # For editors: compile_commands.json at the repository's root, where clangd and VS Code look for it
 ln -sfn "${CMAKE_TREE}/compile_commands.json" "${REPO}/compile_commands.json"
 
-step "[2/6] The port's scripts"
-run make-kit scripts "${VERSION}" "${KSA_VERSION}" "${COMMIT}"
+step "[3/4] The port folder"
+rm -rf "${OUT}"
+cmake --install "${CMAKE_TREE}" --prefix "${OUT}" >> "${LOG}" 2>&1 ||
+    { tail -40 "${LOG}"; die "the port folder could not be assembled (${LOG})."; }
 
-step "[3/6] Icon"
-run build-icon
-
-step "[4/6] Benchmark"
-load_deps
-[ "${CONVERT}" = 0 ] || bash "${OUT}/lib/convert-dotnet.sh" "${KSA_DIR}" "${DOTNET_RUNTIME}" > /dev/null
-run build-benchmark "${KSA_DIR}"
-
-step "[5/6] Hooks"
-run build-hooks "${KSA_DIR}"
-
-step "[6/6] The port folder"
-run make-kit payload
-run check-kit
-run test-benchmark-script "${OUT}"
+step "[4/4] Tests (ctest), but the shader corpus's"
+TESTS="${CMAKE_TREE}/tests.log"
+ctest --test-dir "${CMAKE_TREE}" -LE corpus --output-on-failure > "${TESTS}" 2>&1 ||
+    { tail -40 "${TESTS}"; die "tests failed (${TESTS#"${REPO}/"})."; }
+info "The tests: passed."
+grep -h -E '^    (The |All )' "${CMAKE_TREE}/Testing/Temporary/LastTest.log" || true
 
 echo ""
 step "Done: ${OUT#"${REPO}/"} (port ${VERSION}, KSA ${KSA_VERSION})"

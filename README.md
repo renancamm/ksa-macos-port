@@ -110,22 +110,22 @@ So the app is made of three kinds of pieces:
 - **Patched:** the game's own files lose the Linux .NET runtime and the two files that point the .NET host at it
   ([.NET](#net)), then get small changes: two bytes in `KSA.dll`'s header, and bug fixes in its shader sources
   ([Shader fixes](#shader-fixes)).
-- **Built by this project:** the GLFW shim ([`src/glfw-shim/`](src/glfw-shim/)), KSA Metal's driver
-  ([`src/ksa-metal/`](src/ksa-metal/)), the launcher ([`src/launcher/`](src/launcher/)) and the
+- **Built by this project:** the GLFW shim ([`src/game/shims/glfw/`](src/game/shims/glfw/)), KSA Metal's driver
+  ([`src/game/driver/`](src/game/driver/)), the launcher ([`src/game/launcher/`](src/game/launcher/)) and the
   app bundle around everything ([Building the port](#building-the-port)).
 
 ### The steps
 
 The port folder holds the app without the game, `payload/app/Contents/`: the launcher, the .NET runtime, the native
-libraries, the icon and the licences. `port.sh` extracts the game's archive, converts the game with the scripts in the
-folder's `lib/` and puts it into a copy of that app; in this repository they are in [`src/port/lib/`](src/port/lib/).
+libraries, the icon and the licences. `port.sh` runs the port's program on that .NET runtime: it extracts the game's
+archive, converts the game and puts it into a copy of that app. The port's program is in the folder's `lib/port-cli/`,
+and in this repository in [`src/player/port-cli/`](src/player/port-cli/), which has its own README.
 
-| Step | Script | What it does |
+| Step | In the port's program | What it does |
 |---|---|---|
-| Convert | `convert-cleanup.sh` | removes the Linux binaries and the Windows installer files |
-| | `convert-dotnet.sh` | makes the .NET files run on the macOS runtime (with `mark-arm64.sh`) |
-| | `convert-shaders.sh` | fixes and edits the game's shaders |
-| App | `make-app.sh` | builds the app around the converted game, or puts the port's files into one |
+| Convert | `Conversion.cs` | removes the Linux binaries and the Windows installer files, makes the .NET files run on the macOS runtime |
+| | `ShaderEdits.cs` | fixes and edits the game's shaders, as the `.edits` files of `src/game/changes/` say |
+| App | `App.cs` | builds the app around the converted game, or puts the port's files into one |
 
 To update an app, `port.sh` runs the same steps on it again, without the extraction.
 
@@ -150,7 +150,7 @@ Linux and macOS on Apple Silicon. The port takes the macOS builds of the eleven 
 | Ahwoo.BRUTAL.Monitor.Host | `Brutal.Monitor.Subprocess`, a program | crash dumps |
 
 These are the same versions KSA ships for Linux: the Linux libraries in the game's archive are identical to the
-Linux builds in these packages. `convert-dotnet.sh` compares each package version with the matching game assembly
+Linux builds in these packages. The port's program compares each package version with the matching game assembly
 (`Ahwoo.BRUTAL.Glfw.Native` with `Brutal.Glfw.dll`). It stops when the game is older than the packages, because older
 bindings don't match the newer libraries, and warns when the game is newer.
 
@@ -169,13 +169,24 @@ cd ksa-macos-port
 ```
 
 That makes `dist/ksa-macos-port/`, a port folder like a release's; `./build.sh --install` also puts its files into the
-installed app. The native libraries are a CMake project ([`CMakeLists.txt`](CMakeLists.txt)). The benchmark and the hooks are
-built against the installed app's KSA, or another one with `--ksa <archive>`, and the port folder is made for that
-KSA version. Everything the build downloads is declared in [`cmake/dependencies.cmake`](cmake/dependencies.cmake).
+installed app. CMake builds everything ([`CMakeLists.txt`](CMakeLists.txt)): the native libraries, and the port's
+program, the hooks, the benchmark, the shared library and the two generators, .NET projects of one solution
+([`ksa-macos-port.slnx`](ksa-macos-port.slnx)), which an editor can open after a first build. `build.sh` runs its four
+steps: configure, build, install (the port folder, [`cmake/port-folder.cmake`](cmake/port-folder.cmake)) and test.
+The hooks and the benchmark are built against the installed app's KSA, or another one with `--ksa <archive>`, and the
+port folder is made for that KSA version. Everything the build downloads is declared in
+[`cmake/dependencies.cmake`](cmake/dependencies.cmake).
 
-Warnings are errors in the native libraries, the hooks and the benchmark, and the build runs the hooks' and the
-benchmark's tests. The scripts run on macOS's own bash 3.2 and are kept clean of ShellCheck's findings
-([`.shellcheckrc`](.shellcheckrc)).
+Three files are made by the build, in its build tree, and are not in the repository: `port-settings.h` and
+`Settings.Generated.cs`, the settings the native code and the hooks read, from the settings table
+([`src/shared/settings/`](src/shared/settings/)), and `entries.inc`, the driver's entry table, from Vulkan's registry
+and the driver's sources ([`src/build-tools/entries-generator/`](src/build-tools/entries-generator/)). A build makes
+them again when what they come from changed.
+
+Warnings are errors in the native libraries and the .NET projects, and the build runs the tests of the driver, the
+port's program, the port settings and the benchmark. The scripts run on macOS's own bash 3.2 and are kept clean of
+ShellCheck's findings ([`.shellcheckrc`](.shellcheckrc)); [`.editorconfig`](.editorconfig) says how the sources are
+written.
 
 Releases are made with `release.sh <ksa_linux_vX.tar.gz>`. It builds the port folder from a clean copy of the
 committed sources, zips it, and tests the zip by making an app with it and running the benchmark on that app with a
@@ -183,7 +194,7 @@ fresh install's settings. `release.sh --publish` then tags the commit and upload
 
 ### .NET
 
-The Linux release is a self-contained `linux-x64` .NET program. `convert-dotnet.sh` turns it into one that runs on
+The Linux release is a self-contained `linux-x64` .NET program. The port's program turns it into one that runs on
 the shared macOS runtime the app bundles:
 
 1. It removes the Linux .NET runtime libraries (`System.*.dll`, `mscorlib.dll`, ...): exactly the DLLs whose names
@@ -199,9 +210,11 @@ launcher needs: DYLD environment variables, unsigned libraries and JIT.
 
 ### Shader fixes
 
-KSA compiles its GLSL shaders from `Content/` at startup, so fixes can go straight into the shader sources.
-`convert-shaders.sh` applies these, to files under `Content/Core/Shaders/`; its header explains each one. It also
-edits shaders for the hooks and the driver, which their READMEs explain.
+KSA compiles its GLSL shaders from `Content/` at startup, so fixes can go straight into the shader sources. The port's
+program applies these to files under `Content/Core/Shaders/`, as the edit files of
+[`src/game/changes/fixes/`](src/game/changes/fixes/) say, each with its explanation. It also edits shaders for the
+hooks and the driver (`features/` and `optimizations/` beside it), which
+[`src/game/changes/README.md`](src/game/changes/README.md) explains.
 
 | Shader | Bug | Fix |
 |---|---|---|
@@ -209,12 +222,12 @@ edits shaders for the hooks and the driver, which their READMEs explain.
 | `Planet/GroundClutter/Solid.vert`, `SolidDepth.vert` | the depth pre-pass and the colour pass (depth `EQUAL`) need bit-identical positions, which Vulkan only guarantees for `invariant` outputs; with Metal's fast math they differ: black stripes and see-through patches on trees and rocks | declares `invariant gl_Position` |
 | `Lighting/LightFineClusterCompact.comp` | a tile whose depth range comes out inverted makes a loop run about 4 billion times: the GPU hangs | skips such a tile |
 
-When a KSA update changes the code around a fix, the script prints `[WARN]` and skips it.
+When a KSA update changes the code around a fix, the port's program prints `[WARN]` and skips it.
 
 ### GLFW shim
 
 The launcher loads `libGlfwShim.dylib` with `DYLD_INSERT_LIBRARIES`. With dyld interposing it replaces a few calls
-without modifying GLFW; [`glfw_shim.c`](src/glfw-shim/glfw_shim.c) explains each one:
+without modifying GLFW; [`glfw_shim.c`](src/game/shims/glfw/glfw_shim.c) explains each one:
 
 | Call | Problem | Fix |
 |---|---|---|
@@ -226,12 +239,12 @@ without modifying GLFW; [`glfw_shim.c`](src/glfw-shim/glfw_shim.c) explains each
 
 ### The app bundle
 
-`make-app.sh` moves the converted game folder into the app as `Contents/Resources` and adds the port's part from
+The port's program moves the converted game folder into the app as `Contents/Resources` and adds the port's part from
 `payload/app/Contents/`:
 
 | In the app | What |
 |---|---|
-| `Contents/MacOS/KSA` | the launcher, [`launcher.c`](src/launcher/launcher.c) |
+| `Contents/MacOS/KSA` | the launcher, [`launcher.c`](src/game/launcher/launcher.c) |
 | `Contents/MacOS/dotnet`, `host/`, `shared/` | the .NET runtime |
 | `Contents/Resources/*.dylib` | the native libraries, next to the game that loads them |
 | `Contents/Resources/Hooks/` | [KSA Metal Hooks](#the-hooks), with Harmony |
@@ -247,7 +260,7 @@ launcher is the app's own executable and hands its process over to `dotnet`, so 
 Mode included. `Info.plist` turns `NSHighResolutionCapable` on, so the game draws its interface at the display's full
 resolution.
 
-The bundle isn't signed as a whole, because that would replace Microsoft's signature on `dotnet`. `make-app.sh`
+The bundle isn't signed as a whole, because that would replace Microsoft's signature on `dotnet`. The port's program
 removes the quarantine attribute that a browser download puts on the files, so macOS opens the app as one made on
 this Mac. When `port.sh` replaces an app, it builds the new one next to it, keeps its window layout (`imgui.ini`) and
 StarMap, and moves the old one to the Trash only at the end; if anything fails, the old app is left as it was.
@@ -255,21 +268,31 @@ StarMap, and moves the old one to the Trash only at the end; if anything fails, 
 ### Repository layout
 
 ```text
-build.sh, release.sh      make the port folder; make a release of it
-CMakeLists.txt, cmake/    the native build, and every external source the build uses (dependencies.cmake)
-CMakePresets.json         how CMake is run: Ninja, Release, deps/build/cmake/
-scripts/                  the build's other steps, and lib.sh
-global.json               the .NET SDK version that builds the benchmark and the hooks
-src/port/                 the port folder's commands and lib/, its steps
-src/launcher/             the app's executable
-src/glfw-shim/            the GLFW shim
-src/ktx-shim/             the KTX shim
-src/hooks/                KSA Metal Hooks and their loader, with their own README
-src/ksa-metal/            the driver, with its own README
-src/benchmark/            the benchmark: director, report program, tests and vehicles, with its own README
-third_party/fmod/         FMOD's macOS library, with its licence and notice (not MIT)
-.github/                  the issue templates
-deps/, dist/              made by the build: downloads and build trees; the port folder and release zips
+build.sh, release.sh        make the port folder; make a release of it
+scripts/                    the icon, the port folder's check, and lib.sh, which build.sh and release.sh share
+CMakeLists.txt, cmake/      the build, the port folder's layout, and every external source the build uses
+CMakePresets.json           how CMake is run: Ninja, Release, deps/build/cmake/
+ksa-macos-port.slnx         the .NET projects: the port's program, the hooks, the benchmark, the shared library and
+                            the generators
+global.json                 the .NET SDK version that builds them
+src/game/                   what runs in the game's process:
+  driver/                   KSA Metal's driver and its tests, with its own README
+  launcher/                 the app's executable
+  shims/glfw/, shims/ktx/   the GLFW shim; the KTX shim, with its own README
+  hooks/                    KSA Metal Hooks, their loader and the Mac Port tab, with their own README
+  changes/                  the changes to the game: fixes, optimizations, features, with their own README
+  benchmark/                the benchmark's director, its tests and vehicles (lineup/), with the benchmark's README
+src/player/                 what the player runs from the port folder:
+  port-folder/              the port folder's commands and lib/, what they share, with the port's names (port.env)
+  port-cli/                 the port's program, what port.sh and starmap.sh run, with its own README
+  benchmark-cli/            the program benchmark.sh runs: runs, reports, comparisons, with its tests
+src/shared/                 the library the programs share: the port settings (settings/, with their own README),
+                            the port folder's names, a run's options and results, the screenshots' comparison
+src/build-tools/            the generators the build runs: the typed settings, the driver's entry table
+src/Directory.Build.props   what the .NET projects share
+third_party/fmod/           FMOD's macOS library, with its licence and notice (not MIT)
+.github/                    the issue templates
+deps/, dist/                made by the build: downloads and build trees; the port folder and release zips
 ```
 
 ## KSA Metal
@@ -291,7 +314,7 @@ changes. It implements only the part of Vulkan that KSA uses, about 180 function
 Metal features it uses.
 
 Vulkan and Metal are both explicit, low-level GPU APIs with similar ideas, so each Vulkan concept maps onto Metal
-in a direct way. [`src/ksa-metal/README.md`](src/ksa-metal/README.md) has that mapping, the driver's switches, how
+in a direct way. [`src/game/driver/README.md`](src/game/driver/README.md) has that mapping, the driver's switches, how
 to build and test a change, and what each source file holds.
 
 ### The Mac Port tab
@@ -301,17 +324,19 @@ tabs; each row's tooltip says what it changes and what it costs.
 
 | Section | What's there |
 |---|---|
-| Presets | Performance, Balanced and Quality: the game's graphics settings and the port's, changed together; Game Defaults sets them back |
+| Presets | Performance, Balanced and Quality: the game's graphics settings and the port's, changed together; Game Defaults sets them back. Memory Use, on Auto from the first start, sets the Memory rows and texture sizes to suit the Mac's memory |
 | Image | Apple's MetalFX and what needs it, off by default: the MetalFX choice, how the 3D view's size compares with the window's pixels, render scale, MetalFX's anti-aliasing in place of the game's |
 | Extra Performance | a small trade for speed, with the game's own as the default: fewer cloud shadow updates, lighter warp cloud shadows, lighter plume shadows, simpler PCSS shadows, a baked Milky Way, lighter tumbling physics, debris settling in warp |
 | Optimizations | the same image, faster, on by default |
+| Memory | less memory with the same image, for Macs short of it: on or off as Memory Use sets them |
 | GPU Features | what the Mac's GPU and display offer the game, with the game's own settings still deciding: tessellation, ray queries, ray tracing, HDR output |
 | Interface | the flight HUD fitted to the display, and Apple's Metal Performance HUD over the game |
 | Benchmark | the [benchmark](#the-benchmark)'s tests and the last run's report |
 
 The settings are kept in `port-settings.toml`, next to the game's `settings.toml` in
 `~/Documents/My Games/Kitten Space Agency`, with a comment on each. The file can be edited instead of the tab, and
-its `[developer]` section holds switches for testing and debugging that the tab doesn't show.
+three sections the tab doesn't show hold settings for testing and debugging: Troubleshooting, Diagnostics and
+Experiments.
 
 ### The hooks
 
@@ -319,28 +344,29 @@ Some of the port's changes need the game's C# code. KSA Metal Hooks make them in
 [Harmony](https://github.com/pardeike/Harmony), so `KSA.dll` stays as it is on disk. Their patches are the tab's
 rows that reach into the game; the hooks also draw the tab itself, start the benchmark from it, and make the game's
 Restart button start the app again. When a KSA update has moved the code a hook changes, the hook is left out, the
-tab shows its row as unavailable, and the game runs as it would without it. [`src/hooks/`](src/hooks/) says what
-each one changes and how.
+tab shows its row as unavailable, and the game runs as it would without it. [`src/game/changes/`](src/game/changes/)
+says what each one changes and how, with the port's shader edits; [`src/game/hooks/`](src/game/hooks/) how the hooks
+load and apply.
 
 ### The KTX shim
 
 The game keeps every texture's pixels in memory for the whole session. The KTX shim maps them from files instead once
 a texture is loaded, so macOS can page them out when memory runs short and read them back later. It is the tab's
-**Texture File Mapping** row; [`ktx_shim.c`](src/ktx-shim/ktx_shim.c) has the details.
+**Texture File Mapping** row; [`ktx_shim.c`](src/game/shims/ktx/ktx_shim.c) has the details.
 
 ### The benchmark
 
-The benchmark measures how the game runs on your Mac with three tests, each played in one session: the Mixed Test
-(rockets, smoke, an explosion, a kitten and a cockpit), the Planetary Tour (a flight from Earth to Jupiter) and the Warp
-Test (how far time warp gets in a fixed time). It writes a report you can compare with another run or share. Run it from
-the Mac Port tab (**FAST** or **CINEMATIC** on a test's row), or from the port folder:
+The benchmark measures how the game runs on your Mac with three tests, each starting in a new game's world: the
+Mixed Test (rockets, smoke, an explosion, a kitten and a cockpit, each view standing still), the Planetary Tour (a
+flight from Earth to Jupiter) and the Warp Test (how far time warp gets in a fixed time). It writes a report you can compare with
+another run or share. Run it from the Mac Port tab (**RUN** on a test's row), or from the port folder:
 
 ```bash
 ./benchmark.sh
 ```
 
-[`src/benchmark/README.md`](src/benchmark/README.md) explains the tests, its presets and options, how to compare
-runs, and the tools it brings for work on the port.
+[`src/game/benchmark/README.md`](src/game/benchmark/README.md) explains the tests, its presets and options, how to
+compare runs, and the tools it brings for work on the port.
 
 ## Extras
 

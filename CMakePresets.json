@@ -3,7 +3,7 @@
     "configurePresets": [
         {
             "name": "default",
-            "displayName": "KSA Metal and the GLFW shim",
+            "displayName": "The port: its native libraries, .NET projects and port folder",
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/deps/build/cmake",
             "cacheVariables": {
@@ -16,6 +16,20 @@
         {
             "name": "default",
             "configurePreset": "default"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "default",
+            "configurePreset": "default",
+            "output": {
+                "outputOnFailure": true
+            },
+            "filter": {
+                "exclude": {
+                    "label": "corpus"
+                }
+            }
         }
     ]
 }

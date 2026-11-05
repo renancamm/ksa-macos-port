@@ -1,17 +1,19 @@
 #!/bin/bash
-# The app icon -> deps/build/icon/AppIcon.icns and its notice
+# The app icon: AppIcon.icns and its notice, NOTICE.txt, in <out dir>. The build runs it (cmake/port-folder.cmake).
 #
 # The kitten astronaut from KSA's title card (TITLE_CARD_URL in cmake/dependencies.cmake): the bottom 898x898 of the
 # 900x1350 card.
+#
+# Usage: scripts/build-icon.sh <title card> <its URL> <out dir>
 set -eo pipefail
 source "$(dirname "$0")/lib.sh"
-load_deps
 
-step "Making the app icon"
-CARD="${TITLE_CARD}"
+[ $# = 3 ] || die "usage: scripts/build-icon.sh <title card> <its URL> <out dir>"
+CARD="$1"
+TITLE_CARD_URL="$2"
+OUT_DIR="$3"
 [ -s "${CARD}" ] || die "the title card was not downloaded. Run ./build.sh."
 
-OUT_DIR="${BUILD}/icon"
 TMP="$(mktemp -d)"
 rm -rf "${OUT_DIR}"
 mkdir -p "${OUT_DIR}" "${TMP}/AppIcon.iconset"

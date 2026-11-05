@@ -1,0 +1,23 @@
+<Solution>
+	<Folder Name="/build-tools/">
+		<Project Path="src/build-tools/entries-generator/KsaPort.Tools.EntriesGenerator.csproj" />
+		<Project Path="src/build-tools/settings-generator/KsaPort.Tools.SettingsGenerator.csproj" />
+	</Folder>
+	<Folder Name="/benchmark/">
+		<Project Path="src/game/benchmark/KsaMetal.Benchmark.csproj" />
+		<Project Path="src/player/benchmark-cli/KsaMetal.Benchmark.Cli.csproj" />
+		<Project Path="src/player/benchmark-cli/tests/KsaMetal.Benchmark.Cli.Tests.csproj" />
+	</Folder>
+	<Folder Name="/hooks/">
+		<Project Path="src/game/hooks/KsaMetal.Hooks.csproj" />
+		<Project Path="src/game/hooks/loader/KsaMetal.Hooks.Loader.csproj" />
+	</Folder>
+	<Folder Name="/port-cli/">
+		<Project Path="src/player/port-cli/KsaPort.Cli.csproj" />
+		<Project Path="src/player/port-cli/tests/KsaPort.Cli.Tests.csproj" />
+	</Folder>
+	<Folder Name="/shared/">
+		<Project Path="src/shared/KsaPort.Common.csproj" />
+		<Project Path="src/shared/tests/KsaPort.Common.Tests.csproj" />
+	</Folder>
+</Solution>

@@ -4,10 +4,12 @@
 .LSOverride
 ._*
 
-# Downloads, build trees and the port folder (scripts/lib.sh: DEPS, BUILD, DIST), and build.sh's link to CMake's
-# compile_commands.json for editors
+# Downloads, build trees and the port folder (scripts/lib.sh: DEPS, BUILD, DIST), an editor's build of the .NET
+# projects, and build.sh's link to CMake's compile_commands.json for editors
 deps/
 dist/
+bin/
+obj/
 /compile_commands.json
 *.o
 *.a
@@ -25,11 +27,5 @@ Content/
 # Private working notes and source trees for the native Metal effort: proprietary material, never committed
 .claude-docs/
 
-# The benchmark's vehicle saves are ours, and build output stays out
-!src/benchmark/**/*.toml
-src/benchmark/*/bin/
-src/benchmark/*/obj/
-src/hooks/bin/
-src/hooks/obj/
-src/hooks/*/bin/
-src/hooks/*/obj/
+# The benchmark's vehicle saves are ours
+!src/game/benchmark/**/*.toml

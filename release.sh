@@ -114,7 +114,7 @@ TEST_APP="${TEST}/${APP_NAME}.app"
 [ "$(app_version "${TEST_APP}")" = "${KSA_VERSION}" ] || die "the test app was not made."
 if [ "${GAME_TEST}" = 1 ]; then
     for test in mixed tour; do
-        "${TEST}/ksa-macos-port/benchmark.sh" "${test}" --app "${TEST_APP}" --fast --defaults || die "the benchmark's ${test} test failed on the test app."
+        "${TEST}/ksa-macos-port/benchmark.sh" "${test}" --app "${TEST_APP}" --defaults || die "the benchmark's ${test} test failed on the test app."
     done
 fi
 rm -rf "${WORK}"

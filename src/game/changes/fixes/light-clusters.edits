@@ -1,0 +1,10 @@
+# LightFineClusterCompact.comp: a tile whose depth range comes out inverted makes "maxBin - minBin + 1u" wrap to about
+# 4 billion iterations, a GPU hang. The fix skips such a tile.
+
+@@ edit light-cluster-inverted-range Lighting/LightFineClusterCompact.comp
+@@ what skipped tiles with an inverted depth range
+@@ find
+    uint binCount = maxBin - minBin + 1u;
+@@ replace
+    if (maxBin < minBin) return;  // macOS port: an inverted depth range would loop for billions of bins
+    uint binCount = maxBin - minBin + 1u;

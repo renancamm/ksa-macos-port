@@ -1,19 +1,27 @@
-# The native part of the port: KSA Metal, the GLFW and KTX shims and the launcher, built from src/ with the
-# dependencies declared in cmake/dependencies.cmake. build.sh runs it; on its own: cmake --preset default &&
-# cmake --build --preset default
+# The whole build of the port, with every download declared in cmake/dependencies.cmake: KSA Metal, the GLFW and KTX
+# shims and the launcher; the files made from the settings table and Vulkan's registry; the .NET projects; the app's
+# icon. `cmake --install` assembles the port folder (cmake/port-folder.cmake), and ctest runs the tests. build.sh runs
+# the four steps, with the KSA the hooks and the benchmark are built against:
 #
-# Configuring also downloads everything else the port folder bundles (the .NET runtime, StarMap, BRUTAL's libraries)
-# and writes deps.sh into the build tree, which tells build.sh's other steps where each download is.
+#   cmake --preset default -DKSA_DIR=<folder with KSA.dll>
+#   cmake --build --preset default
+#   cmake --install deps/build/cmake --prefix dist/ksa-macos-port
+#   ctest --preset default
 cmake_minimum_required(VERSION 3.30)
 
-# Everything compiled targets the oldest macOS the app supports, dependencies included: MACOS_MIN in
-# src/port/lib/common.sh. Otherwise a binary inherits the build Mac's version.
-file(STRINGS src/port/lib/common.sh macos_min REGEX "^MACOS_MIN=")
-string(REGEX REPLACE "^MACOS_MIN=\"(.*)\"$" "\\1" MACOS_MIN "${macos_min}")
+# The port's names (src/player/port-folder/lib/port.env), each KEY="value": MACOS_MIN, the oldest macOS the app
+# supports, which everything compiled targets, dependencies included (otherwise a binary inherits the build Mac's
+# version), and BUNDLE_ID, the app's identifier, which the launcher's signature names (src/game/launcher/)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS src/player/port-folder/lib/port.env)
+file(STRINGS src/player/port-folder/lib/port.env port_names REGEX "^[A-Z_]+=\"")
+foreach(line ${port_names})
+    string(REGEX REPLACE "^([A-Z_]+)=\"(.*)\"$" "\\1" name "${line}")
+    string(REGEX REPLACE "^([A-Z_]+)=\"(.*)\"$" "\\2" "${name}" "${line}")
+endforeach()
+if(NOT MACOS_MIN OR NOT BUNDLE_ID)
+    message(FATAL_ERROR "src/player/port-folder/lib/port.env gives no MACOS_MIN or BUNDLE_ID")
+endif()
 set(CMAKE_OSX_DEPLOYMENT_TARGET "${MACOS_MIN}")
-# The app's identifier, which the launcher's signature names (src/launcher/)
-file(STRINGS src/port/lib/common.sh bundle_id REGEX "^BUNDLE_ID=")
-string(REGEX REPLACE "^BUNDLE_ID=\"(.*)\"$" "\\1" BUNDLE_ID "${bundle_id}")
 set(CMAKE_OSX_ARCHITECTURES arm64)
 
 project(ksa-macos-port LANGUAGES C CXX OBJCXX)
@@ -32,68 +40,31 @@ set(SPIRV-Headers_SOURCE_DIR "${spirv_headers_SOURCE_DIR}")
 FetchContent_MakeAvailable(vulkan_headers spirv_cross spirv_tools glfw_headers dotnet_runtime starmap starmap_license
     harmony_license lib_harmony title_card)
 
-# Harmony for KSA Metal Hooks: the package's .NET 10 assembly
+# Harmony for KSA Metal Hooks: the package's .NET 10 assembly. Extracted again only for another version, and then dated
+# now: the hooks' build tells a changed reference by its date, and the package's own is older than the last build.
 set(HARMONY_DIR "${CMAKE_BINARY_DIR}/harmony")
-file(REMOVE_RECURSE "${HARMONY_DIR}")
-# By its name: the download folder keeps the package of an earlier version when the version changes
-file(ARCHIVE_EXTRACT INPUT "${lib_harmony_SOURCE_DIR}/lib.harmony.${HARMONY_VERSION}.nupkg" DESTINATION "${HARMONY_DIR}" PATTERNS "lib/net10.0/0Harmony.dll")
-
-# BRUTAL's native libraries: RocketWerkz's macOS builds, unmodified, from each package's runtimes/osx-arm64/native/,
-# with BRUTAL's licence, notice and the packages' third-party notices. The one file there that is not a library,
-# Brutal.Monitor.Subprocess, is a program: it gets back the execute permission the package's zip doesn't keep.
-# Some packages ship one library under several names, as identical copies (libglfw.dylib, libglfw.3.dylib,
-# libglfw.3.5.dylib): the copies become links to the one named by the library's install name, so that the game and
-# the GLFW shim, which links that name, load the same GLFW.
-# The folder starts anew when the list of packages changes, so no library of an older package stays behind.
-if(NOT "${BRUTAL_PACKAGES}" STREQUAL "$CACHE{KSA_BRUTAL_STAGED}")
-    file(REMOVE_RECURSE "${KSA_NATIVES_DIR}")
-endif()
-file(MAKE_DIRECTORY "${KSA_NATIVES_DIR}/licenses/brutal")
-foreach(entry IN LISTS BRUTAL_PACKAGES)
-    string(REGEX MATCHALL "[^ ]+" fields "${entry}")
-    list(GET fields 0 id)
-    list(GET fields 1 version)
-    string(TOLOWER "${id}" lower)
-    string(REPLACE "." "_" name "${lower}")
-    FetchContent_MakeAvailable(${name})
-    set(unpacked "${CMAKE_BINARY_DIR}/brutal/${name}")
-    file(REMOVE_RECURSE "${unpacked}")
+if(NOT EXISTS "${HARMONY_DIR}/${HARMONY_VERSION}.version" OR NOT EXISTS "${HARMONY_DIR}/lib/net10.0/0Harmony.dll")
+    file(REMOVE_RECURSE "${HARMONY_DIR}")
     # By its name: the download folder keeps the package of an earlier version when the version changes
-    set(package "${${name}_SOURCE_DIR}/${lower}.${version}.nupkg")
-    file(ARCHIVE_EXTRACT INPUT "${package}" DESTINATION "${unpacked}"
-        PATTERNS "runtimes/osx-arm64/native/*" "*.txt") # every pattern must match: not all packages have LICENSES/
-    file(GLOB natives LIST_DIRECTORIES false "${unpacked}/runtimes/osx-arm64/native/*")
-    if(NOT natives)
-        message(FATAL_ERROR "${id} has no macOS libraries.")
-    endif()
-    set(programs ${natives})
-    list(FILTER natives INCLUDE REGEX "\\.dylib$")
-    list(FILTER programs EXCLUDE REGEX "\\.dylib$")
-    if(natives)
-        file(COPY ${natives} DESTINATION "${KSA_NATIVES_DIR}")
-    endif()
-    if(programs)
-        file(COPY ${programs} DESTINATION "${KSA_NATIVES_DIR}" FILE_PERMISSIONS
-            OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
-    endif()
-    foreach(native IN LISTS natives)
-        get_filename_component(file_name "${native}" NAME)
-        file(STRINGS "${native}" install_name REGEX "@rpath/[A-Za-z0-9._+-]+\\.dylib")
-        string(REGEX MATCH "@rpath/[A-Za-z0-9._+-]+\\.dylib" install_name "${install_name}")
-        string(REPLACE "@rpath/" "" install_name "${install_name}")
-        if(install_name AND NOT install_name STREQUAL file_name AND EXISTS "${unpacked}/runtimes/osx-arm64/native/${install_name}")
-            file(SHA256 "${native}" copy)
-            file(SHA256 "${unpacked}/runtimes/osx-arm64/native/${install_name}" original)
-            if(copy STREQUAL original)
-                file(REMOVE "${KSA_NATIVES_DIR}/${file_name}")
-                file(CREATE_LINK "${install_name}" "${KSA_NATIVES_DIR}/${file_name}" SYMBOLIC)
-            endif()
-        endif()
+    file(ARCHIVE_EXTRACT INPUT "${lib_harmony_SOURCE_DIR}/lib.harmony.${HARMONY_VERSION}.nupkg"
+        DESTINATION "${HARMONY_DIR}" PATTERNS "lib/net10.0/0Harmony.dll" TOUCH)
+    file(TOUCH "${HARMONY_DIR}/${HARMONY_VERSION}.version")
+endif()
+
+# port_folder_copy(<destination> <file or folder/>...): copies them into the port folder on `cmake --install`, as they
+# are (permissions, links); a folder with a trailing slash copies its contents
+function(port_folder_copy destination)
+    set(quoted "")
+    foreach(each IN LISTS ARGN)
+        string(APPEND quoted " \"${each}\"")
     endforeach()
-    file(GLOB notices "${unpacked}/LICENSE.txt" "${unpacked}/NOTICE.txt" "${unpacked}/LICENSES/*")
-    file(COPY ${notices} DESTINATION "${KSA_NATIVES_DIR}/licenses/brutal")
-endforeach()
-set(KSA_BRUTAL_STAGED "${BRUTAL_PACKAGES}" CACHE INTERNAL "The BRUTAL packages in KSA_NATIVES_DIR")
+    install(CODE "file(COPY ${quoted} DESTINATION \"\${CMAKE_INSTALL_PREFIX}/${destination}\")")
+endfunction()
+# Where the app's files go in the port folder: the app without the game
+set(PORT_APP "payload/app/Contents")
+
+# BRUTAL's native libraries, unmodified, with their licences
+include(cmake/brutal.cmake)
 
 # The licences of the sources compiled into the two libraries
 foreach(source vulkan_headers spirv_cross spirv_tools spirv_headers)
@@ -105,34 +76,72 @@ foreach(source vulkan_headers spirv_cross spirv_tools spirv_headers)
     endif()
     file(COPY ${notices} DESTINATION "${KSA_NATIVES_DIR}/licenses/${folder}")
 endforeach()
+# Those and BRUTAL's, in the app's licences
+port_folder_copy("${PORT_APP}/Resources/Licenses" "${KSA_NATIVES_DIR}/licenses/")
 
-add_subdirectory(src/ksa-metal)
-add_subdirectory(src/glfw-shim)
-add_subdirectory(src/ktx-shim)
-add_subdirectory(src/launcher)
+# The .NET SDK, as the build runs it: its state and the packages it restores in the build tree. The projects' output
+# goes to KSA_ASSEMBLIES_DIR (bin/<project>/), what the build's tools make to the build tree's generated/.
+find_program(DOTNET dotnet REQUIRED)
+set(KSA_ASSEMBLIES_DIR "${CMAKE_SOURCE_DIR}/deps/build/assemblies" CACHE PATH "Output folder of the .NET projects")
+set(KSA_GENERATED_DIR "${CMAKE_BINARY_DIR}/generated")
+# One .NET command at a time: the projects share bin/ and obj/ folders (KsaPort.Common's among them), and a tool's
+# build or run must not meet the solution's
+set_property(GLOBAL APPEND PROPERTY JOB_POOLS dotnet=1)
+set(PORT_DOTNET "${CMAKE_COMMAND}" -E env DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
+    DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 "DOTNET_CLI_HOME=${KSA_ASSEMBLIES_DIR}/home"
+    "NUGET_PACKAGES=${KSA_ASSEMBLIES_DIR}/nuget" "${DOTNET}")
+# No PDB: the port folder doesn't ship them, and a DLL built with one records its path
+set(PORT_DOTNET_BUILD -c Release -nologo -v quiet "-p:PortBuildDir=${KSA_ASSEMBLIES_DIR}" -p:DebugType=none
+    -nodeReuse:false)
+# port_dotnet_tool(<variable> <project> [<referenced project or source>...]): builds a .NET program the build runs
+# when its sources or those of the projects it references change, and sets <variable> to its assembly
+function(port_dotnet_tool variable project)
+    get_filename_component(name "${project}" NAME_WLE)
+    set(assembly "${KSA_ASSEMBLIES_DIR}/bin/${name}/${name}.dll")
+    set(sources "${PROJECT_SOURCE_DIR}/src/Directory.Build.props")
+    foreach(each "${project}" ${ARGN})
+        get_filename_component(folder "${each}" DIRECTORY)
+        # A project's own sources: those of its folder, but what an editor's build leaves and its tests' project
+        file(GLOB_RECURSE found RELATIVE "${folder}" CONFIGURE_DEPENDS "${folder}/*.cs")
+        list(FILTER found EXCLUDE REGEX "^(bin|obj|tests)/")
+        list(TRANSFORM found PREPEND "${folder}/")
+        list(APPEND sources "${each}" ${found})
+    endforeach()
+    add_custom_command(OUTPUT "${assembly}"
+        COMMAND ${PORT_DOTNET} build "${project}" ${PORT_DOTNET_BUILD}
+        # MSBuild leaves an assembly whose code is the same as it was: dated now, it marks the tool as built
+        COMMAND "${CMAKE_COMMAND}" -E touch "${assembly}"
+        DEPENDS ${sources}
+        JOB_POOL dotnet
+        COMMENT "Building ${name}" VERBATIM)
+    set(${variable} "${assembly}" PARENT_SCOPE)
+endfunction()
 
-# For build.sh's other steps: where each download is, and the versions the port folder records
-set(brutal_list "")
-foreach(entry IN LISTS BRUTAL_PACKAGES)
-    string(REGEX MATCHALL "[^ ]+" fields "${entry}")
-    list(GET fields 0 id)
-    list(GET fields 1 version)
-    string(APPEND brutal_list "    \"${id} ${version}\"\n")
-endforeach()
-file(GLOB title_card "${title_card_SOURCE_DIR}/*")
-file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/deps.sh" CONTENT [[
-# Written by CMakeLists.txt from cmake/dependencies.cmake: where each download is. Sourced by scripts/lib.sh.
-NATIVES="${KSA_NATIVES_DIR}"
-DOTNET_VERSION="${DOTNET_VERSION}"
-DOTNET_RUNTIME="${dotnet_runtime_SOURCE_DIR}"
-STARMAP_VERSION="${STARMAP_VERSION}"
-STARMAP="${starmap_SOURCE_DIR}"
-STARMAP_LICENSE="${starmap_license_SOURCE_DIR}/LICENSE.txt"
-HARMONY_LICENSE="${harmony_license_SOURCE_DIR}/LICENSE"
-HARMONY_VERSION="${HARMONY_VERSION}"
-HARMONY_DLL="${HARMONY_DIR}/lib/net10.0/0Harmony.dll"
-TITLE_CARD="${title_card}"
-TITLE_CARD_URL="${TITLE_CARD_URL}"
-BRUTAL_PACKAGES=(
-${brutal_list})
-]])
+# The components, each with its README; ctest runs the tests some of them have
+enable_testing()
+# The port settings' variables and defaults for the native code: port-settings.h, which the settings' generator makes
+# from the table (src/shared/settings/). It writes the header only when it differs, so the code that includes it is
+# compiled again only then; the stamp marks the table as made.
+port_dotnet_tool(SETTINGS_GENERATOR
+    "${PROJECT_SOURCE_DIR}/src/build-tools/settings-generator/KsaPort.Tools.SettingsGenerator.csproj"
+    "${PROJECT_SOURCE_DIR}/src/shared/KsaPort.Common.csproj")
+set(settings_table "${PROJECT_SOURCE_DIR}/src/shared/settings/port-settings.txt")
+add_custom_command(OUTPUT "${KSA_GENERATED_DIR}/port-settings.stamp"
+    BYPRODUCTS "${KSA_GENERATED_DIR}/port-settings.h"
+    COMMAND "${DOTNET}" "${SETTINGS_GENERATOR}" header "${settings_table}" "${KSA_GENERATED_DIR}/port-settings.h"
+    COMMAND "${CMAKE_COMMAND}" -E touch "${KSA_GENERATED_DIR}/port-settings.stamp"
+    DEPENDS "${settings_table}" "${SETTINGS_GENERATOR}"
+    JOB_POOL dotnet
+    COMMENT "Making port-settings.h from the settings table" VERBATIM)
+add_custom_target(port-settings-header DEPENDS "${KSA_GENERATED_DIR}/port-settings.stamp")
+add_library(port-settings INTERFACE)
+target_include_directories(port-settings INTERFACE "${KSA_GENERATED_DIR}")
+# Followed by every target that links it
+add_dependencies(port-settings port-settings-header)
+add_subdirectory(src/game/driver)
+add_subdirectory(src/game/shims/glfw)
+add_subdirectory(src/game/shims/ktx)
+add_subdirectory(src/game/launcher)
+
+# The .NET projects, the port folder and the tests of the port as a whole
+include(cmake/port-folder.cmake)

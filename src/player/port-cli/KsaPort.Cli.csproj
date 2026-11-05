@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<!-- The port's program (README.md in this folder): what port.sh and starmap.sh do, on the port folder's .NET runtime.
+	     It needs nothing from the game. -->
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<AssemblyName>KsaPort.Cli</AssemblyName>
+		<RootNamespace>KsaPort.Cli</RootNamespace>
+		<GenerateDependencyFile>true</GenerateDependencyFile>
+		<UseAppHost>false</UseAppHost>
+		<InvariantGlobalization>true</InvariantGlobalization>
+	</PropertyGroup>
+	<ItemGroup>
+		<Compile Remove="tests/**" />
+		<!-- The port folder's names, the apps this port made and the commands' output, shared with the benchmark -->
+		<ProjectReference Include="../../shared/KsaPort.Common.csproj" />
+		<!-- The changes to the game's shaders (src/game/changes/): the edits, in shader-edits/<kind>/ with the program,
+		     and the code that makes an edit (port/) -->
+		<None Include="../../game/changes/**/*.edits" Link="shader-edits/%(RecursiveDir)%(Filename)%(Extension)"
+			CopyToOutputDirectory="PreserveNewest" />
+		<Compile Include="../../game/changes/**/port/*.cs" />
+	</ItemGroup>
+	<ItemGroup>
+		<InternalsVisibleTo Include="KsaPort.Cli.Tests" />
+	</ItemGroup>
+</Project>

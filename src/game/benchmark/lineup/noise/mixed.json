@@ -1,0 +1,24 @@
+{
+  "test": "mixed",
+  "made": "seeded 2026-11-04 from the allowances the @shot lines had (about 3 x the spread of repeated runs, 2026-11-02); benchmark.sh calibrate replaces it",
+  "runs": [],
+  "shots": {
+    "kitten": {
+      "spread": 1.33,
+      "limit": 4
+    },
+    "explosion": {
+      "spread": 5.0,
+      "limit": 15
+    },
+    "liftoff": {
+      "spread": 3.33,
+      "limit": 10
+    },
+    "topdown": {
+      "spread": 1.0,
+      "limit": 3
+    }
+  },
+  "parts": {}
+}

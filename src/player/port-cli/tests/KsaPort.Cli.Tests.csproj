@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<!-- The port program's tests (Tests.cs), on synthetic shaders and files: ctest runs them
+	     (cmake/port-folder.cmake): dotnet KsaPort.Cli.Tests.dll <repository> -->
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<AssemblyName>KsaPort.Cli.Tests</AssemblyName>
+		<UseAppHost>false</UseAppHost>
+	</PropertyGroup>
+	<ItemGroup>
+		<ProjectReference Include="../KsaPort.Cli.csproj" />
+	</ItemGroup>
+</Project>

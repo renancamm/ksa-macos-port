@@ -1,0 +1,25 @@
+# How the sources are written, for editors: UTF-8, LF, four spaces (tabs in MSBuild's XML), lines of at most about 120
+# columns (prose and comments wrap at 118)
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+max_line_length = 120
+
+[*.{csproj,props,slnx}]
+indent_style = tab
+
+# Files kept as their makers wrote them: the game's vehicle saves and FMOD's licence
+[{src/game/benchmark/lineup/vehicles/**,third_party/**}]
+charset = unset
+end_of_line = unset
+insert_final_newline = unset
+trim_trailing_whitespace = unset
+indent_style = unset
+indent_size = unset
+max_line_length = unset

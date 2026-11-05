@@ -48,7 +48,7 @@ FetchContent_Declare(glfw_headers
 # the packages KSA 2026.10.25 uses, the libraries are in packages of their own, Ahwoo.BRUTAL.<X>.Native, versioned with
 # Ahwoo.BRUTAL.<X> (Monitor.Host still carries its program).
 # KSA 2026.10.25 ships exactly these versions (the Linux libraries in its archive are the packages' linux-x64 ones);
-# src/port/lib/convert-dotnet.sh compares them with the game's assemblies.
+# the port's program (src/player/port-cli/Conversion.cs) compares them with the game's assemblies.
 # Format: "<package id> <version> <SHA-512 of the .nupkg>".
 set(BRUTAL_PACKAGES
     "Ahwoo.BRUTAL.Stb.Native         2026.10.3 a2f3c40cf7c8426be0e55c2a1dcb90c3278f5a986b39fd760722e15d3b479de017a93a7cb1c6c06b941a990a9a2ba27c87c749e199ac834d774323130b1a3b78"
@@ -73,7 +73,7 @@ foreach(entry IN LISTS BRUTAL_PACKAGES)
     FetchContent_Declare(${name}
         URL https://api.nuget.org/v3-flatcontainer/${lower}/${version}/${lower}.${version}.nupkg
         URL_HASH SHA512=${sha512}
-        DOWNLOAD_NO_EXTRACT TRUE) # CMakeLists.txt takes the macOS libraries out of it
+        DOWNLOAD_NO_EXTRACT TRUE) # cmake/brutal.cmake takes the macOS libraries out of it
 endforeach()
 
 # The .NET runtime bundled into the app: Microsoft's osx-arm64 build, SHA-512 from Microsoft's release metadata
@@ -98,7 +98,7 @@ FetchContent_Declare(harmony_license
     URL_HASH SHA256=a5883d0c45eb7e176d3d1631220e7f96e958e37064773d40245ae6db560bbd6d
     DOWNLOAD_NO_EXTRACT TRUE)
 
-# Harmony, which KSA Metal Hooks (src/hooks/) use to change KSA's code at runtime: the official package on
+# Harmony, which KSA Metal Hooks (src/game/hooks/) use to change KSA's code at runtime: the official package on
 # nuget.org, the version StarMap includes (its licence: harmony_license above). Its net10.0 build goes into the app.
 set(HARMONY_VERSION 2.4.2)
 FetchContent_Declare(lib_harmony

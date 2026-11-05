@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<!-- KSA Metal Hooks, compiled against the KSA version the port folder is made for (KsaDir, src/Directory.Build.props).
+	     The game's assemblies, Harmony, the shared library and the benchmark's director are references only: the app
+	     ships Harmony and the shared library next to the hooks and the director in its Benchmark folder. The loader
+	     (loader/) is a project of its own. -->
+	<PropertyGroup>
+		<AssemblyName>KsaMetal.Hooks</AssemblyName>
+		<RootNamespace>KsaMetal.Hooks</RootNamespace>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+	</PropertyGroup>
+	<ItemGroup>
+		<Compile Remove="loader/**" />
+		<!-- The changes to the game they apply (src/game/changes/), but the code the port's program runs (port/) -->
+		<Compile Include="../changes/**/*.cs" Exclude="../changes/**/port/**" />
+		<Reference Include="$(KsaDir)/*.dll" Private="false" />
+		<Reference Include="$(HarmonyDll)" Private="false" />
+		<ProjectReference Include="../../shared/KsaPort.Common.csproj" Private="false" />
+		<ProjectReference Include="../benchmark/KsaMetal.Benchmark.csproj" Private="false" />
+		<!-- Restored and built with the hooks, for the target below -->
+		<ProjectReference Include="../../build-tools/settings-generator/KsaPort.Tools.SettingsGenerator.csproj"
+			ReferenceOutputAssembly="false" Private="false" />
+	</ItemGroup>
+
+	<!-- The settings the hooks read, as typed properties of Settings (Settings.cs): Settings.Generated.cs, which the
+	     settings' generator makes from the table into the build's obj folder before each compile, an editor's too. The
+	     target builds the generator (nothing to do when it is built), then runs it; it writes the file only when it
+	     differs, so the hooks are compiled again only then. -->
+	<Target Name="GenerateSettings" BeforeTargets="CoreCompile">
+		<PropertyGroup>
+			<SettingsTable>$(MSBuildThisFileDirectory)../../shared/settings/port-settings.txt</SettingsTable>
+			<SettingsFolder>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)'))</SettingsFolder>
+			<SettingsGenerated>$(SettingsFolder)Settings.Generated.cs</SettingsGenerated>
+			<SettingsDotnet>$(DOTNET_HOST_PATH)</SettingsDotnet>
+			<SettingsDotnet Condition="'$(SettingsDotnet)' == ''">dotnet</SettingsDotnet>
+		</PropertyGroup>
+		<MSBuild Targets="Build"
+			Projects="$(MSBuildThisFileDirectory)../../build-tools/settings-generator/KsaPort.Tools.SettingsGenerator.csproj">
+			<Output TaskParameter="TargetOutputs" PropertyName="SettingsGenerator" />
+		</MSBuild>
+		<Exec Command="&quot;$(SettingsDotnet)&quot; &quot;$(SettingsGenerator)&quot; hooks &quot;$(SettingsTable)&quot; &quot;$(SettingsGenerated)&quot;" />
+		<ItemGroup>
+			<Compile Include="$(SettingsGenerated)" />
+			<FileWrites Include="$(SettingsGenerated)" />
+		</ItemGroup>
+	</Target>
+</Project>
