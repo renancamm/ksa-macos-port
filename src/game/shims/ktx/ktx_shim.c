@@ -177,25 +177,14 @@ static void findCache(void) {
 }
 
 // The cache's copy of a file's texture: named after the file's path, size and date and what tells its copies apart
-// (a KTX2's data size, stb's output). Now and then, while the game loads in parallel, stat of a texture's path fails
-// (ENOENT) just after its library opened it; given the texture's bytes, the copy is then named after them instead
-static bool cachePath(const char* path, uint64_t kind, const uint8_t* data, size_t size, char* file, size_t capacity) {
+// (a KTX2's data size, stb's output)
+static bool cachePath(const char* path, uint64_t kind, char* file, size_t capacity) {
+    struct stat st;
+    if (stat(path, &st) != 0) return false;
     uint64_t h = 1469598103934665603ull;  // FNV-1a
     for (const char* c = path; *c; c++) h = (h ^ (uint8_t)*c) * 1099511628211ull;
-    struct stat st;
-    if (stat(path, &st) == 0) {
-        h = (h ^ (uint64_t)st.st_size) * 1099511628211ull;
-        h = (h ^ (uint64_t)st.st_mtimespec.tv_sec) * 1099511628211ull;
-    } else if (data) {
-        h = (h ^ 0x4259544553ull) * 1099511628211ull;  // "BYTES": never a file's size and date
-        for (size_t i = 0; i < size; i += 8) {
-            uint64_t word = 0;
-            memcpy(&word, data + i, size - i < 8 ? size - i : 8);
-            h = (h ^ word) * 1099511628211ull;
-        }
-    } else {
-        return false;
-    }
+    h = (h ^ (uint64_t)st.st_size) * 1099511628211ull;
+    h = (h ^ (uint64_t)st.st_mtimespec.tv_sec) * 1099511628211ull;
     h = (h ^ kind) * 1099511628211ull;
     pthread_once(&g_cacheOnce, findCache);
     if (!g_cacheDir[0]) return false;
@@ -229,7 +218,7 @@ static int writeCacheFile(const char* file, const void* header, size_t headerSiz
 // The cache's copy of these bytes (written now if missing)
 static uint8_t* mapCacheFile(const char* path, const uint8_t* data, size_t size, void** base, size_t* mapped) {
     char file[1100];
-    if (!cachePath(path, (uint64_t)size, data, size, file, sizeof file)) return NULL;
+    if (!cachePath(path, (uint64_t)size, file, sizeof file)) return NULL;
     int fd = open(file, O_RDONLY);
     struct stat cs;
     if (fd >= 0 && (fstat(fd, &cs) != 0 || (size_t)cs.st_size != size)) {
@@ -466,7 +455,7 @@ static void* stbLoad(int kind, const char* filename, int* x, int* y, int* channe
     if (!enabled() || !filename || !x || !y || desired < 0 || desired > 4)
         return stbDecode(kind, filename, x, y, channels, desired);
     char file[1100];
-    bool cached = cachePath(filename, 0x5354420000000000ull | (uint64_t)kind << 8 | (uint64_t)desired, NULL, 0, file,
+    bool cached = cachePath(filename, 0x5354420000000000ull | (uint64_t)kind << 8 | (uint64_t)desired, file,
                             sizeof file);
     void* base;
     size_t mapped;
