@@ -14,6 +14,7 @@ using KSA;
 using KSA.Rendering;
 using KSA.Rendering.Planet;
 using KSA.Rendering.Raytracing;
+using KSA.Rendering.Water.Rendering;
 using RenderCore;
 using RenderCore.Mesh;
 
@@ -48,9 +49,17 @@ namespace KsaMetal.Hooks.Optimizations;
 //
 // The sets the game writes once with a level's buffers (PlanetRenderer._meshGeometrySets,
 // PlanetFrustumCulling._cullingDescriptorSets, the generate sets of each ClutterCubeCellGrid for the finest) are written
-// again each time its buffers change, while no frame in flight uses them (the GPU is waited for when one might). Ocean
-// collections stay as loading built them. Without ray queries clutter places with a BVH of the finest level, which then
-// stays as before.
+// again each time its buffers change, while no frame in flight uses them (the GPU is waited for when one might).
+// Without ray queries clutter places with a BVH of the finest level, which then stays as before.
+//
+// An ocean's collection (Earth's: 7 levels, 184 MB) goes the same way, by the altitude OceanRenderer.Render draws it
+// at (the main view's nearby body, one level), and a prefix there builds the level it is about to draw when it isn't.
+// Only the main view draws the ocean. It binds its level's vertices and indices each frame and nothing else of it:
+// loading builds its finest level an acceleration structure when its body has ground clutter (7 MB), though only the
+// terrain's is ever read, and
+// each level an adjacency and a neighbour distance buffer (73 MB) that only the terrain's sets bind. The ocean's are
+// built without the first and let go of the others as soon as a level is built; its levels then read as not loaded,
+// and the game's exit leaves them to DisposeAllPrefix.
 //
 // CubeMesh.Generate runs on worker threads only: on the main thread, its Loading.Task draws and presents a whole
 // loading screen frame (Loading.OnFrame), in the middle of the game's frame. The game's adjacency build isn't
@@ -66,11 +75,12 @@ internal static class FarTerrain
     // A level smaller than this stays built near the body with the window (the coarse ones, a few MB together)
     private const long SmallBytes = 8L << 20;
 
-    private sealed class Collection(PlanetMeshCollection meshes, List<Celestial> bodies, bool raytraced, bool home)
+    private sealed class Collection(PlanetMeshCollection meshes, List<Celestial> bodies, bool raytraced, bool home, bool ocean)
     {
         public readonly PlanetMeshCollection Meshes = meshes;
         public List<Celestial> Bodies = bodies;
-        // Loading asked for an acceleration structure of the finest level (a body with ground clutter)
+        public readonly bool Ocean = ocean;
+        // Loading asked for an acceleration structure of the finest level (a body with ground clutter), never an ocean's
         public readonly bool Raytraced = raytraced;
         public readonly bool Home = home;
         // The level always built, its smallest; the finest when clutter places with a BVH
@@ -95,8 +105,9 @@ internal static class FarTerrain
         int shaderSlot, int frameIndex, ref Span<VkWriteDescriptorSet> writes);
 
     private static readonly Dictionary<PlanetMeshCollection, Collection> Collections = new();
-    // The views' cameras; behind a map view also its flight camera, which wants levels but draws none
-    private static readonly List<(Camera Camera, Celestial? Nearby, bool Drawn)> Cameras = new();
+    // The views' cameras; behind a map view also its flight camera, which wants levels but draws none. Main: the main
+    // view's, the only one that draws the ocean
+    private static readonly List<(Camera Camera, Celestial? Nearby, bool Drawn, bool Main)> Cameras = new();
     private static readonly Stopwatch Clock = Stopwatch.StartNew();
     private static CelestialSystem? _system;
     private static long _frame;
@@ -127,11 +138,13 @@ internal static class FarTerrain
         harmony.Patch(prepare, postfix: new HarmonyMethod(typeof(FarTerrain), nameof(ViewPrepared)));
         harmony.Patch(disposeAll, prefix: new HarmonyMethod(typeof(FarTerrain), nameof(DisposeAllPrefix)));
         harmony.Patch(clutter, prefix: new HarmonyMethod(typeof(FarTerrain), nameof(ClutterClear)));
+        harmony.Patch(Find.Method(typeof(OceanRenderer), nameof(OceanRenderer.Render)),
+            prefix: new HarmonyMethod(typeof(FarTerrain), nameof(OceanDrawing)));
         return _window ? "on, by altitude" : "on";
     }
 
     // Loading is about to build a collection: one it lets go is built without its acceleration structure, when clutter
-    // places with ray queries
+    // places with ray queries; an ocean's never has one
     private static void CollectionLoading(PlanetMeshCollection __instance, ref PlanetMeshLibrary.GenerateFlags flags)
     {
         if (_failed)
@@ -139,16 +152,20 @@ internal static class FarTerrain
         try
         {
             var system = Universe.CurrentSystem;
-            if (system == null || __instance.Items.Count < 2 || IsOcean(system, __instance))
+            if (system == null || __instance.Items.Count < 2)
                 return;
-            var bodies = Bodies(system, __instance);
-            if (bodies.Count == 0)
+            var terrain = Bodies(system, __instance);
+            var ocean = OceanBodies(system, __instance);
+            // A collection that is both a terrain and an ocean stays as loading builds it
+            if (terrain.Count > 0 == ocean.Count > 0)
                 return;
-            bool raytraced = (flags & PlanetMeshLibrary.GenerateFlags.AccelerationStructure) != 0;
-            bool home = (system.HomeBody as Celestial)?.BodyTemplate?.MeshCollection == __instance;
-            Collections[__instance] = new Collection(__instance, bodies, raytraced, home);
+            bool isOcean = ocean.Count > 0;
+            var homeBody = system.HomeBody as Celestial;
+            bool home = isOcean ? OceanId(homeBody) == __instance.Id : homeBody?.BodyTemplate?.MeshCollection == __instance;
+            bool raytraced = !isOcean && (flags & PlanetMeshLibrary.GenerateFlags.AccelerationStructure) != 0;
+            Collections[__instance] = new Collection(__instance, isOcean ? ocean : terrain, raytraced, home, isOcean);
             _system = system;
-            if (!home && RayQueries)
+            if (isOcean || !home && RayQueries)
                 flags &= ~PlanetMeshLibrary.GenerateFlags.AccelerationStructure;
         }
         catch (Exception e)
@@ -161,7 +178,8 @@ internal static class FarTerrain
     // Loading built it: one of a body other than the home body keeps its smallest level only, before the next collection
     // is built. The home body's stays whole through loading, also with the window: the texture streamer sizes its budget
     // once, at its first frame, from the memory free then (CelestialTextureStreamer.ResolveBudget), and would take what
-    // the window lets go; the window trims it a few seconds into play
+    // the window lets go; the window trims it a few seconds into play. An ocean's levels drop what the ocean never reads
+    // at once, the home body's too (73 MB in Sol)
     private static void CollectionLoaded(PlanetMeshCollection __instance)
     {
         if (_failed || !Collections.TryGetValue(__instance, out var c))
@@ -170,7 +188,10 @@ internal static class FarTerrain
         {
             var levels = __instance.Items;
             int n = levels.Count;
-            c.Kept = KeptLevel(__instance);
+            if (c.Ocean)
+                foreach (var level in levels)
+                    DropOceanBuffers(level);
+            c.Kept = KeptLevel(__instance, c.Ocean);
             c.Built = Enumerable.Repeat(true, n).ToArray();
             c.Small = levels.Select(l => Size(l.Mesh) < SmallBytes).ToArray();
             c.Wanted = new bool[n];
@@ -233,10 +254,10 @@ internal static class FarTerrain
 
     private static bool RayQueries => Program.GetRenderer().RayQueriesSupported;
 
-    private static int KeptLevel(PlanetMeshCollection meshes)
+    private static int KeptLevel(PlanetMeshCollection meshes, bool ocean)
     {
         var levels = meshes.Items;
-        if (!RayQueries)
+        if (!RayQueries && !ocean)
             return levels.Count - 1;
         int kept = 0;
         for (int i = 1; i < levels.Count; i++)
@@ -246,6 +267,50 @@ internal static class FarTerrain
     }
 
     private static long Size(SimpleVkMesh mesh) => (long)mesh.VertexCount * 16 + (long)mesh.IndexCount * 4;
+
+    // An ocean level built: its adjacency and neighbour distances go (the uploads are done: CubeMesh.Generate waits for
+    // them), and it reads as not loaded, so the game's exit doesn't dispose what it no longer has
+    private static void DropOceanBuffers(CubeMesh level)
+    {
+        level.IsLoaded = false;
+        var adjacency = level.AdjacencyBuffer;
+        var distances = level.AverageNeighborDistanceBuffer;
+        level.AdjacencyBuffer = default;
+        level.AverageNeighborDistanceBuffer = default;
+        if (!adjacency.IsNull())
+            adjacency.Dispose();
+        if (!distances.IsNull())
+            distances.Dispose();
+    }
+
+    // The ocean's level about to be drawn, as OceanRenderer.Render picks it: built now when it isn't (the camera reached
+    // it after the frame's start), and marked drawn
+    private static void OceanDrawing(Celestial atmosphericBody, IViewport inViewport)
+    {
+        if (Collections.Count == 0 || _failed)
+            return;
+        try
+        {
+            if (!GameSettings.ShowOcean() || atmosphericBody?.BodyTemplate?.OceanReference?.MeshCollection is not { } meshes ||
+                !Collections.TryGetValue(meshes, out var c) || c.Built.Length == 0)
+                return;
+            int level = meshes.GetLodLevel(inViewport.GetCamera().CurrentAltitudeKm * 1000.0);
+            if (!c.Built[level])
+            {
+                Array.Fill(c.Must, false);
+                c.Must[level] = true;
+                BuildNow(c, "late");
+            }
+            c.DrawnFrame[level] = _frame;
+            c.DrawnFrame[c.Owner[level]] = _frame;
+        }
+        catch (Exception e)
+        {
+            // Restored at the next frame's start (Frame), not in the middle of this one's recording
+            _failed = true;
+            Hooks.Fail(nameof(FarTerrain), e);
+        }
+    }
 
     // A view's terrain for this frame: its nearby body, at one of its collection's levels, in the buffers of that level or
     // of the one it points at
@@ -321,10 +386,10 @@ internal static class FarTerrain
             if (!(view.IsMain() || view.Type == ViewportType.Secondary && view.Visible && view.HasAny(ViewportOptionFlags.RenderTerrain)) ||
                 view.GetCamera() is not { } camera)
                 continue;
-            Cameras.Add((camera, camera.GetEffectiveNearbyCelestial(), true));
+            Cameras.Add((camera, camera.GetEffectiveNearbyCelestial(), true, view.IsMain()));
             // The map shows its own camera's terrain, far up; the flight it returns to keeps its levels
             if (view is GameViewport { Mode: CameraMode.Map } game && game.BaseCamera != camera)
-                Cameras.Add((game.BaseCamera, game.BaseCamera.GetEffectiveNearbyCelestial(), false));
+                Cameras.Add((game.BaseCamera, game.BaseCamera.GetEffectiveNearbyCelestial(), false, view.IsMain()));
         }
     }
 
@@ -335,16 +400,16 @@ internal static class FarTerrain
     {
         Array.Fill(c.Must, false);
         bool missing = false;
-        foreach (var (camera, nearby, drawn) in Cameras)
+        foreach (var (camera, nearby, drawn, main) in Cameras)
         {
-            if (!drawn || nearby == null || !c.Bodies.Contains(nearby))
+            if (!drawn || nearby == null || !c.Bodies.Contains(nearby) || c.Ocean && !OceanShown(main))
                 continue;
             if (!_window)
             {
                 Array.Fill(c.Must, true);
                 return !c.AllBuilt;
             }
-            double altitude = Program.GetCurrentAltitudeKm(camera) * 1000.0;
+            double altitude = Altitude(c, camera, drawn);
             int level = c.Meshes.GetLodLevel(altitude);
             c.Must[level] = true;
             missing |= !c.Built[level];
@@ -364,8 +429,10 @@ internal static class FarTerrain
         Array.Fill(c.Wanted, false);
         c.Wanted[c.Kept] = true;
         int n = c.Wanted.Length;
-        foreach (var (camera, nearby, _) in Cameras)
+        foreach (var (camera, nearby, drawn, main) in Cameras)
         {
+            if (c.Ocean && !OceanShown(main))
+                continue;
             double distance = Distance(c, camera);
             if (!_window)
             {
@@ -375,7 +442,7 @@ internal static class FarTerrain
             }
             if (distance >= NearM)
                 continue;
-            double altitude = nearby != null && c.Bodies.Contains(nearby) ? Program.GetCurrentAltitudeKm(camera) * 1000.0 : distance;
+            double altitude = nearby != null && c.Bodies.Contains(nearby) ? Altitude(c, camera, drawn) : distance;
             int level = c.Meshes.GetLodLevel(altitude);
             for (int i = Math.Max(0, level - 1); i <= Math.Min(n - 1, level + 1); i++)
                 c.Wanted[i] = true;
@@ -389,6 +456,15 @@ internal static class FarTerrain
         }
     }
 
+    // A camera's altitude as the level is picked from it: the terrain's by PlanetViewportData.OnPreRender, the ocean's by
+    // OceanRenderer.Render from the main view's camera, the only one the game writes it for (for that camera the same
+    // value); a map's flight camera keeps the one it had when the map opened, so it goes by the terrain's
+    private static double Altitude(Collection c, Camera camera, bool drawn) =>
+        (c.Ocean && drawn ? camera.CurrentAltitudeKm : Program.GetCurrentAltitudeKm(camera)) * 1000.0;
+
+    // The ocean is drawn by the main view's cameras, unless the game hides it
+    private static bool OceanShown(bool main) => main && GameSettings.ShowOcean();
+
     private static void Update()
     {
         _frame++;
@@ -399,7 +475,7 @@ internal static class FarTerrain
         {
             _system = system;
             foreach (var c in Collections.Values)
-                c.Bodies = Bodies(system, c.Meshes);
+                c.Bodies = c.Ocean ? OceanBodies(system, c.Meshes) : Bodies(system, c.Meshes);
         }
         // The UI, which opens and closes views, has run
         CollectCameras();
@@ -470,13 +546,18 @@ internal static class FarTerrain
         return bodies;
     }
 
-    private static bool IsOcean(CelestialSystem system, PlanetMeshCollection meshes)
+    // The bodies with this ocean; by id: loading builds the collections before the ocean renderer resolves its
+    // references to them (OceanRenderer.PopulatePlanets)
+    private static List<Celestial> OceanBodies(CelestialSystem system, PlanetMeshCollection meshes)
     {
+        var bodies = new List<Celestial>();
         foreach (var body in system.All.AsSpan())
-            if (body.BodyTemplate?.OceanReference?.MeshCollection == meshes)
-                return true;
-        return false;
+            if (body is Celestial celestial && OceanId(celestial) == meshes.Id)
+                bodies.Add(celestial);
+        return bodies;
     }
+
+    private static string? OceanId(Astronomical? body) => body?.BodyTemplate?.OceanReference?.MeshCollection?.Id;
 
     // An acceleration structure with buffers, not the stand-in of a finest level not built
     private static bool Real(AccelerationStructure? structure) => structure is { } s && !s.Buffer.IsNull();
@@ -510,8 +591,10 @@ internal static class FarTerrain
         foreach (var (mesh, adjacency, distances) in freed)
         {
             mesh.Dispose();
-            adjacency.Dispose();
-            distances.Dispose();
+            if (!adjacency.IsNull())
+                adjacency.Dispose();
+            if (!distances.IsNull())
+                distances.Dispose();
         }
         var device = Program.GetRenderer().Device;
         foreach (var structure in structures)
@@ -555,8 +638,9 @@ internal static class FarTerrain
             else if (c.Owner[i] != i)
                 changed.Add(i);
             c.Owner[i] = owner;
-            // A collection with a level not built reads as not loaded: the game's exit leaves it to DisposeAllPrefix
-            level.IsLoaded = c.Built[i];
+            // A collection with a level not built, or an ocean's, reads as not loaded: the game's exit leaves it to
+            // DisposeAllPrefix
+            level.IsLoaded = c.Built[i] && !c.Ocean;
         }
         return changed;
     }
@@ -567,7 +651,7 @@ internal static class FarTerrain
     {
         var levels = c.Meshes.Items.ToArray();
         int finest = levels.Length - 1;
-        bool raytraced = c.Raytraced;
+        bool raytraced = c.Raytraced, ocean = c.Ocean;
         var renderer = Program.GetRenderer();
         var result = new TaskCompletionSource<CubeMesh?[]>(TaskCreationOptions.RunContinuationsAsynchronously);
         var thread = new Thread(() =>
@@ -579,6 +663,8 @@ internal static class FarTerrain
                 {
                     built[i] = new CubeMesh { Mesh = null!, Id = levels[i].Id, BaseLayer = levels[i].BaseLayer, Layers = levels[i].Layers };
                     built[i]!.Generate(renderer, raytraced && i == finest);
+                    if (ocean)
+                        DropOceanBuffers(built[i]!);
                 });
                 result.SetResult(built);
             }
@@ -654,7 +740,8 @@ internal static class FarTerrain
         foreach (int i in swapped)
             if (!changed.Contains(i))
                 changed.Add(i);
-        if (!changed.TrueForAll(i => Quiet(c, i)))
+        // An ocean's levels are in no set written once: nothing to wait for
+        if (!c.Ocean && !changed.TrueForAll(i => Quiet(c, i)))
             Program.GetRenderer().Device.WaitIdle();
         WriteSets(c, changed);
         Hooks.Log($"{nameof(FarTerrain)}: {c.Meshes.Id} {Levels(swapped)} built ({why})");
@@ -699,7 +786,7 @@ internal static class FarTerrain
     // written when it is built
     private static void WriteSets(Collection c, List<int> changed)
     {
-        if (changed.Count == 0 || Program.GetPlanetRenderer() is not { } planets)
+        if (c.Ocean || changed.Count == 0 || Program.GetPlanetRenderer() is not { } planets)
             return;
         var meshes = c.Meshes;
         var renderer = Program.GetRenderer();
@@ -755,8 +842,10 @@ internal static class FarTerrain
     private static void Dispose(CubeMesh level)
     {
         level.Mesh.Dispose();
-        level.AdjacencyBuffer.Dispose();
-        level.AverageNeighborDistanceBuffer.Dispose();
+        if (!level.AdjacencyBuffer.IsNull())
+            level.AdjacencyBuffer.Dispose();
+        if (!level.AverageNeighborDistanceBuffer.IsNull())
+            level.AverageNeighborDistanceBuffer.Dispose();
     }
 
     // As PlanetMeshCollection.DisposeMeshes disposes the finest level's
@@ -802,7 +891,7 @@ internal static class FarTerrain
                         // A failed build disposed what it made
                     }
                 }
-                if (c.Built.Length == 0 || c.AllBuilt)
+                if (c.Built.Length == 0 || c.AllBuilt && !c.Ocean)
                     continue;
                 var levels = c.Meshes.Items;
                 for (int i = 0; i < levels.Count; i++)
