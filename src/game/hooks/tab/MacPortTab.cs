@@ -495,14 +495,18 @@ internal static partial class MacPortTab
     };
 
     // Memory Use's values for this Mac (Auto) or the game's own (Off) become the pending changes, here and, with 8 GB or
-    // less, in the game's tabs
+    // less, in the game's tabs (Off: only the texture streaming budget, which those tabs can't change)
     private static void MemoryUsePicked(string value, GameSettings? pending)
     {
         var rows = value == "auto" ? MemoryUse.Port(Presets.ThisMac.Tier) : MemoryUse.Off();
         foreach (var (key, v) in rows)
             if (Presets.Settable(key))
                 Pending[key] = v;
-        if (value == "auto" && pending != null && PresetsAvailable)
+        if (pending == null || !PresetsAvailable)
+            return;
+        if (value == "auto")
             Presets.UseMemory(pending);
+        else
+            Presets.UseGameMemory(pending);
     }
 }

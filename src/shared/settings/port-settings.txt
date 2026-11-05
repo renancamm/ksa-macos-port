@@ -36,7 +36,7 @@
 [presets] Presets | Sets the game's graphics and these settings together.
 memory_use | choice:auto=Auto/off=Off | auto | | live | tab | | Memory Use | Sets the Memory rows below, and with 8 GB of memory or less the game's texture and shadow sizes, to suit this Mac, as a preset does: when picked, with each preset and on the game's first start. A row changed afterwards keeps its value.
     auto | With 16 GB of memory or less, the Memory rows on but Smaller Particle Pool; with 8 GB or less, that one too, and textures and shadow maps at most 2048 pixels wide and texture streaming at most 512 MB. With more than 16 GB, the Memory rows off: the game has the memory it needs.
-    off | The Memory rows off, as the game runs on its own, and the presets the same on every Mac.
+    off | The Memory rows off, as the game runs on its own (with 8 GB or less, texture streaming on the game's own budget again), and the presets the same on every Mac.
 
 [image] Image | How the 3D view is drawn and scaled to the display.
 upscaling | choice:off=Off/metalfx=Temporal/spatial=Spatial | off | | restart | hooks:RenderScale | spatial,metalfx,off | MetalFX | Draws the 3D view at the Render Scale below and scales it up to the display with Apple's MetalFX.

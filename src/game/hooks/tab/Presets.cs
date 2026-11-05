@@ -252,6 +252,19 @@ internal static class Presets
         }
     }
 
+    // Memory Use on Off, 8 GB or less: the game's own values for the limits its tabs can't change
+    public static void UseGameMemory(GameSettings game)
+    {
+        if (ThisMac.Tier != MemoryUse.Tier.Small)
+            return;
+        var defaults = new GameSettings();
+        foreach (var name in MemoryUse.OffRestores)
+        {
+            var field = Field(name);
+            field.SetValue(Owner(field, game), field.GetValue(Owner(field, defaults)));
+        }
+    }
+
     // How many of Memory Use's values for this Mac have another value here (Auto)
     public static int MemoryDifferences(GameSettings game, Func<string, string> port) =>
         MemoryUse.Port(ThisMac.Tier).Where(kv => Settable(kv.Key)).Count(kv => port(kv.Key) != kv.Value) +

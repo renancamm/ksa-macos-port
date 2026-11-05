@@ -43,6 +43,10 @@ public static class MemoryUse
         ("TextureStreamingBudget", "textureStreamingBudgetMb", 512),
     ];
 
+    // Of those, the ones the game's tabs can't change (its Graphics tab shows the streaming budget, without a control):
+    // Off gives them the game's own values again, as it does the Memory rows
+    public static readonly string[] OffRestores = ["TextureStreamingBudget"];
+
     // This Mac's memory in GB (hw.memsize, rounded); KSA_PORT_MEMORY_GB stands in for it, to try another tier
     public static int MemoryGb()
     {
