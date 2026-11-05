@@ -23,19 +23,30 @@ static void latencyBegin(double waited, bool paced) {
 
 static void latencyAtPresent(id<CAMetalDrawable> drawable, id<MTLCommandBuffer> cb) {
     static uint64_t presents = 0;
-    std::lock_guard<std::mutex> lock(g_latencyMutex);
-    if (!g_latencyCsv) {
-        g_latencyCsv = fopen(kmtlConfig().latency, "w");
-        if (!g_latencyCsv) return;
-        fprintf(g_latencyCsv, "present,began,presented,gpu_end,shown,waited_ms,paced\n");
+    // The handler is added after the mutex is released: Core Animation runs presented handlers while it holds the
+    // drawable's lock, which addPresentedHandler takes too, and the handler takes this mutex (a deadlock otherwise:
+    // the game hung in vkQueuePresentKHR)
+    double now, began, waited;
+    uint64_t n;
+    bool paced;
+    FILE* csv;
+    {
+        std::lock_guard<std::mutex> lock(g_latencyMutex);
+        if (!g_latencyCsv) {
+            g_latencyCsv = fopen(kmtlConfig().latency, "w");
+            if (!g_latencyCsv) return;
+            fprintf(g_latencyCsv, "present,began,presented,gpu_end,shown,waited_ms,paced\n");
+        }
+        now = CACurrentMediaTime();
+        began = g_frameBegan ? g_frameBegan : now;
+        waited = g_frameWaited * 1e3;
+        n = ++presents;
+        paced = g_framePaced;
+        g_frameBegan = now;
+        g_frameWaited = 0;
+        g_framePaced = false;
+        csv = g_latencyCsv;
     }
-    double now = CACurrentMediaTime(), began = g_frameBegan ? g_frameBegan : now, waited = g_frameWaited * 1e3;
-    uint64_t n = ++presents;
-    bool paced = g_framePaced;
-    g_frameBegan = now;
-    g_frameWaited = 0;
-    g_framePaced = false;
-    FILE* csv = g_latencyCsv;
     [drawable addPresentedHandler:^(id<MTLDrawable> d) {
         std::lock_guard<std::mutex> lock(g_latencyMutex);
         fprintf(csv, "%llu,%.6f,%.6f,%.6f,%.6f,%.3f,%d\n", (unsigned long long)n, began, now, cb.GPUEndTime,
@@ -153,7 +164,9 @@ VKFN(VkResult) vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfo
     layer.pixelFormat = kmtlPixelFormat(ci->imageFormat);
     layer.framebufferOnly = NO;
     layer.drawableSize = CGSizeMake(ci->imageExtent.width, ci->imageExtent.height);
-    layer.maximumDrawableCount = 3;
+    // KSA_MTL_DRAWABLE_COUNT: 2 holds the display queue to one frame (lower latency with a locked frame_cadence); frame
+    // interpolation takes two drawables in one present, so it needs 3
+    layer.maximumDrawableCount = kmtlConfig().drawableCount == 2 && !kmtlConfig().frameInterpolation ? 2 : 3;
     layer.displaySyncEnabled = ci->presentMode == VK_PRESENT_MODE_FIFO_KHR || ci->presentMode == VK_PRESENT_MODE_FIFO_RELAXED_KHR;
     // The game's extra windows (detached gauges, pop-outs) ask for a see-through one and clear it to alpha 0
     layer.opaque = ci->compositeAlpha == VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -266,6 +279,15 @@ static void present(id<MTLBlitCommandEncoder> b, id<MTLTexture> image, id<MTLTex
              toTexture:drawable destinationSlice:0 destinationLevel:0 destinationOrigin:MTLOriginMake(0, 0, 0)];
 }
 
+// KSA_MTL_FRAME_CADENCE=<ms>: each drawable is shown at least that long after the one before (with frame
+// interpolation two are shown per game frame, so half as long), so the frame rate holds one step of the display's
+// refresh instead of moving between them
+static void presentPaced(id<MTLCommandBuffer> cb, id<CAMetalDrawable> d, bool interpolated) {
+    double ms = kmtlConfig().frameCadence;
+    if (ms > 0) [cb presentDrawable:d afterMinimumDuration:(interpolated ? ms / 2 : ms) / 1000.0];
+    else [cb presentDrawable:d];
+}
+
 VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
     KTRACE_FIRST();
     KStallTimer stall("vkQueuePresentKHR");
@@ -283,16 +305,17 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
             id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
             [b waitForFence:q->chain];
             // KSA_MTL_FRAME_INTERPOLATION: a frame between the last one and this one goes to the display first
+            id<CAMetalDrawable> first = nil;
             if (kmtlConfig().frameInterpolation) {
                 [b endEncoding];
                 id<MTLTexture> mid = kmtlPresentInterpolate(q->device, cb, img->mtl);
-                id<CAMetalDrawable> first = mid ? [sc->surface->layer nextDrawable] : nil;
+                first = mid ? [sc->surface->layer nextDrawable] : nil;
                 if (first) {
                     id<MTLBlitCommandEncoder> copy = [cb blitCommandEncoder];
                     present(copy, mid, first.texture);
                     [copy endEncoding];
                     [first addPresentedHandler:^(id<MTLDrawable> d) { if (d.presentedTime > 0) kmtlNoteShown(d.presentedTime, false); }];
-                    [cb presentDrawable:first];
+                    presentPaced(cb, first, true);
                 }
                 b = [cb blitCommandEncoder];
                 [b waitForFence:q->chain];
@@ -344,7 +367,7 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
                 // When the display showed it (0 for an image it never showed)
                 [drawable addPresentedHandler:^(id<MTLDrawable> d) { if (d.presentedTime > 0) kmtlNoteShown(d.presentedTime, true); }];
                 if (kmtlConfig().latency) latencyAtPresent(drawable, cb);
-                [cb presentDrawable:drawable];
+                presentPaced(cb, drawable, first != nil);
             }
             [cb commit];
             if (pi->pResults) pi->pResults[i] = r;
