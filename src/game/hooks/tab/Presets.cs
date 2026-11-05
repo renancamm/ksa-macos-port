@@ -330,7 +330,7 @@ internal static class Presets
     [DllImport("libc", EntryPoint = "sysctlbyname")]
     private static extern int SysctlByName(string name, [Out] byte[]? value, ref nint size, nint newValue, nint newSize);
 
-    private static long SysctlLong(string name)
+    internal static long SysctlLong(string name)
     {
         long value = 0;
         nint size = sizeof(long);
