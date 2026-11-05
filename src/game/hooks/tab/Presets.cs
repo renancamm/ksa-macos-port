@@ -14,10 +14,11 @@ namespace KsaMetal.Hooks.Tab;
 // The Mac Port tab's presets: Performance, Balanced and Quality, each a set of the game's own graphics settings and of
 // port settings (the settings table's presets column), and Game Defaults, the defaults of the same settings. With
 // Memory Use on Auto (MemoryUse, in the shared library), every preset also gives the Memory rows for this Mac's memory,
-// and with 8 GB or less the game's textures and shadow maps at most 2048 pixels wide. A preset's card in the tab makes
-// them pending changes, in the game's tabs and in this one, as if the player had set each row; the game's Apply keeps
-// them, Discard drops them. Nothing else changes a setting, but a fresh install's first start, which Memory Use on Auto
-// gives its values (the loader the port settings, FirstStart here the game's).
+// and with 8 GB or less the game's textures and shadow maps at most 2048 pixels wide and its texture streaming budget
+// at most 512 MB. A preset's card in the tab makes them pending changes, in the game's tabs and in this one, as if
+// the player had set each row; the game's Apply keeps them, Discard drops them. Nothing else changes a setting, but a
+// fresh install's first start, which Memory Use on Auto gives its values (the loader the port settings, FirstStart
+// here the game's).
 //
 // Every preset gives every setting any preset sets, so a preset after another leaves nothing of the first, except
 // the port rows the tab can't change (set outside, their hook unavailable) and the render scale without upscaling,
@@ -230,7 +231,7 @@ internal static class Presets
                 return;
             UseMemory(GameSettings.Current);
             GameSettings.Current.Save();
-            Hooks.Log($"{nameof(Presets)}: first start, textures and shadow maps at most 2048 pixels wide for {ThisMac.MemoryGb} GB");
+            Hooks.Log($"{nameof(Presets)}: first start, textures and shadow maps at most 2048 pixels wide, streaming at most 512 MB, for {ThisMac.MemoryGb} GB");
         }
         catch (Exception e)
         {

@@ -489,8 +489,8 @@ internal static partial class MacPortTab
 
     private static string MemoryEffect(MemoryUse.Tier tier) => tier switch
     {
-        MemoryUse.Tier.Small => "the Memory rows on, textures and shadow maps at most 2048 pixels wide",
-        MemoryUse.Tier.Medium => "the Memory rows on",
+        MemoryUse.Tier.Small => "the Memory rows on, textures and shadow maps at most 2048 pixels wide, texture streaming at most 512 MB",
+        MemoryUse.Tier.Medium => "the Memory rows on but Smaller Particle Pool",
         _ => "the Memory rows off",
     };
 

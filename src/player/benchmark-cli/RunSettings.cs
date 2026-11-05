@@ -39,7 +39,7 @@ public static partial class Program
             if (_preset.Length > 0)
                 start.AddRange(PresetCommon.Concat(Presets[_preset]));
             // --defaults is a fresh install's first start, with Memory Use on Auto: with 8 GB or less, the game's textures
-            // and shadow maps at most 2048 pixels wide (the hooks do it on a player's first start)
+            // and shadow maps at most 2048 pixels wide, texture streaming at most 512 MB (the hooks do it on a player's first start)
             else if (_defaults && MemoryUse.ThisMac() == MemoryUse.Tier.Small)
                 start.AddRange(MemoryUse.SmallGame.Select(g => $"{g.Key}={g.AtMost}"));
             foreach (var kv in start)
@@ -118,8 +118,8 @@ public static partial class Program
             }
             PortSettings.FilePath = portSettings;
             // --defaults is a fresh install's first start, with Memory Use on Auto: this Mac's Memory rows, under --port.
-            // A preset's run gets them too (the same image; without them an 8 GB Mac runs out of memory), not the game's
-            // limits, which change it
+            // A preset's run gets them too (without them an 8 GB Mac runs out of memory; with 8 GB or less they include
+            // Smaller Particle Pool), not the game's limits, which change the image
             if (_defaults || _preset.Length > 0)
                 PortSettings.Save(MemoryUse.Port(MemoryUse.ThisMac()));
             if (_ports.Count == 0 && _ab.Length == 0)

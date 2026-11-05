@@ -77,7 +77,7 @@ internal static class PortEnvironment
         var tier = MemoryUse.ThisMac();
         PortSettings.Save(MemoryUse.Port(tier));
         Console.WriteLine($"==> first start: Memory Use on Auto, {MemoryUse.MemoryGb()} GB ({MemoryUse.Describe(tier)}): " +
-                          $"Memory rows {(tier == MemoryUse.Tier.Large ? "off" : "on")}");
+                          $"Memory rows {(tier == MemoryUse.Tier.Large ? "off" : tier == MemoryUse.Tier.Medium ? "on but the 8 GB ones" : "on")}");
     }
 
     // Sets a variable for both: .NET code reads its own copy of the environment, KSA Metal and the shims read the
