@@ -27,7 +27,7 @@ internal static class ClutterResnap
     private static AccessTools.FieldRef<GroundClutterRenderer, int[]>? _viewVersions;
     private static AccessTools.FieldRef<ClutterEcotypePhysicalData, int>? _physicalVersion;
     // The versions each view slot, and each colliding ecotype, was last placed with
-    private static readonly Dictionary<int, (Celestial Body, long Version)> Views = new();
+    private static readonly Dictionary<int, (Celestial Body, long Version)> Slots = new();
     private static readonly ConditionalWeakTable<ClutterEcotypePhysicalData, StrongBox<int>> Physical = new();
     private static bool _failed;
 
@@ -58,15 +58,13 @@ internal static class ClutterResnap
         {
             foreach (var view in ViewportRegistry.Views)
             {
-                if (!(view.IsMain() || view.Type == ViewportType.Secondary && view.Visible && view.HasAny(ViewportOptionFlags.RenderTerrain)) ||
-                    view.GetCamera()?.GetEffectiveNearbyCelestial() is not { } body ||
-                    Entry(body) is not { } entry)
+                if (!Views.Prepared(view) || view.GetCamera()?.GetEffectiveNearbyCelestial() is not { } body || Entry(body) is not { } entry)
                     continue;
                 long version = (long)Version(entry, _normal!) << 32 | (uint)Version(entry, _diffuse!);
                 int slot = view.ShaderSlot;
-                if (Views.TryGetValue(slot, out var last) && last.Body == body && last.Version != version)
+                if (Slots.TryGetValue(slot, out var last) && last.Body == body && last.Version != version)
                     _viewVersions!(__instance)[slot] = int.MinValue;
-                Views[slot] = (body, version);
+                Slots[slot] = (body, version);
             }
         }
         catch (Exception e)

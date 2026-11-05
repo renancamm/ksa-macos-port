@@ -19,11 +19,12 @@ namespace KsaMetal.Hooks.Fixes;
 [Hook(Phase.Default)]
 internal static class KtxPaths
 {
-    private static MethodInfo _getBytes = null!;
+    private static MethodInfo _getBytes = null!, _terminated = null!;
 
     public static string Apply(Harmony harmony)
     {
         _getBytes = Find.Method(typeof(Encoding), nameof(Encoding.GetBytes), typeof(string));
+        _terminated = Find.Method(typeof(KtxPaths), nameof(Terminated));
         var methods = new[]
         {
             Find.Method(typeof(Loader), nameof(Loader.LoadFromFile), typeof(string), typeof(Loader.LoadSettings)),
@@ -44,7 +45,7 @@ internal static class KtxPaths
     {
         foreach (var i in instructions)
             yield return i.Calls(_getBytes)
-                ? new CodeInstruction(i) { opcode = OpCodes.Call, operand = AccessTools.Method(typeof(KtxPaths), nameof(Terminated)) }
+                ? new CodeInstruction(i) { opcode = OpCodes.Call, operand = _terminated }
                 : i;
     }
 

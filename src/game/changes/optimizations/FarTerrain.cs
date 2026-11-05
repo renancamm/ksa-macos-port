@@ -247,7 +247,9 @@ internal static class FarTerrain
         }
         catch (Exception e)
         {
-            Hooks.Log($"{nameof(FarTerrain)}: clutter check, {Hooks.Describe(e)}");
+            // Restored at the next frame's start (Frame)
+            _failed = true;
+            Hooks.Fail(nameof(FarTerrain), e);
             return true;
         }
     }
@@ -316,12 +318,23 @@ internal static class FarTerrain
     // of the one it points at
     private static void ViewPrepared(PlanetViewportData __instance)
     {
-        if (__instance.NearbyCelestial?.BodyTemplate?.MeshCollection is { } meshes &&
-            Collections.TryGetValue(meshes, out var c) && c.Built.Length > 0)
+        if (_failed)
+            return;
+        try
         {
-            int level = __instance.MeshLodIndex;
-            c.DrawnFrame[level] = _frame;
-            c.DrawnFrame[c.Owner[level]] = _frame;
+            if (__instance.NearbyCelestial?.BodyTemplate?.MeshCollection is { } meshes &&
+                Collections.TryGetValue(meshes, out var c) && c.Built.Length > 0)
+            {
+                int level = __instance.MeshLodIndex;
+                c.DrawnFrame[level] = _frame;
+                c.DrawnFrame[c.Owner[level]] = _frame;
+            }
+        }
+        catch (Exception e)
+        {
+            // Restored at the next frame's start (Frame)
+            _failed = true;
+            Hooks.Fail(nameof(FarTerrain), e);
         }
     }
 
@@ -383,13 +396,12 @@ internal static class FarTerrain
         Cameras.Clear();
         foreach (var view in ViewportRegistry.Views)
         {
-            if (!(view.IsMain() || view.Type == ViewportType.Secondary && view.Visible && view.HasAny(ViewportOptionFlags.RenderTerrain)) ||
-                view.GetCamera() is not { } camera)
+            if (!Views.Prepared(view) || view.GetCamera() is not { } camera)
                 continue;
             Cameras.Add((camera, camera.GetEffectiveNearbyCelestial(), true, view.IsMain()));
             // The map shows its own camera's terrain, far up; the flight it returns to keeps its levels
-            if (view is GameViewport { Mode: CameraMode.Map } game && game.BaseCamera != camera)
-                Cameras.Add((game.BaseCamera, game.BaseCamera.GetEffectiveNearbyCelestial(), false, view.IsMain()));
+            if (Views.Flight(view, camera) is { } flight)
+                Cameras.Add((flight, flight.GetEffectiveNearbyCelestial(), false, view.IsMain()));
         }
     }
 

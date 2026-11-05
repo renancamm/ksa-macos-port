@@ -49,11 +49,23 @@ internal static class FarClutter
     // Loading builds an ecotype's resources: those of a world other than the home body wait
     private static bool Building(ClutterEcotypeRenderData __instance)
     {
-        if (_building || _failed || Universe.CurrentSystem?.HomeBody == __instance.Celestial)
+        if (_building || _failed)
             return true;
-        Waiting.Add(__instance);
-        Bodies.Add(__instance.Celestial);
-        return false;
+        try
+        {
+            if (Universe.CurrentSystem?.HomeBody == __instance.Celestial)
+                return true;
+            Waiting.Add(__instance);
+            Bodies.Add(__instance.Celestial);
+            return false;
+        }
+        catch (Exception e)
+        {
+            // Loading builds this one itself, and what waited is built now
+            Waiting.Remove(__instance);
+            Failed(e);
+            return true;
+        }
     }
 
     // The game's exit, or a clutter renderer let go: one never built has only its atlas
@@ -61,7 +73,16 @@ internal static class FarClutter
     {
         if (!Waiting.Remove(__instance))
             return true;
-        __instance.EcotypeMeshAtlas.Dispose();
+        try
+        {
+            __instance.EcotypeMeshAtlas.Dispose();
+        }
+        catch (Exception e)
+        {
+            // Nothing else of this one to free (the game's DestroyFrameResources would dispose buffers it never made); the
+            // worlds still waiting are built now, as after any failure
+            Failed(e);
+        }
         return false;
     }
 
@@ -111,12 +132,11 @@ internal static class FarClutter
         Cameras.Clear();
         foreach (var view in ViewportRegistry.Views)
         {
-            if (!(view.IsMain() || view.Type == ViewportType.Secondary && view.Visible && view.HasAny(ViewportOptionFlags.RenderTerrain)) ||
-                view.GetCamera() is not { } camera)
+            if (!Views.Prepared(view) || view.GetCamera() is not { } camera)
                 continue;
             Cameras.Add(camera);
-            if (view is GameViewport { Mode: CameraMode.Map } game && game.BaseCamera != camera)
-                Cameras.Add(game.BaseCamera);
+            if (Views.Flight(view, camera) is { } flight)
+                Cameras.Add(flight);
         }
     }
 

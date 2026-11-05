@@ -52,6 +52,7 @@ internal static class FarTextures
         public SimpleVkTexture? Texture;  // null while let go
         public Task<SimpleVkTexture>? Making;
         public long NeededFrame = -1, FarSince = -1;
+        public int Faults;  // makings that failed, logged once
         public string Name => System.IO.Path.GetFileName(Refs[0].LocalPath);
     }
 
@@ -65,8 +66,6 @@ internal static class FarTextures
     private static long _frame;
     private static bool _failed, _exiting;
     private static FieldInfo? _imageViews, _textures, _viewports;
-    private static MethodInfo? _texture, _view;
-    private static Func<TextureReference, int>? _coarseCap;
 
     public static string Apply(Harmony harmony)
     {
@@ -78,10 +77,7 @@ internal static class FarTextures
         _imageViews = Find.Field(typeof(CelestialRenderData), "_imageViews");
         _textures = Find.Field(typeof(CelestialRenderData), "_textures");
         _viewports = Find.Field(typeof(PlanetRenderer), "_planetViewportData");
-        _texture = Find.Setter(typeof(TextureReference), nameof(TextureReference.Texture));
-        _view = Find.Setter(typeof(TextureReference), nameof(TextureReference.ImageView));
-        _coarseCap = AccessTools.MethodDelegate<Func<TextureReference, int>>(
-            Find.Method(typeof(TextureReference), "StreamingCoarseCap"));
+        TextureImages.Lookup();
         harmony.Patch(generate, prefix: new HarmonyMethod(typeof(FarTextures), nameof(SystemLoading)));
         // Before Unload Far Terrain's postfix, which waits for a jump's terrain: the textures upload meanwhile
         harmony.Patch(celestials, postfix: new HarmonyMethod(typeof(FarTextures), nameof(Frame)) { priority = Priority.High });
@@ -299,7 +295,7 @@ internal static class FarTextures
 
     private static bool Remakeable(TextureReference r) =>
         (r.GetType() == typeof(TextureReference) || r.GetType() == typeof(TexturePowerReference)) &&
-        r.TextureAsset != null && _coarseCap!(r) == 0;
+        r.TextureAsset != null && !TextureImages.Streamed(r);
 
     // The views' cameras, and the bodies with a vessel near their surface: GroundClutterRenderer.OnFrameViewport places
     // the clutter it collides with (biome maps, placement maps) wherever the cameras are, within the radius it uses
@@ -307,7 +303,7 @@ internal static class FarTextures
     {
         Cameras.Clear();
         foreach (var view in ViewportRegistry.Views)
-            if ((view.IsMain() || view.Type == ViewportType.Secondary && view.Visible) && view.GetCamera() is { } camera)
+            if (Views.Prepared(view, terrain: false) && view.GetCamera() is { } camera)
                 Cameras.Add(camera);
         Landed.Clear();
         foreach (var image in Images)
@@ -351,7 +347,11 @@ internal static class FarTextures
             {
                 // Begun now, waited for before the views are prepared (ViewsPreparing)
                 if (image.Texture == null && image.Making is not { IsFaulted: false })
+                {
+                    if (image.Making is { IsFaulted: true } && image.Faults++ == 0)
+                        Hooks.Log($"{nameof(FarTextures)}: {image.Name} not made ({Hooks.Describe(image.Making.Exception!)}), tried again each frame it is near");
                     image.Making = Make(image);
+                }
                 image.NeededFrame = _frame;
                 image.FarSince = -1;
             }
@@ -359,7 +359,7 @@ internal static class FarTextures
             {
                 if (image.Making is { IsFaulted: true })
                 {
-                    Hooks.Log($"{nameof(FarTextures)}: {image.Name} not made ({Hooks.Describe(image.Making.Exception!.InnerException!)}), again later");
+                    Hooks.Log($"{nameof(FarTextures)}: {image.Name} not made ({Hooks.Describe(image.Making.Exception!)}), again later");
                     image.Making = null;
                 }
                 else if (image.Making is { IsCompleted: true })
@@ -400,10 +400,7 @@ internal static class FarTextures
         var renderer = Program.GetRenderer();
         return Task.Run(() =>
         {
-            int cap = GameSettings.GetMaxTextureSize(texture.Category);
-            int manifestCap = texture.Manifest?.MaxSize ?? 0;
-            if (manifestCap != 0 && (cap == 0 || manifestCap < cap))
-                cap = manifestCap;
+            int cap = TextureImages.Cap(texture);
             var asset = texture.TextureAsset;
             var descriptor = RenderCore.TextureDescriptor.FromTexture(asset.Texture);
             var reduction = !asset.Texture.Format.Descriptor().IsBlockCompressed && descriptor.MipLevels <= 1
@@ -462,10 +459,7 @@ internal static class FarTextures
     private static void Point(Image image, SimpleVkTexture texture, VkImageView view)
     {
         foreach (var r in image.Refs)
-        {
-            _texture!.Invoke(r, [texture]);
-            _view!.Invoke(r, [view]);
-        }
+            TextureImages.Set(r, texture, view);
         Program.Instance.BindlessTextures.SetTexture(image.Handle, view);
         // While loading, the render data and the planet renderer, made later, take the textures' views
         var planets = Program.GetPlanetRenderer();
@@ -520,7 +514,7 @@ internal static class FarTextures
         Images.Clear();
     }
 
-    private static long Size(SimpleVkTexture texture) => (long)texture.ImageEx.AllocationInfo.MemAllocationInfo.AllocSize;
+    private static long Size(SimpleVkTexture texture) => TextureImages.Size(texture);
 
     // At exit a let-go texture holds the empty texture, which the game frees itself
     private static bool Disposing(TextureReference __instance)
@@ -540,8 +534,15 @@ internal static class FarTextures
                 {
                     Hooks.Log($"{nameof(FarTextures)}: at exit, {Hooks.Describe(e)}");
                 }
-            foreach (var (texture, _) in Dying)
-                texture.Dispose();
+            try
+            {
+                foreach (var (texture, _) in Dying)
+                    texture.Dispose();
+            }
+            catch (Exception e)
+            {
+                Hooks.Log($"{nameof(FarTextures)}: at exit, {Hooks.Describe(e)}");
+            }
             Dying.Clear();
         }
         return !LetGo.Contains(__instance);

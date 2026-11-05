@@ -31,7 +31,8 @@ internal static class SoundFiles
     private static string _folder = "";
     private static uint _version;
     private static long _bytes;
-    private static int _count;
+    private static int _count, _fallbacks;
+    private static bool _failed;
 
     public static string Apply(Harmony harmony)
     {
@@ -46,7 +47,7 @@ internal static class SoundFiles
 
     private static unsafe bool Creating(SoundFileReference soundReference, ref Sound sound, ref Result result, ref bool __result)
     {
-        if (soundReference.StreamFromDisk)
+        if (_failed || soundReference.StreamFromDisk)
             return true;
         string? file = null;
         try
@@ -57,7 +58,7 @@ internal static class SoundFiles
             file = CopyPath(path);
             if (file == null || !(File.Exists(file) || Decode(path, soundReference.Mode, file)))
                 return true;
-            var (pcm, header) = Map(file);
+            var (pcm, header, mapping) = Map(file);
             var info = new CreateSoundExInfo
             {
                 Length = header.Bytes, NumChannels = header.Channels, DefaultFrequency = header.Frequency,
@@ -67,7 +68,10 @@ internal static class SoundFiles
             var made = GameAudio.System.TryCreateSound(new ReadOnlySpan<byte>((void*)pcm, (int)header.Bytes), mode, in info,
                 out var mapped);
             if (made != Result.Ok)
+            {
+                Unmap(mapping);
                 throw new InvalidDataException($"FMOD: {made}");
+            }
             try
             {
                 soundReference.LoopData?.Apply(mapped);
@@ -88,18 +92,33 @@ internal static class SoundFiles
             __result = true;
             return false;
         }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            // This sound's: the copy, the cache folder, or FMOD's answer to it
+            if (_fallbacks++ == 0)
+                Hooks.Log($"{nameof(SoundFiles)}: {Path.GetFileName(soundReference.ModPath)} loads as the game loads it ({Hooks.Describe(e)}); others like it aren't logged");
+            Delete(file);
+            return true;
+        }
         catch (Exception e)
         {
-            Hooks.Log($"{nameof(SoundFiles)}: {Path.GetFileName(soundReference.ModPath)} loads as the game loads it: {Hooks.Describe(e)}");
-            try
-            {
-                if (file != null)
-                    File.Delete(file);
-            }
-            catch (IOException)
-            {
-            }
+            _failed = true;
+            Hooks.Fail(nameof(SoundFiles), e);
+            Delete(file);
             return true;
+        }
+    }
+
+    // A copy that isn't played: made again at the next start
+    private static void Delete(string? file)
+    {
+        try
+        {
+            if (file != null)
+                File.Delete(file);
+        }
+        catch (IOException)
+        {
         }
     }
 
@@ -174,8 +193,8 @@ internal static class SoundFiles
         }
     }
 
-    // The copy mapped (private, copy on write) for the session: the PCM's start and the header, checked
-    private static unsafe (nint Pcm, Header Header) Map(string file)
+    // The copy mapped (private, copy on write) for the session: the PCM's start, the header, checked, and the mapping
+    private static unsafe (nint Pcm, Header Header, (MemoryMappedFile File, MemoryMappedViewAccessor View) Mapping) Map(string file)
     {
         var length = new FileInfo(file).Length;
         var mapped = MemoryMappedFile.CreateFromFile(file, FileMode.Open, null, 0, MemoryMappedFileAccess.CopyOnWrite);
@@ -196,7 +215,17 @@ internal static class SoundFiles
         File.SetLastWriteTimeUtc(file, DateTime.UtcNow);  // used now
         lock (Maps)
             Maps.Add((mapped, view));  // mapped while the game runs: FMOD plays from it
-        return ((nint)(start + HeaderBytes), header);
+        return ((nint)(start + HeaderBytes), header, (mapped, view));
+    }
+
+    // A mapping FMOD didn't take
+    private static void Unmap((MemoryMappedFile File, MemoryMappedViewAccessor View) mapping)
+    {
+        lock (Maps)
+            Maps.Remove(mapping);
+        mapping.View.SafeMemoryMappedViewHandle.ReleasePointer();
+        mapping.View.Dispose();
+        mapping.File.Dispose();
     }
 
     // Copies no start used in 60 days, and temporary files a failed write left a day ago

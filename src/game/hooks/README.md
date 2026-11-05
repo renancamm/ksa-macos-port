@@ -14,6 +14,7 @@ and test a change. What each hook changes in the game is in [`../changes/`](../c
 | `Hooks.cs` | how the hooks apply: `[Hook]`, which marks one, the phases that order them, and the rule they follow: `Skip`, `Find`, `Fail` |
 | `Settings.cs` | the settings as the hooks read them, a typed property each, with `Settings.Generated.cs`, which the build makes from the settings table ([Settings](#settings)) |
 | `BenchmarkRun.cs`, `Displays.cs` | the benchmark's runs in the game; a display's desktop mode and pixels, for the Resolution list and the presets |
+| `Views.cs`, `TextureImages.cs` | what hooks share: which views the game prepares terrain for, with the flight camera behind a map; a texture's image as `TextureReference.Bind` makes it |
 | [`detours/`](detours/) | mods' Harmony patches on generic methods, which arm64 needs fixed |
 | [`tab/`](tab/) | the Mac Port tab and its presets |
 | [`loader/`](loader/) | the startup hook, which applies the settings and loads the hooks ([How they load](#how-they-load)) |

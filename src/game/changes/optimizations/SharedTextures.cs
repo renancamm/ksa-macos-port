@@ -18,7 +18,8 @@ namespace KsaMetal.Hooks.Optimizations;
 // as none) and the same manifest (mip chain, formats; XML may give one without a file beside the texture) now takes the image, view and bindless slot of the first one bound, and only that one frees them at exit (TextureReference.Dispose). Nothing else writes a
 // texture's slot or image after binding. TexturePowerReference (normal maps) only adds a value its material reads;
 // the other subclasses load or bind otherwise (cubemaps, heights, Hapke tables) and keep their own, as do the maps the
-// celestial streamer replaces (StreamingCoarseCap).
+// celestial streamer replaces (StreamingCoarseCap). An error of the hook's own while a texture binds fails the hook:
+// that texture and every one after it bind as the game binds them, and those already sharing keep their image.
 [Hook(Phase.Default, Switch = nameof(Settings.LoadTexturesOnce))]
 internal static class SharedTextures
 {
@@ -29,9 +30,9 @@ internal static class SharedTextures
     [ThreadStatic] private static object? _held;
     [ThreadStatic] private static Key _heldKey;
     private static FieldInfo? _bound, _imgui;
-    private static MethodInfo? _texture, _view, _handle;
-    private static Func<TextureReference, int>? _coarseCap;
+    private static MethodInfo? _handle;
     private static long _bytes;
+    private static bool _failed;
 
     public static string Apply(Harmony harmony)
     {
@@ -40,11 +41,8 @@ internal static class SharedTextures
         var bindAll = Find.Method(typeof(ModLibrary), nameof(ModLibrary.Bind));
         _bound = Find.Field(typeof(TextureReference), "_isBound");
         _imgui = Find.Field(typeof(TextureReference), "_addToImgui");
-        _texture = Find.Setter(typeof(TextureReference), nameof(TextureReference.Texture));
-        _view = Find.Setter(typeof(TextureReference), nameof(TextureReference.ImageView));
         _handle = Find.Setter(typeof(TextureReference), nameof(TextureReference.BindlessHandle));
-        _coarseCap = AccessTools.MethodDelegate<Func<TextureReference, int>>(
-            Find.Method(typeof(TextureReference), "StreamingCoarseCap"));
+        TextureImages.Lookup();
         harmony.Patch(bind, prefix: new HarmonyMethod(typeof(SharedTextures), nameof(Binding)),
             postfix: new HarmonyMethod(typeof(SharedTextures), nameof(Bound)),
             finalizer: new HarmonyMethod(typeof(SharedTextures), nameof(BindEnd)));
@@ -57,15 +55,29 @@ internal static class SharedTextures
     // game while this thread holds the file's gate, so a second one waits for it
     private static bool Binding(TextureReference __instance, Renderer renderer)
     {
+        if (_failed)
+            return true;
+        try
+        {
+            return Bind(__instance, renderer);
+        }
+        catch (Exception e)
+        {
+            _failed = true;
+            Hooks.Fail(nameof(SharedTextures), e);
+            return true;
+        }
+    }
+
+    private static bool Bind(TextureReference __instance, Renderer renderer)
+    {
         var type = __instance.GetType();
         if (type != typeof(TextureReference) && type != typeof(TexturePowerReference) || __instance.IsReference() ||
-            (bool)_bound!.GetValue(__instance)! || __instance.TextureAsset == null || _coarseCap!(__instance) > 0)
+            (bool)_bound!.GetValue(__instance)! || __instance.TextureAsset == null || TextureImages.Streamed(__instance))
             return true;
         var manifest = __instance.Manifest ?? new TextureManifest();
-        // The largest size Bind lets the image have, as it works it out
-        int cap = GameSettings.GetMaxTextureSize(__instance.Category);
-        if (manifest.MaxSize != 0 && (cap == 0 || manifest.MaxSize < cap))
-            cap = manifest.MaxSize;
+        // The largest size Bind lets the image have; one at least the file's size counts as none
+        int cap = TextureImages.Cap(__instance);
         if (cap >= Math.Max(__instance.Width, __instance.Height))
             cap = 0;
         Key key = (Path.GetFullPath(__instance.ModPath), cap, manifest.MipMaps, manifest.Format,
@@ -78,33 +90,36 @@ internal static class SharedTextures
                 Gates[key] = gate = new object();
         }
         Monitor.Enter(gate);
-        lock (Gates)
-            Owners.TryGetValue(key, out owner);
-        if (owner == null || owner == __instance)
-        {
-            _held = gate;
-            _heldKey = key;
-            return true;
-        }
         try
         {
-            _texture!.Invoke(__instance, [owner.Texture]);
-            _view!.Invoke(__instance, [owner.ImageView]);
+            lock (Gates)
+                Owners.TryGetValue(key, out owner);
+            if (owner == null || owner == __instance)
+            {
+                // Kept held while the game binds it: BindEnd lets go
+                _held = gate;
+                _heldKey = key;
+                return true;
+            }
+            TextureImages.Set(__instance, owner.Texture, owner.ImageView);
             _handle!.Invoke(__instance, [owner.BindlessHandle]);
-            _bound.SetValue(__instance, true);
-            if ((bool)_imgui!.GetValue(__instance)!)
-                __instance.BindToImgui(renderer.LinearSampler);
+            // A sharer from here on, so that its Dispose never frees the owner's image, whatever throws below; bound last,
+            // so that a texture the game binds after a failure here is still unbound
             lock (Gates)
             {
                 Sharers.Add(__instance);
-                _bytes += (long)owner.Texture.ImageEx.AllocationInfo.MemAllocationInfo.AllocSize;
+                _bytes += TextureImages.Size(owner.Texture);
             }
+            _bound.SetValue(__instance, true);
+            if ((bool)_imgui!.GetValue(__instance)!)
+                __instance.BindToImgui(renderer.LinearSampler);
+            return false;
         }
         finally
         {
-            Monitor.Exit(gate);
+            if (_held != gate)
+                Monitor.Exit(gate);
         }
-        return false;
     }
 
     private static void Bound(TextureReference __instance)
