@@ -324,11 +324,11 @@ tabs; each row's tooltip says what it changes and what it costs.
 
 | Section | What's there |
 |---|---|
-| Presets | Performance, Balanced and Quality, and Game Defaults, which sets them back: the game's graphics settings and the port's, changed together. Memory Use, a second preset beside them, sets the Memory rows to suit the Mac's memory, on Auto from the first start |
+| Presets | Performance, Balanced and Quality, and Game Defaults, which sets them back: the game's graphics settings and the port's, changed together. Auto Memory Saving, a second preset beside them, sets the Memory rows to suit the Mac's memory, on from the first start |
 | Image | Apple's MetalFX and what needs it, off by default, with a picture of the 3D view's size against the window's |
 | Extra Performance | faster or steadier, with small trade-offs you can see; off by default, on in Performance |
 | Optimizations | the same image, faster, on by default |
-| Memory | less memory with the same image, for Macs short of it; Memory Use sets them |
+| Memory | less memory with the same image, for Macs short of it; Auto Memory Saving sets them |
 | GPU Features | what the Mac's GPU and display offer the game, with the game's own settings still deciding |
 | Interface | the flight HUD fitted to the display, and Apple's Metal Performance HUD over the game |
 | Benchmark | the [benchmark](#the-benchmark)'s tests and the last run's report |

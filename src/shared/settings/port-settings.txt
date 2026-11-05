@@ -31,16 +31,14 @@
 #   presets   its values in the Mac Port tab's presets Performance, Balanced and Quality, comma separated (Game
 #             Defaults gives it its default); none for a setting the presets leave alone. Every Extra Performance row
 #             is on in Performance
-#   memory    its values with Memory Use on Auto, for a Mac with 8 GB of memory or less, 16 GB or less, and more,
+#   memory    its values with Auto Memory Saving on, for a Mac with 8 GB of memory or less, 16 GB or less, and more,
 #             comma separated; an empty one leaves the row to its preset (Fewer Effects at Once: on with 8 GB or
 #             less, else Performance's). Off gives a row with a value for the last tier its default. None at all for a
-#             setting Memory Use leaves alone (MemoryUse.cs in this folder)
+#             setting Auto Memory Saving leaves alone (AutoMemorySaving.cs in this folder)
 #   label     its row in the tab; help: the row's tooltip and the file's comment, which the values' help follows
 
 [presets] Presets | Sets the game's graphics and these settings together.
-memory_use | choice:auto=Auto/off=Off | auto | | live | tab | | | Memory Use | Sets the Memory rows, and on a Mac with 8 GB of memory or less the game's texture and shadow sizes, to suit this Mac's memory. Picked like a preset: the rows take its values, and a row changed afterwards keeps its own.
-    auto | With 16 GB of memory or less, the Memory rows on; with 8 GB or less, also Fewer Effects at Once, textures and shadow maps at most 2048 wide and a smaller texture budget. With more, the Memory rows off: the game has room.
-    off | The game's own: the Memory rows off, and with 8 GB or less the game's own texture budget again. The texture and shadow sizes stay as they are.
+auto_memory_saving | bool | true | | live | tab | | | Auto Memory Saving | Sets the Memory rows for this Mac's memory: on with 16 GB or less, and with 8 GB or less also Fewer Effects at Once, textures and shadow maps at most 2048 wide and a smaller texture budget. Off is the game's own.
 
 [image] Image | How the 3D view is drawn and scaled to the display.
 upscaling | choice:off=Off/metalfx=Temporal/spatial=Spatial | off | | restart | hooks:RenderScale | spatial,metalfx,off | | MetalFX | Draws the 3D view at the Render Scale below and scales it up to the display with Apple's MetalFX.
@@ -82,7 +80,7 @@ in_place_shader_parameters | bool | true | | restart | driver | | | In-Place Sha
 idle_thread_sleep | bool | true | | restart | hooks:WorkerPark | | | Idle Thread Sleep | The game's background threads sleep while they wait for work instead of keeping the CPU busy: the same frames, about a core and a half less CPU time. Off is the game's own.
 loading_screen_fps_cap | bool | true | | restart | hooks:LoadingPace | | | Loading Screen FPS Cap | While the game loads, its loading screen is drawn at most 30 times a second instead of after every step: the game loads about 2 seconds faster. Off is the game's own.
 
-[memory] Memory | Less memory, the same image. Memory Use under Presets sets them.
+[memory] Memory | Less memory, the same image. Auto Memory Saving under Presets sets them.
 textures_kept_on_disk | bool | false | | restart | ktx-shim | | true,true,false | Textures Kept on Disk | Textures are read from files on disk instead of held in memory, so macOS can let go of them when memory runs short and read them back: about 3.5 GB less memory with the solar system. Off is the game's own.
 unload_far_terrain | bool | false | | restart | hooks:FarTerrain, hooks:FarClutter | | true,true,false | Unload Far Terrain | The terrain of far worlds is let go and made again before the camera gets near, their ground clutter too: about 1.4 GB less memory with the solar system. A jump to another world can pause a moment. Off is the game's own.
 release_freed_memory | bool | false | | restart | launcher, hooks:FreedMemory | | true,true,false | Release Freed Memory | Memory the game frees goes back to macOS at once instead of being kept for reuse, and loading leaves less behind: less memory, the same image. Off is the game's own.

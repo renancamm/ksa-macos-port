@@ -11,15 +11,15 @@ using KsaPort.Common;
 
 namespace KsaMetal.Hooks.Tab;
 
-// The Mac Port tab's presets: Performance, Balanced and Quality, each a set of the game's own graphics settings and of
-// port settings (the settings table's presets column), and Game Defaults, the defaults of the same settings. Memory
-// Use (MemoryUse, in the shared library) is the second preset beside them: the Memory rows are its own, which these
-// leave alone (Fewer Effects at Once it shares with Performance), but with Memory Use on Auto on a Mac with 8 GB of
-// memory or less every preset's textures and shadow maps are at most 2048 pixels wide and its texture streaming
-// budget at most 512 MB. A preset's card in the tab makes its values pending changes, in the game's tabs and in this
-// one, as if the player had set each row; the
-// game's Apply keeps them, Discard drops them. Nothing else changes a setting, but a fresh install's first start,
-// which Memory Use on Auto gives its values (the loader the port settings, FirstStart here the game's).
+// The Mac Port tab's presets: Performance, Balanced and Quality, each a set of the game's own graphics settings and
+// of port settings (the settings table's presets column), and Game Defaults, the defaults of the same settings. Auto
+// Memory Saving (AutoMemorySaving, in the shared library) is the second preset beside them: the Memory rows are its
+// own, which these leave alone (Fewer Effects at Once it shares with Performance), but on a Mac with 8 GB of memory
+// or less and Auto Memory Saving on, every preset's textures and shadow maps are at most 2048 pixels wide and its
+// texture streaming budget at most 512 MB. A preset's card in the tab makes its values pending changes, in the game's
+// tabs and in this one, as if the player had set each row; the game's Apply keeps them, Discard drops them. Nothing
+// else changes a setting, but a fresh install's first start, where Auto Memory Saving, on by default, sets its
+// values (the loader the port settings, FirstStart here the game's).
 //
 // Every preset gives every setting any preset sets, so a preset after another leaves nothing of the first, except
 // the port rows the tab can't change (set outside, their hook unavailable) and the render scale without upscaling,
@@ -47,10 +47,10 @@ internal static class Presets
         public Dictionary<string, string> Game { get; private set; } = new();
         public Dictionary<string, string> Port { get; private set; } = new();
 
-        public void For(Mac mac, bool memoryAuto)
+        public void For(Mac mac, bool memorySaving)
         {
             Game = game(mac);
-            if (memoryAuto && mac.Tier == MemoryUse.Tier.Small)
+            if (memorySaving && mac.Tier == AutoMemorySaving.Tier.Small)
                 Limit(Game);
             Port = Port(index);
             if (Port["upscaling"] == "off")
@@ -58,10 +58,10 @@ internal static class Presets
         }
     }
 
-    // What Memory Use goes by on Auto: this Mac's memory
+    // What Auto Memory Saving goes by: this Mac's memory
     public sealed record Mac(string Chip, int MemoryGb)
     {
-        public MemoryUse.Tier Tier => MemoryUse.TierOf(MemoryGb);
+        public AutoMemorySaving.Tier Tier => AutoMemorySaving.TierOf(MemoryGb);
     }
 
     public static readonly Preset[] All =
@@ -112,7 +112,7 @@ internal static class Presets
             -1),
     ];
 
-    // The game's defaults are the same on every Mac, but for Memory Use's
+    // The game's defaults are the same on every Mac, but for Auto Memory Saving's
     public static Preset GameDefaults => All[^1];
 
     // The game's settings another preset sets, at their defaults: a new GameSettings' (the game's Reset)
@@ -157,21 +157,21 @@ internal static class Presets
             ["RaytracedShadowResolutionScale"] = "50",
             ["RaytracedReflectionBounces"] = "1",
         };
-        // The game's terrain textures at most this many pixels wide (0: the game's, none), in every preset, so that each
-        // one sets it: the planets' textures loaded whole (Earth's clouds, tiling and biome maps, the moons' rock), the
-        // finest level the streamer gives the planets' colour maps (Earth, the Moon, Mars; not their heights and
-        // normals), ground clutter and rock particles. Performance's 2048 saves about 0.3 GB of graphics memory in the
-        // solar system (M5, Mixed Test views, at an 8 GB Mac's texture budget). With 8 GB or less, Memory Use limits it
-        // in every preset, and the vessels' textures and the shadow maps too (Limit)
+        // The game's terrain textures at most this many pixels wide (0: the game's, none), in every preset, so that
+        // each one sets it: the planets' textures loaded whole (Earth's clouds, tiling and biome maps, the moons'
+        // rock), the finest level the streamer gives the planets' colour maps (Earth, the Moon, Mars; not their
+        // heights and normals), ground clutter and rock particles. Performance's 2048 saves about 0.3 GB of graphics
+        // memory in the solar system (M5, Mixed Test views, at an 8 GB Mac's texture budget). With 8 GB or less, Auto
+        // Memory Saving limits it in every preset, and the vessels' textures and the shadow maps too (Limit)
         game["TerrainTextureCap"] = Text(planetTextures);
         return game;
     }
 
-    // Memory Use's limits with 8 GB or less, on a preset's game settings: those it gives, and the vessels' textures
+    // Auto Memory Saving's limits with 8 GB or less on a preset's game settings: those it gives, and vessel textures
     private static void Limit(Dictionary<string, string> game)
     {
-        foreach (var (field, _, atMost) in MemoryUse.SmallGame)
-            game[field] = Text(MemoryUse.Limit(game.TryGetValue(field, out var v) ? int.Parse(v, CultureInfo.InvariantCulture) : 0, atMost));
+        foreach (var (field, _, atMost) in AutoMemorySaving.SmallGame)
+            game[field] = Text(AutoMemorySaving.Limit(game.TryGetValue(field, out var v) ? int.Parse(v, CultureInfo.InvariantCulture) : 0, atMost));
     }
 
     // The port settings a preset gives, from the table's presets column (Performance, Balanced, Quality; -1: the
@@ -187,7 +187,7 @@ internal static class Presets
     private static string Text(bool value) => value ? "true" : "false";
     private static string Text(object? value) => value is bool b ? Text(b) : Convert.ToString(value, CultureInfo.InvariantCulture) ?? "";
 
-    public static Mac ThisMac { get; private set; } = new("", MemoryUse.MemoryGb());
+    public static Mac ThisMac { get; private set; } = new("", AutoMemorySaving.MemoryGb());
     private static readonly Dictionary<string, FieldInfo> Fields = new();
 
     public static string Apply(Harmony harmony)
@@ -204,29 +204,29 @@ internal static class Presets
             preset.For(ThisMac, false);
             Check(preset);
         }
-        Refresh(Settings.Get(MemoryUse.Key).Saved == "auto");
-        foreach (var (field, _, _) in MemoryUse.SmallGame)
+        Refresh(Settings.Get(AutoMemorySaving.Key).Saved == "true");
+        foreach (var (field, _, _) in AutoMemorySaving.SmallGame)
             Field(field);
         harmony.Patch(Find.Method(typeof(GameSettings), nameof(GameSettings.LoadFromFile)),
             postfix: new HarmonyMethod(typeof(Presets), nameof(FirstStart)));
-        return $"on, {ThisMac.Chip}, {ThisMac.MemoryGb} GB, memory {MemoryUse.Describe(ThisMac.Tier)}";
+        return $"on, {ThisMac.Chip}, {ThisMac.MemoryGb} GB, memory {AutoMemorySaving.Describe(ThisMac.Tier)}";
     }
 
-    // The presets' values with Memory Use on Auto or not
-    public static void Refresh(bool memoryAuto)
+    // The presets' values with Auto Memory Saving on or not
+    public static void Refresh(bool memorySaving)
     {
         foreach (var preset in All)
-            preset.For(ThisMac, memoryAuto);
+            preset.For(ThisMac, memorySaving);
     }
 
-    // A fresh install's first start (the loader made port-settings.toml, KSA_PORT_FRESH), Memory Use on Auto, 8 GB or
-    // less: the game's settings, just loaded, take the limits before anything is drawn, and are saved with them
+    // A fresh install's first start (the loader made port-settings.toml, KSA_PORT_FRESH), Auto Memory Saving on, 8 GB
+    // or less: the game's settings, just loaded, take the limits before anything is drawn, and are saved with them
     private static void FirstStart()
     {
         try
         {
-            if (Environment.GetEnvironmentVariable("KSA_PORT_FRESH") != "1" || Settings.Get(MemoryUse.Key).Saved != "auto" ||
-                ThisMac.Tier != MemoryUse.Tier.Small)
+            if (Environment.GetEnvironmentVariable("KSA_PORT_FRESH") != "1" || Settings.Get(AutoMemorySaving.Key).Saved != "true" ||
+                ThisMac.Tier != AutoMemorySaving.Tier.Small)
                 return;
             UseMemory(GameSettings.Current);
             GameSettings.Current.Save();
@@ -238,16 +238,16 @@ internal static class Presets
         }
     }
 
-    // Memory Use's limits for this Mac on these game settings (8 GB or less); the Memory rows' values on Auto
+    // Auto Memory Saving's limits for this Mac on these game settings (8 GB or less); the Memory rows' values when on
     public static void UseMemory(GameSettings game)
     {
-        if (ThisMac.Tier != MemoryUse.Tier.Small)
+        if (ThisMac.Tier != AutoMemorySaving.Tier.Small)
             return;
-        foreach (var (name, _, atMost) in MemoryUse.SmallGame)
+        foreach (var (name, _, atMost) in AutoMemorySaving.SmallGame)
         {
             var field = Fields[name];
             int value = Convert.ToInt32(field.GetValue(Owner(field, game)), CultureInfo.InvariantCulture);
-            field.SetValue(Owner(field, game), Parse(field, Text(MemoryUse.Limit(value, atMost))));
+            field.SetValue(Owner(field, game), Parse(field, Text(AutoMemorySaving.Limit(value, atMost))));
         }
     }
 
@@ -255,31 +255,31 @@ internal static class Presets
     private static GameSettings? _gameDefaults;
     private static GameSettings GameDefaultSettings => _gameDefaults ??= new GameSettings();
 
-    // Memory Use on Off, 8 GB or less: the game's own values for the limits its tabs can't change
+    // Auto Memory Saving off, 8 GB or less: the game's own values for the limits its tabs can't change
     public static void UseGameMemory(GameSettings game)
     {
-        if (ThisMac.Tier != MemoryUse.Tier.Small)
+        if (ThisMac.Tier != AutoMemorySaving.Tier.Small)
             return;
-        foreach (var name in MemoryUse.OffRestores)
+        foreach (var name in AutoMemorySaving.OffRestores)
         {
             var field = Field(name);
             field.SetValue(Owner(field, game), field.GetValue(Owner(field, GameDefaultSettings)));
         }
     }
 
-    // How many of Memory Use's values (Auto's for this Mac, or Off's) have another value here: its rows, and with 8 GB
-    // or less the game's limits (Auto) or the budget Off gives back
-    public static int MemoryDifferences(GameSettings game, Func<string, string> port, bool auto)
+    // How many of Auto Memory Saving's values (on: this Mac's; off: the game's) have another value here: its rows,
+    // and with 8 GB or less the game's limits (on) or the budget off gives back
+    public static int MemoryDifferences(GameSettings game, Func<string, string> port, bool on)
     {
-        var rows = auto ? MemoryUse.Port(ThisMac.Tier) : MemoryUse.Off();
+        var rows = on ? AutoMemorySaving.Port(ThisMac.Tier) : AutoMemorySaving.Off();
         int count = rows.Where(kv => Settable(kv.Key)).Count(kv => port(kv.Key) != kv.Value);
-        if (ThisMac.Tier != MemoryUse.Tier.Small)
+        if (ThisMac.Tier != AutoMemorySaving.Tier.Small)
             return count;
-        if (auto)
-            return count + MemoryUse.SmallGame.Count(g =>
+        if (on)
+            return count + AutoMemorySaving.SmallGame.Count(g =>
                 Convert.ToInt32(Fields[g.Field].GetValue(Owner(Fields[g.Field], game)), CultureInfo.InvariantCulture) is var v &&
-                MemoryUse.Limit(v, g.AtMost) != v);
-        return count + MemoryUse.OffRestores.Count(name =>
+                AutoMemorySaving.Limit(v, g.AtMost) != v);
+        return count + AutoMemorySaving.OffRestores.Count(name =>
             Field(name) is var field && !Equals(field.GetValue(Owner(field, game)), field.GetValue(Owner(field, GameDefaultSettings))));
     }
 
@@ -405,7 +405,7 @@ internal static class Presets
     }
 
     // The chip's name ("Apple M2 Pro", for the log) and the memory (KSA_PORT_MEMORY_GB stands in for it)
-    private static Mac Detect() => new(SysctlText("machdep.cpu.brand_string"), MemoryUse.MemoryGb());
+    private static Mac Detect() => new(SysctlText("machdep.cpu.brand_string"), AutoMemorySaving.MemoryGb());
 
     [DllImport("libc", EntryPoint = "sysctlbyname")]
     private static extern int SysctlByName(string name, [Out] byte[]? value, ref nint size, nint newValue, nint newSize);

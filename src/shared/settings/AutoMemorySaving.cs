@@ -5,24 +5,24 @@ using System.Runtime.InteropServices;
 
 namespace KsaPort.Common;
 
-// Memory Use, the Presets section's second preset (memory_use), beside the graphics presets. On Auto it gives the
-// rows with values in the table's memory column the values for this Mac's memory, in three tiers: with 8 GB or less
-// it also limits the game's texture and shadow sizes and its texture streaming budget (the solar system doesn't fit
-// an 8 GB Mac's GPU memory otherwise); with more than 16 GB the game keeps its own memory use, nothing gained, no
-// part of the port's left in the way. Off gives the rows their defaults, the game's own, and the budget back. The
-// Memory section's rows are its own, which the graphics presets never touch; Fewer Effects at Once it shares with the
-// Performance preset: on with 8 GB or less, the preset's otherwise (an empty tier value). Picked like a preset: in
-// the tab, on a fresh install's first start (the hooks' loader, as it writes port-settings.toml), on the game's
-// Reset, and in a benchmark run with --defaults. A row changed by hand afterwards keeps its value; with 8 GB or less
-// every graphics preset's texture and shadow sizes take the limits.
-public static class MemoryUse
+// Auto Memory Saving, the Presets section's second preset (auto_memory_saving), beside the graphics presets. On, it
+// gives the rows with values in the table's memory column the values for this Mac's memory, in three tiers: with 8 GB
+// or less it also limits the game's texture and shadow sizes and its texture streaming budget (the solar system
+// doesn't fit an 8 GB Mac's GPU memory otherwise); with more than 16 GB the game keeps its own memory use, nothing
+// gained, no part of the port's left in the way. Off gives the rows their defaults, the game's own, and the budget
+// back. The Memory section's rows are its own, which the graphics presets never touch; Fewer Effects at Once it
+// shares with the Performance preset: on with 8 GB or less, the preset's otherwise (an empty tier value). Picked like
+// a preset: in the tab, on a fresh install's first start (the hooks' loader, as it writes port-settings.toml), on the
+// game's Reset, and in a benchmark run with --defaults. A row changed by hand afterwards keeps its value; with 8 GB
+// or less every graphics preset's texture and shadow sizes take the limits.
+public static class AutoMemorySaving
 {
-    public const string Key = "memory_use";
+    public const string Key = "auto_memory_saving";
 
     // In the order of the table's memory column: 8 GB or less, 16 GB or less, more
     public enum Tier { Small, Medium, Large }
 
-    // The rows Memory Use sets: those with values in the table's memory column
+    // The rows Auto Memory Saving sets: those with values in the table's memory column
     public static IEnumerable<PortSetting> Rows => PortSettings.All.Where(s => s.Memory.Length > 0);
 
     // The game's settings with 8 GB or less: the field of GameSettings or GameSettings.Graphics, its key in
@@ -66,11 +66,11 @@ public static class MemoryUse
         _ => "more than 16 GB",
     };
 
-    // The rows' values on Auto, for a tier: those with a value for it (an empty one leaves the row to its preset)
+    // The rows' values when on, for a tier: those with a value for it (an empty one leaves the row to its preset)
     public static Dictionary<string, string> Port(Tier tier) =>
         Rows.Where(s => s.Memory[(int)tier].Length > 0).ToDictionary(s => s.Key, s => s.Memory[(int)tier]);
 
-    // The rows' values on Off: the default, the game's own, of every row Auto sets on a Mac with memory to spare
+    // The rows' values when off: the default, the game's own, of every row it sets on a Mac with memory to spare
     public static Dictionary<string, string> Off() =>
         Rows.Where(s => s.Memory[(int)Tier.Large].Length > 0).ToDictionary(s => s.Key, s => s.Default);
 

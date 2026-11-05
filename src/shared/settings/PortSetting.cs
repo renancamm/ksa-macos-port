@@ -13,8 +13,8 @@ public sealed class PortSetting
     public string[] Needs = [], By = [];
     // Its values in the Mac Port tab's presets Performance, Balanced and Quality (none: the presets leave it alone)
     public string[] Presets = [];
-    // Its values with Memory Use on Auto, for 8 GB of memory or less, 16 GB or less, and more (none: Memory Use leaves it
-    // alone; an empty one: its preset's there)
+    // Its values with Auto Memory Saving on, for 8 GB of memory or less, 16 GB or less, and more (none: Auto Memory
+    // Saving leaves it alone; an empty one: its preset's there)
     public string[] Memory = [];
     // Applies while the game runs (the table's "live"); shown in the Mac Port tab (its section's)
     public bool Live, InTab;

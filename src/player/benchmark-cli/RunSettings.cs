@@ -38,10 +38,11 @@ public static partial class Program
                 "displayChangelogOnChange=false", "celestialNames=false", "locationNames=false" };
             if (_preset.Length > 0)
                 start.AddRange(PresetCommon.Concat(Presets[_preset]));
-            // --defaults is a fresh install's first start, with Memory Use on Auto: with 8 GB or less, the game's textures
-            // and shadow maps at most 2048 pixels wide, texture streaming at most 512 MB (the hooks do it on a player's first start)
-            else if (_defaults && MemoryUse.ThisMac() == MemoryUse.Tier.Small)
-                start.AddRange(MemoryUse.SmallGame.Select(g => $"{g.Key}={g.AtMost}"));
+            // --defaults is a fresh install's first start, with Auto Memory Saving on: with 8 GB or less, the game's
+            // textures and shadow maps at most 2048 pixels wide, texture streaming at most 512 MB (the hooks do it on
+            // a player's first start)
+            else if (_defaults && AutoMemorySaving.ThisMac() == AutoMemorySaving.Tier.Small)
+                start.AddRange(AutoMemorySaving.SmallGame.Select(g => $"{g.Key}={g.AtMost}"));
             foreach (var kv in start)
                 SetSetting(kv[..kv.IndexOf('=')], kv[(kv.IndexOf('=') + 1)..]);
             // --settings: its "key = value" lines
@@ -117,11 +118,11 @@ public static partial class Program
                 Die($"--port: the app's table of the port settings can't be read: {e.Message}");
             }
             PortSettings.FilePath = portSettings;
-            // --defaults is a fresh install's first start, with Memory Use on Auto: this Mac's Memory rows, under --port.
-            // A preset's run gets them too (without them an 8 GB Mac runs out of memory; with 8 GB or less they include
-            // Fewer Effects at Once), not the game's limits, which change the image
+            // --defaults is a fresh install's first start, with Auto Memory Saving on: this Mac's Memory rows, under
+            // --port. A preset's run gets them too (without them an 8 GB Mac runs out of memory; with 8 GB or less
+            // they include Fewer Effects at Once), not the game's limits, which change the image
             if (_defaults || _preset.Length > 0)
-                PortSettings.Save(MemoryUse.Port(MemoryUse.ThisMac()));
+                PortSettings.Save(AutoMemorySaving.Port(AutoMemorySaving.ThisMac()));
             if (_ports.Count == 0 && _ab.Length == 0)
                 return;
             var values = new Dictionary<string, string>();
@@ -132,9 +133,9 @@ public static partial class Program
                 string key = kv[..kv.IndexOf('=')], value = kv[(kv.IndexOf('=') + 1)..];
                 if (PortSettings.Get(key) is not { } setting)
                     Die($"--port: there is no setting '{key}' in port-settings.toml.");
-                else if (key == MemoryUse.Key)
-                    Die($"--port {key}: Memory Use sets other rows when the game first starts, which a run's game never is; " +
-                        $"set the Memory rows themselves ({string.Join(", ", MemoryUse.Rows.Select(r => r.Key))}).");
+                else if (key == AutoMemorySaving.Key)
+                    Die($"--port {key}: Auto Memory Saving sets other rows when the game first starts, which a run's game never is; " +
+                        $"set the Memory rows themselves ({string.Join(", ", AutoMemorySaving.Rows.Select(r => r.Key))}).");
                 else if (!setting.Valid(value))
                     Die($"--port {key}={value}: it takes {setting.Values()}.");
                 values[key] = value;

@@ -261,9 +261,9 @@ internal static partial class MacPortTab
         // Reset leaves alone what the tab doesn't let the player change: the file's own settings, those set outside
         foreach (var s in PortSettings.All)
             Pending[s.Key] = _reset && s.InTab && s.Outside == null ? s.Default : s.Saved;
-        // Reset gives Memory Use on Auto, as a fresh install has it
-        if (_reset && Pending[MemoryUse.Key] == "auto")
-            MemoryUsePicked("auto", temporary as GameSettings);
+        // Reset turns Auto Memory Saving on, as a fresh install has it
+        if (_reset && Pending[AutoMemorySaving.Key] == "true")
+            AutoMemorySavingPicked("true", temporary as GameSettings);
         _reset = false;
     }
 
@@ -367,19 +367,18 @@ internal static partial class MacPortTab
         // A switch waiting for another setting can still be set, and its name says what it is about. Greyed out: what
         // can't change (it has a note), and any other control that does nothing yet
         ConsoleStyle.PushDisabled(reason is { Length: > 0 } && (note.Length > 0 || s.Kind != "bool"));
+        // A pending row without the value it had, as the game's own rows
         if (pending)
-            ConsoleWidgets.BeginPendingRow(s.Label, s.Kind == "choice" ? "" : s.LabelOf(s.Saved));
+            ConsoleWidgets.BeginPendingRow(s.Label, "");
         else
             ConsoleWidgets.BeginRow(s.Label);
-        // A segmented control is wider than the row's control column, so it says what the row was itself
+        // A segmented control is wider than the row's control column, so it starts left of it
         if (s.Kind == "choice")
         {
             var column = ImGui.GetCursorScreenPos();
             float labelEnd = ConsoleWidgets.RowMin.X + ConsoleWidgets.RowLabelInsetPx + LabelWidth(s.Label);
             // Past the row's right edge rather than over its label, with a very large interface scale
             ImGui.SetCursorScreenPos(new float2(MathF.Max(column.X + ConsoleWidgets.RowControlWidth - SegmentedWidth(s), labelEnd + ConsoleWidgets.GhostControlGapPx), column.Y));
-            if (pending)
-                Note(s.Label, "was " + s.LabelOf(s.Saved));
         }
         if (!pending && note.Length > 0)
             Note(s.Label, note);
@@ -402,7 +401,7 @@ internal static partial class MacPortTab
                 break;
             }
             default:
-                optionHelp = DrawSegmented(s, id, value, pending, out _);
+                optionHelp = DrawSegmented(s, id, value, pending);
                 break;
         }
         bool hovered = ConsoleWidgets.RowHovered;
@@ -421,9 +420,9 @@ internal static partial class MacPortTab
         }
     }
 
-    // The presets: one card each, with what it sets, making its values the pending changes here and in the game's tabs,
-    // then Memory Use, the second preset, as a banner. The card in use has a soft fill, and the one the pending changes
-    // make is gold, as the game's Apply is then
+    // The presets: one card each, with what it sets, making its values the pending changes here and in the game's
+    // tabs, then Auto Memory Saving, the second preset, as a banner with a switch. The card in use has a soft fill,
+    // and the one the pending changes make is gold, as the game's Apply is then
     private static void DrawPresets()
     {
         SectionHeader("Presets", PortSettings.Sections.First(s => s.Key == "presets").Caption, first: true);
@@ -433,8 +432,8 @@ internal static partial class MacPortTab
                 : "Unavailable: it ran into an error (logs/console.log says why)."
             : null;
         var pending = _temporary.GetValue(null) as GameSettings;
-        var memory = PortSettings.Get(MemoryUse.Key)!;
-        // Without the presets' values there is nothing for the cards to show; Memory Use still sets its rows
+        var memory = PortSettings.Get(AutoMemorySaving.Key)!;
+        // Without the presets' values there is nothing for the cards to show; Auto Memory Saving still sets its rows
         if (unavailable != null || Presets.All.Any(p => p.Port.Count == 0))
         {
             Caption(unavailable ?? "Unavailable.", ConsoleWidgets.RowLabelInsetPx);
@@ -442,15 +441,15 @@ internal static partial class MacPortTab
             return;
         }
         var mac = Presets.ThisMac;
-        bool auto = Value(memory) == "auto";
-        if (auto != _presetsAuto)
+        bool saving = Value(memory) == "true";
+        if (saving != _presetsSaving)
         {
-            Presets.Refresh(auto);
+            Presets.Refresh(saving);
             _summaries = null;
-            _presetsAuto = auto;
+            _presetsSaving = saving;
         }
-        var limits = auto && mac.Tier == MemoryUse.Tier.Small
-            ? $"With Memory Use on Auto on this {mac.MemoryGb} GB Mac, its textures and shadow maps are at most 2048 wide. " : "";
+        var limits = saving && mac.Tier == AutoMemorySaving.Tier.Small
+            ? $"On this {mac.MemoryGb} GB Mac with Auto Memory Saving on, its textures and shadow maps are at most 2048 wide. " : "";
         var inUse = Presets.All.FirstOrDefault(p => Presets.Matches(p, GameSettings.Current, key => PortSettings.Get(key)!.Saved));
         var shown = pending == null ? inUse : Presets.All.FirstOrDefault(p => Presets.Matches(p, pending, key => Value(PortSettings.Get(key)!)));
         var summaries = _summaries ??= Presets.All.Select(Presets.Summary).ToArray();
@@ -479,26 +478,28 @@ internal static partial class MacPortTab
     private static bool PresetsAvailable =>
         Hooks.Status.GetValueOrDefault(nameof(Presets)) is not { Unavailable: true } && Presets.All.All(p => p.Port.Count > 0);
 
-    private static bool? _presetsAuto;
+    private static bool? _presetsSaving;
 
-    // Memory Use: a banner under the presets' cards, its name and what the choice shown means here on the left, Auto
-    // (for this Mac's memory) and Off (the game's own) on the right, on the MetalFX boxes' panel. A choice picked makes
-    // its values pending changes, as a preset's card does
+    // Auto Memory Saving: a banner under the presets' cards, on the MetalFX boxes' panel, its name and what it does
+    // here on the left and its switch on the right. Switched, its values become pending changes, as a card's do
     private static void DrawMemoryBanner(PortSetting memory, GameSettings? pending)
     {
         float s = ConsoleStyle.EffectiveInterfaceScale, inset = ConsoleWidgets.RowLabelInsetPx;
         float padX = 16f * s, padY = 10f * s, gap = 16f * s, space = 4f * s;
         Gap(14f * s);
         var at = ImGui.GetCursorScreenPos() + new float2(inset, 0f);
-        float width = ConsoleStyle.ContentAvailWidth() - inset, control = SegmentedWidth(memory);
+        float width = ConsoleStyle.ContentAvailWidth() - inset;
+        // The game's switch, as its Checkbox measures it: the track, the gap, the widest of ON and OFF
+        ConsoleStyle.PushValueFont();
+        float control = ConsoleStyle.FrameHeightPx * 1.1538461f + ConsoleWidgets.CheckboxStateGapPx + ImGui.CalcTextSize("OFF").X;
+        ConsoleStyle.PopFont();
         var mac = Presets.ThisMac;
-        string value = Value(memory), saved = memory.Saved;
+        bool on = Value(memory) == "true";
         string Port(string key) => Value(PortSettings.Get(key)!);
-        int count = pending != null && PresetsAvailable ? Presets.MemoryDifferences(pending, Port, value == "auto") : 0;
-        var note = (value == "auto" ? $"For this Mac's {mac.MemoryGb} GB of memory." : "The game's own memory use.") +
-            (value != saved ? $" Was {memory.LabelOf(saved)}." : "") +
-            (count > 0 ? $" {count} setting{(count == 1 ? " differs" : "s differ")} from {memory.LabelOf(value)}." : "");
-        // The control past the panel's right edge rather than over the name, with a very large interface scale
+        int count = pending != null && PresetsAvailable ? Presets.MemoryDifferences(pending, Port, on) : 0;
+        var note = (on ? $"For this Mac's {mac.MemoryGb} GB of memory." : "The game's own memory use.") +
+            (count > 0 ? $" {count} setting{(count == 1 ? " differs" : "s differ")} from {(on ? "this Mac's values" : "the game's own")}." : "");
+        // The switch past the panel's right edge rather than over the name, with a very large interface scale
         float left = MathF.Max(width - padX * 2f - gap - control, LabelWidth(memory.Label));
         var lines = WrapSmall(note, left);
         float titleHeight = LabelHeight(), line = MathF.Round(SmallHeight());
@@ -520,35 +521,42 @@ internal static partial class MacPortTab
             y += line;
         }
         ConsoleStyle.PopFont();
-        ImGui.SetCursorScreenPos(new float2(at.X + padX + left + gap, at.Y + (height - ConsoleStyle.FrameHeightPx) * 0.5f));
-        var optionHelp = DrawSegmented(memory, "MacPort_memory", value, value != saved, out var picked);
-        ConsoleStyle.PopDisabled();
-        // The choice shown again too: its values come back after rows changed by hand, as a preset's do
-        if (picked != null && pending != null)
+        // The switch right-aligns itself to the space it has, as in a row's control column: a table cell ending at
+        // the panel's padding gives it that
+        float cell = ImGui.GetStyle().CellPadding.Y;
+        ImGui.SetCursorScreenPos(new float2(at.X + padX + left + gap, at.Y + (height - ConsoleStyle.FrameHeightPx) * 0.5f - cell));
+        bool switched = false;
+        if (ImGui.BeginTable("MacPort_memory", 1, ImGuiTableFlags.NoPadOuterX | ImGuiTableFlags.NoPadInnerX | ImGuiTableFlags.NoClip, new float2(control, 0f)))
         {
-            MemoryUsePicked(picked, pending);
-            Hooks.Log($"MacPortTab: Memory Use {memory.LabelOf(picked)} pending");
+            ImGui.TableNextColumn();
+            switched = ConsoleWidgets.Checkbox("MacPort_" + memory.Key, ref on, on != (memory.Saved == "true"));
+            ImGui.EndTable();
+        }
+        ConsoleStyle.PopDisabled();
+        if (switched && pending != null)
+        {
+            Pending[memory.Key] = on ? "true" : "false";
+            AutoMemorySavingPicked(Pending[memory.Key], pending);
+            Hooks.Log($"MacPortTab: Auto Memory Saving {memory.LabelOf(Pending[memory.Key])} pending");
         }
         bool hovered = ImGui.IsWindowHovered() && ImGui.IsMouseHoveringRect(in at, in end);
         ImGui.SetCursorScreenPos(new float2(at.X - inset, end.Y));
         Gap(4f * s);
-        // Over a choice its help, elsewhere the row's help and the shown choice's, as a row's tooltip
         if (hovered)
-            Tooltip((optionHelp ?? memory.Help + (memory.OptionHelp.TryGetValue(value, out var meaning) ? $"\n\n{memory.LabelOf(value)}: {meaning}" : "")) +
-                "\n\nThis makes them pending changes, here and in the game's tabs; Apply keeps them.");
+            Tooltip(memory.Help + "\n\nSwitching it makes its values pending changes, here and in the game's tabs; Apply keeps them.");
     }
 
-    // Memory Use's values for this Mac (Auto) or the game's own (Off) become the pending changes, here and, with 8 GB or
-    // less, in the game's tabs (Off: only the texture streaming budget, which those tabs can't change)
-    private static void MemoryUsePicked(string value, GameSettings? pending)
+    // Auto Memory Saving's values for this Mac (on) or the game's own (off) become the pending changes, here and,
+    // with 8 GB or less, in the game's tabs (off: only the texture streaming budget, which those tabs can't change)
+    private static void AutoMemorySavingPicked(string value, GameSettings? pending)
     {
-        var rows = value == "auto" ? MemoryUse.Port(Presets.ThisMac.Tier) : MemoryUse.Off();
+        var rows = value == "true" ? AutoMemorySaving.Port(Presets.ThisMac.Tier) : AutoMemorySaving.Off();
         foreach (var (key, v) in rows)
             if (Presets.Settable(key))
                 Pending[key] = v;
         if (pending == null || !PresetsAvailable)
             return;
-        if (value == "auto")
+        if (value == "true")
             Presets.UseMemory(pending);
         else
             Presets.UseGameMemory(pending);

@@ -39,7 +39,7 @@ internal static class Tests
             ("values from the environment", FromEnvironment),
             ("the hooks' view of the settings", HooksLoad),
             ("what the loader sets", LoaderPlan),
-            ("Memory Use", Memory),
+            ("Auto Memory Saving", Memory),
         };
         foreach (var (name, run) in tests)
         {
@@ -85,9 +85,9 @@ internal static class Tests
 
     // Each line of the table: its key and variable are its own, its default is one of its values, its needs name
     // settings that exist (or the game's that the tab checks) with values they take, without a loop, its presets'
-    // values are three of its own (every Extra Performance row on in Performance), its Memory Use values are three of
-    // its own, the last its default (every Memory row has them), the tab draws its kind and its values fit, and its help
-    // can be read back. Each of the tab's sections has a caption.
+    // values are three of its own (every Extra Performance row on in Performance), its Auto Memory Saving values are
+    // three of its own, the last its default (every Memory row has them), the tab draws its kind and its values fit,
+    // and its help can be read back. Each of the tab's sections has a caption.
     private static void TableRules()
     {
         var all = PortSettings.All;
@@ -135,14 +135,14 @@ internal static class Tests
                 Check(s.Presets.FirstOrDefault() is { } performance && performance != s.Default,
                     $"{s.Key} is an Extra Performance row, but Performance doesn't turn it on");
             Check(s.Presets.Length == 0 || s.InTab, $"{s.Key} is the file's only, and the presets leave those alone");
-            // Memory Use: a value per tier, the last the default; every row of the Memory section has them
-            Check(s.Memory.Length is 0 or 3, $"{s.Key} has {s.Memory.Length} Memory Use values, not 3");
+            // Auto Memory Saving: a value per tier, the last the default; every row of the Memory section has them
+            Check(s.Memory.Length is 0 or 3, $"{s.Key} has {s.Memory.Length} Auto Memory Saving values, not 3");
             foreach (var value in s.Memory.Where(v => v.Length > 0 && !s.Valid(v)))
-                Check(false, $"{s.Key}'s Memory Use value '{value}' is none of its values");
-            Check(s.Memory.Length == 0 || s.InTab, $"{s.Key} is the file's only, and Memory Use leaves those alone");
-            Check(s.Memory.Length != 3 || s.Memory[2].Length == 0 || s.Memory[2] == s.Default, $"{s.Key}: with more than 16 GB Memory Use gives it {s.Memory.LastOrDefault()}, not its default");
+                Check(false, $"{s.Key}'s Auto Memory Saving value '{value}' is none of its values");
+            Check(s.Memory.Length == 0 || s.InTab, $"{s.Key} is the file's only, and Auto Memory Saving leaves those alone");
+            Check(s.Memory.Length != 3 || s.Memory[2].Length == 0 || s.Memory[2] == s.Default, $"{s.Key}: with more than 16 GB Auto Memory Saving gives it {s.Memory.LastOrDefault()}, not its default");
             if (s.Section == "memory")
-                Check(s.Memory.Length == 3 && s.Memory.All(v => v.Length > 0), $"{s.Key} is a Memory row, but Memory Use doesn't set it in every tier");
+                Check(s.Memory.Length == 3 && s.Memory.All(v => v.Length > 0), $"{s.Key} is a Memory row, but Auto Memory Saving doesn't set it in every tier");
         }
     }
 
@@ -319,28 +319,28 @@ internal static class Tests
         }
     }
 
-    // Memory Use: the tiers, the rows' values on Auto and Off, the small tier's limits
+    // Auto Memory Saving: the tiers, the rows' values on and off, the small tier's limits
     private static void Memory()
     {
-        Equal(MemoryUse.Tier.Large, MemoryUse.TierOf(0), "unknown memory");
-        Equal(MemoryUse.Tier.Small, MemoryUse.TierOf(8), "8 GB");
-        Equal(MemoryUse.Tier.Medium, MemoryUse.TierOf(9), "9 GB");
-        Equal(MemoryUse.Tier.Medium, MemoryUse.TierOf(16), "16 GB");
-        Equal(MemoryUse.Tier.Large, MemoryUse.TierOf(17), "17 GB");
-        var rows = MemoryUse.Rows.Select(s => s.Key).ToList();
+        Equal(AutoMemorySaving.Tier.Large, AutoMemorySaving.TierOf(0), "unknown memory");
+        Equal(AutoMemorySaving.Tier.Small, AutoMemorySaving.TierOf(8), "8 GB");
+        Equal(AutoMemorySaving.Tier.Medium, AutoMemorySaving.TierOf(9), "9 GB");
+        Equal(AutoMemorySaving.Tier.Medium, AutoMemorySaving.TierOf(16), "16 GB");
+        Equal(AutoMemorySaving.Tier.Large, AutoMemorySaving.TierOf(17), "17 GB");
+        var rows = AutoMemorySaving.Rows.Select(s => s.Key).ToList();
         Check(rows.Count >= 9 && rows.Contains("unload_far_terrain") && rows.Contains("fewer_effects_at_once"), $"the rows: {string.Join(", ", rows)}");
-        var small = MemoryUse.Port(MemoryUse.Tier.Small);
+        var small = AutoMemorySaving.Port(AutoMemorySaving.Tier.Small);
         Check(small.Count == rows.Count && small.Values.All(v => v == "true"), "with 8 GB every row on");
-        var medium = MemoryUse.Port(MemoryUse.Tier.Medium);
+        var medium = AutoMemorySaving.Port(AutoMemorySaving.Tier.Medium);
         Check(!medium.ContainsKey("fewer_effects_at_once"), "fewer effects left to its preset with 16 GB");
         Equal("true", medium.GetValueOrDefault("unload_far_terrain"), "far terrain with 16 GB");
-        var large = MemoryUse.Port(MemoryUse.Tier.Large);
+        var large = AutoMemorySaving.Port(AutoMemorySaving.Tier.Large);
         Check(large.Count == rows.Count - 1 && large.All(kv => kv.Value == Setting(kv.Key).Default), "with more than 16 GB: the defaults");
-        var off = MemoryUse.Off();
+        var off = AutoMemorySaving.Off();
         Check(off.Count == large.Count && off.All(kv => kv.Value == Setting(kv.Key).Default) && !off.ContainsKey("fewer_effects_at_once"), "Off: the defaults, the shared row left alone");
-        Equal(2048, MemoryUse.Limit(0, 2048), "automatic takes the limit");
-        Equal(2048, MemoryUse.Limit(4096, 2048), "above the limit");
-        Equal(1024, MemoryUse.Limit(1024, 2048), "below the limit");
+        Equal(2048, AutoMemorySaving.Limit(0, 2048), "automatic takes the limit");
+        Equal(2048, AutoMemorySaving.Limit(4096, 2048), "above the limit");
+        Equal(1024, AutoMemorySaving.Limit(1024, 2048), "below the limit");
     }
 
     private static void LoaderPlan()

@@ -70,8 +70,8 @@ static void prepend(const char* name, const char* item) {
 // Release Freed Memory (release_freed_memory). macOS's allocator keeps the blocks of 128 KB and more that a program
 // frees, dirty and counted as its memory (Sol: about 0.8 GB, swapped out like any other), for the next allocation of
 // their size; MallocLargeCache=0, read when the process starts, has it give them back at once. On: its variable when
-// set (1), otherwise the line in port-settings.toml (the game's documents folder, as the hooks' loader finds it); with
-// no file yet, a fresh install, what Memory Use's first start is about to write: on with 16 GB of memory or less.
+// set (1), otherwise the line in port-settings.toml (the game's documents folder, as the hooks' loader finds it);
+// with no file yet, a fresh install, what Auto Memory Saving is about to write: on with 16 GB or less.
 static bool releaseFreedMemory(void) {
     const char* variable = getenv("KSA_MTL_RELEASE_FREED_MEMORY");
     if (variable) return strcmp(variable, "1") == 0;  // set outside the game, even empty: the loader leaves it so too
@@ -83,7 +83,7 @@ static bool releaseFreedMemory(void) {
     else return false;
     FILE* settings = fopen(file, "r");
     if (!settings) {
-        // This Mac's memory in GB, rounded, as Memory Use takes it (KSA_PORT_MEMORY_GB stands in for it)
+        // This Mac's memory in GB, rounded, as Auto Memory Saving takes it (KSA_PORT_MEMORY_GB stands in for it)
         const char* stand = getenv("KSA_PORT_MEMORY_GB");
         uint64_t memory = 0;
         size_t size = sizeof memory;

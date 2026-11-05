@@ -245,7 +245,7 @@ internal static partial class MacPortTab
         var then = ViewSize(Running("upscaling"), Running("render_scale"));
         bool changed = now != then;
         float s = ConsoleStyle.EffectiveInterfaceScale, inset = ConsoleWidgets.RowLabelInsetPx;
-        float padX = 20f * s, padTop = 14f * s, padBottom = 12f * s, gap = 14f * s;
+        float padX = 24f * s, padTop = 22f * s, padBottom = 20f * s, gap = 14f * s;
         var at = ImGui.GetCursorScreenPos() + new float2(inset, 4f * s);
         float width = ConsoleStyle.ContentAvailWidth() - inset;
         float boxWidth = MathF.Min(150f * s, (width - padX * 2f - gap * 2f) * 0.3f);
@@ -350,8 +350,8 @@ internal static partial class MacPortTab
         return (widest + 20f * ConsoleStyle.EffectiveInterfaceScale) * s.Choices.Length;
     }
 
-    // Returns the help of the option under the mouse, and the option clicked (the one shown too)
-    private static string? DrawSegmented(PortSetting s, string id, string value, bool pending, out string? picked)
+    // Returns the help of the option under the mouse
+    private static string? DrawSegmented(PortSetting s, string id, string value, bool pending)
     {
         float total = SegmentedWidth(s), each = total / s.Choices.Length, height = ConsoleStyle.FrameHeightPx;
         var at = ImGui.GetCursorScreenPos();
@@ -359,7 +359,6 @@ internal static partial class MacPortTab
         var end = at + new float2(total, height);
         bool enabled = ImGui.GetStyle().Alpha >= 1f;
         string? hovered = null;
-        picked = null;
         draw.AddRectFilled(in at, in end, ConsoleStyle.ApplyAlpha(ConsoleStyle.InsetU32), ConsoleStyle.FrameRoundingPx);
         for (int i = 0; i < s.Choices.Length; i++)
         {
@@ -376,7 +375,7 @@ internal static partial class MacPortTab
             if (over)
                 hovered = s.OptionHelp.GetValueOrDefault(choice);
             if (clicked)
-                Pending[s.Key] = picked = choice;
+                Pending[s.Key] = choice;
             bool active = choice == value;
             var corners = i == 0 ? ImDrawFlags.RoundCornersLeft : i == s.Choices.Length - 1 ? ImDrawFlags.RoundCornersRight : ImDrawFlags.RoundCornersNone;
             if (active)
@@ -396,7 +395,7 @@ internal static partial class MacPortTab
         return hovered;
     }
 
-    // A short note in front of the row's control, where a pending row shows what it was
+    // A short note in front of the row's control
     private static void Note(string label, string note)
     {
         var at = ImGui.GetCursorScreenPos();

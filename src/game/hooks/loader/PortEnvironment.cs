@@ -12,11 +12,11 @@ using KsaPort.Common;
 // A variable already set when the game starts wins over the file.
 //
 // It also puts the game's output in console.log in the documents folder's logs (unless it goes to a terminal), copies
-// the commented template there when the player has no port-settings.toml: a fresh install's first start, which
-// Memory Use on Auto gives this Mac's Memory rows (MemoryUse) and tells the hooks of (KSA_PORT_FRESH: the game's own
-// settings, Presets.FirstStart). For the Mac Port tab it sets
-// KSA_PORT_SETTINGS (the file) and KSA_PORT_OUTSIDE (the variables set already), and for Restart KSA_PORT_SET (those
-// it set, which the new game sets again).
+// the commented template there when the player has no port-settings.toml: a fresh install's first start, where Auto
+// Memory Saving, on by default, gives this Mac's Memory rows (AutoMemorySaving) and tells the hooks of it
+// (KSA_PORT_FRESH: the game's own settings, Presets.FirstStart). For the Mac Port tab it sets KSA_PORT_SETTINGS (the
+// file) and KSA_PORT_OUTSIDE (the variables set already), and for Restart KSA_PORT_SET (those it set, which the new
+// game sets again).
 internal static class PortEnvironment
 {
     [DllImport("libc", SetLastError = true)]
@@ -68,16 +68,16 @@ internal static class PortEnvironment
                hooks.FromEnvironment(Environment.GetEnvironmentVariable(hooks.Variable), out _) == "true";
     }
 
-    // A fresh install's first start: Memory Use on Auto (the template's) sets the Memory rows for this Mac's memory
+    // A fresh install's first start: Auto Memory Saving, on in the template, sets this Mac's Memory rows
     private static void FirstStart()
     {
         Set("KSA_PORT_FRESH", "1");
-        if ((PortSettings.ReadFile().GetValueOrDefault(MemoryUse.Key) ?? PortSettings.Get(MemoryUse.Key)?.Default) != "auto")
+        if ((PortSettings.ReadFile().GetValueOrDefault(AutoMemorySaving.Key) ?? PortSettings.Get(AutoMemorySaving.Key)?.Default) != "true")
             return;
-        var tier = MemoryUse.ThisMac();
-        var rows = MemoryUse.Port(tier);
+        var tier = AutoMemorySaving.ThisMac();
+        var rows = AutoMemorySaving.Port(tier);
         PortSettings.Save(rows);
-        Console.WriteLine($"==> first start: Memory Use on Auto, {MemoryUse.MemoryGb()} GB ({MemoryUse.Describe(tier)}): " +
+        Console.WriteLine($"==> first start: Auto Memory Saving on, {AutoMemorySaving.MemoryGb()} GB ({AutoMemorySaving.Describe(tier)}): " +
                           (rows.Count(kv => kv.Value != PortSettings.Get(kv.Key)!.Default) is var on && on == 0 ? "its rows off" : $"{on} of its {rows.Count} rows on"));
     }
 
