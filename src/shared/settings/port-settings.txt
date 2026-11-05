@@ -23,7 +23,8 @@
 #             While one isn't met, it keeps its default
 #   applies   live: on Apply, in the running game (the hooks read it while the game runs); restart: when the game
 #             starts
-#   by        what does it (comma separated): driver (KSA Metal), ktx-shim, hooks (the hooks and their loader),
+#   by        what does it (comma separated): driver (KSA Metal), ktx-shim, launcher (the app's executable, which
+#             reads it from the file itself), hooks (the hooks and their loader),
 #             hooks:<hook>, a class marked [Hook] (src/game/hooks/Hooks.cs) by its name, which the tab shows the
 #             setting as unavailable without (skipped or failed), metal:<variable>, Apple's variable that Metal reads,
 #             which the setting sets instead of its own, or tab: the tab's own, which sets no variable
@@ -77,6 +78,7 @@ loading_screen_fps_cap | bool | true | | restart | hooks:LoadingPace | | Loading
 
 [memory] Memory | Less memory, the same image. Set to suit this Mac's memory under Presets.
 texture_file_mapping | bool | false | | restart | ktx-shim | | Texture File Mapping | Textures' pixels are read from files instead of held in memory, so macOS can let go of them when memory runs short and read them back later: about 3 GB less memory with the solar system. Off: try it when a texture looks wrong.
+release_freed_memory | bool | false | | restart | launcher, hooks:FreedMemory | | Release Freed Memory | Memory the game frees goes back to macOS at once instead of being kept for reuse, and the game's own memory is compacted when loading ends: about 1 GB less memory, the same image. Off: try it when the game stutters.
 compact_ray_tracing_memory | bool | false | ray_queries | restart | driver | | Compact Ray Tracing Memory | What places grass and traces the cockpit's rays sits in the memory the game set aside for it, instead of memory of its own: about 0.4 GB less memory with the solar system, the same image. Off: try it when grass or the cockpit look wrong.
 load_textures_once | bool | false | | restart | hooks:SharedTextures | | Load Textures Once | A texture file the game uses in more than one place, such as the Moon's rocks that Saturn's rings use too, is loaded once and shared: about 80 MB less memory with the solar system, the same image. Off: try it when a texture looks wrong.
 unload_far_terrain | bool | false | | restart | hooks:FarTerrain | | Unload Far Terrain | The terrain of far worlds is let go and made again before the camera gets near: about 1.3 GB less memory with the solar system, the same image. Switching to a vessel at another world can pause a moment. Off: try it when terrain looks wrong.

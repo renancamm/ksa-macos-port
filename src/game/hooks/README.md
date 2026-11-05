@@ -109,7 +109,7 @@ setting; those of the hooks:
 | `fewer_cloud_shadow_updates`, `lighter_warp_cloud_shadows`, `lighter_plume_shadows`, `simpler_pcss_shadows`, `baked_milky_way`, `crew_portraits_at_15_fps`, `lighter_tumbling_physics`, `debris_settles_in_warp` | on: the Extra Performance rows |
 | `skip_hidden_crew_portraits`, `fit_hud_to_display` | off: the game's own crew portraits and flight HUD; both change while the game runs |
 | `terrain_cache`, `skip_unused_outlines`, `skip_unused_overlays`, `skip_hidden_vessel_parts`, `skip_unused_ocean_blending`, `idle_thread_sleep`, `loading_screen_fps_cap`, `clear_faded_smoke` | off: leave out that patch |
-| `unload_far_terrain`, `load_textures_once`, `unload_far_textures` | on (Memory Use turns them on with 16 GB of memory or less): that patch; off, the default: the game's own |
+| `unload_far_terrain`, `load_textures_once`, `unload_far_textures`, `release_freed_memory` | on (Memory Use turns them on with 16 GB of memory or less): that patch; off, the default: the game's own |
 | `load_terrain_by_altitude` | on: near a world, Unload Far Terrain keeps only the levels around each camera's altitude (it needs `unload_far_terrain`) |
 | `worker_park_ms` | milliseconds: how long an idle job worker spins before it sleeps (0.25) |
 | `trail_caches` | `<large>,<small>,<tiny>[,<segments>]`: the smoke's volume cache budgets in MiB (Experiments; unset: the game's) |

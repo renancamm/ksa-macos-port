@@ -208,6 +208,10 @@ public static class Find
         AccessTools.Method(type, name, parameters.Length > 0 ? parameters : null) ??
         throw new Skip($"{type.Name}.{name} not found");
 
+    public static ConstructorInfo Constructor(Type type, params Type[] parameters) =>
+        AccessTools.Constructor(type, parameters.Length > 0 ? parameters : null) ??
+        throw new Skip($"{type.Name}'s constructor not found");
+
     public static MethodInfo Getter(Type type, string name) =>
         AccessTools.PropertyGetter(type, name) ?? throw new Skip($"{type.Name}.{name} not found");
 

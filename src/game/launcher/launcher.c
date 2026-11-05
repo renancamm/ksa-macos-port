@@ -12,6 +12,8 @@
  *                          (port-settings.toml in the game's documents folder) and puts the game's output in
  *                          console.log, before the game starts
  *   KSA_PORT_LAUNCHER      this program, for the hooks to find the app and start the game again
+ *   MallocLargeCache=0     with Release Freed Memory on (release_freed_memory, read from port-settings.toml here,
+ *                          as macOS's allocator reads its variables when the process starts, before the hooks)
  * and then becomes dotnet KSA.dll, so the game runs in this process.
  *
  * With the StarMap mod loader in the app (starmap.sh), the game starts through it; KSA_STARMAP_DIR names another
@@ -25,7 +27,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <sys/stat.h>
+#include <sys/sysctl.h>
 #include <unistd.h>
 
 // Tells the player in an alert (and the terminal, when there is one), then quits
@@ -61,6 +65,53 @@ static void prepend(const char* name, const char* item) {
     snprintf(value, size, "%s%s%s", item, list && *list ? ":" : "", list && *list ? list : "");
     setenv(name, value, 1);
     free(value);
+}
+
+// Release Freed Memory (release_freed_memory). macOS's allocator keeps the blocks of 128 KB and more that a program
+// frees, dirty and counted as its memory (Sol: about 0.8 GB, swapped out like any other), for the next allocation of
+// their size; MallocLargeCache=0, read when the process starts, has it give them back at once. On: its variable when
+// set (1), otherwise the line in port-settings.toml (the game's documents folder, as the hooks' loader finds it); with
+// no file yet, a fresh install, what Memory Use's first start is about to write: on with 16 GB of memory or less.
+static bool releaseFreedMemory(void) {
+    const char* variable = getenv("KSA_MTL_RELEASE_FREED_MEMORY");
+    if (variable) return strcmp(variable, "1") == 0;  // set outside the game, even empty: the loader leaves it so too
+    char file[PATH_MAX];
+    const char* instance = getenv("STARMAP_INSTANCE_PATH");
+    const char* home = getenv("HOME");
+    if (instance && *instance) snprintf(file, sizeof file, "%s/port-settings.toml", instance);
+    else if (home) snprintf(file, sizeof file, "%s/Documents/My Games/Kitten Space Agency/port-settings.toml", home);
+    else return false;
+    FILE* settings = fopen(file, "r");
+    if (!settings) {
+        // This Mac's memory in GB, rounded, as Memory Use takes it (KSA_PORT_MEMORY_GB stands in for it)
+        const char* stand = getenv("KSA_PORT_MEMORY_GB");
+        uint64_t memory = 0;
+        size_t size = sizeof memory;
+        long gb = stand && atol(stand) > 0 ? atol(stand)
+                : sysctlbyname("hw.memsize", &memory, &size, NULL, 0) == 0 ? (long)((memory + (1ull << 29)) >> 30) : 0;
+        return gb > 0 && gb <= 16;
+    }
+    bool on = false;
+    char line[512];
+    static const char key[] = "release_freed_memory";
+    while (fgets(line, sizeof line, settings)) {
+        const char* p = line + strspn(line, " \t");
+        if (strncmp(p, key, sizeof key - 1) != 0) continue;
+        p += sizeof key - 1;
+        p += strspn(p, " \t");
+        if (*p != '=') continue;
+        p += 1 + strspn(p + 1, " \t");
+        // A value the loader takes: true or false, quoted (what follows ignored) or followed by nothing but a comment; a
+        // later valid line wins
+        char quote = *p == '"' || *p == '\'' ? *p++ : 0;
+        size_t length = strncmp(p, "true", 4) == 0 ? 4 : strncmp(p, "false", 5) == 0 ? 5 : 0;
+        if (!length || (quote && p[length] != quote)) continue;
+        const char* rest = p + length + (quote ? 1 : 0);
+        rest += strspn(rest, " \t\r\n");
+        if (quote || *rest == 0 || *rest == '#') on = length == 4;
+    }
+    fclose(settings);
+    return on;
 }
 
 // StarMap reads its config from the current folder and needs the game's full path, which changes when the app
@@ -115,6 +166,9 @@ int main(int argc, char** argv) {
     setenv("DYLD_INSERT_LIBRARIES", path, 1);
     snprintf(path, sizeof path, "%s/Hooks/KsaMetal.Hooks.Loader.dll", res);
     if (isFile(path)) prepend("DOTNET_STARTUP_HOOKS", path);
+    // Off: also when a game started again (Restart) hands this one its environment
+    if (releaseFreedMemory()) setenv("MallocLargeCache", "0", 1);
+    else unsetenv("MallocLargeCache");
 
     // dotnet and the program, then the arguments, without the process serial number older macOS versions pass to
     // apps

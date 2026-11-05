@@ -143,7 +143,7 @@ internal static class Generate
     private static readonly Dictionary<string, string> Readers = new()
     {
         ["driver"] = "src/game/driver/README.md", ["ktx-shim"] = "src/game/shims/ktx/README.md",
-        ["hooks"] = "src/game/hooks/README.md",
+        ["hooks"] = "src/game/hooks/README.md", ["launcher"] = "src/game/launcher/README.md",
     };
 
     private static string Reader(string by) => by.StartsWith("hooks:", StringComparison.Ordinal) ? "hooks" : by;
@@ -378,7 +378,7 @@ internal static class Generate
             foreach (var by in s.By)
             {
                 if (!(Readers.ContainsKey(Reader(by)) || by == "tab" || by.StartsWith("metal:", StringComparison.Ordinal)))
-                    problems.Add($"{s.Key}: by {by} is none of driver, ktx-shim, hooks, hooks:<hook>, metal:<variable>, tab.");
+                    problems.Add($"{s.Key}: by {by} is none of driver, ktx-shim, launcher, hooks, hooks:<hook>, metal:<variable>, tab.");
                 else if (native.TryGetValue(by, out var nativeCode) && !Regex.IsMatch(nativeCode, $@"{ConfigRead}{Camel(s.Key)}\b"))
                     problems.Add($"{s.Key}: by {by}, but its code doesn't use the field {Camel(s.Key)}.");
                 else if (Reader(by) == "hooks" && !Regex.IsMatch(hooksCode, $@"\bSettings\.{Pascal(s.Key)}\b"))
