@@ -154,7 +154,7 @@ internal static class RenderScale
         if (!composite && !cmaa2)
             return;
         VkExtent2D render = main.Extent;
-        bool stretched = (cmaa2 || !Upscale.Wanted) && (render.Width != Output.X || render.Height != Output.Y);
+        bool stretched = (cmaa2 || !Upscale.Wanted || !OwnsExtent) && (render.Width != Output.X || render.Height != Output.Y);
         _sampler(__instance) = stretched ? Program.LinearClampedSampler : Program.PointClampedSampler;
     }
 

@@ -22,8 +22,8 @@ namespace KsaMetal.Hooks.Features;
 // For MetalFX's temporal upscaler, the projection moves by a different sub-pixel offset every frame (a Halton
 // sequence of 16), the cockpit's ray tracing's too, and the driver makes the motion vectors from the depth buffer and
 // the reprojections passed here, computed in double: the ground and what is on it through the nearby body's rotating
-// frame, what is above the ground with the centre of the vessel the camera follows, the sky by the camera's turn
-// alone, and inside its bounding sphere that vessel, through its own frame. A copy of the image before the
+// frame, what is higher up (or anywhere away from a body) with the centre of the vessel the camera follows, the sky by
+// the camera's turn alone, and inside its bounding sphere that vessel, through its own frame. A copy of the image before the
 // exhausts, particles and glass lets the driver mark what those change as reactive (no smearing). With frame
 // interpolation, the final composite then marks where the UI starts, so that MetalFX can draw this frame's UI over
 // the frame it makes.
@@ -141,6 +141,7 @@ internal static class Upscale
     }
 
     private static RenderImage? _output;
+    private static bool _reading;  // the composites, as last built, read _output: MetalFX runs (and the jitter with it)
     private static bool _reset = true, _havePrevious;
     private static int _frame;
     private static float2 _jitter, _jitterClip;
@@ -158,7 +159,10 @@ internal static class Upscale
     // the main view larger than the display: its composites read the main view's own image, at its size
     private static void AddImagePrefix(ref VkImageView inImageView)
     {
-        if (Program.OffscreenTarget is not { ColorImage: { } color } || !inImageView.Equals(color.ImageView) || !RenderScale.OwnsExtent)
+        if (Program.OffscreenTarget is not { ColorImage: { } color } || !inImageView.Equals(color.ImageView))
+            return;
+        _reading = RenderScale.OwnsExtent;
+        if (!_reading)
             return;
         Renderer renderer = Program.GetRenderer();
         VkExtent2D size = renderer.SwapchainExtent;
@@ -201,6 +205,10 @@ internal static class Upscale
         return d;
     }
 
+    // How far from its centre the body's ground or sea reaches, at most (the game's own bound for what is on it)
+    private static double GroundRadius(Celestial body) =>
+        body.GetOceanReference() is { } ocean ? Math.Max(body.MaxTerrainRadius, body.MeanRadius + (double)ocean.Level) : body.MaxTerrainRadius;
+
     // Camera-centred ecliptic coordinates -> the nearby body's rotating frame (or the ecliptic frame in space)
     private static double4x4 EgoToFrame(Camera camera, Celestial? body)
     {
@@ -217,10 +225,9 @@ internal static class Upscale
         int2 size = viewport.Size;
         float jx = 0f, jy = 0f;
         // A high-resolution screenshot is drawn without jitter, and the history starts again after it
-        bool upscaling = RenderScale.OwnsExtent;
-        if (!upscaling)
+        if (!_reading)
             _reset = true;
-        if (!Spatial && upscaling)
+        if (!Spatial && _reading)
         {
             int i = _frame++ % 16 + 1;
             jx = Halton(i, 2) - 0.5f;
@@ -258,14 +265,10 @@ internal static class Upscale
             double elapsed = time - _previousTime;
             double3 expected = _velocity * elapsed;
             if ((moved - expected).Length() > 5000.0 + 0.25 * expected.Length())
-            {
                 _reset = true;
-                _velocity = default;
-            }
-            else if (elapsed > 0)
-            {
+            // Learnt after a reset too: otherwise, in time warp, every frame after one would look like a jump
+            if (elapsed > 0)
                 _velocity = moved / elapsed;
-            }
         }
         else
         {
@@ -278,7 +281,7 @@ internal static class Upscale
         _sphere = default;
         // Above the body's highest ground, what the camera sees beside the vessel it follows (another vessel by it in
         // orbit, a kitten on EVA, a stage falling away) moves with that vessel far more than with the ground below
-        _bodySphere = body != null ? new float4(float3.Pack(camera.GetPositionEgo(body)), (float)body.MaxTerrainRadius + 1000f) : default;
+        _bodySphere = body != null ? new float4(float3.Pack(camera.GetPositionEgo(body)), (float)GroundRadius(body) + 1000f) : default;
         if (camera.Following is Vehicle vehicle)
         {
             double4x4.Invert(vehicle.GetMatrixAsmb2Ego(camera), out var egoToObject);
@@ -320,11 +323,11 @@ internal static class Upscale
     // Before the main view's final composite pass begins
     private static unsafe void AaPreparePostfix(CommandBuffer commandBuffer, int shaderSlot)
     {
-        if (_output == null || Program.OffscreenTarget is not { ColorImage: { } colorImage, DepthImage: { } depthImage } ||
-            shaderSlot != Program.MainViewport.ShaderSlot || !RenderScale.OwnsExtent)
+        if (_output == null || !_reading || shaderSlot != Program.MainViewport.ShaderSlot ||
+            Program.OffscreenTarget is not { ColorImage: { } colorImage, DepthImage: { } depthImage } target)
             return;
         VkImage color = colorImage.Image, depth = depthImage.Image, output = _output.Image;
-        VkExtent2D input = Program.GetRenderer().Extent;
+        VkExtent2D input = target.Extent;
         var info = new VkUpscaleInfoKSA
         {
             Color = Unsafe.As<VkImage, ulong>(ref color),
@@ -407,7 +410,7 @@ internal static class Upscale
 
     private static void Snapshot(CommandBuffer commandBuffer)
     {
-        if (Program.OffscreenTarget is not { ColorImage: { } colorImage })
+        if (!_reading || Program.OffscreenTarget is not { ColorImage: { } colorImage })
             return;
         VkImage color = colorImage.Image;
         VkCommandBuffer handle = commandBuffer.Handle;

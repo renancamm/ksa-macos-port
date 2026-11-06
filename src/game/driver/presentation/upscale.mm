@@ -25,7 +25,7 @@ struct VkUpscaleInfoKSA {
     float prevClipFromEgoSky[16];     // the same for the sky (depth 0)
     float prevClipFromEgoNearby[16];  // the same for what is outside the body's sphere: moving with the followed object
     float objectSphere[4];      // its bounding sphere in ego (radius 0: none)
-    float bodySphere[4];        // the nearby body's highest ground in ego (radius 0: no body)
+    float bodySphere[4];        // the nearby body's highest ground or sea and 1 km, in ego (radius 0: no body)
     float fovY, nearPlane, farPlane, deltaTime;  // for frame interpolation
     uint32_t flags;          // kUpscaleReset, kUpscaleSpatial
     uint32_t pad;
@@ -115,7 +115,7 @@ struct UpscaleState {
     uint64_t presentEventValue = 0, fxShotCount = 0;
     bool frameReset = true;
     bool failed = false;  // the kernels didn't compile
-    bool interpolatorFailed = false;
+    uint64_t interpolatorFailed = 0;  // the sizes MetalFX made no interpolator for (inW, out width and height), 0: none
 };
 UpscaleState& g_up = *new UpscaleState;  // never destroyed: releasing a scaler at exit aborts in MetalFX's MPSGraph teardown
 }
@@ -383,7 +383,7 @@ VKFN(void) vkCmdMarkUiKSA(VkCommandBuffer commandBuffer) {
 // image, which has it composited, and draws it on top. Returns the texture to present first, or nil.
 id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<MTLTexture> color) {
     std::lock_guard<std::mutex> lock(g_up.m);
-    if (g_up.interpolatorFailed || !g_up.temporal || !g_up.frameDepth || g_up.frameSerial == g_up.presentedSerial) return nil;
+    if (!g_up.temporal || !g_up.frameDepth || g_up.frameSerial == g_up.presentedSerial) return nil;
     g_up.presentedSerial = g_up.frameSerial;
     // Without this frame's scene (no UI mark: a loading screen), no frame in between, and no history for the next
     if (!g_up.scene || g_up.sceneSerial != g_up.frameSerial || g_up.scene.width != color.width ||
@@ -394,6 +394,8 @@ id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<
     id<MTLDevice> d = dev->mtl;
     if (!g_up.interpolator || g_up.interpolator.outputWidth != color.width || g_up.interpolator.outputHeight != color.height ||
         g_up.interpolator.inputWidth != g_up.inW || g_up.interpolator.colorTextureFormat != color.pixelFormat) {
+        uint64_t sizes = (uint64_t)g_up.inW << 40 | (uint64_t)color.width << 20 | color.height;
+        if (g_up.interpolatorFailed == sizes) return nil;
         MTLFXFrameInterpolatorDescriptor* fd = [MTLFXFrameInterpolatorDescriptor new];
         fd.colorTextureFormat = color.pixelFormat;
         fd.outputTextureFormat = color.pixelFormat;
@@ -411,7 +413,7 @@ id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<
         if (!g_up.interpolator) {
             KERR("frame interpolation: interpolator %ux%u -> %lux%lu not created", g_up.inW, g_up.inH, (unsigned long)color.width,
                  (unsigned long)color.height);
-            g_up.interpolatorFailed = true;
+            g_up.interpolatorFailed = sizes;
             return nil;
         }
         KLOG(0, "frame interpolation: %ux%u motion -> %lux%lu frames", g_up.inW, g_up.inH, (unsigned long)color.width,
