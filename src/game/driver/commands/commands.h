@@ -68,7 +68,7 @@ struct KCommandBuffer : KDispatchable {
     // vkCmdUpscaleKSA (upscale.mm): full barriers around MetalFX
     id<MTLEvent> fxEvent = nil;
     uint64_t fxValue = 0;
-    bool fxSnapshot = false;  // vkCmdUpscaleSnapshotKSA ran in this recording
+    uint32_t fxSnapshots = 0;  // the stages vkCmdUpscaleSnapshotKSA copied in this recording (a bit each)
     void waitForResolves(uint32_t roles);  // an encoder of these roles that depends on fragment work
     void waitForAllResolves();             // whatever comes next (the end of recording, MetalFX)
     void beginCommands();

@@ -21,11 +21,12 @@ namespace KsaMetal.Hooks.Features;
 // view's image into an image of the swapchain's size (the display's pixels), which the composite then reads instead.
 // For MetalFX's temporal upscaler, the projection moves by a different sub-pixel offset every frame (a Halton
 // sequence of 16), the cockpit's ray tracing's too, and the driver makes the motion vectors from the depth buffer and
-// two reprojections passed here, both computed in double: the scene through the nearby body's rotating frame, and
-// inside its bounding sphere the vessel the camera follows, through its own frame. A copy of the image before the
-// exhausts, particles and glass lets the driver mark what those change as reactive (no smearing). With frame
-// interpolation, the final composite then marks where the UI starts, so that MetalFX can draw this frame's UI over
-// the frame it makes.
+// the reprojections passed here, computed in double: the ground and what is on it through the nearby body's rotating
+// frame, what is higher up (or anywhere away from a body) with the centre of the vessel the camera follows, the sky by
+// the camera's turn alone, and inside its bounding sphere that vessel, through its own frame. Copies of the image before
+// the exhausts, particles and glass and on both sides of the bloom let the driver mark what those effects and what is
+// drawn over the scene change as reactive (no smearing), but not the bloom. With frame interpolation, the final
+// composite then marks where the UI starts, so that MetalFX can draw this frame's UI over the frame it makes.
 internal static class Upscale
 {
     private static bool Interpolate;
@@ -48,7 +49,10 @@ internal static class Upscale
         public fixed float EgoFromClip[16];
         public fixed float PrevClipFromEgo[16];
         public fixed float PrevClipFromEgoObject[16];
+        public fixed float PrevClipFromEgoSky[16];
+        public fixed float PrevClipFromEgoNearby[16];
         public fixed float ObjectSphere[4];
+        public fixed float BodySphere[4];
         public float FovY, NearPlane, FarPlane, DeltaTime;
         public uint Flags, Pad;
     }
@@ -59,7 +63,7 @@ internal static class Upscale
     private static extern void vkCmdUpscaleKSA(nint commandBuffer, ref VkUpscaleInfoKSA info);
 
     [DllImport("libvulkan.1.dylib")]
-    private static extern void vkCmdUpscaleSnapshotKSA(nint commandBuffer, ulong image);
+    private static extern void vkCmdUpscaleSnapshotKSA(nint commandBuffer, ulong image, uint stage);
 
     [DllImport("libvulkan.1.dylib")]
     private static extern void vkCmdMarkUiKSA(nint commandBuffer);
@@ -70,10 +74,14 @@ internal static class Upscale
             prefix: new HarmonyMethod(typeof(Upscale), nameof(AddImagePrefix)));
         harmony.Patch(Find.Method(typeof(Program), "RenderAaPreparePasses"),
             postfix: new HarmonyMethod(typeof(Upscale), nameof(AaPreparePostfix)));
+        harmony.Patch(Find.Method(typeof(Program), "RenderGame"),
+            transpiler: new HarmonyMethod(typeof(Upscale), nameof(CaptureTranspiler)));
         if (!Spatial)
         {
             harmony.Patch(Find.Method(typeof(Program), "RenderGame"),
                 transpiler: new HarmonyMethod(typeof(Upscale), nameof(SnapshotTranspiler)));
+            harmony.Patch(Find.Method(typeof(Program), "RenderGame"),
+                transpiler: new HarmonyMethod(typeof(Upscale), nameof(BloomTranspiler)));
             harmony.Patch(Find.Method(typeof(RaytracingRenderer), nameof(RaytracingRenderer.RunRaytracePass)),
                 transpiler: new HarmonyMethod(typeof(Upscale), nameof(RayTracingTranspiler)));
         }
@@ -137,19 +145,28 @@ internal static class Upscale
     }
 
     private static RenderImage? _output;
+    private static bool _reading;  // the composites, as last built, read _output: MetalFX runs (and the jitter with it)
     private static bool _reset = true, _havePrevious;
     private static int _frame;
     private static float2 _jitter, _jitterClip;
-    private static float4x4 _egoFromClip, _scene, _object, _previousViewProjection;
-    private static float4 _sphere;
+    private static float4x4 _egoFromClip, _scene, _object, _sky, _nearby, _previousViewProjection;
+    private static float4 _sphere, _bodySphere;
+    private static double3 _previousCentre;
     private static float _fovY = 1f, _deltaTime;
     private static double4x4 _previousEgoToFrame, _previousEgoToObject;
     private static Vehicle? _previousObject;
+    private static Celestial? _previousBody;
+    private static double _previousTime;
+    private static double3 _velocity;  // the camera's, in the nearby body's frame, from the frames before
 
-    // The composite reads the upscaled image instead of the main view's
+    // The composite reads the upscaled image instead of the main view's. Not while a high-resolution screenshot renders
+    // the main view larger than the display: its composites read the main view's own image, at its size
     private static void AddImagePrefix(ref VkImageView inImageView)
     {
-        if (Program.OffscreenTarget is not { ColorImage: { } color } || !inImageView.Equals(color.ImageView))
+        if (Program.OffscreenTarget is not { ColorImage: { } color } main || !inImageView.Equals(color.ImageView))
+            return;
+        _reading = RenderScale.Upscalable(main.Extent);
+        if (!_reading)
             return;
         Renderer renderer = Program.GetRenderer();
         VkExtent2D size = renderer.SwapchainExtent;
@@ -192,10 +209,13 @@ internal static class Upscale
         return d;
     }
 
+    // How far from its centre the body's ground or sea reaches, at most (the game's own bound for what is on it)
+    private static double GroundRadius(Celestial body) =>
+        body.GetOceanReference() is { } ocean ? Math.Max(body.MaxTerrainRadius, body.MeanRadius + (double)ocean.Level) : body.MaxTerrainRadius;
+
     // Camera-centred ecliptic coordinates -> the nearby body's rotating frame (or the ecliptic frame in space)
-    private static double4x4 EgoToFrame(Camera camera)
+    private static double4x4 EgoToFrame(Camera camera, Celestial? body)
     {
-        Celestial? body = camera.GetEffectiveNearbyCelestial();
         return body != null
             ? double4x4.CreateTranslation(camera.PositionEcl - body.GetPositionEcl()) * double4x4.CreateFromQuaternion(body.GetCce2Ccf())
             : double4x4.CreateTranslation(camera.PositionEcl);
@@ -208,7 +228,10 @@ internal static class Upscale
         Camera camera = viewport.GetCamera();
         int2 size = viewport.Size;
         float jx = 0f, jy = 0f;
-        if (!Spatial)
+        // A high-resolution screenshot is drawn without jitter, and the history starts again after it
+        if (!_reading)
+            _reset = true;
+        if (!Spatial && _reading)
         {
             int i = _frame++ % 16 + 1;
             jx = Halton(i, 2) - 0.5f;
@@ -219,8 +242,7 @@ internal static class Upscale
         float4x4 p = camera.MVP.projection;
         _fovY = 2f * MathF.Atan(1f / MathF.Abs(p.M22));
         _deltaTime = data.DeltaTime;
-        p.M31 -= _jitterClip.X;
-        p.M32 -= _jitterClip.Y;
+        AddJitter(ref p);
         float4x4 viewProjection = camera.MVP.view * p;
         float4x4.Invert(p, out var inverseProjection);
         data.Projection = p;
@@ -229,41 +251,67 @@ internal static class Upscale
         // The inverse in double: the depth range is 0.1 m to 1 AU
         double4x4.Invert(ToDouble(in viewProjection), out var egoFromClip);
         _egoFromClip = float4x4.Pack(in egoFromClip);
-        double4x4 egoToFrame = EgoToFrame(camera);
-        if (_havePrevious)
+        // The sky (stars, the Milky Way, the Sun's disc) is fixed in the ecliptic axes of the ego space: only the
+        // camera's turn moves it
+        _sky = _havePrevious ? _previousViewProjection : camera.MVP.viewProjection;
+        Celestial? body = camera.GetEffectiveNearbyCelestial();
+        double4x4 egoToFrame = EgoToFrame(camera, body);
+        double time = Universe.GetElapsedSeconds();
+        if (_havePrevious && body == _previousBody)
         {
             double4x4.Invert(_previousEgoToFrame, out var frameToPreviousEgo);
             double4x4 delta = egoToFrame * frameToPreviousEgo;
             _scene = float4x4.Pack(in delta) * _previousViewProjection;
-            if (Math.Sqrt(delta.M41 * delta.M41 + delta.M42 * delta.M42 + delta.M43 * delta.M43) > 5000.0)
-                _reset = true;  // a jump, not motion
+            // A jump is what the camera's own motion doesn't explain: in time warp, an orbit's camera moves hundreds of
+            // kilometres a frame. Its position in the frame is where egoToFrame takes the ego origin (its last row)
+            var moved = new double3(egoToFrame.M41 - _previousEgoToFrame.M41, egoToFrame.M42 - _previousEgoToFrame.M42,
+                egoToFrame.M43 - _previousEgoToFrame.M43);
+            double elapsed = time - _previousTime;
+            double3 expected = _velocity * elapsed;
+            if ((moved - expected).Length() > 5000.0 + 0.25 * expected.Length())
+                _reset = true;
+            // Learnt after a reset too: otherwise, in time warp, every frame after one would look like a jump
+            if (elapsed > 0)
+                _velocity = moved / elapsed;
         }
         else
         {
             _scene = camera.MVP.viewProjection;
             _reset = true;
+            _velocity = default;
         }
         _object = _scene;
+        _nearby = _scene;
         _sphere = default;
+        // Above the body's highest ground, what the camera sees beside the vessel it follows (another vessel by it in
+        // orbit, a kitten on EVA, a stage falling away) moves with that vessel far more than with the ground below
+        _bodySphere = body != null ? new float4(float3.Pack(camera.GetPositionEgo(body)), (float)GroundRadius(body) + 1000f) : default;
         if (camera.Following is Vehicle vehicle)
         {
             double4x4.Invert(vehicle.GetMatrixAsmb2Ego(camera), out var egoToObject);
+            double3 centre = camera.GetPositionEgo(vehicle);
             if (_havePrevious && _previousObject == vehicle)
             {
                 double4x4.Invert(_previousEgoToObject, out var objectToPreviousEgo);
                 double4x4 delta = egoToObject * objectToPreviousEgo;
                 _object = float4x4.Pack(in delta) * _previousViewProjection;
-                double3 centre = camera.GetPositionEgo(vehicle);
                 _sphere = new float4(float3.Pack(in centre), vehicle.BoundingSphereRadiusBody * 1.2f + 1f);
+                // Moving with the vessel's centre, its axes the ecliptic's: the ego space shifted by how far the
+                // vessel moved from the camera
+                double4x4 shift = double4x4.CreateTranslation(_previousCentre - centre);
+                _nearby = float4x4.Pack(in shift) * _previousViewProjection;
             }
             _previousObject = vehicle;
             _previousEgoToObject = egoToObject;
+            _previousCentre = centre;
         }
         else
         {
             _previousObject = null;
         }
         _havePrevious = true;
+        _previousBody = body;
+        _previousTime = time;
         _previousEgoToFrame = egoToFrame;
         _previousViewProjection = camera.MVP.viewProjection;
     }
@@ -276,14 +324,47 @@ internal static class Upscale
         d[12] = m.M41; d[13] = m.M42; d[14] = m.M43; d[15] = m.M44;
     }
 
-    // Before the main view's final composite pass begins
-    private static unsafe void AaPreparePostfix(CommandBuffer commandBuffer, int shaderSlot)
+    // Before the main view's final composite pass begins: MetalFX, then a screenshot's copy of its image
+    private static void AaPreparePostfix(CommandBuffer commandBuffer, int shaderSlot)
     {
-        if (_output == null || Program.OffscreenTarget is not { ColorImage: { } colorImage, DepthImage: { } depthImage } ||
-            shaderSlot != Program.MainViewport.ShaderSlot)
+        if (shaderSlot != Program.MainViewport.ShaderSlot)
+            return;
+        Capture? pending = _capture;
+        _capture = null;
+        UpscaleMainView(commandBuffer);
+        if (pending is { } capture && capture.CommandBuffer.Handle.Equals(commandBuffer.Handle))
+        {
+            CompositeData data = capture.Data;
+            capture.Screenshot.OnRenderGameCapture(capture.CommandBuffer, capture.FrameIndex, in data);
+        }
+    }
+
+    // RenderGame: ScreenshotCapture.OnRenderGameCapture -> DeferCapture. The game copies the screenshot right before its
+    // anti-aliasing passes, where MetalFX makes this frame's image: the copy took the frame before's, drawn with the
+    // UI that a screenshot leaves out (orbit lines, the gauges in the scene)
+    private static IEnumerable<CodeInstruction> CaptureTranspiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var code = instructions.ToList();
+        var capture = Find.Method(typeof(ScreenshotCapture), nameof(ScreenshotCapture.OnRenderGameCapture));
+        int at = Find.Once(code, c => c.Calls(capture), "the screenshot's copy");
+        code[at] = new CodeInstruction(OpCodes.Call, Find.Method(typeof(Upscale), nameof(DeferCapture)))
+            .MoveLabelsFrom(code[at]).MoveBlocksFrom(code[at]);
+        return code;
+    }
+
+    private record struct Capture(ScreenshotCapture Screenshot, CommandBuffer CommandBuffer, int FrameIndex, CompositeData Data);
+
+    private static Capture? _capture;
+
+    private static void DeferCapture(ScreenshotCapture screenshot, CommandBuffer commandBuffer, int frameIndex, in CompositeData data) =>
+        _capture = new Capture(screenshot, commandBuffer, frameIndex, data);
+
+    private static unsafe void UpscaleMainView(CommandBuffer commandBuffer)
+    {
+        if (_output == null || !_reading || Program.OffscreenTarget is not { ColorImage: { } colorImage, DepthImage: { } depthImage } target)
             return;
         VkImage color = colorImage.Image, depth = depthImage.Image, output = _output.Image;
-        VkExtent2D input = Program.GetRenderer().Extent;
+        VkExtent2D input = target.Extent;
         var info = new VkUpscaleInfoKSA
         {
             Color = Unsafe.As<VkImage, ulong>(ref color),
@@ -302,10 +383,16 @@ internal static class Upscale
         Put(info.EgoFromClip, in _egoFromClip);
         Put(info.PrevClipFromEgo, in _scene);
         Put(info.PrevClipFromEgoObject, in _object);
+        Put(info.PrevClipFromEgoSky, in _sky);
+        Put(info.PrevClipFromEgoNearby, in _nearby);
         info.ObjectSphere[0] = _sphere.X;
         info.ObjectSphere[1] = _sphere.Y;
         info.ObjectSphere[2] = _sphere.Z;
         info.ObjectSphere[3] = _sphere.W;
+        info.BodySphere[0] = _bodySphere.X;
+        info.BodySphere[1] = _bodySphere.Y;
+        info.BodySphere[2] = _bodySphere.Z;
+        info.BodySphere[3] = _bodySphere.W;
         VkCommandBuffer handle = commandBuffer.Handle;
         vkCmdUpscaleKSA(Unsafe.As<VkCommandBuffer, nint>(ref handle), ref info);
         _reset = false;
@@ -320,7 +407,29 @@ internal static class Upscale
         if (at == 0 || !code[at - 1].IsLdloc())
             throw new Skip("the exhausts' profiler region no longer follows the command buffer");
         var loadCommandBuffer = new CodeInstruction(code[at - 1].opcode, code[at - 1].operand).MoveLabelsFrom(code[at - 1]);
-        code.InsertRange(at - 1, new[] { loadCommandBuffer, new CodeInstruction(OpCodes.Call, Find.Method(typeof(Upscale), nameof(Snapshot))) });
+        code.InsertRange(at - 1, new[] { loadCommandBuffer, new CodeInstruction(OpCodes.Ldc_I4_0), new CodeInstruction(OpCodes.Call, Find.Method(typeof(Upscale), nameof(Snapshot))) });
+        return code;
+    }
+
+    // RenderGame: snapshots right before the sun's bloom and right after the overall bloom, so that the reactive mask
+    // takes what the effects changed before the bloom and what is drawn over the scene after it, not the bloom: the glow
+    // beside a bright edge (a sunlit hull against space) made the edge reactive, and MetalFX showed it as each frame's
+    // jittered samples, flickering
+    private static IEnumerable<CodeInstruction> BloomTranspiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var code = instructions.ToList();
+        var snapshot = Find.Method(typeof(Upscale), nameof(Snapshot));
+        int sun = Find.Once(code, c => c.Calls(Find.Method(typeof(SunbloomRenderer), nameof(SunbloomRenderer.Render))), "the sun's bloom");
+        int overall = Find.Once(code, c => c.Calls(Find.Method(typeof(OverallBloomRenderer), nameof(OverallBloomRenderer.Render))), "the overall bloom");
+        // ldarg.0, ldfld _sunbloomRenderer, ldloc <command buffer>, ...
+        int start = code.FindLastIndex(sun, c => c.opcode == OpCodes.Ldarg_0);
+        var renderer = Find.Field(typeof(Program), "_sunbloomRenderer");
+        if (start < 0 || overall < sun || !code[start + 1].LoadsField(renderer) || !code[start + 2].IsLdloc())
+            throw new Skip("the bloom no longer follows the command buffer");
+        CodeInstruction LoadCommandBuffer() => new(code[start + 2].opcode, code[start + 2].operand);
+        code.InsertRange(overall + 1, new[] { LoadCommandBuffer(), new CodeInstruction(OpCodes.Ldc_I4_2), new CodeInstruction(OpCodes.Call, snapshot) });
+        var first = LoadCommandBuffer().MoveLabelsFrom(code[start]);
+        code.InsertRange(start, new[] { first, new CodeInstruction(OpCodes.Ldc_I4_1), new CodeInstruction(OpCodes.Call, snapshot) });
         return code;
     }
 
@@ -346,19 +455,25 @@ internal static class Upscale
     private static float4x4 Jittered(float4x4 projection, IViewport viewport)
     {
         if (viewport.Type == ViewportType.Main)
-        {
-            projection.M31 -= _jitterClip.X;
-            projection.M32 -= _jitterClip.Y;
-        }
+            AddJitter(ref projection);
         return projection;
     }
 
-    private static void Snapshot(CommandBuffer commandBuffer)
+    // Clip x and y moved by the jitter's share of w: the column of w added to theirs, which holds for the perspective
+    // projection (w from the view's z) and for the Vehicle Editor's orthographic one (w = 1) alike
+    private static void AddJitter(ref float4x4 p)
     {
-        if (Program.OffscreenTarget is not { ColorImage: { } colorImage })
+        p.M11 += _jitterClip.X * p.M14; p.M21 += _jitterClip.X * p.M24; p.M31 += _jitterClip.X * p.M34; p.M41 += _jitterClip.X * p.M44;
+        p.M12 += _jitterClip.Y * p.M14; p.M22 += _jitterClip.Y * p.M24; p.M32 += _jitterClip.Y * p.M34; p.M42 += _jitterClip.Y * p.M44;
+    }
+
+    // stage 0: before the translucent effects, 1: before the bloom, 2: after it
+    private static void Snapshot(CommandBuffer commandBuffer, uint stage)
+    {
+        if (!_reading || Program.OffscreenTarget is not { ColorImage: { } colorImage })
             return;
         VkImage color = colorImage.Image;
         VkCommandBuffer handle = commandBuffer.Handle;
-        vkCmdUpscaleSnapshotKSA(Unsafe.As<VkCommandBuffer, nint>(ref handle), Unsafe.As<VkImage, ulong>(ref color));
+        vkCmdUpscaleSnapshotKSA(Unsafe.As<VkCommandBuffer, nint>(ref handle), Unsafe.As<VkImage, ulong>(ref color), stage);
     }
 }

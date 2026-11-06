@@ -1,12 +1,15 @@
 // MetalFX upscaling for the hooks' render scale (src/game/hooks/), behind private entry points the patched game calls:
-// vkCmdUpscaleKSA between its scene and its final composite, vkCmdUpscaleSnapshotKSA before its translucent effects.
+// vkCmdUpscaleKSA between its scene and its final composite, vkCmdUpscaleSnapshotKSA before its translucent effects
+// and on both sides of its bloom.
 // KSA Metal makes the motion vectors itself from the depth buffer and the matrices the game passes: the scene's
-// motion through the nearby body's frame, and inside a bounding sphere the motion of the vessel the camera follows,
-// through its own frame. What the translucent effects and the bloom changed since the snapshot becomes MetalFX's
-// reactive mask, so that plumes moving with the camera don't smear. Past the temporal upscaler's largest scale (3x on
-// an M5), it upscales as far as it can and MetalFX's spatial upscaler does the rest. The same file has the present's
-// MetalFX pass: frame interpolation (KSA_MTL_FRAME_INTERPOLATION), for which the game marks where its UI starts
-// (vkCmdMarkUiKSA).
+// motion through the nearby body's frame up to its highest ground and with the followed vessel's centre above it, the
+// sky's by the camera's turn alone, and inside a bounding sphere the motion of the vessel the camera follows, through
+// its own frame. What the translucent effects changed before the bloom, and what is drawn over the scene after it
+// (orbit lines, the selected part), becomes MetalFX's reactive mask, so that plumes moving with the camera don't smear;
+// the bloom itself is left out, or the glow beside a bright edge would keep MetalFX from smoothing the edge. Past the
+// temporal upscaler's largest scale (3x on an M5), it upscales as far as it can and MetalFX's spatial upscaler does the
+// rest. The same file has the present's MetalFX pass: frame interpolation (KSA_MTL_FRAME_INTERPOLATION), for which the
+// game marks where its UI starts (vkCmdMarkUiKSA).
 #import <MetalFX/MetalFX.h>
 #include "kmtl.h"
 
@@ -21,40 +24,52 @@ struct VkUpscaleInfoKSA {
     float egoFromClip[16];      // (ndc.xy, depth, 1) * M = homogeneous ego position (inverse jittered view-projection)
     float prevClipFromEgo[16];  // ego * M = the previous frame's unjittered clip position, for the scene
     float prevClipFromEgoObject[16];  // the same for the followed object
+    float prevClipFromEgoSky[16];     // the same for the sky (depth 0)
+    float prevClipFromEgoNearby[16];  // the same for what is outside the body's sphere: moving with the followed object
     float objectSphere[4];      // its bounding sphere in ego (radius 0: none)
+    float bodySphere[4];        // the nearby body's highest ground or sea and 1 km, in ego (radius 0: no body)
     float fovY, nearPlane, farPlane, deltaTime;  // for frame interpolation
     uint32_t flags;          // kUpscaleReset, kUpscaleSpatial
     uint32_t pad;
 };
 }
 enum : uint32_t { kUpscaleReset = 1, kUpscaleSpatial = 2 };
-// How strongly a colour change since the snapshot marks a pixel reactive
+// How strongly a colour change between two snapshots marks a pixel reactive
 static const float kReactiveGain = 2.f;
 
 static const char* kMotionSource = R"(
 #include <metal_stdlib>
 using namespace metal;
-struct Params { float4x4 egoFromClip, scene, object; float4 sphere; float2 size; float2 jitter; float reactiveGain; uint hasSnapshot; };
+struct Params { float4x4 egoFromClip, scene, object, sky, nearby; float4 sphere, body; float2 size; float2 jitter; float reactiveGain; uint snapshots; };
+// How much of a pixel changed from before to now, as the reactive mask's weight
+static float changed(half4 now, half4 before, float gain) {
+    float3 c = float3(now.rgb), s = float3(before.rgb);
+    float change = length(c - s) / (max(dot(c, float3(0.2126, 0.7152, 0.0722)), 0.0) + 0.05);
+    return saturate((change - 0.05) * gain);
+}
 kernel void motion(depth2d<float, access::read> depth [[texture(0)]], texture2d<half, access::write> mv [[texture(1)]],
-                   texture2d<half, access::read> color [[texture(2)]], texture2d<half, access::read> snapshot [[texture(3)]],
-                   texture2d<half, access::write> reactive [[texture(4)]],
+                   texture2d<half, access::read> color [[texture(2)]], texture2d<half, access::read> beforeEffects [[texture(3)]],
+                   texture2d<half, access::write> reactive [[texture(4)]], texture2d<half, access::read> beforeBloom [[texture(5)]],
+                   texture2d<half, access::read> afterBloom [[texture(6)]],
                    constant Params& p [[buffer(0)]], uint2 gid [[thread_position_in_grid]]) {
     if (gid.x >= uint(p.size.x) || gid.y >= uint(p.size.y)) return;
     float d = depth.read(gid);
     float2 pix = float2(gid) + 0.5;
     float4 ego = p.egoFromClip * float4(pix / p.size * 2.0 - 1.0, d, 1.0);
-    bool onObject = p.sphere.w > 0 && abs(ego.w) > 1e-20 && distance(ego.xyz / ego.w, p.sphere.xyz) < p.sphere.w;
-    float4 prev = (onObject ? p.object : p.scene) * ego;
+    float3 at = ego.xyz / ego.w;
+    bool onObject = p.sphere.w > 0 && abs(ego.w) > 1e-20 && distance(at, p.sphere.xyz) < p.sphere.w;
+    bool onBody = p.body.w > 0 && distance(at, p.body.xyz) < p.body.w;
+    float4 prev = (d == 0 ? p.sky : onObject ? p.object : onBody ? p.scene : p.nearby) * ego;
     float2 prevPix = (prev.xy / prev.w * 0.5 + 0.5) * p.size;
     float2 v = prevPix - (pix - p.jitter);
     if (!all(isfinite(v))) v = 0;
     mv.write(half4(half2(clamp(v, -16384.0, 16384.0)), 0, 0), gid);
     float r = 0;
-    if (p.hasSnapshot != 0) {
-        float3 c = float3(color.read(gid).rgb), s = float3(snapshot.read(gid).rgb);
-        float change = length(c - s) / (max(dot(c, float3(0.2126, 0.7152, 0.0722)), 0.0) + 0.05);
-        r = saturate((change - 0.05) * p.reactiveGain);
-    }
+    if (p.snapshots == 7)
+        r = max(changed(beforeBloom.read(gid), beforeEffects.read(gid), p.reactiveGain),
+                changed(color.read(gid), afterBloom.read(gid), p.reactiveGain));
+    else if ((p.snapshots & 1) != 0)
+        r = changed(color.read(gid), beforeEffects.read(gid), p.reactiveGain);
     reactive.write(half4(r), gid);
 }
 // KSA_MTL_FX_DEBUG=1: the output shows the motion vectors (red |x|, green |y|, 32 px = full) and the object mask (blue)
@@ -68,6 +83,14 @@ kernel void debugView(depth2d<float, access::read> depth [[texture(0)]], texture
     bool onObject = p.sphere.w > 0 && abs(ego.w) > 1e-20 && distance(ego.xyz / ego.w, p.sphere.xyz) < p.sphere.w;
     out.write(half4(half(saturate(abs(v.x) / 32)), half(saturate(abs(v.y) / 32)), onObject ? 0.6h : 0.0h, 1), gid);
 }
+// Where MetalFX can't scale this size: the image stretched, filtered, so that the composite never shows a stale one
+kernel void stretch(texture2d<half, access::sample> color [[texture(0)]], texture2d<half, access::write> out [[texture(1)]],
+                    constant float2& content [[buffer(0)]], uint2 gid [[thread_position_in_grid]]) {
+    if (gid.x >= out.get_width() || gid.y >= out.get_height()) return;
+    constexpr sampler s(filter::linear, address::clamp_to_edge, coord::pixel);
+    float2 at = (float2(gid) + 0.5) / float2(out.get_width(), out.get_height()) * content;
+    out.write(color.sample(s, min(at, content - 0.5)), gid);
+}
 )";
 
 namespace {
@@ -75,15 +98,18 @@ struct UpscaleState {
     std::mutex m;
     id<MTLComputePipelineState> motion = nil;
     id<MTLComputePipelineState> debugView = nil;
+    id<MTLComputePipelineState> stretch = nil;
     id<MTLFXTemporalScaler> temporal = nil;
     id<MTLFXSpatialScaler> spatial = nil;
     uint32_t inW = 0, inH = 0, outW = 0, outH = 0;
+    bool spatialMode = false;
+    bool scalerFailed = false;  // MetalFX made no scaler for these sizes and mode: not tried again until they change
     // Past the temporal upscaler's largest scale: its output, which the spatial upscaler scales the rest of the way
     id<MTLFXSpatialScaler> rest = nil;
     id<MTLTexture> restTex = nil;
     id<MTLTexture> motionTex = nil;
     id<MTLTexture> reactiveTex = nil;
-    id<MTLTexture> snapshotTex = nil;
+    id<MTLTexture> snapshots[3] = {nil, nil, nil};  // vkCmdUpscaleSnapshotKSA's stages: before the effects, before the bloom, after it
     // KSA_MTL_FRAME_INTERPOLATION=1: the last upscale's inputs, for a frame interpolated at present
     id<MTLFXFrameInterpolator> interpolator = nil;
     id<MTLTexture> frameDepth = nil, interpolated = nil;
@@ -97,7 +123,10 @@ struct UpscaleState {
     id<MTLEvent> presentEvent = nil;
     uint64_t presentEventValue = 0, fxShotCount = 0;
     bool frameReset = true;
-    bool failed = false;
+    bool failed = false;  // the kernels didn't compile
+    // The input and output MetalFX made no interpolator for (0: none)
+    uint64_t interpolatorFailed = 0;
+    MTLPixelFormat interpolatorFailedFormat = MTLPixelFormatInvalid;
 };
 UpscaleState& g_up = *new UpscaleState;  // never destroyed: releasing a scaler at exit aborts in MetalFX's MPSGraph teardown
 }
@@ -112,15 +141,19 @@ static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uin
         g_up.motion = f ? [d newComputePipelineStateWithFunction:f error:&err] : nil;
         id<MTLFunction> dv = [lib newFunctionWithName:@"debugView"];
         g_up.debugView = dv ? [d newComputePipelineStateWithFunction:dv error:&err] : nil;
+        id<MTLFunction> st = [lib newFunctionWithName:@"stretch"];
+        g_up.stretch = st ? [d newComputePipelineStateWithFunction:st error:&err] : nil;
         if (!g_up.motion) {
             KERR("upscale: motion kernel: %s", err.localizedDescription.UTF8String);
             g_up.failed = true;
             return false;
         }
     }
-    if (g_up.inW == inW && g_up.inH == inH && g_up.outW == outW && g_up.outH == outH && (spatial ? g_up.spatial != nil : g_up.temporal != nil))
-        return true;
+    if (g_up.inW == inW && g_up.inH == inH && g_up.outW == outW && g_up.outH == outH && g_up.spatialMode == spatial)
+        return !g_up.scalerFailed;
     g_up.inW = inW; g_up.inH = inH; g_up.outW = outW; g_up.outH = outH;
+    g_up.spatialMode = spatial;
+    g_up.scalerFailed = false;
     g_up.temporal = nil;
     g_up.spatial = nil;
     g_up.rest = nil;
@@ -172,8 +205,9 @@ static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uin
                  g_up.rest ? [NSString stringWithFormat:@", spatial -> %ux%u", outW, outH].UTF8String : "");
     }
     if (!(spatial ? (id)g_up.spatial : (id)g_up.temporal)) {
-        KERR("upscale: MetalFX %s scaler %ux%u -> %ux%u not created", spatial ? "spatial" : "temporal", inW, inH, outW, outH);
-        g_up.failed = true;
+        KERR("upscale: MetalFX %s scaler %ux%u -> %ux%u not created, the image is stretched instead", spatial ? "spatial" : "temporal",
+             inW, inH, outW, outH);
+        g_up.scalerFailed = true;
         return false;
     }
     return true;
@@ -202,21 +236,35 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
     bool spatial = (info->flags & kUpscaleSpatial) || !depth;
     uint32_t outW = (uint32_t)out->mtl.width, outH = (uint32_t)out->mtl.height;
     std::lock_guard<std::mutex> lock(g_up.m);
-    if (!prepare(cb->device, info->inputWidth, info->inputHeight, outW, outH, spatial)) return;
+    bool ready = prepare(cb->device, info->inputWidth, info->inputHeight, outW, outH, spatial);
+    if (!ready && !g_up.stretch) return;
     cb->endEncoder();
     cb->waitForAllResolves();
     fullBarrier(cb);
-    if (spatial) {
+    if (!ready) {
+        float content[2] = {(float)info->inputWidth, (float)info->inputHeight};
+        id<MTLComputeCommandEncoder> e = [cb->mtl computeCommandEncoder];
+        e.label = @"upscale stretch";
+        [e setComputePipelineState:g_up.stretch];
+        [e setTexture:color->mtl atIndex:0];
+        [e setTexture:out->mtl atIndex:1];
+        [e setBytes:content length:sizeof(content) atIndex:0];
+        [e dispatchThreads:MTLSizeMake(outW, outH, 1) threadsPerThreadgroup:MTLSizeMake(16, 16, 1)];
+        [e endEncoding];
+    } else if (spatial) {
         g_up.spatial.colorTexture = color->mtl;
         g_up.spatial.outputTexture = out->mtl;
         g_up.spatial.inputContentWidth = info->inputWidth;
         g_up.spatial.inputContentHeight = info->inputHeight;
         [g_up.spatial encodeToCommandBuffer:cb->mtl];
     } else {
-        struct { float egoFromClip[16], scene[16], object[16], sphere[4]; float size[2]; float jitter[2]; float reactiveGain; uint32_t hasSnapshot; float pad[2]; } p;
+        struct { float egoFromClip[16], scene[16], object[16], sky[16], nearby[16], sphere[4], body[4]; float size[2]; float jitter[2]; float reactiveGain; uint32_t snapshots; float pad[2]; } p;
         memcpy(p.egoFromClip, info->egoFromClip, sizeof(p.egoFromClip));
         memcpy(p.scene, info->prevClipFromEgo, sizeof(p.scene));
         memcpy(p.object, info->prevClipFromEgoObject, sizeof(p.object));
+        memcpy(p.sky, info->prevClipFromEgoSky, sizeof(p.sky));
+        memcpy(p.nearby, info->prevClipFromEgoNearby, sizeof(p.nearby));
+        memcpy(p.body, info->bodySphere, sizeof(p.body));
         memcpy(p.sphere, info->objectSphere, sizeof(p.sphere));
         p.size[0] = (float)info->inputWidth; p.size[1] = (float)info->inputHeight;
         p.jitter[0] = info->jitterX; p.jitter[1] = info->jitterY;
@@ -226,12 +274,16 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
         [e setTexture:depth->mtl atIndex:0];
         [e setTexture:g_up.motionTex atIndex:1];
         [e setTexture:color->mtl atIndex:2];
-        bool snap = cb->fxSnapshot && g_up.snapshotTex && g_up.snapshotTex.width == color->mtl.width &&
-                    g_up.snapshotTex.height == color->mtl.height;
-        [e setTexture:snap ? g_up.snapshotTex : color->mtl atIndex:3];
+        uint32_t snaps = 0;
+        for (uint32_t i = 0; i < 3; i++) {
+            id<MTLTexture> s = g_up.snapshots[i];
+            bool taken = (cb->fxSnapshots & 1u << i) && s && s.width == color->mtl.width && s.height == color->mtl.height;
+            if (taken) snaps |= 1u << i;
+            [e setTexture:taken ? s : color->mtl atIndex:i == 0 ? 3 : 4 + i];
+        }
         [e setTexture:g_up.reactiveTex atIndex:4];
         p.reactiveGain = kReactiveGain;
-        p.hasSnapshot = snap ? 1 : 0;
+        p.snapshots = snaps;
         [e setBytes:&p length:sizeof(p) atIndex:0];
         [e dispatchThreads:MTLSizeMake(info->inputWidth, info->inputHeight, 1) threadsPerThreadgroup:MTLSizeMake(16, 16, 1)];
         [e endEncoding];
@@ -279,29 +331,31 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
     fullBarrier(cb);
 }
 
-VKFN(void) vkCmdUpscaleSnapshotKSA(VkCommandBuffer commandBuffer, VkImage image) {
+// stage 0: before the translucent effects, 1: before the bloom, 2: after it
+VKFN(void) vkCmdUpscaleSnapshotKSA(VkCommandBuffer commandBuffer, VkImage image, uint32_t stage) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
     auto* color = (KImage*)image;
-    if (!color || cb->inRenderPass) return;
+    if (!color || cb->inRenderPass || stage > 2) return;
     std::lock_guard<std::mutex> lock(g_up.m);
     id<MTLTexture> src = color->mtl;
-    if (!g_up.snapshotTex || g_up.snapshotTex.width != src.width || g_up.snapshotTex.height != src.height) {
+    __strong id<MTLTexture>& snapshot = g_up.snapshots[stage];
+    if (!snapshot || snapshot.width != src.width || snapshot.height != src.height) {
         MTLTextureDescriptor* d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:src.pixelFormat width:src.width
                                                                                    height:src.height mipmapped:NO];
         d.usage = MTLTextureUsageShaderRead;
         d.storageMode = MTLStorageModePrivate;
-        g_up.snapshotTex = [cb->device->mtl newTextureWithDescriptor:d];
+        snapshot = [cb->device->mtl newTextureWithDescriptor:d];
     }
     cb->endEncoder();
     cb->waitForAllResolves();
     fullBarrier(cb);
     id<MTLBlitCommandEncoder> b = [cb->mtl blitCommandEncoder];
     b.label = @"upscale snapshot";
-    [b copyFromTexture:src toTexture:g_up.snapshotTex];
+    [b copyFromTexture:src toTexture:snapshot];
     [b endEncoding];
     fullBarrier(cb);
-    cb->fxSnapshot = true;
+    cb->fxSnapshots |= 1u << stage;
 }
 
 // How far the temporal scaler scales on this Mac, past which the spatial one does the rest: for the Mac Port tab
@@ -346,7 +400,7 @@ VKFN(void) vkCmdMarkUiKSA(VkCommandBuffer commandBuffer) {
 // image, which has it composited, and draws it on top. Returns the texture to present first, or nil.
 id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<MTLTexture> color) {
     std::lock_guard<std::mutex> lock(g_up.m);
-    if (g_up.failed || !g_up.temporal || !g_up.frameDepth || g_up.frameSerial == g_up.presentedSerial) return nil;
+    if (!g_up.temporal || !g_up.frameDepth || g_up.frameSerial == g_up.presentedSerial) return nil;
     g_up.presentedSerial = g_up.frameSerial;
     // Without this frame's scene (no UI mark: a loading screen), no frame in between, and no history for the next
     if (!g_up.scene || g_up.sceneSerial != g_up.frameSerial || g_up.scene.width != color.width ||
@@ -357,6 +411,8 @@ id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<
     id<MTLDevice> d = dev->mtl;
     if (!g_up.interpolator || g_up.interpolator.outputWidth != color.width || g_up.interpolator.outputHeight != color.height ||
         g_up.interpolator.inputWidth != g_up.inW || g_up.interpolator.colorTextureFormat != color.pixelFormat) {
+        uint64_t sizes = (uint64_t)g_up.inW << 40 | (uint64_t)color.width << 20 | color.height;
+        if (g_up.interpolatorFailed == sizes && g_up.interpolatorFailedFormat == color.pixelFormat) return nil;
         MTLFXFrameInterpolatorDescriptor* fd = [MTLFXFrameInterpolatorDescriptor new];
         fd.colorTextureFormat = color.pixelFormat;
         fd.outputTextureFormat = color.pixelFormat;
@@ -374,7 +430,8 @@ id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<
         if (!g_up.interpolator) {
             KERR("frame interpolation: interpolator %ux%u -> %lux%lu not created", g_up.inW, g_up.inH, (unsigned long)color.width,
                  (unsigned long)color.height);
-            g_up.failed = true;
+            g_up.interpolatorFailed = sizes;
+            g_up.interpolatorFailedFormat = color.pixelFormat;
             return nil;
         }
         KLOG(0, "frame interpolation: %ux%u motion -> %lux%lu frames", g_up.inW, g_up.inH, (unsigned long)color.width,

@@ -36,10 +36,16 @@ internal static class RenderScale
     public static int2 Output;  // the swapchain's size in pixels, which the main view is scaled up to
     private static VkExtent2D? _ours;  // the override this patch set (a screenshot's is left alone)
 
+    // Whether MetalFX can scale the main view's image up to the swapchain: not when it is larger, which a
+    // high-resolution screenshot makes it (the console's screenshot <scale> sets its own override and rebuilds the main
+    // view's targets without the swapchain)
+    public static bool Upscalable(VkExtent2D render) => render.Width <= Output.X && render.Height <= Output.Y;
+
     // The game's fields the patch reads and writes, found when it applies (a missing one skips it)
     private static AccessTools.FieldRef<ScreenspaceRenderer, VkSampler> _sampler = null!;
     private static AccessTools.FieldRef<Cmaa2Renderer, RenderTarget?> _sceneLdr = null!;
     private static AccessTools.FieldRef<UboCameraData[]> _cameraData = null!;
+    private static AccessTools.FieldRef<ScreenshotCapture, VkExtent2D> _captureExtent = null!;
     private static AccessTools.StructFieldRef<UboCameraData, int> _outputHeight = null!;
 
     public static string Apply(Harmony harmony)
@@ -47,6 +53,7 @@ internal static class RenderScale
         _sampler = AccessTools.FieldRefAccess<ScreenspaceRenderer, VkSampler>(Find.Field(typeof(ScreenspaceRenderer), "_samplerRef"));
         _sceneLdr = AccessTools.FieldRefAccess<Cmaa2Renderer, RenderTarget?>(Find.Field(typeof(Cmaa2Renderer), "_sceneLdrTarget"));
         _cameraData = AccessTools.StaticFieldRefAccess<UboCameraData[]>(Find.Field(typeof(Program), "_cameraData"));
+        _captureExtent = AccessTools.FieldRefAccess<ScreenshotCapture, VkExtent2D>(Find.Field(typeof(ScreenshotCapture), "_captureExtent"));
         // The camera data's spare int: the window's height, for the shader edits (0: not scaled)
         _outputHeight = AccessTools.StructFieldRefAccess<UboCameraData, int>(Find.Field(typeof(UboCameraData), "_padding2"));
         Upscale.Configure();
@@ -56,6 +63,9 @@ internal static class RenderScale
         harmony.Patch(Find.Method(typeof(Program), "RenderFinalComposite"),
             prefix: new HarmonyMethod(typeof(RenderScale), nameof(CompositePrefix)),
             finalizer: new HarmonyMethod(typeof(RenderScale), nameof(CompositeFinalizer)));
+        harmony.Patch(Find.Method(typeof(ScreenshotCapture), nameof(ScreenshotCapture.OnRenderGameCapture)),
+            prefix: new HarmonyMethod(typeof(RenderScale), nameof(CapturePrefix)),
+            finalizer: new HarmonyMethod(typeof(RenderScale), nameof(CaptureFinalizer)));
         harmony.Patch(Find.Method(typeof(ScreenspaceRenderer), nameof(ScreenspaceRenderer.AddImage)),
             prefix: new HarmonyMethod(typeof(RenderScale), nameof(AddImagePrefix)) { priority = Priority.First });
         harmony.Patch(Find.Method(typeof(Cmaa2Renderer), "CreateResourcesIfNeeded"),
@@ -126,6 +136,24 @@ internal static class RenderScale
         return __exception;
     }
 
+    // A screenshot's composite (the screenshot key's and the console's screenshot) fills the capture's image, which is
+    // the swapchain's size or a multiple of it: without this it took the main view's size, and a screenshot on a
+    // Retina display had the 3D view in its top left quarter
+    private static void CapturePrefix(ScreenshotCapture __instance, out (int2? Before, int2 Ours) __state)
+    {
+        VkExtent2D capture = _captureExtent(__instance);
+        __state = (Program.CompositeViewportSizeOverride, new int2(capture.Width, capture.Height));
+        Program.CompositeViewportSizeOverride = __state.Ours;
+    }
+
+    // Given back unless the game set its own: a high-resolution screenshot's for the main view's composite after it
+    private static Exception? CaptureFinalizer(Exception? __exception, (int2? Before, int2 Ours) __state)
+    {
+        if (Program.CompositeViewportSizeOverride == __state.Ours)
+            Program.CompositeViewportSizeOverride = __state.Before;
+        return __exception;
+    }
+
     [ThreadStatic] private static Cmaa2Renderer? _cmaa2;  // the CMAA2 renderer building its passes
 
     private static void Cmaa2Prefix(Cmaa2Renderer __instance) => _cmaa2 = __instance;
@@ -147,7 +175,7 @@ internal static class RenderScale
         if (!composite && !cmaa2)
             return;
         VkExtent2D render = main.Extent;
-        bool stretched = (cmaa2 || !Upscale.Wanted) && (render.Width != Output.X || render.Height != Output.Y);
+        bool stretched = (cmaa2 || !Upscale.Wanted || !Upscalable(render)) && (render.Width != Output.X || render.Height != Output.Y);
         _sampler(__instance) = stretched ? Program.LinearClampedSampler : Program.PointClampedSampler;
     }
 
