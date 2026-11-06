@@ -1,0 +1,17 @@
+# For Lighter Smoke March (the hooks' SmokeMarch.cs): the smoke's raymarch steps 1.5 times as far where the hooks set
+# the trail data's spare fireLightPadding0 to 1 (0 without them: the game's step).
+
+@@ check smoke-march-padding VolumetricTrail/SegmentData.glsl
+@@ what the smoke's longer steps
+@@ contains
+    // Match the padding after VolumetricTrailData.FireLightCount for 16 byte alignment
+    int fireLightPadding0;
+@@ counts VolumetricTrail/RaymarchVolumetricTrail.comp ADAPTIVE_STEP_SIZE_RADIUS_FRACTION=2
+
+@@ edit smoke-march VolumetricTrail/RaymarchVolumetricTrail.comp
+@@ what made the smoke's steps longer where the hooks ask
+@@ needs smoke-march-padding
+@@ find
+#define ADAPTIVE_STEP_SIZE_RADIUS_FRACTION 0.075 // Multiplied by the selected adaptive radius
+@@ replace
+#define ADAPTIVE_STEP_SIZE_RADIUS_FRACTION (segmentParams.fireLightPadding0 != 0 ? 0.1125 : 0.075) // Multiplied by the selected adaptive radius; macOS port: Lighter Smoke March
