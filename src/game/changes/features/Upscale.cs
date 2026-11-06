@@ -21,8 +21,9 @@ namespace KsaMetal.Hooks.Features;
 // view's image into an image of the swapchain's size (the display's pixels), which the composite then reads instead.
 // For MetalFX's temporal upscaler, the projection moves by a different sub-pixel offset every frame (a Halton
 // sequence of 16), the cockpit's ray tracing's too, and the driver makes the motion vectors from the depth buffer and
-// the reprojections passed here, computed in double: the scene through the nearby body's rotating frame, the sky by the
-// camera's turn alone, and inside its bounding sphere the vessel the camera follows, through its own frame. A copy of the image before the
+// the reprojections passed here, computed in double: the ground and what is on it through the nearby body's rotating
+// frame, what is above the ground with the centre of the vessel the camera follows, the sky by the camera's turn
+// alone, and inside its bounding sphere that vessel, through its own frame. A copy of the image before the
 // exhausts, particles and glass lets the driver mark what those change as reactive (no smearing). With frame
 // interpolation, the final composite then marks where the UI starts, so that MetalFX can draw this frame's UI over
 // the frame it makes.
@@ -49,7 +50,9 @@ internal static class Upscale
         public fixed float PrevClipFromEgo[16];
         public fixed float PrevClipFromEgoObject[16];
         public fixed float PrevClipFromEgoSky[16];
+        public fixed float PrevClipFromEgoNearby[16];
         public fixed float ObjectSphere[4];
+        public fixed float BodySphere[4];
         public float FovY, NearPlane, FarPlane, DeltaTime;
         public uint Flags, Pad;
     }
@@ -141,8 +144,9 @@ internal static class Upscale
     private static bool _reset = true, _havePrevious;
     private static int _frame;
     private static float2 _jitter, _jitterClip;
-    private static float4x4 _egoFromClip, _scene, _object, _sky, _previousViewProjection;
-    private static float4 _sphere;
+    private static float4x4 _egoFromClip, _scene, _object, _sky, _nearby, _previousViewProjection;
+    private static float4 _sphere, _bodySphere;
+    private static double3 _previousCentre;
     private static float _fovY = 1f, _deltaTime;
     private static double4x4 _previousEgoToFrame, _previousEgoToObject;
     private static Vehicle? _previousObject;
@@ -270,20 +274,29 @@ internal static class Upscale
             _velocity = default;
         }
         _object = _scene;
+        _nearby = _scene;
         _sphere = default;
+        // Above the body's highest ground, what the camera sees beside the vessel it follows (another vessel by it in
+        // orbit, a kitten on EVA, a stage falling away) moves with that vessel far more than with the ground below
+        _bodySphere = body != null ? new float4(float3.Pack(camera.GetPositionEgo(body)), (float)body.MaxTerrainRadius + 1000f) : default;
         if (camera.Following is Vehicle vehicle)
         {
             double4x4.Invert(vehicle.GetMatrixAsmb2Ego(camera), out var egoToObject);
+            double3 centre = camera.GetPositionEgo(vehicle);
             if (_havePrevious && _previousObject == vehicle)
             {
                 double4x4.Invert(_previousEgoToObject, out var objectToPreviousEgo);
                 double4x4 delta = egoToObject * objectToPreviousEgo;
                 _object = float4x4.Pack(in delta) * _previousViewProjection;
-                double3 centre = camera.GetPositionEgo(vehicle);
                 _sphere = new float4(float3.Pack(in centre), vehicle.BoundingSphereRadiusBody * 1.2f + 1f);
+                // Moving with the vessel's centre, its axes the ecliptic's: the ego space shifted by how far the
+                // vessel moved from the camera
+                double4x4 shift = double4x4.CreateTranslation(_previousCentre - centre);
+                _nearby = float4x4.Pack(in shift) * _previousViewProjection;
             }
             _previousObject = vehicle;
             _previousEgoToObject = egoToObject;
+            _previousCentre = centre;
         }
         else
         {
@@ -331,10 +344,15 @@ internal static class Upscale
         Put(info.PrevClipFromEgo, in _scene);
         Put(info.PrevClipFromEgoObject, in _object);
         Put(info.PrevClipFromEgoSky, in _sky);
+        Put(info.PrevClipFromEgoNearby, in _nearby);
         info.ObjectSphere[0] = _sphere.X;
         info.ObjectSphere[1] = _sphere.Y;
         info.ObjectSphere[2] = _sphere.Z;
         info.ObjectSphere[3] = _sphere.W;
+        info.BodySphere[0] = _bodySphere.X;
+        info.BodySphere[1] = _bodySphere.Y;
+        info.BodySphere[2] = _bodySphere.Z;
+        info.BodySphere[3] = _bodySphere.W;
         VkCommandBuffer handle = commandBuffer.Handle;
         vkCmdUpscaleKSA(Unsafe.As<VkCommandBuffer, nint>(ref handle), ref info);
         _reset = false;
