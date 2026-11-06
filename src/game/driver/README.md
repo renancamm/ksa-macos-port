@@ -130,6 +130,7 @@ The debugging settings, used the same way:
 | `throttle` | `<hash>:<n>,...`: an experiment, a pipeline whose name holds that shader hash runs only every n-th present (0: never), to see what a shader costs and what it draws |
 | `frame_cadence` | `<ms>`: an experiment, each frame shown at least that long after the one before (25: 40 fps at 120 Hz), so the frame rate holds one step; wins over `steady_frame_rate` |
 | `drawable_count` | `2` or `3`: an experiment, how many images the window keeps to show; 2 lets fewer frames wait to be shown (latency; 3 with frame interpolation). `0`, the default: 2 at a cadence of 25 ms or more, else 3 |
+| `late_frame_start` | `<ms>`: an experiment, with a cadence (in whole refresh intervals; not with frame interpolation) each frame starts as late as still keeps its slot on the display: the game's wait for an earlier frame grows by that much after each frame shown on time and is cut in half after one shown late, so about one frame in (wait / 2) / step misses its slot (lower latency at the same cadence) |
 
 Metal's own tools work too: `MTL_HUD_ENABLED=1` shows Apple's performance overlay, and `MTL_DEBUG_LAYER=1` and
 `MTL_SHADER_VALIDATION=1` check API use and catch out-of-bounds memory access in shaders (slow).

@@ -27,6 +27,9 @@ struct KPresentState {
     double began = 0;           // when the game's last wait for a present ended
     double cpuMs[8] = {}, gpuMs[8] = {};  // recent frames: from that wait to the present; GPU time
     uint32_t cpuSamples = 0, gpuSamples = 0;
+    double startDelay = 0;                 // late_frame_start: how much longer the game's wait lasts (seconds)
+    double lastShown = 0;                  // when the display showed the last game frame, and its present
+    uint64_t lastShownPresent = 0;
 };
 
 // Pixel size of a surface's layer (bounds x contentsScale): the surface's current extent
