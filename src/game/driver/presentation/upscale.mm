@@ -68,6 +68,14 @@ kernel void debugView(depth2d<float, access::read> depth [[texture(0)]], texture
     bool onObject = p.sphere.w > 0 && abs(ego.w) > 1e-20 && distance(ego.xyz / ego.w, p.sphere.xyz) < p.sphere.w;
     out.write(half4(half(saturate(abs(v.x) / 32)), half(saturate(abs(v.y) / 32)), onObject ? 0.6h : 0.0h, 1), gid);
 }
+// Where MetalFX can't scale this size: the image stretched, filtered, so that the composite never shows a stale one
+kernel void stretch(texture2d<half, access::sample> color [[texture(0)]], texture2d<half, access::write> out [[texture(1)]],
+                    constant float2& content [[buffer(0)]], uint2 gid [[thread_position_in_grid]]) {
+    if (gid.x >= out.get_width() || gid.y >= out.get_height()) return;
+    constexpr sampler s(filter::linear, address::clamp_to_edge, coord::pixel);
+    float2 at = (float2(gid) + 0.5) / float2(out.get_width(), out.get_height()) * content;
+    out.write(color.sample(s, min(at, content - 0.5)), gid);
+}
 )";
 
 namespace {
@@ -75,9 +83,12 @@ struct UpscaleState {
     std::mutex m;
     id<MTLComputePipelineState> motion = nil;
     id<MTLComputePipelineState> debugView = nil;
+    id<MTLComputePipelineState> stretch = nil;
     id<MTLFXTemporalScaler> temporal = nil;
     id<MTLFXSpatialScaler> spatial = nil;
     uint32_t inW = 0, inH = 0, outW = 0, outH = 0;
+    bool spatialMode = false;
+    bool scalerFailed = false;  // MetalFX made no scaler for these sizes and mode: not tried again until they change
     // Past the temporal upscaler's largest scale: its output, which the spatial upscaler scales the rest of the way
     id<MTLFXSpatialScaler> rest = nil;
     id<MTLTexture> restTex = nil;
@@ -97,7 +108,8 @@ struct UpscaleState {
     id<MTLEvent> presentEvent = nil;
     uint64_t presentEventValue = 0, fxShotCount = 0;
     bool frameReset = true;
-    bool failed = false;
+    bool failed = false;  // the kernels didn't compile
+    bool interpolatorFailed = false;
 };
 UpscaleState& g_up = *new UpscaleState;  // never destroyed: releasing a scaler at exit aborts in MetalFX's MPSGraph teardown
 }
@@ -112,15 +124,19 @@ static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uin
         g_up.motion = f ? [d newComputePipelineStateWithFunction:f error:&err] : nil;
         id<MTLFunction> dv = [lib newFunctionWithName:@"debugView"];
         g_up.debugView = dv ? [d newComputePipelineStateWithFunction:dv error:&err] : nil;
+        id<MTLFunction> st = [lib newFunctionWithName:@"stretch"];
+        g_up.stretch = st ? [d newComputePipelineStateWithFunction:st error:&err] : nil;
         if (!g_up.motion) {
             KERR("upscale: motion kernel: %s", err.localizedDescription.UTF8String);
             g_up.failed = true;
             return false;
         }
     }
-    if (g_up.inW == inW && g_up.inH == inH && g_up.outW == outW && g_up.outH == outH && (spatial ? g_up.spatial != nil : g_up.temporal != nil))
-        return true;
+    if (g_up.inW == inW && g_up.inH == inH && g_up.outW == outW && g_up.outH == outH && g_up.spatialMode == spatial)
+        return !g_up.scalerFailed;
     g_up.inW = inW; g_up.inH = inH; g_up.outW = outW; g_up.outH = outH;
+    g_up.spatialMode = spatial;
+    g_up.scalerFailed = false;
     g_up.temporal = nil;
     g_up.spatial = nil;
     g_up.rest = nil;
@@ -172,8 +188,9 @@ static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uin
                  g_up.rest ? [NSString stringWithFormat:@", spatial -> %ux%u", outW, outH].UTF8String : "");
     }
     if (!(spatial ? (id)g_up.spatial : (id)g_up.temporal)) {
-        KERR("upscale: MetalFX %s scaler %ux%u -> %ux%u not created", spatial ? "spatial" : "temporal", inW, inH, outW, outH);
-        g_up.failed = true;
+        KERR("upscale: MetalFX %s scaler %ux%u -> %ux%u not created, the image is stretched instead", spatial ? "spatial" : "temporal",
+             inW, inH, outW, outH);
+        g_up.scalerFailed = true;
         return false;
     }
     return true;
@@ -202,11 +219,22 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
     bool spatial = (info->flags & kUpscaleSpatial) || !depth;
     uint32_t outW = (uint32_t)out->mtl.width, outH = (uint32_t)out->mtl.height;
     std::lock_guard<std::mutex> lock(g_up.m);
-    if (!prepare(cb->device, info->inputWidth, info->inputHeight, outW, outH, spatial)) return;
+    bool ready = prepare(cb->device, info->inputWidth, info->inputHeight, outW, outH, spatial);
+    if (!ready && !g_up.stretch) return;
     cb->endEncoder();
     cb->waitForAllResolves();
     fullBarrier(cb);
-    if (spatial) {
+    if (!ready) {
+        float content[2] = {(float)info->inputWidth, (float)info->inputHeight};
+        id<MTLComputeCommandEncoder> e = [cb->mtl computeCommandEncoder];
+        e.label = @"upscale stretch";
+        [e setComputePipelineState:g_up.stretch];
+        [e setTexture:color->mtl atIndex:0];
+        [e setTexture:out->mtl atIndex:1];
+        [e setBytes:content length:sizeof(content) atIndex:0];
+        [e dispatchThreads:MTLSizeMake(outW, outH, 1) threadsPerThreadgroup:MTLSizeMake(16, 16, 1)];
+        [e endEncoding];
+    } else if (spatial) {
         g_up.spatial.colorTexture = color->mtl;
         g_up.spatial.outputTexture = out->mtl;
         g_up.spatial.inputContentWidth = info->inputWidth;
@@ -346,7 +374,7 @@ VKFN(void) vkCmdMarkUiKSA(VkCommandBuffer commandBuffer) {
 // image, which has it composited, and draws it on top. Returns the texture to present first, or nil.
 id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<MTLTexture> color) {
     std::lock_guard<std::mutex> lock(g_up.m);
-    if (g_up.failed || !g_up.temporal || !g_up.frameDepth || g_up.frameSerial == g_up.presentedSerial) return nil;
+    if (g_up.interpolatorFailed || !g_up.temporal || !g_up.frameDepth || g_up.frameSerial == g_up.presentedSerial) return nil;
     g_up.presentedSerial = g_up.frameSerial;
     // Without this frame's scene (no UI mark: a loading screen), no frame in between, and no history for the next
     if (!g_up.scene || g_up.sceneSerial != g_up.frameSerial || g_up.scene.width != color.width ||
@@ -374,7 +402,7 @@ id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<
         if (!g_up.interpolator) {
             KERR("frame interpolation: interpolator %ux%u -> %lux%lu not created", g_up.inW, g_up.inH, (unsigned long)color.width,
                  (unsigned long)color.height);
-            g_up.failed = true;
+            g_up.interpolatorFailed = true;
             return nil;
         }
         KLOG(0, "frame interpolation: %ux%u motion -> %lux%lu frames", g_up.inW, g_up.inH, (unsigned long)color.width,
