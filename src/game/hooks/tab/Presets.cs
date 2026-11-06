@@ -97,7 +97,7 @@ internal static class Presets
             "where it lies, and cloud shadows that fall out of place during very high warp.",
             mac => Game(mac, antiAliasing: "MultisampleX2", filter: "Pcf", cascades: 2048, terrain: 4096,
                 milkyWay: "High", clouds: "Medium", cloudShadows: "Medium", effects: "Medium", godrays: true, clutterShadows: true,
-                plumeShadows: true, rayTracing: true),
+                plumeShadows: true, rayTracing: true, exhausts: "High"),
             1),
         new("Quality", "Window size. Trims what barely shows.",
             "The game's own image at the window's full size, with its anti-aliasing, soft shadows and ray tracing in " +
@@ -135,8 +135,13 @@ internal static class Presets
     // off), the rest in GameSettings.Graphics
     private static Dictionary<string, string> Game(Mac mac, string antiAliasing, string filter, int cascades, int terrain,
         string milkyWay, string clouds, string cloudShadows, string effects, bool godrays, bool clutterShadows,
-        bool plumeShadows, bool rayTracing, int planetTextures = 0)
+        bool plumeShadows, bool rayTracing, int planetTextures = 0, string? exhausts = null)
     {
+        // Exhausts and particles at High cost about nothing under MetalFX Temporal 0.75 (High vs Low: exhausts ~0 ms,
+        // particles under 1, M5, Mixed Test in a 1440x900 window), and the exhaust's blocks are visibly smaller in motion;
+        // explosions at High cost up to ~4 ms (vs Low) while one is on screen, the heaviest moments: Balanced keeps those
+        // at Medium
+        exhausts ??= effects;
         // With the Milky Way bake (Performance, Balanced and Quality), Milky Way High costs what Low and Medium do (M5,
         // fast run: every view within 0.1 ms). Cloud Shadows Low costs what Medium does, so no preset goes below Medium.
         //
@@ -155,8 +160,8 @@ internal static class Presets
             ["GroundClutterShadowCasting"] = Text(clutterShadows),
             ["PlumeTrailShadows"] = Text(plumeShadows),
             ["ExplosionQuality"] = effects,
-            ["ExhaustUpscaling"] = effects,
-            ["ParticleQuality"] = effects,
+            ["ExhaustUpscaling"] = exhausts,
+            ["ParticleQuality"] = exhausts,
             ["AuroraQuality"] = effects,
             ["AmbientOcclusionQuality"] = small,
             ["OceanSimQuality"] = small,
@@ -336,7 +341,7 @@ internal static class Presets
             }),
             ("Shadows", soft ? terrain >= 8192 ? "Very High" : "High" : terrain >= 4096 ? "Medium" : "Low"),
             ("Clouds", game["CloudUpscaling"]),
-            ("Effects", game["ExhaustUpscaling"]),
+            ("Effects", game["ExplosionQuality"]),
             ("Ray Trace", game["IVARayTracing"] != "true" ? "Off" : game["RaytracedOpaqueReflectionResolutionScale"] == "100" ? "On" : "Lighter"),
         ];
     }
