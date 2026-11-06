@@ -23,10 +23,10 @@ namespace KsaMetal.Hooks.Features;
 // sequence of 16), the cockpit's ray tracing's too, and the driver makes the motion vectors from the depth buffer and
 // the reprojections passed here, computed in double: the ground and what is on it through the nearby body's rotating
 // frame, what is higher up (or anywhere away from a body) with the centre of the vessel the camera follows, the sky by
-// the camera's turn alone, and inside its bounding sphere that vessel, through its own frame. A copy of the image before the
-// exhausts, particles and glass lets the driver mark what those change as reactive (no smearing). With frame
-// interpolation, the final composite then marks where the UI starts, so that MetalFX can draw this frame's UI over
-// the frame it makes.
+// the camera's turn alone, and inside its bounding sphere that vessel, through its own frame. Copies of the image before
+// the exhausts, particles and glass and on both sides of the bloom let the driver mark what those effects and what is
+// drawn over the scene change as reactive (no smearing), but not the bloom. With frame interpolation, the final
+// composite then marks where the UI starts, so that MetalFX can draw this frame's UI over the frame it makes.
 internal static class Upscale
 {
     private static bool Interpolate;
@@ -63,7 +63,7 @@ internal static class Upscale
     private static extern void vkCmdUpscaleKSA(nint commandBuffer, ref VkUpscaleInfoKSA info);
 
     [DllImport("libvulkan.1.dylib")]
-    private static extern void vkCmdUpscaleSnapshotKSA(nint commandBuffer, ulong image);
+    private static extern void vkCmdUpscaleSnapshotKSA(nint commandBuffer, ulong image, uint stage);
 
     [DllImport("libvulkan.1.dylib")]
     private static extern void vkCmdMarkUiKSA(nint commandBuffer);
@@ -80,6 +80,8 @@ internal static class Upscale
         {
             harmony.Patch(Find.Method(typeof(Program), "RenderGame"),
                 transpiler: new HarmonyMethod(typeof(Upscale), nameof(SnapshotTranspiler)));
+            harmony.Patch(Find.Method(typeof(Program), "RenderGame"),
+                transpiler: new HarmonyMethod(typeof(Upscale), nameof(BloomTranspiler)));
             harmony.Patch(Find.Method(typeof(RaytracingRenderer), nameof(RaytracingRenderer.RunRaytracePass)),
                 transpiler: new HarmonyMethod(typeof(Upscale), nameof(RayTracingTranspiler)));
         }
@@ -405,7 +407,29 @@ internal static class Upscale
         if (at == 0 || !code[at - 1].IsLdloc())
             throw new Skip("the exhausts' profiler region no longer follows the command buffer");
         var loadCommandBuffer = new CodeInstruction(code[at - 1].opcode, code[at - 1].operand).MoveLabelsFrom(code[at - 1]);
-        code.InsertRange(at - 1, new[] { loadCommandBuffer, new CodeInstruction(OpCodes.Call, Find.Method(typeof(Upscale), nameof(Snapshot))) });
+        code.InsertRange(at - 1, new[] { loadCommandBuffer, new CodeInstruction(OpCodes.Ldc_I4_0), new CodeInstruction(OpCodes.Call, Find.Method(typeof(Upscale), nameof(Snapshot))) });
+        return code;
+    }
+
+    // RenderGame: snapshots right before the sun's bloom and right after the overall bloom, so that the reactive mask
+    // takes what the effects changed before the bloom and what is drawn over the scene after it, not the bloom: the glow
+    // beside a bright edge (a sunlit hull against space) made the edge reactive, and MetalFX showed it as each frame's
+    // jittered samples, flickering
+    private static IEnumerable<CodeInstruction> BloomTranspiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var code = instructions.ToList();
+        var snapshot = Find.Method(typeof(Upscale), nameof(Snapshot));
+        int sun = Find.Once(code, c => c.Calls(Find.Method(typeof(SunbloomRenderer), nameof(SunbloomRenderer.Render))), "the sun's bloom");
+        int overall = Find.Once(code, c => c.Calls(Find.Method(typeof(OverallBloomRenderer), nameof(OverallBloomRenderer.Render))), "the overall bloom");
+        // ldarg.0, ldfld _sunbloomRenderer, ldloc <command buffer>, ...
+        int start = code.FindLastIndex(sun, c => c.opcode == OpCodes.Ldarg_0);
+        var renderer = Find.Field(typeof(Program), "_sunbloomRenderer");
+        if (start < 0 || overall < sun || !code[start + 1].LoadsField(renderer) || !code[start + 2].IsLdloc())
+            throw new Skip("the bloom no longer follows the command buffer");
+        CodeInstruction LoadCommandBuffer() => new(code[start + 2].opcode, code[start + 2].operand);
+        code.InsertRange(overall + 1, new[] { LoadCommandBuffer(), new CodeInstruction(OpCodes.Ldc_I4_2), new CodeInstruction(OpCodes.Call, snapshot) });
+        var first = LoadCommandBuffer().MoveLabelsFrom(code[start]);
+        code.InsertRange(start, new[] { first, new CodeInstruction(OpCodes.Ldc_I4_1), new CodeInstruction(OpCodes.Call, snapshot) });
         return code;
     }
 
@@ -443,12 +467,13 @@ internal static class Upscale
         p.M12 += _jitterClip.Y * p.M14; p.M22 += _jitterClip.Y * p.M24; p.M32 += _jitterClip.Y * p.M34; p.M42 += _jitterClip.Y * p.M44;
     }
 
-    private static void Snapshot(CommandBuffer commandBuffer)
+    // stage 0: before the translucent effects, 1: before the bloom, 2: after it
+    private static void Snapshot(CommandBuffer commandBuffer, uint stage)
     {
         if (!_reading || Program.OffscreenTarget is not { ColorImage: { } colorImage })
             return;
         VkImage color = colorImage.Image;
         VkCommandBuffer handle = commandBuffer.Handle;
-        vkCmdUpscaleSnapshotKSA(Unsafe.As<VkCommandBuffer, nint>(ref handle), Unsafe.As<VkImage, ulong>(ref color));
+        vkCmdUpscaleSnapshotKSA(Unsafe.As<VkCommandBuffer, nint>(ref handle), Unsafe.As<VkImage, ulong>(ref color), stage);
     }
 }

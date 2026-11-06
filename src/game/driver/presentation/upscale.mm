@@ -1,13 +1,15 @@
 // MetalFX upscaling for the hooks' render scale (src/game/hooks/), behind private entry points the patched game calls:
-// vkCmdUpscaleKSA between its scene and its final composite, vkCmdUpscaleSnapshotKSA before its translucent effects.
+// vkCmdUpscaleKSA between its scene and its final composite, vkCmdUpscaleSnapshotKSA before its translucent effects
+// and on both sides of its bloom.
 // KSA Metal makes the motion vectors itself from the depth buffer and the matrices the game passes: the scene's
 // motion through the nearby body's frame up to its highest ground and with the followed vessel's centre above it, the
 // sky's by the camera's turn alone, and inside a bounding sphere the motion of the vessel the camera follows, through
-// its own frame. What the translucent effects and the bloom changed since the snapshot becomes MetalFX's reactive mask,
-// so that plumes moving with the camera don't smear. Past the temporal upscaler's largest scale (3x on an M5), it
-// upscales as far as it can and MetalFX's spatial upscaler does the rest. The same file has the present's MetalFX
-// pass: frame interpolation (KSA_MTL_FRAME_INTERPOLATION), for which the game marks where its UI starts
-// (vkCmdMarkUiKSA).
+// its own frame. What the translucent effects changed before the bloom, and what is drawn over the scene after it
+// (orbit lines, the selected part), becomes MetalFX's reactive mask, so that plumes moving with the camera don't smear;
+// the bloom itself is left out, or the glow beside a bright edge would keep MetalFX from smoothing the edge. Past the
+// temporal upscaler's largest scale (3x on an M5), it upscales as far as it can and MetalFX's spatial upscaler does the
+// rest. The same file has the present's MetalFX pass: frame interpolation (KSA_MTL_FRAME_INTERPOLATION), for which the
+// game marks where its UI starts (vkCmdMarkUiKSA).
 #import <MetalFX/MetalFX.h>
 #include "kmtl.h"
 
@@ -32,16 +34,23 @@ struct VkUpscaleInfoKSA {
 };
 }
 enum : uint32_t { kUpscaleReset = 1, kUpscaleSpatial = 2 };
-// How strongly a colour change since the snapshot marks a pixel reactive
+// How strongly a colour change between two snapshots marks a pixel reactive
 static const float kReactiveGain = 2.f;
 
 static const char* kMotionSource = R"(
 #include <metal_stdlib>
 using namespace metal;
-struct Params { float4x4 egoFromClip, scene, object, sky, nearby; float4 sphere, body; float2 size; float2 jitter; float reactiveGain; uint hasSnapshot; };
+struct Params { float4x4 egoFromClip, scene, object, sky, nearby; float4 sphere, body; float2 size; float2 jitter; float reactiveGain; uint snapshots; };
+// How much of a pixel changed from before to now, as the reactive mask's weight
+static float changed(half4 now, half4 before, float gain) {
+    float3 c = float3(now.rgb), s = float3(before.rgb);
+    float change = length(c - s) / (max(dot(c, float3(0.2126, 0.7152, 0.0722)), 0.0) + 0.05);
+    return saturate((change - 0.05) * gain);
+}
 kernel void motion(depth2d<float, access::read> depth [[texture(0)]], texture2d<half, access::write> mv [[texture(1)]],
-                   texture2d<half, access::read> color [[texture(2)]], texture2d<half, access::read> snapshot [[texture(3)]],
-                   texture2d<half, access::write> reactive [[texture(4)]],
+                   texture2d<half, access::read> color [[texture(2)]], texture2d<half, access::read> beforeEffects [[texture(3)]],
+                   texture2d<half, access::write> reactive [[texture(4)]], texture2d<half, access::read> beforeBloom [[texture(5)]],
+                   texture2d<half, access::read> afterBloom [[texture(6)]],
                    constant Params& p [[buffer(0)]], uint2 gid [[thread_position_in_grid]]) {
     if (gid.x >= uint(p.size.x) || gid.y >= uint(p.size.y)) return;
     float d = depth.read(gid);
@@ -56,11 +65,11 @@ kernel void motion(depth2d<float, access::read> depth [[texture(0)]], texture2d<
     if (!all(isfinite(v))) v = 0;
     mv.write(half4(half2(clamp(v, -16384.0, 16384.0)), 0, 0), gid);
     float r = 0;
-    if (p.hasSnapshot != 0) {
-        float3 c = float3(color.read(gid).rgb), s = float3(snapshot.read(gid).rgb);
-        float change = length(c - s) / (max(dot(c, float3(0.2126, 0.7152, 0.0722)), 0.0) + 0.05);
-        r = saturate((change - 0.05) * p.reactiveGain);
-    }
+    if (p.snapshots == 7)
+        r = max(changed(beforeBloom.read(gid), beforeEffects.read(gid), p.reactiveGain),
+                changed(color.read(gid), afterBloom.read(gid), p.reactiveGain));
+    else if ((p.snapshots & 1) != 0)
+        r = changed(color.read(gid), beforeEffects.read(gid), p.reactiveGain);
     reactive.write(half4(r), gid);
 }
 // KSA_MTL_FX_DEBUG=1: the output shows the motion vectors (red |x|, green |y|, 32 px = full) and the object mask (blue)
@@ -100,7 +109,7 @@ struct UpscaleState {
     id<MTLTexture> restTex = nil;
     id<MTLTexture> motionTex = nil;
     id<MTLTexture> reactiveTex = nil;
-    id<MTLTexture> snapshotTex = nil;
+    id<MTLTexture> snapshots[3] = {nil, nil, nil};  // vkCmdUpscaleSnapshotKSA's stages: before the effects, before the bloom, after it
     // KSA_MTL_FRAME_INTERPOLATION=1: the last upscale's inputs, for a frame interpolated at present
     id<MTLFXFrameInterpolator> interpolator = nil;
     id<MTLTexture> frameDepth = nil, interpolated = nil;
@@ -249,7 +258,7 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
         g_up.spatial.inputContentHeight = info->inputHeight;
         [g_up.spatial encodeToCommandBuffer:cb->mtl];
     } else {
-        struct { float egoFromClip[16], scene[16], object[16], sky[16], nearby[16], sphere[4], body[4]; float size[2]; float jitter[2]; float reactiveGain; uint32_t hasSnapshot; float pad[2]; } p;
+        struct { float egoFromClip[16], scene[16], object[16], sky[16], nearby[16], sphere[4], body[4]; float size[2]; float jitter[2]; float reactiveGain; uint32_t snapshots; float pad[2]; } p;
         memcpy(p.egoFromClip, info->egoFromClip, sizeof(p.egoFromClip));
         memcpy(p.scene, info->prevClipFromEgo, sizeof(p.scene));
         memcpy(p.object, info->prevClipFromEgoObject, sizeof(p.object));
@@ -265,12 +274,16 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
         [e setTexture:depth->mtl atIndex:0];
         [e setTexture:g_up.motionTex atIndex:1];
         [e setTexture:color->mtl atIndex:2];
-        bool snap = cb->fxSnapshot && g_up.snapshotTex && g_up.snapshotTex.width == color->mtl.width &&
-                    g_up.snapshotTex.height == color->mtl.height;
-        [e setTexture:snap ? g_up.snapshotTex : color->mtl atIndex:3];
+        uint32_t snaps = 0;
+        for (uint32_t i = 0; i < 3; i++) {
+            id<MTLTexture> s = g_up.snapshots[i];
+            bool taken = (cb->fxSnapshots & 1u << i) && s && s.width == color->mtl.width && s.height == color->mtl.height;
+            if (taken) snaps |= 1u << i;
+            [e setTexture:taken ? s : color->mtl atIndex:i == 0 ? 3 : 4 + i];
+        }
         [e setTexture:g_up.reactiveTex atIndex:4];
         p.reactiveGain = kReactiveGain;
-        p.hasSnapshot = snap ? 1 : 0;
+        p.snapshots = snaps;
         [e setBytes:&p length:sizeof(p) atIndex:0];
         [e dispatchThreads:MTLSizeMake(info->inputWidth, info->inputHeight, 1) threadsPerThreadgroup:MTLSizeMake(16, 16, 1)];
         [e endEncoding];
@@ -318,29 +331,31 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
     fullBarrier(cb);
 }
 
-VKFN(void) vkCmdUpscaleSnapshotKSA(VkCommandBuffer commandBuffer, VkImage image) {
+// stage 0: before the translucent effects, 1: before the bloom, 2: after it
+VKFN(void) vkCmdUpscaleSnapshotKSA(VkCommandBuffer commandBuffer, VkImage image, uint32_t stage) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
     auto* color = (KImage*)image;
-    if (!color || cb->inRenderPass) return;
+    if (!color || cb->inRenderPass || stage > 2) return;
     std::lock_guard<std::mutex> lock(g_up.m);
     id<MTLTexture> src = color->mtl;
-    if (!g_up.snapshotTex || g_up.snapshotTex.width != src.width || g_up.snapshotTex.height != src.height) {
+    __strong id<MTLTexture>& snapshot = g_up.snapshots[stage];
+    if (!snapshot || snapshot.width != src.width || snapshot.height != src.height) {
         MTLTextureDescriptor* d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:src.pixelFormat width:src.width
                                                                                    height:src.height mipmapped:NO];
         d.usage = MTLTextureUsageShaderRead;
         d.storageMode = MTLStorageModePrivate;
-        g_up.snapshotTex = [cb->device->mtl newTextureWithDescriptor:d];
+        snapshot = [cb->device->mtl newTextureWithDescriptor:d];
     }
     cb->endEncoder();
     cb->waitForAllResolves();
     fullBarrier(cb);
     id<MTLBlitCommandEncoder> b = [cb->mtl blitCommandEncoder];
     b.label = @"upscale snapshot";
-    [b copyFromTexture:src toTexture:g_up.snapshotTex];
+    [b copyFromTexture:src toTexture:snapshot];
     [b endEncoding];
     fullBarrier(cb);
-    cb->fxSnapshot = true;
+    cb->fxSnapshots |= 1u << stage;
 }
 
 // How far the temporal scaler scales on this Mac, past which the spatial one does the rest: for the Mac Port tab

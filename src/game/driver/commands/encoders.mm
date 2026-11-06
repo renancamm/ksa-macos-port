@@ -378,7 +378,7 @@ void KCommandBuffer::resetState() {
     stencilRef[0] = stencilRef[1] = 0;
     depthBiasDirty = blendConstantsDirty = stencilRefDirty = false;
     draws = dispatches = passes = 0;
-    fxSnapshot = false;
+    fxSnapshots = 0;
     encodedPipeline = nullptr;
 }
 
