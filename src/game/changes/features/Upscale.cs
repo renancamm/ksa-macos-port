@@ -74,6 +74,8 @@ internal static class Upscale
             prefix: new HarmonyMethod(typeof(Upscale), nameof(AddImagePrefix)));
         harmony.Patch(Find.Method(typeof(Program), "RenderAaPreparePasses"),
             postfix: new HarmonyMethod(typeof(Upscale), nameof(AaPreparePostfix)));
+        harmony.Patch(Find.Method(typeof(Program), "RenderGame"),
+            transpiler: new HarmonyMethod(typeof(Upscale), nameof(CaptureTranspiler)));
         if (!Spatial)
         {
             harmony.Patch(Find.Method(typeof(Program), "RenderGame"),
@@ -320,11 +322,44 @@ internal static class Upscale
         d[12] = m.M41; d[13] = m.M42; d[14] = m.M43; d[15] = m.M44;
     }
 
-    // Before the main view's final composite pass begins
-    private static unsafe void AaPreparePostfix(CommandBuffer commandBuffer, int shaderSlot)
+    // Before the main view's final composite pass begins: MetalFX, then a screenshot's copy of its image
+    private static void AaPreparePostfix(CommandBuffer commandBuffer, int shaderSlot)
     {
-        if (_output == null || !_reading || shaderSlot != Program.MainViewport.ShaderSlot ||
-            Program.OffscreenTarget is not { ColorImage: { } colorImage, DepthImage: { } depthImage } target)
+        if (shaderSlot != Program.MainViewport.ShaderSlot)
+            return;
+        Capture? pending = _capture;
+        _capture = null;
+        UpscaleMainView(commandBuffer);
+        if (pending is { } capture && capture.CommandBuffer.Handle.Equals(commandBuffer.Handle))
+        {
+            CompositeData data = capture.Data;
+            capture.Screenshot.OnRenderGameCapture(capture.CommandBuffer, capture.FrameIndex, in data);
+        }
+    }
+
+    // RenderGame: ScreenshotCapture.OnRenderGameCapture -> DeferCapture. The game copies the screenshot right before its
+    // anti-aliasing passes, where MetalFX makes this frame's image: the copy took the frame before's, drawn with the
+    // UI that a screenshot leaves out (orbit lines, the gauges in the scene)
+    private static IEnumerable<CodeInstruction> CaptureTranspiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var code = instructions.ToList();
+        var capture = Find.Method(typeof(ScreenshotCapture), nameof(ScreenshotCapture.OnRenderGameCapture));
+        int at = Find.Once(code, c => c.Calls(capture), "the screenshot's copy");
+        code[at] = new CodeInstruction(OpCodes.Call, Find.Method(typeof(Upscale), nameof(DeferCapture)))
+            .MoveLabelsFrom(code[at]).MoveBlocksFrom(code[at]);
+        return code;
+    }
+
+    private record struct Capture(ScreenshotCapture Screenshot, CommandBuffer CommandBuffer, int FrameIndex, CompositeData Data);
+
+    private static Capture? _capture;
+
+    private static void DeferCapture(ScreenshotCapture screenshot, CommandBuffer commandBuffer, int frameIndex, in CompositeData data) =>
+        _capture = new Capture(screenshot, commandBuffer, frameIndex, data);
+
+    private static unsafe void UpscaleMainView(CommandBuffer commandBuffer)
+    {
+        if (_output == null || !_reading || Program.OffscreenTarget is not { ColorImage: { } colorImage, DepthImage: { } depthImage } target)
             return;
         VkImage color = colorImage.Image, depth = depthImage.Image, output = _output.Image;
         VkExtent2D input = target.Extent;
