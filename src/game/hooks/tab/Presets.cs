@@ -92,11 +92,11 @@ internal static class Presets
             0),
         new("Balanced", "Faster, with little visible change.",
             "Faster, with little visible change: MetalFX Temporal draws the 3D view at three quarters of the window's size, " +
-            "with simpler shadow filtering, clouds and smoke a step lower, and lighter ray tracing in the cockpit. " +
+            "with simpler shadow filtering, smoke a step lower, and lighter ray tracing in the cockpit. " +
             "Time warp slows down less: lighter physics for tumbling pieces, debris that settles and stays " +
             "where it lies, and cloud shadows that fall out of place during very high warp.",
             mac => Game(mac, antiAliasing: "MultisampleX2", filter: "Pcf", cascades: 2048, terrain: 4096,
-                milkyWay: "High", clouds: "Medium", cloudShadows: "Medium", effects: "Medium", godrays: true, clutterShadows: true,
+                milkyWay: "High", clouds: "High", cloudShadows: "Medium", effects: "Medium", godrays: true, clutterShadows: true,
                 plumeShadows: true, rayTracing: true, exhausts: "High"),
             1),
         new("Quality", "Window size. Trims what barely shows.",
@@ -140,7 +140,8 @@ internal static class Presets
         // Exhausts and particles at High cost about nothing under MetalFX Temporal 0.75 (High vs Low: exhausts ~0 ms,
         // particles under 1, M5, Mixed Test in a 1440x900 window), and the exhaust's blocks are visibly smaller in motion;
         // explosions at High cost up to ~4 ms (vs Low) while one is on screen, the heaviest moments: Balanced keeps those
-        // at Medium
+        // at Medium. Its clouds are at High: Medium's grain at cloud edges shows in motion, and High costs 0.1-0.6 ms
+        // more near the ground (the Tour's descent to earth4)
         exhausts ??= effects;
         // With the Milky Way bake (Performance, Balanced and Quality), Milky Way High costs what Low and Medium do (M5,
         // fast run: every view within 0.1 ms). Cloud Shadows Low costs what Medium does, so no preset goes below Medium.
