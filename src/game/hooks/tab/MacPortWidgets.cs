@@ -157,6 +157,19 @@ internal static partial class MacPortTab
         ConsoleStyle.PopFont();
     }
 
+    // A footnote under a control (* 7 settings differ from Performance.): smaller and fainter than a caption
+    private static void Footnote(string text, float inset = 0f)
+    {
+        if (inset > 0f)
+            ImGui.SetCursorScreenPos(ImGui.GetCursorScreenPos() + new float2(inset, 0f));
+        ConsoleStyle.PushSignatureFont(0.9f);
+        var colour = ImGui.ColorConvertU32ToFloat4(ConsoleStyle.ApplyAlpha(ConsoleStyle.TextMutedU32, 0.7f));
+        ImGui.PushStyleColor(ImGuiCol.Text, in colour);
+        ImGui.TextWrapped(text.Replace("%", "%%"));
+        ImGui.PopStyleColor();
+        ConsoleStyle.PopFont();
+    }
+
     // How far MetalFX Temporal scales on this Mac, past which Spatial does the rest (0: not known)
     [DllImport("libvulkan.1.dylib")]
     private static extern float vkGetUpscaleMaxScaleKSA();
@@ -436,8 +449,9 @@ internal static partial class MacPortTab
     // What each preset's card shows: the presets are made once, when the hooks start
     private static (string Label, string Value)[][]? _summaries;
 
-    // A card: a preset's name, its one-line description and what it sets
-    private sealed record Card(string Name, string Short, (string Label, string Value)[] Lines, string Id);
+    // A card: a preset's name, its one-line description and what it sets, and whether some settings differ from it (a
+    // * after its name)
+    private sealed record Card(string Name, string Short, (string Label, string Value)[] Lines, string Id, bool Differs);
 
     // The cards, wanted on a row, or half as many when what they show doesn't fit. The one in use (inUse) has a soft
     // fill, and the one the pending changes make (next) is gold, as the game's Apply is then. Returns the one under
@@ -451,7 +465,8 @@ internal static partial class MacPortTab
         float small = ImGui.GetFontSize(), noteLine = MathF.Round(small), rowLine = noteLine;
         float need = cards.SelectMany(c => c.Lines).Max(r => ImGui.CalcTextSize(r.Label).X + ImGui.CalcTextSize(r.Value).X) + gap + pad * 2f;
         ConsoleStyle.PopFont();
-        need = MathF.Max(need, cards.Max(c => LabelWidth(c.Name.ToUpperInvariant())) + pad * 2f);
+        // The * counted on every card, so that the columns don't change with it
+        need = MathF.Max(need, cards.Max(c => LabelWidth(c.Name.ToUpperInvariant() + " *")) + pad * 2f);
         int columns = wanted;
         while (columns > 1 && (avail - gap * (columns - 1)) / columns < need)
             columns /= 2;
@@ -511,7 +526,7 @@ internal static partial class MacPortTab
             float top = pos.Y + (down ? ConsoleStyle.BezelInsetPx : 0f);
             float y = top + pad, left = pos.X + pad, right = end.X - pad;
             ConsoleStyle.PushLabelFont();
-            draw.AddText(new float2(left, y), Colour(use ? ConsoleStyle.TextPrimaryU32 : ConsoleStyle.TextLabelU32), card.Name.ToUpperInvariant());
+            draw.AddText(new float2(left, y), Colour(use ? ConsoleStyle.TextPrimaryU32 : ConsoleStyle.TextLabelU32), card.Differs ? card.Name.ToUpperInvariant() + " *" : card.Name.ToUpperInvariant());
             ConsoleStyle.PopFont();
             y += nameHeight + space;
             ConsoleStyle.PushSignatureFont();

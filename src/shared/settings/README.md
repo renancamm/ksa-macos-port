@@ -48,12 +48,13 @@ the rows free at load would only grow it). Off, it gives the rows their defaults
 It acts as a preset does: when switched on or off in the Mac Port tab (its values become pending changes, kept by the
 game's Apply), on a fresh install's first start (the loader writes the rows as it makes `port-settings.toml`, and the
 hooks' presets limit the game's settings just loaded), on the game's Reset, and in a benchmark run with `--defaults`.
-A row changed by hand afterwards keeps its value; the tab says how many differ. The launcher, which runs before the
-file exists, applies the tier rule to its one setting itself ([`../../game/launcher/`](../../game/launcher/)).
+A row changed by hand afterwards keeps its value; while it is on, the tab says how many differ. The launcher, which
+runs before the file exists, applies the tier rule to its one setting itself
+([`../../game/launcher/`](../../game/launcher/)).
 
 A row Auto Memory Saving sets has three values in the `memory` column, one per tier, the last its default; an empty
-value leaves the row to its preset in that tier (Fewer Effects at Once: `true,,`, on with 8 GB or less, Performance's
-otherwise, and off leaves it alone). The tests check them, and that every row of the Memory section has all three.
+value leaves the row to its preset in that tier (Fewer Effects at Once: `true,,`, on with 8 GB or less over every
+graphics preset's value, Performance's otherwise, and off leaves it alone). The tests check them, and that every row of the Memory section has all three.
 
 ## Typed settings
 

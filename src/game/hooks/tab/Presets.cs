@@ -19,7 +19,9 @@ namespace KsaMetal.Hooks.Tab;
 // texture streaming budget at most 512 MB. A preset's card in the tab makes its values pending changes, in the game's
 // tabs and in this one, as if the player had set each row; the game's Apply keeps them, Discard drops them. Nothing
 // else changes a setting, but a fresh install's first start, where Auto Memory Saving, on by default, sets its
-// values (the loader the port settings, FirstStart here the game's).
+// values (the loader the port settings, FirstStart here the game's). The card picked last is kept in the file
+// (preset): the tab counts the settings that differ from it, unless they are another preset's. With Auto Memory
+// Saving on, its values sit on top of every card's, as its limits do: Fewer Effects at Once with 8 GB or less.
 //
 // Every preset gives every setting any preset sets, so a preset after another leaves nothing of the first, except
 // the port rows the tab can't change (set outside, their hook unavailable) and the render scale without upscaling,
@@ -29,7 +31,8 @@ namespace KsaMetal.Hooks.Tab;
 // In Fullscreen, every preset also sets the Resolution to the size the screen's desktop has (Displays), so the render
 // scale alone decides the 3D view's size and the display keeps its mode. Windowed, the Resolution is the window's size,
 // and Borderless doesn't use it: those keep it. The card reads the Mode as it is then: a Mode set to Fullscreen after it
-// keeps the Resolution, and unless that is the desktop's size the tab then shows no preset in use. An error reading
+// keeps the Resolution, and unless that is the desktop's size (or 0 x 0, the window's) it counts as a setting that
+// differs. An error reading
 // the display makes the presets unavailable, as any (Hooks.Fail), without taking the tab with them.
 [Hook(Phase.PortParts)]
 internal static class Presets
@@ -40,6 +43,8 @@ internal static class Presets
         int index)
     {
         public string Name => name;
+        // Its value of the port setting that keeps the card picked last (Game Defaults: game_defaults)
+        public string Id => name.ToLowerInvariant().Replace(' ', '_');
         // What its card says, and its tooltip
         public string Short => shortHelp;
         public string Help => help;
@@ -55,6 +60,9 @@ internal static class Presets
             Port = Port(index);
             if (Port["upscaling"] == "off")
                 Port.Remove("render_scale");
+            if (memorySaving)
+                foreach (var (key, value) in AutoMemorySaving.Port(mac.Tier).Where(kv => Port.ContainsKey(kv.Key)))
+                    Port[key] = value;
         }
     }
 
@@ -114,6 +122,10 @@ internal static class Presets
 
     // The game's defaults are the same on every Mac, but for Auto Memory Saving's
     public static Preset GameDefaults => All[^1];
+
+    // The port setting that keeps the card picked last, and the preset a value of it names
+    public const string Key = "preset";
+    public static Preset Picked(string value) => All.FirstOrDefault(p => p.Id == value) ?? GameDefaults;
 
     // The game's settings another preset sets, at their defaults: a new GameSettings' (the game's Reset)
     private static Dictionary<string, string> Defaults(Dictionary<string, string> settings, Func<string, string> value) =>
@@ -204,6 +216,8 @@ internal static class Presets
             preset.For(ThisMac, false);
             Check(preset);
         }
+        if (!Settings.Get(Key).Choices.Select(c => c.Value).ToHashSet().SetEquals(All.Select(p => p.Id)))
+            throw new InvalidOperationException($"{Key}'s values aren't the presets'");
         Refresh(Settings.Get(AutoMemorySaving.Key).Saved == "true");
         foreach (var (field, _, _) in AutoMemorySaving.SmallGame)
             Field(field);
@@ -267,20 +281,16 @@ internal static class Presets
         }
     }
 
-    // How many of Auto Memory Saving's values (on: this Mac's; off: the game's) have another value here: its rows,
-    // and with 8 GB or less the game's limits (on) or the budget off gives back
-    public static int MemoryDifferences(GameSettings game, Func<string, string> port, bool on)
+    // How many of Auto Memory Saving's values for this Mac have another value here: its rows, and with 8 GB or less
+    // the game's limits
+    public static int MemoryDifferences(GameSettings game, Func<string, string> port)
     {
-        var rows = on ? AutoMemorySaving.Port(ThisMac.Tier) : AutoMemorySaving.Off();
-        int count = rows.Where(kv => Settable(kv.Key)).Count(kv => port(kv.Key) != kv.Value);
+        int count = AutoMemorySaving.Port(ThisMac.Tier).Where(kv => Settable(kv.Key)).Count(kv => port(kv.Key) != kv.Value);
         if (ThisMac.Tier != AutoMemorySaving.Tier.Small)
             return count;
-        if (on)
-            return count + AutoMemorySaving.SmallGame.Count(g =>
-                Convert.ToInt32(Fields[g.Field].GetValue(Owner(Fields[g.Field], game)), CultureInfo.InvariantCulture) is var v &&
-                AutoMemorySaving.Limit(v, g.AtMost) != v);
-        return count + AutoMemorySaving.OffRestores.Count(name =>
-            Field(name) is var field && !Equals(field.GetValue(Owner(field, game)), field.GetValue(Owner(field, GameDefaultSettings))));
+        return count + AutoMemorySaving.SmallGame.Count(g =>
+            Convert.ToInt32(Fields[g.Field].GetValue(Owner(Fields[g.Field], game)), CultureInfo.InvariantCulture) is var v &&
+            AutoMemorySaving.Limit(v, g.AtMost) != v);
     }
 
     private static void Check(Preset preset)
@@ -335,7 +345,7 @@ internal static class Presets
     public static int Differences(Preset preset, GameSettings game, Func<string, string> port) =>
         preset.Game.Count(kv => !Equals(Fields[kv.Key].GetValue(Owner(Fields[kv.Key], game)), Parse(Fields[kv.Key], kv.Value))) +
         preset.Port.Where(kv => Settable(kv.Key)).Count(kv => !Same(Settings.Get(kv.Key), port(kv.Key), kv.Value)) +
-        (FullscreenSize(game) is { Width: > 0 } size && (game.ScreenWidth != size.Width || game.ScreenHeight != size.Height) ? 1 : 0);
+        (OtherSize(game) ? 1 : 0);
 
     // A port setting the tab can change: not set outside, none of its hooks skipped or failed
     public static bool Settable(string key) =>
@@ -359,7 +369,12 @@ internal static class Presets
     public static bool Matches(Preset preset, GameSettings game, Func<string, string> port) =>
         preset.Game.All(kv => Equals(Fields[kv.Key].GetValue(Owner(Fields[kv.Key], game)), Parse(Fields[kv.Key], kv.Value))) &&
         preset.Port.Where(kv => Settable(kv.Key)).All(kv => Same(Settings.Get(kv.Key), port(kv.Key), kv.Value)) &&
-        (FullscreenSize(game) is not { Width: > 0 } size || (game.ScreenWidth == size.Width && game.ScreenHeight == size.Height));
+        !OtherSize(game);
+
+    // In Fullscreen, a Resolution other than the desktop's size: 0 x 0 is the window's, which the game takes (Reset's)
+    private static bool OtherSize(GameSettings game) =>
+        FullscreenSize(game) is { Width: > 0 } size && (game.ScreenWidth, game.ScreenHeight) != (0, 0) &&
+        (game.ScreenWidth != size.Width || game.ScreenHeight != size.Height);
 
     private static bool _displayFailed;
 

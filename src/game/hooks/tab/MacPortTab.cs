@@ -176,7 +176,8 @@ internal static partial class MacPortTab
         try
         {
             Sync();
-            __result = Shown.Any(s => Pending[s.Key] != s.Saved);
+            // The card picked last alone is no change: what the settings are based on is worked out again from them
+            __result = Shown.Any(s => Pending[s.Key] != s.Saved && s.Key != Presets.Key);
         }
         catch (Exception e)
         {
@@ -213,7 +214,7 @@ internal static partial class MacPortTab
             return;
         try
         {
-            Save();
+            Save((GameSettings)__instance);
         }
         catch (Exception e)
         {
@@ -221,8 +222,10 @@ internal static partial class MacPortTab
         }
     }
 
-    private static void Save()
+    private static void Save(GameSettings saved)
     {
+        if (PresetsAvailable)
+            Pending[Presets.Key] = Based(saved).Id;
         var changed = Shown.Where(s => Pending[s.Key] != s.Saved).ToDictionary(s => s.Key, s => Pending[s.Key]);
         if (changed.Count == 0)
             return;
@@ -421,8 +424,9 @@ internal static partial class MacPortTab
     }
 
     // The presets: one card each, with what it sets, making its values the pending changes here and in the game's
-    // tabs, then Auto Memory Saving, the second preset, as a banner with a switch. The card in use has a soft fill,
-    // and the one the pending changes make is gold, as the game's Apply is then
+    // tabs, then Auto Memory Saving, the second preset, as a banner with a switch. The card the saved settings are
+    // based on has a soft fill, and the one the pending changes are based on is gold, as the game's Apply is then; a *
+    // on it and a footnote under the cards say how many settings differ from it
     private static void DrawPresets()
     {
         SectionHeader("Presets", PortSettings.Sections.First(s => s.Key == "presets").Caption, first: true);
@@ -450,29 +454,34 @@ internal static partial class MacPortTab
         }
         var limits = saving && mac.Tier == AutoMemorySaving.Tier.Small
             ? $"On this {mac.MemoryGb} GB Mac with Auto Memory Saving on, its textures and shadow maps are at most 2048 wide. " : "";
-        var inUse = Presets.All.FirstOrDefault(p => Presets.Matches(p, GameSettings.Current, key => PortSettings.Get(key)!.Saved));
-        var shown = pending == null ? inUse : Presets.All.FirstOrDefault(p => Presets.Matches(p, pending, key => Value(PortSettings.Get(key)!)));
+        string Port(string key) => Value(PortSettings.Get(key)!);
+        var inUse = Presets.All.FirstOrDefault(p => Presets.Matches(p, GameSettings.Current, key => PortSettings.Get(key)!.Saved)) ??
+            Presets.Picked(PortSettings.Get(Presets.Key)!.Saved);
+        var based = pending == null ? inUse : Based(pending);
+        int count = pending == null ? 0 : Presets.Differences(based, pending, Port);
         var summaries = _summaries ??= Presets.All.Select(Presets.Summary).ToArray();
-        var cards = Presets.All.Select((p, i) => new Card(p.Name, p.Short, summaries[i], "MacPort_preset_" + p.Name)).ToArray();
+        var cards = Presets.All.Select((p, i) => new Card(p.Name, p.Short, summaries[i], "MacPort_preset_" + p.Name, p == based && count > 0)).ToArray();
         ConsoleStyle.PushDisabled(pending == null);
-        var (hovered, clicked) = DrawCards(cards, Array.IndexOf(Presets.All, inUse), Array.IndexOf(Presets.All, shown), 4);
+        var (hovered, clicked) = DrawCards(cards, Array.IndexOf(Presets.All, inUse), Array.IndexOf(Presets.All, based), 4);
         ConsoleStyle.PopDisabled();
         if (clicked >= 0 && pending != null)
         {
             Presets.Use(Presets.All[clicked], pending, Pending);
+            Pending[Presets.Key] = Presets.All[clicked].Id;
             Hooks.Log($"MacPortTab: {Presets.All[clicked].Name} preset pending");
         }
         if (hovered >= 0)
             Tooltip(Presets.All[hovered].Help + "\n\n" + limits + "This makes them pending changes, here and in the game's tabs; Apply keeps them.");
-        string Port(string key) => Value(PortSettings.Get(key)!);
-        if (shown == null && pending != null)
-        {
-            var closest = Presets.All.MinBy(p => Presets.Differences(p, pending, Port))!;
-            int count = Presets.Differences(closest, pending, Port);
-            Caption($"Own settings: {count} setting{(count == 1 ? " differs" : "s differ")} from {closest.Name}.", ConsoleWidgets.RowLabelInsetPx);
-        }
+        if (count > 0)
+            Footnote($"* {count} setting{(count == 1 ? " differs" : "s differ")} from {based.Name}.", ConsoleWidgets.RowLabelInsetPx);
         DrawMemoryBanner(memory, pending);
     }
+
+    // The preset these pending settings are based on: the one they are, else the card picked last. Apply keeps it as
+    // the pick, so that what changes after is counted from it
+    private static Presets.Preset Based(GameSettings pending) =>
+        Presets.All.FirstOrDefault(p => Presets.Matches(p, pending, key => Value(PortSettings.Get(key)!))) ??
+        Presets.Picked(Pending[Presets.Key]);
 
     // The presets know the game's settings they set (unavailable: a KSA update moved one)
     private static bool PresetsAvailable =>
@@ -481,8 +490,8 @@ internal static partial class MacPortTab
     private static bool? _presetsSaving;
 
     // Auto Memory Saving: a banner under the presets' cards, on the MetalFX boxes' panel, its name and what it is on
-    // the left, the same either way but for a count of settings that differ, and its switch on the right. Switched,
-    // its values become pending changes, as a card's do
+    // the left, the same either way, and its switch on the right. On, its name gets a * while settings differ from
+    // its values, and a footnote under it says how many. Switched, its values become pending changes, as a card's do
     private static void DrawMemoryBanner(PortSetting memory, GameSettings? pending)
     {
         float s = ConsoleStyle.EffectiveInterfaceScale, inset = ConsoleWidgets.RowLabelInsetPx;
@@ -496,11 +505,11 @@ internal static partial class MacPortTab
         ConsoleStyle.PopFont();
         bool on = Value(memory) == "true";
         string Port(string key) => Value(PortSettings.Get(key)!);
-        int count = pending != null && PresetsAvailable ? Presets.MemoryDifferences(pending, Port, on) : 0;
-        var note = "Memory optimization preset for this Mac." + (count > 0 ? $" {count} setting{(count == 1 ? " differs" : "s differ")}." : "");
+        int count = on && pending != null && PresetsAvailable ? Presets.MemoryDifferences(pending, Port) : 0;
+        var title = count > 0 ? memory.Label + " *" : memory.Label;
         // The switch past the panel's right edge rather than over the name, with a very large interface scale
-        float left = MathF.Max(width - padX * 2f - gap - control, LabelWidth(memory.Label));
-        var lines = WrapSmall(note, left);
+        float left = MathF.Max(width - padX * 2f - gap - control, LabelWidth(title));
+        var lines = WrapSmall("Memory optimization preset for this Mac.", left);
         float titleHeight = LabelHeight(), line = MathF.Round(SmallHeight());
         float height = MathF.Max(titleHeight + space + line * lines.Length, ConsoleStyle.FrameHeightPx) + padY * 2f;
         var end = at + new float2(width, height);
@@ -510,7 +519,7 @@ internal static partial class MacPortTab
         ConsoleStyle.PushDisabled(pending == null);
         float y = at.Y + (height - titleHeight - space - line * lines.Length) * 0.5f;
         ConsoleStyle.PushLabelFont();
-        draw.AddText(new float2(at.X + padX, y), ConsoleStyle.ApplyAlpha(ConsoleStyle.TextPrimaryU32), memory.Label);
+        draw.AddText(new float2(at.X + padX, y), ConsoleStyle.ApplyAlpha(ConsoleStyle.TextPrimaryU32), title);
         ConsoleStyle.PopFont();
         y += titleHeight + space;
         ConsoleStyle.PushSignatureFont();
@@ -541,6 +550,8 @@ internal static partial class MacPortTab
         bool hovered = ImGui.IsWindowHovered() && ImGui.IsMouseHoveringRect(in at, in end);
         ImGui.SetCursorScreenPos(new float2(at.X - inset, end.Y));
         Gap(4f * s);
+        if (count > 0)
+            Footnote($"* {count} setting{(count == 1 ? " differs" : "s differ")} from {memory.Label}.", inset);
         if (hovered)
             Tooltip(memory.Help);
     }
