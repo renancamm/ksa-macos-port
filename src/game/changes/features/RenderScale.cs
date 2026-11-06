@@ -36,12 +36,10 @@ internal static class RenderScale
     public static int2 Output;  // the swapchain's size in pixels, which the main view is scaled up to
     private static VkExtent2D? _ours;  // the override this patch set (a screenshot's is left alone)
 
-    // Whether the main view renders at the size this patch set, not at a high-resolution screenshot's (the console's
-    // screenshot <scale>, which sets its own override and rebuilds the main view's targets without the swapchain)
-    public static bool OwnsExtent => Owns(Program.GetRenderer());
-
-    private static bool Owns(Renderer renderer) => renderer.ExtentOverride is { } current && _ours is { } ours &&
-        current.Width == ours.Width && current.Height == ours.Height;
+    // Whether MetalFX can scale the main view's image up to the swapchain: not when it is larger, which a
+    // high-resolution screenshot makes it (the console's screenshot <scale> sets its own override and rebuilds the main
+    // view's targets without the swapchain)
+    public static bool Upscalable(VkExtent2D render) => render.Width <= Output.X && render.Height <= Output.Y;
 
     // The game's fields the patch reads and writes, found when it applies (a missing one skips it)
     private static AccessTools.FieldRef<ScreenspaceRenderer, VkSampler> _sampler = null!;
@@ -106,7 +104,7 @@ internal static class RenderScale
     // its own
     private static void RebuildPostfix(Renderer __instance)
     {
-        if (__instance.ExtentOverride != null && !Owns(__instance))
+        if (__instance.ExtentOverride is { } current && !(_ours is { } ours && current.Width == ours.Width && current.Height == ours.Height))
             return;
         VkExtent2D output = __instance.SwapchainExtent;
         Output = new int2(output.Width, output.Height);
@@ -154,7 +152,7 @@ internal static class RenderScale
         if (!composite && !cmaa2)
             return;
         VkExtent2D render = main.Extent;
-        bool stretched = (cmaa2 || !Upscale.Wanted || !OwnsExtent) && (render.Width != Output.X || render.Height != Output.Y);
+        bool stretched = (cmaa2 || !Upscale.Wanted || !Upscalable(render)) && (render.Width != Output.X || render.Height != Output.Y);
         _sampler(__instance) = stretched ? Program.LinearClampedSampler : Program.PointClampedSampler;
     }
 

@@ -159,9 +159,9 @@ internal static class Upscale
     // the main view larger than the display: its composites read the main view's own image, at its size
     private static void AddImagePrefix(ref VkImageView inImageView)
     {
-        if (Program.OffscreenTarget is not { ColorImage: { } color } || !inImageView.Equals(color.ImageView))
+        if (Program.OffscreenTarget is not { ColorImage: { } color } main || !inImageView.Equals(color.ImageView))
             return;
-        _reading = RenderScale.OwnsExtent;
+        _reading = RenderScale.Upscalable(main.Extent);
         if (!_reading)
             return;
         Renderer renderer = Program.GetRenderer();

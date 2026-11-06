@@ -115,7 +115,9 @@ struct UpscaleState {
     uint64_t presentEventValue = 0, fxShotCount = 0;
     bool frameReset = true;
     bool failed = false;  // the kernels didn't compile
-    uint64_t interpolatorFailed = 0;  // the sizes MetalFX made no interpolator for (inW, out width and height), 0: none
+    // The input and output MetalFX made no interpolator for (0: none)
+    uint64_t interpolatorFailed = 0;
+    MTLPixelFormat interpolatorFailedFormat = MTLPixelFormatInvalid;
 };
 UpscaleState& g_up = *new UpscaleState;  // never destroyed: releasing a scaler at exit aborts in MetalFX's MPSGraph teardown
 }
@@ -395,7 +397,7 @@ id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<
     if (!g_up.interpolator || g_up.interpolator.outputWidth != color.width || g_up.interpolator.outputHeight != color.height ||
         g_up.interpolator.inputWidth != g_up.inW || g_up.interpolator.colorTextureFormat != color.pixelFormat) {
         uint64_t sizes = (uint64_t)g_up.inW << 40 | (uint64_t)color.width << 20 | color.height;
-        if (g_up.interpolatorFailed == sizes) return nil;
+        if (g_up.interpolatorFailed == sizes && g_up.interpolatorFailedFormat == color.pixelFormat) return nil;
         MTLFXFrameInterpolatorDescriptor* fd = [MTLFXFrameInterpolatorDescriptor new];
         fd.colorTextureFormat = color.pixelFormat;
         fd.outputTextureFormat = color.pixelFormat;
@@ -414,6 +416,7 @@ id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<
             KERR("frame interpolation: interpolator %ux%u -> %lux%lu not created", g_up.inW, g_up.inH, (unsigned long)color.width,
                  (unsigned long)color.height);
             g_up.interpolatorFailed = sizes;
+            g_up.interpolatorFailedFormat = color.pixelFormat;
             return nil;
         }
         KLOG(0, "frame interpolation: %ux%u motion -> %lux%lu frames", g_up.inW, g_up.inH, (unsigned long)color.width,
