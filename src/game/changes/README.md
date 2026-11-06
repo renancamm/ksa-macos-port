@@ -65,7 +65,7 @@ follows](../hooks/README.md#the-rule-every-hook-follows)).
 | Shader edit | What it does |
 |---|---|
 | [`cloud-noise.edits`](optimizations/cloud-noise.edits) | the clouds' noise: the same image, fewer lookups |
-| [`unlit-shadows.edits`](optimizations/unlit-shadows.edits) | Skip Shadows on Unlit Sides, which KSA Metal turns off with `skip_shadows_on_unlit_sides` |
+| [`unlit-shadows.edits`](optimizations/unlit-shadows.edits) | Skip Shadows on Unlit Sides and Shared Shadow Samples, which KSA Metal turns off with `skip_shadows_on_unlit_sides` and `shared_shadow_samples` |
 
 ## Features
 

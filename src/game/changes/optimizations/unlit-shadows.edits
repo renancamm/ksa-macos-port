@@ -280,6 +280,7 @@ layout(constant_id = 900) const bool PORT_SKIP_UNLIT_SHADOWS = true;  // macOS p
 @@ edit terrain-shadows Planet/Planet.frag
 @@ what looked the terrain's other shadows up only where there is sunlight
 @@ needs terrain-black
+@@ done-if sunShadowFactor = PORT_SHARED_SHADOW_TAPS && portOceanQuad == 0u
 @@ find
     float sunShadowFactor = getSunShadowFiltered(terrainShadowUbo, inWorldPosition.xyz, sphereWorldNormal);
     float cloudShadows = GetCloudShadows(inWorldPosition.xyz, global.lighting.planetPosition.xyz, directionToSun);
@@ -339,6 +340,7 @@ layout(constant_id = 900) const bool PORT_SKIP_UNLIT_SHADOWS = true;  // macOS p
 @@ edit grass Planet/GroundClutter/Solid.frag
 @@ what looked the grass's shadows up only where the planet's shadow lets sunlight through
 @@ needs quad-grass
+@@ done-if sunShadowFactor = PORT_SHARED_SHADOW_TAPS  // macOS port
 @@ find
         float sunShadowFactor = getSunShadowFiltered(terrainShadowUbo, inWorldPosition.xyz, meshWorldNormal);
         float cascadeShadowFactor = GetCascadedShadow(inWorldPosition.xyz, meshWorldNormal, dotNL, viewDepth);
@@ -562,3 +564,413 @@ mix(cloudShadow, 1.0, 0.5));
         if(lightData.color.w > 0.5){
 @@ replace
         if(lightData.color.w > 0.5 && (!PORT_SKIP_UNLIT_SHADOWS || any(notEqual(light, vec3(0.0))))){  // macOS port: no shadow ray where there is no light
+
+@@ # Shared Shadow Samples (the tab's Optimizations), which KSA Metal turns off with KSA_MTL_SHARED_SHADOW_SAMPLES=0: the
+@@ # terrain's sun shadow map is filtered with 16 to 32 taps (PCSS) or the PCF kernel for every pixel of the terrain and
+@@ # the ground clutter, though its texels are metres wide. The pixels of a 2x2 quad share them: each takes every fourth
+@@ # tap and the quad sums (copies of the game's filters in SunShadows.glsl, which a check holds to the game's). They
+@@ # run inside the quad-uniform branches the edits above made (terrain-shadows, grass), and on the terrain not in a quad
+@@ # the ocean cut short (its returned pixels' values would be undefined). PORT_SHARED_SHADOW_TAPS is specialization
+@@ # constant 901. The shared wording replaces a line of terrain-shadows' and grass's replacements, which their done-if
+@@ # lines accept: when either changes, its earlier text must be the wording as it reads after these edits.
+
+@@ check shared-taps-uses Lighting/SunShadows.glsl
+@@ what neighbouring pixels sharing the terrain shadow's samples
+@@ contains
+float sampleShadowPCSS(ShadowUBO shadowUbo, vec4 shadowCoord, float bias, float grazingStretch) {
+    float texelSize = shadowUbo.texelSize;
+    float orthoSize = max(shadowUbo.orthoWidth, EPSILON);
+    float clipRange = shadowUbo.clipPlanes.y - shadowUbo.clipPlanes.x;
+    float shadowMapSize = 1.0 / texelSize;
+
+    // World-space meters per texel for this shadow map.
+    float texelWorld = orthoSize * texelSize;
+
+    // Blocker search range: scale by grazing stretch to cover the expanded texel footprint
+    float minSearch = texelSize * 2.0 * grazingStretch;
+    float maxSearch = texelSize * 16.0 * grazingStretch;
+
+    float receiverDepth = shadowCoord.z;
+    float depthFactor   = smoothstep(0.1, 0.9, receiverDepth);
+
+    mat2 R;
+    float depthCompare = saturate(shadowCoord.z - bias);
+    #ifdef FRAGMENT_SHADER
+        R = PoissonRotation(gl_FragCoord.xy);
+        vec3 shadowPosDX = dFdxFine(shadowCoord.xyz);
+        vec3 shadowPosDY = dFdyFine(shadowCoord.xyz);
+        vec2 receiverPlaneDepthBias = ComputeReceiverPlaneBias(shadowPosDX, shadowPosDY);
+        float fractionalSamplingError = dot(vec2(texelSize), abs(receiverPlaneDepthBias));
+        depthCompare -= min(fractionalSamplingError, 0.01);
+    #else
+         // In compute shaders we can't use gl_FragCoord so we use the UV directly as input to the rotation function
+        R = PoissonRotation(shadowCoord.xy);
+    #endif
+        
+    // --- Blocker search ---
+    float searchRadius  = mix(minSearch, maxSearch, depthFactor);
+
+    // --- Blocker search ---
+    float avgBlockerDepth = 0.0;
+    float numBlockers = 0;
+    for (int i = 0; i < POISSON_COUNT; i++) {
+        vec2 offset = (R * POISSON_KERNEL[i]) * searchRadius;
+        vec2 uvSample = shadowCoord.xy + offset;
+
+        float comp = depthCompare;
+        #ifdef FRAGMENT_SHADER
+        comp += dot(offset, receiverPlaneDepthBias);
+        #endif
+
+        // sample depth
+        float sampledDepth = sampleShadowMap(shadowUbo, uvSample);
+        
+        // depth comparison
+        float isBlocker = 1.0 - step(comp, sampledDepth);
+        avgBlockerDepth += sampledDepth * isBlocker;
+        numBlockers += isBlocker;
+    }
+    if (numBlockers < 0.5)
+        return 1.0; // No blockers found means fully lit.
+
+    avgBlockerDepth /= float(numBlockers);
+
+    // --- Penumbra ---
+    // Calculate the penumbra as the ratio between the depth difference and the blocker depth.
+    float separationDepth = max(0.0, avgBlockerDepth - receiverDepth);
+    
+    float separationWorld = separationDepth * clipRange;
+    float penumbraWorld   = separationWorld * SUN_ANGULAR_DIAMETER;
+    float filterRadius    = penumbraWorld / orthoSize;
+
+    // Clamp filter radius to avoid excessive blur at low resolution; keep at least one texel.
+    filterRadius = clamp(filterRadius, texelSize * grazingStretch, maxSearch);
+    filterRadius = floor((filterRadius + texelSize * 0.5) / texelSize) * texelSize;
+    
+    float smoothWidth = clamp(filterRadius * 0.85, texelSize, texelSize * 4.0);
+    #ifdef FRAGMENT_SHADER
+        // Widen smooth transition at steep depth gradients (e.g. poles) to prevent banding
+        float pcssGradientMag = length(receiverPlaneDepthBias) * texelSize;
+        smoothWidth = max(smoothWidth, pcssGradientMag * 0.5);
+    #endif
+    float denom = max(1.0 - avgBlockerDepth, EPSILON);
+    float penumbraRatio = saturate((avgBlockerDepth - receiverDepth) / denom);
+    
+    //TODO: Maybe should use a adaptive poisson count based on filter radius?
+    const int MAX_SAMPLES = POISSON_COUNT;
+    const int MIN_SAMPLES = 8;
+    float maxFilter = texelSize * 16;
+    float radiusNorm = saturate(filterRadius / maxFilter);
+    int adaptiveCount = int(mix(float(MIN_SAMPLES), float(MAX_SAMPLES), radiusNorm));
+    
+    // --- Main shadow sample filter ---
+    float shadowFactor = 0.0;
+    float validSamples = 0.0;
+    for (int i = 0; i < adaptiveCount; i++) {
+        vec2 offset = (R * POISSON_KERNEL[i]) * filterRadius;
+        vec2 uvSample = shadowCoord.xy +offset;
+
+        float comp = depthCompare;
+        #ifdef FRAGMENT_SHADER
+        comp += dot(offset, receiverPlaneDepthBias);
+        #endif
+        
+        // sample depth
+        float sampledDepth = sampleShadowMap(shadowUbo, uvSample);
+
+        // attempt to smooth the shadow penumbra edge
+        float filtered = smoothstep(comp - smoothWidth, comp + smoothWidth, sampledDepth);
+        
+        // contact hardening
+        float x = 2.0 * filtered - 1.0;
+        float s = sign(x);
+        x = 1.0 - s * x;
+        x = x * x * x;
+        x = s - x * s;
+        float hardenedKernel = 0.5 * x + 0.5;
+        filtered = mix(hardenedKernel, filtered, penumbraRatio);
+        
+        shadowFactor += filtered;
+        validSamples += 1.0;
+    }
+    if(validSamples < 0.5)
+        return 1.0;
+    
+    return shadowFactor / validSamples;
+}
+@@ contains
+float sampleShadowPCF(ShadowUBO shadowUbo, vec3 shadowCoord, float bias, float grazingStretch){
+    
+    float texelSize = shadowUbo.texelSize;
+    float shadowMapSize = 1.0 / texelSize;
+    
+    // Scale filter kernel by grazing stretch to cover the expanded texel footprint
+    float filterScale = texelSize * grazingStretch;
+    
+    float zBias = bias;
+    vec2 dz_dUV = CalculateReceiverPlane(shadowCoord);
+    
+    float gradientMag = length(dz_dUV) * texelSize; // depth change per texel
+    float smoothWidth = max(texelSize * 1.5, gradientMag * 0.5);
+    
+    float shadow = 0.0;
+    float validSamples = 0.0;
+    for (int i = 0; i < PCF_SAMPLE_COUNT; i++) {
+
+        vec2 uvSample = shadowCoord.xy + PCF_KERNEL[i] * filterScale;
+        
+        #ifdef FRAGMENT_SHADER
+            zBias = bias;
+            zBias += CalculateReceiverPlaneDepthBias(dz_dUV, uvSample, texelSize, shadowMapSize, shadowUbo.slopeBias);
+        #endif
+        
+        float d = sampleShadowMap(shadowUbo, uvSample);
+        float z = shadowCoord.z - zBias;
+
+        shadow += smoothstep(z - smoothWidth, z + smoothWidth, d);
+        validSamples += 1.0;
+    }
+    
+    return (validSamples > 0.5) ? shadow / float(validSamples) : 1.0;
+}
+@@ contains
+float getSunShadowFiltered(ShadowUBO shadowUbo, vec3 worldPos, vec3 worldNormal, int filterType)
+{
+    if (isSunShadowMapMissing(shadowUbo))
+        return 1.0;
+
+    vec3 toLight = normalize(global.lighting.sunPosition.xyz - worldPos);
+    vec3 shadingNormal = normalize(worldNormal);
+    float geoNDotL = dot(shadingNormal, toLight);
+    
+    float texelSizeWorld = shadowUbo.orthoWidth * shadowUbo.texelSize;
+    
+    float angleFactor = saturate(1.0 - geoNDotL);
+    float normalOffsetScale = shadowUbo.normalBias * angleFactor * angleFactor;
+    const float MAX_NORMAL_OFFSET_TEXELS = 2.0;
+    normalOffsetScale = min(normalOffsetScale, MAX_NORMAL_OFFSET_TEXELS);
+    vec3 offsetPos = worldPos + shadingNormal * (normalOffsetScale * texelSizeWorld);
+    
+    vec4 rawShadowPos = shadowUbo.viewProj * vec4(offsetPos, 1);
+    vec4 shadowCoord = rawShadowPos;
+    float invW = 1.0 / max(shadowCoord.w, EPSILON);
+    shadowCoord.xyz *= invW;
+    shadowCoord.xy = shadowCoord.xy * 0.5 + 0.5;
+
+    float edgeSdf = sdBox(rawShadowPos.xy, vec2(1.0, 1.0)) * 5.0;
+    float edgeFade = clamp(-edgeSdf, 0.0, 1.0);
+    
+    if (edgeFade < 0.001)
+        return 1.0;
+    
+    vec3 shadowNormal = GetShadowNormal(shadowUbo.viewProj, shadingNormal);
+    float shadowNDotL = abs(dot(normalize(shadowNormal), vec3(0.0, 0.0, 1.0)));
+    float bias = ComputeDepthBias(shadowNDotL, shadowUbo.bias, shadowUbo.slopeBias, shadowUbo.texelSize);
+    
+    float absNDotL = max(abs(geoNDotL), 0.05);
+    
+    float grazingStretch = clamp(1.0 / absNDotL, 1.0, 4.0);
+
+    float shadowFactor = 1.0;
+    switch(filterType)
+    {
+        case 1:
+        shadowFactor = sampleShadowPCF(shadowUbo, shadowCoord.xyz, bias, grazingStretch);
+        break;
+        case 2:
+        shadowFactor = sampleShadowPCSS(shadowUbo, shadowCoord, bias, grazingStretch);
+        break;
+        default:
+        shadowFactor = sampleShadowMap(shadowUbo, shadowCoord.xy, shadowCoord.z, bias);
+        break;
+    }
+
+    return mix(1.0, shadowFactor, edgeFade);
+}
+
+@@ edit shared-taps Lighting/SunShadows.glsl
+@@ what added the shadow filters whose samples neighbouring pixels share
+@@ needs shared-taps-uses
+@@ find
+float getSunShadowFiltered(ShadowUBO shadowUbo, vec3 worldPos, vec3 worldNormal)
+{
+    return getSunShadowFiltered(shadowUbo, worldPos, worldNormal, shadowUbo.filterType);
+}
+@@ replace
+float getSunShadowFiltered(ShadowUBO shadowUbo, vec3 worldPos, vec3 worldNormal)
+{
+    return getSunShadowFiltered(shadowUbo, worldPos, worldNormal, shadowUbo.filterType);
+}
+
+#if defined(PORT_SHARED_SHADOW_TAPS_HERE)
+// macOS port: Shared Shadow Samples. getSunShadowFiltered with the PCF or PCSS taps split across the pixel's 2x2 quad:
+// each pixel takes every fourth tap and the quad sums them, so a quad costs one pixel's taps and every pixel gets the
+// quad's mean, a 2-pixel blur of a map whose texels are metres wide. Every pixel of the quad must call it: the callers'
+// branches are quad-uniform, and none of the quad's pixels has returned. KSA Metal sets the constant to false when
+// KSA_MTL_SHARED_SHADOW_SAMPLES is 0.
+layout(constant_id = 901) const bool PORT_SHARED_SHADOW_TAPS = true;
+
+float portQuadSum(float v)
+{
+    v += subgroupQuadSwapHorizontal(v);
+    v += subgroupQuadSwapVertical(v);
+    return v;
+}
+
+float portShadowPCSSShared(ShadowUBO shadowUbo, vec4 shadowCoord, float bias, float grazingStretch)
+{
+    int lane = int(gl_SubgroupInvocationID & 3u);
+    float texelSize = shadowUbo.texelSize;
+    float orthoSize = max(shadowUbo.orthoWidth, EPSILON);
+    float clipRange = shadowUbo.clipPlanes.y - shadowUbo.clipPlanes.x;
+    float minSearch = texelSize * 2.0 * grazingStretch;
+    float maxSearch = texelSize * 16.0 * grazingStretch;
+    float receiverDepth = shadowCoord.z;
+    float depthFactor = smoothstep(0.1, 0.9, receiverDepth);
+    float depthCompare = saturate(shadowCoord.z - bias);
+    mat2 R = PoissonRotation(gl_FragCoord.xy);
+    vec3 shadowPosDX = dFdxFine(shadowCoord.xyz);
+    vec3 shadowPosDY = dFdyFine(shadowCoord.xyz);
+    vec2 receiverPlaneDepthBias = ComputeReceiverPlaneBias(shadowPosDX, shadowPosDY);
+    float fractionalSamplingError = dot(vec2(texelSize), abs(receiverPlaneDepthBias));
+    depthCompare -= min(fractionalSamplingError, 0.01);
+    float searchRadius = mix(minSearch, maxSearch, depthFactor);
+    float blockerSum = 0.0, blockers = 0.0;
+    for (int i = lane; i < POISSON_COUNT; i += 4)
+    {
+        vec2 offset = (R * POISSON_KERNEL[i]) * searchRadius;
+        float comp = depthCompare + dot(offset, receiverPlaneDepthBias);
+        float sampledDepth = sampleShadowMap(shadowUbo, shadowCoord.xy + offset);
+        float isBlocker = 1.0 - step(comp, sampledDepth);
+        blockerSum += sampledDepth * isBlocker;
+        blockers += isBlocker;
+    }
+    blockerSum = portQuadSum(blockerSum);
+    blockers = portQuadSum(blockers);
+    if (blockers < 0.5)
+        return 1.0;
+    float avgBlockerDepth = blockerSum / blockers;
+    float separationDepth = max(0.0, avgBlockerDepth - receiverDepth);
+    float filterRadius = separationDepth * clipRange * SUN_ANGULAR_DIAMETER / orthoSize;
+    filterRadius = clamp(filterRadius, texelSize * grazingStretch, maxSearch);
+    filterRadius = floor((filterRadius + texelSize * 0.5) / texelSize) * texelSize;
+    float smoothWidth = clamp(filterRadius * 0.85, texelSize, texelSize * 4.0);
+    smoothWidth = max(smoothWidth, length(receiverPlaneDepthBias) * texelSize * 0.5);
+    float denom = max(1.0 - avgBlockerDepth, EPSILON);
+    float penumbraRatio = saturate((avgBlockerDepth - receiverDepth) / denom);
+    float radiusNorm = saturate(filterRadius / (texelSize * 16));
+    int adaptiveCount = int(mix(8.0, float(POISSON_COUNT), radiusNorm));
+    float shadowFactor = 0.0, validSamples = 0.0;
+    for (int i = lane; i < adaptiveCount; i += 4)
+    {
+        vec2 offset = (R * POISSON_KERNEL[i]) * filterRadius;
+        float comp = depthCompare + dot(offset, receiverPlaneDepthBias);
+        float sampledDepth = sampleShadowMap(shadowUbo, shadowCoord.xy + offset);
+        float filtered = smoothstep(comp - smoothWidth, comp + smoothWidth, sampledDepth);
+        float x = 2.0 * filtered - 1.0;
+        float sg = sign(x);
+        x = 1.0 - sg * x;
+        x = x * x * x;
+        x = sg - x * sg;
+        filtered = mix(0.5 * x + 0.5, filtered, penumbraRatio);
+        shadowFactor += filtered;
+        validSamples += 1.0;
+    }
+    shadowFactor = portQuadSum(shadowFactor);
+    validSamples = portQuadSum(validSamples);
+    return validSamples < 0.5 ? 1.0 : shadowFactor / validSamples;
+}
+
+float portShadowPCFShared(ShadowUBO shadowUbo, vec3 shadowCoord, float bias, float grazingStretch)
+{
+    int lane = int(gl_SubgroupInvocationID & 3u);
+    float texelSize = shadowUbo.texelSize;
+    float shadowMapSize = 1.0 / texelSize;
+    float filterScale = texelSize * grazingStretch;
+    vec2 dz_dUV = CalculateReceiverPlane(shadowCoord);
+    float smoothWidth = max(texelSize * 1.5, length(dz_dUV) * texelSize * 0.5);
+    float shadow = 0.0, validSamples = 0.0;
+    for (int i = lane; i < PCF_SAMPLE_COUNT; i += 4)
+    {
+        vec2 uvSample = shadowCoord.xy + PCF_KERNEL[i] * filterScale;
+        float zBias = bias + CalculateReceiverPlaneDepthBias(dz_dUV, uvSample, texelSize, shadowMapSize, shadowUbo.slopeBias);
+        float d = sampleShadowMap(shadowUbo, uvSample);
+        float z = shadowCoord.z - zBias;
+        shadow += smoothstep(z - smoothWidth, z + smoothWidth, d);
+        validSamples += 1.0;
+    }
+    shadow = portQuadSum(shadow);
+    validSamples = portQuadSum(validSamples);
+    return validSamples > 0.5 ? shadow / validSamples : 1.0;
+}
+
+// getSunShadowFiltered with the quad's taps, and no early return before them (the quad's lanes all reach the swaps)
+float portSunShadowShared(ShadowUBO shadowUbo, vec3 worldPos, vec3 worldNormal)
+{
+    if (isSunShadowMapMissing(shadowUbo))
+        return 1.0;
+    vec3 toLight = normalize(global.lighting.sunPosition.xyz - worldPos);
+    vec3 shadingNormal = normalize(worldNormal);
+    float geoNDotL = dot(shadingNormal, toLight);
+    float texelSizeWorld = shadowUbo.orthoWidth * shadowUbo.texelSize;
+    float angleFactor = saturate(1.0 - geoNDotL);
+    float normalOffsetScale = min(shadowUbo.normalBias * angleFactor * angleFactor, 2.0);
+    vec3 offsetPos = worldPos + shadingNormal * (normalOffsetScale * texelSizeWorld);
+    vec4 rawShadowPos = shadowUbo.viewProj * vec4(offsetPos, 1);
+    vec4 shadowCoord = rawShadowPos;
+    shadowCoord.xyz *= 1.0 / max(shadowCoord.w, EPSILON);
+    shadowCoord.xy = shadowCoord.xy * 0.5 + 0.5;
+    float edgeFade = clamp(-sdBox(rawShadowPos.xy, vec2(1.0, 1.0)) * 5.0, 0.0, 1.0);
+    vec3 shadowNormal = GetShadowNormal(shadowUbo.viewProj, shadingNormal);
+    float shadowNDotL = abs(dot(normalize(shadowNormal), vec3(0.0, 0.0, 1.0)));
+    float bias = ComputeDepthBias(shadowNDotL, shadowUbo.bias, shadowUbo.slopeBias, shadowUbo.texelSize);
+    float grazingStretch = clamp(1.0 / max(abs(geoNDotL), 0.05), 1.0, 4.0);
+    float shadowFactor;
+    if (shadowUbo.filterType == 2)
+        shadowFactor = portShadowPCSSShared(shadowUbo, shadowCoord, bias, grazingStretch);
+    else if (shadowUbo.filterType == 1)
+        shadowFactor = portShadowPCFShared(shadowUbo, shadowCoord.xyz, bias, grazingStretch);
+    else
+        shadowFactor = sampleShadowMap(shadowUbo, shadowCoord.xy, shadowCoord.z, bias);
+    return edgeFade < 0.001 ? 1.0 : mix(1.0, shadowFactor, edgeFade);
+}
+#endif
+
+@@ edit shared-taps-terrain-define Planet/Planet.frag
+@@ what let the terrain share its shadow's samples between neighbouring pixels
+@@ needs shared-taps terrain-shadows
+@@ find
+#extension GL_KHR_shader_subgroup_quad : require  // macOS port: the shadows' skip below decides per 2x2 quad
+@@ replace
+#extension GL_KHR_shader_subgroup_quad : require  // macOS port: the shadows' skip below decides per 2x2 quad
+#define PORT_SHARED_SHADOW_TAPS_HERE  // macOS port: Shared Shadow Samples, before any include of SunShadows.glsl
+
+@@ edit shared-taps-terrain Planet/Planet.frag
+@@ what made neighbouring pixels of the terrain share its shadow's samples
+@@ needs shared-taps-terrain-define
+@@ find
+        sunShadowFactor = getSunShadowFiltered(terrainShadowUbo, inWorldPosition.xyz, sphereWorldNormal);
+@@ replace
+        // macOS port: the quad shares the samples (Shared Shadow Samples), but where the ocean cut it short
+        sunShadowFactor = PORT_SHARED_SHADOW_TAPS && portOceanQuad == 0u
+            ? portSunShadowShared(terrainShadowUbo, inWorldPosition.xyz, sphereWorldNormal)
+            : getSunShadowFiltered(terrainShadowUbo, inWorldPosition.xyz, sphereWorldNormal);
+
+@@ edit shared-taps-grass-define Planet/GroundClutter/Solid.frag
+@@ what let the ground clutter share its terrain shadow's samples between neighbouring pixels
+@@ needs shared-taps grass
+@@ find
+#extension GL_KHR_shader_subgroup_quad : require  // macOS port: the shadows' skip below decides per 2x2 quad
+@@ replace
+#extension GL_KHR_shader_subgroup_quad : require  // macOS port: the shadows' skip below decides per 2x2 quad
+#define PORT_SHARED_SHADOW_TAPS_HERE  // macOS port: Shared Shadow Samples, before any include of SunShadows.glsl
+
+@@ edit shared-taps-grass Planet/GroundClutter/Solid.frag
+@@ what made neighbouring pixels of the ground clutter share its terrain shadow's samples
+@@ needs shared-taps-grass-define
+@@ find
+            sunShadowFactor = getSunShadowFiltered(terrainShadowUbo, inWorldPosition.xyz, meshWorldNormal);
+@@ replace
+            sunShadowFactor = PORT_SHARED_SHADOW_TAPS  // macOS port: the quad shares the samples (Shared Shadow Samples)
+                ? portSunShadowShared(terrainShadowUbo, inWorldPosition.xyz, meshWorldNormal)
+                : getSunShadowFiltered(terrainShadowUbo, inWorldPosition.xyz, meshWorldNormal);

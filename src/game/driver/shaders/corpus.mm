@@ -52,6 +52,7 @@ void kmtlCorpusRecord(uint64_t key, KShaderModule* mod, const char* entry, spv::
     const char* presets = kmtlConfig().spec;
     snprintf(line, sizeof(line), "config %d %d ", (int)kmtlConfig().shaderConstantMemory, (int)kmtlConfig().skipShadowsOnUnlitSides);
     t += line + std::string(presets ? presets : "-") + "\n";
+    if (!kmtlConfig().sharedShadowSamples) t += "shared-shadow-samples 0\n";  // a line of its own: older records lack it
     if (layout) {
         t += "sets " + std::to_string(layout->sets.size()) + "\n";
         for (KSetLayout* sl : layout->sets) {
@@ -161,6 +162,8 @@ bool kmtlCorpusLoad(const std::string& dir, uint64_t key, KCorpusEntry* out, std
             out->constantArgumentBuffers = constantAB;
             out->unlitShadowSkip = unlitSkip;
             out->specPresets = ok && rest.substr(n) != "-" ? rest.substr(n) : "";
+        } else if (what == "shared-shadow-samples") {
+            out->sharedShadowSamples = atoi(r) != 0;
         } else if (what == "sets") {
             out->hasLayout = true;
         } else if (what == "set") {

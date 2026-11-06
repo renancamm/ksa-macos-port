@@ -93,8 +93,17 @@ static ParsedIR sizeRuntimeArrays(const std::vector<uint32_t>& spirv, KPipelineL
     return ir;
 }
 
-// PORT_SKIP_UNLIT_SHADOWS, the specialization constant of the shadow edits (src/game/changes/optimizations/)
-static const uint32_t kUnlitShadowSkipConstant = 900;
+// PORT_SKIP_UNLIT_SHADOWS and PORT_SHARED_SHADOW_TAPS, the specialization constants of the shadow edits
+// (src/game/changes/optimizations/unlit-shadows.edits), true in the source; off when their setting is
+static const uint32_t kUnlitShadowSkipConstant = 900, kSharedShadowTapsConstant = 901;
+
+// The edits' constants this configuration turns off
+static std::vector<uint32_t> switchesOff() {
+    std::vector<uint32_t> off;
+    if (!kmtlConfig().skipShadowsOnUnlitSides) off.push_back(kUnlitShadowSkipConstant);
+    if (!kmtlConfig().sharedShadowSamples) off.push_back(kSharedShadowTapsConstant);
+    return off;
+}
 
 // Whether the module declares a specialization constant with this id (OpDecorate <id> SpecId <specId>)
 static bool hasSpecId(const KShaderModule* mod, uint32_t specId) {
@@ -268,11 +277,10 @@ bool kmtlTranslate(KShaderModule* mod, const char* entryName, spv::ExecutionMode
             }
         }
 
-        // KSA_MTL_SKIP_SHADOWS_ON_UNLIT_SIDES=0: the shader edits that skip shadows where there is no light
-        // (unlit-shadows.edits) read this constant (PORT_SKIP_UNLIT_SHADOWS, true in the source)
-        if (!kmtlConfig().skipShadowsOnUnlitSides)
+        // KSA_MTL_SKIP_SHADOWS_ON_UNLIT_SIDES=0, KSA_MTL_SHARED_SHADOW_SAMPLES=0: the shadow edits read these constants
+        for (uint32_t id : switchesOff())
             for (auto& sc : c.get_specialization_constants())
-                if (sc.constant_id == kUnlitShadowSkipConstant) c.get_constant(sc.id).m.c[0].r[0].u32 = 0;
+                if (sc.constant_id == id) c.get_constant(sc.id).m.c[0].r[0].u32 = 0;
 
         out->msl = c.compile();
         if (viewMask) {
@@ -327,7 +335,8 @@ uint64_t kmtlTranslationKey(KShaderModule* mod, const char* entry, spv::Executio
         (uint32_t)mod->hash, (uint32_t)(mod->hash >> 32), so.rtLaunch, (uint32_t)kmtlConfig().shaderConstantMemory,
         so.tessFusedInput};
     if (const char* presets = kmtlConfig().spec) k.push_back((uint32_t)kmtlHash(presets, strlen(presets)));
-    if (!kmtlConfig().skipShadowsOnUnlitSides && hasSpecId(mod, kUnlitShadowSkipConstant)) k.push_back(kUnlitShadowSkipConstant);
+    for (uint32_t id : switchesOff())
+        if (hasSpecId(mod, id)) k.push_back(id);
     for (const char* c = entry; *c; c++) k.push_back((uint8_t)*c);
     if (layout) {
         for (KSetLayout* sl : layout->sets) {
