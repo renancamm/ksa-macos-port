@@ -21,8 +21,8 @@ namespace KsaMetal.Hooks.Features;
 // view's image into an image of the swapchain's size (the display's pixels), which the composite then reads instead.
 // For MetalFX's temporal upscaler, the projection moves by a different sub-pixel offset every frame (a Halton
 // sequence of 16), the cockpit's ray tracing's too, and the driver makes the motion vectors from the depth buffer and
-// two reprojections passed here, both computed in double: the scene through the nearby body's rotating frame, and
-// inside its bounding sphere the vessel the camera follows, through its own frame. A copy of the image before the
+// the reprojections passed here, computed in double: the scene through the nearby body's rotating frame, the sky by the
+// camera's turn alone, and inside its bounding sphere the vessel the camera follows, through its own frame. A copy of the image before the
 // exhausts, particles and glass lets the driver mark what those change as reactive (no smearing). With frame
 // interpolation, the final composite then marks where the UI starts, so that MetalFX can draw this frame's UI over
 // the frame it makes.
@@ -48,6 +48,7 @@ internal static class Upscale
         public fixed float EgoFromClip[16];
         public fixed float PrevClipFromEgo[16];
         public fixed float PrevClipFromEgoObject[16];
+        public fixed float PrevClipFromEgoSky[16];
         public fixed float ObjectSphere[4];
         public float FovY, NearPlane, FarPlane, DeltaTime;
         public uint Flags, Pad;
@@ -140,7 +141,7 @@ internal static class Upscale
     private static bool _reset = true, _havePrevious;
     private static int _frame;
     private static float2 _jitter, _jitterClip;
-    private static float4x4 _egoFromClip, _scene, _object, _previousViewProjection;
+    private static float4x4 _egoFromClip, _scene, _object, _sky, _previousViewProjection;
     private static float4 _sphere;
     private static float _fovY = 1f, _deltaTime;
     private static double4x4 _previousEgoToFrame, _previousEgoToObject;
@@ -226,8 +227,7 @@ internal static class Upscale
         float4x4 p = camera.MVP.projection;
         _fovY = 2f * MathF.Atan(1f / MathF.Abs(p.M22));
         _deltaTime = data.DeltaTime;
-        p.M31 -= _jitterClip.X;
-        p.M32 -= _jitterClip.Y;
+        AddJitter(ref p);
         float4x4 viewProjection = camera.MVP.view * p;
         float4x4.Invert(p, out var inverseProjection);
         data.Projection = p;
@@ -236,6 +236,9 @@ internal static class Upscale
         // The inverse in double: the depth range is 0.1 m to 1 AU
         double4x4.Invert(ToDouble(in viewProjection), out var egoFromClip);
         _egoFromClip = float4x4.Pack(in egoFromClip);
+        // The sky (stars, the Milky Way, the Sun's disc) is fixed in the ecliptic axes of the ego space: only the
+        // camera's turn moves it
+        _sky = _havePrevious ? _previousViewProjection : camera.MVP.viewProjection;
         Celestial? body = camera.GetEffectiveNearbyCelestial();
         double4x4 egoToFrame = EgoToFrame(camera, body);
         double time = Universe.GetElapsedSeconds();
@@ -327,6 +330,7 @@ internal static class Upscale
         Put(info.EgoFromClip, in _egoFromClip);
         Put(info.PrevClipFromEgo, in _scene);
         Put(info.PrevClipFromEgoObject, in _object);
+        Put(info.PrevClipFromEgoSky, in _sky);
         info.ObjectSphere[0] = _sphere.X;
         info.ObjectSphere[1] = _sphere.Y;
         info.ObjectSphere[2] = _sphere.Z;
@@ -371,11 +375,16 @@ internal static class Upscale
     private static float4x4 Jittered(float4x4 projection, IViewport viewport)
     {
         if (viewport.Type == ViewportType.Main)
-        {
-            projection.M31 -= _jitterClip.X;
-            projection.M32 -= _jitterClip.Y;
-        }
+            AddJitter(ref projection);
         return projection;
+    }
+
+    // Clip x and y moved by the jitter's share of w: the column of w added to theirs, which holds for the perspective
+    // projection (w from the view's z) and for the Vehicle Editor's orthographic one (w = 1) alike
+    private static void AddJitter(ref float4x4 p)
+    {
+        p.M11 += _jitterClip.X * p.M14; p.M21 += _jitterClip.X * p.M24; p.M31 += _jitterClip.X * p.M34; p.M41 += _jitterClip.X * p.M44;
+        p.M12 += _jitterClip.Y * p.M14; p.M22 += _jitterClip.Y * p.M24; p.M32 += _jitterClip.Y * p.M34; p.M42 += _jitterClip.Y * p.M44;
     }
 
     private static void Snapshot(CommandBuffer commandBuffer)

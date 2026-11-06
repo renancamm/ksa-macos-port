@@ -1,12 +1,12 @@
 // MetalFX upscaling for the hooks' render scale (src/game/hooks/), behind private entry points the patched game calls:
 // vkCmdUpscaleKSA between its scene and its final composite, vkCmdUpscaleSnapshotKSA before its translucent effects.
 // KSA Metal makes the motion vectors itself from the depth buffer and the matrices the game passes: the scene's
-// motion through the nearby body's frame, and inside a bounding sphere the motion of the vessel the camera follows,
-// through its own frame. What the translucent effects and the bloom changed since the snapshot becomes MetalFX's
-// reactive mask, so that plumes moving with the camera don't smear. Past the temporal upscaler's largest scale (3x on
-// an M5), it upscales as far as it can and MetalFX's spatial upscaler does the rest. The same file has the present's
-// MetalFX pass: frame interpolation (KSA_MTL_FRAME_INTERPOLATION), for which the game marks where its UI starts
-// (vkCmdMarkUiKSA).
+// motion through the nearby body's frame (the sky's by the camera's turn alone), and inside a bounding sphere the
+// motion of the vessel the camera follows, through its own frame. What the translucent effects and the bloom changed
+// since the snapshot becomes MetalFX's reactive mask, so that plumes moving with the camera don't smear. Past the
+// temporal upscaler's largest scale (3x on an M5), it upscales as far as it can and MetalFX's spatial upscaler does the
+// rest. The same file has the present's MetalFX pass: frame interpolation (KSA_MTL_FRAME_INTERPOLATION), for which the
+// game marks where its UI starts (vkCmdMarkUiKSA).
 #import <MetalFX/MetalFX.h>
 #include "kmtl.h"
 
@@ -21,6 +21,7 @@ struct VkUpscaleInfoKSA {
     float egoFromClip[16];      // (ndc.xy, depth, 1) * M = homogeneous ego position (inverse jittered view-projection)
     float prevClipFromEgo[16];  // ego * M = the previous frame's unjittered clip position, for the scene
     float prevClipFromEgoObject[16];  // the same for the followed object
+    float prevClipFromEgoSky[16];     // the same for the sky (depth 0)
     float objectSphere[4];      // its bounding sphere in ego (radius 0: none)
     float fovY, nearPlane, farPlane, deltaTime;  // for frame interpolation
     uint32_t flags;          // kUpscaleReset, kUpscaleSpatial
@@ -34,7 +35,7 @@ static const float kReactiveGain = 2.f;
 static const char* kMotionSource = R"(
 #include <metal_stdlib>
 using namespace metal;
-struct Params { float4x4 egoFromClip, scene, object; float4 sphere; float2 size; float2 jitter; float reactiveGain; uint hasSnapshot; };
+struct Params { float4x4 egoFromClip, scene, object, sky; float4 sphere; float2 size; float2 jitter; float reactiveGain; uint hasSnapshot; };
 kernel void motion(depth2d<float, access::read> depth [[texture(0)]], texture2d<half, access::write> mv [[texture(1)]],
                    texture2d<half, access::read> color [[texture(2)]], texture2d<half, access::read> snapshot [[texture(3)]],
                    texture2d<half, access::write> reactive [[texture(4)]],
@@ -44,7 +45,7 @@ kernel void motion(depth2d<float, access::read> depth [[texture(0)]], texture2d<
     float2 pix = float2(gid) + 0.5;
     float4 ego = p.egoFromClip * float4(pix / p.size * 2.0 - 1.0, d, 1.0);
     bool onObject = p.sphere.w > 0 && abs(ego.w) > 1e-20 && distance(ego.xyz / ego.w, p.sphere.xyz) < p.sphere.w;
-    float4 prev = (onObject ? p.object : p.scene) * ego;
+    float4 prev = (d == 0 ? p.sky : onObject ? p.object : p.scene) * ego;
     float2 prevPix = (prev.xy / prev.w * 0.5 + 0.5) * p.size;
     float2 v = prevPix - (pix - p.jitter);
     if (!all(isfinite(v))) v = 0;
@@ -241,10 +242,11 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
         g_up.spatial.inputContentHeight = info->inputHeight;
         [g_up.spatial encodeToCommandBuffer:cb->mtl];
     } else {
-        struct { float egoFromClip[16], scene[16], object[16], sphere[4]; float size[2]; float jitter[2]; float reactiveGain; uint32_t hasSnapshot; float pad[2]; } p;
+        struct { float egoFromClip[16], scene[16], object[16], sky[16], sphere[4]; float size[2]; float jitter[2]; float reactiveGain; uint32_t hasSnapshot; float pad[2]; } p;
         memcpy(p.egoFromClip, info->egoFromClip, sizeof(p.egoFromClip));
         memcpy(p.scene, info->prevClipFromEgo, sizeof(p.scene));
         memcpy(p.object, info->prevClipFromEgoObject, sizeof(p.object));
+        memcpy(p.sky, info->prevClipFromEgoSky, sizeof(p.sky));
         memcpy(p.sphere, info->objectSphere, sizeof(p.sphere));
         p.size[0] = (float)info->inputWidth; p.size[1] = (float)info->inputHeight;
         p.jitter[0] = info->jitterX; p.jitter[1] = info->jitterY;
