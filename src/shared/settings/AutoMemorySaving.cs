@@ -10,11 +10,10 @@ namespace KsaPort.Common;
 // or less it also limits the game's texture and shadow sizes and its texture streaming budget (the solar system
 // doesn't fit an 8 GB Mac's GPU memory otherwise); with more than 16 GB the game keeps its own memory use, nothing
 // gained, no part of the port's left in the way. Off gives the rows their defaults, the game's own, and the budget
-// back. The Memory section's rows are its own, which the graphics presets never touch; Fewer Effects at Once it
-// shares with the Performance preset: on with 8 GB or less, the preset's otherwise (an empty tier value). Picked like
-// a preset: in the tab, on a fresh install's first start (the hooks' loader, as it writes port-settings.toml), on the
-// game's Reset, and in a benchmark run with --defaults. A row changed by hand afterwards keeps its value; with 8 GB
-// or less every graphics preset's texture and shadow sizes take the limits.
+// back. Its rows are the Memory section's, which the graphics presets never touch. Picked like a preset: in the tab,
+// on a fresh install's first start (the hooks' loader, as it writes port-settings.toml), on the game's Reset, and in a
+// benchmark run with --defaults. A row changed by hand afterwards keeps its value; with 8 GB or less every graphics
+// preset's texture and shadow sizes take the limits.
 public static class AutoMemorySaving
 {
     public const string Key = "auto_memory_saving";
@@ -66,13 +65,11 @@ public static class AutoMemorySaving
         _ => "more than 16 GB",
     };
 
-    // The rows' values when on, for a tier: those with a value for it (an empty one leaves the row to its preset)
-    public static Dictionary<string, string> Port(Tier tier) =>
-        Rows.Where(s => s.Memory[(int)tier].Length > 0).ToDictionary(s => s.Key, s => s.Memory[(int)tier]);
+    // The rows' values when on, for a tier
+    public static Dictionary<string, string> Port(Tier tier) => Rows.ToDictionary(s => s.Key, s => s.Memory[(int)tier]);
 
-    // The rows' values when off: the default, the game's own, of every row it sets on a Mac with memory to spare
-    public static Dictionary<string, string> Off() =>
-        Rows.Where(s => s.Memory[(int)Tier.Large].Length > 0).ToDictionary(s => s.Key, s => s.Default);
+    // The rows' values when off: their defaults, the game's own
+    public static Dictionary<string, string> Off() => Rows.ToDictionary(s => s.Key, s => s.Default);
 
     // A size or cap with the small tier's limit
     public static int Limit(int value, int atMost) => value == 0 || value > atMost ? atMost : value;

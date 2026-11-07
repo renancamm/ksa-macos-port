@@ -301,7 +301,7 @@ internal static partial class MacPortTab
         if (s.Outside != null)
         {
             note = "set outside";
-            return $"{s.Outside} is set where the game was started, and it decides this setting instead of the file.";
+            return $"Set by {s.Outside} where the game was started, which wins over this tab.";
         }
         foreach (var hook in s.Hooks)
         {
@@ -309,8 +309,8 @@ internal static partial class MacPortTab
                 continue;
             note = "unavailable";
             return status.State == HookState.Skipped
-                ? "Unavailable with this KSA version: the game's code it changes has moved, so it is left out (logs/console.log says more)."
-                : "Unavailable: it ran into an error, so it is left out (logs/console.log says why).";
+                ? "Unavailable with this KSA version (logs/console.log says more)."
+                : "Unavailable: it ran into an error (logs/console.log says why).";
         }
         foreach (var need in s.Needs)
         {
@@ -385,6 +385,8 @@ internal static partial class MacPortTab
         }
         if (!pending && note.Length > 0)
             Note(s.Label, note);
+        if (s.Tag.Length > 0)
+            Tag(s.Label, s.Tag, pending ? "" : note);
         string? optionHelp = null;
         var id = "MacPort_" + s.Key;
         switch (s.Kind)
@@ -432,7 +434,7 @@ internal static partial class MacPortTab
         SectionHeader("Presets", PortSettings.Sections.First(s => s.Key == "presets").Caption, first: true);
         var unavailable = Hooks.Status.GetValueOrDefault(nameof(Presets)) is { Unavailable: true } status
             ? status.State == HookState.Skipped
-                ? "Unavailable with this KSA version: the game's settings it sets have moved (logs/console.log says more)."
+                ? "Unavailable with this KSA version (logs/console.log says more)."
                 : "Unavailable: it ran into an error (logs/console.log says why)."
             : null;
         var pending = _temporary.GetValue(null) as GameSettings;
@@ -453,7 +455,7 @@ internal static partial class MacPortTab
             _presetsSaving = saving;
         }
         var limits = saving && mac.Tier == AutoMemorySaving.Tier.Small
-            ? $"On this {mac.MemoryGb} GB Mac with Auto Memory Saving on, its textures and shadow maps are at most 2048 wide. " : "";
+            ? $"With Auto Memory Saving on this {mac.MemoryGb} GB Mac, textures and shadow maps are at most 2048 wide. " : "";
         string Port(string key) => Value(PortSettings.Get(key)!);
         var inUse = Presets.All.FirstOrDefault(p => Presets.Matches(p, GameSettings.Current, key => PortSettings.Get(key)!.Saved)) ??
             Presets.Picked(PortSettings.Get(Presets.Key)!.Saved);
@@ -471,7 +473,7 @@ internal static partial class MacPortTab
             Hooks.Log($"MacPortTab: {Presets.All[clicked].Name} preset pending");
         }
         if (hovered >= 0)
-            Tooltip(Presets.All[hovered].Help + "\n\n" + limits + "This makes them pending changes, here and in the game's tabs; Apply keeps them.");
+            Tooltip(Presets.All[hovered].Help + "\n\n" + limits + "Apply keeps the changes.");
         if (count > 0)
             Footnote($"* {count} setting{(count == 1 ? " differs" : "s differ")} from {based.Name}.", ConsoleWidgets.RowLabelInsetPx);
         DrawMemoryBanner(memory, pending);
