@@ -171,7 +171,7 @@ internal static class Tests
     // names
     private static void Names()
     {
-        Equal("KSA_MTL_FUSED_TESSELLATION", Setting("fused_tessellation").Variable, "a variable");
+        Equal("KSA_MTL_SHADER_CONSTANT_MEMORY", Setting("shader_constant_memory").Variable, "a variable");
         Equal("MTL_HUD_ENABLED", Setting("metal_performance_hud").Variable, "Apple's variable");
         Equal("", Setting("restart_for_a_clean_run").Variable, "the tab's own");
         Equal("TerrainCache", Setting("terrain_cache").Hook, "a hook");
@@ -261,8 +261,8 @@ internal static class Tests
         values["gpu_profile"] = "~/profile.csv";
         Check(Met("gpu_profile_frames"), "gpu_profile_frames with gpu_profile");
         Check(!Met("lighter_plume_shadows", game: false), "lighter_plume_shadows without the game's plume trail shadows");
-        values["tessellation"] = "false";
-        Check(!Met("fused_tessellation"), "fused_tessellation without tessellation");
+        values["unload_far_terrain"] = "false";
+        Check(!Met("load_terrain_by_altitude"), "load_terrain_by_altitude without unload_far_terrain");
     }
 
     private static void FromEnvironment()

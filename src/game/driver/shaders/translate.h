@@ -19,7 +19,6 @@ struct KStageOptions {
     uint32_t tessControlPoints = 0;
     bool tessQuads = false;
     bool rtLaunch = false;  // ray tracing kernel: launch size uniform at set 15 -> kRtLaunchBufferIndex
-    bool tessFusedInput = false;  // fused evaluation stage: control points as stage-in attributes, not a raw buffer
 };
 
 // Everything that shapes a stage's translation, hashed: translations with the same key are the same

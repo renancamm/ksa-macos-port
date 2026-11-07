@@ -135,7 +135,7 @@ internal static class Generate
 
     private static string TomlValue(PortSetting s) => s.Toml(s.Default);
 
-    // A key as a name in code: PascalCase for C# (fused_tessellation: FusedTessellation), camelCase for C
+    // A key as a name in code: PascalCase for C# (shader_constant_memory: ShaderConstantMemory), camelCase for C
     private static string Pascal(string key) => string.Concat(key.Split('_').Select(w => char.ToUpperInvariant(w[0]) + w[1..]));
     private static string Camel(string key) => char.ToLowerInvariant(Pascal(key)[0]) + Pascal(key)[1..];
 

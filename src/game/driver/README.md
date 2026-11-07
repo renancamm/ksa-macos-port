@@ -26,7 +26,6 @@ These switches turn a feature off or change a default, to work around a problem 
 | Setting | Effect |
 |---|---|
 | `tessellation` | off: hide tessellation from the game; it draws terrain and ocean without it |
-| `fused_tessellation` | off: tessellate without the fused path ([Tessellation](#from-vulkan-to-metal)): the vertex stage's outputs go through memory (try it when the ocean looks wrong) |
 | `ray_queries` | off: hide ray queries and ray tracing; the game places clutter without them, and ray tracing inside the cockpit (IVA) is unavailable |
 | `ray_tracing` | off: hide only ray tracing pipelines (the cockpit's ray tracing) |
 | `background_shader_compiling` | off: compile pipelines on the game's thread, when the game creates them |
@@ -252,13 +251,8 @@ Metal's tessellator has no vertex or control stages, so KSA Metal runs those two
 output into scratch buffers, then draws the patches with the evaluation shader as Metal's post-tessellation vertex
 function.
 
-When the control shader passes its control points through unchanged, as KSA's ocean shaders do, the vertex
-outputs don't go through memory at all. KSA Metal links the vertex shader into the evaluation shader at the
-SPIR-V level, so the evaluation stage runs it for each of its control points on attributes Metal fetches through the
-draw's index buffer. The control shader loses its copies, and the vertex and control kernels shrink to what the
-tessellation factors need. Draws with 16-bit indices or instances keep the evaluation stage reading the vertex
-kernel's output. The benchmark measures no difference in GPU time with the ocean in view (the Earth flight's nine
-places, Vsync off so that the GPU stays busy: within 0.2 ms); `fused_tessellation` turns it off.
+When the control shader passes its control points through unchanged, as KSA's ocean shaders do, KSA Metal strips
+the copies from it at the SPIR-V level, and the evaluation stage reads the vertex kernel's output in their place.
 
 **Ray tracing.** KSA uses ray queries for ground clutter placement, and ray tracing pipelines for lighting inside
 the cockpit (IVA). Ray queries and acceleration structures map onto Metal's; each structure is placed in the heap of
@@ -320,7 +314,7 @@ The complete mapping:
 | MSAA resolves | a pass that resolves signals an `MTLEvent`; the next compute or blit encoder that reads fragment output waits on it |
 | Render pass, dynamic rendering | `MTLRenderPassDescriptor` |
 | Multiview | one draw per view |
-| Tessellation | vertex and control stages as compute kernels into scratch buffers, `drawPatches` with the evaluation shader as post-tessellation vertex function; with a passthrough control stage, the vertex shader linked into the evaluation shader and `drawIndexedPatches` with the index buffer as control point index buffer |
+| Tessellation | vertex and control stages as compute kernels into scratch buffers, `drawPatches` with the evaluation shader as post-tessellation vertex function; a passthrough control stage loses its copies, and the evaluation stage reads the vertex kernel's output |
 | Acceleration structures, ray query | Metal acceleration structures placed in their buffer's heap (`compact_ray_tracing_memory`; private heaps only, else standalone); instances converted on the CPU to indirect instance descriptors |
 | Ray tracing pipeline | one compute kernel with ray queries (`rtspirv.cpp`) |
 | Triangle fans | a shared (0, i, i+1) index buffer |
@@ -360,7 +354,7 @@ share is in that folder's header too, under a heading that says so (`stages.h` f
 | `shaders/translate.mm`, `translate.h` | a shader stage's translation from SPIR-V to MSL |
 | `shaders/shadercache.mm` | the translation cache on disk and the background compile |
 | `shaders/corpus.mm` | the shader corpus (`shader_corpus`): translations recorded for the tests |
-| `shaders/tessspirv.cpp`, `rtspirv.cpp`, `spvmodule.h` | the SPIR-V rewrites behind passthrough and fused tessellation, and ray tracing as compute kernels; a SPIR-V module as a list of instructions, for them |
+| `shaders/tessspirv.cpp`, `rtspirv.cpp`, `spvmodule.h` | the SPIR-V rewrites behind passthrough tessellation and ray tracing as compute kernels; a SPIR-V module as a list of instructions, for them |
 | `pipelines/stages.mm`, `stages.h` | shader modules, MSL compilation, a stage made ready: translated or from the cache, overridden, compiled |
 | `pipelines/pipelines.mm` | render passes, framebuffers, graphics and compute pipelines |
 | `pipelines/rtpipeline.mm` | ray tracing pipelines rewritten as compute kernels |

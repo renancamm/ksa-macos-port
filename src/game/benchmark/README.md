@@ -119,7 +119,7 @@ The same tests are the project's tool for looking into the driver, the shaders a
 # ...make the change, ./build.sh --install, then:
 ./benchmark.sh check                    # exits with 1 when a screenshot differs
 ./benchmark.sh measure tour             # the numbers, with a warm-up and three passes
-./benchmark.sh measure --ab fused_tessellation=false   # a port setting's cost, A and B in turn
+./benchmark.sh measure --ab shader_constant_memory=false   # a port setting's cost, A and B in turn
 ```
 
 A Mac's heat moves GPU time: after a rest a run reads up to about a tenth low until the chip warms up. `measure`'s

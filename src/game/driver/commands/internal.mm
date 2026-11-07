@@ -21,7 +21,6 @@ kernel void kmtl_tess_prep(const device VkDII& a [[buffer(0)]], device uint* o [
     atomic_fetch_max_explicit(&stats[1], a.firstIndex, memory_order_relaxed);
     atomic_fetch_max_explicit(&stats[2], a.instanceCount, memory_order_relaxed);
     if (a.indexCount > maxIndices) atomic_fetch_add_explicit(&stats[3], 1u, memory_order_relaxed);
-    if (a.vertexOffset != 0) atomic_fetch_max_explicit(&stats[4], uint(abs(a.vertexOffset)), memory_order_relaxed);
     // The scratch buffers hold maxIndices vertices: larger draws are clamped (and reported by the driver)
     uint indexCount = min(a.indexCount, maxIndices / inCP * inCP);
     uint patches = (indexCount / inCP) * a.instanceCount;
@@ -76,7 +75,7 @@ struct KInternalPipelines {
     id<MTLComputePipelineState> fill32 = nil;
     id<MTLComputePipelineState> tessPrep = nil;
     // Written by kmtl_tess_prep: [0] largest index count requested, [1] largest firstIndex, [2] largest instance
-    // count, [3] number of draws clamped to the cap, [4] largest vertexOffset (fused tessellation ignores it)
+    // count, [3] number of draws clamped to the cap
     id<MTLBuffer> tessStats = nil;
     std::atomic<uint32_t> tessCap{0};
     id<MTLSamplerState> nearest = nil, linear = nil;
@@ -234,6 +233,5 @@ uint32_t kmtlTessCap(KDevice* dev) {
         return std::max(cap, grown);
     }
     if (st[1]) KERR_ONCE("indirect tessellated draws with firstIndex %u are drawn from index 0", st[1]);
-    if (st[4]) KERR_ONCE("indirect tessellated draws with vertexOffset %u: fused tessellation (KSA_MTL_FUSED_TESSELLATION) draws them from vertex 0", st[4]);
     return cap;
 }

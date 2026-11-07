@@ -6,7 +6,6 @@
 #include <memory>
 #include <set>
 #include <regex>
-#include <functional>
 
 using namespace SPIRV_CROSS_NAMESPACE;
 
@@ -240,7 +239,7 @@ static std::vector<std::string> structFieldTypes(const std::string& msl, const s
 // given, a control stage that only copies its control points is built without the copies (see below)
 static bool buildTessKernels(KDevice* dev, const VkGraphicsPipelineCreateInfo* ci, const VkPipelineShaderStageCreateInfo* vs,
                              const VkPipelineShaderStageCreateInfo* tcs, KPipelineLayout* layout, KTessStages* st, KTranslated* htr,
-                             const KTranslated& modes, bool* passthrough, KTranslated* vtrOut = nullptr) {
+                             const KTranslated& modes, bool* passthrough) {
     static const CompilerMSL::Options::IndexType types[3] = {CompilerMSL::Options::IndexType::None,
         CompilerMSL::Options::IndexType::UInt16, CompilerMSL::Options::IndexType::UInt32};
     for (int t = 0; t < 3; t++) {
@@ -284,7 +283,6 @@ static bool buildTessKernels(KDevice* dev, const VkGraphicsPipelineCreateInfo* c
             return false;
         }
         st->vertexStride = outputStride(refl, kTessOutputBufferIndex);
-        if (vtrOut) *vtrOut = vtr;
     }
     KStageOptions so;
     so.tess = KTessRole::ControlKernel;
@@ -308,9 +306,9 @@ static bool buildTessKernels(KDevice* dev, const VkGraphicsPipelineCreateInfo* c
         return true;
     };
     // A passthrough control stage (tessspirv.cpp) loses its copies, and the evaluation stage reads the vertex kernel's
-    // records in their place: so the stripped kernel's record must be the vertex kernel's (the translated records
-    // compared the way the fused path compares its own, and the reflected strides). Otherwise, and for a stage that
-    // computes something per control point, the stage runs as written
+    // records in their place: so the stripped kernel's record must be the vertex kernel's (the translated records'
+    // field types compared, and the reflected strides). Otherwise, and for a stage that computes something per control
+    // point, the stage runs as written
     auto* tcsModule = (KShaderModule*)tcs->module;
     std::string why;
     if (passthrough) *passthrough = false;
@@ -340,101 +338,6 @@ static bool buildTessKernels(KDevice* dev, const VkGraphicsPipelineCreateInfo* c
     return (passthrough && *passthrough) || buildControl(tcs);
 }
 
-// Fused tessellation (KSA_MTL_FUSED_TESSELLATION=0 turns it off; tessspirv.cpp has the rewrites). With a passthrough
-// control stage the vertex kernel's outputs only travel to the evaluation stage through memory: here the evaluation
-// stage computes them itself from the vertex attributes Metal fetches per control point (through the draw's 32-bit
-// index buffer), and the kernels shrink to what the tessellation factors need. Fills p's *Fused members; false leaves
-// the pipeline as it was.
-static bool buildFusedTess(KDevice* dev, const VkGraphicsPipelineCreateInfo* ci, const VkPipelineShaderStageCreateInfo* vs,
-                           const VkPipelineShaderStageCreateInfo* tcs, const VkPipelineShaderStageCreateInfo* tes,
-                           KPipelineLayout* layout, const KTranslated& modes, KStageOptions eso, MTLRenderPipelineDescriptor* d,
-                           const std::function<id<MTLRenderPipelineState>(MTLRenderPipelineDescriptor*)>& makeState, KPipeline* p) {
-    const auto* vi = ci->pVertexInputState;
-    if (!vi || !vi->vertexAttributeDescriptionCount || p->tessInCP != p->tessOutCP || p->tessPlain.patchStride) return false;
-    auto* vsm = (KShaderModule*)vs->module;
-    uint64_t teHash = ((KShaderModule*)tes->module)->hash;
-    std::string err;
-    std::vector<uint32_t> ctl, vred, eval, inputs, raw;
-    bool position;
-    if (!kmtlReduceTessControl(((KShaderModule*)tcs->module)->spirv, &ctl, &inputs, &position, &err) ||
-        !kmtlReduceVertexOutputs(vsm->spirv, inputs, &vred, &err) ||
-        !kmtlFuseTessEvaluation(vsm->spirv, ((KShaderModule*)tes->module)->spirv, p->tessOutCP, &eval, &raw, &err)) {
-        KLOG(1, "fused tessellation unavailable: %s", err.c_str());
-        return false;
-    }
-    if (const char* dir = kmtlConfig().dumpSpv) {
-        auto dump = [&](const char* what, const std::vector<uint32_t>& w) {
-            char name[64];
-            snprintf(name, sizeof(name), "fused_%s_%016llx.spv", what, (unsigned long long)vsm->hash);
-            kmtlDumpFile(dir, name, w.data(), w.size() * 4);
-        };
-        dump("control", ctl); dump("vertex", vred); dump("eval", eval);
-    }
-    // The rewritten modules go through the usual paths; they live as long as this call
-    KShaderModule km[3];
-    km[0].spirv = std::move(vred);
-    km[1].spirv = std::move(ctl);
-    km[2].spirv = std::move(eval);
-    for (auto& m : km) m.hash = kmtlHash(m.spirv.data(), m.spirv.size() * 4);
-    VkPipelineShaderStageCreateInfo vst = *vs, cst = *tcs, est = *tes;
-    vst.module = (VkShaderModule)&km[0];
-    cst.module = (VkShaderModule)&km[1];
-    est.module = (VkShaderModule)&km[2];
-    KTessStages parts;
-    KTranslated htr, vtr;
-    if (!buildTessKernels(dev, ci, &vst, &cst, layout, &parts, &htr, modes, nullptr, &vtr)) return false;
-    // The vertex kernel's record must be what the control kernel reads
-    std::vector<std::string> outNames, inNames;
-    auto outTypes = structFieldTypes(vtr.msl, "main0_out", &outNames);
-    auto inTypes = structFieldTypes(htr.msl, "main0_in", &inNames);
-    if (outTypes.empty() || outTypes != inTypes) {
-        KLOG(1, "fused tessellation unavailable: reduced vertex and control interfaces differ");
-        return false;
-    }
-    KTranslated etr;
-    eso.tessFusedInput = true;
-    id<MTLFunction> efn = kmtlMakeFunction(dev, &est, spv::ExecutionModelTessellationEvaluation, layout, eso, &etr);
-    if (!efn) return false;
-    // Each control point's attributes, fetched through the control point index buffer
-    MTLVertexDescriptor* vd = [MTLVertexDescriptor vertexDescriptor];
-    for (uint32_t loc : raw) {
-        const VkVertexInputAttributeDescription* a = nullptr;
-        for (uint32_t i = 0; i < vi->vertexAttributeDescriptionCount; i++)
-            if (vi->pVertexAttributeDescriptions[i].location == loc) a = &vi->pVertexAttributeDescriptions[i];
-        const VkVertexInputBindingDescription* b = nullptr;
-        for (uint32_t i = 0; a && i < vi->vertexBindingDescriptionCount; i++)
-            if (vi->pVertexBindingDescriptions[i].binding == a->binding) b = &vi->pVertexBindingDescriptions[i];
-        if (!a || !b || !b->stride || b->inputRate != VK_VERTEX_INPUT_RATE_VERTEX) {
-            KLOG(1, "fused tessellation unavailable: vertex attribute %u is not per vertex", loc);
-            return false;
-        }
-        MTLVertexAttributeDescriptor* ad = vd.attributes[loc];
-        ad.format = kmtlVertexFormat(a->format);
-        ad.offset = a->offset;
-        ad.bufferIndex = vertexBufferIndex(a->binding);
-        MTLVertexBufferLayoutDescriptor* l = vd.layouts[vertexBufferIndex(a->binding)];
-        l.stride = b->stride;
-        l.stepFunction = MTLVertexStepFunctionPerPatchControlPoint;
-        l.stepRate = 1;
-    }
-    MTLRenderPipelineDescriptor* fd = [d copy];
-    fd.vertexFunction = efn;
-    fd.vertexDescriptor = vd;
-    fd.tessellationControlPointIndexType = MTLTessellationControlPointIndexTypeUInt32;
-    id<MTLRenderPipelineState> ps = makeState(fd);
-    if (!ps) return false;
-    p->renderFused = ps;
-    // The reduced control kernel writes no control point or patch records (the draw gives it a token buffer)
-    parts.controlStride = parts.patchStride = 0;
-    p->tessFused = parts;
-    KLOG(1, "fused tessellation (vs %016llx te %016llx fs %s, color %d depth %d samples %lu): vertex record %lu -> %lu bytes, "
-         "%zu attributes per control point", (unsigned long long)vsm->hash, (unsigned long long)teHash,
-         d.fragmentFunction ? "yes" : "no", (int)d.colorAttachments[0].pixelFormat, (int)d.depthAttachmentPixelFormat,
-         (unsigned long)d.rasterSampleCount,
-         (unsigned long)p->tessPlain.vertexStride, (unsigned long)parts.vertexStride, raw.size());
-    return true;
-}
-
 static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineCreateInfo* ci) {
     auto* layout = (KPipelineLayout*)ci->layout;
     KAttachmentFormats af = attachmentFormats(ci);
@@ -458,7 +361,7 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
                                                          : "it has only one of the control and evaluation stages");
         return nullptr;
     }
-    KTessStages tessPlain;
+    KTessStages tessStages;
     bool passthrough = false;
     KTranslated htr, dtr, tmodes;
     if (tess) {
@@ -470,7 +373,7 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
         if (hm.hasDomain) { tmodes.quads = hm.quads; tmodes.hasDomain = true; }
         if (hm.hasWinding && !tmodes.hasWinding) { tmodes.cw = hm.cw; tmodes.hasWinding = true; }
         if (hm.hasPartition && !tmodes.hasPartition) { tmodes.partition = hm.partition; tmodes.hasPartition = true; }
-        if (!buildTessKernels(dev, ci, vs, tcs, layout, &tessPlain, &htr, tmodes, &passthrough)) return nullptr;
+        if (!buildTessKernels(dev, ci, vs, tcs, layout, &tessStages, &htr, tmodes, &passthrough)) return nullptr;
     }
     if (!vs) {
         KERR("graphics pipeline without vertex shader");
@@ -648,15 +551,14 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
     p->primitive = primitiveType(topo);
     if (tess) {
         p->tess = true;
-        p->tessPlain = tessPlain;
+        p->tessStages = tessStages;
         p->tessInCP = ci->pTessellationState ? ci->pTessellationState->patchControlPoints : 3;
         p->tessOutCP = tmodes.outputVertices ? tmodes.outputVertices : p->tessInCP;
         p->tessQuads = tmodes.quads;
         p->tessPassthrough = passthrough;  // the control points stay as the vertex kernel wrote them
         KLOG(1, "tessellation pipeline: %u -> %u control points, strides vertex %lu control %lu patch %lu%s", p->tessInCP,
-             p->tessOutCP, (unsigned long)tessPlain.vertexStride, (unsigned long)tessPlain.controlStride,
-             (unsigned long)tessPlain.patchStride, p->tessPassthrough ? ", passthrough control stage" : "");
-        if (kmtlConfig().fusedTessellation && p->tessPassthrough) buildFusedTess(dev, ci, vs, tcs, tes, layout, tmodes, vso, d, makeState, p);
+             p->tessOutCP, (unsigned long)tessStages.vertexStride, (unsigned long)tessStages.controlStride,
+             (unsigned long)tessStages.patchStride, p->tessPassthrough ? ", passthrough control stage" : "");
     }
     p->triangleFan = topo == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
     p->vertexUsesDrawId = vtr.usesDrawId;
