@@ -14,14 +14,13 @@ namespace KsaMetal.Hooks.Tab;
 // The Mac Port tab's presets: Performance, Balanced and Quality, each a set of the game's own graphics settings and
 // of port settings (the settings table's presets column), and Game Defaults, the defaults of the same settings. Auto
 // Memory Saving (AutoMemorySaving, in the shared library) is the second preset beside them: the Memory rows are its
-// own, which these leave alone (Fewer Effects at Once it shares with Performance), but on a Mac with 8 GB of memory
-// or less and Auto Memory Saving on, every preset's textures and shadow maps are at most 2048 pixels wide and its
-// texture streaming budget at most 512 MB. A preset's card in the tab makes its values pending changes, in the game's
+// own, which these leave alone, but on a Mac with 8 GB of memory or less and Auto Memory Saving on, every preset's
+// textures and shadow maps are at most 2048 pixels wide and its texture streaming budget at most 512 MB. A preset's card in the tab makes its values pending changes, in the game's
 // tabs and in this one, as if the player had set each row; the game's Apply keeps them, Discard drops them. Nothing
 // else changes a setting, but a fresh install's first start, where Auto Memory Saving, on by default, sets its
 // values (the loader the port settings, FirstStart here the game's). The card picked last is kept in the file
 // (preset): the tab counts the settings that differ from it, unless they are another preset's. With Auto Memory
-// Saving on, its values sit on top of every card's, as its limits do: Fewer Effects at Once with 8 GB or less.
+// Saving on, its limits sit on top of every card's.
 //
 // Every preset gives every setting any preset sets, so a preset after another leaves nothing of the first, except
 // the port rows the tab can't change (set outside, their hook unavailable) and the render scale without upscaling,
@@ -60,9 +59,6 @@ internal static class Presets
             Port = Port(index);
             if (Port["upscaling"] == "off")
                 Port.Remove("render_scale");
-            if (memorySaving)
-                foreach (var (key, value) in AutoMemorySaving.Port(mac.Tier).Where(kv => Port.ContainsKey(kv.Key)))
-                    Port[key] = value;
         }
     }
 
@@ -79,38 +75,30 @@ internal static class Presets
         // spatial upscaler without the game's MSAA costs 1.3-1.9 ms less a frame (M5, fast run). Thin edges, such as
         // branches against the sky, are rougher
         new("Performance", "Fastest. Softer, with rougher edges.",
-            "The fastest the game gets: MetalFX Spatial draws the 3D view at half the window's size with the " +
-            "game's Anti-Aliasing off; shadows, clouds, smoke and effects are drawn the simple way, without " +
-            "cockpit ray tracing, and planets and grass get less detailed textures, for less memory. Softer and " +
-            "plainer, with rougher edges, slower crew portraits and room for fewer effects at once. With Vsync the frame rate " +
-            "holds steady at half the display's refresh rate: 60 FPS on a 120 Hz display, 30 on a 60 Hz one. Time warp slows down " +
-            "less: lighter physics for tumbling pieces, debris that settles and stays where it lies, and cloud shadows " +
-            "that fall out of place during very high warp.",
+            "The highest frame rate: MetalFX Spatial at half the window's size, without the game's Anti-Aliasing, " +
+            "with simpler shadows, clouds and effects and no cockpit ray tracing. With Vsync, it holds half the " +
+            "display's refresh rate. Time warp slows down less.",
             mac => Game(mac, antiAliasing: "Disabled", filter: "Pcf", cascades: 2048, terrain: 2048,
                 milkyWay: "High", clouds: "Low", cloudShadows: "Medium", effects: "Low", godrays: false,
                 clutterShadows: false, plumeShadows: false, rayTracing: false, planetTextures: 2048),
             0),
         new("Balanced", "Faster, with little visible change.",
-            "Faster, with little visible change: MetalFX Temporal draws the 3D view at three quarters of the window's size, " +
-            "with simpler shadow filtering, smoke a step lower, and lighter ray tracing in the cockpit. " +
-            "Time warp slows down less: lighter physics for tumbling pieces, debris that settles and stays " +
-            "where it lies, and cloud shadows that fall out of place during very high warp.",
+            "MetalFX Temporal at three quarters of the window's size, with simpler shadow filtering and lighter " +
+            "cockpit ray tracing. Time warp slows down less.",
             mac => Game(mac, antiAliasing: "MultisampleX2", filter: "Pcf", cascades: 2048, terrain: 4096,
                 milkyWay: "High", clouds: "High", cloudShadows: "Medium", effects: "Medium", godrays: true, clutterShadows: true,
                 plumeShadows: true, rayTracing: true, exhausts: "High"),
             1),
-        new("Quality", "Window size. Trims what barely shows.",
-            "The game's own image at the window's full size, with its anti-aliasing, soft shadows and ray tracing in " +
-            "the cockpit. Only what costs much and barely shows is lower or baked: shadow map " +
-            "sizes, soft shadows near the camera, cockpit ray tracing, the Milky Way.",
+        new("Quality", "Best looking, a little faster.",
+            "The game's image at the window's size, with its anti-aliasing and soft shadows. Only what costs much " +
+            "and barely shows is lighter: shadow sizes, nearby soft shadows, cockpit ray tracing, the Milky Way.",
             mac => Game(mac, antiAliasing: "MultisampleX2", filter: "Pcss", cascades: 2048, terrain: 4096,
                 milkyWay: "High", clouds: "High", cloudShadows: "High", effects: "High", godrays: true, clutterShadows: true,
                 plumeShadows: true, rayTracing: true),
             2),
         new("Game Defaults", "The game's own graphics settings.",
-            "The game's own image: its default graphics for every setting the other presets change, and the Image and " +
-            "Extra Performance rows at their defaults, without MetalFX. Everything else, such as the Field of View or " +
-            "the Optimizations, stays as it is.",
+            "The game's own graphics, with MetalFX and the Extra Performance rows off. Other settings, such as the " +
+            "Field of View, stay as they are.",
             mac =>
             {
                 var defaults = new GameSettings();

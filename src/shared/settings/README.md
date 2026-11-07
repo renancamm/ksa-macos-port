@@ -2,7 +2,7 @@
 
 One table, [`port-settings.txt`](port-settings.txt), holds every port setting: its key, type and default, what it
 needs, when it applies, what does it (the driver, the KTX shim, a hook), its values in the Mac Port tab's presets and
-with Auto Memory Saving on, and its row in the tab with its help. The table's header explains its columns. Everything
+with Auto Memory Saving on, and its row in the tab with its tag and help. The table's header explains its columns. Everything
 else that knows about a setting reads the table or is made from it.
 
 A setting has one name, its key, and its environment variable is `KSA_MTL_` and the key in capitals:
@@ -37,13 +37,13 @@ values, or belongs to a setting whose needs aren't met means the default.
 
 Auto Memory Saving (`auto_memory_saving`, [`AutoMemorySaving.cs`](AutoMemorySaving.cs)) is the Presets section's
 second preset, beside the graphics presets. The Memory section's rows are its own, which the graphics presets never
-touch; Fewer Effects at Once it shares with the Performance preset. On, it gives the rows with values in the table's
-`memory` column the values for this Mac's memory, in three tiers by `hw.memsize` (`KSA_PORT_MEMORY_GB` stands in for
-it, to try another tier): 8 GB or less, 16 GB or less, more. With 8 GB or less it also limits the game's own settings,
-the terrain and vessel texture caps and both shadow map sizes to 2048 and the texture streaming budget to 512 MB
-(`AutoMemorySaving.SmallGame`; on automatic the budget is set once from the memory free at the first frame, and what
-the rows free at load would only grow it). Off, it gives the rows their defaults, the game's own, and the budget back
-(`OffRestores`); the texture and shadow sizes stay as they are, the game's tabs change those.
+touch. On, it gives the rows with values in the table's `memory` column the values for this Mac's memory, in three
+tiers by `hw.memsize` (`KSA_PORT_MEMORY_GB` stands in for it, to try another tier): 8 GB or less, 16 GB or less, more.
+With 8 GB or less it also limits the game's own settings, the terrain and vessel texture caps and both shadow map
+sizes to 2048 and the texture streaming budget to 512 MB (`AutoMemorySaving.SmallGame`; on automatic the budget is set
+once from the memory free at the first frame, and what the rows free at load would only grow it). Off, it gives the
+rows their defaults, the game's own, and the budget back (`OffRestores`); the texture and shadow sizes stay as they
+are, the game's tabs change those.
 
 It acts as a preset does: when switched on or off in the Mac Port tab (its values become pending changes, kept by the
 game's Apply), on a fresh install's first start (the loader writes the rows as it makes `port-settings.toml`, and the
@@ -52,9 +52,10 @@ A row changed by hand afterwards keeps its value; while it is on, the tab says h
 runs before the file exists, applies the tier rule to its one setting itself
 ([`../../game/launcher/`](../../game/launcher/)).
 
-A row Auto Memory Saving sets has three values in the `memory` column, one per tier, the last its default; an empty
-value leaves the row to its preset in that tier (Fewer Effects at Once: `true,,`, on with 8 GB or less over every
-graphics preset's value, Performance's otherwise, and off leaves it alone). The tests check them, and that every row of the Memory section has all three.
+A row Auto Memory Saving sets has three values in the `memory` column, one per tier, the last its default. The tests
+check them, that the Memory section's rows are the ones that have them, and that none of those has presets' values.
+A Memory row with a cost a player can see (a pause, an effect not shown) has `trade-off` in the `tag` column, which the
+tab shows after its label.
 
 ## Typed settings
 
@@ -95,7 +96,7 @@ against the table, and the build stops when it isn't in step:
 ## Changing a setting
 
 Edit its line in the table, then build: `./build.sh` makes the typed files and the template, the generator checks the
-repository, and the library's tests check the table's rules (values, needs, presets, the kinds the tab draws). A new
-Extra Performance row gets its presets' values in the same line (on in Performance, the tests check), a row Auto
-Memory Saving sets its three tier values in the `memory` column, and its key goes into the README of the code that
-reads it.
+repository, and the library's tests check the table's rules (values, needs, presets, the kinds the tab draws, a
+tooltip's 25 words at most). A new Extra Performance row gets its presets' values in the same line (on in Performance,
+the tests check), a row Auto Memory Saving sets its three tier values in the `memory` column, and its key goes into
+the README of the code that reads it.

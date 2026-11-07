@@ -11,7 +11,7 @@
 # setting per line; a choice can be followed by indented lines "<value> | <help>", what its values mean (their
 # tooltips):
 #
-#   key | type | default | needs | applies | by | presets | memory | label | help
+#   key | type | default | needs | applies | by | presets | memory | tag | label | help
 #
 #   type      bool: on or off; choice:<value>=<label>/...; scale:<min>:<max>, a fraction shown in percent;
 #             int:<min>:<max>; number:<min>:<max>; numbers:<min>:<max>, that many numbers, comma separated, or none; text
@@ -32,126 +32,126 @@
 #             Defaults gives it its default); none for a setting the presets leave alone. Every Extra Performance row
 #             is on in Performance
 #   memory    its values with Auto Memory Saving on, for a Mac with 8 GB of memory or less, 16 GB or less, and more,
-#             comma separated; an empty one leaves the row to its preset (Fewer Effects at Once: on with 8 GB or
-#             less, else Performance's). Off gives a row with a value for the last tier its default. None at all for a
-#             setting Auto Memory Saving leaves alone (AutoMemorySaving.cs in this folder)
+#             comma separated; Off gives the row its default, the last tier's. None for a setting Auto Memory Saving
+#             leaves alone (AutoMemorySaving.cs in this folder). A row has presets or memory values, never both
+#   tag       a word the tab shows after the row's label: trade-off, on a Memory row with a cost a player can see
 #   label     its row in the tab; help: the row's tooltip and the file's comment, which the values' help follows
 
-[presets] Presets | Sets the game's graphics and these settings together.
-preset | choice:performance=Performance/balanced=Balanced/quality=Quality/game_defaults=Game Defaults | game_defaults | | live | tab | | | Preset | The preset card picked last in the Mac Port tab, which sets it. Its name gets a * while some settings differ from it.
-auto_memory_saving | bool | true | | live | tab | | | Auto Memory Saving | Based on this Mac's memory, turns on the Memory rows if needed and, where memory is short, lowers texture and shadow sizes and the texture budget. Off is the game's own.
+[presets] Presets | The game's graphics and this tab, set together.
+preset | choice:performance=Performance/balanced=Balanced/quality=Quality/game_defaults=Game Defaults | game_defaults | | live | tab | | | | Preset | The preset card picked last. Its name gets a * when settings differ from it.
+auto_memory_saving | bool | true | | live | tab | | | | Auto Memory Saving | Sets the Memory rows for this Mac's memory. With 8 GB or less, it also lowers texture and shadow sizes.
 
-[image] Image | How the 3D view is drawn and scaled to the display.
-upscaling | choice:off=Off/metalfx=Temporal/spatial=Spatial | off | | restart | hooks:RenderScale | spatial,metalfx,off | | MetalFX | Draws the 3D view at the Render Scale below and scales it up to the display with Apple's MetalFX.
-    off | The game's own. The 3D view is drawn at the window's size and stretched to the display.
-    metalfx | Builds each image from the ones before it: the sharpest, even at a low Render Scale, and it smooths edges itself. Things that move fast can look a little soft.
-    spatial | Scales each image on its own: nothing trails behind in motion, but the image is softer below 100 %. The game's Anti-Aliasing (Display) applies.
-render_scale | scale:0.5:2 | 1.0 | upscaling!=off | restart | hooks:RenderScale | 0.5,0.75,1.0 | | Render Scale | The size the 3D view is drawn at, as a share of the window's, before MetalFX scales it up. Lower is faster and a little softer. Above 100 % is sharper and much more work for the GPU, and changes nothing without a Retina display.
-skip_game_anti_aliasing | bool | true | upscaling=metalfx | restart | hooks:RenderScale | true,true,true | | Skip Game Anti-Aliasing | With MetalFX Temporal, the game's Anti-Aliasing (Display) is turned off: Temporal smooths edges itself.
+[upscaling] Upscaling | A smaller 3D view, scaled up to the display.
+upscaling | choice:off=Off/metalfx=Temporal/spatial=Spatial | off | | restart | hooks:RenderScale | spatial,metalfx,off | | | MetalFX | Draws the 3D view at the Render Scale and scales it up with Apple's MetalFX.
+    off | The game's own: the 3D view is drawn at the window's size.
+    metalfx | Builds each image from the ones before it: the sharpest, and it smooths edges. Fast motion can look a little soft.
+    spatial | Scales each image on its own: no trails in motion, but softer below 100 %.
+render_scale | scale:0.5:2 | 1.0 | upscaling!=off | restart | hooks:RenderScale | 0.5,0.75,1.0 | | | Render Scale | The 3D view's size before MetalFX scales it up. Lower is faster and softer. Above 100 % is sharper on Retina displays, and much slower.
+skip_game_anti_aliasing | bool | true | upscaling=metalfx | restart | hooks:RenderScale | true,true,true | | | Skip Game Anti-Aliasing | Turns off the game's Anti-Aliasing (Display) with MetalFX Temporal, which smooths edges itself.
 
-[performance] Extra Performance | Faster or steadier, with small trade-offs. Off is the game's own.
-lighter_cloud_march | bool | false | | restart | hooks:CloudMarch | true,true,false | | Lighter Cloud March | Clouds close by are drawn in fewer, longer steps: about 2-7 % faster with clouds in view, such as at a launch. They look the same in still views. Off is the game's own.
-lighter_smoke_march | bool | false | | restart | hooks:SmokeMarch | true,true,false | | Lighter Smoke March | Rocket smoke is drawn in fewer, longer steps: a big rocket's smoke seen from above and explosions about 9 % faster. A launch's plume looks a little different up close. Off is the game's own.
-simpler_dense_smoke | bool | false | | restart | hooks:TrailCaches | true,false,false | | Simpler Dense Smoke | Draws the thickest rocket smoke in less detail: faster there, a little softer seen from afar.
-fewer_cloud_shadow_updates | bool | false | | restart | hooks:CloudShadows | true,true,false | | Fewer Cloud Shadow Updates | The shadows that clouds cast on the ground are updated about 4 times less often: a little faster over Earth, and the shadows lag behind moving clouds. Off is the game's own.
-lighter_warp_cloud_shadows | bool | false | | restart | hooks:WarpCloudShadows | true,true,false | | Lighter Warp Cloud Shadows | At very high time warp, cloud shadows are no longer worked out whole every frame: the frame rate holds and warp keeps its speed. During warp they fall out of place, on vessels too, and catch up seconds after. Off is the game's own.
-lighter_plume_shadows | bool | false | game:plume_trail_shadows | restart | hooks:PlumeShadows | true,true,false | | Lighter Plume Shadows | With the game's Plume trail shadows (Graphics), the shadows rocket smoke casts from the sun have less detail and reach only within 3 km: a big rocket's smoke draws about 10-20 % faster, with coarser shadows on the ground. Off is the game's own.
-simpler_pcss_shadows | bool | false | game:pcss | restart | hooks:ShadowSearch | true,true,true | | Simpler PCSS Shadows | With the game's Cascaded Shadow Filter on Pcss (Graphics), soft shadows close to the camera look a shorter way for what casts them: about 9 % faster in grass. A shadow cast from high above can get a sharper edge. Off is the game's own.
-baked_milky_way | bool | false | | restart | hooks:MilkyWayBake | true,true,true | | Baked Milky Way | The Milky Way's dust clouds are drawn from a picture made once when the game starts: faster with much sky in view, and Milky Way Quality (Graphics) up to High costs no more than Low. Their finest grain is softer. Off is the game's own.
-crew_portraits_at_15_fps | bool | false | | live | hooks:CrewPortraits | true,false,false | | Crew Portraits at 15 FPS | The crew panel's portraits are drawn at most 15 times a second: the faces move less smoothly. Off is the game's own.
-lighter_tumbling_physics | bool | false | | restart | hooks:TumblingPhysics | true,true,false | | Lighter Tumbling Physics | Pieces tumbling through the air, such as boosters falling back after staging, take longer physics steps, and nothing spins faster than about 30 turns a second: time warp slows down less while they fall. Off is the game's own.
-debris_settles_in_warp | bool | false | | restart | hooks:DebrisSettle | true,true,false | | Debris Settles in Warp | At time warp of x8 or more, pieces nobody flies come to rest where they lie and stay there, in saves too, and pass through each other. A piece that falls inside the planet is removed. Off is the game's own.
-fewer_effects_at_once | bool | false | | restart | hooks:ParticlePool | true,false,false | true,, | Fewer Effects at Once | The game keeps room for far more smoke, spark and explosion effects at once than a launch or an explosion uses; a quarter of it is kept: about 0.2 GB less memory. An effect that finds no room isn't shown. Off is the game's own.
-steady_frame_rate | bool | false | game:vsync | restart | driver | true,false,false | | Steady Frame Rate | Frames are shown at an even pace with the game's Vsync (Display): half the display's refresh rate, 60 FPS at 120 Hz, 30 at 60 Hz. Steadier motion and less GPU work; the frame rate goes no higher. Off is the game's own.
+[performance] Extra Performance | Faster, with small trade-offs.
+fewer_cloud_steps | bool | false | | restart | hooks:CloudSteps | true,true,false | | | Fewer Cloud Steps | Draws nearby clouds in fewer, longer steps. Faster with clouds in view.
+fewer_smoke_steps | bool | false | | restart | hooks:SmokeSteps | true,true,false | | | Fewer Smoke Steps | Draws rocket smoke in fewer, longer steps. Faster in big plumes and explosions; a launch's plume looks a little different up close.
+simpler_dense_smoke | bool | false | | restart | hooks:DenseSmoke | true,false,false | | | Simpler Dense Smoke | Draws dense rocket smoke in less detail. Faster there, a little softer from afar.
+fewer_cloud_shadow_updates | bool | false | | restart | hooks:CloudShadows | true,true,false | | | Fewer Cloud Shadow Updates | Updates the shadows of clouds on the ground less often. A little faster; the shadows lag behind moving clouds.
+lighter_warp_cloud_shadows | bool | false | | restart | hooks:WarpCloudShadows | true,true,false | | | Lighter Warp Cloud Shadows | At very high time warp, cloud shadows aren't rebuilt every frame, so warp keeps its speed. They fall out of place, then catch up.
+lighter_plume_shadows | bool | false | game:plume_trail_shadows | restart | hooks:PlumeShadows | true,true,false | | | Lighter Plume Shadows | With Plume trail shadows (Graphics), rocket smoke casts coarser shadows, only within 3 km. A big rocket's smoke draws about 10-20 % faster.
+simpler_pcss_shadows | bool | false | game:pcss | restart | hooks:ShadowSearch | true,true,true | | | Simpler PCSS Shadows | With Cascaded Shadow Filter on Pcss (Graphics), nearby soft shadows are simpler. Faster in grass; shadows cast from high above can look sharper.
+baked_milky_way | bool | false | | restart | hooks:MilkyWayBake | true,true,true | | | Baked Milky Way | Draws the Milky Way's dust from a picture made at start. Faster with much sky in view, and slightly softer.
+crew_portraits_at_15_fps | bool | false | | live | hooks:CrewPortraits | true,false,false | | | Crew Portraits at 15 FPS | Draws the crew panel's portraits at 15 FPS. The faces move less smoothly.
+lighter_tumbling_physics | bool | false | | restart | hooks:TumblingPhysics | true,true,false | | | Lighter Tumbling Physics | Tumbling pieces, such as falling boosters, take longer physics steps. Time warp slows down less while they fall.
+debris_settles_in_warp | bool | false | | restart | hooks:DebrisSettle | true,true,false | | | Debris Settles in Warp | At time warp x8 and above, pieces nobody flies settle where they lie and pass through each other. Any inside the planet are removed.
+steady_frame_rate | bool | false | game:vsync | restart | driver | true,false,false | | | Steady Frame Rate | With Vsync (Display), shows frames at an even half of the display's refresh rate. Steadier motion, less GPU work.
 
-[optimizations] Optimizations | The same image, faster. Leave them on; turn one off to find a problem.
-terrain_cache | bool | true | | restart | hooks:TerrainCache | | | Terrain Cache | The terrain's shape and shading are worked out again only when something about them changed, instead of every frame: a higher frame rate, the same image. Off is the game's own.
-skip_unused_outlines | bool | true | | restart | hooks:OutlineSkip | | | Skip Unused Outlines | The outline around selected parts is drawn only while a part is selected: a higher frame rate, the same image. Off is the game's own.
-skip_unused_overlays | bool | true | | restart | hooks:OverlaySkip | | | Skip Unused Overlays | The steps that draw gizmos and orbit lines over the 3D view run only on frames that have some: a higher frame rate, the same image. Off is the game's own.
-skip_hidden_vessel_parts | bool | true | | restart | hooks:HiddenPartsSkip | | | Skip Hidden Vessel Parts | Parts of a vessel hidden behind something else are no longer shaded: a higher frame rate, most in the cockpit, the same image. Off is the game's own.
-skip_unused_ocean_blending | bool | true | | restart | hooks:OceanBlending | | | Skip Unused Ocean Blending | Near the ocean's surface (below 9 km), the ocean is drawn without a step only views from higher up need: a higher frame rate, the same image. Off is the game's own.
-clear_faded_smoke | bool | true | | restart | hooks:FadedSmoke | | | Clear Faded Smoke | Smoke trails that have faded from view are removed. The game keeps some, from rockets with widely spaced boosters, for hours of game time, which slows it to a few frames a second after time warp. Off is the game's own.
-skip_hidden_crew_portraits | bool | true | | live | hooks:CrewPortraits | | | Skip Hidden Crew Portraits | The crew panel's portraits are small views the game draws every frame while the vessel has crew. They are drawn only while the panel is open: a higher frame rate, the same image. Off is the game's own.
-skip_shadows_on_unlit_sides | bool | true | | restart | driver | | | Skip Shadows on Unlit Sides | Shadows are worked out only where light reaches (terrain, vessels, kittens, grass, buildings, the sea, godrays, cockpit ray tracing): the cockpit draws about 45 % faster, grass at night about 8-16 %, with the same image. Off is the game's own.
-shared_shadow_samples | bool | true | | restart | driver | | | Shared Shadow Samples | Neighbouring pixels share the samples of the shadows that terrain casts, on the ground and the grass, instead of each taking them all: about 3 % faster near the ground, the same image. Off is the game's own.
-fused_tessellation | bool | true | tessellation | restart | driver | | | Fused Tessellation | Terrain and ocean are tessellated in one combined step, without a round trip through memory: a higher frame rate over terrain, the same image. Off is the game's own.
-skip_gpu_texture_compression | bool | true | | restart | driver | | | Skip GPU Texture Compression | Textures such as terrain heights, cloud noise and sea waves skip the GPU's compression, which slows drawing: terrain draws about 2-4 % faster, over clouds and the sea up to 10 %, with the same image and memory. Off is the game's own.
-iva_ray_search | bool | true | ray_tracing | restart | driver | | | IVA Ray Search | With IVA Ray Tracing (Graphics) on, the cockpit's rays find what they hit through a faster kind of ray search: the cockpit draws about 6 % faster, with the same image. Off is the game's own.
-vsync_pacing | bool | true | game:vsync | restart | driver | | | Vsync Pacing | With Vsync, a frame starts as soon as the GPU is ready for it, not only once the display has shown the one before: a higher frame rate in a window. Off is the game's own.
-background_shader_compiling | bool | true | | restart | driver | | | Background Shader Compiling | Shaders are compiled in the background, so the game doesn't stop for each one. Off is the game's own.
-shader_cache | bool | true | | restart | driver | | | Shader Cache | Translated shaders are kept on disk, in ~/Library/Caches/ksa-metal, so later starts don't translate them again. Off is the game's own.
-shader_constant_memory | bool | true | | restart | driver | | | Shader Constant Memory | Shaders read the textures and data they draw with through a faster kind of memory: a little faster, the same image. Off is the game's own.
-in_place_shader_parameters | bool | true | | restart | driver | | | In-Place Shader Parameters | Shaders read the game's parameters where they are instead of copying them over and over: the smoke of a big explosion draws about 7-9 % faster, with the same image. Off is the game's own.
-idle_thread_sleep | bool | true | | restart | hooks:WorkerPark | | | Idle Thread Sleep | The game's background threads sleep while they wait for work instead of keeping the CPU busy: the same frames, about a core and a half less CPU time. Off is the game's own.
-loading_screen_fps_cap | bool | true | | restart | hooks:LoadingPace | | | Loading Screen FPS Cap | While the game loads, its loading screen is drawn at most 30 times a second instead of after every step: the game loads about 2 seconds faster. Off is the game's own.
+[optimizations] Optimizations | Faster, with no visible change.
+terrain_cache | bool | true | | restart | hooks:TerrainCache | | | | Terrain Cache | Recalculates the terrain only when it changes, not every frame.
+skip_unused_outlines | bool | true | | restart | hooks:OutlineSkip | | | | Skip Unused Outlines | Draws the outline around parts only while a part is selected.
+skip_unused_overlays | bool | true | | restart | hooks:OverlaySkip | | | | Skip Unused Overlays | Draws gizmos and orbit lines only on frames that have some.
+skip_hidden_vessel_parts | bool | true | | restart | hooks:HiddenPartsSkip | | | | Skip Hidden Vessel Parts | Skips shading the parts of a vessel hidden behind something else. Faster, most in the cockpit.
+skip_unused_ocean_blending | bool | true | | restart | hooks:OceanBlending | | | | Skip Unused Ocean Blending | Below 9 km, skips a step of drawing the ocean that only views from higher up need.
+clear_faded_smoke | bool | true | | restart | hooks:FadedSmoke | | | | Clear Faded Smoke | Removes smoke trails that have faded out, which slow the game after time warp.
+skip_hidden_crew_portraits | bool | true | | live | hooks:CrewPortraits | | | | Skip Hidden Crew Portraits | Draws the crew panel's portraits only while the panel is open.
+skip_shadows_on_unlit_sides | bool | true | | restart | driver | | | | Skip Shadows on Unlit Sides | Skips shadow work where no light reaches. Much faster in the cockpit.
+shared_shadow_samples | bool | true | | restart | driver | | | | Shared Shadow Samples | Neighbouring pixels share the work of terrain shadows. A little faster near the ground.
+fused_tessellation | bool | true | tessellation | restart | driver | | | | Fused Tessellation | Tessellates terrain and ocean in one step. Faster over terrain.
+skip_gpu_texture_compression | bool | true | | restart | driver | | | | Skip GPU Texture Compression | Skips the GPU's compression for textures such as terrain, clouds and sea, which slows drawing. Faster, with the same memory.
+iva_ray_search | bool | true | ray_tracing | restart | driver | | | | IVA Ray Search | With IVA Ray Tracing (Graphics), the cockpit's rays use a faster search. The cockpit draws about 6 % faster.
+vsync_pacing | bool | true | game:vsync | restart | driver | | | | Vsync Pacing | With Vsync, starts each frame as soon as the GPU is ready for it. A higher frame rate in a window.
+background_shader_compiling | bool | true | | restart | driver | | | | Background Shader Compiling | Compiles shaders in the background, so the game doesn't stop for each one.
+shader_cache | bool | true | | restart | driver | | | | Shader Cache | Keeps translated shaders on disk, so later starts don't translate them again.
+shader_constant_memory | bool | true | | restart | driver | | | | Shader Constant Memory | Shaders read their data through a faster kind of memory.
+in_place_shader_parameters | bool | true | | restart | driver | | | | In-Place Shader Parameters | Shaders read the game's parameters in place instead of copying them. Faster in big explosions.
+idle_thread_sleep | bool | true | | restart | hooks:WorkerPark | | | | Idle Thread Sleep | Background threads sleep while they wait, instead of keeping the CPU busy. Less CPU use.
+loading_screen_fps_cap | bool | true | | restart | hooks:LoadingPace | | | | Loading Screen FPS Cap | Draws the loading screen at 30 FPS. The game loads about 2 seconds faster.
 
-[memory] Memory | Less memory, the same image. Auto Memory Saving under Presets sets them.
-textures_kept_on_disk | bool | false | | restart | ktx-shim | | true,true,false | Textures Kept on Disk | Textures are read from files on disk instead of held in memory, so macOS can let go of them when memory runs short and read them back: about 3.5 GB less memory with the solar system. Off is the game's own.
-unload_far_terrain | bool | false | | restart | hooks:FarTerrain, hooks:FarClutter | | true,true,false | Unload Far Terrain | The terrain of far worlds is let go and made again before the camera gets near, their ground clutter too: about 1.4 GB less memory with the solar system. A jump to another world can pause a moment. Off is the game's own.
-release_freed_memory | bool | false | | restart | launcher, hooks:FreedMemory | | true,true,false | Release Freed Memory | Memory the game frees goes back to macOS at once instead of being kept for reuse, and loading leaves less behind: less memory, the same image. Off is the game's own.
-compact_ray_tracing_memory | bool | false | ray_queries | restart | driver | | true,true,false | Compact Ray Tracing Memory | The ray tracing data that places grass and lights the cockpit shares the memory the game set aside for it instead of taking its own: about 0.4 GB less memory with the solar system. Off is the game's own.
-load_terrain_by_altitude | bool | false | unload_far_terrain | restart | hooks:FarTerrain | | true,true,false | Load Terrain by Altitude | Near a world, only the terrain detail levels around the camera's altitude are kept; the others are made as it climbs or descends: about 0.4 GB less memory. At very high time warp, terrain detail can change a moment late. Off is the game's own.
-unload_far_textures | bool | false | | restart | hooks:FarTextures | | true,true,false | Unload Far Textures | The ground, rock and cloud textures of far worlds are let go and loaded again before the camera gets near: about 0.25 GB less memory with the solar system. A jump to another world can pause a moment. Off is the game's own.
-sounds_kept_on_disk | bool | false | | restart | hooks:SoundFiles | | true,true,false | Sounds Kept on Disk | Sounds the game keeps in memory, such as the engines' and the wind's, are played from a copy on disk instead, so macOS can let go of them when memory runs short: about 0.15 GB less memory, the same sound. Off is the game's own.
-load_textures_once | bool | false | | restart | hooks:SharedTextures | | true,true,false | Load Textures Once | A texture file the game uses in more than one place, such as the Moon's rocks that Saturn's rings use too, is loaded once and shared: about 80 MB less memory with the solar system. Off is the game's own.
+[memory] Memory | Less memory use.
+textures_kept_on_disk | bool | false | | restart | ktx-shim | | true,true,false | | Textures Kept on Disk | Lets macOS drop textures from memory and read them back when needed. About 3.5 GB less.
+release_freed_memory | bool | false | | restart | launcher, hooks:FreedMemory | | true,true,false | | Release Freed Memory | Gives memory the game frees back to macOS at once, instead of keeping it for reuse.
+compact_ray_tracing_memory | bool | false | ray_queries | restart | driver | | true,true,false | | Compact Ray Tracing Memory | Ray tracing data for grass and the cockpit shares memory the game already set aside. About 0.4 GB less.
+sounds_kept_on_disk | bool | false | | restart | hooks:SoundFiles | | true,true,false | | Sounds Kept on Disk | Plays sounds such as engines and wind from disk, so macOS can drop them from memory. About 0.15 GB less.
+load_textures_once | bool | false | | restart | hooks:SharedTextures | | true,true,false | | Load Textures Once | Loads a texture used in several places once, and shares it. About 80 MB less.
+unload_far_terrain | bool | false | | restart | hooks:FarTerrain, hooks:FarClutter | | true,true,false | trade-off | Unload Far Terrain | Unloads far worlds' terrain and rebuilds it on approach. About 1.4 GB less; a jump to another world can pause a moment.
+load_terrain_by_altitude | bool | false | unload_far_terrain | restart | hooks:FarTerrain | | true,true,false | trade-off | Load Terrain by Altitude | Near a world, keeps only the terrain detail around the camera's altitude. About 0.4 GB less; at high time warp, detail can change late.
+unload_far_textures | bool | false | | restart | hooks:FarTextures | | true,true,false | trade-off | Unload Far Textures | Unloads far worlds' ground, rock and cloud textures and reloads them on approach. About 0.25 GB less; a jump can pause a moment.
+fewer_effects_at_once | bool | false | | restart | hooks:ParticlePool | | true,false,false | trade-off | Fewer Effects at Once | Keeps less room for smoke and explosion effects. About 0.2 GB less; rarely, an effect isn't shown.
 
-[game_features] GPU Features | What the game may use on this Mac. Its own settings still decide.
-tessellation | bool | true | | restart | driver | | | Tessellation | Lets the game tessellate terrain and ocean; its own Tessellation setting (Graphics, Terrain) still decides. Off: the game draws them without it.
-ray_queries | bool | true | | restart | driver | | | Ray Queries | Lets the game place ground clutter with ray queries, and use ray tracing. Off: the game places clutter without them.
-ray_tracing | bool | true | ray_queries | restart | driver | | | Ray Tracing | Lets the game use ray tracing in the cockpit (IVA); its own IVA Ray Tracing setting (Graphics) still decides. Off: unavailable to the game.
-hdr_output | bool | true | | restart | driver | | | HDR Output | Lets the game show HDR on a display that has it; its own HDR (Experimental) setting (Display) still decides. The game's white then matches other windows; HDR Paper White and HDR Peak Brightness set how far highlights reach above it. Off: unavailable to the game.
+[game_features] GPU Features | What the game can use on this Mac.
+tessellation | bool | true | | restart | driver | | | | Tessellation | Lets the game tessellate terrain and ocean. Its Tessellation setting (Graphics, Terrain) still decides.
+ray_queries | bool | true | | restart | driver | | | | Ray Queries | Lets the game place ground clutter with ray queries, and use ray tracing.
+ray_tracing | bool | true | ray_queries | restart | driver | | | | Ray Tracing | Lets the game use ray tracing in the cockpit. Its IVA Ray Tracing setting (Graphics) still decides.
+hdr_output | bool | true | | restart | driver | | | | HDR Output | Lets the game show HDR on a display that has it. Its HDR (Experimental) setting (Display) still decides.
 
-[interface] Interface | How the flight HUD fits the display, and Apple's live performance readout.
-fit_hud_to_display | bool | true | | live | hooks:HudLayout | | | Fit HUD to Display | The flight HUD keeps its fullscreen size in a window, smaller on displays narrower than 16:9 such as MacBooks, with panel text scaled to fit. If panels overlap, lower HUD Scale (Interface). Off is the game's own: text can overflow in smaller windows.
-metal_performance_hud | bool | false | | restart | metal:MTL_HUD_ENABLED | | | Metal Performance HUD | Apple's overlay in a corner of the window: frame rate, frame and GPU times, and memory.
+[interface] Interface | Additional interface features.
+fit_hud_to_display | bool | true | | live | hooks:HudLayout | | | | Fit HUD to Display | Keeps the flight HUD's fullscreen size in a window, scaled to fit narrower displays. If panels overlap, lower HUD Scale (Interface).
+metal_performance_hud | bool | false | | restart | metal:MTL_HUD_ENABLED | | | | Metal Performance HUD | Apple's overlay with the frame rate, GPU time and memory.
 
-[benchmark] Benchmark | Fixed tests with these settings, each writing a report. Esc stops one.
-restart_for_a_clean_run | bool | false | | live | tab | | | Restart for a Clean Run | On: your game is saved as "Before the benchmark", and the game restarts into a new game without your mods; at the end, it quits and the report opens. Off: it plays in this game, which comes back at the end.
+[benchmark] Benchmark | Test your settings and get a report. Esc to stop.
+restart_for_a_clean_run | bool | false | | live | tab | | | | Restart for a Clean Run | On: saves your game as "Before the benchmark", restarts without mods, and quits at the end. Off: runs in this game.
 
 [troubleshooting] Troubleshooting | Turn a part of the port off, or run it strictly, to find out what causes a problem. | file
-hooks | bool | true | | restart | hooks | | | | KSA Metal Hooks, which also draw the Mac Port tab. Off: the game starts without them.
-harmony_generic_detours | bool | true | hooks | restart | hooks:GenericDetours | | | | Mods' Harmony patches on generic methods over reference types land on the shared method. Off: to tell whether a mod's problem comes from this. Such patches then get shifted arguments, which can crash the game, or never run.
-early_fragment_tests | bool | true | | restart | driver | | | | A second state that tests depth first, for pipelines whose fragment shader stores to an image: Skip Hidden Vessel Parts switches to it. Off: none, to tell whether a problem comes from it.
-dedicated_large_buffers | bool | true | | restart | driver | | | | Buffers of 4 MB or more get memory of their own, so memory the game frees goes back to macOS. Off: they share larger blocks, to tell whether a problem comes from it.
-strict_pipelines | bool | false | | restart | driver | | | | Return pipeline errors to the game, instead of skipping the pipeline and continuing.
-strict_sync | bool | false | | restart | driver | | | | Run all GPU work strictly in order: slower, but rules out synchronization bugs.
-precise_math | bool | false | | restart | driver | | | | Compile shaders without fast math: rules out precision problems.
+hooks | bool | true | | restart | hooks | | | | | KSA Metal Hooks, which also draw the Mac Port tab. Off: the game starts without them.
+harmony_generic_detours | bool | true | hooks | restart | hooks:GenericDetours | | | | | Mods' Harmony patches on generic methods over reference types land on the shared method. Off: to tell whether a mod's problem comes from this. Such patches then get shifted arguments, which can crash the game, or never run.
+early_fragment_tests | bool | true | | restart | driver | | | | | A second state that tests depth first, for pipelines whose fragment shader stores to an image: Skip Hidden Vessel Parts switches to it. Off: none, to tell whether a problem comes from it.
+dedicated_large_buffers | bool | true | | restart | driver | | | | | Buffers of 4 MB or more get memory of their own, so memory the game frees goes back to macOS. Off: they share larger blocks, to tell whether a problem comes from it.
+strict_pipelines | bool | false | | restart | driver | | | | | Return pipeline errors to the game, instead of skipping the pipeline and continuing.
+strict_sync | bool | false | | restart | driver | | | | | Run all GPU work strictly in order: slower, but rules out synchronization bugs.
+precise_math | bool | false | | restart | driver | | | | | Compile shaders without fast math: rules out precision problems.
 
 [diagnostics] Diagnostics | Logs, measurements, dumps and screenshots, for work on the port. | file
-log | int:0:2 | 0 | | restart | driver | | | | KSA Metal's log: 0 errors only, 1 also warnings and the first call of each function, 2 also object creation.
-log_file | text | | | restart | driver | | | | Write KSA Metal's log to this file instead of console.log.
-stalls | number:0:10000 | 0 | | restart | driver | | | | Log what blocks the game longer than this many milliseconds: waits for fences, drawables and submits, residency set commits, late command buffers, allocations of 16 MB or more.
-frames | text | | | restart | driver | | | | A CSV file of every frame: CPU frame time, GPU busy time, draws, dispatches and allocated memory.
-latency | text | | | restart | driver | | | | A CSV file of every frame's timing: when it began, was presented, was done on the GPU and was shown.
-labels | bool | false | | restart | driver | | | | Name every encoder after its pipelines, for Instruments, the Metal HUD and Xcode's frame capture.
-frame_capture | bool | false | | restart | metal:MTL_CAPTURE_ENABLED, driver | | | | Allow Xcode frame captures, for the console's framecapture command; encoders are named too.
-gpu_errors | bool | false | | restart | driver | | | | A command buffer that fails logs each encoder's state (completed, faulted, affected, pending); with labels the log names them.
-gpu_profile | text | | | restart | driver | | | | A CSV file of the GPU time of every encoder, for 300 frames from present 2000.
-gpu_profile_frames | text | | gpu_profile | restart | driver | | | | <first>,<count>: other frames for gpu_profile.
-gpu_profile_split | bool | false | gpu_profile | restart | driver | | | | Give every draw and dispatch its own encoder, so the profiler times each one (times grow).
-watch | text | | | restart | driver | | | | A folder: every 31 presents, a look at a sample of the presented image; when it looks broken (mostly pure white, pure black for a second, or specks of pure primary colours), the image and a pass dump go there.
-watch_white | number:0:100 | 30 | watch | restart | driver | | | | The share of pure white, in percent, at which watch counts an image as broken (0: every image, to test it).
-dump_msl | text | | | restart | driver | | | | A folder: write every translated shader, and the errors of those that fail to compile.
-dump_spv | text | | | restart | driver | | | | A folder: write every shader module the game creates as <hash>.spv.
-shader_corpus | text | | | restart | driver | | | | A folder: record every shader translation's inputs and result there, for KSA Metal's shader corpus test.
-shots | text | | | restart | driver | | | | <n>,...: save the presented image as shot_<n>.png at these points.
-shot_unit | choice:presents=presents/frames=frames/seconds=seconds | presents | shots | restart | driver | | | | What shots counts: presents, or frames or seconds from the first in-game frame.
-shot_dir | text | | shots | restart | driver | | | | Where shots go (default: the current folder).
-exit_after_shots | bool | false | shots | restart | driver | | | | Quit once the last shot is saved.
-exit_after | int:0:100000000 | 0 | | restart | driver | | | | Quit after this many presents.
-exit_after_s | number:0:100000 | 0 | | restart | driver | | | | Quit this many seconds after the start.
-fx_debug | bool | false | | restart | driver | | | | The upscaled image shows MetalFX's motion vectors instead.
-fx_shots | text | | | restart | driver | | | | A folder: now and then, a PNG of what MetalFX made.
+log | int:0:2 | 0 | | restart | driver | | | | | KSA Metal's log: 0 errors only, 1 also warnings and the first call of each function, 2 also object creation.
+log_file | text | | | restart | driver | | | | | Write KSA Metal's log to this file instead of console.log.
+stalls | number:0:10000 | 0 | | restart | driver | | | | | Log what blocks the game longer than this many milliseconds: waits for fences, drawables and submits, residency set commits, late command buffers, allocations of 16 MB or more.
+frames | text | | | restart | driver | | | | | A CSV file of every frame: CPU frame time, GPU busy time, draws, dispatches and allocated memory.
+latency | text | | | restart | driver | | | | | A CSV file of every frame's timing: when it began, was presented, was done on the GPU and was shown.
+labels | bool | false | | restart | driver | | | | | Name every encoder after its pipelines, for Instruments, the Metal HUD and Xcode's frame capture.
+frame_capture | bool | false | | restart | metal:MTL_CAPTURE_ENABLED, driver | | | | | Allow Xcode frame captures, for the console's framecapture command; encoders are named too.
+gpu_errors | bool | false | | restart | driver | | | | | A command buffer that fails logs each encoder's state (completed, faulted, affected, pending); with labels the log names them.
+gpu_profile | text | | | restart | driver | | | | | A CSV file of the GPU time of every encoder, for 300 frames from present 2000.
+gpu_profile_frames | text | | gpu_profile | restart | driver | | | | | <first>,<count>: other frames for gpu_profile.
+gpu_profile_split | bool | false | gpu_profile | restart | driver | | | | | Give every draw and dispatch its own encoder, so the profiler times each one (times grow).
+watch | text | | | restart | driver | | | | | A folder: every 31 presents, a look at a sample of the presented image; when it looks broken (mostly pure white, pure black for a second, or specks of pure primary colours), the image and a pass dump go there.
+watch_white | number:0:100 | 30 | watch | restart | driver | | | | | The share of pure white, in percent, at which watch counts an image as broken (0: every image, to test it).
+dump_msl | text | | | restart | driver | | | | | A folder: write every translated shader, and the errors of those that fail to compile.
+dump_spv | text | | | restart | driver | | | | | A folder: write every shader module the game creates as <hash>.spv.
+shader_corpus | text | | | restart | driver | | | | | A folder: record every shader translation's inputs and result there, for KSA Metal's shader corpus test.
+shots | text | | | restart | driver | | | | | <n>,...: save the presented image as shot_<n>.png at these points.
+shot_unit | choice:presents=presents/frames=frames/seconds=seconds | presents | shots | restart | driver | | | | | What shots counts: presents, or frames or seconds from the first in-game frame.
+shot_dir | text | | shots | restart | driver | | | | | Where shots go (default: the current folder).
+exit_after_shots | bool | false | shots | restart | driver | | | | | Quit once the last shot is saved.
+exit_after | int:0:100000000 | 0 | | restart | driver | | | | | Quit after this many presents.
+exit_after_s | number:0:100000 | 0 | | restart | driver | | | | | Quit this many seconds after the start.
+fx_debug | bool | false | | restart | driver | | | | | The upscaled image shows MetalFX's motion vectors instead.
+fx_shots | text | | | restart | driver | | | | | A folder: now and then, a PNG of what MetalFX made.
 
 [experiments] Experiments | Features not finished, and values to measure with. | file
-frame_interpolation | bool | false | upscaling=metalfx | restart | driver, hooks:RenderScale | | | | A frame MetalFX interpolates between every two the game draws, shown before each one: smoother motion, about half a frame more delay, 1.7-3 ms more GPU a frame, so it pays only when the game already runs at half the refresh rate or more. While it is on, the game's UI pixel culling is off, so the scene is drawn under the HUD too (about 0.1 ms more GPU a frame): otherwise the interpolated frames smear the HUD, and probably the black boxes seen beside it came from there too. Known issue: ragged rocket plumes.
-shader_overrides | text | | | restart | driver | | | | A folder of hand-written Metal source used in place of translated shaders, named as in dump_msl.
-spec | text | | | restart | driver | | | | <hash>:<id>=<value>,...: replace a specialization constant of a shader module.
-frame_cadence | number:0:100 | 0 | | restart | driver | | | | Show each frame at least this many milliseconds after the one before (25: 40 fps on a 120 Hz display), so the frame rate holds one step instead of moving between them (0: off). Wins over steady_frame_rate's half the refresh rate.
-drawable_count | int:0:3 | 0 | frame_interpolation=false | restart | driver | | | | How many images the window keeps to show, 2 or 3: 2 lets fewer frames wait to be shown (lower latency, with a cadence). 0: 2 at a cadence of 25 ms or more (steady_frame_rate on a 60 Hz display, frame_cadence), else 3.
-throttle | text | | | restart | driver | | | | <hash>:<N>,...: a pipeline whose name holds one of these module hashes runs every N-th present (an experiment, to measure what skipping a pass would save).
-trail_caches | numbers:3:4 | | | restart | hooks:TrailCaches | | | | <large>,<small>,<tiny>[,<segments>]: the atlas budgets in MiB of the smoke's 16, 8 and 4 texel volume caches (the game's: 8,8,8), and the fewest segments a cell needs to get one (33). At least one budget of 1 or more; for no caches, 8,8,8,1000000.
-trail_shadows | numbers:3:3 | | | restart | hooks:PlumeShadows | | | | <cascades>,<resolution>,<metres>: the smoke's sun shadow cascades, which the game draws with its Plume trail shadows setting (the game's: 8,512,20000; lighter_plume_shadows: 4,128,3000). Wins over lighter_plume_shadows.
-texture_budget_mb | int:0:1048576 | 0 | | restart | driver | | | | The GPU memory budget reported to the game, which sizes its texture streaming from it (0: what Metal recommends for this Mac).
-worker_park_ms | number:0:100 | 0.25 | idle_thread_sleep | restart | hooks:WorkerPark | | | | How long an idle job worker spins before it sleeps, with idle_thread_sleep.
-cache_dir | text | | | restart | driver, ktx-shim, hooks | | | | Where the shader cache and the texture and sound copies go (default: ~/Library/Caches/ksa-metal).
+frame_interpolation | bool | false | upscaling=metalfx | restart | driver, hooks:RenderScale | | | | | A frame MetalFX interpolates between every two the game draws, shown before each one: smoother motion, about half a frame more delay, 1.7-3 ms more GPU a frame, so it pays only when the game already runs at half the refresh rate or more. While it is on, the game's UI pixel culling is off, so the scene is drawn under the HUD too (about 0.1 ms more GPU a frame): otherwise the interpolated frames smear the HUD, and probably the black boxes seen beside it came from there too. Known issue: ragged rocket plumes.
+shader_overrides | text | | | restart | driver | | | | | A folder of hand-written Metal source used in place of translated shaders, named as in dump_msl.
+spec | text | | | restart | driver | | | | | <hash>:<id>=<value>,...: replace a specialization constant of a shader module.
+frame_cadence | number:0:100 | 0 | | restart | driver | | | | | Show each frame at least this many milliseconds after the one before (25: 40 fps on a 120 Hz display), so the frame rate holds one step instead of moving between them (0: off). Wins over steady_frame_rate's half the refresh rate.
+drawable_count | int:0:3 | 0 | frame_interpolation=false | restart | driver | | | | | How many images the window keeps to show, 2 or 3: 2 lets fewer frames wait to be shown (lower latency, with a cadence). 0: 2 at a cadence of 25 ms or more (steady_frame_rate on a 60 Hz display, frame_cadence), else 3.
+throttle | text | | | restart | driver | | | | | <hash>:<N>,...: a pipeline whose name holds one of these module hashes runs every N-th present (an experiment, to measure what skipping a pass would save).
+trail_caches | numbers:3:4 | | | restart | hooks:DenseSmoke | | | | | <large>,<small>,<tiny>[,<segments>]: the atlas budgets in MiB of the smoke's 16, 8 and 4 texel volume caches (the game's: 8,8,8), and the fewest segments a cell needs to get one (33). At least one budget of 1 or more; for no caches, 8,8,8,1000000.
+trail_shadows | numbers:3:3 | | | restart | hooks:PlumeShadows | | | | | <cascades>,<resolution>,<metres>: the smoke's sun shadow cascades, which the game draws with its Plume trail shadows setting (the game's: 8,512,20000; lighter_plume_shadows: 4,128,3000). Wins over lighter_plume_shadows.
+texture_budget_mb | int:0:1048576 | 0 | | restart | driver | | | | | The GPU memory budget reported to the game, which sizes its texture streaming from it (0: what Metal recommends for this Mac).
+worker_park_ms | number:0:100 | 0.25 | idle_thread_sleep | restart | hooks:WorkerPark | | | | | How long an idle job worker spins before it sleeps, with idle_thread_sleep.
+cache_dir | text | | | restart | driver, ktx-shim, hooks | | | | | Where the shader cache and the texture and sound copies go (default: ~/Library/Caches/ksa-metal).

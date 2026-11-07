@@ -421,6 +421,27 @@ internal static partial class MacPortTab
         ConsoleStyle.PopFont();
     }
 
+    // A row's tag after its label (trade-off), in the captions' small muted font, where the control and the note in
+    // front of it (none: "") leave room
+    private static void Tag(string label, string tag, string note)
+    {
+        var at = ImGui.GetCursorScreenPos();
+        float labelEnd = ConsoleWidgets.RowMin.X + ConsoleWidgets.RowLabelInsetPx + LabelWidth(label);
+        float right = at.X - ConsoleWidgets.GhostControlGapPx;
+        if (note.Length > 0)
+        {
+            ConsoleStyle.PushValueFont();
+            right -= ImGui.CalcTextSize(note).X + ConsoleWidgets.GhostControlGapPx;
+            ConsoleStyle.PopFont();
+        }
+        ConsoleStyle.PushSignatureFont();
+        var size = ImGui.CalcTextSize(tag);
+        var pos = new float2(labelEnd + ConsoleWidgets.GhostControlGapPx, at.Y + (ConsoleStyle.FrameHeightPx - size.Y) * 0.5f);
+        if (pos.X + size.X < right)
+            ImGui.GetWindowDrawList().AddText(in pos, ConsoleStyle.ApplyAlpha(ConsoleStyle.TextMutedU32), tag);
+        ConsoleStyle.PopFont();
+    }
+
     // A row's tooltip, drawn after its row ends (a greyed-out row would fade it). The game's Tooltip is a printf format
     // to ImGui: a % is doubled, or "10-20 % faster" prints a number
     private static void Tooltip(string text) => ConsoleWidgets.Tooltip(Wrap(text).Replace("%", "%%"));
@@ -556,9 +577,9 @@ internal static partial class MacPortTab
     // The benchmark's tests, in the order full plays them
     private static readonly (string Test, string Name, string Time, string What, string Help)[] Tests =
     [
-        ("mixed", "Mixed Test", "1 min", "Rockets, smoke, an explosion, a kitten and a cockpit.", "What the tour doesn't check: the vehicles set up at one moment, then each view standing still, the game paused."),
+        ("mixed", "Mixed Test", "1 min", "Rockets, smoke, an explosion, a kitten and a cockpit.", "Each view standing still, with the game paused."),
         ("tour", "Planetary Tour", "5 min", "From Earth to Jupiter: ground, sea, clouds and rings.", "The flight between the worlds, without a cut."),
-        ("warp", "Warp Test", "3 min", "How far time warp gets, with debris around Earth.", "A ship in orbit at the top speed: alone, among rockets blown up in orbit, and as pieces fall back and land. Each part takes the same time on any Mac, so a slow one gets less far. With the Extra Performance warp rows off, the game may stop here: the parts it finished are kept."),
+        ("warp", "Warp Test", "3 min", "How far time warp gets, with debris around Earth.", "A ship in orbit at top warp: alone, among exploded rockets, and as debris falls and lands. A slower Mac gets less far. Without the Extra Performance warp rows, the game may stall or stop here; finished parts are kept."),
         ("full", "Full", "9 min", "All three, one after the other.", "The Mixed Test, the Planetary Tour and the Warp Test, in one game."),
     ];
 
