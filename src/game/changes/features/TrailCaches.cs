@@ -19,6 +19,10 @@ internal static class TrailCaches
         _values = Array.ConvertAll(Settings.TrailCaches, v => (int)v);
         if (_values.Length == 0)
             return "game's";
+        // With no room for any cache the game's atlases would be 1x1x1 texels, which its renderer refuses at start
+        if (_values[0] <= 0 && _values[1] <= 0 && _values[2] <= 0)
+            return "game's (" + string.Join(',', _values) +
+                " leaves no room for any cache, which the game can't start with)";
         harmony.Patch(Find.Method(typeof(VolumetricTrailVolumeCache), "CreateVolumeCacheAtlasResources"),
             prefix: new HarmonyMethod(typeof(TrailCaches), nameof(Prefix)));
         return string.Join(',', _values);
