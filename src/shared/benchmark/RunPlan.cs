@@ -94,7 +94,7 @@ public sealed class RunPlan
         {
             ["play"] = Pick("script", "only", "fast", "mode", "test", "noShots", "hold", "here", "explore", "stay"),
             ["record"] = Pick("zoneLabels", "capture", "film"),
-            ["host"] = Pick("session", "variant", "noiseFolder", "app", "facts", "inGame", "restarted", "waitForRecording"),
+            ["host"] = Pick("session", "noiseFolder", "app", "facts", "inGame", "restarted", "waitForRecording"),
         };
         foreach (var k in new[] { "on", "against" })
             if (o[k] is { } v)
@@ -152,13 +152,11 @@ public sealed class RecordPlan
     public bool CameraLog { get; set; }
 }
 
-// What the run's host says: the game session, the side of an A/B run, where noise profiles are, the app, and the facts for
-// the record
+// What the run's host says: the game session, where noise profiles are, the app, and the facts for the record
 public sealed class HostPlan
 {
-    // Which game session of the run this is, from 1, and the side of an A/B run it plays (A, B; empty: none)
+    // Which game session of the run this is, from 1
     public int Session { get; set; } = 1;
-    public string Variant { get; set; } = "";
     // A folder whose noise/ holds profiles that a test's own (in the app, next to the lineup) gives way to: the benchmarks
     // folder, where benchmark.sh calibrate writes them
     public string NoiseFolder { get; set; } = "";

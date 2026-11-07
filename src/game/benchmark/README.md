@@ -112,7 +112,8 @@ The same tests are the project's tool for looking into the driver, the shaders a
 | Command | What it does |
 |---|---|
 | `check [test]` | the standard test of a change: the test (default `mixed`) at a fresh install's settings, compared with the baseline `main` of that test, or else the last run of it that passed played the same way; exits with 1 when screenshots differ |
-| `measure [test] [--repeat n] [--sessions n] [--ab key=value]` | numbers to judge a change by: a warm-up pass first, left out of the numbers, then `n` passes (3) in one game session; the report shows each part's median and range; `--sessions` plays more games of it; `--ab` plays games with the port setting `key=value` (B) and as the run has it (A, `--port` can give its value) in turn, and sets B against A part by part, with macOS's memory pressure and swap while each side played |
+| `measure [test] [--repeat n] [--sessions n] [--ab key=value]` | numbers to judge a change by: a warm-up pass first, left out of the numbers, then `n` passes (3) in one game session; the report shows each part's median and range; `--sessions` plays more games of it; `--ab` is a [study](#studies) of two variants, the port setting `key=value` (B) and as the run has it (A, `--port` can give its value), `--sessions` games each |
+| `study <file>`, `study resume [study]`, `study report [study]` | variants of one `measure` or `profile` command, each in game sessions of its own, played in turn and set against a baseline variant by their sessions ([below](#studies)) |
 | `profile [test \| places...]` | where the time goes: a warm-up, a measured pass and a profiled pass in one game session. The profiled pass turns the game's GPU zones on ("Clouds Raymarching", "Ocean", "Stars") and `profile.md` lists, per part, the zones with the most own time a frame; the measured pass gives the run's numbers |
 | `investigate <tool> <places...>` | a tool on places jumped to, or a whole test (below) |
 | `calibrate [test] [n]` | how much a test moves between runs of the same build on this Mac: `n` runs (3) at a fresh install's settings, written as the test's noise profile |
@@ -127,7 +128,7 @@ The same tests are the project's tool for looking into the driver, the shaders a
 # ...make the change, ./build.sh --install, then:
 ./benchmark.sh check                    # exits with 1 when a screenshot differs
 ./benchmark.sh measure tour             # the numbers, with a warm-up and three passes
-./benchmark.sh measure --ab shader_constant_memory=false   # a port setting's cost, A and B in turn
+./benchmark.sh measure --ab shader_constant_memory=false --sessions 5   # a port setting's cost, A and B in turn
 ```
 
 A Mac's heat moves GPU time: after a rest a run reads up to about a tenth low until the chip warms up. `measure`'s
@@ -144,12 +145,44 @@ warp), and the other numbers beside it ([`../../shared/benchmark/Comparison.cs`]
 |---|---|---|
 | one game session a side, one pass (`check`, two runs) | screen | past the part's limit: its noise profile's, else 5 % |
 | one game session a side, several passes (`measure`) | quick read | the passes' ranges don't overlap and it is over 2 % |
-| several game sessions a side (`measure --sessions`, `--ab`) | sessions | each session's median is a sample: Mann-Whitney's p under 0.05, Cliff's delta from 0.147 (not negligible) and past the limit; with fewer than 5 sessions a side, inconclusive |
+| several game sessions a side (a [study](#studies), `measure --sessions`) | sessions | each session's median is a sample: Mann-Whitney's p under 0.05, Cliff's delta from 0.147 (not negligible) and past the limit; with fewer than 5 sessions a side, inconclusive |
 
 The verdict names its basis (`GPU time 12 % lower (screen)`), and the comparison names the zones that moved with each
 part that changed: the GPU's when both runs were profiled (`earth4 GPU busy +1.4 ms: Clouds Raymarching +1.20`), else
 the main thread's for a frame time. `compare.html` shows the verdict and what moved first; every judged number, with
 its p, delta and the 95 % interval of B against A, is under Statistics.
+
+### Studies
+
+A study plays variants of one command, each in game sessions of its own, and sets each against a baseline variant by
+those sessions ([`../../shared/benchmark/Study.cs`](../../shared/benchmark/Study.cs)). Its file is a few lines:
+
+```text
+# Fewer cloud steps, at two presets
+measure mixed --defaults --repeat 1
+sessions 5
+variant main
+variant steps --port fewer_cloud_steps=true
+axis --preset low high
+```
+
+| Line | What it says |
+|---|---|
+| `measure <options>` or `profile <options>` | what every session plays: the command's options, as on the command line |
+| `sessions <n>` | the game sessions each variant plays (5 unless said, the fewest a verdict stands on) |
+| `variant <name> [options]` | a variant, and the options it adds to the command (`--port`, `--set`, `--preset`, `--app`, `--env`) |
+| `axis <option> <value>...` | every variant once for each value: `main low`, `main high`, `steps low`, `steps high` |
+| `baseline <name>` | the variant the others are set against (default: the first) |
+
+The sessions play round after round, each variant once a round, the next round the other way (A B B A A B), so the
+Mac's heat falls on every variant the same. Each session is a run of its own in the study's folder (the benchmarks
+folder's `studies/`), from your settings as they were when the study began, and each variant's first round takes the
+screenshots. The study waits while another game runs; Ctrl-C stops the session playing and the study, and
+`study resume` plays the rest, after a crash or a reboot too. A session that failed is played again at once, and left
+out when it fails twice. The report, `report.html` in the study's folder, has each variant's verdict against
+the baseline with its screenshots held against the baseline's, the parts as a matrix of variants with the 95 %
+interval of each ratio, the zones that moved, and every session's run. `measure --ab` is such a study, and
+`--save-plan <file>` writes a `measure` or `profile` command line as a study's file to add variants to.
 
 ### Noise profiles
 
@@ -310,8 +343,7 @@ writes: what plays, its passes (a warm-up, measured, profiled), what the tools r
 changes a setting. It writes what happens into the run's store as events (a pass beginning, a scenario starting, a part
 opened and closed, a screenshot, a checkpoint's moment, an error, a heartbeat every second) and every frame, marked with
 the part its numbers count in; `benchmark.sh` adds its own events around the game (a session, how it ended, and
-macOS's memory pressure and swap, over the run and in each game session: an A/B run's report shows them for each
-side). When the run ends, one step makes its record, `run.json`, from the store
+macOS's memory pressure and swap, over the run and in each game session). When the run ends, one step makes its record, `run.json`, from the store
 ([`../../shared/benchmark/Finish.cs`](../../shared/benchmark/Finish.cs)): each part's [metrics](#metrics) over its
 measured passes, each measuring's own, a profiled pass's apart, the zones and the slow frames, the facts about the Mac
 and the settings, and one list of checks that decides what fails the run and what is worth knowing. The report, its
@@ -447,6 +479,8 @@ flight's. Fly the free camera to a place, open the console (`\`) and type `bench
 | `--compare <run>` | compare with that run at the end (its folder, zip or name, `last`, `previous`, a baseline's name), checked before the game starts; the script fails when screenshots differ |
 | `--app <path>` | the app to measure (default: `~/Applications/Kitten Space Agency.app`) |
 | `--on '<rule>'` | with `run`, `check`, `measure`, `profile` or `investigate`: a [trigger](#triggers) (repeat for more) |
+| `--env <NAME>=<value>` | the game's environment for the run, such as a KSA Metal switch (`KSA_MTL_...`; repeat for more); the report lists them |
+| `--save-plan <file>` | with `measure` or `profile`: write the command line as a [study's](#studies) file and play nothing |
 
 | Command | |
 |---|---|
@@ -455,7 +489,7 @@ flight's. Fly the free camera to a place, open the console (`\`) and type `bench
 | `report [run] [test] [--again]` | a run's report in the terminal, and its page in your browser (default: the last run; a baseline with runs of several tests needs the test; `--again`: made again from its store first) |
 | `compare [run] [run]` | how the second run differs from the first (with one run: against the last; with none: the last against the one before it); exits with 1 when screenshots differ, 2 when the runs don't compare |
 | `clean [--keep n] [--yes]` | delete all but your last runs (30, or n) and the baselines' runs, after asking (`--yes`: without asking); only folders a run leaves |
-| `check`, `measure`, `profile`, `investigate`, `calibrate`, `baseline`, `query`, `timeline`, `explore` | for work on the port (above) |
+| `check`, `measure`, `profile`, `study`, `investigate`, `calibrate`, `baseline`, `query`, `timeline`, `explore` | for work on the port (above) |
 
 | File | |
 |---|---|

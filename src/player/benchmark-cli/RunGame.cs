@@ -40,7 +40,7 @@ public static partial class Program
             var start = new ProcessStartInfo("/bin/sh");
             foreach (var a in new[] { "-c", "trap '' INT QUIT; exec \"$0\" \"$@\" < /dev/null > /dev/null 2>&1", Path.Combine(_app, "Contents", "MacOS", "KSA") })
                 start.ArgumentList.Add(a);
-            start.Environment["STARMAP_INSTANCE_PATH"] = Instance;
+            start.Environment["STARMAP_INSTANCE_PATH"] = _instance;
             foreach (var (k, v) in env)
                 start.Environment[k] = v;
             return start;
@@ -104,9 +104,13 @@ public static partial class Program
         private List<Fact> HostFacts()
         {
             var home = PortFolder.Home;
-            var switches = string.Join(' ', Environment.GetEnvironmentVariables().Keys.Cast<string>()
-                .Where(k => k.StartsWith("KSA_MTL_", StringComparison.Ordinal)).Order(StringComparer.Ordinal)
-                .Select(k => $"{k}={Environment.GetEnvironmentVariable(k)}".Replace(home, "~")));
+            // KSA Metal's switches: this program's environment's, and --env's
+            var own = Environment.GetEnvironmentVariables().Keys.Cast<string>().Where(k => k.StartsWith("KSA_MTL_", StringComparison.Ordinal))
+                .ToDictionary(k => k, k => Environment.GetEnvironmentVariable(k) ?? "");
+            foreach (var (k, v) in Env().Where(kv => kv.Key.StartsWith("KSA_MTL_", StringComparison.Ordinal)))
+                own[k] = v;
+            var switches = string.Join(' ', own.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key}={kv.Value}".Replace(home, "~")));
+            var environment = string.Join(' ', Env().Where(kv => !kv.Key.StartsWith("KSA_MTL_", StringComparison.Ordinal)).Select(kv => $"{kv.Key}={kv.Value}".Replace(home, "~")));
             var tools = _tools.Count > 0 ? string.Join(", ", _tools) : "none";
             var preset = PresetFact;
             var changed = ChangedFact;
@@ -115,7 +119,7 @@ public static partial class Program
                 new("StarMap", Starmap()), new("System", SystemId), new("Test", _test.Length > 0 ? _test : "places"), new("Scenarios", Sections),
                 new("Mode", $"{Mode}{(_noShots ? ", no screenshots" : "")}"), new("Preset", preset), new("Settings changed", changed),
                 new("Start", Start), new("KSA Metal switches", switches.Length > 0 ? switches : "none"), new("Tools", tools),
-                .. _ab.Length > 0 ? [new Fact("A/B", $"--port {_ab}")] : Array.Empty<Fact>()
+                .. environment.Length > 0 ? [new Fact("Environment", environment)] : Array.Empty<Fact>()
             ];
         }
 
@@ -159,6 +163,17 @@ public static partial class Program
             return _lineup.Scenarios.Where(s => play.Contains(s.Name)).Select(s => (s.Name, s.Length)).ToList();
         }
 
+        private static bool _awake;
+
+        // --env's names and values, a name given again taking its last value (a study's variant over its command)
+        private Dictionary<string, string> Env()
+        {
+            var env = new Dictionary<string, string>();
+            foreach (var kv in _env)
+                env[kv[..kv.IndexOf('=')]] = kv[(kv.IndexOf('=') + 1)..];
+            return env;
+        }
+
         // 2. The run
         private int Play()
         {
@@ -169,22 +184,29 @@ public static partial class Program
             if (FreeGb() < 1)
                 Die($"the results need 1 GB free on this disk ({FreeGb()} GB free). ./benchmark.sh clean deletes old runs.");
 
-            _out = Path.Combine(Benchmarks, DateTime.Now.ToString("yyyy-MM-dd_HHmm", CultureInfo.InvariantCulture));
-            if (_hold.Length > 0)
-                _out += "_hold";
-            if (Directory.Exists(_out) || File.Exists(_out))
-                _out += "_" + DateTime.Now.ToString("ss", CultureInfo.InvariantCulture);
+            if (Into.Length > 0)
+                _out = Into;
+            else
+            {
+                _out = Path.Combine(Benchmarks, DateTime.Now.ToString("yyyy-MM-dd_HHmm", CultureInfo.InvariantCulture));
+                if (_hold.Length > 0)
+                    _out += "_hold";
+                if (Directory.Exists(_out) || File.Exists(_out))
+                    _out += "_" + DateTime.Now.ToString("ss", CultureInfo.InvariantCulture);
+            }
             Directory.CreateDirectory(_out);
             File.Copy(_settings, Path.Combine(_out, "settings.toml"));
             var events = new EventLog(_out);
             events.Add("start", text: Start);
-            // Keeps the display awake while the run lasts (the game needs it), and wakes it now: a display that went to
-            // sleep makes the game fail at start
-            Process.Start("caffeinate", ["-d", "-i", "-w", Environment.ProcessId.ToString(CultureInfo.InvariantCulture)]);
+            // Keeps the display awake while this program lasts (the game needs it; a study's runs are one program), and wakes
+            // it now: a display that went to sleep makes the game fail at start
+            if (!_awake)
+                Process.Start("caffeinate", ["-d", "-i", "-w", Environment.ProcessId.ToString(CultureInfo.InvariantCulture)]);
+            _awake = true;
             Tool.Exec("caffeinate", ["-u", "-t", "1"], out _);
 
-            // What the tools add to the game's environment, and to the run's plan
-            var env = new Dictionary<string, string>();
+            // What the tools add to the game's environment, and to the run's plan; --env first, the tools' own over it
+            var env = Env();
             var plan = new RunPlan { Passes = Passes() };
             if (_purpose == Purpose.Profile)
             {
@@ -259,7 +281,7 @@ public static partial class Program
                 };
                 if (_test.Length > 0)
                     what = $"{_test}, {what}";
-                int games = _sessions * (_ab.Length > 0 ? 2 : 1);
+                int games = _sessions;
                 // The passes: "a warm-up and 3 measured passes", "a warm-up, a measured and a profiled pass"
                 var passes = Passes();
                 if (passes.Count > 1)
@@ -293,17 +315,15 @@ public static partial class Program
             });
             if (busy.Length > 0)
                 events.Add("gpu", value: int.Parse(busy));
-            // The sessions: in full each test in a game of its own; measure's sessions, A and B in turn with --ab
+            // The sessions: in full each test in a game of its own; measure's sessions
             var groups = _test == "full"
                 ? Lineup.Full.Select(t => _lineup.Test(t)!.Scenarios.ToList()).ToList()
                 : [_only];
-            string[] variants = _ab.Length > 0 ? ["A", "B"] : [""];
             int session = 0;
             for (int r = 1; r <= _sessions && !_stopped && !StoppedByTrigger(session); r++)
-                foreach (var variant in variants)
-                    foreach (var group in groups)
-                        if (!_stopped && !StoppedByTrigger(session))
-                            PlayOnce(++session, group, variant, env, plan, lengths, timeout, hang, events, ref pressure);
+                foreach (var group in groups)
+                    if (!_stopped && !StoppedByTrigger(session))
+                        PlayOnce(++session, group, env, plan, lengths, timeout, hang, events, ref pressure);
             Console.CancelKeyPress -= stop;
             term.Dispose();
             // --defaults: the settings as the game saved them, with its defaults filled in
@@ -331,6 +351,14 @@ public static partial class Program
                 failed = 1;
             if (!File.Exists(Path.Combine(_out, "report.md")))
                 Die($"the run's report could not be written. What the run left is in {_out}");
+            // A study's session: a line of its own, the study's report says the rest
+            if (Into.Length > 0)
+            {
+                var h = record?.Headline();
+                Output.Info($"{record?.Status.ToString() ?? "No record"}{(h?.GpuMs is { } gpu ? FormattableString.Invariant($", GPU {gpu:F2} ms a frame") : "")}" +
+                            $"{(h?.Short() is { Length: > 0 } fps ? $", {fps}" : "")}{(record?.Problems.FirstOrDefault() is { } p ? $": {p.Text}" : "")} ({Path.GetFileName(_out)})");
+                return failed;
+            }
             Console.WriteLine();
             Show(_out);
             Console.WriteLine();
@@ -360,27 +388,22 @@ public static partial class Program
 
         // One game session: its plan in the run's folder, the game watched until it ends, hangs or is stopped, its
         // ending and its log
-        private void PlayOnce(int n, List<string> only, string variant, Dictionary<string, string> env, RunPlan plan,
+        private void PlayOnce(int n, List<string> only, Dictionary<string, string> env, RunPlan plan,
             List<(string Section, double Seconds)> lengths, int timeout, int hang, EventLog events, ref int pressure)
         {
-            // This session's memory pressure at its worst and the swap at its start: an A/B run's report gives each side
-            // its own
+            // This session's memory pressure at its worst and the swap at its start
             int sessionPressure = 1;
             var swapStart = Swap();
-            if (n > 1 || variant.Length > 0)
-                Output.Info($"Game {n}{(variant.Length > 0 ? $": {variant}{(variant == "B" ? $", {_ab}" : "")}" : "")}");
+            if (n > 1)
+                Output.Info($"Game {n}");
             events.Session = n;
-            events.Add("session", text: variant.Length > 0 ? variant : null);
-            // A/B: B's port settings with the setting changed, A's without
-            if (_ab.Length > 0)
-                PortSettingsFor(variant == "B");
+            events.Add("session");
             plan.Play.Only = string.Join(' ', only);
             plan.Play.Fast = _fast;
             plan.Play.Mode = Mode;
             plan.Play.Hold = _hold;
             // The first session alone takes screenshots: the others measure (in full, each test's own)
             plan.Play.NoShots = _noShots || n > (_test == "full" ? Lineup.Full.Count : 1);
-            plan.Host.Variant = variant;
             plan.Host.NoiseFolder = Benchmarks;
             plan.Host.Session = n;
             plan.Play.Test = _test;
@@ -472,7 +495,7 @@ public static partial class Program
                 tracer.WaitForExit();
             }
             // The game's log, without your home folder's name
-            var log = Path.Combine(Instance, "logs", "console.log");
+            var log = Path.Combine(_instance, "logs", "console.log");
             if (File.Exists(log))
                 File.WriteAllText(Path.Combine(_out, n > 1 ? $"game-{n}.log" : "game.log"), File.ReadAllText(log).Replace(PortFolder.Home, "~"));
         }

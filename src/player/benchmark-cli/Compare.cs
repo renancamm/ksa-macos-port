@@ -19,8 +19,8 @@ public static partial class Program
     {
         if (Load(Unpacked(run)) is not { } record)
             return $"no run's record in {run}";
-        if (record.Scenarios.Any(s => s.Variant != null))
-            return "that run is an A/B run: its report sets its two sides against each other.";
+        if (record.Fact("A/B") != null)
+            return "that run is an A/B run of before studies: its two sides are in one record.";
         if (record.Mode != mode)
             return $"that run played in {record.Mode} mode and this one plays in {mode} mode: neither their numbers nor their screenshots would compare.";
         var scenarios = record.Scenarios.Select(s => s.Name).ToHashSet();
@@ -40,10 +40,10 @@ public static partial class Program
         var (ra, rb) = (Load(a), Load(b));
         if (ra == null || rb == null)
             return 2;
-        // An A/B run's two sides are set against each other in its own report
-        if (new[] { (a, ra), (b, rb) }.FirstOrDefault(x => x.Item2.Scenarios.Any(s => s.Variant != null)) is ({ } ab, not null))
+        // An A/B run of before studies holds both sides in one record
+        if (new[] { (a, ra), (b, rb) }.FirstOrDefault(x => x.Item2.Fact("A/B") != null) is ({ } ab, not null))
         {
-            Console.Error.WriteLine($"{Path.GetFileName(ab.TrimEnd('/'))} is an A/B run: its report sets its two sides against each other (./benchmark.sh report {Path.GetFileName(ab.TrimEnd('/'))}).");
+            Console.Error.WriteLine($"{Path.GetFileName(ab.TrimEnd('/'))} is an A/B run of before studies: its two sides are in one record, which doesn't compare.");
             return 2;
         }
         var c = Comparison.Of(ra.AllParts().Select(x => (x.Scenario.Name, x.Part)), rb.AllParts().Select(x => (x.Scenario.Name, x.Part)));
@@ -174,7 +174,7 @@ public static partial class Program
     private static List<(string Key, string A, string B)> Macs(RunRecord ra, RunRecord rb)
     {
         var rows = ra.Facts.Select(f => f.Key).Union(rb.Facts.Select(f => f.Key))
-            .Where(k => k is not ("Displays" or "Scenarios" or "Settings changed" or "While A played" or "While B played") && ra.Fact(k) != rb.Fact(k))
+            .Where(k => k is not ("Displays" or "Scenarios" or "Settings changed") && ra.Fact(k) != rb.Fact(k))
             .Select(k => (k, ra.Fact(k) ?? "", rb.Fact(k) ?? "")).ToList();
         if (ra.Mode != rb.Mode)
             rows.Add(("Mode", ra.Mode, rb.Mode));

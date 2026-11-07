@@ -82,7 +82,7 @@ public static partial class Program
                     var record = RunRecord.Read(dir);
                     if (record == null || record.Test is "places" or "full")
                         throw new PortException($"{run} is not a run of one test (mixed, tour or warp): a baseline stands for one test.");
-                    if (record.Scenarios.Any(s => s.Variant != null))
+                    if (record.Fact("A/B") != null)
                         Die($"{run} is an A/B run, two settings at once: a baseline is a run of one.");
                     if (record.Status != Status.Passed)
                         Output.Warn($"{Path.GetFileName(dir)} did not pass: it is the baseline all the same.");

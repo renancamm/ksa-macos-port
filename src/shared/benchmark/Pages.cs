@@ -141,7 +141,7 @@ public static class Pages
             md.AppendLine($"|---|---|{string.Concat(Columns.Select(_ => "---:|"))}");
             foreach (var s in plain)
             {
-                string name = Label(s);
+                string name = s.Name;
                 foreach (var p in s.Parts.Where(p => !p.Warped))
                 {
                     md.AppendLine($"| {name} | {p.Name} | {string.Join(" | ", Columns.Select(m => Cell(p, m) + (m == Metrics.FrameTime && p.Range(m) is [var lo, var hi] ? $" ({F(lo, "0.0")}-{F(hi, "0.0")})" : "")))} |");
@@ -177,27 +177,6 @@ public static class Pages
             foreach (var (s, p) in profiled)
                 md.AppendLine($"- {s.Name} {p.Name} (GPU busy {N(p.Profiled!.GetValueOrDefault(Metrics.GpuBusy.Name), "0.0")}): " +
                               string.Join(", ", p.Zones(Metrics.GpuZones, profiled: true).Take(6).Select(z => $"{Metrics.ZoneLabel(z.Name)} {F(z.Ms, "0.00")}")));
-        }
-        if (AB(r) is { } ab)
-        {
-            md.AppendLine();
-            var (sentence, _) = ab.Sentence();
-            md.AppendLine($"A/B: B played with {r.Fact("A/B") ?? "the setting changed"}, A with the run's own value of it, in sessions taken in turn. **{sentence}**.");
-            md.AppendLine();
-            md.AppendLine("| Scenario | Part | GPU ms A | GPU ms B | Change | Zones that moved |");
-            md.AppendLine("|---|---|---:|---:|---:|---|");
-            foreach (var c in ab.Parts.Where(c => c.Decides != null))
-            {
-                var v = c.Decides!;
-                md.AppendLine($"| {c.Scenario} | {c.Name} | {Range(c.A, v.Metric)} | {Range(c.B, v.Metric)} | {Marked(v)} | {Zones(c)} |");
-            }
-            md.AppendLine();
-            md.AppendLine(BasisNote(ab.Basis));
-            if (r.Fact("While A played") is { } memoryA && r.Fact("While B played") is { } memoryB)
-            {
-                md.AppendLine();
-                md.AppendLine($"macOS's memory while each side played: A {memoryA}; B {memoryB}.");
-            }
         }
         var warp = r.AllParts().Where(x => x.Part.Warped).ToList();
         if (warp.Count > 0)
@@ -263,15 +242,6 @@ public static class Pages
              "A Mac's heat moves GPU time too: measure both sides to be sure (./benchmark.sh measure --sessions 5).",
     };
 
-    // An A/B run's two sides compared, B against A; null in other runs
-    public static Comparison? AB(RunRecord r)
-    {
-        var a = r.Scenarios.Where(s => s.Variant == "A").SelectMany(s => s.Parts.Select(p => (s.Name, p)));
-        var b = r.Scenarios.Where(s => s.Variant == "B").SelectMany(s => s.Parts.Select(p => (s.Name, p)));
-        var c = Comparison.Of(a, b);
-        return c.Parts.Count + c.Warps.Count > 0 ? c : null;
-    }
-
     // --- report.html
 
     public static void WriteReport(string dir, RunRecord r)
@@ -330,7 +300,6 @@ public static class Pages
         SlowFrames(html, r);
         WhereTheTimeGoes(html, r);
         AllNumbers(html, r);
-        ABTable(html, r);
         var timelines = Timelines(dir);
         WarpCharts(html, r, timelines);
         FrameCharts(html, r, timelines);
@@ -374,9 +343,9 @@ public static class Pages
         string last = "";
         foreach (var (s, p) in parts)
         {
-            if (Label(s) != last && r.Scenarios.Count > 1)
-                html.Append($"<tr class=\"group\"><th colspan=\"{Columns.Length + 2}\">{E(Label(s))}</th></tr>");
-            last = Label(s);
+            if (s.Name != last && r.Scenarios.Count > 1)
+                html.Append($"<tr class=\"group\"><th colspan=\"{Columns.Length + 2}\">{E(s.Name)}</th></tr>");
+            last = s.Name;
             var shot = $"{s.Name}_{p.Name}";
             html.Append($"<tr><td class=\"part\">{(shots.Contains(shot) ? $"<a href=\"#{E(shot)}\">{Image(shot + ext, "")}</a>" : "<span class=\"no-thumb\"></span>")}{E(p.Name)}</td>");
             html.Append("<td class=\"bar-cell\">");
@@ -452,30 +421,12 @@ public static class Pages
         html.Append("</tr></thead><tbody>");
         foreach (var (s, p) in parts)
         {
-            html.Append($"<tr><td class=\"part\">{E(Label(s))} {E(p.Name)}</td>");
+            html.Append($"<tr><td class=\"part\">{E(s.Name)} {E(p.Name)}</td>");
             foreach (var m in metrics)
                 html.Append($"<td>{Cell(p, m)}</td>");
             html.Append("</tr>");
         }
         html.Append("</tbody></table></div></details></section>");
-    }
-
-    // A scenario's name, with its side in an A/B run
-    private static string Label(ScenarioRecord s) => s.Variant is { } v ? $"{s.Name} ({v})" : s.Name;
-
-    // An A/B run: each part with the setting changed (B) and as the run had it (A), its verdict and the zones that moved
-    private static void ABTable(StringBuilder html, RunRecord r)
-    {
-        if (AB(r) is not { } ab)
-            return;
-        var (sentence, good) = ab.Sentence();
-        html.Append($"<section><h2>A/B</h2><p class=\"lead\">B played with {E(r.Fact("A/B") ?? "the setting changed")}, A with the run's own value of it, in sessions taken in turn. {(good is { } g ? Status(g, sentence) : E(sentence))}</p>");
-        ComparisonTable(html, ab, "A", "B");
-        html.Append($"<p class=\"small\">{E(BasisNote(ab.Basis))}</p>");
-        StatisticsTable(html, ab);
-        if (r.Fact("While A played") is { } memoryA && r.Fact("While B played") is { } memoryB)
-            html.Append($"<p class=\"lead\">macOS's memory while each side played: A {E(memoryA)}; B {E(memoryB)}.</p>");
-        html.Append("</section>");
     }
 
     // A comparison's parts: a bar for each side, the deciding numbers, the verdict and the zones that moved
@@ -811,6 +762,89 @@ public static class Pages
         html.Append("</main>");
         Close(html);
         File.WriteAllText(Path.Combine(b, "compare.html"), html.ToString());
+    }
+
+    // A study's page (report.html in its folder): each variant's verdict against the baseline, the parts as a matrix of
+    // variants, what moved, the screenshots that differ, each variant's statistics, and the sessions with their runs
+    public static void WriteStudy(string dir, StudyPage s)
+    {
+        var html = new StringBuilder();
+        Open(html, $"Study {s.Name}", s.First?.Drawable);
+        html.Append("<header class=\"hero slim\"><div class=\"hero-text\"><div class=\"eyebrow\">KSA Metal benchmark · study</div>");
+        html.Append($"<h1>{E(s.Name)}</h1><p>{E(s.First is { } r ? $"{When(r)} · {MacLine(r)} · " : "")}{s.Played} of {s.Sessions.Count} game sessions</p>");
+        html.Append("</div></header><main>");
+
+        html.Append($"<section><h2>Against {E(s.Baseline)}</h2><p class=\"lead\">Every session: <code>{E(s.Command)}</code>, {s.SessionsEach} for each variant, in turn. " +
+                    $"The baseline: {E(s.Baseline)}{(s.BaselineOptions.Count > 0 ? $" (<code>{E(string.Join(' ', s.BaselineOptions))}</code>)" : "")}.</p><ul class=\"moved\">");
+        foreach (var v in s.Variants)
+            html.Append($"<li><b>{E(v.Name)}</b> {(v.Good is { } g ? Status(g, v.Sentence) : $"<span class=\"quiet\">{E(v.Sentence)}</span>")}" +
+                        $"{(v.Options.Count > 0 ? $" <span class=\"small\"><code>{E(string.Join(' ', v.Options))}</code></span>" : "")}</li>");
+        html.Append("</ul></section>");
+
+        var rows = s.Rows();
+        var shown = s.Variants.Where(v => v.Comparison != null).ToList();
+        if (rows.Count > 0)
+        {
+            html.Append("<section><h2>Part by part</h2><p class=\"lead\">GPU busy a frame where both sides have it, else frame time; time warp's parts by their speed. Each cell: the variant against the baseline, the 95 % interval of the ratio below it.</p>");
+            html.Append($"<div class=\"table-scroll\"><table class=\"parts\"><thead><tr><th>Part</th><th></th><th>{E(s.Baseline)}</th>{string.Concat(shown.Select(v => $"<th>{E(v.Name)}</th>"))}</tr></thead><tbody>");
+            string last = "";
+            foreach (var (scenario, part) in rows)
+            {
+                if (scenario != last && rows.Select(x => x.Scenario).Distinct().Count() > 1)
+                    html.Append($"<tr class=\"group\"><th colspan=\"{3 + shown.Count}\">{E(scenario)}</th></tr>");
+                last = scenario;
+                var first = shown.Select(v => s.Cell(v, scenario, part)).First(c => c != null)!.Decides!;
+                html.Append($"<tr><td class=\"part\">{E(part)}</td><td class=\"quiet\">{E(first.Metric.Label)}</td><td>{first.Metric.Format(first.A)} {E(first.Metric.Unit)}</td>");
+                foreach (var v in shown)
+                    html.Append(s.Cell(v, scenario, part)?.Decides is { } d
+                        ? $"<td>{Chip(d)}{(d.Interval is [var lo, var hi] ? $"<div class=\"small\">{F(lo, "0.000")}-{F(hi, "0.000")}</div>" : "")}</td>"
+                        : "<td></td>");
+                html.Append("</tr>");
+            }
+            html.Append($"</tbody></table></div><p class=\"small\">{E(BasisNote(shown.Select(v => v.Comparison!.Basis).Min()))}</p></section>");
+        }
+
+        var moved = shown.SelectMany(v => v.Comparison!.Parts.Concat(v.Comparison.Warps).Where(p => p.Decides is { Changed: true }).Select(p => (v, p))).ToList();
+        if (moved.Count > 0)
+        {
+            html.Append("<section><h2>What moved</h2><ul class=\"moved\">");
+            foreach (var (v, p) in moved)
+                html.Append($"<li>{Chip(p.Decides!)} <b>{E(v.Name)}</b> {E(p.Line())}</li>");
+            html.Append("</ul></section>");
+        }
+
+        // The screenshots that differ from the baseline's, each variant's first session's
+        var differing = shown.Where(v => v.ShotsDiffer > 0 && v.ShotsOf != null).ToList();
+        if (differing.Count > 0)
+        {
+            var baseShots = s.Sessions.FirstOrDefault(x => x.Variant == s.Baseline && x.Run != null && Directory.GetFiles(Path.Combine(dir, x.Run), "*_*.png").Length > 0)?.Run;
+            html.Append("<section><h2>Screenshots that differ</h2><p class=\"lead\">Each variant's first session against the baseline's. Drag across a picture to go from the baseline to the variant.</p><div class=\"gallery compare\">");
+            foreach (var v in differing)
+                foreach (var shot in v.Shots.Where(x => x.State is "differs" or "unreadable"))
+                {
+                    html.Append($"<figure class=\"slider\" style=\"--at:50%\"><div class=\"pair\">{(baseShots != null ? Image(Path.Combine(baseShots, shot.Name), "baseline: " + shot.Name) : "")}<div class=\"over\">{Image(Path.Combine(v.ShotsOf!, shot.Name), v.Name + ": " + shot.Name)}</div><i class=\"handle\"></i><span class=\"tag a\">{E(s.Baseline)}</span><span class=\"tag b\">{E(v.Name)}</span><input type=\"range\" min=\"0\" max=\"100\" value=\"50\" aria-label=\"From the baseline to the variant\"></div>");
+                    html.Append($"<figcaption><b>{E(v.Name)} · {E(Path.GetFileNameWithoutExtension(shot.Name))}</b><span>{F(shot.ChangedPercent, "0.00")} % · {Mark(false, shot.State)}</span></figcaption></figure>");
+                }
+            html.Append("</div></section>");
+        }
+
+        if (shown.Count > 0)
+        {
+            html.Append("<section><h2>Statistics</h2><p class=\"lead\">A: the baseline, B: the variant.</p>");
+            foreach (var v in shown)
+            {
+                html.Append($"<h3>{E(v.Name)}</h3>");
+                StatisticsTable(html, v.Comparison!);
+            }
+            html.Append("</section>");
+        }
+
+        html.Append("<section><h2>Sessions</h2><div class=\"table-scroll\"><table class=\"parts\"><thead><tr><th>Session</th><th>Round</th><th>Variant</th><th>Run</th></tr></thead><tbody>");
+        foreach (var x in s.Sessions)
+            html.Append($"<tr><td>{x.Number}</td><td>{x.Round}</td><td class=\"part\">{E(x.Variant)}</td><td class=\"part\">{(x.Run != null ? $"<a href=\"{E(Url(x.Run))}/report.html\">{E(x.Run)}</a>" : $"<span class=\"quiet\">{E(x.State)}</span>")}</td></tr>");
+        html.Append("</tbody></table></div></section></main>");
+        Close(html);
+        File.WriteAllText(Path.Combine(dir, "report.html"), html.ToString());
     }
 
     private static string Mark(bool better, string text) => $"<span class=\"chip {(better ? "good" : "bad")}\">{(better ? "▲" : "▼")} {E(text)}</span>";

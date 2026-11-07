@@ -32,7 +32,6 @@ internal static class Tests
             ("a run with problems", Problems),
             ("the conditions noted", Notes),
             ("repeats", Repeats),
-            ("an A/B run's memory on each side", SideMemory),
             ("numbers in any region", AnyRegion),
             ("finish", FinishZip),
             ("comparing two runs", Compare),
@@ -61,6 +60,8 @@ internal static class Tests
             ("a run's zones and slow frames in its record", ZonesInRecord),
             ("a run of before plans, finished again", BeforePlans),
             ("a profiled pass beside the measured one", ProfiledPass),
+            ("a study's file", StudyFile),
+            ("a study's variants by their sessions", StudyVariants),
         };
         foreach (var (name, run) in tests)
         {
@@ -149,10 +150,10 @@ internal static class Tests
 
     // One game session of the scenario earth: its part's frames, and its ending
     private static void Session(string dir, EventLog events, int session, double frameMs, double? gpuMs, Kind kind, string ending = "quit normally",
-        bool done = true, Action<EventLog>? during = null, uint shaders = 0, string? variant = null)
+        bool done = true, Action<EventLog>? during = null, uint shaders = 0)
     {
         events.Session = session;
-        events.Add("session", text: variant);
+        events.Add("session");
         events.Add("loaded", value: 1.5);
         events.Add("scenario", "earth", text: Lineup.Name(kind));
         events.Add("open", "earth", "earth1", game: 0, value: 0);
@@ -325,25 +326,6 @@ internal static class Tests
         var merged = Measure.Merge([Measure.Of(Warped(1), null, null, 1000, 0), Measure.Of(Warped(0.5), null, null, 1000, 0), Measure.Of(Warped(1), null, null, 1000, 0)]);
         Check(!merged.ContainsKey(Metrics.ToSpeed.Name), "seconds to speed: never, in one of the runs");
         Check(merged.ContainsKey(Metrics.Speed.Name), "the speed: their median");
-    }
-
-    // Each side's sessions: the worst pressure, the swap grown in all of them
-    private static void SideMemory()
-    {
-        var dir = Run("side-memory", sessions: 0);
-        var events = new EventLog(dir);
-        Action<EventLog> Memory(string text) => e => e.Add("session-memory", text: text);
-        Session(dir, events, 1, 10, 10, Kind.Views, variant: "A", during: Memory("pressure normal, swap 100.00 -> 100.00 MB"));
-        Session(dir, events, 2, 10, 10, Kind.Views, variant: "B", during: Memory("pressure warning, swap 100.00 -> 400.00 MB"));
-        Session(dir, events, 3, 10, 10, Kind.Views, variant: "A", during: Memory("pressure normal, swap 400.00 -> 450.00 MB"));
-        Session(dir, events, 4, 10, 10, Kind.Views, variant: "B", during: Memory("pressure normal, swap 450.00 -> 650.00 MB"));
-        Session(dir, events, 5, 10, 10, Kind.Views, variant: "A", during: Memory("pressure critical, swap ? -> ? MB"));
-        var record = Finished(dir);
-        Equal("worst memory pressure critical, swap grew 50 MB in 3 game sessions", record.Fact("While A played"), "side A");
-        Equal("worst memory pressure warning, swap grew 500 MB in 2 game sessions", record.Fact("While B played"), "side B");
-        Contains([File.ReadAllText(Path.Combine(dir, "report.md"))], "macOS's memory while each side played: A worst memory pressure critical",
-            "report.md's line");
-        Equal<string?>(null, Finished(Run("plain-memory")).Fact("While A played"), "a run without sides");
     }
 
     // A Mac whose region writes 16,7 for 16.7: the record's numbers stay the same
@@ -1128,5 +1110,96 @@ internal static class Tests
         var report = File.ReadAllText(Path.Combine(dir, "report.md"));
         Contains([report], "no two recordings play the same", "what it is");
         Check(!report.Contains("slowest", StringComparison.Ordinal), "no slowest of one part");
+    }
+
+    // A study's file: its lines, its variants (named, and a grid), the baseline, the order of the queue, what it refuses
+    private static void StudyFile()
+    {
+        var study = Study.Parse([
+            "# cloud light, at two presets",
+            "measure mixed --defaults --repeat 1 --on 'frame>50ms: moment'",
+            "sessions 3",
+            "variant main",
+            "variant light2 --port cloud_light=2   # fewer samples",
+            "axis --preset low high",
+            "baseline main high",
+        ]);
+        Equal("measure", study.Verb, "the verb");
+        Equal("mixed --defaults --repeat 1 --on frame>50ms: moment", string.Join(' ', study.Command), "the command, a quoted word kept whole");
+        Equal("main low,main high,light2 low,light2 high", string.Join(',', study.Variants.Select(v => v.Name)), "the variants, each with every value of the axis");
+        Equal("main high", study.Baseline.Name, "the baseline named");
+        Equal("--port cloud_light=2 --preset high", string.Join(' ', study.Variants[3].Options), "a variant's options, its axis's last");
+        Equal("mixed --defaults --repeat 1 --on frame>50ms: moment --preset low", string.Join(' ', study.Arguments(study.Variants[0])), "a variant's command line");
+        var queue = study.Queue();
+        Equal(12, queue.Count, "3 sessions of 4 variants");
+        Equal("main low,main high,light2 low,light2 high,light2 high,light2 low,main high,main low,main low",
+            string.Join(',', queue.Take(9).Select(q => q.Variant.Name)), "in turn, the next round the other way");
+        Equal("05-light2_high", queue[4].Folder(queue.Count), "a session's folder");
+        Equal("05-light2_high-2", queue[4].Folder(queue.Count, 2), "played again");
+        Equal("base", Study.Parse(["measure mixed"]).Variants.Single().Name, "no variants: one, the command as it is");
+        Equal(Study.DefaultSessions, Study.Parse(["measure mixed"]).Sessions, "5 sessions unless said");
+        Equal("low,medium", string.Join(',', Study.Parse(["profile", "axis --preset low medium"]).Variants.Select(v => v.Name)), "an axis alone names its variants");
+        foreach (var w in new[] { "plain", "frame>50ms: moment", "it's", "#1" })
+            Equal(w, Study.Words(Study.Quote(w)).Single(), $"{w} quoted and read back");
+        foreach (var (lines, says) in new (string[], string)[]
+        {
+            (["variant a"], "no command"),
+            (["measure mixed", "measure tour"], "one command"),
+            (["measure mixed --sessions 3"], "--sessions isn't for a study"),
+            (["measure mixed", "variant b --ab x=1"], "--ab isn't for a study"),
+            (["measure mixed", "variant a", "variant a --preset low"], "two variants named a"),
+            (["measure mixed", "axis --preset low"], "two values or more"),
+            (["measure mixed", "sessions 0"], "1 to 100"),
+            (["measure mixed", "baseline nobody"], "no variant nobody"),
+            (["measure mixed", "repeat 3"], "'repeat' isn't a study's line"),
+            (["measure mixed --on 'frame>50ms"], "a quote (') left open"),
+            (["measure mixed", "variant a/b", "variant a-b"], "would share a folder"),
+        })
+        {
+            try
+            {
+                Study.Parse(lines);
+                Failures.Add($"{_test}: accepted {string.Join(" / ", lines)}");
+            }
+            catch (StudyException e)
+            {
+                Check(e.Message.Contains(says, StringComparison.Ordinal), $"refused with '{says}': {e.Message}");
+            }
+        }
+    }
+
+    // A study's variants: each run a session, merged per variant and judged against the baseline by those sessions; the
+    // page and report.md from them
+    private static void StudyVariants()
+    {
+        double[] jitter = [0, 0.1, -0.1, 0.05, -0.05];
+        var a = jitter.Select((j, i) => Finished(Run($"a{i}", frameMs: 20, gpuMs: 10 + j))).ToList();
+        var b = jitter.Select((j, i) => Finished(Run($"b{i}", frameMs: 20, gpuMs: 12 + j))).ToList();
+        var merged = Study.Merged(b);
+        var part = merged.Single().Part;
+        Equal(5, part.Sessions(Metrics.GpuBusy).Length, "each run a session of its own");
+        Equal("12,12.1,11.9,12.05,11.95", string.Join(",", part.Sessions(Metrics.GpuBusy)), "the sessions in the order the runs played");
+        Equal(5, part.Runs, "the part's runs");
+        var c = Comparison.Of(Study.Merged(a), merged);
+        Equal(Basis.Sessions, c.Basis, "judged by sessions");
+        Equal(Change.Worse, c.Parts.Single().Decides!.Change, "20 % more GPU time in every session");
+        Contains([c.Sentence().Text], "GPU time 20 % higher (5 sessions a side)", "the sentence");
+        var (sentence, good) = c.Sentence();
+        var page = new StudyPage("2026-11-08_0100_light", "./benchmark.sh measure mixed", "base", [], 5,
+            [new StudyPage.Variant("light2", ["--port", "cloud_light=2"], c, sentence, good, [], 0, null),
+             new StudyPage.Variant("broken", [], null, "no session of it passed yet", null, [], 0, null)],
+            [new StudyPage.Session(1, 1, "base", "01-base", "passed"), new StudyPage.Session(2, 1, "light2", null, "to play")], a[0]);
+        var md = page.Markdown();
+        Contains([md], "| light2 | **GPU time 20 % higher (5 sessions a side)** |", "report.md: the variant's verdict, marked when worse");
+        Contains([md], "| earth | earth1 | GPU busy | 10.0 ms | **20 % slower** (", "report.md: the part's row, with its interval");
+        Contains([md], "- light2: earth earth1 GPU busy +2.0 ms (20 % slower)", "report.md: what moved");
+        Contains([md], "| 2 | 1 | light2 | to play |", "report.md: a session still to play");
+        Check(!page.Markdown(terminal: true).Contains("| Session |", StringComparison.Ordinal), "the terminal's summary: no sessions");
+        Directory.CreateDirectory(Path.Combine(_scratch, "study"));
+        Pages.WriteStudy(Path.Combine(_scratch, "study"), page);
+        var html = File.ReadAllText(Path.Combine(_scratch, "study", "report.html"));
+        Contains([html], "20 % slower", "the page's matrix");
+        Contains([html], "01-base/report.html", "the page links each session's run");
+        Contains([html], "no session of it passed yet", "a variant with nothing to compare");
     }
 }
