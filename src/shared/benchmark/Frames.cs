@@ -2,7 +2,8 @@
 // kept so that a shared run can answer later questions, and a better summary applies to old runs too. Frame time is the
 // time between two game frames, as the player feels it (it includes waiting for Vsync); GPU time is the time the GPU
 // spent on a presented frame, which KSA Metal reports a few frames late (nothing over a part of seconds). The driver's
-// columns are those of its latest present: a frame that presented nothing repeats them, the present column tells.
+// columns are those of its latest present: a frame that presented nothing repeats them, the present column tells. The
+// run's store gets the same rows (Store.cs).
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -28,6 +29,7 @@ public sealed class FrameLog : IDisposable
                                   "thermal,shaders,pipelines,display_ms,game_s,asked,sim_ms,substeps,bubbles,vehicles";
 
     private readonly StreamWriter _out;
+    private readonly RunStore? _store;
     private readonly int _session;
 
     // Which time the scenario plays in this session (a run's passes, from 1)
@@ -47,21 +49,43 @@ public sealed class FrameLog : IDisposable
         else if (cut)
             _out.WriteLine();
         _session = session;
+        _store = RunStore.For(dir);
     }
 
     public void Add(double script, string? scenario, string? part, string phase, double frameMs, FrameStats? driver, SimSample? sim)
     {
-        var line = FormattableString.Invariant($"{_since.Elapsed.TotalSeconds:F4},{_session},{Pass},{script:F3},{scenario},{part},{phase},{frameMs:F3}");
-        if (driver is { } d)
-            line += FormattableString.Invariant(
-                $",{d.Present},{d.GpuMs:F3},{d.CpuMs:F3},{d.Draws},{d.Passes},{d.AllocatedMb},{d.FootprintMb},{d.ThermalState},{d.ShadersCompiled},{d.PipelinesCreated},{d.DisplayMs:F3}");
-        else
-            line += ",,,,,,,,,,,";
-        if (sim is { } m)
-            line += FormattableString.Invariant($",{m.GameSeconds:F3},{m.Asked:F3},{m.TickMs:F3},{m.Substeps},{m.Bubbles},{m.Vehicles}");
-        else
-            line += ",,,,,,";
-        _out.WriteLine(line);
+        var columns = Columns(_since.Elapsed.TotalSeconds, _session, Pass, script, scenario, part, phase, frameMs, driver, sim);
+        for (int i = 0; i < columns.Length; i++)
+        {
+            if (i > 0)
+                _out.Write(',');
+            if (columns[i] is IFormattable f)
+                _out.Write(f.ToString(null, CultureInfo.InvariantCulture));
+            else
+                _out.Write(columns[i] as string);
+        }
+        _out.WriteLine();
+        _store?.AddFrame(RunClock.Now(), columns);
+    }
+
+    // A frame's values in the header's order, times rounded as the file keeps them (to 0.1 ms, the rest to the thousandth),
+    // so that the store holds the same numbers; null where the driver or the simulation said nothing
+    public static object?[] Columns(double time, int session, int pass, double script, string? scenario, string? part, string phase,
+        double frameMs, FrameStats? driver, SimSample? sim)
+    {
+        static double R(double x, int digits) => Math.Round(x, digits, MidpointRounding.AwayFromZero);
+        var d = driver ?? default;
+        var m = sim ?? default;
+        bool hasDriver = driver != null, hasSim = sim != null;
+        return
+        [
+            R(time, 4), session, pass, R(script, 3), scenario ?? "", part ?? "", phase, R(frameMs, 3),
+            hasDriver ? d.Present : null, hasDriver ? R(d.GpuMs, 3) : null, hasDriver ? R(d.CpuMs, 3) : null, hasDriver ? d.Draws : null,
+            hasDriver ? d.Passes : null, hasDriver ? d.AllocatedMb : null, hasDriver ? d.FootprintMb : null, hasDriver ? d.ThermalState : null,
+            hasDriver ? d.ShadersCompiled : null, hasDriver ? d.PipelinesCreated : null, hasDriver ? R(d.DisplayMs, 3) : null,
+            hasSim ? R(m.GameSeconds, 3) : null, hasSim ? R(m.Asked, 3) : null, hasSim ? R(m.TickMs, 3) : null, hasSim ? m.Substeps : null,
+            hasSim ? m.Bubbles : null, hasSim ? m.Vehicles : null,
+        ];
     }
 
     // Onto the disk: the director does it at every part's end and every second, so that a game that dies keeps its frames

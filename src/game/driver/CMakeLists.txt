@@ -40,7 +40,7 @@ add_library(ksa-metal-objects OBJECT
     pipelines/stages.mm pipelines/pipelines.mm pipelines/rtpipeline.mm
     shaders/translate.mm shaders/shadercache.mm shaders/corpus.mm shaders/tessspirv.cpp shaders/rtspirv.cpp
     presentation/swapchain.mm presentation/upscale.mm
-    diagnostics/instruments.mm diagnostics/passdump.mm diagnostics/profile.mm)
+    diagnostics/instruments.mm diagnostics/drain.mm diagnostics/passdump.mm diagnostics/profile.mm)
 set_target_properties(ksa-metal-objects PROPERTIES
     CXX_STANDARD 17
     CXX_EXTENSIONS OFF

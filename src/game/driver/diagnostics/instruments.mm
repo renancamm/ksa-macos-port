@@ -67,22 +67,8 @@ static double g_gpuBusyFrame = 0;  // the same, since the last present completed
 //   ksaMtlCapture(path, frames)  Xcode GPU frame capture of the next frames into path (.gputrace); false when Metal
 //                                does not allow it (the game needs MTL_CAPTURE_ENABLED=1); ksaMtlCapturing() is true
 //                                until the file is written
-// The caller passes the size of the struct it knows and gets back how much was filled; the benchmark's director takes
-// the stats only when that is all of its struct, so a director and a driver from different builds don't misread them.
-struct KsaMtlFrameStats {
-    uint64_t present;
-    double cpuMs, gpuMs;
-    uint32_t draws, dispatches, passes, submits;
-    int64_t allocatedMb;
-    // NSProcessInfo.thermalState (0 nominal, 1 fair, 2 serious, 3 critical), MSL compiled (not from the cache) and
-    // pipeline states made since the start, the presented image's size in pixels
-    int32_t thermalState;
-    uint32_t shadersCompiled, pipelinesCreated, drawableWidth, drawableHeight, reserved;
-    // The process's memory footprint (what Activity Monitor shows), the time between the last two images the display
-    // actually showed (0 until known)
-    int64_t footprintMb;
-    double displayMs;
-};
+//   ksaMtlDrain*                 the drain: every present, frame shown, wait and large allocation as records (drain.mm)
+// KsaMtlFrameStats, the struct, is in diagnostics.h.
 static KsaMtlFrameStats g_lastFrame{};
 static std::vector<std::string> g_shotRequests;
 // Frame capture: the file, the swapchain whose presents count (a pop-out window's come in the same frame), the presents
@@ -367,6 +353,7 @@ void kmtlOnPresent(KDevice* dev, KSwapchain* swapchain, KImage* image, id<MTLCom
     g_lastFrame.drawableWidth = (uint32_t)image->mtl.width;
     g_lastFrame.drawableHeight = (uint32_t)image->mtl.height;
     g_lastFrame.displayMs = g_displayMs.load();
+    if (kmtlDrainOn()) kmtlDrainPresent(CACurrentMediaTime(), g_lastFrame);
     if (kmtlConfig().frameInterpolation && g_presents % 600 == 0) {
         static uint64_t lastShown = 0, lastPresents = 0;
         static auto lastTime = now;

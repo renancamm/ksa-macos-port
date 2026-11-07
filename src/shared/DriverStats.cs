@@ -1,10 +1,13 @@
 // What KSA Metal measures for each presented frame, read through its benchmark interface
 // (src/game/driver/diagnostics/instruments.mm: ksaMtlFrameStats, ksaMtlScreenshot, ksaMtlMarker, ksaMtlCapture,
-// ksaMtlCapturing; passdump.mm: ksaMtlPassDump, ksaMtlPassDumping, ksaMtlGpuErrors; profile.mm: ksaMtlProfileFrames).
+// ksaMtlCapturing; passdump.mm: ksaMtlPassDump, ksaMtlPassDumping, ksaMtlGpuErrors; profile.mm: ksaMtlProfileFrames;
+// drain.mm: ksaMtlDrainOpen, ksaMtlDrain, ksaMtlDrainDropped, ksaMtlDrainClose, the records below).
 // The app ships the director with the KSA Metal it was built with, so the driver has all of it. With another Vulkan
 // driver the mod still measures CPU frame times.
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace KsaPort.Common;
 
@@ -20,6 +23,23 @@ public struct FrameStats
     public long FootprintMb;
     public double DisplayMs;
 }
+
+// What KSA Metal's drain hands over (drain.mm), each with the time on the store's clock (RunClock, seconds)
+public abstract record DriverRecord;
+
+// A present: the driver's numbers for it, as ksaMtlFrameStats has them
+public sealed record PresentRecord(double T, FrameStats Stats) : DriverRecord;
+
+// When a present's frame began, was presented, finished on the GPU and was shown (0: never shown), how long it waited
+// for an earlier frame, and whether pacing ended that wait
+public sealed record ShownRecord(ulong Present, double Began, double Presented, double GpuEnd, double Shown, double WaitedMs, bool Paced)
+    : DriverRecord;
+
+// A call that blocked the game longer than the drain's threshold: what (a Vulkan call, a wait inside one), from when, how long
+public sealed record WaitRecord(double T, double Ms, ulong Present, string What) : DriverRecord;
+
+// An allocation (bytes positive) or a free (negative) of 16 MB or more, of a Vulkan memory type
+public sealed record MemoryRecord(double T, long Bytes, uint Type, ulong Present) : DriverRecord;
 
 public static unsafe class DriverStats
 {
@@ -58,6 +78,24 @@ public static unsafe class DriverStats
     [DllImport(Driver, EntryPoint = "ksaMtlGpuErrors")]
     private static extern uint GpuErrorsNative();
 
+    [DllImport(Driver, EntryPoint = "ksaMtlDrainOpen")]
+    [return: MarshalAs(UnmanagedType.U1)]
+    private static extern bool DrainOpenNative(uint version, double waitMs, uint capacity);
+
+    [DllImport(Driver, EntryPoint = "ksaMtlDrain")]
+    private static extern uint DrainNative(byte* records, uint capacity);
+
+    [DllImport(Driver, EntryPoint = "ksaMtlDrainDropped")]
+    private static extern ulong DrainDroppedNative();
+
+    [DllImport(Driver, EntryPoint = "ksaMtlDrainClose")]
+    private static extern void DrainCloseNative();
+
+    // The records' layout, which drain.mm's kDrainVersion names
+    private const uint DrainVersion = 1;
+    private const int Header = 8;
+    private static readonly byte[] DrainBuffer = new byte[64 << 10];
+
     // Whether the game's driver is KSA Metal, filling every field of FrameStats
     public static readonly bool Available = Probe();
 
@@ -86,6 +124,79 @@ public static unsafe class DriverStats
 
     // The driver's GPU profiler (KSA_MTL_GPU_PROFILE) for the next frames; false when it is off
     public static bool ProfileFrames(string label, uint count) => Available && ProfileFramesNative(label, count);
+
+    // Starts KSA Metal recording into its drain: from then on every present, every frame shown, every wait of at least
+    // waitMs and every allocation of 16 MB or more; false when the driver has no drain of this layout
+    public static bool OpenDrain(double waitMs)
+    {
+        if (!Available)
+            return false;
+        try
+        {
+            return DrainOpenNative(DrainVersion, waitMs, 1 << 20);
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return false;
+        }
+    }
+
+    // Everything recorded since the last call, in the order it came; the drain keeps what doesn't fit for the next
+    public static void Drain(List<DriverRecord> into)
+    {
+        lock (DrainBuffer)
+        {
+            fixed (byte* p = DrainBuffer)
+            {
+                uint n;
+                do
+                {
+                    n = DrainNative(p, (uint)DrainBuffer.Length);
+                    Parse(new ReadOnlySpan<byte>(p, (int)n), into);
+                } while (n > DrainBuffer.Length / 2);
+            }
+        }
+    }
+
+    // Records lost because the drain was full when they came
+    public static ulong DrainDropped() => DrainDroppedNative();
+
+    // Stops the driver recording into the drain; what wasn't read is gone
+    public static void CloseDrain() => DrainCloseNative();
+
+    // The records in bytes the drain wrote: each a header (type, size of the whole record, 4 bytes unused), then its fields
+    public static void Parse(ReadOnlySpan<byte> bytes, List<DriverRecord> into)
+    {
+        while (bytes.Length >= Header)
+        {
+            ushort type = MemoryMarshal.Read<ushort>(bytes), size = MemoryMarshal.Read<ushort>(bytes[2..]);
+            if (size < Header || size > bytes.Length)
+                return;
+            var r = bytes[Header..size];
+            switch (type)
+            {
+                case 1 when r.Length >= 8 + sizeof(FrameStats):
+                    into.Add(new PresentRecord(D(r, 0), MemoryMarshal.Read<FrameStats>(r[8..])));
+                    break;
+                case 2 when r.Length >= 56:
+                    into.Add(new ShownRecord(U(r, 0), D(r, 8), D(r, 16), D(r, 24), D(r, 32), D(r, 40), MemoryMarshal.Read<uint>(r[48..]) != 0));
+                    break;
+                case 3 when r.Length >= 64:
+                    var what = r.Slice(24, 40);
+                    int end = what.IndexOf((byte)0);
+                    into.Add(new WaitRecord(D(r, 0), D(r, 8), U(r, 16), Encoding.UTF8.GetString(end < 0 ? what : what[..end])));
+                    break;
+                case 4 when r.Length >= 32:
+                    into.Add(new MemoryRecord(D(r, 0), MemoryMarshal.Read<long>(r[8..]), MemoryMarshal.Read<uint>(r[16..]), U(r, 24)));
+                    break;
+            }
+            bytes = bytes[size..];
+        }
+    }
+
+    private static double D(ReadOnlySpan<byte> r, int at) => MemoryMarshal.Read<double>(r[at..]);
+
+    private static ulong U(ReadOnlySpan<byte> r, int at) => MemoryMarshal.Read<ulong>(r[at..]);
 
     private static bool Probe()
     {

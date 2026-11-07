@@ -276,10 +276,24 @@ time warp the game's clock and the physics' work. The record's numbers are summa
 so a shared run can answer questions nobody asked when it was made. While a part is measured, KSA Metal also marks it
 as a signpost interval, which is how an Instruments trace knows where each part is.
 
+The run's store holds the same events and frames, and more, in SQLite files in the run's folder
+([`../../shared/benchmark/Store.cs`](../../shared/benchmark/Store.cs)): the game writes `run.db`, `benchmark.sh` writes
+`host.db`, so two processes never write one file, and every row carries the time on one clock, the Mac's monotonic clock
+in seconds, which KSA Metal's own times use. Besides the events and frames, `run.db` has what KSA Metal hands the
+director through its drain while a run plays: every present with its numbers (`presents`), when each frame began, was
+presented, finished on the GPU and was shown (`shown`), every wait of a millisecond or more that blocked the game, such
+as a fence or the next drawable (`waits`), and every allocation or free of 16 MB or more (`memory`). The record is made
+from `events.jsonl` and `frames.csv`; a run whose store says otherwise gets a note. macOS's `sqlite3` reads the files:
+
+```bash
+sqlite3 run.db "SELECT what, COUNT(*), ROUND(MAX(ms), 1) FROM waits GROUP BY what ORDER BY 3 DESC"
+```
+
 The build runs the benchmark's tests, which need no game, and stops when one fails. Those in
 [`../../player/benchmark-cli/tests/`](../../player/benchmark-cli/tests/) check the record (what passes and fails a run,
 the conditions it notes, passes and sessions merged into medians, numbers the same on a Mac in any region, an older
-run's report), its report and zip, the comparison of two runs, the PNG reader, and the lineup itself.
+run's report), the run's store against its files, KSA Metal's drain records, its report and zip, the comparison of two
+runs, the PNG reader, and the lineup itself.
 [`command.sh`](../../player/benchmark-cli/tests/command.sh) plays [`benchmark.sh`](../../player/port-folder/benchmark.sh)
 against a stand-in for the game that writes events and frames as the director does: its commands, what it refuses, and
 a run that passes, crashes, hangs or is stopped. [`../../player/benchmark-cli/`](../../player/benchmark-cli/) holds
@@ -323,7 +337,7 @@ flight's. Fly the free camera to a place, open the console (`\`) and type `bench
 
 | File | |
 |---|---|
-| `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/` | the results: `report.html`, `report.md`, `run.json` (the record), `events.jsonl`, `frames.csv`, `options.json`, the screenshots, `game.log`, `stuck.txt` from a stuck game, `compare.html` and `compare.md` after a comparison, and what the tools wrote |
+| `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/` | the results: `report.html`, `report.md`, `run.json` (the record), `events.jsonl`, `frames.csv`, `run.db` and `host.db` (the run's store), `options.json`, the screenshots, `game.log`, `stuck.txt` from a stuck game, `compare.html` and `compare.md` after a comparison, and what the tools wrote |
 | `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/<date>.zip` | the run to share |
 | `~/Documents/My Games/Kitten Space Agency/benchmarks/baselines.json`, `noise/` | the baselines' names, and the noise profiles `calibrate` measured on this Mac |
 | `~/Library/Caches/ksa-macos-port/benchmark/instance/` | the game's documents folder for a run that starts the game |

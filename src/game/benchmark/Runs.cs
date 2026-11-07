@@ -81,6 +81,7 @@ public static class Runs
         Action<IReadOnlyDictionary<string, string>>? restart)
     {
         _log = log;
+        RunStore.Log = log;
         _hooksSummary = hooksSummary;
         _restart = restart;
         _folder = Path.Combine(Resources, "Benchmark");

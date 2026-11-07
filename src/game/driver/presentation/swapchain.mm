@@ -7,9 +7,10 @@
 #include <algorithm>
 #include <thread>
 
-// KSA_MTL_LATENCY=<csv>: per present, when its frame began (the game's wait for an earlier present returned, or else
-// the previous present), when it was presented, finished on the GPU and was shown (seconds, presentedTime's clock),
-// how long the frame waited for an earlier present, and whether pacing ended that wait before the display
+// KSA_MTL_LATENCY=<csv>, and the benchmark's drain while it is open (shown records, diagnostics/drain.mm): per present,
+// when its frame began (the game's wait for an earlier present returned, or else the previous present), when it was
+// presented, finished on the GPU and was shown (seconds, presentedTime's clock), how long the frame waited for an earlier
+// present, and whether pacing ended that wait before the display
 static std::mutex g_latencyMutex;
 static FILE* g_latencyCsv = nullptr;
 static double g_frameBegan = 0, g_frameWaited = 0;
@@ -28,16 +29,16 @@ static void latencyAtPresent(id<CAMetalDrawable> drawable, id<MTLCommandBuffer> 
     // drawable's lock, which addPresentedHandler takes too, and the handler takes this mutex (a deadlock otherwise:
     // the game hung in vkQueuePresentKHR)
     double now, began, waited;
-    uint64_t n;
-    bool paced;
+    uint64_t n, present = kmtlPresentCount();  // kmtlOnPresent counted this present already
+    bool paced, drain = kmtlDrainOn();
     FILE* csv;
     {
         std::lock_guard<std::mutex> lock(g_latencyMutex);
-        if (!g_latencyCsv) {
+        if (!g_latencyCsv && kmtlConfig().latency) {
             g_latencyCsv = fopen(kmtlConfig().latency, "w");
-            if (!g_latencyCsv) return;
-            fprintf(g_latencyCsv, "present,began,presented,gpu_end,shown,waited_ms,paced\n");
+            if (g_latencyCsv) fprintf(g_latencyCsv, "present,began,presented,gpu_end,shown,waited_ms,paced\n");
         }
+        if (!g_latencyCsv && !drain) return;
         now = CACurrentMediaTime();
         began = g_frameBegan ? g_frameBegan : now;
         waited = g_frameWaited * 1e3;
@@ -49,6 +50,8 @@ static void latencyAtPresent(id<CAMetalDrawable> drawable, id<MTLCommandBuffer> 
         csv = g_latencyCsv;
     }
     [drawable addPresentedHandler:^(id<MTLDrawable> d) {
+        if (drain) kmtlDrainShown(present, began, now, cb.GPUEndTime, d.presentedTime, waited, paced);
+        if (!csv) return;
         std::lock_guard<std::mutex> lock(g_latencyMutex);
         fprintf(csv, "%llu,%.6f,%.6f,%.6f,%.6f,%.3f,%d\n", (unsigned long long)n, began, now, cb.GPUEndTime,
                 d.presentedTime, waited, paced ? 1 : 0);
@@ -318,7 +321,7 @@ VKFN(VkResult) vkWaitForPresentKHR(VkDevice, VkSwapchainKHR swapchain, uint64_t 
     lock.lock();
     state->began = end;
     lock.unlock();
-    if (kmtlConfig().latency) latencyBegin(end - start, paced);
+    if (kmtlConfig().latency || kmtlDrainOn()) latencyBegin(end - start, paced);
     return done ? VK_SUCCESS : VK_TIMEOUT;
 }
 
@@ -449,7 +452,7 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
             if (drawable) {
                 // When the display showed it (0 for an image it never showed)
                 [drawable addPresentedHandler:^(id<MTLDrawable> d) { if (d.presentedTime > 0) kmtlNoteShown(d.presentedTime, true); }];
-                if (kmtlConfig().latency) latencyAtPresent(drawable, cb);
+                if (kmtlConfig().latency || kmtlDrainOn()) latencyAtPresent(drawable, cb);
                 presentPaced(sc, cb, drawable, first != nil);
             }
             [cb commit];

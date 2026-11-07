@@ -136,12 +136,13 @@ Metal's own tools work too: `MTL_HUD_ENABLED=1` shows Apple's performance overla
 `MTL_SHADER_VALIDATION=1` check API use and catch out-of-bounds memory access in shaders (slow).
 
 The benchmark's mod and the hooks talk to KSA Metal through the only functions it exports besides Vulkan's, in
-`diagnostics/instruments.mm`, `diagnostics/profile.mm`, `diagnostics/passdump.mm`, `pipelines/stages.mm` and
-`presentation/swapchain.mm`:
+`diagnostics/instruments.mm`, `diagnostics/drain.mm`, `diagnostics/profile.mm`, `diagnostics/passdump.mm`,
+`pipelines/stages.mm` and `presentation/swapchain.mm`:
 
 | Function | |
 |---|---|
 | `ksaMtlFrameStats` | the latest presented frame: the `frames` numbers, thermal state, shaders compiled, memory footprint, drawable size, display interval |
+| `ksaMtlDrainOpen`, `ksaMtlDrain`, `ksaMtlDrainDropped`, `ksaMtlDrainClose` | the drain: once a reader opens it with the layout it knows, every present (the `ksaMtlFrameStats` numbers), when each frame began, was presented, finished on the GPU and was shown, each wait of at least the reader's threshold (the `stalls` scopes, residency commits) and each allocation or free of 16 MB or more, as records in a 1 MB ring the reader empties; a record that finds it full is counted and dropped, nothing waits |
 | `ksaMtlScreenshot` | a PNG of the next frame |
 | `ksaMtlMarker` | begins or ends a signpost interval, one per measured part, under Points of Interest in Instruments |
 | `ksaMtlPassDump`, `ksaMtlPassDumping` | the next frame's colour attachments after each draw of a render pass (the first 64, then every 16th) and at its end, the images at the frame's end that it can read, as PNGs (NaN magenta, infinity cyan), and the first 64 KB of the buffers bound for each draw, with their numbers and heap places in `passes.txt`, which says why others are left out; that frame's passes don't overlap, so a clean dump doesn't rule out a missing barrier. The second says whether they are still being written |
@@ -367,6 +368,7 @@ share is in that folder's header too, under a heading that says so (`stages.h` f
 | `presentation/swapchain.mm` | swapchain and presentation: pacing, HDR, frame interpolation at present, latency |
 | `presentation/upscale.mm` | MetalFX: upscaling, motion vectors, frame interpolation |
 | `diagnostics/instruments.mm` | what is measured at each present: frame log, screenshots, exits, the benchmark's interface, frame captures, signposts |
+| `diagnostics/drain.mm` | the benchmark's drain: what is measured, as records for its run's store |
 | `diagnostics/passdump.mm` | one frame's images, pass by pass (`ksaMtlPassDump`) |
 | `diagnostics/profile.mm` | the GPU profiler |
 | `tests/` | the tests that run without the game |

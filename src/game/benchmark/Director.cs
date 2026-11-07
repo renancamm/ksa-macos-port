@@ -85,6 +85,11 @@ public partial class Director
     private Dictionary<string, HashSet<string>?>? _only;
     private FrameLog? _frames;
     private EventLog _events = null!;
+    // KSA Metal's drain (DriverStats.Drain): open while a run plays, its latest present the frame's driver numbers
+    private bool _drain;
+    private RunStore? _store;
+    private FrameStats? _present;
+    private readonly List<DriverRecord> _driverRecords = new();
     // This frame's line of frames.csv, and the part its numbers count in (none: null)
     private (double Script, string? Scenario, string Phase, double FrameMs, FrameStats? Driver, SimSample Sim)? _row;
     private string? _measured;
@@ -238,6 +243,9 @@ public partial class Director
         _waitFor = options.WaitForRecording;
         Directory.CreateDirectory(_outDir);
         _frames = new FrameLog(_outDir, options.Session) { Pass = _pass };
+        // Waits from a millisecond on: shorter ones are the driver's ordinary work
+        _store = RunStore.For(_outDir);
+        _drain = DriverStats.OpenDrain(1);
         _probes = Probes.For(options, new ProbeContext(_outDir, Error, Log));
         _active = true;
         // A directive without a handler fails the run at once, before anything plays
@@ -251,6 +259,8 @@ public partial class Director
     {
         _row = null;
         _measured = null;
+        // Every frame, also while waiting or holding, so the drain never fills
+        DrainDriver();
         FrameBody();
         // The frame's line, once it is known which part its numbers count in
         if (_row is { } r)
@@ -300,7 +310,7 @@ public partial class Director
             return;
         // The game's messages stay in its log, off the screen
         Program.ConsoleWindow.ClearConsole();
-        _row = (_clock.Script - _sectionStart, ScenarioName, _phase.ToString(), dt * 1000, DriverStats.Read(), ReadSim());
+        _row = (_clock.Script - _sectionStart, ScenarioName, _phase.ToString(), dt * 1000, _drain ? _present ?? DriverStats.Read() : DriverStats.Read(), ReadSim());
 
         if (_phase != Phase.Play)
         {
@@ -482,6 +492,7 @@ public partial class Director
             _active = false;
             _frames?.Dispose();
             _frames = null;
+            CloseDrain();
             foreach (var probe in _probes)
                 probe.End();
             if (_clock.ShortSteps > 0)
@@ -530,6 +541,35 @@ public partial class Director
         return true;
     }
 
+    // KSA Metal's drain into the run's store (every present, frame shown, wait and large allocation), and its latest
+    // present kept as the frame's driver numbers
+    private void DrainDriver()
+    {
+        if (!_drain)
+            return;
+        _driverRecords.Clear();
+        DriverStats.Drain(_driverRecords);
+        foreach (var record in _driverRecords)
+        {
+            _store?.Add(record);
+            // The newest by its number: the one the drain's opening adds may come after a newer present
+            if (record is PresentRecord p && (_present is not { } latest || p.Stats.Present >= latest.Present))
+                _present = p.Stats;
+        }
+    }
+
+    // The rest of the drain into the store, and the driver stops recording
+    private void CloseDrain()
+    {
+        if (!_drain)
+            return;
+        DrainDriver();
+        if (DriverStats.DrainDropped() is > 0 and var dropped)
+            _events.Add("note", text: $"KSA Metal's drain was full: {dropped} of its records lost");
+        DriverStats.CloseDrain();
+        _drain = false;
+    }
+
     // Ends the run before the script's end: the player stopped it, or it failed (the watch found it stuck); the results
     // say why, and that it did not complete
     public void Stop(string why, bool failed = false)
@@ -541,6 +581,7 @@ public partial class Director
         _active = false;
         _frames?.Dispose();
         _frames = null;
+        CloseDrain();
         foreach (var probe in _probes)
             probe.End();
         Log($"stopped: {why}");
