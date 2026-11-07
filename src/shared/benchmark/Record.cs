@@ -150,8 +150,6 @@ public sealed class ScenarioRecord
 {
     public string Name { get; set; } = "";
     public Kind Kind { get; set; }
-    // The side of an A/B run it played (benchmark.sh measure --ab): A, B; null in other runs
-    public string? Variant { get; set; }
     public List<PartRecord> Parts { get; set; } = [];
     // Its screenshots in the order taken, with the limit a comparison holds each to
     public List<ShotRecord> Shots { get; set; } = [];

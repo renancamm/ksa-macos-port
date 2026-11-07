@@ -22,14 +22,14 @@ public static partial class Program
         //    the numbers nor stop the game from starting; the director adds the benchmark's vehicles from the app)
         private void Prepare()
         {
-            if (Directory.Exists(Instance))
-                Directory.Delete(Instance, true);
-            Directory.CreateDirectory(Instance);
-            File.WriteAllText(Path.Combine(Instance, "manifest.toml"), "[[mods]]\nid = \"Core\"\nenabled = true\n");
+            if (Directory.Exists(_instance))
+                Directory.Delete(_instance, true);
+            Directory.CreateDirectory(_instance);
+            File.WriteAllText(Path.Combine(_instance, "manifest.toml"), "[[mods]]\nid = \"Core\"\nenabled = true\n");
 
             // The run's settings: yours, with the preset on top
-            _settings = Path.Combine(Instance, "settings.toml");
-            File.Copy(Path.Combine(Docs, "settings.toml"), _settings);
+            _settings = Path.Combine(_instance, "settings.toml");
+            File.Copy(Path.Combine(Yours, "settings.toml"), _settings);
             // The game starts straight into a new game of the chosen system, without its system menu, update popup,
             // changelog or name labels, with the camera on the game's test vessel in orbit (a testing start, the one that
             // keeps the system's vehicles)
@@ -96,8 +96,8 @@ public static partial class Program
 
             // The run's port settings (the app's port-settings.toml template): yours unless a preset is played or
             // --defaults, --port on top
-            var portSettings = Path.Combine(Instance, "port-settings.toml");
-            var yours = Path.Combine(Docs, "port-settings.toml");
+            var portSettings = Path.Combine(_instance, "port-settings.toml");
+            var yours = Path.Combine(Yours, "port-settings.toml");
             var template = Path.Combine(_res, "port-settings.toml");
             if (_preset.Length == 0 && !_defaults && File.Exists(yours))
                 File.Copy(yours, portSettings);
@@ -140,8 +140,8 @@ public static partial class Program
                     Die($"--port {key}={value}: it takes {setting.Values()}.");
                 values[key] = value;
             }
-            // --ab's setting is B's alone: checked here, written before each of B's sessions. A plays it as --port
-            // gives it, or the run's settings have it, or its default, and that must differ from B's
+            // --ab's setting is B's alone (its own variant's --port): checked here. A plays it as --port gives it, or the run's
+            // settings have it, or its default, and that must differ from B's
             string abKey = _ab.Length > 0 ? _ab[.._ab.IndexOf('=')] : "";
             if (_ab.Length > 0 && !_ports.Any(kv => kv.StartsWith(abKey + "=", StringComparison.Ordinal)))
                 values.Remove(abKey);
@@ -170,21 +170,6 @@ public static partial class Program
             "numbers" => PortSetting.Numbers(a) is { } na && PortSetting.Numbers(b) is { } nb && na.SequenceEqual(nb),
             _ => a == b,
         };
-
-        // measure --ab: the port settings of A (the run's) or B (the run's with the setting changed), written before each
-        // session (the launcher reads them when the game starts)
-        private string? _portBase;
-
-        private void PortSettingsFor(bool b)
-        {
-            var file = Path.Combine(Instance, "port-settings.toml");
-            _portBase ??= File.ReadAllText(file);
-            File.WriteAllText(file, _portBase);
-            if (!b)
-                return;
-            PortSettings.FilePath = file;
-            PortSettings.Save(new Dictionary<string, string> { [_ab[.._ab.IndexOf('=')]] = _ab[(_ab.IndexOf('=') + 1)..] });
-        }
 
         // One line of settings.toml (keys are unique across its sections). As <section>.<key>, the key in that section,
         // added when the file lacks it (one a newer KSA added; the section must be there)

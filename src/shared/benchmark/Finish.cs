@@ -51,7 +51,7 @@ public static class Finish
                 return null;
             return facts.OfType<System.Text.Json.Nodes.JsonObject>()
                 .Select(f => new Fact((string?)f["key"] ?? "", (string?)f["value"] ?? ""))
-                .Where(f => f.Key is not ("Warm-up" or "While A played" or "While B played")).ToList();
+                .Where(f => f.Key != "Warm-up").ToList();
         }
         catch (Exception e) when (e is IOException or System.Text.Json.JsonException or InvalidOperationException)
         {
@@ -72,7 +72,6 @@ public static class Finish
         if (record.WarmUp is { } warmUp)
             record.Facts.Add(new Fact("Warm-up", warmUp.GpuMs is { } gpu
                 ? $"a pass first, left out (GPU {gpu:F1} ms a frame)" : "a pass first, left out"));
-        record.Facts.AddRange(SideMemory(events));
         var crashes = CrashReports(record.Started.ToUniversalTime());
         record.Findings = Checks.Run(new RunEvidence(dir, record, events, logs, crashes));
         record.Status = events.Any(e => e.Type == "stopped") ? Status.Stopped : record.Problems.Any() ? Status.Failed : Status.Passed;
@@ -107,35 +106,6 @@ public static class Finish
         return record;
     }
 
-    // An A/B run's memory on each side, from its sessions: macOS's worst memory pressure and the swap the Mac grew while
-    // they played ("While A played", "While B played"). A session whose swap couldn't be read counts its pressure
-    private static IEnumerable<Fact> SideMemory(List<RunEvent> events)
-    {
-        var variants = events.Where(e => e.Type == "session" && e.Text is { Length: > 0 }).GroupBy(e => e.Session)
-            .ToDictionary(g => g.Key, g => g.First().Text!);
-        foreach (var side in variants.Values.Distinct().Order())
-        {
-            string worst = "normal";
-            double grew = 0;
-            int sessions = 0;
-            foreach (var e in events.Where(e => e.Type == "session-memory" && variants.GetValueOrDefault(e.Session) == side))
-            {
-                var m = Regex.Match(e.Text ?? "", @"pressure (\w+), swap (\S+) -> (\S+) MB");
-                if (!m.Success)
-                    continue;
-                sessions++;
-                if (m.Groups[1].Value == "critical" || m.Groups[1].Value == "warning" && worst == "normal")
-                    worst = m.Groups[1].Value;
-                if (double.TryParse(m.Groups[2].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var before) &&
-                    double.TryParse(m.Groups[3].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var after))
-                    grew += Math.Max(0, after - before);
-            }
-            if (sessions > 0)
-                yield return new Fact($"While {side} played", FormattableString.Invariant(
-                    $"worst memory pressure {worst}, swap grew {grew:F0} MB in {sessions} game session{(sessions == 1 ? "" : "s")}"));
-        }
-    }
-
     // What each pass of each session was (the pass event's kind): warm-up, measured or profiled; a run of before pass
     // events had its warm-up as pass 0 and measured the rest
     public static Func<int, int, string> PassKinds(IEnumerable<RunEvent> events)
@@ -146,24 +116,19 @@ public static class Finish
 
     // The scenarios as they played, in order: each part's measurings (the measured passes of every session) from their
     // frames, KSA Metal's shown records and the zones, merged; a profiled pass's apart; the screenshots of the first pass
-    // (a warm-up's too) with their limits. An A/B run's scenarios are there once for each side, the sessions of each
-    // merged
+    // (a warm-up's too) with their limits
     private static List<ScenarioRecord> Scenarios(List<RunEvent> events, List<FrameRow> frames, Dictionary<ulong, ShownRow> shown, List<WaitRow> waits,
         List<ZoneRow> zones)
     {
-        var variants = events.Where(e => e.Type == "session").GroupBy(e => e.Session)
-            .ToDictionary(g => g.Key, g => g.First().Text is { Length: > 0 } v ? v : null);
-        string? VariantOf(int session) => variants.GetValueOrDefault(session);
         var kindOf = PassKinds(events);
         var scenarios = new List<ScenarioRecord>();
         foreach (var e in events.Where(e => e.Type == "scenario" && e.Scenario != null))
         {
-            var variant = VariantOf(e.Session);
-            if (scenarios.Any(s => s.Name == e.Scenario && s.Variant == variant))
+            if (scenarios.Any(s => s.Name == e.Scenario))
                 continue;
             scenarios.Add(new ScenarioRecord
             {
-                Name = e.Scenario!, Variant = variant,
+                Name = e.Scenario!,
                 Kind = Enum.TryParse<Kind>(e.Text, ignoreCase: true, out var kind) ? kind : Kind.Flight
             });
         }
@@ -174,7 +139,7 @@ public static class Finish
         foreach (var scenario in scenarios)
         {
             var opens = events.Where(e => e.Type == "open" && e.Scenario == scenario.Name && kindOf(e.Session, e.Pass) != "warm-up" &&
-                                          VariantOf(e.Session) == scenario.Variant && !disturbed.Contains((e.Scenario, e.Part, e.Session, e.Pass))).ToList();
+                                          !disturbed.Contains((e.Scenario, e.Part, e.Session, e.Pass))).ToList();
             foreach (var part in opens.Select(e => e.Part!).Distinct().ToList())
             {
                 var measured = new List<(RunEvent Open, Dictionary<string, double> Values, int Frames, double Seconds)>();
@@ -204,7 +169,7 @@ public static class Finish
                         : null,
                 });
             }
-            var firstPass = events.Where(e => e.Type == "shot" && e.Scenario == scenario.Name && VariantOf(e.Session) == scenario.Variant)
+            var firstPass = events.Where(e => e.Type == "shot" && e.Scenario == scenario.Name)
                 .GroupBy(e => (e.Session, e.Pass)).FirstOrDefault();
             foreach (var shot in firstPass ?? Enumerable.Empty<RunEvent>())
                 scenario.Shots.Add(new ShotRecord(shot.Part!, shot.Text!, shot.Value ?? NoiseProfile.DefaultShotLimit(scenario.Kind)));

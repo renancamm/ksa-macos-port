@@ -207,6 +207,48 @@ sleep 1
 FAKE_GAME=pass bench check --app "${APP}"
 expect "check: against the baseline main (the run at 30 ms)" 0 "GPU time 50 % lower"
 
+# A study: two variants in turn, two game sessions each; B's game draws slower (--env reaches the game)
+S="${T}/home/Documents/My Games/Kitten Space Agency/benchmarks/studies"
+cat > "${T}/light.txt" <<STUDY
+# two variants
+measure --app '${APP}' --repeat 1
+sessions 2
+variant A
+variant B --env FAKE_GPU=30
+STUDY
+bench study "${T}/light.txt"
+expect "a study" 0 "GPU time inconclusive (2 sessions a side, 5 needed)"
+expect "a study's sessions in turn" 0 "Session 3 of 4: B (round 2)"
+STUDY_DIR="$(ls -d "${S}"/*_light 2> /dev/null | tail -1)"
+[ -f "${STUDY_DIR}/04-A/run.json" ] && [ -f "${STUDY_DIR}/report.html" ] && [ -f "${STUDY_DIR}/study.txt" ] || fail "a study: no runs or report in ${STUDY_DIR}"
+grep -q '"Environment"' "${STUDY_DIR}/02-B/run.json" || fail "a study: --env not among B's facts"
+[ -f "${STUDY_DIR}/settings.toml" ] || fail "a study: no copy of your settings"
+# One benchmark game at a time: a run while another holds the lock is refused
+perl -e 'use Fcntl ":flock"; open(F, ">>", $ARGV[0]) or die; flock(F, LOCK_EX) or die; sleep 4' \
+    "${T}/home/Documents/My Games/Kitten Space Agency/benchmarks/.playing" &
+holder=$!
+sleep 1
+bench --app "${APP}"
+expect "a run while another benchmark run plays" 1 "another benchmark run is starting or playing"
+wait "${holder}"
+bench study resume
+expect "a study that is done" 1 "is done"
+# A session whose record went missing (a reboot in the middle) plays again
+rm "${STUDY_DIR}/03-B/run.json"
+bench study resume
+expect "a study resumed" 0 "Session 3 of 4: B (round 2, attempt 2)"
+[ -f "${STUDY_DIR}/03-B-2/run.json" ] || fail "a study resumed: no 03-B-2"
+bench study report
+expect "a study's report" 0 "+100 % ?"
+bench study "${T}/nothing.txt"
+expect "a study's file missing" 1 "no study file"
+printf 'measure --app %s\nvariant A --nonsense\n' "'${APP}'" > "${T}/bad.txt"
+bench study "${T}/bad.txt"
+expect "a study's variant that can't play, refused before a game starts" 1 "the variant A: no option --nonsense"
+bench measure --app "${APP}" --repeat 1 --save-plan "${T}/saved.txt"
+expect "--save-plan" 0 "The study's file"
+grep -q "^variant base" "${T}/saved.txt" && grep -q "^measure --app" "${T}/saved.txt" || fail "--save-plan: $(cat "${T}/saved.txt")"
+
 # How a run ends
 sleep 1
 FAKE_GAME=crash bench --app "${APP}"

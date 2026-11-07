@@ -19,11 +19,11 @@ public static partial class Program
     // folder and settings (RunSettings.cs), the game session or sessions and the report (RunGame.cs)
     private sealed partial class BenchmarkRun
     {
-        private readonly List<string> _places = [], _sets = [], _ports = [], _tools = [];
+        private readonly List<string> _places = [], _sets = [], _ports = [], _tools = [], _env = [];
         private string _preset = "", _system = "", _hold = "", _settingsFile = "", _reference = "", _catch = "";
         private string _template = "Metal System Trace", _test = "";
         private bool _defaults, _explore, _fast, _noShots, _hud, _trace, _capture, _catchCapture, _passes, _cameraLog, _holding;
-        private string _repeatText = "", _sessionsText = "1", _ab = "", _filmText = "0";
+        private string _repeatText = "", _sessionsText = "1", _ab = "", _filmText = "0", _savePlan = "";
         private double _film;
         // measure: the measured passes in each game session, the sessions (taken in turn for A and B with --ab)
         private int _repeat = 1, _sessions = 1;
@@ -44,20 +44,149 @@ public static partial class Program
         // What the run is for: the verb that started it
         private Purpose _purpose = Purpose.Run;
 
-        // The run's folder once it played, and whether it was stopped (calibrate reads them)
+        // The run's folder once it played, and whether it was stopped (calibrate and study read them)
         public string Folder => _out;
         public bool Stopped => _stopped;
+
+        // A study's session: the run's folder (the study's), and whether it takes screenshots (its variant's first round)
+        public string Into { get; init; } = "";
+        public bool TakesShots { get; init; } = true;
+        // Where your settings.toml and port-settings.toml are: your documents folder, or a study's copy of them (made when
+        // it began, so that a game you play meanwhile changes none of its sessions)
+        public string Yours { get; init; } = Docs;
+        // Only checked, not played: a game running is no reason to refuse
+        private bool _checking;
+        // The game's documents folder for the run (the benchmark's; aside while only checked)
+        private string _instance = Instance;
 
         public int Run(string[] args, Purpose purpose)
         {
             _purpose = purpose;
             if (!Parse(args, out int status))
                 return status;
+            // measure --ab: a study of two variants, the setting as the run has it (A) and changed (B)
+            if (_ab.Length > 0)
+                return AB(args);
+            if (_savePlan.Length > 0)
+                return SavePlan(args);
+            // One benchmark game at a time, whoever starts it (two runs, a study and a run): held until this one is over
+            using var playing = Playing() ?? throw new PortException("another benchmark run is starting or playing: wait for it to end.");
             Check();
             Prepare();
             if (_explore)
                 return Explore();
             return Play();
+        }
+
+        // A study's variant: its options read and checked as a run's are, its settings made in a folder of their own (a game
+        // may be playing in the benchmark's), before any game starts
+        public void Validate(string[] args, Purpose purpose)
+        {
+            _purpose = purpose;
+            if (!Parse(args, out _))
+                Die("a study's command takes no --help.");
+            Checked();
+        }
+
+        // Checked and its settings made aside, nothing played
+        private void Checked()
+        {
+            _checking = true;
+            Check();
+            _instance = Path.Combine(Benchmarks, "studies", $".check-{Environment.ProcessId}");
+            try
+            {
+                Prepare();
+            }
+            finally
+            {
+                if (Directory.Exists(_instance))
+                    Directory.Delete(_instance, true);
+                _instance = Instance;
+            }
+        }
+
+        // The command line as it was, less the options of its own that a study plays itself
+        private static List<string> Without(string[] args, params string[] own)
+        {
+            var kept = new List<string>();
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (own.Contains(args[i]))
+                    i++;
+                else
+                    kept.Add(args[i]);
+            }
+            return kept;
+        }
+
+        // A study's file for this command line, its sessions and its variants (A and B with --ab)
+        private List<string> StudyLines(string[] args)
+        {
+            var verb = _purpose == Purpose.Profile ? "profile" : "measure";
+            var lines = new List<string>
+            {
+                $"{verb} {string.Join(' ', Without(args, "--ab", "--sessions", "--save-plan").Select(Study.Quote))}".TrimEnd(),
+                $"sessions {(_sessionsText != "1" || _ab.Length > 0 ? _sessionsText : Study.DefaultSessions.ToString(CultureInfo.InvariantCulture))}",
+            };
+            if (_ab.Length > 0)
+                lines.AddRange(["variant A", $"variant B --port {Study.Quote(_ab)}"]);
+            return lines;
+        }
+
+        // measure --ab key=value [--sessions n]: the study of A (the port setting as the run has it) and B (key=value), n
+        // sessions each
+        private int AB(string[] args)
+        {
+            if (_reference.Length > 0)
+                Die("--compare: an A/B run sets its two sides against each other in its own report.");
+            if (!_ab.Contains('='))
+                Die($"--ab needs a port setting as key=value, not '{_ab}'.");
+            if (!Regex.IsMatch(_sessionsText, "^[1-9][0-9]*$"))
+                Die($"--sessions needs a number of game sessions, not '{_sessionsText}'.");
+            // A's port settings, made as its sessions will have them, against B's
+            Checked();
+            var lines = StudyLines(args);
+            if (_savePlan.Length > 0)
+                return SaveStudy(lines, args);
+            Study study;
+            try
+            {
+                study = Study.Parse(lines);
+            }
+            catch (StudyException e)
+            {
+                Die(e.Message);
+                return 1;
+            }
+            var text = $"# ./benchmark.sh measure {string.Join(' ', args.Select(Study.Quote))}\n{string.Join('\n', lines)}\n";
+            return PlayStudy(NewStudy(study, text, "ab " + _ab[.._ab.IndexOf('=')]));
+        }
+
+        // --save-plan <file>: the command line as a study's file, to add variants to, nothing played
+        private int SavePlan(string[] args)
+        {
+            if (_reference.Length > 0)
+                Die("--compare: a study sets its variants against each other in its own report.");
+            Checked();
+            return SaveStudy(StudyLines(args), args);
+        }
+
+        private int SaveStudy(List<string> lines, string[] args)
+        {
+            if (File.Exists(_savePlan))
+                Die($"{_savePlan} is there already: name another file.");
+            if (args.FirstOrDefault(a => a.Contains('\'') && a.Contains('"')) is { } both)
+                Die($"--save-plan: a study's file can't hold {both} (both kinds of quote).");
+            var verb = _purpose == Purpose.Profile ? "profile" : "measure";
+            File.WriteAllText(_savePlan, $"""
+                # A study made from ./benchmark.sh {verb} {string.Join(' ', args.Select(Study.Quote))}
+                # Add variants (variant <name> <options>) or a grid (axis <option> <value>...), then: ./benchmark.sh study {_savePlan}
+                {string.Join('\n', lines)}{(_ab.Length > 0 ? "" : "\nvariant base")}
+
+                """);
+            Output.Info($"The study's file: {_savePlan} (./benchmark.sh study {_savePlan} plays it)");
+            return 0;
         }
 
         // Each verb's options: the player's settings for every one, the rest as the verb has them
@@ -96,7 +225,7 @@ public static partial class Program
                 }
             }
             var withValue = new[] { "--set", "--port", "--settings", "--compare", "--app", "--preset", "--system", "--repeat", "--sessions", "--ab",
-                "--trace-template", "--on" };
+                "--trace-template", "--on", "--env", "--save-plan" };
             for (; i < args.Length; i++)
             {
                 var a = args[i];
@@ -112,13 +241,15 @@ public static partial class Program
                     case "--preset": _preset = args[++i]; break;
                     case "--defaults": _defaults = true; break;
                     case "--system": _system = args[++i]; break;
+                    case "--env": _env.Add(args[++i]); break;
                     // What each verb adds
                     case "--compare" when _purpose is Purpose.Run or Purpose.Check or Purpose.Measure or Purpose.Profile: _reference = args[++i]; break;
                     case "--no-shots" when _purpose is Purpose.Run: _noShots = true; break;
                     case "--fast" when _purpose is Purpose.Run: _fast = true; break;
                     case "--repeat" when _purpose is Purpose.Measure: _repeatText = args[++i]; break;
                     case "--sessions" when _purpose is Purpose.Measure: _sessionsText = args[++i]; break;
-                    case "--ab" when _purpose is Purpose.Measure: _ab = args[++i]; break;
+                    case "--ab" when _purpose is Purpose.Measure && Into.Length == 0: _ab = args[++i]; break;
+                    case "--save-plan" when _purpose is Purpose.Measure or Purpose.Profile && Into.Length == 0: _savePlan = args[++i]; break;
                     case "--trace-template" when _trace: _template = args[++i]; break;
                     case "--catch-capture" when _catch.Length > 0: _catchCapture = true; break;
                     case "--on" when _purpose is not Purpose.Explore: _on.Add(args[++i]); break;
@@ -173,7 +304,7 @@ public static partial class Program
             (Directory.Exists(Benchmarks) ? Directory.GetDirectories(Benchmarks) : []).Where(IsRun).OrderByDescending(d => Path.GetFileName(d), StringComparer.Ordinal)
                 .FirstOrDefault(d => RunRecord.Read(d) is { Status: Status.Passed } r && r.Test == test && r.Mode == mode &&
                                      r.Fact("Mode") == mode && r.Fact("Preset") == PresetFact && r.Fact("Settings changed") == ChangedFact &&
-                                     r.Fact("Tools") == "none" && r.Fact("KSA Metal switches") == "none" && r.Fact("A/B") == null &&
+                                     r.Fact("Tools") == "none" && r.Fact("KSA Metal switches") == "none" && r.Fact("Environment") == null &&
                                      r.WarmUp == null && r.Fact("Warm-up") == null && r.Passes == 1);
 
         // The one test what plays belongs to (for a baseline's name): the test, or the test of the places; null for several
@@ -201,8 +332,16 @@ public static partial class Program
             if (!Regex.IsMatch(_sessionsText, "^[1-9][0-9]*$"))
                 Die($"--sessions needs a number of game sessions, not '{_sessionsText}'.");
             _sessions = int.Parse(_sessionsText);
-            if (_ab.Length > 0 && !_ab.Contains('='))
-                Die($"--ab needs a port setting as key=value, not '{_ab}'.");
+            foreach (var kv in _env)
+            {
+                var key = kv.Split('=')[0];
+                if (!Regex.IsMatch(kv, "^[A-Za-z_][A-Za-z0-9_]*=") )
+                    Die($"--env needs NAME=value, not '{kv}'.");
+                if (key is "KSA_BENCH_OUT" or "STARMAP_INSTANCE_PATH" or "KSA_BENCH_HANG_LIMIT")
+                    Die($"--env: {key} is the benchmark's own.");
+            }
+            if (!TakesShots)
+                _noShots = true;
             if (!double.TryParse(_filmText, NumberStyles.Float, CultureInfo.InvariantCulture, out _film) || _film < 0)
                 Die($"film needs a number of seconds, not '{_filmText}'.");
             if (_settingsFile.Length > 0 && !File.Exists(_settingsFile))
@@ -287,16 +426,14 @@ public static partial class Program
             // --compare: said now, not after the minutes the run takes
             if (_reference.Length > 0)
             {
-                if (_ab.Length > 0)
-                    Die("--compare: an A/B run sets its two sides against each other in its own report.");
                 _reference = RunFolder(_reference, TestPlayed);
                 if (NotComparable(_reference, Mode, _only) is { } why)
                     Die($"--compare: {why}");
             }
 
-            if (!File.Exists(Path.Combine(Docs, "settings.toml")))
+            if (!File.Exists(Path.Combine(Yours, "settings.toml")))
                 Die("start the game once before benchmarking it (it has no settings yet).");
-            if (GamesRunning().Count > 0)
+            if (!_checking && GamesRunning().Count > 0)
                 Die("the game is running. Quit it first.");
             CheckTools();
             PortFolder.CheckKsaMatch(_installed);
@@ -321,8 +458,22 @@ public static partial class Program
             return "";
         }
 
+        // The lock of a benchmark run that starts a game, or null when another run holds it
+        public static FileStream? Playing()
+        {
+            Directory.CreateDirectory(Benchmarks);
+            try
+            {
+                return new FileStream(Path.Combine(Benchmarks, ".playing"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            }
+            catch (IOException)
+            {
+                return null;
+            }
+        }
+
         // The games running on this Mac, by process id
-        private static List<int> GamesRunning() =>
+        public static List<int> GamesRunning() =>
             Ask("pgrep", "-f", "dotnet (KSA|StarMap).dll").Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToList();
 
         // Whether the app's director is older than plans (its assembly names no RunPlan); a stand-in without one is not

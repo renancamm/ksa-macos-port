@@ -71,8 +71,14 @@ public static partial class Program
                              screenshots differ
           ./benchmark.sh measure [test] [--repeat n] [--sessions n] [--ab key=value] [options]
                              numbers to judge a change by: a warm-up pass first (left out), then n passes (3) in one game
-                             session, each part's median and range; --sessions plays more games of it; --ab plays games with
-                             the port setting key=value (B) and as the run has it (A) in turn and sets B against A, part by part
+                             session, each part's median and range; --sessions plays more games of it; --ab is a study of two
+                             variants, the port setting key=value (B) and as the run has it (A), --sessions games each
+          ./benchmark.sh study <file> | study resume [study] | study report [study]
+                             variants of one measure (or profile) command, each in game sessions of its own (5), played in
+                             turn and set against the baseline variant by their sessions; the file's lines: measure
+                             <options>, sessions <n>, variant <name> <options>, axis <option> <value>..., baseline <name>.
+                             It waits while another game runs; Ctrl-C stops the session playing and the study, resume
+                             plays the rest (default: the last study not done). Its folder: the benchmarks folder's studies/
           ./benchmark.sh profile [test | places...] [options]
                              where the time goes: a warm-up, a measured pass and a profiled pass in one game session; the
                              profiled pass names the game's GPU zones in each part (profile.md), its own cost kept apart
@@ -87,6 +93,8 @@ public static partial class Program
                              that goes wrong now and then; --catch-capture adds a frame capture), passes (a pass dump at every
                              place: a clean run for catch), film <seconds> (screenshots along the way), camera-log (the
                              camera's place every frame), hold (stay at one place, paused, until you quit the game)
+          --env <NAME=value> the game's environment for the run (again for more): KSA Metal's switches (KSA_MTL_...)
+          --save-plan <file> with measure or profile: the command line as a study's file, to add variants to; plays nothing
           --on '<rule>'      with run, check, measure, profile or investigate: a trigger, '<condition>: <action>, ...' (again for
                              more). Conditions: frame>N ms, broken, checkpoint, stuck, gpu-error; actions: moment,
                              screenshot, passes, capture, sample, stop, max N ('frame>50ms: moment, max 5')
@@ -154,6 +162,7 @@ public static partial class Program
                 ["measure", .. var rest] => new BenchmarkRun().Run(rest, Purpose.Measure),
                 ["profile", .. var rest] => new BenchmarkRun().Run(rest, Purpose.Profile),
                 ["calibrate", .. var rest] => Calibrate(rest),
+                ["study", .. var rest] => StudyCommand(rest),
                 ["investigate", .. var rest] => new BenchmarkRun().Run(rest, Purpose.Investigate),
                 ["explore", .. var rest] => new BenchmarkRun().Run(rest, Purpose.Explore),
                 // A player's ./benchmark.sh and ./benchmark.sh tour: a run
