@@ -50,6 +50,7 @@ internal static class Tests
             ("the tests' script", Script),
             ("the run's store", Store),
             ("KSA Metal's drain", Drain),
+            ("the game's zones", ZoneSums),
         };
         foreach (var (name, run) in tests)
         {
@@ -763,5 +764,71 @@ internal static class Tests
         Equal(new ShownRecord(7, 12.49, 12.5, 12.51, 12.52, 0.4, true), records[1], "shown");
         Equal(new WaitRecord(13, 4.5, 8, "vkWaitForFences"), records[2], "wait");
         Equal(new MemoryRecord(14, -(64L << 20), 2, 9), records[3], "memory");
+    }
+
+    // The game's profiler zones summed per part, and a slow frame kept as a moment with its cause and slices
+    private static void ZoneSums()
+    {
+        var dir = Path.Combine(_scratch, "zones");
+        Directory.CreateDirectory(dir);
+        var names = new[] { "Main Thread", "Render", "RecordCommandBuffer", "VehicleUpdate" };
+        var log = new ZoneLog(RunStore.For(dir), i => names[i]);
+        var part = new PartKey(1, 1, "earth", "earth1");
+        double t = 100;
+        // 10 frames of 16 ms: Render 10 ms, inside it RecordCommandBuffer 4 ms (allocating 1 MB)
+        for (int f = 0; f < 10; f++, t += 0.016)
+        {
+            log.Add(new ZoneFrame("main", "Main Thread", [new(0, -1, t, 16, 0), new(1, 0, t + 0.001, 10, 0), new(2, 1, t + 0.002, 4, 1 << 20)]));
+            log.EndFrame(t + 0.016, part);
+        }
+        // A slow frame: 120 ms, VehicleUpdate 100 of them; the driver waited 95 ms for a present, whose GPU took 97
+        log.Add(new ZoneFrame("main", "Main Thread", [new(0, -1, t, 120, 0), new(3, 0, t + 0.001, 100, 0)]));
+        log.AddWait(t + 0.002, 95, "vkWaitForPresentKHR");
+        log.AddPresent(t + 0.119, 97);
+        t += 0.120;
+        log.EndFrame(t, part);
+        log.Hitch(t, 120, part);
+        for (int f = 0; f < 20; f++, t += 0.016)
+        {
+            log.Add(new ZoneFrame("main", "Main Thread", [new(0, -1, t, 16, 0), new(1, 0, t + 0.001, 10, 0)]));
+            log.EndFrame(t + 0.016, part);
+        }
+        log.EndFrame(t + 0.02, null);
+        log.Close();
+        RunStore.CloseAll();
+        using var db = Sqlite.Open(Path.Combine(dir, RunStore.GameFile));
+        using (var q = db.Prepare("SELECT frames, calls, total_ms, self_ms, median_ms, max_ms, alloc_mb FROM zone_stats WHERE zone = 'Render'"))
+        {
+            Check(q.Step(), "Render's numbers");
+            Equal(30L, q.Long(0), "Render: frames");
+            Equal(30L, q.Long(1), "Render: calls");
+            Equal(300.0, Math.Round(q.Double(2), 3), "Render: total ms");
+            Equal(260.0, Math.Round(q.Double(3), 3), "Render: self ms (less RecordCommandBuffer's)");
+            Equal(10.0, q.Double(4), "Render: median ms a frame");
+            Equal(10.0, q.Double(5), "Render: worst");
+        }
+        using (var q = db.Prepare("SELECT median_ms, max_ms, alloc_mb FROM zone_stats WHERE zone = 'RecordCommandBuffer'"))
+        {
+            Check(q.Step(), "RecordCommandBuffer's numbers");
+            Equal(0.0, q.Double(0), "RecordCommandBuffer: median, frames without it as 0");
+            Equal(4.0, q.Double(1), "RecordCommandBuffer: worst");
+            Equal(10.0, Math.Round(q.Double(2), 3), "RecordCommandBuffer: MB allocated");
+        }
+        using (var q = db.Prepare("SELECT id, frame_ms, part, cause FROM moments"))
+        {
+            Check(q.Step(), "a moment");
+            Equal(120.0, q.Double(1), "the moment's frame");
+            Equal("earth1", q.Text(2), "the moment's part");
+            Check(q.Text(3).StartsWith("VehicleUpdate 100.0 ms", StringComparison.Ordinal), $"the cause: {q.Text(3)}");
+            Contains([q.Text(3)], "waited in vkWaitForPresentKHR 95.0 ms", "the cause's wait");
+            Contains([q.Text(3)], "GPU up to 97.0 ms a frame", "the cause's GPU time");
+            Check(!q.Step(), "one moment");
+        }
+        using (var q = db.Prepare("SELECT COUNT(*), MAX(ms) FROM slices WHERE moment = 1"))
+        {
+            q.Step();
+            Check(q.Long(0) > 3, "the moment's slices");
+            Equal(120.0, q.Double(1), "the slow frame among them");
+        }
     }
 }

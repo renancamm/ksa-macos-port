@@ -180,6 +180,8 @@ public static class Runs
         catch (Exception e)
         {
             Log($"BenchmarkRun: {e}");
+            // What the run switched on in the game and its driver, off again
+            _run?.Abandon();
             _run = null;
             try
             {
