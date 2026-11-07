@@ -579,6 +579,9 @@ internal static class FarTerrain
     // flight uses them
     private static void Free(Collection c, List<int> free)
     {
+        // A clutter build on FarClutter's worker may be reading the finest level's buffers
+        if (free.Contains(c.Finest) && c.Bodies.Any(FarClutter.OnWorker))
+            FarClutter.Settle();
         var levels = c.Meshes.Items;
         var freed = new List<(SimpleVkMesh Mesh, BufferEx Adjacency, BufferEx Distances)>();
         var structures = new List<AccelerationStructure>();
@@ -829,25 +832,39 @@ internal static class FarTerrain
                     Utils.WriteDescriptorSets(sets[f], default, default, default, default, infos, renderer);
                 }
         }
-        // As ClutterCubeCellGrid.BuildFrameResources writes them, one per view slot and frame slot
-        if (!changed.Contains(c.Finest) || !c.Raytraced || !renderer.RayQueriesSupported ||
-            planets.GroundClutterRenderer is not { } clutter)
+        if (changed.Contains(c.Finest))
+            foreach (var body in c.Bodies)
+                WriteClutterSets(c, body);
+    }
+
+    // A body's clutter built on FarClutter's worker: its generate sets written with its finest level as it is now (the
+    // writes above skipped them while it was built)
+    public static void ClutterBuilt(Celestial body)
+    {
+        if (_failed || Program.GetPlanetRenderer() is null)
             return;
-        var finest = meshes.Items[^1];
+        foreach (var c in Collections.Values)
+            if (!c.Ocean && c.Bodies.Contains(body))
+                WriteClutterSets(c, body);
+    }
+
+    // As ClutterCubeCellGrid.BuildFrameResources writes them, one per view slot and frame slot
+    private static void WriteClutterSets(Collection c, Celestial body)
+    {
+        var renderer = Program.GetRenderer();
+        if (!c.Raytraced || !renderer.RayQueriesSupported || Program.GetPlanetRenderer()?.GroundClutterRenderer is not { } clutter ||
+            !clutter.PlanetEcotypeRenderData.TryGetValue(body.Hash, out var ecotypes))
+            return;
+        var finest = c.Meshes.Items[^1];
         Span<VkWriteDescriptorSet> writes = stackalloc VkWriteDescriptorSet[13];
-        foreach (var body in c.Bodies)
+        foreach (var ecotype in ecotypes)
         {
-            if (!clutter.PlanetEcotypeRenderData.TryGetValue(body.Hash, out var ecotypes))
+            var grid = ecotype.CubeCellGrid;
+            if (!grid.RenderDataInitialized || FarClutter.OnWorker(ecotype))
                 continue;
-            foreach (var ecotype in ecotypes)
-            {
-                var grid = ecotype.CubeCellGrid;
-                if (!grid.RenderDataInitialized)
-                    continue;
-                for (int slot = 0; slot < grid.GenerateDescriptorSets.Length; slot++)
-                    for (int f = 0; f < grid.GenerateDescriptorSets[slot].Length; f++)
-                        _clutterWrites!(grid, renderer, body, finest, slot, f, ref writes);
-            }
+            for (int slot = 0; slot < grid.GenerateDescriptorSets.Length; slot++)
+                for (int f = 0; f < grid.GenerateDescriptorSets[slot].Length; f++)
+                    _clutterWrites!(grid, renderer, body, finest, slot, f, ref writes);
         }
     }
 
