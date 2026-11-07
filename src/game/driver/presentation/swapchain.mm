@@ -5,6 +5,7 @@
 #import <CoreGraphics/CoreGraphics.h>
 #include <chrono>
 #include <algorithm>
+#include <thread>
 
 // KSA_MTL_LATENCY=<csv>: per present, when its frame began (the game's wait for an earlier present returned, or else
 // the previous present), when it was presented, finished on the GPU and was shown (seconds, presentedTime's clock),
@@ -308,11 +309,42 @@ VKFN(VkResult) vkWaitForPresentKHR(VkDevice, VkSwapchainKHR swapchain, uint64_t 
             break;
         }
     }
+    // late_frame_start's delay, within the caller's timeout
+    double left = std::chrono::duration<double>(deadline - std::chrono::steady_clock::now()).count();
+    double delay = done ? std::min(state->startDelay, std::max(left, 0.0)) : 0;
+    lock.unlock();
+    if (delay > 0) std::this_thread::sleep_for(std::chrono::duration<double>(delay));
     double end = CACurrentMediaTime();
+    lock.lock();
     state->began = end;
     lock.unlock();
     if (kmtlConfig().latency) latencyBegin(end - start, paced);
     return done ? VK_SUCCESS : VK_TIMEOUT;
+}
+
+// late_frame_start: with a cadence the game's wait above ends a frame or two before the display slot its frame will
+// get, and the input it reads then is that old when shown. Each game frame shown on its slot (within 2 ms of the
+// cadence after the one before) stretches the wait by late_frame_start's milliseconds, up to three quarters of the
+// cadence; one shown later, or not at all, halves it: about one frame in (half the wait / the step) misses its slot.
+// The wait settles just short of the frames missing their slots, whatever the CPU, GPU and window server take. The
+// cadence must be a whole number of the display's refresh intervals (steady_frame_rate's is), or every frame counts
+// as late
+static void noteShownForStart(KPresentState& st, uint64_t present, double shownAt, double cadenceMs, double stepMs) {
+    if (shownAt <= 0) {
+        st.startDelay *= 0.5;
+        st.lastShownPresent = 0;  // the next frame shown only starts the count again
+        return;
+    }
+    if (st.lastShownPresent && st.lastShownPresent + 1 == present) {
+        double interval = (shownAt - st.lastShown) * 1e3;
+        st.startDelay = interval <= cadenceMs + 2.0 ? std::min(st.startDelay + stepMs * 1e-3, cadenceMs * 0.75e-3)
+                                                    : st.startDelay * 0.5;
+    } else if (st.lastShownPresent) {
+        st.startDelay *= 0.5;
+    }
+    st.startDelay = std::min(st.startDelay, cadenceMs * 0.75e-3);  // the cadence can shrink (another display)
+    st.lastShown = shownAt;
+    st.lastShownPresent = present;
 }
 
 VKFN(VkResult) vkAcquireNextImage2KHR(VkDevice device, const VkAcquireNextImageInfoKHR* info, uint32_t* index) {
@@ -403,8 +435,12 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
                     if (shownAtEnd) state->presented = std::max(state->presented, presentId);
                     state->cv.notify_all();
                 }];
-                if (drawable) [drawable addPresentedHandler:^(id<MTLDrawable>) {
+                bool late = kmtlConfig().lateFrameStart > 0 && !kmtlConfig().frameInterpolation;
+                double cadence = late ? sc->cadenceMs : 0;
+                double step = kmtlConfig().lateFrameStart;
+                if (drawable) [drawable addPresentedHandler:^(id<MTLDrawable> d) {
                     std::lock_guard<std::mutex> lock(state->m);
+                    if (cadence > 0) noteShownForStart(*state, n, d.presentedTime, cadence, step);
                     if (KPresentState::Frame* f = findFrame(*state, n)) f->shown = true;
                     state->presented = std::max(state->presented, presentId);
                     state->cv.notify_all();
