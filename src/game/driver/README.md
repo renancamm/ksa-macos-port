@@ -26,7 +26,7 @@ These switches turn a feature off or change a default, to work around a problem 
 | Setting | Effect |
 |---|---|
 | `tessellation` | off: hide tessellation from the game; it draws terrain and ocean without it |
-| `fused_tessellation` | off: tessellate without the fused path ([Tessellation](#from-vulkan-to-metal)): the vertex stage's outputs go through memory (slower; try it when terrain or ocean look wrong) |
+| `fused_tessellation` | off: tessellate without the fused path ([Tessellation](#from-vulkan-to-metal)): the vertex stage's outputs go through memory (try it when the ocean looks wrong) |
 | `ray_queries` | off: hide ray queries and ray tracing; the game places clutter without them, and ray tracing inside the cockpit (IVA) is unavailable |
 | `ray_tracing` | off: hide only ray tracing pipelines (the cockpit's ray tracing) |
 | `background_shader_compiling` | off: compile pipelines on the game's thread, when the game creates them |
@@ -246,18 +246,19 @@ sorts work into a few stage classes (compute, transfer, vertex, fragment, accele
 each barrier into fence waits between them. Work that doesn't depend on each other can overlap on the GPU, for
 example the vertex work of one render pass with the fragment work of the previous one.
 
-**Tessellation.** KSA tessellates terrain and ocean. Vulkan's tessellation pipeline has a vertex shader, a control
-shader, a fixed-function tessellator and an evaluation shader. Metal's tessellator has no vertex or control stages,
-so KSA Metal runs those two as compute kernels that write their output into scratch buffers, then draws the patches
-with the evaluation shader as Metal's post-tessellation vertex function.
+**Tessellation.** KSA tessellates its terrain in a compute pass of its own; its ocean uses Vulkan's tessellation
+pipeline. That pipeline has a vertex shader, a control shader, a fixed-function tessellator and an evaluation shader.
+Metal's tessellator has no vertex or control stages, so KSA Metal runs those two as compute kernels that write their
+output into scratch buffers, then draws the patches with the evaluation shader as Metal's post-tessellation vertex
+function.
 
-When the control shader passes its control points through unchanged, as KSA's terrain and ocean shaders do, the
-vertex outputs don't go through memory at all. KSA Metal links the vertex shader into the evaluation shader at the
+When the control shader passes its control points through unchanged, as KSA's ocean shaders do, the vertex
+outputs don't go through memory at all. KSA Metal links the vertex shader into the evaluation shader at the
 SPIR-V level, so the evaluation stage runs it for each of its control points on attributes Metal fetches through the
 draw's index buffer. The control shader loses its copies, and the vertex and control kernels shrink to what the
-tessellation factors need (for the terrain, 32 bytes per vertex instead of 128). Draws with 16-bit indices or
-instances keep the evaluation stage reading the vertex kernel's output. In the benchmark this takes 5-15% off the GPU
-time of the scenes with terrain; `fused_tessellation` turns it off.
+tessellation factors need. Draws with 16-bit indices or instances keep the evaluation stage reading the vertex
+kernel's output. The benchmark measures no difference in GPU time with the ocean in view (the Earth flight's nine
+places, Vsync off so that the GPU stays busy: within 0.2 ms); `fused_tessellation` turns it off.
 
 **Ray tracing.** KSA uses ray queries for ground clutter placement, and ray tracing pipelines for lighting inside
 the cockpit (IVA). Ray queries and acceleration structures map onto Metal's; each structure is placed in the heap of

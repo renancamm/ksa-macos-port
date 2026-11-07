@@ -73,7 +73,7 @@ clear_faded_smoke | bool | true | | restart | hooks:FadedSmoke | | | | Clear Fad
 skip_hidden_crew_portraits | bool | true | | live | hooks:CrewPortraits | | | | Skip Hidden Crew Portraits | Draws the crew panel's portraits only while the panel is open.
 skip_shadows_on_unlit_sides | bool | true | | restart | driver | | | | Skip Shadows on Unlit Sides | Skips shadow work where no light reaches. Much faster in the cockpit.
 shared_shadow_samples | bool | true | | restart | driver | | | | Shared Shadow Samples | Neighbouring pixels share the work of terrain shadows. A little faster near the ground.
-fused_tessellation | bool | true | tessellation | restart | driver | | | | Fused Tessellation | Tessellates terrain and ocean in one step. Faster over terrain.
+fused_tessellation | bool | true | tessellation | restart | driver | | | | Fused Tessellation | Tessellates the ocean in one step.
 skip_gpu_texture_compression | bool | true | | restart | driver | | | | Skip GPU Texture Compression | Skips the GPU's compression for textures such as terrain, clouds and sea, which slows drawing. Faster, with the same memory.
 iva_ray_search | bool | true | ray_tracing | restart | driver | | | | IVA Ray Search | With IVA Ray Tracing (Graphics), the cockpit's rays use a faster search. The cockpit draws about 6 % faster.
 vsync_pacing | bool | true | game:vsync | restart | driver | | | | Vsync Pacing | With Vsync, starts each frame as soon as the GPU is ready for it. A higher frame rate in a window.
