@@ -12,6 +12,11 @@
 //             GPU and was shown, how long the frame waited, whether pacing ended the wait
 //   waits     a call that blocked the game longer than the threshold the director opened the drain with: what, how long
 //   memory    an allocation (positive) or a free (negative) of 16 MB or more
+//   zone_stats, moments, slices  the game's profiler zones summed per part, the slow frames and what took their time
+//             (Zones.cs)
+//
+// frames has, after frames.csv's columns, the .NET runtime's work in each frame (RuntimeCounters): GC pause, collections
+// by generation, JIT time and methods compiled, lock contentions, MB allocated.
 //
 // The record is made from events.jsonl and frames.csv, and Finish.cs checks the store against them: a run whose store
 // says something else gets a note.
@@ -54,7 +59,7 @@ public static class RunClock
 public sealed class RunStore : IDisposable
 {
     public const string GameFile = "run.db", HostFile = "host.db";
-    private const int Schema = 1;
+    private const int Schema = 2;
 
     // The file this process writes: the game's, unless the process says it is the host (benchmark.sh's program)
     public static string ProcessFile { get; set; } = GameFile;
@@ -132,19 +137,24 @@ public sealed class RunStore : IDisposable
             store.Dispose();
     }
 
-    private enum Table { Event, Frame, Present, Shown, Wait, Memory }
+    private enum Table { Event, Frame, Present, Shown, Wait, Memory, ZoneStats, Moment, Slice }
 
     private static readonly Dictionary<Table, string> Inserts = new()
     {
         [Table.Event] = "INSERT INTO events (t, at, session, pass, type, scenario, part, text, game, value) VALUES (?,?,?,?,?,?,?,?,?,?)",
         [Table.Frame] = "INSERT INTO frames (t, time, session, pass, script, scenario, part, phase, frame_ms, present, gpu_ms, cpu_ms, draws, " +
                         "passes, metal_mb, footprint_mb, thermal, shaders, pipelines, display_ms, game_s, asked, sim_ms, substeps, bubbles, " +
-                        "vehicles) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        "vehicles, gc_pause_ms, gc0, gc1, gc2, jit_ms, jit_methods, contentions, alloc_mb) " +
+                        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         [Table.Present] = "INSERT INTO presents (t, present, cpu_ms, gpu_ms, draws, dispatches, passes, submits, metal_mb, footprint_mb, " +
                           "thermal, shaders, pipelines, width, height, display_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         [Table.Shown] = "INSERT INTO shown (present, began, presented, gpu_end, shown, waited_ms, paced) VALUES (?,?,?,?,?,?,?)",
         [Table.Wait] = "INSERT INTO waits (t, ms, what, present) VALUES (?,?,?,?)",
         [Table.Memory] = "INSERT INTO memory (t, bytes, type, present) VALUES (?,?,?,?)",
+        [Table.ZoneStats] = "INSERT INTO zone_stats (session, pass, scenario, part, grp, zone, frames, calls, total_ms, self_ms, median_ms, " +
+                            "p95_ms, max_ms, alloc_mb) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [Table.Moment] = "INSERT INTO moments (id, t, frame_ms, session, pass, scenario, part, cause) VALUES (?,?,?,?,?,?,?,?)",
+        [Table.Slice] = "INSERT INTO slices (moment, grp, thread, zone, depth, start, ms, self_ms, bytes) VALUES (?,?,?,?,?,?,?,?,?)",
     };
 
     private const string Create = """
@@ -154,7 +164,8 @@ public sealed class RunStore : IDisposable
         CREATE TABLE IF NOT EXISTS frames (t REAL, time REAL, session INTEGER, pass INTEGER, script REAL, scenario TEXT, part TEXT,
             phase TEXT, frame_ms REAL, present INTEGER, gpu_ms REAL, cpu_ms REAL, draws INTEGER, passes INTEGER, metal_mb INTEGER,
             footprint_mb INTEGER, thermal INTEGER, shaders INTEGER, pipelines INTEGER, display_ms REAL, game_s REAL, asked REAL,
-            sim_ms REAL, substeps INTEGER, bubbles INTEGER, vehicles INTEGER);
+            sim_ms REAL, substeps INTEGER, bubbles INTEGER, vehicles INTEGER, gc_pause_ms REAL, gc0 INTEGER, gc1 INTEGER, gc2 INTEGER,
+            jit_ms REAL, jit_methods INTEGER, contentions INTEGER, alloc_mb REAL);
         CREATE TABLE IF NOT EXISTS presents (t REAL, present INTEGER, cpu_ms REAL, gpu_ms REAL, draws INTEGER, dispatches INTEGER,
             passes INTEGER, submits INTEGER, metal_mb INTEGER, footprint_mb INTEGER, thermal INTEGER, shaders INTEGER,
             pipelines INTEGER, width INTEGER, height INTEGER, display_ms REAL);
@@ -162,6 +173,12 @@ public sealed class RunStore : IDisposable
             paced INTEGER);
         CREATE TABLE IF NOT EXISTS waits (t REAL, ms REAL, what TEXT, present INTEGER);
         CREATE TABLE IF NOT EXISTS memory (t REAL, bytes INTEGER, type INTEGER, present INTEGER);
+        CREATE TABLE IF NOT EXISTS zone_stats (session INTEGER, pass INTEGER, scenario TEXT, part TEXT, grp TEXT, zone TEXT, frames INTEGER,
+            calls INTEGER, total_ms REAL, self_ms REAL, median_ms REAL, p95_ms REAL, max_ms REAL, alloc_mb REAL);
+        CREATE TABLE IF NOT EXISTS moments (id INTEGER, t REAL, frame_ms REAL, session INTEGER, pass INTEGER, scenario TEXT, part TEXT,
+            cause TEXT);
+        CREATE TABLE IF NOT EXISTS slices (moment INTEGER, grp TEXT, thread TEXT, zone TEXT, depth INTEGER, start REAL, ms REAL,
+            self_ms REAL, bytes INTEGER);
         """;
 
     private readonly string _path;
@@ -209,8 +226,25 @@ public sealed class RunStore : IDisposable
     public void Add(RunEvent e) =>
         Enqueue(Table.Event, RunClock.Now(), e.At.ToUniversalTime().Ticks, e.Session, e.Pass, e.Type, e.Scenario, e.Part, e.Text, e.Game, e.Value);
 
-    // A frame: its time, then frames.csv's columns in their order (FrameLog.Columns)
-    public void AddFrame(double t, object?[] columns) => Enqueue(Table.Frame, [t, .. columns]);
+    // A frame: its time, frames.csv's columns in their order (FrameLog.Columns), and the runtime's work in it
+    public void AddFrame(double t, object?[] columns, RuntimeSample? runtime)
+    {
+        var r = runtime ?? default;
+        bool has = runtime != null;
+        Enqueue(Table.Frame, [t, .. columns, has ? r.GcPauseMs : null, has ? r.Gen0 : null, has ? r.Gen1 : null, has ? r.Gen2 : null,
+            has ? r.JitMs : null, has ? r.JitMethods : null, has ? r.Contentions : null, has ? r.AllocMb : null]);
+    }
+
+    public void AddZoneStats(PartKey part, string group, string zone, int frames, int calls, double totalMs, double selfMs, double medianMs,
+        double p95Ms, double maxMs, double allocMb) =>
+        Enqueue(Table.ZoneStats, part.Session, part.Pass, part.Scenario, part.Part, group, zone, frames, calls, totalMs, selfMs, medianMs,
+            p95Ms, maxMs, allocMb);
+
+    public void AddMoment(int id, double t, double frameMs, PartKey part, string cause) =>
+        Enqueue(Table.Moment, id, t, frameMs, part.Session, part.Pass, part.Scenario, part.Part, cause);
+
+    public void AddSlice(int moment, string group, string thread, string zone, int depth, double start, double ms, double selfMs, long bytes) =>
+        Enqueue(Table.Slice, moment, group, thread, zone, depth, start, ms, selfMs, bytes);
 
     public void Add(DriverRecord record)
     {

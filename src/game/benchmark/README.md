@@ -222,6 +222,7 @@ table when it starts. Around it:
 | `Camera.cs`, `Path.cs`, `Rig.cs` | the camera: its flights through the `@key` places (`Path.cs`), the vehicle camera that follows or watches a vehicle (`Rig.cs`), the cockpit and front views |
 | `Vehicles.cs` | the vehicle directives: launch pads, flights, kittens, staging, explosions |
 | `Probes.cs` | the tools of `investigate`: each watches the parts, the checkpoints or the frames; one that works on a view holds its checkpoint until it is done |
+| `GameProfilers.cs` | the game's own profilers, on while a run plays and read every frame into the run's store |
 | `World.cs` | a new game's world, and the sea's waves settled at once for a view standing still |
 | `Explore.cs` | `explore`'s console command |
 | `Runs.cs` | the runs in the game: those `benchmark.sh` starts, those of the Mac Port tab, and its watchdog |
@@ -282,11 +283,26 @@ The run's store holds the same events and frames, and more, in SQLite files in t
 in seconds, which KSA Metal's own times use. Besides the events and frames, `run.db` has what KSA Metal hands the
 director through its drain while a run plays: every present with its numbers (`presents`), when each frame began, was
 presented, finished on the GPU and was shown (`shown`), every wait of a millisecond or more that blocked the game, such
-as a fence or the next drawable (`waits`), and every allocation or free of 16 MB or more (`memory`). The record is made
-from `events.jsonl` and `frames.csv`; a run whose store says otherwise gets a note. macOS's `sqlite3` reads the files:
+as a fence or the next drawable (`waits`; the wait for an earlier frame's present too, the game's every frame under
+V-Sync), and every allocation or free of 16 MB or more (`memory`). Each frame also has the .NET runtime's work in it: GC
+pause, collections, JIT time and methods, lock contentions, MB allocated.
+
+During a run the director switches on the game's own profilers, the main thread's and the job runners' (orbit and vehicle
+solvers and the others), and reads them every frame ([`GameProfilers.cs`](GameProfilers.cs),
+[`../../shared/benchmark/Zones.cs`](../../shared/benchmark/Zones.cs)): `zone_stats` has every zone of each part, its total
+and own time, its median, 95th percentile and worst in a frame, and what it allocated. A frame of 100 ms or more in a
+measured part is a moment (`moments`): its cause names the main thread's zones with the most own time in it, KSA Metal's
+waits of 2 ms or more and the GPU time of the presents around it, and the first ten of the measured passes keep every
+zone from half a second before to a quarter of a second after it (`slices`). Reading them costs the game about 20 µs a
+frame; `KSA_BENCH_ZONES=0` in front of `benchmark.sh` leaves the profilers off.
+
+The record is made from `events.jsonl` and `frames.csv`; a run whose store says otherwise gets a note. macOS's `sqlite3`
+reads the files:
 
 ```bash
 sqlite3 run.db "SELECT what, COUNT(*), ROUND(MAX(ms), 1) FROM waits GROUP BY what ORDER BY 3 DESC"
+sqlite3 run.db "SELECT part, ROUND(frame_ms), cause FROM moments"
+sqlite3 run.db "SELECT zone, ROUND(self_ms / frames, 2) FROM zone_stats WHERE part = 'earth4' ORDER BY self_ms DESC LIMIT 10"
 ```
 
 The build runs the benchmark's tests, which need no game, and stops when one fails. Those in

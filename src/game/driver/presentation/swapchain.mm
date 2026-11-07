@@ -318,6 +318,8 @@ VKFN(VkResult) vkWaitForPresentKHR(VkDevice, VkSwapchainKHR swapchain, uint64_t 
     lock.unlock();
     if (delay > 0) std::this_thread::sleep_for(std::chrono::duration<double>(delay));
     double end = CACurrentMediaTime();
+    // The drain only: under V-Sync the game waits here every frame by design, which the stalls log would drown in
+    if (kmtlDrainOn()) kmtlDrainWait("vkWaitForPresentKHR", start, (end - start) * 1000.0);
     lock.lock();
     state->began = end;
     lock.unlock();

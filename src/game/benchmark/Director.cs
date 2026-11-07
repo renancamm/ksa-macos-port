@@ -88,6 +88,11 @@ public partial class Director
     // KSA Metal's drain (DriverStats.Drain): open while a run plays, its latest present the frame's driver numbers
     private bool _drain;
     private RunStore? _store;
+    // The game's profilers (GameProfilers) and the .NET runtime's counters, while a run plays; a frame of a measured part
+    // this long or longer is kept as a moment (ZoneLog)
+    private GameProfilers? _profilers;
+    private RuntimeCounters? _runtime;
+    private const double HitchMs = 100;
     private FrameStats? _present;
     private readonly List<DriverRecord> _driverRecords = new();
     // This frame's line of frames.csv, and the part its numbers count in (none: null)
@@ -246,6 +251,8 @@ public partial class Director
         // Waits from a millisecond on: shorter ones are the driver's ordinary work
         _store = RunStore.For(_outDir);
         _drain = DriverStats.OpenDrain(1);
+        _profilers = GameProfilers.Start(_store, Log);
+        _runtime = new RuntimeCounters();
         _probes = Probes.For(options, new ProbeContext(_outDir, Error, Log));
         _active = true;
         // A directive without a handler fails the run at once, before anything plays
@@ -259,14 +266,19 @@ public partial class Director
     {
         _row = null;
         _measured = null;
-        // Every frame, also while waiting or holding, so the drain never fills
+        // Every frame, also while waiting or holding, so the drain never fills and a frame's runtime counters are its own
         DrainDriver();
+        var runtime = _runtime?.Sample();
         FrameBody();
-        // The frame's line, once it is known which part its numbers count in
+        // The frame's line, once it is known which part its numbers count in, and its zones there
+        PartKey? part = null;
         if (_row is { } r)
         {
-            _frames?.Add(r.Script, r.Scenario, _measured, r.Phase, r.FrameMs, r.Driver, r.Sim);
+            _frames?.Add(r.Script, r.Scenario, _measured, r.Phase, r.FrameMs, r.Driver, r.Sim, runtime);
+            if (_measured != null)
+                part = new PartKey(_options.Session, _pass, r.Scenario ?? "", _measured);
         }
+        _profilers?.Frame(part, part != null && _row is { FrameMs: >= HitchMs } slow ? slow.FrameMs : 0);
     }
 
     private void FrameBody()
@@ -493,6 +505,7 @@ public partial class Director
             _frames?.Dispose();
             _frames = null;
             CloseDrain();
+            StopProfilers();
             foreach (var probe in _probes)
                 probe.End();
             if (_clock.ShortSteps > 0)
@@ -552,9 +565,15 @@ public partial class Director
         foreach (var record in _driverRecords)
         {
             _store?.Add(record);
-            // The newest by its number: the one the drain's opening adds may come after a newer present
-            if (record is PresentRecord p && (_present is not { } latest || p.Stats.Present >= latest.Present))
-                _present = p.Stats;
+            if (record is PresentRecord p)
+            {
+                // The newest by its number: the one the drain's opening adds may come after a newer present
+                if (_present is not { } latest || p.Stats.Present >= latest.Present)
+                    _present = p.Stats;
+                _profilers?.Zones.AddPresent(p.T, p.Stats.GpuMs);
+            }
+            else if (record is WaitRecord w)
+                _profilers?.Zones.AddWait(w.T, w.Ms, w.What);
         }
     }
 
@@ -570,6 +589,35 @@ public partial class Director
         _drain = false;
     }
 
+    // The game's profilers' last frames and moments written, and their switches as they were
+    private void StopProfilers()
+    {
+        var profilers = _profilers;
+        _profilers = null;
+        profilers?.Stop();
+    }
+
+    // The run failed with an exception: what it switched on in the game and its driver, off again, whatever else fails
+    public void Abandon()
+    {
+        try
+        {
+            CloseDrain();
+        }
+        catch (Exception e)
+        {
+            Log($"the drain: {e.Message}");
+        }
+        try
+        {
+            StopProfilers();
+        }
+        catch (Exception e)
+        {
+            Log($"the game's profilers: {e.Message}");
+        }
+    }
+
     // Ends the run before the script's end: the player stopped it, or it failed (the watch found it stuck); the results
     // say why, and that it did not complete
     public void Stop(string why, bool failed = false)
@@ -582,6 +630,7 @@ public partial class Director
         _frames?.Dispose();
         _frames = null;
         CloseDrain();
+        StopProfilers();
         foreach (var probe in _probes)
             probe.End();
         Log($"stopped: {why}");

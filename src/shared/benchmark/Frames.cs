@@ -16,6 +16,34 @@ namespace KsaPort.Common.Benchmark;
 // physics bubbles and vehicles
 public readonly record struct SimSample(double GameSeconds, double Asked, double TickMs, long Substeps, int Bubbles, int Vehicles);
 
+// What the .NET runtime did in a frame: GC pause, collections by generation, JIT time and methods compiled, lock
+// contentions, MB allocated (RuntimeCounters)
+public readonly record struct RuntimeSample(double GcPauseMs, int Gen0, int Gen1, int Gen2, double JitMs, int JitMethods, long Contentions,
+    double AllocMb);
+
+// The .NET runtime's own counters, each frame's share: free to read, so every run has them
+public sealed class RuntimeCounters
+{
+    private TimeSpan _pause = GC.GetTotalPauseDuration(), _jit = System.Runtime.JitInfo.GetCompilationTime();
+    private int _gen0 = GC.CollectionCount(0), _gen1 = GC.CollectionCount(1), _gen2 = GC.CollectionCount(2);
+    private long _methods = System.Runtime.JitInfo.GetCompiledMethodCount(), _contentions = System.Threading.Monitor.LockContentionCount,
+        _allocated = GC.GetTotalAllocatedBytes();
+
+    // Since the last call
+    public RuntimeSample Sample()
+    {
+        var pause = GC.GetTotalPauseDuration();
+        var jit = System.Runtime.JitInfo.GetCompilationTime();
+        int gen0 = GC.CollectionCount(0), gen1 = GC.CollectionCount(1), gen2 = GC.CollectionCount(2);
+        long methods = System.Runtime.JitInfo.GetCompiledMethodCount(), contentions = System.Threading.Monitor.LockContentionCount,
+            allocated = GC.GetTotalAllocatedBytes();
+        var s = new RuntimeSample((pause - _pause).TotalMilliseconds, gen0 - _gen0, gen1 - _gen1, gen2 - _gen2, (jit - _jit).TotalMilliseconds,
+            (int)(methods - _methods), contentions - _contentions, (allocated - _allocated) / 1048576.0);
+        (_pause, _jit, _gen0, _gen1, _gen2, _methods, _contentions, _allocated) = (pause, jit, gen0, gen1, gen2, methods, contentions, allocated);
+        return s;
+    }
+}
+
 // A frame as frames.csv has it. Part is the part whose numbers the frame counts in, empty when none does
 public sealed record FrameRow(double Time, int Session, int Pass, double Script, string Scenario, string Part, string Phase, double FrameMs,
     ulong Present, double? GpuMs, uint Draws, long MetalMb, long FootprintMb, int Thermal, uint Shaders, uint Pipelines,
@@ -52,7 +80,8 @@ public sealed class FrameLog : IDisposable
         _store = RunStore.For(dir);
     }
 
-    public void Add(double script, string? scenario, string? part, string phase, double frameMs, FrameStats? driver, SimSample? sim)
+    public void Add(double script, string? scenario, string? part, string phase, double frameMs, FrameStats? driver, SimSample? sim,
+        RuntimeSample? runtime = null)
     {
         var columns = Columns(_since.Elapsed.TotalSeconds, _session, Pass, script, scenario, part, phase, frameMs, driver, sim);
         for (int i = 0; i < columns.Length; i++)
@@ -65,7 +94,7 @@ public sealed class FrameLog : IDisposable
                 _out.Write(columns[i] as string);
         }
         _out.WriteLine();
-        _store?.AddFrame(RunClock.Now(), columns);
+        _store?.AddFrame(RunClock.Now(), columns, runtime);
     }
 
     // A frame's values in the header's order, times rounded as the file keeps them (to 0.1 ms, the rest to the thousandth),
