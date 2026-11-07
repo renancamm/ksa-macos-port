@@ -1,4 +1,4 @@
-// The tools' summaries: KSA Metal's GPU profiler (profile) and an Instruments trace (trace).
+// The tools' summaries: the game's GPU zones (profile) and an Instruments trace (trace).
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -12,66 +12,88 @@ using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
 using KsaPort.Common;
+using KsaPort.Common.Benchmark;
 
 namespace KsaMetal.Benchmark.Cli;
 
 public static partial class Program
 {
-    // KSA Metal's GPU profiler (gpuprof.csv): per measured part, the encoders that took the most GPU time, averaged over
-    // the frames profiled. Rows are "frame,cb,encoder,type,draws,dispatches,start_us,vertex_us,fragment_us,total_us,
-    // pipelines", a "cb" row per command buffer, and "<first frame>,label,<section/part>" where a part's frames begin.
+    // The game's GPU zones (investigate profile: RunOptions.GpuZones) from the run's store: per measured part, the zones
+    // with the most own time a frame (their time less their zones'), against the GPU time the parts measured
     private static int Profile(string dir)
     {
-        var csv = Path.Combine(dir, "gpuprof.csv");
-        if (!File.Exists(csv))
+        var db = Path.Combine(dir, RunStore.GameFile);
+        if (!File.Exists(db))
         {
-            Console.Error.WriteLine($"no GPU profile at {csv}");
+            Console.Error.WriteLine($"no run's store at {db}");
             return 1;
         }
-        var labels = new List<(ulong first, string label)>();
-        var rows = new List<string[]>();
-        foreach (var line in File.ReadLines(csv).Skip(1))
+        using var store = Sqlite.Open(db, readOnly: true);
+        var parts = new List<(string Scenario, string Part, long Frames, double GpuFrame, List<(string Zone, double Self, double Total, double Calls, double P95)> Zones)>();
+        // Passes and sessions together
+        using (var q = store.Prepare("SELECT scenario, part, zone, SUM(frames), SUM(calls), SUM(total_ms), SUM(self_ms), MAX(p95_ms), zone = 'GPU' " +
+                                     "FROM zone_stats WHERE grp = 'gpu' AND pass > 0 GROUP BY scenario, part, zone ORDER BY scenario, part, SUM(self_ms) DESC"))
         {
-            var f = line.Split(',');
-            if (f.Length == 3 && f[1] == "label" && ulong.TryParse(f[0], out var first))
-                labels.Add((first, f[2]));
-            else if (f.Length == 11)
-                rows.Add(f);
-        }
-        string? LabelOf(ulong frame) => labels.LastOrDefault(l => l.first <= frame).label;
-        var md = new StringBuilder();
-        md.AppendLine("## GPU profile");
-        md.AppendLine();
-        md.AppendLine("Per measured part, the encoders that took the most GPU time, averaged over the frames profiled. An encoder is named after the " +
-                      "pipelines it ran: v/t/c and the hash of the vertex, tessellation or compute shader, +f and the fragment shader's " +
-                      "(KSA_MTL_DUMP_SPV=<dir> writes the shaders by those hashes). Profiling costs GPU time itself: compare these numbers only " +
-                      "with other profiles.");
-        foreach (var part in rows.GroupBy(r => LabelOf(ulong.Parse(r[0]))).Where(g => g.Key != null))
-        {
-            var frames = part.Select(r => r[0]).Distinct().Count();
-            double cbMs = part.Where(r => r[3] == "cb").Sum(r => double.Parse(r[9])) / frames / 1000;
-            var encoders = part.Where(r => r[3] != "cb" && double.Parse(r[9]) >= 0)
-                .GroupBy(r => (type: r[3], pipelines: r[10]))
-                .Select(g => (g.Key.type, g.Key.pipelines,
-                    us: g.Sum(r => double.Parse(r[9])) / frames,
-                    draws: g.Sum(r => double.Parse(r[4])) / frames,
-                    dispatches: g.Sum(r => double.Parse(r[5])) / frames))
-                .OrderByDescending(e => e.us).ToList();
-            double total = encoders.Sum(e => e.us);
-            md.AppendLine();
-            md.AppendLine($"### {part.Key}");
-            md.AppendLine();
-            md.AppendLine($"{frames} frames: command buffers {cbMs:F2} ms a frame, encoders {total / 1000:F2} ms (they overlap a little).");
-            md.AppendLine();
-            md.AppendLine("| Encoder | Type | µs a frame | Share | Draws | Dispatches |");
-            md.AppendLine("|---|---|---:|---:|---:|---:|");
-            foreach (var e in encoders.Take(15))
+            while (q.Step())
             {
-                var names = e.pipelines.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                string name = names.Length == 0 ? "(no pipeline)" : string.Join(" ", names.Take(2)) + (names.Length > 2 ? $" +{names.Length - 2}" : "");
-                string type = e.type switch { "r" => "render", "c" => "compute", "b" => "blit", _ => e.type };
-                md.AppendLine($"| {name} | {type} | {e.us:F0} | {e.us / total:P0} | {e.draws:F0} | {e.dispatches:F0} |");
+                var (scenario, part, zone) = (q.Text(0), q.Text(1), q.Text(2));
+                if (parts.Count == 0 || parts[^1].Scenario != scenario || parts[^1].Part != part)
+                    parts.Add((scenario, part, 0, 0, []));
+                var p = parts[^1];
+                if (q.Long(8) == 1)
+                {
+                    // The profiler's own frame: the GPU's whole frame
+                    parts[^1] = p with { Frames = q.Long(3), GpuFrame = q.Double(5) / Math.Max(1, q.Long(3)) };
+                    continue;
+                }
+                p.Zones.Add((zone, q.Double(6), q.Double(5), q.Long(4), q.Double(7)));
             }
+        }
+        if (parts.Count == 0)
+        {
+            Console.Error.WriteLine("no GPU zones in the run's store (does the app's KSA Metal have gpu_zones?)");
+            return 1;
+        }
+        // What the GPU measured for the same parts, the median of their frames
+        var measured = new Dictionary<(string, string), double>();
+        using (var q = store.Prepare("SELECT scenario, part, gpu_ms FROM frames WHERE part <> '' AND pass > 0 AND gpu_ms > 0"))
+        {
+            var all = new Dictionary<(string, string), List<double>>();
+            while (q.Step())
+            {
+                var key = (q.Text(0), q.Text(1));
+                if (!all.TryGetValue(key, out var list))
+                    all[key] = list = [];
+                list.Add(q.Double(2));
+            }
+            foreach (var (key, list) in all)
+            {
+                list.Sort();
+                measured[key] = list[list.Count / 2];
+            }
+        }
+        var md = new StringBuilder();
+        md.AppendLine("## GPU zones");
+        md.AppendLine();
+        md.AppendLine("Per measured part, the game's GPU zones, as its GPU profiler names them, with KSA Metal splitting render passes at each " +
+                      "zone so that a zone inside a pass has its own time. Own time is a zone's time less its zones'. Every zone boundary waits " +
+                      "for all the work before it, so zones run one after the other, and the profiled frame takes longer than a frame measured " +
+                      "without them (about 13 % in the Mixed Test). A zone called many times a frame reads high by about 20 µs for each call (up to " +
+                      "70), and a zone at a render " +
+                      "pass's edge carries the store and load of the pass's images: compare these numbers only with other profiles.");
+        foreach (var (scenario, part, frames, gpuFrame, zones) in parts)
+        {
+            md.AppendLine();
+            md.AppendLine($"### {scenario} {part}");
+            md.AppendLine();
+            md.AppendLine(FormattableString.Invariant($"{frames} frames: the profiled GPU frame {gpuFrame:F2} ms") +
+                          (measured.TryGetValue((scenario, part), out var gpu) ? FormattableString.Invariant($", GPU time measured {gpu:F2} ms a frame.") : "."));
+            md.AppendLine();
+            md.AppendLine("| Zone | Own ms a frame | Total ms a frame | Calls a frame | p95 ms |");
+            md.AppendLine("|---|---:|---:|---:|---:|");
+            double n = Math.Max(1, frames);
+            foreach (var z in zones.Take(20))
+                md.AppendLine(FormattableString.Invariant($"| {z.Zone} | {z.Self / n:F2} | {z.Total / n:F2} | {z.Calls / n:F1} | {z.P95:F2} |"));
         }
         File.WriteAllText(Path.Combine(dir, "profile.md"), md.ToString());
         Console.WriteLine(Path.Combine(dir, "profile.md"));

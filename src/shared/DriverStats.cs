@@ -1,6 +1,6 @@
 // What KSA Metal measures for each presented frame, read through its benchmark interface
 // (src/game/driver/diagnostics/instruments.mm: ksaMtlFrameStats, ksaMtlScreenshot, ksaMtlMarker, ksaMtlCapture,
-// ksaMtlCapturing; passdump.mm: ksaMtlPassDump, ksaMtlPassDumping, ksaMtlGpuErrors; profile.mm: ksaMtlProfileFrames;
+// ksaMtlCapturing; passdump.mm: ksaMtlPassDump, ksaMtlPassDumping, ksaMtlGpuErrors; zones.mm: ksaMtlZoneMode, ksaMtlZoneBegin, ksaMtlZoneEnd;
 // drain.mm: ksaMtlDrainOpen, ksaMtlDrain, ksaMtlDrainDropped, ksaMtlDrainClose, the records below).
 // The app ships the director with the KSA Metal it was built with, so the driver has all of it. With another Vulkan
 // driver the mod still measures CPU frame times.
@@ -41,6 +41,8 @@ public sealed record WaitRecord(double T, double Ms, ulong Present, string What)
 // An allocation (bytes positive) or a free (negative) of 16 MB or more, of a Vulkan memory type
 public sealed record MemoryRecord(double T, long Bytes, uint Type, ulong Present) : DriverRecord;
 
+public enum ZoneMode : uint { AsTheyCome, Labels, Split }
+
 public static unsafe class DriverStats
 {
     // The app's launcher puts the game folder first in the library path, so this is the driver the game uses
@@ -52,9 +54,15 @@ public static unsafe class DriverStats
     [DllImport(Driver, EntryPoint = "ksaMtlScreenshot")]
     private static extern void ScreenshotNative([MarshalAs(UnmanagedType.LPUTF8Str)] string path);
 
-    [DllImport(Driver, EntryPoint = "ksaMtlProfileFrames")]
+    [DllImport(Driver, EntryPoint = "ksaMtlZoneMode")]
     [return: MarshalAs(UnmanagedType.U1)]
-    private static extern bool ProfileFramesNative([MarshalAs(UnmanagedType.LPUTF8Str)] string label, uint count);
+    private static extern bool ZoneModeNative(uint mode);
+
+    [DllImport(Driver, EntryPoint = "ksaMtlZoneBegin")]
+    private static extern void ZoneBeginNative(nint commandBuffer, byte* name);
+
+    [DllImport(Driver, EntryPoint = "ksaMtlZoneEnd")]
+    private static extern void ZoneEndNative(nint commandBuffer);
 
     [DllImport(Driver, EntryPoint = "ksaMtlMarker")]
     private static extern void MarkerNative([MarshalAs(UnmanagedType.LPUTF8Str)] string name, [MarshalAs(UnmanagedType.U1)] bool begin);
@@ -122,8 +130,15 @@ public static unsafe class DriverStats
     // Command buffers that failed: after a hang the GPU refuses this process's work, and a dump or capture holds nothing
     public static uint GpuErrors() => Available ? GpuErrorsNative() : 0;
 
-    // The driver's GPU profiler (KSA_MTL_GPU_PROFILE) for the next frames; false when it is off
-    public static bool ProfileFrames(string label, uint count) => Available && ProfileFramesNative(label, count);
+    // How KSA Metal answers the game's GPU profiler's timestamps (zones.mm): as they come, labels only, or splitting render
+    // passes (needs KSA_MTL_GPU_ZONES=1); false when it can't
+    public static bool ZoneMode(ZoneMode mode) => Available && ZoneModeNative((uint)mode);
+
+    // A zone of the game's GPU profiler begins or ends in a recording: the name of the encoders in it (a null-terminated
+    // UTF-8 name)
+    public static void ZoneBegin(nint commandBuffer, byte* name) => ZoneBeginNative(commandBuffer, name);
+
+    public static void ZoneEnd(nint commandBuffer) => ZoneEndNative(commandBuffer);
 
     // Starts KSA Metal recording into its drain: from then on every present, every frame shown, every wait of at least
     // waitMs and every allocation of 16 MB or more; false when the driver has no drain of this layout

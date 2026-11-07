@@ -243,7 +243,6 @@ template <typename F> static VkResult submit(VkQueue queue, uint32_t submitCount
             }
             cb->endEncoder();
             [cb->mtl addCompletedHandler:^(id<MTLCommandBuffer> c) { checkCommandBufferError(c); kmtlNoteGpuTime(c); }];
-            kmtlProfSubmit(cb, cb->mtl);
             cb->submitTimestamps(cb->mtl);
             toCommit.push_back(cb->mtl);
             kmtlCountWork(cb->draws, cb->dispatches, cb->passes);

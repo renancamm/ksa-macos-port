@@ -125,9 +125,7 @@ latency | text | | | restart | driver | | | | | A CSV file of every frame's timi
 labels | bool | false | | restart | driver | | | | | Name every encoder after its pipelines, for Instruments, the Metal HUD and Xcode's frame capture.
 frame_capture | bool | false | | restart | metal:MTL_CAPTURE_ENABLED, driver | | | | | Allow Xcode frame captures, for the console's framecapture command; encoders are named too.
 gpu_errors | bool | false | | restart | driver | | | | | A command buffer that fails logs each encoder's state (completed, faulted, affected, pending); with labels the log names them.
-gpu_profile | text | | | restart | driver | | | | | A CSV file of the GPU time of every encoder, for 300 frames from present 2000.
-gpu_profile_frames | text | | gpu_profile | restart | driver | | | | | <first>,<count>: other frames for gpu_profile.
-gpu_profile_split | bool | false | gpu_profile | restart | driver | | | | | Give every draw and dispatch its own encoder, so the profiler times each one (times grow).
+gpu_zones | bool | false | | restart | driver | | | | | Time the game's GPU profiler's zones right inside render passes: a pass splits at each of its timestamps, and attachments kept in tile memory get memory of their own (more memory, times grow a little). The benchmark's profile sets it.
 watch | text | | | restart | driver | | | | | A folder: every 31 presents, a look at a sample of the presented image; when it looks broken (mostly pure white, pure black for a second, or specks of pure primary colours), the image and a pass dump go there.
 watch_white | number:0:100 | 30 | watch | restart | driver | | | | | The share of pure white, in percent, at which watch counts an image as broken (0: every image, to test it).
 dump_msl | text | | | restart | driver | | | | | A folder: write every translated shader, and the errors of those that fail to compile.

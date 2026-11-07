@@ -38,7 +38,7 @@ enum class ShotUnit { Presents, InGameFrames, InGameSeconds };
 struct Shot { double at; std::string path; };
 
 static std::mutex g_frameMutex;
-// Read without the lock by game threads (kmtlPresentCount: the throttle, stall logs, the GPU profiler)
+// Read without the lock by game threads (kmtlPresentCount: the throttle, stall logs)
 static std::atomic<uint64_t> g_presents{0};
 static uint64_t g_ingamePresent = 0;
 uint64_t kmtlPresentCount() { return g_presents; }

@@ -75,7 +75,7 @@ public static partial class Program
                              install's settings, the spread of each screenshot and part, written as the test's noise profile
                              (the benchmarks folder's noise/), which comparisons hold each screenshot and part to
           ./benchmark.sh investigate <tool> <places...> [options]
-                             a tool on places jumped to (or a whole test): profile (KSA Metal's GPU profiler: profile.md),
+                             a tool on places jumped to (or a whole test): profile (the game's GPU zones: profile.md),
                              trace (an Instruments trace; --trace-template <name>), capture (an Xcode GPU frame capture at
                              each place), hud (Apple's Metal Performance HUD), catch <clean run> (a pass dump of a picture
                              that goes wrong now and then; --catch-capture adds a frame capture), passes (a pass dump at every

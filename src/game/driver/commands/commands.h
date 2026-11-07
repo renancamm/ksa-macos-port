@@ -112,25 +112,27 @@ struct KCommandBuffer : KDispatchable {
     KPipeline* encodedPipeline = nullptr;
 
     // Timestamp queries: one counter sample per write (end of a tiny ordered encoder); writes inside a render pass
-    // are taken when the pass ends
+    // are taken when the pass ends, or split it (zones.mm)
     struct TimestampWrite { KQueryPool* pool; uint32_t query; uint32_t sample; };
     id<MTLCounterSampleBuffer> tsSamples = nil;
     uint32_t tsUsed = 0;
     std::vector<TimestampWrite> tsWrites;
     std::vector<std::pair<KQueryPool*, uint32_t>> tsDeferred;
     void writeTimestamp(KQueryPool* pool, uint32_t query);
+    void stampTimestamp(KQueryPool* pool, uint32_t query);
     void submitTimestamps(id<MTLCommandBuffer> c);
     void releaseTimestamps();
 
     // Counters for the frame log
     uint32_t draws = 0, dispatches = 0, passes = 0;
 
-    // GPU profiler (profile.mm): set while this recording is profiled, null otherwise, so the hooks cost one test
-    KProfState* prof = nullptr;
-
     // KSA_MTL_LABELS=1: the open encoder's name, from the pipelines it ran (the game sets no debug labels in its
     // release builds); Instruments, the Metal HUD and Xcode's frame capture show it
     std::string encLabel;
+    // The game's GPU profiler's open zones in this recording (ksaMtlZoneBegin), and the one the encoder's first draw or
+    // dispatch ran in, which leads its name
+    std::vector<std::string> zones;
+    std::string encZone;
     uint32_t encPipelines = 0;
     uint64_t encLastPipeline = 0;
     void notePipelineLabel(KPipeline* p);

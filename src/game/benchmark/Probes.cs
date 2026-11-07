@@ -48,8 +48,6 @@ internal static class Probes
     public static List<IProbe> For(RunOptions options, ProbeContext context)
     {
         var probes = new List<IProbe>();
-        if (options.Profile > 0)
-            probes.Add(new ProfileProbe(options.Profile, context));
         if (options.Capture)
             probes.Add(new CaptureProbe(context));
         if (options.Film > 0)
@@ -82,22 +80,6 @@ internal static class Probes
             }
             return second == null || second();
         };
-    }
-}
-
-// KSA Metal's GPU profiler on the first frames of every measured part (the game needs KSA_MTL_GPU_PROFILE=<csv>)
-internal sealed class ProfileProbe(uint frames, ProbeContext context) : IProbe
-{
-    private bool _off;
-
-    public string Name => $"profiling {frames} frames a part";
-
-    public void Opened(string scenario, string part)
-    {
-        if (_off || DriverStats.ProfileFrames($"{scenario}/{part}", frames))
-            return;
-        context.Error($"{part}: KSA Metal's GPU profiler is off (does the game have KSA_MTL_GPU_PROFILE=<csv>?)");
-        _off = true;
     }
 }
 

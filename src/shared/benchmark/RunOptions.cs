@@ -36,9 +36,12 @@ public sealed class RunOptions
     // The app played, and what the host says about the run for its record (the test, the settings, the tools...)
     public string App { get; set; } = "";
     public List<Fact> Facts { get; set; } = [];
-    // Profile that many frames of every measured part with KSA Metal's GPU profiler (the game needs
-    // KSA_MTL_GPU_PROFILE=<csv>)
-    public uint Profile { get; set; }
+    // The game's GPU zones in every part: its GPU profiler on, KSA Metal splitting render passes at its timestamps, so
+    // zones inside a pass read their own time (the game needs KSA_MTL_GPU_ZONES=1); their own cost is in the numbers
+    public bool GpuZones { get; set; }
+    // Encoders named after the game's GPU zones, for a trace or a frame capture: its GPU profiler on, KSA Metal answering
+    // its timestamps at once (the game needs KSA_MTL_LABELS=1)
+    public bool ZoneLabels { get; set; }
     // An Xcode GPU frame capture of the view at every checkpoint, <section>_<shot>.gputrace (the game needs
     // MTL_CAPTURE_ENABLED=1)
     public bool Capture { get; set; }

@@ -78,7 +78,7 @@ struct KPipeline {
         std::unique_lock<std::mutex> lock(pending->m);
         pending->cv.wait(lock, [&] { return pending->done.load(std::memory_order_acquire); });
     }
-    // GPU profiler name: shader module hashes
+    // The pipeline's name, from its shader modules' hashes (encoder labels, pass dumps, the throttle)
     uint64_t profId = 0;
     std::string profName;
     int throttle = -1;  // KSA_MTL_THROTTLE: run every N-th present (0 never, -1 always)

@@ -261,14 +261,37 @@ VKFN(void) vkCmdResolveImage(VkCommandBuffer, VkImage, VkImageLayout, VkImage, V
 // ---------------------------------------------------------------------------------------------------------------
 // Queries and debug labels
 
-// Timestamps. Apple GPUs sample counters only at encoder stage boundaries, so a timestamp is the end of a tiny blit
-// encoder ordered after everything before it. Used only while the game's profiler is open.
+// Timestamps (the game's GPU profiler; zones.mm says how they are answered)
 
 void KCommandBuffer::writeTimestamp(KQueryPool* pool, uint32_t query) {
+    uint32_t mode = kmtlZoneMode();
+    // Labels: answered at once, no encoder and no wait
+    if (mode == kZonesLabels) {
+        std::lock_guard<std::mutex> lock(pool->m);
+        if (query < pool->count) {
+            pool->values[query] = 0;
+            pool->available[query] = 1;
+        }
+        pool->cv.notify_all();
+        return;
+    }
     if (render) {
+        // Split: the pass ends here and goes on after the timestamp, which waits for its first half and is waited for by
+        // its second (beginRender's roles)
+        if (mode == kZonesSplit && deferredStores && passDesc) {
+            suspendRender();
+            stampTimestamp(pool, query);
+            resumeRender();
+            return;
+        }
         tsDeferred.push_back({pool, query});
         return;
     }
+    stampTimestamp(pool, query);
+}
+
+// A tiny blit encoder after everything recorded so far, whose end is the timestamp
+void KCommandBuffer::stampTimestamp(KQueryPool* pool, uint32_t query) {
     if (!tsSamples) {
         tsSamples = kmtlAcquireTimestamps(device, "vkCmdWriteTimestamp");
         if (!tsSamples) {
@@ -282,6 +305,9 @@ void KCommandBuffer::writeTimestamp(KQueryPool* pool, uint32_t query) {
         return;
     }
     endEncoder();
+    // It waits for everything before it, MSAA resolves too: its wait clears what later encoders would wait for
+    // (waitForResolves), so they would no longer wait for those
+    waitForAllResolves();
     MTLBlitPassDescriptor* d = [MTLBlitPassDescriptor blitPassDescriptor];
     d.sampleBufferAttachments[0].sampleBuffer = tsSamples;
     d.sampleBufferAttachments[0].startOfEncoderSampleIndex = tsUsed;

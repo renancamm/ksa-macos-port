@@ -257,9 +257,9 @@ internal static class Tests
         Check(Met("ray_tracing"), "ray_tracing with ray queries");
         values["ray_queries"] = "false";
         Check(!Met("ray_tracing"), "ray_tracing without ray queries");
-        Check(!Met("gpu_profile_frames"), "gpu_profile_frames without gpu_profile");
-        values["gpu_profile"] = "~/profile.csv";
-        Check(Met("gpu_profile_frames"), "gpu_profile_frames with gpu_profile");
+        Check(!Met("watch_white"), "watch_white without watch");
+        values["watch"] = "~/watch";
+        Check(Met("watch_white"), "watch_white with watch");
         Check(!Met("lighter_plume_shadows", game: false), "lighter_plume_shadows without the game's plume trail shadows");
         values["unload_far_terrain"] = "false";
         Check(!Met("load_terrain_by_altitude"), "load_terrain_by_altitude without unload_far_terrain");
@@ -301,7 +301,7 @@ internal static class Tests
         var variables = new Dictionary<string, string?>
         {
             ["KSA_PORT_SETTINGS"] = file, ["KSA_PORT_OUTSIDE"] = "KSA_MTL_RENDER_SCALE", ["KSA_MTL_RENDER_SCALE"] = "Always",
-            ["KSA_MTL_FIT_HUD_TO_DISPLAY"] = "0", ["KSA_MTL_UPSCALING"] = "metalfx", ["KSA_MTL_TERRAIN_CACHE"] = "0", ["KSA_MTL_GPU_PROFILE_SPLIT"] = "1",
+            ["KSA_MTL_FIT_HUD_TO_DISPLAY"] = "0", ["KSA_MTL_UPSCALING"] = "metalfx", ["KSA_MTL_TERRAIN_CACHE"] = "0", ["KSA_MTL_WATCH_WHITE"] = "0",
         };
         var before = variables.Keys.ToDictionary(k => k, Environment.GetEnvironmentVariable);
         foreach (var (name, value) in variables)
@@ -317,7 +317,7 @@ internal static class Tests
             Equal("1.0", Setting("render_scale").Running, "an invalid variable: the default");
             Equal("KSA_MTL_RENDER_SCALE=Always", Setting("render_scale").Outside, "set outside");
             Equal(null, Setting("fit_hud_to_display").Outside, "set from the file");
-            Equal("false", Setting("gpu_profile_split").Running, "a variable whose setting's needs aren't met: the default");
+            Equal("30", Setting("watch_white").Running, "a variable whose setting's needs aren't met: the default");
             Equal(1, warnings.Count, "warnings");
         }
         finally
