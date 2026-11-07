@@ -54,7 +54,7 @@ internal static partial class MacPortTab
 
     // The wordmark, plain ASCII that needs a font whose characters are all one width (the player can choose another: the
     // words alone then), with the port's version and what the tab is for on the right, as far as the width allows
-    private static readonly string[] Description = ["Settings for the Mac port."];
+    private static readonly string[] Description = ["Mac-only settings that improve", "compatibility and performance."];
     private static readonly string[] Wordmark =
     [
         @" __  __   _   ___   ___  ___  ___ _____",
