@@ -32,7 +32,7 @@ holds the game's shaders, so it stays on the Mac that recorded it and never goes
 | File | Holds |
 |---|---|
 | `<module hash>.spv` | a shader module, as the game created it |
-| `<translation key>.in` | the rest of the inputs: entry point, stage, options, set layouts, specialization data, and the settings that shape a translation (`shader_constant_memory`, `skip_shadows_on_unlit_sides`, `spec`) |
+| `<translation key>.in` | the rest of the inputs: entry point, stage, options, set layouts, specialization data, and the settings that shape a translation (`shader_constant_memory`, `skip_shadows_on_unlit_sides`, `shared_shadow_samples`, `spec`) |
 | `<translation key>.out` | the result, as the shader cache stores it |
 
 The test recomputes each translation's key from its `.in` file first: a different key means the record leaves out an

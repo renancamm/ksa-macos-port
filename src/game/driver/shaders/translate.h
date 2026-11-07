@@ -53,8 +53,8 @@ struct KCorpusEntry {
     bool hasSpec = false;
     KStageOptions options;
     // The settings that shape a translation, as they were when it was recorded (KSA_MTL_SHADER_CONSTANT_MEMORY,
-    // KSA_MTL_SKIP_SHADOWS_ON_UNLIT_SIDES, KSA_MTL_SPEC)
-    bool constantArgumentBuffers = true, unlitShadowSkip = true;
+    // KSA_MTL_SKIP_SHADOWS_ON_UNLIT_SIDES, KSA_MTL_SHARED_SHADOW_SAMPLES, KSA_MTL_SPEC)
+    bool constantArgumentBuffers = true, unlitShadowSkip = true, sharedShadowSamples = true;
     std::string specPresets;
     KTranslated recorded;
 };

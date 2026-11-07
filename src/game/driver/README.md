@@ -40,6 +40,7 @@ These switches turn a feature off or change a default, to work around a problem 
 | `compact_ray_tracing_memory` | on: each acceleration structure sits in the buffer the game made for it, instead of memory of its own while that buffer stays unused (the terrain's structures for clutter placement are about 170 MB each); off: try it when grass or the cockpit look wrong |
 | `dedicated_large_buffers` | off: buffers of 4 MB or more share Vulkan Memory Allocator's blocks (up to 256 MB) like smaller ones, so memory the game frees stays in its block (the Planetary Tour: about 0.1 GB more at its peak, 0.4 GB more from leaving Earth until another world's terrain is built); try it when something looks wrong |
 | `skip_shadows_on_unlit_sides` | off: the port's shader edits that skip shadows where there is no light ([Shaders](#from-vulkan-to-metal)) look them up everywhere, as the game does; slower, try it when a shadow looks wrong |
+| `shared_shadow_samples` | off: every pixel filters the terrain's sun shadow with all its samples, as the game does, instead of sharing them with its 2x2 quad ([Shaders](#from-vulkan-to-metal)); slower, try it when a shadow on the ground looks wrong |
 | `early_fragment_tests` | off: no second state that tests depth first for pipelines whose fragment shader stores to an image ([Shaders](#from-vulkan-to-metal)): the hooks' Skip Hidden Vessel Parts has nothing to switch to |
 | `texture_budget_mb` | the GPU memory budget in MB reported to the game, which sizes its texture streaming from it (0, the default: what Metal recommends for this Mac) |
 | `frame_interpolation` | on: frame interpolation ([MetalFX](#from-vulkan-to-metal)) |
@@ -207,6 +208,14 @@ godrays', at sea at night, from 19.9 ms to 18.8; the grass's and the buildings' 
 grass from 26.5 ms to 24.9 and one of the launch pad from 23.3 ms to 22.4. All of them test a specialization constant
 the script declares, `PORT_SKIP_UNLIT_SHADOWS` (id 900, true by default), which the driver sets to false in every
 shader with `skip_shadows_on_unlit_sides` off: the game's code again, without porting the game anew.
+
+The terrain's sun shadow map is filtered with 16 to 32 samples (PCSS) or a PCF kernel for every pixel of the terrain
+and the grass, though its texels are metres wide. With the edits' shared samples, the pixels of a 2x2 quad share them:
+each takes every fourth and the quad sums (copies of the game's filters, held to the game's by a check), a 2-pixel blur
+of a shadow metres wide. On an M5 near the ground (the Tour's earth6, two games a side) the game's own settings take
+1.1 ms less of 32.8, the Quality preset 1.1 of 29.8, Balanced 0.5 of 20.6; the Mixed Test's shots are the same, and
+still shots of the Tour's Earth move as between two runs of the game's own. The
+constant is `PORT_SHARED_SHADOW_TAPS` (id 901), false with `shared_shadow_samples` off.
 
 Two more edits skip work that changes nothing, with the same image. The clouds' noise blends three lookups of a 3D
 texture at every sample, weighted by where the sample lies in a triangle grid, and near a triangle's edges and corners
