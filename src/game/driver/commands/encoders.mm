@@ -173,11 +173,14 @@ KUploadRing::Place KUploadRing::alloc(KDevice* dev, size_t size) {
 // ---------------------------------------------------------------------------------------------------------------
 // Encoders
 
-// The encoder's name: its first pipeline (shader hashes, as the GPU profiler names them), how many others it ran, and
-// a render pass's size
+// The encoder's name: the game's GPU zone it began in (zones.mm), its first pipeline (shader hashes, the pipeline's
+// name), how many others it ran, and a render pass's size
 void KCommandBuffer::notePipelineLabel(KPipeline* p) {
     if (!p || p->profId == encLastPipeline) return;
-    if (encLabel.empty()) encLabel = p->profName;
+    if (encLabel.empty()) {
+        encLabel = p->profName;
+        if (!zones.empty()) encZone = zones.back();
+    }
     encPipelines++;
     encLastPipeline = p->profId;
 }
@@ -186,10 +189,12 @@ template <typename E> void KCommandBuffer::nameEncoder(E enc) {
     if (!encLabel.empty()) {
         std::string name = encLabel;
         if (encPipelines > 1) name += " +" + std::to_string(encPipelines - 1);
+        if (!encZone.empty()) name = encZone + ": " + name;
         if (render) name = std::to_string(rtWidth) + "x" + std::to_string(rtHeight) + " " + name;
         enc.label = [NSString stringWithUTF8String:name.c_str()];
     }
     encLabel.clear();
+    encZone.clear();
     encPipelines = 0;
     encLastPipeline = 0;
 }
@@ -202,7 +207,7 @@ void KCommandBuffer::endEncoder() {
             if (!t) continue;
             bool tileOnly = t.storageMode == MTLStorageModeMemoryless;
             if (suspending && tileOnly)
-                KERR_ONCE("render pass suspended with a memoryless attachment (a tessellated draw, or KSA_MTL_GPU_PROFILE_SPLIT=1): "
+                KERR_ONCE("render pass suspended with a memoryless attachment (a tessellated draw): "
                           "its contents are lost");
             MTLStoreAction suspended = dumpResolves && passDesc.colorAttachments[i].resolveTexture ? MTLStoreActionStoreAndMultisampleResolve : MTLStoreActionStore;
             [render setColorStoreAction:suspending && !tileOnly ? suspended : colorStores[i] atIndex:i];
@@ -251,7 +256,6 @@ void KCommandBuffer::endEncoder() {
         blit = nil;
     }
     encRoles = 0;
-    kmtlProfEncoderEnded(this);
 }
 
 // Before a compute or blit encoder: MSAA resolves of earlier render passes are not covered by their fences (on Apple
@@ -278,7 +282,7 @@ id<MTLComputeCommandEncoder> KCommandBuffer::computeEncoder(uint32_t roles) {
     if (compute && (encRoles & roles) == roles) return compute;
     endEncoder();
     waitForResolves(roles);
-    compute = kmtlProfComputeEncoder(this);
+    compute = [mtl computeCommandEncoderWithDispatchType:MTLDispatchTypeSerial];
     waitForRoles(compute, roles);
     computeSetsDirty = ~0u;
     computePushDirty = true;
@@ -289,7 +293,7 @@ id<MTLBlitCommandEncoder> KCommandBuffer::blitEncoder() {
     if (blit) return blit;
     endEncoder();
     waitForResolves(kClassTransfer);
-    blit = kmtlProfBlitEncoder(this);
+    blit = [mtl blitCommandEncoder];
     waitForRoles(blit, kClassTransfer);
     return blit;
 }
@@ -308,7 +312,8 @@ void KCommandBuffer::beginRender(MTLRenderPassDescriptor* rp, uint32_t w, uint32
             dumpDepthLoad = rp.depthAttachment.loadAction;
         }
     }
-    deferredStores = kmtlConfig().tessellation;
+    // A tessellated draw, or a game timestamp with gpu_zones, suspends the pass and resumes it
+    deferredStores = kmtlConfig().tessellation || kmtlConfig().gpuZones;
     if (deferredStores) {
         if (!resuming) {
             for (int i = 0; i < 8; i++) colorStores[i] = rp.colorAttachments[i].storeAction;
@@ -321,7 +326,6 @@ void KCommandBuffer::beginRender(MTLRenderPassDescriptor* rp, uint32_t w, uint32
         if (rp.stencilAttachment.texture) rp.stencilAttachment.storeAction = MTLStoreActionUnknown;
         passDesc = rp;
     }
-    kmtlProfRenderPass(this, rp);
     render = [mtl renderCommandEncoderWithDescriptor:rp];
     if (!render) {
         KERR("render encoder creation failed (%ux%u)", w, h);
@@ -404,7 +408,6 @@ static void dropRecording(KCommandBuffer* cb) {
         cb->mtl = nil;
     }
     cb->releaseTimestamps();
-    kmtlProfDrop(cb);
 }
 
 VKFN(void) vkDestroyCommandPool(VkDevice, VkCommandPool pool, const VkAllocationCallbacks*) {
@@ -469,7 +472,7 @@ VKFN(VkResult) vkBeginCommandBuffer(VkCommandBuffer commandBuffer, const VkComma
     } else {
         cb->mtl = [cb->queue->mtl commandBuffer];
     }
-    kmtlProfBegin(cb);
+    cb->zones.clear();
     cb->beginCommands();
     cb->resetState();
     cb->ring.reset();
@@ -480,6 +483,11 @@ VKFN(VkResult) vkEndCommandBuffer(VkCommandBuffer commandBuffer) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
     if (cb->inRenderPass) KERR("vkEndCommandBuffer inside a render pass");
+    // The game closes every zone of a frame: one left open means a zone's end was not seen (the benchmark's postfix
+    // missed a call the JIT inlined), and the encoders after it carry the wrong zone's name
+    if (!cb->zones.empty())
+        KERR_ONCE("zone labels: %zu zones left open at the end of a recording, from \"%s\": encoder names may name the wrong zone",
+                  cb->zones.size(), cb->zones.front().c_str());
     cb->endEncoder();
     cb->joinCommands();
     return VK_SUCCESS;

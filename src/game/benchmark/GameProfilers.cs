@@ -1,7 +1,9 @@
 // The game's own profilers as the director's zones (ZoneLog, src/shared/benchmark/Zones.cs): switched on while a run plays,
 // and read every frame for the frames they finished since. Sources: the main thread's (Profiler.MainThread, a frame each
 // game frame) and the job runners' of the game's job systems (JobSystems.Profilers: the orbit and vehicle solvers and the
-// others, a frame each game frame they had jobs; the game arms them on the main thread before each batch). The worker pools'
+// others, a frame each game frame they had jobs; the game arms them on the main thread before each batch), and with the
+// game's GPU zones (GpuZones.cs, RunOptions.GpuZones) its GPU profiler's (group gpu: a frame each game frame, published
+// once the GPU has run it, so a frame or two late, its start the time it was read). The worker pools'
 // profilers stay off: switched while a worker is in a burst, the game's profiler is left with a scope open and throws on
 // that worker. Each source's switches are put back at the end. KSA_BENCH_ZONES=0 leaves them all off, to measure what
 // they cost.
@@ -37,7 +39,7 @@ internal sealed class GameProfilers
 
     public ZoneLog Zones { get; }
 
-    private GameProfilers(RunStore? store, Action<string> log)
+    private GameProfilers(RunStore? store, Action<string> log, bool gpu)
     {
         _log = log;
         _offset = RunClock.Now() - Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
@@ -46,6 +48,8 @@ internal sealed class GameProfilers
         foreach (var scheduler in JobSystems.Profilers)
             foreach (var runner in scheduler.Runners)
                 _sources.Add(new Source(scheduler.Name, runner));
+        if (gpu)
+            _sources.Add(new Source("gpu", Profiler.Gpu));
         foreach (var s in _sources)
         {
             s.Profiler.IsActive = true;
@@ -53,14 +57,15 @@ internal sealed class GameProfilers
         }
     }
 
-    // On for a run, unless KSA_BENCH_ZONES=0; null when off or when this game's profilers can't be reached
-    public static GameProfilers? Start(RunStore? store, Action<string> log)
+    // On for a run, unless KSA_BENCH_ZONES=0, with the GPU profiler's zones or without; null when off or when this game's
+    // profilers can't be reached
+    public static GameProfilers? Start(RunStore? store, Action<string> log, bool gpu)
     {
         if (Environment.GetEnvironmentVariable("KSA_BENCH_ZONES") == "0")
             return null;
         try
         {
-            return new GameProfilers(store, log);
+            return new GameProfilers(store, log, gpu);
         }
         catch (Exception e) when (e is MissingMemberException or TypeLoadException or NullReferenceException)
         {

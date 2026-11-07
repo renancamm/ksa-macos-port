@@ -264,7 +264,7 @@ internal static class Tests
         new RunOptions
         {
             Test = "mixed", Mode = "views",
-            Facts = [new("Power", "Battery Power"), new("Low Power Mode", "on"), new("KSA Metal switches", "KSA_MTL_GPU_PROFILE=x.csv"), new("Tools", "Instruments"),
+            Facts = [new("Power", "Battery Power"), new("Low Power Mode", "on"), new("KSA Metal switches", "KSA_MTL_GPU_ZONES=1"), new("Tools", "Instruments"),
                 new("port settings", "defaults")]
         }.Write(dir);
         var events = new EventLog(dir);
@@ -282,7 +282,7 @@ internal static class Tests
         var notes = Notes(record);
         Contains(notes, "ran on battery", "battery");
         Contains(notes, "Low Power Mode was on", "Low Power Mode");
-        Contains(notes, "KSA Metal switches were set (KSA_MTL_GPU_PROFILE=x.csv)", "KSA Metal switches");
+        Contains(notes, "KSA Metal switches were set (KSA_MTL_GPU_ZONES=1)", "KSA Metal switches");
         Contains(notes, "measured with Instruments", "tools");
         Contains(notes, "the GPU was busy before the run (90 %)", "a busy GPU");
         Contains(notes, "crash report, dotnet-2026-10-26.ips", "a crash report");

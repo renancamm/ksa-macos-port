@@ -90,6 +90,8 @@ public partial class Director
     private RunStore? _store;
     // The game's profilers (GameProfilers) and the .NET runtime's counters, while a run plays
     private GameProfilers? _profilers;
+    // The game's GPU zones (GpuZones.cs), with RunOptions.GpuZones or ZoneLabels
+    private GpuZones? _gpuZones;
     private RuntimeCounters? _runtime;
     // The run's triggers (Triggers.cs): which frames are kept as moments, what is caught, when the run stops
     private TriggerRunner? _triggers;
@@ -287,7 +289,8 @@ public partial class Director
         _store = RunStore.For(_outDir);
         // Waits from a millisecond on: shorter ones are the driver's ordinary work
         _drain = DriverStats.OpenDrain(1);
-        _profilers = GameProfilers.Start(_store, Log);
+        _gpuZones = GpuZones.Start(_options, Log);
+        _profilers = GameProfilers.Start(_store, Log, _gpuZones?.Split == true);
         _runtime = new RuntimeCounters();
         var context = new ProbeContext(_outDir, Error, Log);
         _probes = Probes.For(_options, context);
@@ -643,12 +646,19 @@ public partial class Director
         _drain = false;
     }
 
-    // The game's profilers' last frames and moments written, and their switches as they were
+    // The game's profilers' last frames and moments written, and their switches and KSA Metal's zone mode as they were
     private void StopProfilers()
     {
-        var profilers = _profilers;
-        _profilers = null;
-        profilers?.Stop();
+        var (profilers, zones) = (_profilers, _gpuZones);
+        (_profilers, _gpuZones) = (null, null);
+        try
+        {
+            profilers?.Stop();
+        }
+        finally
+        {
+            zones?.Stop();
+        }
     }
 
     // The run failed with an exception: what it switched on in the game and its driver, off again, whatever else fails

@@ -119,7 +119,6 @@ inline uint32_t vertexBufferIndex(uint32_t binding) { return kVertexBufferTop - 
 struct KDevice;
 struct KQueue;
 struct KSampler;
-struct KProfState;  // GPU profiler state of a command buffer (profile.mm)
 
 // ---------------------------------------------------------------------------------------------------------------
 // Dispatchable objects. The loader-magic word is kept first so a pointer that any Khronos tool inspects looks sane.

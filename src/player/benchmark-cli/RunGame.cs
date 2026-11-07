@@ -179,10 +179,9 @@ public static partial class Program
             var options = new RunOptions();
             if (_profile)
             {
-                // Nothing profiled until the director opens a part
-                env["KSA_MTL_GPU_PROFILE"] = Path.Combine(_out, "gpuprof.csv");
-                env["KSA_MTL_GPU_PROFILE_FRAMES"] = "0,0";
-                options.Profile = 60;
+                // KSA Metal splits render passes at the game's GPU zones, with memory for every attachment
+                env["KSA_MTL_GPU_ZONES"] = "1";
+                options.GpuZones = true;
             }
             if (_hud)
             {
@@ -202,6 +201,8 @@ public static partial class Program
                 env["MTL_CAPTURE_ENABLED"] = env["KSA_MTL_LABELS"] = "1";
                 options.Capture = true;
             }
+            // Encoders named after the game's GPU zones, where the tool shows their names
+            options.ZoneLabels = env.ContainsKey("KSA_MTL_LABELS");
             // The triggers, the defaults among them; catch's own look at every 31st image besides, KSA Metal's watch
             options.On = _rules.Select(r => r.ToString()).ToList();
             options.Against = _catch;

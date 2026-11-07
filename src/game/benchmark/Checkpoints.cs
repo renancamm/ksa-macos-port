@@ -216,7 +216,7 @@ public partial class Director
     }
 
     // A measured part opens: its event (with the game's clock and the physics' substeps then, where a timed part's numbers
-    // start from), a signpost interval for traces, and the probes (the GPU profiler's frames)
+    // start from), a signpost interval for traces, and the probes
     private void Opened(Window window)
     {
         var sim = ReadSim();

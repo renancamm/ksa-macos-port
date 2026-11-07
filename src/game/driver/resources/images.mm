@@ -109,8 +109,9 @@ VKFN(void) vkDestroyImage(VkDevice, VkImage image, const VkAllocationCallbacks*)
 }
 
 // Transient attachments live only in tile memory: Metal memoryless textures, outside the heaps; the memory the game
-// binds them to is a token allocation
+// binds them to is a token allocation. Not with gpu_zones, whose splits store and load every attachment (zones.mm)
 static bool memoryless(const VkImageCreateInfo& ci) {
+    if (kmtlConfig().gpuZones) return false;
     const VkImageUsageFlags attachmentOnly = VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                                              VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
     return (ci.usage & VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT) && !(ci.usage & ~attachmentOnly) && ci.tiling == VK_IMAGE_TILING_OPTIMAL;

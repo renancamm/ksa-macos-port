@@ -340,11 +340,11 @@ public static partial class Program
             }
             if (_profile)
             {
-                if (!DriverHas("ksaMtlProfileFrames"))
-                    Die("this app's KSA Metal has no GPU profiler: update it with ./port.sh.");
+                if (!DriverHas("ksaMtlZoneMode"))
+                    Die("this app's KSA Metal can't time the game's GPU zones: update it with ./port.sh.");
                 if (_hud)
                     Die("--profile and --hud can't run together: both use the GPU's counters.");
-                _tools.Add("GPU profiler");
+                _tools.Add("the game's GPU zones");
             }
             if (_hud)
                 _tools.Add("Metal HUD");

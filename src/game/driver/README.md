@@ -119,9 +119,7 @@ The debugging settings, used the same way:
 | `fx_shots` | a folder: now and then, a PNG of what MetalFX made, an interpolated frame with the frames around it |
 | `latency` | a CSV file: per frame, when it began (when the game's wait for an earlier frame ended), was presented, was done on the GPU and was shown, how long it waited, and whether pacing ended the wait |
 | `stalls` | milliseconds: log what blocks the game longer than that: waits for fences, drawables and submits, residency set commits (with what they added), command buffers that started late on the GPU, and allocations of 16 MB or more, each with the present it falls in |
-| `gpu_profile` | a CSV file: the GPU time of every encoder, for 300 frames from present 2000 |
-| `gpu_profile_frames` | `<first>,<count>`: other frames for `gpu_profile` |
-| `gpu_profile_split` | on: give every draw and dispatch its own encoder, so the profiler times each one (times grow: each draw stores and loads its attachments) |
+| `gpu_zones` | on: the game's GPU profiler's zones timed right inside render passes, when the benchmark asks for it (`ksaMtlZoneMode`): a pass splits at each of the profiler's timestamps, and transient attachments get memory of their own, since a split stores and loads them (more memory; times grow a little). The benchmark's `profile` sets it |
 | `labels` | on: name every encoder after its pipelines (render pass size, shader hashes), for Instruments, the Metal HUD and Xcode's frame capture; on with `frame_capture` too |
 | `frame_capture` | on: Xcode frame captures are allowed (it sets Apple's `MTL_CAPTURE_ENABLED`) |
 | `gpu_errors` | on: a failed command buffer logs each encoder's state (completed, faulted, affected, pending); with `labels` the log names them |
@@ -136,7 +134,7 @@ Metal's own tools work too: `MTL_HUD_ENABLED=1` shows Apple's performance overla
 `MTL_SHADER_VALIDATION=1` check API use and catch out-of-bounds memory access in shaders (slow).
 
 The benchmark's mod and the hooks talk to KSA Metal through the only functions it exports besides Vulkan's, in
-`diagnostics/instruments.mm`, `diagnostics/drain.mm`, `diagnostics/profile.mm`, `diagnostics/passdump.mm`,
+`diagnostics/instruments.mm`, `diagnostics/drain.mm`, `diagnostics/zones.mm`, `diagnostics/passdump.mm`,
 `pipelines/stages.mm` and `presentation/swapchain.mm`:
 
 | Function | |
@@ -148,11 +146,12 @@ The benchmark's mod and the hooks talk to KSA Metal through the only functions i
 | `ksaMtlPassDump`, `ksaMtlPassDumping` | the next frame's colour attachments after each draw of a render pass (the first 64, then every 16th) and at its end, the images at the frame's end that it can read, as PNGs (NaN magenta, infinity cyan), and the first 64 KB of the buffers bound for each draw, with their numbers and heap places in `passes.txt`, which says why others are left out; that frame's passes don't overlap, so a clean dump doesn't rule out a missing barrier. The second says whether they are still being written |
 | `ksaMtlGpuErrors` | how many command buffers failed; after a hang the GPU refuses the process's work, and pass dumps refuse to start |
 | `ksaMtlCapture`, `ksaMtlCapturing` | an Xcode GPU frame capture of the next frames (with `MTL_CAPTURE_ENABLED=1`), and whether it is still being written |
-| `ksaMtlProfileFrames` | the GPU profiler (`gpu_profile`) on the next frames, under a label |
+| `ksaMtlZoneMode` | how the game's GPU profiler's timestamps are answered: as they come (each one a tiny encoder that waits for all the work before it; one inside a render pass is taken at the pass's end, so a zone inside a pass reads about 0), labels only (answered at once, no encoder), or split (a render pass splits at each one; needs `gpu_zones`) |
+| `ksaMtlZoneBegin`, `ksaMtlZoneEnd` | a zone of the game's GPU profiler begins or ends in a recording; with `labels`, each encoder is named after the zone its first draw or dispatch ran in |
 | `ksaMtlEarlyFragmentTests` | whether draws use the pipelines' states that test depth first (below); the hooks' Skip Hidden Vessel Parts sets it at the start of a frame |
 | `ksaMtlHdrNits` | the game's HDR Paper White and HDR Peak Brightness in nits, which HDR output maps to the display (below); the hooks pass them when the game applies its Display settings |
 
-The benchmark's tools `profile`, `trace`, `capture` and `hud` use the first five.
+The benchmark's tools `profile`, `trace`, `capture` and `hud` use them too.
 
 ## From Vulkan to Metal
 
@@ -370,7 +369,7 @@ share is in that folder's header too, under a heading that says so (`stages.h` f
 | `diagnostics/instruments.mm` | what is measured at each present: frame log, screenshots, exits, the benchmark's interface, frame captures, signposts |
 | `diagnostics/drain.mm` | the benchmark's drain: what is measured, as records for its run's store |
 | `diagnostics/passdump.mm` | one frame's images, pass by pass (`ksaMtlPassDump`) |
-| `diagnostics/profile.mm` | the GPU profiler |
+| `diagnostics/zones.mm` | the game's GPU profiler: its timestamps' sample buffers and how they are answered, encoders named after its zones |
 | `tests/` | the tests that run without the game |
 | `CMakeLists.txt`, `exports.txt` | the build: sources, flags, and the symbols the library exports |
 

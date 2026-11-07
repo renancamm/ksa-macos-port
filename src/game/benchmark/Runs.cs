@@ -79,12 +79,14 @@ public static class Runs
     private static string Resources =>
         Path.GetFullPath(Path.Combine(Path.GetDirectoryName(typeof(Runs).Assembly.Location)!, ".."));
 
-    // Called by the hooks once they call AfterFrame after every frame: what the hooks lend, and the run that starts
-    // with the game (KSA_BENCH_OUT). Returns what the log says.
+    // Called by the hooks once they call AfterFrame after every frame: what the hooks lend (their log, their summary, the
+    // game's restart, and a postfix on a method of the game, which a run puts in only when it asks for it), and the run
+    // that starts with the game (KSA_BENCH_OUT). Returns what the log says.
     public static string Install(Action<string> log, Func<string> hooksSummary,
-        Action<IReadOnlyDictionary<string, string>>? restart)
+        Action<IReadOnlyDictionary<string, string>>? restart, Action<System.Reflection.MethodBase, System.Reflection.MethodInfo> postfix)
     {
         _log = log;
+        GpuZones.Patch = postfix;
         RunStore.Log = log;
         _hooksSummary = hooksSummary;
         _restart = restart;

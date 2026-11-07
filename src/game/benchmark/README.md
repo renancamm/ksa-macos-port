@@ -147,7 +147,7 @@ tool on. A place is a screenshot's name; a whole test works for the tools that d
 
 | Tool | |
 |---|---|
-| `profile` | KSA Metal's GPU profiler on the first 60 frames of every measured part: `profile.md` lists, per part, the encoders that cost the most GPU time, named by their shader hashes. The timestamps span each encoder from start to end, waits included, so they show where to look rather than exact costs |
+| `profile` | the game's own GPU zones in every measured part ("Clouds Raymarching", "Ocean", "Stars"): KSA Metal splits render passes at each zone, so a zone inside a pass gets its own time, and `profile.md` lists, per part, the zones with the most own time a frame; they are in the run's store too (`zone_stats`, group `gpu`). Every zone boundary waits for all the work before it, so a profiled run's GPU time is about 13 % higher than a run's without (the Mixed Test), a zone called many times a frame reads high by about 20 µs for each call (up to 70), and a zone at a render pass's edge carries the store and load of the pass's images. Against an Instruments trace of the same frames, the zones called once a frame read a median 4 % high, 52 of 56 within 10 % (four places of the Tour) |
 | `trace` | an Instruments trace of the places (the Metal System Trace template, or another with `--trace-template <name>`), each measured part marked under Points of Interest; `trace.md` sums up the GPU time per part by channel (compute, vertex, fragment). Needs Xcode, 10 GB free, and places |
 | `capture` | an Xcode GPU frame capture at each place: every draw and dispatch, the resources, the shader profiler and debugger. Needs places, 20 GB free |
 | `hud` | Apple's Metal Performance HUD over the game, its per-frame log in `hud.log`; the HUD's menu, in the menu bar while the game runs, writes its reports to `hud/`. Not with `profile`: both use the GPU's counters |
@@ -157,9 +157,12 @@ tool on. A place is a screenshot's name; a whole test works for the tools that d
 | `camera-log` | the camera's place every frame in `trace.csv`, to check its moves are smooth |
 | `hold` | jump to one place and stay there, paused, until you quit the game: for a close look with Apple's overlay or Xcode |
 
-With `trace`, `capture` and `hud`, KSA Metal names every encoder after its pipelines (the `labels` setting), so the
-tools show `1280x800 v1658c4ba926081e2+f7e01e1b174a96688 +1` (the render pass's size, the vertex and fragment shaders'
-hashes, how many other pipelines it ran) instead of an anonymous encoder.
+With `trace`, `capture` and `hud`, KSA Metal names every encoder after the game's GPU zone it began in and its
+pipelines (the `labels` setting), so the tools show `1280x800 Clouds Upscaling: v1658c4ba926081e2+f7e01e1b174a96688 +1`
+(the render pass's size, the zone, the vertex and fragment shaders' hashes, how many other pipelines it ran) instead of
+an anonymous encoder. An encoder that runs several zones carries the first one's name; with `KSA_MTL_GPU_ZONES=1` in
+front of `benchmark.sh`, every zone is an encoder of its own and the run's store has their times as well, to set the
+two side by side.
 
 ```bash
 # Where does jupiter2's GPU time go?
@@ -267,6 +270,7 @@ table when it starts. Around it:
 | `Here.cs` | the tab's recording of the player's own game (`RunOptions.Here`): no script, one part named `here`, everything a run records, a screenshot at its start |
 | `Triggers.cs` | the run's [triggers](#triggers): every frame and after every checkpoint's screenshot, their conditions looked at and their actions run |
 | `GameProfilers.cs` | the game's own profilers, on while a run plays and read every frame into the run's store |
+| `GpuZones.cs` | the game's GPU zones for `profile` (KSA Metal splitting render passes at them) and encoders named after them for `trace`, `capture` and `hud` |
 | `World.cs` | a new game's world, and the sea's waves settled at once for a view standing still |
 | `Explore.cs` | `explore`'s console command |
 | `Runs.cs` | the runs in the game: those `benchmark.sh` starts, those of the Mac Port tab, and its watchdog |
@@ -332,7 +336,7 @@ V-Sync), and every allocation or free of 16 MB or more (`memory`). Each frame al
 pause, collections, JIT time and methods, lock contentions, MB allocated.
 
 During a run the director switches on the game's own profilers, the main thread's and the job runners' (orbit and vehicle
-solvers and the others), and reads them every frame ([`GameProfilers.cs`](GameProfilers.cs),
+solvers and the others), with `profile` its GPU profiler too (group `gpu`, [`GpuZones.cs`](GpuZones.cs)), and reads them every frame ([`GameProfilers.cs`](GameProfilers.cs),
 [`../../shared/benchmark/Zones.cs`](../../shared/benchmark/Zones.cs)): `zone_stats` has every zone of each part, its total
 and own time, its median, 95th percentile and worst in a frame, and what it allocated. A frame a trigger keeps is a moment
 (`moments`; by default a measured part's frame of 100 ms or more, 20 a pass): its cause names the main thread's zones with the most own time in it, KSA Metal's

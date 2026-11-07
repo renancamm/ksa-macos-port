@@ -134,13 +134,6 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
         [enc dispatchThreads:MTLSizeMake(t.count, t.instances, 1) threadsPerThreadgroup:MTLSizeMake(vw, 1, 1)];
     }
     [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
-    if (kmtlConfig().gpuProfileSplit) {
-        // Profiling: the control stage in its own encoder
-        kmtlProfNote(cb, p, true, 1);
-        cb->endEncoder();
-        enc = cb->computeEncoder(KCommandBuffer::kClassVertex);
-        bindGame(enc, false);
-    }
 
     // Control stage
     [enc setComputePipelineState:st.control];
@@ -156,7 +149,7 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
         [enc setBytes:prm length:sizeof(prm) atIndex:kTessParamsBufferIndex];
         [enc dispatchThreads:MTLSizeMake((NSUInteger)patches * p->tessOutCP, 1, 1) threadsPerThreadgroup:MTLSizeMake(wg, 1, 1)];
     }
-    kmtlProfNote(cb, p, true, 2);
+    kmtlNoteDraw(cb, p, true);
     cb->endEncoder();  // the resumed pass waits on the kernels (vertex class) and the suspended pass (fragment class)
 
     // Evaluation and rasterization
@@ -172,7 +165,7 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
         [r drawPatches:p->tessOutCP patchIndexBuffer:nil patchIndexBufferOffset:0 indirectBuffer:args indirectBufferOffset:argsOff + 14 * 4];
     else
         [r drawPatches:p->tessOutCP patchStart:0 patchCount:patches patchIndexBuffer:nil patchIndexBufferOffset:0 instanceCount:1 baseInstance:0];
-    kmtlProfNote(cb, p, false, 1);
+    kmtlNoteDraw(cb, p, false);
     cb->draws++;
 }
 
@@ -219,7 +212,7 @@ VKFN(void) vkCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32
                                   indexBuffer:fan indexBufferOffset:0
                                 instanceCount:instanceCount baseVertex:firstVertex baseInstance:firstInstance];
         });
-        kmtlProfNote(cb, cb->graphicsPipeline, false, 1);
+        kmtlNoteDraw(cb, cb->graphicsPipeline, false);
         cb->draws++;
         return;
     }
@@ -227,7 +220,7 @@ VKFN(void) vkCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32
         [cb->render drawPrimitives:cb->graphicsPipeline->primitive vertexStart:firstVertex vertexCount:vertexCount
                      instanceCount:instanceCount baseInstance:firstInstance];
     });
-    kmtlProfNote(cb, cb->graphicsPipeline, false, 1);
+    kmtlNoteDraw(cb, cb->graphicsPipeline, false);
     cb->draws++;
 }
 
@@ -254,7 +247,7 @@ VKFN(void) vkCmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indexCount, 
                               indexBuffer:cb->indexBuffer indexBufferOffset:cb->indexOffset + firstIndex * indexSize(cb)
                             instanceCount:instanceCount baseVertex:vertexOffset baseInstance:firstInstance];
     });
-    kmtlProfNote(cb, cb->graphicsPipeline, false, 1);
+    kmtlNoteDraw(cb, cb->graphicsPipeline, false);
     cb->draws++;
 }
 
@@ -272,7 +265,7 @@ VKFN(void) vkCmdDrawIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkD
                   indirectBufferOffset:buf->offset + offset + (VkDeviceSize)i * stride];
         });
     }
-    kmtlProfNote(cb, cb->graphicsPipeline, false, drawCount);
+    kmtlNoteDraw(cb, cb->graphicsPipeline, false);
     cb->draws += drawCount;
 }
 
@@ -304,16 +297,14 @@ VKFN(void) vkCmdDrawIndexedIndirect(VkCommandBuffer commandBuffer, VkBuffer buff
                          indirectBufferOffset:buf->offset + offset + (VkDeviceSize)i * stride];
         });
     }
-    kmtlProfNote(cb, cb->graphicsPipeline, false, drawCount);
+    kmtlNoteDraw(cb, cb->graphicsPipeline, false);
     cb->draws += drawCount;
 }
 
-// After every dispatch, ray traces included: the profiler's note and the count, and with KSA_MTL_GPU_PROFILE_SPLIT=1
-// the encoder ends, so the profiler times each dispatch alone
+// After every dispatch, ray traces included: its note (zones.mm) and the count
 static void dispatched(KCommandBuffer* cb) {
-    kmtlProfNote(cb, cb->computePipeline, true, 1);
+    kmtlNoteDraw(cb, cb->computePipeline, true);
     cb->dispatches++;
-    if (kmtlConfig().gpuProfileSplit) cb->endEncoder();
 }
 
 VKFN(void) vkCmdDispatch(VkCommandBuffer commandBuffer, uint32_t x, uint32_t y, uint32_t z) {

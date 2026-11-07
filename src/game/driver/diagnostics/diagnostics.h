@@ -50,19 +50,15 @@ double kmtlTakeFrameGpuTime();  // one frame's GPU busy time in seconds (since t
 // whose interval since the last one is the frame log's display_ms (interpolated frames only count)
 void kmtlNoteShown(double t, bool timed);
 
-// GPU profiler (profile.mm, KSA_MTL_GPU_PROFILE), and the timestamp sample buffers it shares with the game's
-// timestamp queries: recycled, since Metal caps how many are alive; null (logged a few times) when one can't be made
+// The game's GPU profiler (zones.mm): the timestamp sample buffers of its queries, recycled, since Metal caps how many
+// are alive (null, logged a few times, when one can't be made); how its timestamps are answered (ksaMtlZoneMode); a
+// draw's or dispatch's note for the encoder's name and a pass dump
 constexpr uint32_t kTimestampSamples = 4096;
+constexpr uint32_t kZonesAsTheyCome = 0, kZonesLabels = 1, kZonesSplit = 2;
 id<MTLCounterSampleBuffer> kmtlAcquireTimestamps(KDevice* dev, const char* what);
 void kmtlRecycleTimestamps(id<MTLCounterSampleBuffer> b);
-void kmtlProfBegin(KCommandBuffer* cb);
-void kmtlProfDrop(KCommandBuffer* cb);  // a recording dropped without a submit: frees its state
-void kmtlProfRenderPass(KCommandBuffer* cb, MTLRenderPassDescriptor* rp);
-id<MTLComputeCommandEncoder> kmtlProfComputeEncoder(KCommandBuffer* cb);
-id<MTLBlitCommandEncoder> kmtlProfBlitEncoder(KCommandBuffer* cb);
-void kmtlProfNote(KCommandBuffer* cb, KPipeline* p, bool dispatch, uint32_t n);
-void kmtlProfEncoderEnded(KCommandBuffer* cb);
-void kmtlProfSubmit(KCommandBuffer* cb, id<MTLCommandBuffer> mtl);
+uint32_t kmtlZoneMode();
+void kmtlNoteDraw(KCommandBuffer* cb, KPipeline* p, bool dispatch);
 
 // instruments.mm: a texture (8-bit RGBA or BGRA) saved as a PNG once the command buffer completes, then done (if any);
 // the copy waits for the fence after (if any)
