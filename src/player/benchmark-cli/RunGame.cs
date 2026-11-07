@@ -20,7 +20,7 @@ public static partial class Program
     private sealed partial class BenchmarkRun
     {
         // The script stands at one moment on purpose with --hold, and for as long as a tool takes at a checkpoint
-        private bool StandsStill => _hold.Length > 0 || _capture || _catch.Length > 0 || _passes;
+        private bool StandsStill => _hold.Length > 0 || _capture || Triggers.HoldCheckpoints(_rules);
 
         // The game's environment for the run, on top of this program's
         private ProcessStartInfo Game(Dictionary<string, string> env)
@@ -202,18 +202,13 @@ public static partial class Program
                 env["MTL_CAPTURE_ENABLED"] = env["KSA_MTL_LABELS"] = "1";
                 options.Capture = true;
             }
+            // The triggers, the defaults among them; catch's own look at every 31st image besides, KSA Metal's watch
+            options.On = _rules.Select(r => r.ToString()).ToList();
+            options.Against = _catch;
             if (_catch.Length > 0)
-            {
-                options.Catch = _catch;
                 env["KSA_MTL_WATCH"] = Path.Combine(_out, "caught");
-                if (_catchCapture)
-                {
-                    env["MTL_CAPTURE_ENABLED"] = env["KSA_MTL_LABELS"] = "1";
-                    options.CatchCapture = true;
-                }
-            }
-            if (_passes)
-                options.Passes = true;
+            if (_rules.Any(r => r.Has(TriggerAction.Capture)))
+                env["MTL_CAPTURE_ENABLED"] = env["KSA_MTL_LABELS"] = "1";
             options.Film = _film;
             options.Trace = _cameraLog;
 
@@ -233,7 +228,7 @@ public static partial class Program
             // KSA_BENCH_HANG_LIMIT: other seconds (not a number: no hang check)
             var limit = Environment.GetEnvironmentVariable("KSA_BENCH_HANG_LIMIT");
             int HangLimit(int otherwise) => limit is not { Length: > 0 } ? otherwise : int.TryParse(limit, out var s) ? s : int.MaxValue;
-            int hang = HangLimit(Watchdog.Limit(_capture || _catch.Length > 0 || _passes ||
+            int hang = HangLimit(Watchdog.Limit(_capture || Triggers.TakeMinutes(_rules) ||
                                                 _only.Any(p => _lineup.Scenario(p.Split('_')[0])?.Kind == Kind.Timed)));
             int pressure = 1;
             var swapBefore = Swap();
@@ -289,10 +284,10 @@ public static partial class Program
                 : [_only];
             string[] variants = _ab.Length > 0 ? ["A", "B"] : [""];
             int session = 0;
-            for (int r = 1; r <= _sessions && !_stopped; r++)
+            for (int r = 1; r <= _sessions && !_stopped && !StoppedByTrigger(session); r++)
                 foreach (var variant in variants)
                     foreach (var group in groups)
-                        if (!_stopped)
+                        if (!_stopped && !StoppedByTrigger(session))
                             PlayOnce(++session, group, variant, env, options, lengths, timeout, hang, events, ref pressure);
             Console.CancelKeyPress -= stop;
             term.Dispose();
@@ -342,6 +337,11 @@ public static partial class Program
             }
             return failed;
         }
+
+        // Whether a trigger's stop ended that game session: the run ends with it
+        private bool StoppedByTrigger(int session) => session > 0 &&
+            EventLog.Read(_out).Any(e => e.Session == session && e.Type is "stopped" or "error" &&
+                                         e.Text?.StartsWith("stopped by the trigger", StringComparison.Ordinal) == true);
 
         // One game session: its options in the run's folder, the game watched until it ends, hangs or is stopped, its
         // ending and its log
@@ -408,16 +408,9 @@ public static partial class Program
                     ending = $"hung{Watchdog.Where(stale)} (no frame for {hang} s): stopped";
                 else if (!StandsStill && Watchdog.Stuck(played, n, hang) is { } still)
                 {
-                    // What its threads were doing, before it is stopped
-                    try
-                    {
-                        Tool.Exec("/usr/bin/sample", [game.Id.ToString(CultureInfo.InvariantCulture), "5", "-file",
-                            Path.Combine(_out, n > 1 ? $"stuck-{n}.txt" : "stuck.txt")], out _);
-                    }
-                    catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)
-                    {
-                        Output.Warn($"sample: {e.Message}");
-                    }
+                    // What its threads were doing, before it is stopped (the stuck trigger)
+                    if (_rules.Any(r => r.When == Condition.Stuck && r.Has(TriggerAction.Sample)) && !Watchdog.Sample(game.Id, _out, n, out var why))
+                        Output.Warn($"sample: {why}");
                     ending = $"stuck{Watchdog.Where(still)} (its clock stood still for {hang} s): stopped";
                 }
                 else if (timeout > 0 && elapsed >= timeout)
@@ -525,8 +518,12 @@ public static partial class Program
             if (_capture)
                 foreach (var c in Directory.GetFileSystemEntries(_out, "*.gputrace").Order(StringComparer.Ordinal))
                     Output.Info($"Frame capture: {c} (open it in Xcode)");
-            if ((_catch.Length > 0 || _passes) && Directory.Exists(Path.Combine(_out, "caught")))
-                Output.Info($"Caught: {_out}/caught (each place's passes and passes.txt; watch.txt: when the image looked broken)");
+            if (Directory.Exists(Path.Combine(_out, "caught")))
+                Output.Info($"Caught: {_out}/caught (what the triggers kept: passes and passes.txt, images, frame captures; watch.txt: when the image looked broken)");
+            // What the triggers did, but keep a moment (the run's store has those)
+            foreach (var e in EventLog.Read(_out).Where(e => e.Type == "trigger" &&
+                         (e.Text ?? "").Split(": ").ElementAtOrDefault(1)?.Split(", ").All(a => a == "moment" || a.StartsWith("max ", StringComparison.Ordinal)) != true).Take(10))
+                Output.Info($"Trigger: {(e.Scenario != null ? $"{e.Scenario} {e.Part}: " : "")}{e.Text}");
         }
     }
 

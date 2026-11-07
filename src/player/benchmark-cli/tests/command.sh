@@ -145,6 +145,12 @@ bench investigate sharpen earth4
 expect "investigate: no such tool" 1 "no tool 'sharpen'"
 bench check tour mixed
 expect "check: one test" 1 "check takes one test"
+bench --app "${APP}" --on 'warp>5: moment'
+expect "--on: no such condition" 1 "no condition 'warp>5'"
+bench --app "${APP}" --on 'frame>50ms: sample'
+expect "--on: an action its condition can't take" 1 "frame>50ms can't sample"
+bench --app "${APP}" --no-shots --on 'checkpoint: passes'
+expect "--on: screenshots needed" 1 "it can't go with --no-shots"
 [ "$(runs_count)" = 0 ] || fail "a refused run left a folder"
 
 # A run that passes
@@ -158,6 +164,7 @@ DIR="${T}/home/Documents/My Games/Kitten Space Agency/benchmarks/${RUN}"
 for f in report.md run.json report.html events.jsonl frames.csv options.json settings.toml "${RUN}.zip"; do
     [ -f "${DIR}/${f}" ] || fail "a run that passes: no ${f}"
 done
+grep -q '"stuck: sample, stop"' "${DIR}/options.json" || fail "a run that passes: no default triggers in options.json"
 
 # A relative --app, comparing by name, "last" and "previous"
 sleep 1

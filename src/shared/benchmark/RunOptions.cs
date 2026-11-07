@@ -42,15 +42,11 @@ public sealed class RunOptions
     // An Xcode GPU frame capture of the view at every checkpoint, <section>_<shot>.gputrace (the game needs
     // MTL_CAPTURE_ENABLED=1)
     public bool Capture { get; set; }
-    // A clean run's folder: after a screenshot under half the size of that run's same screenshot, KSA Metal's pass dump
-    // of the next frame in caught/<section>_<shot>/ and an image of a frame after it in caught/, at most MaxCatches a
-    // run. A screenshot also counts when it has far more pure black than that run's, or is 30 % pure white
-    public string Catch { get; set; } = "";
-    // With Catch: an Xcode GPU frame capture after the pass dump, in caught/<section>_<shot>.gputrace (the game needs
-    // MTL_CAPTURE_ENABLED=1)
-    public bool CatchCapture { get; set; }
-    // The same pass dump and image at every checkpoint, broken or not: a clean run's, to compare a caught one with
-    public bool Passes { get; set; }
+    // The run's own triggers, as written ("frame>50ms: moment", Triggers.cs); the defaults come on top
+    public List<string> On { get; set; } = [];
+    // A clean run's folder, which the broken trigger holds each screenshot against: one under half the size of that run's
+    // same screenshot, or with far more pure black, looks broken
+    public string Against { get; set; } = "";
     // Wait in the game before playing (up to a minute) for the "recording" event, so that a tool started once the game is
     // up (an Instruments trace) sees the whole run
     public bool WaitForRecording { get; set; }

@@ -6,7 +6,9 @@
 // is hung or stuck.
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 
 namespace KsaPort.Common.Benchmark;
 
@@ -45,6 +47,36 @@ public static class Watchdog
             first = e;
         }
         return last != null && first != null && (last.At - first.At).TotalSeconds > limit ? first : null;
+    }
+
+    // What a stuck game's threads are doing (the stuck trigger's sample, Triggers.cs): 5 s of /usr/bin/sample into a file
+    // of the run's folder, stuck.txt (stuck-<n>.txt for a later session). False, with why, when it couldn't be taken
+    public static bool Sample(int pid, string dir, int session, out string why)
+    {
+        why = "";
+        var path = Path.Combine(dir, session > 1 ? $"stuck-{session}.txt" : "stuck.txt");
+        try
+        {
+            using var sample = Process.Start(new ProcessStartInfo("/usr/bin/sample",
+                [pid.ToString(CultureInfo.InvariantCulture), "5", "-file", path]) { RedirectStandardOutput = true, RedirectStandardError = true })!;
+            sample.StandardOutput.ReadToEndAsync();
+            sample.StandardError.ReadToEndAsync();
+            if (!sample.WaitForExit(30000))
+            {
+                sample.Kill();
+                why = "it took more than 30 s";
+                return false;
+            }
+            if (File.Exists(path))
+                return true;
+            why = $"it ended with status {sample.ExitCode} and no file";
+            return false;
+        }
+        catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            why = e.Message;
+            return false;
+        }
     }
 
     // Where a heartbeat says the game was: " in <scenario> at <seconds> s", or nothing before the first scenario

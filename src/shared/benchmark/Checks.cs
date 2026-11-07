@@ -47,6 +47,9 @@ public static class Checks
             if (e.Text is not ("quit normally" or "kept running" or "was stopped with Ctrl-C"))
                 yield return Fail("ended", $"the game {(run.Record.Sessions > 1 ? $"(session {e.Session}) " : "")}{e.Text}");
         }
+        // A trigger's stop (Triggers.cs) is the run's own, not the player's
+        foreach (var e in run.Events.Where(e => e.Type is "stopped" or "error" && e.Text?.StartsWith("stopped by the trigger ", StringComparison.Ordinal) == true))
+            yield return Note("trigger-stop", e.Text!["stopped by ".Length..]);
         if (run.Events.Any(e => e.Type == "alongside"))
             yield return Fail("alongside", "another game ran at the same time, sharing the Mac's GPU and memory");
         if (run.Events.Any(e => e.Type == "ended" && e.Text?.Contains("before its first frame", StringComparison.Ordinal) == true) &&
@@ -158,6 +161,8 @@ public static class Checks
             yield return Note("in-game", "played in a running game, after what was played before: its numbers compare best with runs started the same way, and its screenshots aren't compared");
         if (Fact("Tools") is { Length: > 0 } tools && tools != "none")
             yield return Note("tools", $"measured with {tools}: their own cost is in the numbers");
+        foreach (var e in run.Events.Where(e => e.Type == "disturbed"))
+            yield return Note("disturbed", $"{(e.Pass > 1 ? $"pass {e.Pass}: " : "")}{e.Scenario} {e.Part}: left out of the numbers, {e.Text}");
     }
 
     // macOS's memory pressure, swap and a busy GPU, as the host saw them

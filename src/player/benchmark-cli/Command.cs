@@ -81,6 +81,9 @@ public static partial class Program
                              that goes wrong now and then; --catch-capture adds a frame capture), passes (a pass dump at every
                              place: a clean run for catch), film <seconds> (screenshots along the way), camera-log (the
                              camera's place every frame), hold (stay at one place, paused, until you quit the game)
+          --on '<rule>'      with run, check, measure or investigate: a trigger, '<condition>: <action>, ...' (again for
+                             more). Conditions: frame>N ms, broken, checkpoint, stuck, gpu-error; actions: moment,
+                             screenshot, passes, capture, sample, stop, max N ('frame>50ms: moment, max 5')
           ./benchmark.sh baseline [set <name> [run...] | remove <name>]
                              name runs to compare with, one of each test (check compares with main)
           ./benchmark.sh explore
