@@ -56,17 +56,14 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
         maxVerts = (uint64_t)t.count * t.instances;
     }
     uint64_t maxPatches = maxVerts / p->tessInCP;
-    // Fused (KSA_MTL_FUSED_TESSELLATION): 32-bit indices, as the control point index buffer, and no instances or base
-    // vertex for direct draws (indirect ones are checked by the prep kernel's statistics)
-    bool fused = p->renderFused && idxType == 2 && t.instances == 1 && (t.indirect || t.vertexOffset == 0);
-    const KTessStages& st = fused ? p->tessFused : p->tessPlain;
+    const KTessStages& st = p->tessPlain;
     if (!maxPatches || !st.vertex[idxType] || !st.control) return;
     // Scratch layout: vertex outputs, control outputs, per-patch outputs, tessellation factors
     auto align = [](uint64_t n) { return kmtlAlignUp<uint64_t>(n, 256); };
     NSUInteger levelSize = p->tessQuads ? sizeof(MTLQuadTessellationFactorsHalf) : sizeof(MTLTriangleTessellationFactorsHalf);
     NSUInteger vtxOff = 0;
     NSUInteger tcOff = vtxOff + align(std::max<uint64_t>(maxVerts * st.vertexStride, 16));
-    uint64_t tcBytes = p->tessPassthrough ? 16 : maxPatches * p->tessOutCP * st.controlStride;  // fused is passthrough too
+    uint64_t tcBytes = p->tessPassthrough ? 16 : maxPatches * p->tessOutCP * st.controlStride;
     NSUInteger patchOff = tcOff + align(std::max<uint64_t>(tcBytes, 16));
     NSUInteger levelsOff = patchOff + align(maxPatches * st.patchStride);
     uint64_t scratchSize = levelsOff + align(maxPatches * levelSize);
@@ -166,24 +163,6 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
     cb->resumeRender();
     if (!kmtlFlushGraphics(cb)) return;
     id<MTLRenderCommandEncoder> r = cb->render;
-    if (fused) {
-        // The evaluation stage fetches each control point's vertex attributes itself
-        [r setRenderPipelineState:p->renderFused];
-        cb->encodedPipeline = nullptr;  // the next draw sets its pipeline state again
-        [r setVertexBuffer:levels offset:levelsOff atIndex:kTessFactorBufferIndex];
-        [r setTessellationFactorBuffer:levels offset:levelsOff instanceStride:0];
-        id<MTLBuffer> cpIndices = cb->indexBuffer;
-        if (t.indirect)
-            [r drawIndexedPatches:p->tessOutCP patchIndexBuffer:nil patchIndexBufferOffset:0 controlPointIndexBuffer:cpIndices
-                controlPointIndexBufferOffset:cb->indexOffset indirectBuffer:args indirectBufferOffset:argsOff + 14 * 4];
-        else
-            [r drawIndexedPatches:p->tessOutCP patchStart:0 patchCount:patches patchIndexBuffer:nil patchIndexBufferOffset:0
-                controlPointIndexBuffer:cpIndices controlPointIndexBufferOffset:cb->indexOffset + t.first * idxSize
-                instanceCount:1 baseInstance:0];
-        kmtlProfNote(cb, p, false, 1);
-        cb->draws++;
-        return;
-    }
     // A passthrough control stage left the control points where the vertex kernel wrote them
     [r setVertexBuffer:p->tessPassthrough ? vtxOut : tcOut offset:p->tessPassthrough ? vtxOff : tcOff atIndex:kTessInputBufferIndex];
     if (patchOut) [r setVertexBuffer:patchOut offset:patchOff atIndex:kTessPatchBufferIndex];

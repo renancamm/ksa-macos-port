@@ -11,7 +11,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 
-static const char* kFormat = "KSAMTL-CORPUS 1";
+static const char* kFormat = "KSAMTL-CORPUS 2";
 
 static std::string hex64(uint64_t v) {
     char s[17];
@@ -45,9 +45,8 @@ void kmtlCorpusRecord(uint64_t key, KShaderModule* mod, const char* entry, spv::
     char line[256];
     t += "module " + hex64(mod->hash) + "\n";
     t += std::string("entry ") + entry + "\n";
-    snprintf(line, sizeof(line), "model %d\noptions %u %d %u %d %d %u %d %d %d\n", (int)model, so.fragMask, (int)so.sampleRate,
-             so.viewMask, (int)so.tess, (int)so.indexType, so.tessControlPoints, (int)so.tessQuads, (int)so.rtLaunch,
-             (int)so.tessFusedInput);
+    snprintf(line, sizeof(line), "model %d\noptions %u %d %u %d %d %u %d %d\n", (int)model, so.fragMask, (int)so.sampleRate,
+             so.viewMask, (int)so.tess, (int)so.indexType, so.tessControlPoints, (int)so.tessQuads, (int)so.rtLaunch);
     t += line;
     const char* presets = kmtlConfig().spec;
     snprintf(line, sizeof(line), "config %d %d ", (int)kmtlConfig().shaderConstantMemory, (int)kmtlConfig().skipShadowsOnUnlitSides);
@@ -147,15 +146,14 @@ bool kmtlCorpusLoad(const std::string& dir, uint64_t key, KCorpusEntry* out, std
             out->model = (spv::ExecutionModel)atoi(r);
         } else if (what == "options") {
             KStageOptions& so = out->options;
-            int sampleRate = 0, tess = 0, indexType = 0, quads = 0, rtLaunch = 0, fused = 0;
-            ok = sscanf(r, "%u %d %u %d %d %u %d %d %d", &so.fragMask, &sampleRate, &so.viewMask, &tess, &indexType,
-                        &so.tessControlPoints, &quads, &rtLaunch, &fused) == 9;
+            int sampleRate = 0, tess = 0, indexType = 0, quads = 0, rtLaunch = 0;
+            ok = sscanf(r, "%u %d %u %d %d %u %d %d", &so.fragMask, &sampleRate, &so.viewMask, &tess, &indexType,
+                        &so.tessControlPoints, &quads, &rtLaunch) == 8;
             so.sampleRate = sampleRate;
             so.tess = (KTessRole)tess;
             so.indexType = (KIndexType)indexType;
             so.tessQuads = quads;
             so.rtLaunch = rtLaunch;
-            so.tessFusedInput = fused;
         } else if (what == "config") {
             int constantAB = 1, unlitSkip = 1, n = 0;
             ok = sscanf(r, "%d %d %n", &constantAB, &unlitSkip, &n) == 2 && n > 0;

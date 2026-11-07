@@ -39,12 +39,9 @@ struct KPipeline {
     id<MTLDepthStencilState> depthStencil = nil;
     MTLPrimitiveType primitive = MTLPrimitiveTypeTriangle;
     bool triangleFan = false;  // emulated with a generated index buffer
-    // Tessellation: the plain stages, and, when the control stage is a passthrough, the fused ones (32-bit indexed
-    // draws; KSA_MTL_FUSED_TESSELLATION=0 turns them off): their evaluation stage runs the vertex shader on
-    // attributes Metal fetches per control point, so their kernels only write what the tessellation factors need
+    // Tessellation: the vertex and control stages as compute kernels
     bool tess = false;
-    KTessStages tessPlain, tessFused;
-    id<MTLRenderPipelineState> renderFused = nil;
+    KTessStages tessPlain;
     id<MTLRenderPipelineState> renderEarly = nil;  // its fragment function tests depth first (kmtlEarlyFragmentTests)
     uint32_t tessInCP = 3, tessOutCP = 3;
     bool tessQuads = false;

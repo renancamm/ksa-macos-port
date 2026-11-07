@@ -6,9 +6,9 @@ with Auto Memory Saving on, and its row in the tab with its tag and help. The ta
 else that knows about a setting reads the table or is made from it.
 
 A setting has one name, its key, and its environment variable is `KSA_MTL_` and the key in capitals:
-`fused_tessellation` is `KSA_MTL_FUSED_TESSELLATION`. Only two settings set Apple's own variable instead, which Metal
-reads: `metal_performance_hud` (`MTL_HUD_ENABLED`) and `frame_capture` (`MTL_CAPTURE_ENABLED`). A hook goes by its
-class's name, in the table as in the log.
+`shader_constant_memory` is `KSA_MTL_SHADER_CONSTANT_MEMORY`. Only two settings set Apple's own variable instead, which
+Metal reads: `metal_performance_hud` (`MTL_HUD_ENABLED`) and `frame_capture` (`MTL_CAPTURE_ENABLED`). A hook goes by
+its class's name, in the table as in the log.
 
 | Path | What it holds |
 |---|---|
@@ -67,7 +67,7 @@ that reads it is compiled again only then.
 
 | File | Holds |
 |---|---|
-| `port-settings.h` | `PortSettings`, a field per setting the driver or the KTX shim does (`fusedTessellation`, a `bool`), and `portSettingsRead()`, which reads them from their variables with the values the library takes (it doesn't apply needs to a variable set outside the game); KSA Metal keeps them in `kmtlConfig()` ([`../../game/driver/setup/config.mm`](../../game/driver/setup/config.mm)) |
+| `port-settings.h` | `PortSettings`, a field per setting the driver or the KTX shim does (`shaderConstantMemory`, a `bool`), and `portSettingsRead()`, which reads them from their variables with the values the library takes (it doesn't apply needs to a variable set outside the game); KSA Metal keeps them in `kmtlConfig()` ([`../../game/driver/setup/config.mm`](../../game/driver/setup/config.mm)) |
 | `Settings.Generated.cs` | a property of the hooks' `Settings` per setting the hooks do (`Settings.TerrainCache`, a `bool`; `Settings.RenderScale`, a `double`): read once when the hooks load, or each time for a live setting |
 
 ## The generator

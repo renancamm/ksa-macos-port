@@ -172,7 +172,7 @@ bool kmtlTranslate(KShaderModule* mod, const char* entryName, spv::ExecutionMode
             mo.fixed_subgroup_size = 32;
             break;
         case KTessRole::Evaluation:
-            mo.raw_buffer_tese_input = !so.tessFusedInput;
+            mo.raw_buffer_tese_input = true;
             mo.shader_input_buffer_index = kTessInputBufferIndex;
             mo.shader_patch_input_buffer_index = kTessPatchBufferIndex;
             mo.shader_tess_factor_buffer_index = kTessFactorBufferIndex;
@@ -332,8 +332,7 @@ uint64_t kmtlTranslationKey(KShaderModule* mod, const char* entry, spv::Executio
     static const uint32_t kTranslatorVersion = 4;
     std::vector<uint32_t> k = {kTranslatorVersion, 0x300681bbu /* SPIRV-Cross pin */, (uint32_t)model, so.fragMask,
         so.sampleRate, so.viewMask, (uint32_t)so.tess, (uint32_t)so.indexType, so.tessControlPoints, so.tessQuads,
-        (uint32_t)mod->hash, (uint32_t)(mod->hash >> 32), so.rtLaunch, (uint32_t)kmtlConfig().shaderConstantMemory,
-        so.tessFusedInput};
+        (uint32_t)mod->hash, (uint32_t)(mod->hash >> 32), so.rtLaunch, (uint32_t)kmtlConfig().shaderConstantMemory};
     if (const char* presets = kmtlConfig().spec) k.push_back((uint32_t)kmtlHash(presets, strlen(presets)));
     for (uint32_t id : switchesOff())
         if (hasSpecId(mod, id)) k.push_back(id);
