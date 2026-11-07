@@ -18,7 +18,7 @@ The port folder, its `VERSION`, KSA's versions, the apps this port made and the 
 shares with the benchmark ([`../../shared/PortFolder.cs`](../../shared/PortFolder.cs)). The shader edits it
 makes are data, `.edits` files with the changes to the game they belong to
 ([`../../game/changes/`](../../game/changes/), whose README describes the format); the one edit made by code is there
-too ([`MilkyWay.cs`](../../game/changes/features/port/MilkyWay.cs)), and the port's program compiles it.
+too ([`BakedMilkyWay.cs`](../../game/changes/features/port/BakedMilkyWay.cs)), and the port's program compiles it.
 
 The port's names (the app's name and bundle id, the oldest macOS, where releases are) are in
 [`../port-folder/lib/port.env`](../port-folder/lib/port.env), which the commands, CMake and the port's program all

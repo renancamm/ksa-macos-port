@@ -190,7 +190,7 @@ public static class ShaderEdits
                 case "code":
                     status[step.Id] = step.Id switch
                     {
-                        "milky-way" => MilkyWay.Apply(shaders, print),
+                        "baked-milky-way" => BakedMilkyWay.Apply(shaders, print),
                         _ => throw new FormatException($"{step.Source}: no code edit named {step.Id}"),
                     };
                     break;
