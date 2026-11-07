@@ -2,8 +2,8 @@
 // and read every frame for the frames they finished since. Sources: the main thread's (Profiler.MainThread, a frame each
 // game frame) and the job runners' of the game's job systems (JobSystems.Profilers: the orbit and vehicle solvers and the
 // others, a frame each game frame they had jobs; the game arms them on the main thread before each batch), and with the
-// game's GPU zones (GpuZones.cs, RunOptions.GpuZones) its GPU profiler's (group gpu: a frame each game frame, published
-// once the GPU has run it, so a frame or two late, its start the time it was read). The worker pools'
+// game's GPU zones (GpuZones.cs: a profiled pass) its GPU profiler's (group gpu: a frame each game frame, published once
+// the GPU has run it, so a frame or two late, its start the time it was read). The worker pools'
 // profilers stay off: switched while a worker is in a burst, the game's profiler is left with a scope open and throws on
 // that worker. Each source's switches are put back at the end. KSA_BENCH_ZONES=0 leaves them all off, to measure what
 // they cost.
@@ -96,6 +96,16 @@ internal sealed class GameProfilers
 
     // The frame Frame just counted, of that many ms, kept as a moment of this part (a trigger's)
     public void Moment(double frameMs, PartKey part) => Zones.Hitch(_now, frameMs, part);
+
+    // The GPU profiler's frames read too, from now (a profiled pass begins), or no more (it ends): its switches are
+    // GpuZones'
+    public void Gpu(bool on)
+    {
+        if (on && !_sources.Exists(s => s.Group == "gpu"))
+            _sources.Add(new Source("gpu", Profiler.Gpu));
+        else if (!on)
+            _sources.RemoveAll(s => s.Group == "gpu");
+    }
 
     // What the sources finished since
     private void Read()

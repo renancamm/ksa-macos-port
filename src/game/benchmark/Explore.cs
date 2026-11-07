@@ -1,4 +1,4 @@
-// Explore mode (benchmark.sh --explore, RunOptions.Explore): the benchmark's game, started the same way as a run, with
+// Explore mode (benchmark.sh --explore, RunPlan.Play.Explore): the benchmark's game, started the same way as a run, with
 // its clock paused so the light stays the tour's. The console command "benchkey [name]" captures the free camera's
 // place as a @key line for benchmark.txt: added to keys.txt in the run's folder and copied to the clipboard.
 using System;

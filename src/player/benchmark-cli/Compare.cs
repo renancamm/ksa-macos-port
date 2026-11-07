@@ -1,6 +1,5 @@
 // Two runs compared (compare, and the check before a run with --compare): a verdict, the Macs and settings that
-// differ, the numbers part by part, the screenshots side by side. Both runs are read as records (run.json, or an older
-// run's report.json).
+// differ, the numbers part by part, the screenshots side by side. Both runs are read as records (run.json).
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -14,11 +13,6 @@ namespace KsaMetal.Benchmark.Cli;
 
 public static partial class Program
 {
-    // Changes smaller than this are within run-to-run noise (two runs on one Mac differ by 1% in most parts, 4% at most),
-    // unless the test's noise profile gives a part its own limit (Noise.Moved). With repeats on both sides, a change counts
-    // when the ranges of the repeats don't overlap and it is over the smaller threshold.
-    private const double Significant = Noise.Significant, SignificantRepeated = Noise.SignificantRepeated;
-
     // Whether a run about to play will compare with this one: said before the minutes it takes, not after. Null when it
     // will, else why not
     internal static string? NotComparable(string run, string mode, IReadOnlyList<string> played)
@@ -52,27 +46,22 @@ public static partial class Program
             Console.Error.WriteLine($"{Path.GetFileName(ab.TrimEnd('/'))} is an A/B run: its report sets its two sides against each other (./benchmark.sh report {Path.GetFileName(ab.TrimEnd('/'))}).");
             return 2;
         }
-        var (warpA, warpB) = (Parts(ra, warp: true), Parts(rb, warp: true));
+        var c = Comparison.Of(ra.AllParts().Select(x => (x.Scenario.Name, x.Part)), rb.AllParts().Select(x => (x.Scenario.Name, x.Part)));
         if (ra.Mode != rb.Mode)
         {
             // Timed scenarios play the same whatever the rest played
-            var warp = Changes(warpA, warpB, warp: true, false);
             var md = new StringBuilder();
-            WarpNumbers(md, warp);
+            WarpNumbers(md, c);
             Console.Write(Terminal.Layout(md.ToString()));
-            Console.WriteLine($"The runs played in different modes ({ra.Mode}, {rb.Mode}): {(warp.Count > 0 ? "only the time warp's parts compare" : "neither their numbers nor their screenshots compare")}.");
+            Console.WriteLine($"The runs played in different modes ({ra.Mode}, {rb.Mode}): {(c.Warps.Count > 0 ? "only the time warp's parts compare" : "neither their numbers nor their screenshots compare")}.");
             return 2;
         }
         string dirA = Directory.Exists(a) ? a : Path.GetDirectoryName(a)!, dirB = Directory.Exists(b) ? b : Path.GetDirectoryName(b)!;
-        var (partsA, partsB) = (Parts(ra, warp: false), Parts(rb, warp: false));
-        if (!partsA.Keys.Concat(warpA.Keys).Any(k => partsB.ContainsKey(k) || warpB.ContainsKey(k)))
+        if (c.Parts.Count + c.Warps.Count == 0)
         {
             Console.WriteLine($"The runs have no part in common ({Scenarios(ra)}; {Scenarios(rb)}): nothing to compare.");
             return 2;
         }
-        bool repeated = Repeated(ra) && Repeated(rb);
-        var plain = Changes(partsA, partsB, warp: false, repeated);
-        var warps = Changes(warpA, warpB, warp: true, repeated);
         // The screenshots first: the verdict leads with them
         var body = new StringBuilder();
         var warnings = new List<string>();
@@ -100,7 +89,7 @@ public static partial class Program
             body.AppendLine("Same Mac, same version, same settings.");
             body.AppendLine();
         }
-        Numbers(body, plain, warps, partsA, partsB, repeated);
+        Numbers(body, c);
         // A run in a running game starts with the clouds and the sea where that game had them
         var shots = new List<ShotResult>();
         bool inGame = ra.InGame || rb.InGame;
@@ -115,7 +104,9 @@ public static partial class Program
             if (shots.Count == 0)
                 shotsNote = shotsTable;
         }
-        var (verdict, good) = Verdict(plain, warps, shots, inGame, repeated);
+        int compared = shots.Count(s => s.State != "free"), different = shots.Count(s => s.State is "differs" or "unreadable");
+        string? image = !inGame && compared > 0 ? different == 0 ? $"same image ({compared} of {compared} screenshots)" : $"{different} of {compared} screenshots differ" : null;
+        var (verdict, good) = c.Sentence(image, different == 0);
         var head = new StringBuilder();
         head.AppendLine("## Comparison");
         head.AppendLine();
@@ -129,89 +120,41 @@ public static partial class Program
         head.AppendLine($"a: {a}");
         head.AppendLine($"b: {b}");
         head.AppendLine();
+        // What moved, first: each part that changed, with the zones that moved with it
+        var moved = c.Parts.Concat(c.Warps).Where(p => p.Decides is { Changed: true }).ToList();
+        if (moved.Count > 0)
+        {
+            head.AppendLine("What moved:");
+            head.AppendLine();
+            foreach (var p in moved)
+                head.AppendLine($"- {p.Line()} ({Comparison.Text(p.Decides!)})");
+            head.AppendLine();
+            if (moved.Any(p => p.Decides!.Metric == Metrics.GpuBusy && !p.GpuZones))
+            {
+                head.AppendLine("Profile both runs to name the GPU's zones that moved: ./benchmark.sh profile.");
+                head.AppendLine();
+            }
+        }
         var printed = new StringBuilder(head.ToString()).Append(body).Append(shotsNote).Append(ShotsForTerminal(shots, differ));
         head.Append(body).Append(shotsTable);
         File.WriteAllText(Path.Combine(dirB, "compare.md"), head.ToString());
-        Pages.WriteCompare(dirA, dirB, ra, rb, plain, warps, shots, verdict, good, differences, shotsNote.Trim());
+        Pages.WriteCompare(dirA, dirB, ra, rb, c, shots, verdict, good, differences, shotsNote.Trim());
         Console.Write(Terminal.Layout(printed.ToString()));
         Console.WriteLine();
         Console.WriteLine($"Side by side: {Path.Combine(dirB, "compare.html")}");
         return differ > 0 ? 1 : 0;
     }
 
-    // Whether a run measured its parts more than once (--repeat; full's sessions play other tests)
-    private static bool Repeated(RunRecord r) => r.AllParts().Any(x => x.Part.Runs > 1);
-
     private static string Scenarios(RunRecord r) => string.Join(" ", r.Scenarios.Select(s => s.Name));
-
-    // A run's parts by scenario and name: time warp's, or the others
-    private static Dictionary<(string Scenario, string Part), PartRecord> Parts(RunRecord r, bool warp)
-    {
-        var all = new Dictionary<(string, string), PartRecord>();
-        foreach (var (s, p) in r.AllParts().Where(x => x.Part.Warp != null == warp))
-            all.TryAdd((s.Name, p.Name), p);
-        return all;
-    }
-
-    // The parts both runs have, a's order, with their change: GPU time where both have it (frame times sit on the display's
-    // beat), the speed reached in time warp
-    private static List<PartChange> Changes(Dictionary<(string Scenario, string Part), PartRecord> a, Dictionary<(string Scenario, string Part), PartRecord> b,
-        bool warp, bool repeated)
-    {
-        var changes = new List<PartChange>();
-        foreach (var (key, pa) in a)
-        {
-            if (!b.TryGetValue(key, out var pb))
-                continue;
-            double x, y;
-            double[]? rx, ry;
-            if (warp)
-                (x, y, rx, ry) = (pa.Warp!.Speed, pb.Warp!.Speed, pa.Warp.SpeedRange, pb.Warp.SpeedRange);
-            else if (pa.GpuMsMedian is { } ga && pb.GpuMsMedian is { } gb)
-                (x, y, rx, ry) = (ga, gb, pa.GpuMsRange, pb.GpuMsRange);
-            else
-                (x, y, rx, ry) = (pa.FrameMsMedian, pb.FrameMsMedian, pa.FrameMsRange, pb.FrameMsRange);
-            var limit = pa.Limit is { } la && pb.Limit is { } lb ? Math.Max(la, lb) : pa.Limit ?? pb.Limit;
-            changes.Add(new PartChange(key.Scenario, pa, pb, Noise.Moved(x, y, rx, ry, warp ? null : limit), x > 0 ? (y - x) / x : 0));
-        }
-        return changes;
-    }
-
-    // One sentence for two runs: the image, then the GPU time over the parts (each part counts the same), then time warp
-    private static (string Text, bool? Good) Verdict(List<PartChange> plain, List<PartChange> warps, List<ShotResult> shots, bool inGame, bool repeated)
-    {
-        var words = new List<string>();
-        int differ = shots.Count(s => s.State is "differs" or "unreadable"), compared = shots.Count(s => s.State != "free");
-        if (!inGame && compared > 0)
-            words.Add(differ == 0 ? $"same image ({compared} of {compared} screenshots)" : $"{differ} of {compared} screenshots differ");
-        // A part at zero on either side (a stalled warp) has no ratio: it is left out
-        static double Ratio(List<PartChange> changes) =>
-            changes.Where(c => c.Change > -1).ToList() is { Count: > 0 } usable ? Math.Exp(usable.Average(c => Math.Log(1 + c.Change))) : 1;
-        // Over the limit, and a part that counts as changed in that direction
-        bool Moved(List<PartChange> changes, double ratio) =>
-            Math.Abs(ratio - 1) >= (repeated ? SignificantRepeated : Significant) && changes.Any(c => c.Marked && c.Change > 0 == ratio > 1);
-        var gpuParts = plain.Where(c => c.A.GpuMsMedian != null && c.B.GpuMsMedian != null).ToList();
-        double gpu = Ratio(gpuParts);
-        bool gpuMoved = gpuParts.Count > 0 && Moved(gpuParts, gpu);
-        if (gpuParts.Count > 0)
-            words.Add(gpuMoved ? $"GPU time {Math.Abs(gpu - 1) * 100:F0} % {(gpu < 1 ? "lower" : "higher")}" : "GPU time within noise");
-        double speed = Ratio(warps);
-        bool warpMoved = warps.Count > 0 && Moved(warps, speed);
-        if (warps.Count > 0)
-            words.Add(warpMoved ? $"time warp {Math.Abs(speed - 1) * 100:F0} % {(speed > 1 ? "faster" : "slower")}" : "time warp within noise");
-        if (words.Count == 0)
-            return ("Nothing to compare", null);
-        var text = string.Join(", ", words);
-        // Good: nothing got worse
-        return (char.ToUpperInvariant(text[0]) + text[1..], differ == 0 && !(gpuMoved && gpu > 1) && !(warpMoved && speed < 1));
-    }
 
     // A run's record, or null (said on the error stream)
     private static RunRecord? Load(string dir)
     {
         if (RunRecord.Read(dir) is { } record)
             return record;
-        Console.Error.WriteLine($"no run's record at {dir}");
+        Console.Error.WriteLine(File.Exists(Path.Combine(dir, RunStore.GameFile))
+            ? $"the record at {dir} is older than this benchmark: ./benchmark.sh report {Path.GetFileName(dir.TrimEnd('/'))} --again makes it again from its store"
+            : $"no run's record at {dir}");
         return null;
     }
 
@@ -223,8 +166,7 @@ public static partial class Program
         var dir = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(path))!, Path.GetFileNameWithoutExtension(path));
         if (!Directory.Exists(dir))
             ZipFile.ExtractToDirectory(path, dir);
-        var record = Directory.GetFiles(dir, RunRecord.FileName, SearchOption.AllDirectories)
-            .Concat(Directory.GetFiles(dir, "report.json", SearchOption.AllDirectories)).OrderBy(f => f.Length).FirstOrDefault();
+        var record = Directory.GetFiles(dir, RunRecord.FileName, SearchOption.AllDirectories).OrderBy(f => f.Length).FirstOrDefault();
         return record != null ? Path.GetDirectoryName(record)! : dir;
     }
 
@@ -263,55 +205,45 @@ public static partial class Program
             .Select(k => (k, sa.GetValueOrDefault(k, ""), sb.GetValueOrDefault(k, ""))).ToList();
     }
 
-    private static string Num(double? x, string format) => x is { } v ? v.ToString(format, System.Globalization.CultureInfo.InvariantCulture) : "";
-
-    // How far b is from a, marked when it counts: "12 % slower", or "+2%" within noise. Times: less is faster.
-    private static string ChangeText(PartChange c, bool moreIsBetter = false) =>
-        c.Marked ? $"**{Math.Abs(c.Change) * 100:F0} % {(c.Change < 0 != moreIsBetter ? "faster" : "slower")}**" : $"{c.Change * 100:+0;-0;0} %";
-
-    private static void Numbers(StringBuilder md, List<PartChange> plain, List<PartChange> warps,
-        Dictionary<(string Scenario, string Part), PartRecord> a, Dictionary<(string Scenario, string Part), PartRecord> b, bool repeated)
+    private static void Numbers(StringBuilder md, Comparison c)
     {
-        if (plain.Count > 0)
+        var parts = c.Parts.Where(p => p.Decides != null).ToList();
+        if (parts.Count > 0)
         {
-            md.AppendLine("| Scenario | Part | GPU ms a | GPU ms b | Change | Frame ms a | Frame ms b | Change |");
-            md.AppendLine("|---|---|---:|---:|---:|---:|---:|---:|");
+            md.AppendLine("| Scenario | Part | | a | b | Change | Frame ms a | Frame ms b | Change |");
+            md.AppendLine("|---|---|---|---:|---:|---:|---:|---:|---:|");
             string last = "";
-            foreach (var c in plain)
+            foreach (var p in parts)
             {
-                var frame = new PartChange(c.Scenario, c.A, c.B, Noise.Moved(c.A.FrameMsMedian, c.B.FrameMsMedian, c.A.FrameMsRange, c.B.FrameMsRange),
-                    c.A.FrameMsMedian > 0 ? (c.B.FrameMsMedian - c.A.FrameMsMedian) / c.A.FrameMsMedian : 0);
-                var gpu = c.A.GpuMsMedian != null && c.B.GpuMsMedian != null ? ChangeText(c) : "";
-                md.AppendLine($"| {(c.Scenario == last ? "" : c.Scenario)} | {c.A.Name} | {Num(c.A.GpuMsMedian, "F1")} | {Num(c.B.GpuMsMedian, "F1")} | {gpu} | " +
-                              $"{Num(c.A.FrameMsMedian, "F1")} | {Num(c.B.FrameMsMedian, "F1")} | {ChangeText(frame)} |");
-                last = c.Scenario;
+                var v = p.Decides!;
+                var frame = p.Verdicts.FirstOrDefault(x => x.Metric == Metrics.FrameTime);
+                md.AppendLine($"| {(p.Scenario == last ? "" : p.Scenario)} | {p.Name} | {v.Metric.Label} | {v.Metric.Format(v.A)} | {v.Metric.Format(v.B)} | {Pages.Marked(v)} | " +
+                              $"{(frame != null ? $"{frame.Metric.Format(frame.A)} | {frame.Metric.Format(frame.B)} | {Pages.Marked(frame)}" : " | | ")} |");
+                last = p.Scenario;
             }
             md.AppendLine();
         }
-        WarpNumbers(md, warps);
-        var gone = a.Keys.Where(k => !b.ContainsKey(k)).Select(k => $"{k.Scenario} {k.Part}").ToList();
-        var come = b.Keys.Where(k => !a.ContainsKey(k)).Select(k => $"{k.Scenario} {k.Part}").ToList();
-        if (gone.Count > 0)
-            md.AppendLine($"Only in a: {string.Join(", ", gone)}.");
-        if (come.Count > 0)
-            md.AppendLine($"Only in b: {string.Join(", ", come)}.");
-        md.AppendLine(repeated
-            ? $"Both runs were repeated: a change is marked when the ranges of the repeats don't overlap and it is over {SignificantRepeated:P0}."
-            : $"Changes past a part's limit (its test's noise profile, else {Significant:P0}) are marked; smaller ones are within run-to-run noise. Frame times sit on the display's beat: read GPU ms first. " +
-              "A Mac's heat moves GPU time too, about 10 % between a first run after a rest and the next ones: compare runs at the same point of a series, or measure both sides (./benchmark.sh measure).");
+        WarpNumbers(md, c);
+        if (c.OnlyA.Count > 0)
+            md.AppendLine($"Only in a: {string.Join(", ", c.OnlyA)}.");
+        if (c.OnlyB.Count > 0)
+            md.AppendLine($"Only in b: {string.Join(", ", c.OnlyB)}.");
+        md.AppendLine(Pages.BasisNote(c.Basis) + (c.Basis == Basis.Screen ? " Frame times sit on the display's beat: read GPU busy first." : ""));
         md.AppendLine();
     }
 
     // The time warp's parts by the speed they reached: more is better
-    private static void WarpNumbers(StringBuilder md, List<PartChange> warps)
+    private static void WarpNumbers(StringBuilder md, Comparison c)
     {
+        var warps = c.Warps.Where(p => p.Decides != null).ToList();
         if (warps.Count == 0)
             return;
-        md.AppendLine("| Warp part | Game days a | Game days b | Speed a | Speed b | Change | GPU ms a | GPU ms b |");
+        md.AppendLine("| Warp part | Game days a | Game days b | Speed a | Speed b | Change | GPU busy a | GPU busy b |");
         md.AppendLine("|---|---:|---:|---:|---:|---:|---:|---:|");
-        foreach (var c in warps)
-            md.AppendLine($"| {c.A.Name} | {Num(c.A.Warp!.GameDays, "F1")} | {Num(c.B.Warp!.GameDays, "F1")} | {Num(c.A.Warp.Speed, "F0")} | {Num(c.B.Warp.Speed, "F0")} | " +
-                          $"{ChangeText(c, moreIsBetter: true)} | {Num(c.A.GpuMsMedian, "F1")} | {Num(c.B.GpuMsMedian, "F1")} |");
+        string N(PartRecord p, Metric m) => p[m] is { } v ? m.Format(v) : "";
+        foreach (var p in warps)
+            md.AppendLine($"| {p.Name} | {N(p.A, Metrics.GameDays)} | {N(p.B, Metrics.GameDays)} | {Metrics.Speed.Format(p.Decides!.A)} | {Metrics.Speed.Format(p.Decides.B)} | " +
+                          $"{Pages.Marked(p.Decides)} | {N(p.A, Metrics.GpuBusy)} | {N(p.B, Metrics.GpuBusy)} |");
         md.AppendLine();
     }
 

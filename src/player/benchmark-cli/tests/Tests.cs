@@ -44,7 +44,7 @@ internal static class Tests
             ("a game stuck at one moment", StuckGame),
             ("a screenshot of nothing", BlankShot),
             ("runs that can't compare", NothingInCommon),
-            ("an older run's report", OlderRun),
+            ("an older run", OlderRun),
             ("the list of runs", ListOfRuns),
             ("the terminal's layout", Layout),
             ("the tests' script", Script),
@@ -54,6 +54,13 @@ internal static class Tests
             ("the triggers' rules", Rules),
             ("a part a trigger disturbed", Disturbed),
             ("a recording of the player's game", YourGame),
+            ("the statistics", StatisticsTests),
+            ("verdicts on sessions, passes and one run", Verdicts),
+            ("PresentMon's numbers", PresentMon),
+            ("the zones that moved", ZonesMoved),
+            ("a run's zones and slow frames in its record", ZonesInRecord),
+            ("a run of before plans, finished again", BeforePlans),
+            ("a profiled pass beside the measured one", ProfiledPass),
         };
         foreach (var (name, run) in tests)
         {
@@ -121,15 +128,18 @@ internal static class Tests
 
     private static PartRecord Part(RunRecord r) => r.Scenarios.FirstOrDefault()?.Parts.FirstOrDefault() ?? throw new Exception("no part in the record");
 
-    // A run's folder as the director and benchmark.sh leave it: its options with these facts, one session that played the
+    // A run's folder as the director and benchmark.sh leave it: its plan with these facts, one session that played the
     // scenario earth (of this kind) with one part, earth1, of 100 frames (the last one three times as long), and ended
     private static string Run(string name, double frameMs = 10, string mode = "views", Fact[]? facts = null, double? gpuMs = null,
         Kind kind = Kind.Views, string ending = "quit normally", bool done = true, int sessions = 1)
     {
         var dir = Path.Combine(_scratch, name);
         Directory.CreateDirectory(dir);
-        new RunOptions { Test = "mixed", Mode = mode, Facts = [new("Power", "AC Power"), new("Low Power Mode", "off"), new("port settings", "defaults"), .. facts ?? []] }
-            .Write(dir);
+        new RunPlan
+        {
+            Play = new() { Test = "mixed", Mode = mode },
+            Host = new() { Facts = [new("Power", "AC Power"), new("Low Power Mode", "off"), new("port settings", "defaults"), .. facts ?? []] },
+        }.Write(dir);
         var events = new EventLog(dir);
         events.Add("start", text: "a new game, from benchmark.sh");
         for (int n = 1; n <= sessions; n++)
@@ -146,8 +156,8 @@ internal static class Tests
         events.Add("loaded", value: 1.5);
         events.Add("scenario", "earth", text: Lineup.Name(kind));
         events.Add("open", "earth", "earth1", game: 0, value: 0);
-        using (var frames = new FrameLog(dir, session))
         {
+            var frames = new FrameLog(dir, session);
             for (int i = 0; i < 100; i++)
             {
                 FrameStats? driver = gpuMs is { } g ? new FrameStats { Present = (ulong)i + 1, GpuMs = g, ShadersCompiled = i == 99 ? shaders : 0 } : null;
@@ -180,15 +190,15 @@ internal static class Tests
     {
         var dir = Path.Combine(_scratch, name);
         Directory.CreateDirectory(dir);
-        new RunOptions { Test = "warp", Mode = "timed", Facts = [new("port settings", "defaults")] }.Write(dir);
+        new RunPlan { Play = new() { Test = "warp", Mode = "timed" }, Host = new() { Facts = [new("port settings", "defaults")] } }.Write(dir);
         var events = new EventLog(dir, 1);
         events.Add("session");
         events.Add("scenario", "warpdebris", text: "timed");
         events.Add("open", "warpdebris", "debris", game: 1000, value: 0);
-        using (var frames = new FrameLog(dir, 1))
-            foreach (var r in Warped(heldBack))
-                frames.Add(r.Script, r.Scenario, r.Part, r.Phase, r.FrameMs, null,
-                    new SimSample(r.GameSeconds!.Value, r.Asked!.Value, r.SimMs!.Value, r.Substeps!.Value, r.Bubbles!.Value, r.Vehicles!.Value));
+        var frames = new FrameLog(dir, 1);
+        foreach (var r in Warped(heldBack))
+            frames.Add(r.Script, r.Scenario, r.Part, r.Phase, r.FrameMs, null,
+                new SimSample(r.GameSeconds!.Value, r.Asked!.Value, r.SimMs!.Value, r.Substeps!.Value, r.Bubbles!.Value, r.Vehicles!.Value));
         events.Add("close", "warpdebris", "debris");
         events.Add("done");
         events.Add("ended", text: "quit normally");
@@ -206,10 +216,11 @@ internal static class Tests
         Equal(0, Notes(record).Length, "notes");
         var part = Part(record);
         Equal(100, part.Frames, "frames");
-        Equal(20.0, part.FrameMsMedian, "frame time's median");
-        Equal(60.0, part.FrameMsMax, "worst frame");
-        Equal(1, part.FramesOver50Ms, "frames over 50 ms");
-        Equal(0, part.FramesOver100Ms, "frames over 100 ms");
+        Equal<double?>(20.0, part[Metrics.FrameTime], "frame time's median");
+        Equal<double?>(60.0, part[Metrics.Worst], "worst frame");
+        Equal<double?>(1, part[Metrics.Hitches], "a hitch: over 50 ms and twice the median");
+        Equal<double?>(0, part[Metrics.Over100], "frames over 100 ms");
+        Equal<double?>(60.0, part[Metrics.Low1], "the 1% low: the slowest frame of 100");
         Equal(1.5, record.LoadSeconds, "loading");
         Equal(Status.Passed, RunRecord.Read(dir)?.Status, "run.json read back");
         var md = File.ReadAllText(Path.Combine(dir, "report.md"));
@@ -261,11 +272,14 @@ internal static class Tests
     {
         var dir = Path.Combine(_scratch, "notes");
         Directory.CreateDirectory(dir);
-        new RunOptions
+        new RunPlan
         {
-            Test = "mixed", Mode = "views",
-            Facts = [new("Power", "Battery Power"), new("Low Power Mode", "on"), new("KSA Metal switches", "KSA_MTL_GPU_ZONES=1"), new("Tools", "Instruments"),
-                new("port settings", "defaults")]
+            Play = new() { Test = "mixed", Mode = "views" },
+            Host = new()
+            {
+                Facts = [new("Power", "Battery Power"), new("Low Power Mode", "on"), new("KSA Metal switches", "KSA_MTL_GPU_ZONES=1"), new("Tools", "Instruments"),
+                    new("port settings", "defaults")]
+            },
         }.Write(dir);
         var events = new EventLog(dir);
         events.Add("start", text: "a new game, from benchmark.sh");
@@ -289,9 +303,6 @@ internal static class Tests
         Contains(notes, "swapped memory to disk during the run (100.00 -> 600.00 MB)", "swap");
         Contains(notes, "shaders compiled while measuring earth earth1 (3)", "shaders compiled");
         Equal(8, notes.Length, "notes");
-        // A line of the events cut short (a game that died writing it) is left out
-        File.AppendAllText(Path.Combine(dir, EventLog.FileName), "{\"type\":\"err");
-        Equal(Status.Passed, Finished(dir).Status, "an event cut short");
     }
 
     private static void Repeats()
@@ -305,13 +316,15 @@ internal static class Tests
         Equal(3, record.Sessions, "sessions");
         Contains(Problems(record), "the run did not play to its end", "the incomplete session");
         var part = Part(record);
-        Equal(12.0, part.FrameMsMedian, "frame time: the median of the runs");
-        Equal("10,20", string.Join(",", part.FrameMsRange ?? []), "frame time's range");
+        Equal<double?>(12.0, part[Metrics.FrameTime], "frame time: the median of the runs");
+        Equal("10,20", string.Join(",", part.Range(Metrics.FrameTime) ?? []), "frame time's range");
+        Equal("12,10,20", string.Join(",", part.Sessions(Metrics.FrameTime)), "each session's number, in the order they played");
         Equal(3, part.Runs, "the part's runs");
         Contains([File.ReadAllText(Path.Combine(dir, "report.md"))], "| 12.0 (10.0-20.0) |", "report.md's range");
         // A part that never got to its speed in one repeat never did
-        var merged = Summary.Merge([Summary.Of("debris", Warped(1), 1000, 0), Summary.Of("debris", Warped(0.5), 1000, 0), Summary.Of("debris", Warped(1), 1000, 0)]);
-        Equal<double?>(null, merged.Warp?.SecondsToSpeed, "seconds to speed: never, in one of the runs");
+        var merged = Measure.Merge([Measure.Of(Warped(1), null, null, 1000, 0), Measure.Of(Warped(0.5), null, null, 1000, 0), Measure.Of(Warped(1), null, null, 1000, 0)]);
+        Check(!merged.ContainsKey(Metrics.ToSpeed.Name), "seconds to speed: never, in one of the runs");
+        Check(merged.ContainsKey(Metrics.Speed.Name), "the speed: their median");
     }
 
     // Each side's sessions: the worst pressure, the swap grown in all of them
@@ -342,16 +355,16 @@ internal static class Tests
         var record = Finished(dir);
         Equal(Status.Passed, record.Status, "passed");
         Contains([File.ReadAllText(Path.Combine(dir, "report.md"))], "| 16.7 |", "report.md's frame time");
-        Equal(16.7, Part(record).FrameMsMedian, "the record's frame time");
+        Equal<double?>(16.7, Part(record)[Metrics.FrameTime], "the record's frame time");
         Contains(Notes(record), "swapped memory", "swap read with a decimal point");
     }
 
-    // A run from benchmark.sh: its options without the port settings and the hooks, which come from the game's log
+    // A run from benchmark.sh: its plan without the port settings and the hooks, which come from the game's log
     private static void FinishZip()
     {
         var dir = Path.Combine(_scratch, "2026-10-26_0100");
         Directory.CreateDirectory(dir);
-        new RunOptions { Test = "mixed", Mode = "views" }.Write(dir);
+        new RunPlan { Play = new() { Test = "mixed", Mode = "views" } }.Write(dir);
         Session(dir, new EventLog(dir), 1, 10, null, Kind.Views);
         File.WriteAllLines(Path.Combine(dir, "game.log"),
             ["==> port settings: render_scale=0.75", "[hooks] TerrainCache: skipped (KSA's code moved)", "[hooks] OutlineSkip: on"]);
@@ -363,7 +376,7 @@ internal static class Tests
         Contains(Notes(record), "port settings were changed (render_scale=0.75)", "the port settings");
         using var zip = ZipFile.OpenRead(Path.Combine(dir, "2026-10-26_0100.zip"));
         var names = zip.Entries.Select(e => e.FullName).ToArray();
-        foreach (var file in new[] { "run.json", "report.md", "report.html", "events.jsonl", "frames.csv", "options.json", "game.log" })
+        foreach (var file in new[] { "run.json", "report.md", "report.html", "run.db", "plan.json", "game.log" })
             Contains(names, $"2026-10-26_0100/{file}", "the zip");
     }
 
@@ -417,15 +430,16 @@ internal static class Tests
 
     private static void TimedPart()
     {
-        var reached = Summary.Of("debris", Warped(1), 1000, 0).Warp!;
-        Equal(1000.0, reached.SpeedAsked, "the speed asked for");
-        Check(reached.Speed is > 700 and < 800, $"the speed over the whole part: {reached.Speed}");
-        Check(reached.SecondsToSpeed is > 5 and < 7, $"the seconds to 90 %: {reached.SecondsToSpeed}");
-        Check(reached.GameDays is >= 0.17 and <= 0.18, $"the game days: {reached.GameDays}");
-        Equal(1598L, reached.Substeps, "the substeps");
-        Equal(12, reached.BubblesMax, "the most bubbles");
-        Equal<double?>(null, Summary.Of("debris", Warped(0.5), 1000, 0).Warp!.SecondsToSpeed, "a part that never gets to 90 %");
-        Equal<WarpRecord?>(null, Summary.Of("earth1", Warped(1), null, null).Warp, "a part of another kind");
+        var reached = Measure.Of(Warped(1), null, null, 1000, 0);
+        double? V(Dictionary<string, double> v, Metric m) => v.TryGetValue(m.Name, out var x) ? x : null;
+        Equal<double?>(1000.0, V(reached, Metrics.SpeedAsked), "the speed asked for");
+        Check(V(reached, Metrics.Speed) is > 700 and < 800, $"the speed over the whole part: {V(reached, Metrics.Speed)}");
+        Check(V(reached, Metrics.ToSpeed) is > 5 and < 7, $"the seconds to 90 %: {V(reached, Metrics.ToSpeed)}");
+        Check(V(reached, Metrics.GameDays) is >= 0.17 and <= 0.18, $"the game days: {V(reached, Metrics.GameDays)}");
+        Equal<double?>(1598, V(reached, Metrics.Substeps), "the substeps");
+        Equal<double?>(12, V(reached, Metrics.Bubbles), "the most bubbles");
+        Equal<double?>(null, V(Measure.Of(Warped(0.5), null, null, 1000, 0), Metrics.ToSpeed), "a part that never gets to 90 %");
+        Equal<double?>(null, V(Measure.Of(Warped(1), null, null, null, null), Metrics.Speed), "a part of another kind");
     }
 
     private static void WarpReport()
@@ -554,7 +568,7 @@ internal static class Tests
         Contains([KsaMetal.Benchmark.Cli.Program.NotComparable(a, "jump", ["earth_earth9"]) ?? ""], "no part in common", "a place that run didn't measure");
         Equal<string?>(null, KsaMetal.Benchmark.Cli.Program.NotComparable(a, "jump", ["earth_earth1", "earth_earth9"]), "one that it did");
         var b = WarpRun("b", 1);
-        new RunOptions { Test = "warp", Mode = "jump" }.Write(b);
+        new RunPlan { Play = new() { Test = "warp", Mode = "jump" } }.Write(b);
         Finished(b);
         var compared = Said(() => KsaMetal.Benchmark.Cli.Program.Compare(a, b));
         Equal(2, compared.Status, "compare: nothing in common");
@@ -583,24 +597,15 @@ internal static class Tests
         Equal(1, Said(() => KsaMetal.Benchmark.Cli.Program.Compare(old, fresh)).Status, "an old run's loose limit doesn't hide a change");
     }
 
-    // A run made before run.json: its report.json read into a record
+    // A run of an older record's schema, or older still (a report.json and run.json as its options): not read
     private static void OlderRun()
     {
         var dir = Path.Combine(_scratch, "2026-11-02_2057");
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, "report.json"), """
-            {"schema":2,"system":{"Mac":"Mac17,2","Test":"mixed","Start":"a new game, from benchmark.sh"},"mode":"fast","runs":1,"passed":false,
-             "stopped":false,"problems":["game.log: ERROR one"],"notes":["swap"],"sections":[{"name":"mixed","windows":[{"name":"kitten","frames":40,
-             "seconds":1,"averageFps":40,"frameMsMedian":25,"gpuMsMedian":24.6}],"screenshots":["kitten"],"shotLimits":{"kitten":4},"errors":[],"live":false}]}
-            """);
-        var record = RunRecord.Read(dir);
-        Check(record != null, "read");
-        Equal("views", record?.Mode, "fast mode of the mixed section: views");
-        Equal(Status.Failed, record?.Status, "failed");
-        Equal("game.log: ERROR one", record?.Problems.FirstOrDefault()?.Text, "its problem");
-        Equal(24.6, record?.Scenario("mixed")?.Part("kitten")?.GpuMsMedian, "its part");
-        Equal(4.0, record?.Scenario("mixed")?.Shots.FirstOrDefault()?.Limit, "its screenshot's limit");
-        Equal("Mac17,2", record?.Fact("Mac"), "its facts");
+        File.WriteAllText(Path.Combine(dir, RunRecord.FileName), $$"""{"schema":{{RunRecord.CurrentSchema - 1}},"name":"2026-11-02_2057","test":"mixed","scenarios":[]}""");
+        Check(RunRecord.Read(dir) == null, "an older schema");
+        File.WriteAllText(Path.Combine(dir, RunRecord.FileName), """{"script":"benchmark.txt","only":"mixed"}""");
+        Check(RunRecord.Read(dir) == null, "an older run's plan");
     }
 
     private static void ListOfRuns()
@@ -690,6 +695,186 @@ internal static class Tests
         }
     }
 
+    // Mann-Whitney U, Cliff's delta and the ratio's interval against values worked out by hand
+    private static void StatisticsTests()
+    {
+        double[] low = [1, 2, 3, 4, 5], high = [6, 7, 8, 9, 10], odd = [1, 3, 5, 7, 9], even = [2, 4, 6, 8, 10];
+        Equal(Math.Round(2 / 252.0, 6), Math.Round(Statistics.MannWhitney(low, high), 6), "5 against 5 apart: exact p = 2/252");
+        Equal(1.0, Statistics.MannWhitney(low, low), "the same samples");
+        Check(Statistics.MannWhitney(odd, even) > 0.5, "samples that interleave");
+        Equal(1.0, Statistics.CliffsDelta(low, high), "every B higher");
+        Equal(0.2, Statistics.CliffsDelta(odd, even), "15 pairs higher, 10 lower, of 25");
+        // 12 a side: the normal approximation
+        var a = Enumerable.Range(0, 12).Select(i => 10.0 + i * 0.01).ToArray();
+        var b = a.Select(x => x + 1).ToArray();
+        Check(Statistics.MannWhitney(a, b) < 0.001, $"12 against 12 apart: {Statistics.MannWhitney(a, b)}");
+        var interval = Statistics.RatioInterval(low, high);
+        Check(interval is [var lo, var hi] && lo <= 8.0 / 3 && hi >= 8.0 / 3 && lo > 1, $"the ratio's interval holds the ratio of the medians: {string.Join(",", interval ?? [])}");
+        Equal(string.Join(",", interval ?? []), string.Join(",", Statistics.RatioInterval(low, high) ?? []), "the same samples, the same interval");
+    }
+
+    // A part measured in these sessions, each with these passes' GPU busy
+    private static PartRecord Measured(params double[][] sessions)
+    {
+        var part = new PartRecord { Name = "earth1", Runs = sessions.Sum(x => x.Length), Frames = 100, Seconds = 1 };
+        for (int s = 0; s < sessions.Length; s++)
+            for (int p = 0; p < sessions[s].Length; p++)
+                part.Measurings.Add(new MeasuringRecord(s + 1, p + 1, new SortedDictionary<string, double> { [Metrics.GpuBusy.Name] = sessions[s][p] }));
+        foreach (var (k, v) in Measure.Merge(part.Measurings.Select(m => (IReadOnlyDictionary<string, double>)m.Values).ToList()))
+            part.Values[k] = v;
+        return part;
+    }
+
+    private static void Verdicts()
+    {
+        double[][] Sessions(params double[] medians) => medians.Select(m => new[] { m }).ToArray();
+        var a = Measured(Sessions(10.0, 10.1, 9.9, 10.05, 9.95));
+        var slower = Statistics.Judge(a, Measured(Sessions(11.0, 11.1, 10.9, 11.05, 10.95)), Metrics.GpuBusy)!;
+        Equal(Basis.Sessions, slower.Basis, "5 sessions a side: by sessions");
+        Equal(Change.Worse, slower.Change, "10 % more GPU time in every session");
+        Check(slower.P < 0.05 && slower.Delta == 1, $"p {slower.P}, delta {slower.Delta}");
+        Equal(Change.Same, Statistics.Judge(a, Measured(Sessions(10.02, 9.98, 10.08, 9.93, 10.0)), Metrics.GpuBusy)!.Change, "the same");
+        Equal(Change.Inconclusive, Statistics.Judge(Measured(Sessions(10, 10.1, 9.9)), Measured(Sessions(11, 11.1, 10.9)), Metrics.GpuBusy)!.Change,
+            "3 sessions a side: inconclusive, however far apart");
+        var quick = Statistics.Judge(Measured([10.0, 10.1, 9.9]), Measured([10.5, 10.6, 10.4]), Metrics.GpuBusy)!;
+        Equal(Basis.QuickRead, quick.Basis, "one session a side with passes: a quick read");
+        Equal(Change.Worse, quick.Change, "ranges apart, 5 %");
+        Equal(Change.Same, Statistics.Judge(Measured([10.0, 10.3, 9.9]), Measured([10.2, 10.6, 10.1]), Metrics.GpuBusy)!.Change, "ranges that overlap");
+        var screen = Statistics.Judge(Measured([10.0]), Measured([10.4]), Metrics.GpuBusy)!;
+        Equal(Basis.Screen, screen.Basis, "one measuring a side: a screen");
+        Equal(Change.Same, screen.Change, "4 %: under the 5 % limit");
+        var limited = Measured([10.0]);
+        limited.Limit = 3;
+        Equal(Change.Worse, Statistics.Judge(limited, Measured([10.4]), Metrics.GpuBusy)!.Change, "4 %: past a calibrated limit of 3 %");
+        // A few percent of a small number: under CPU busy's floor of 0.25 ms
+        PartRecord Cpu(params double[] ms)
+        {
+            var p = Measured(ms.Select(x => new[] { x }).ToArray());
+            foreach (var (m, x) in p.Measurings.Zip(ms))
+                m.Values[Metrics.CpuBusy.Name] = x;
+            p.Values[Metrics.CpuBusy.Name] = Measure.Median(ms);
+            return p;
+        }
+        Equal(Change.Same, Statistics.Judge(Cpu(2.40, 2.41, 2.39, 2.42, 2.40), Cpu(2.20, 2.19, 2.21, 2.18, 2.20), Metrics.CpuBusy)!.Change,
+            "CPU busy 0.2 ms faster: 8 %, past the limit, under the floor");
+        Equal(Change.Better, Statistics.Judge(Cpu(3.00, 3.01, 2.99, 3.02, 3.00), Cpu(2.60, 2.59, 2.61, 2.58, 2.60), Metrics.CpuBusy)!.Change,
+            "CPU busy 0.4 ms faster: past both");
+        var comparison = Comparison.Of([("earth", a)], [("earth", Measured(Sessions(10.0, 10.1, 9.9)))]);
+        Contains([comparison.Sentence().Text], "inconclusive (3 sessions a side, 5 needed)", "the sentence of too few sessions");
+    }
+
+    // CPU busy, CPU wait, display latency, displayed time and animation error from KSA Metal's times of each present
+    private static void PresentMon()
+    {
+        var frames = new List<FrameRow>();
+        var shown = new Dictionary<ulong, ShownRow>();
+        for (int i = 1; i <= 10; i++)
+        {
+            frames.Add(new FrameRow(i, 1, 1, 0, "earth", "earth1", "Measure", 16.7, (ulong)i, 8, 100, 1000, 2000, 0, 0, 0, null, null, null, null, null, null));
+            double began = i * 0.0167;
+            // The fifth frame shows a refresh late: its step on screen differs from its step at the start by 16.7 ms
+            double late = i >= 5 ? 0.0167 : 0;
+            shown[(ulong)i] = new ShownRow((ulong)i, began, began + 0.004, began + 0.012, began + 0.030 + late, 2);
+        }
+        // A wait for a drawable of 1.5 ms inside every frame, from 1 ms after it began
+        var waits = shown.Values.Select(r => new WaitRow(r.Began + 0.001, 1.5, "nextDrawable"))
+            // The present that holds it counts once with it
+            .Concat(shown.Values.Select(r => new WaitRow(r.Began + 0.0009, 1.4, "vkQueuePresentKHR"))).OrderBy(w => w.Start).ToList();
+        var v = Measure.Of(frames, shown, null, null, null, waits);
+        Equal(2.4, v[Metrics.CpuBusy.Name], "CPU busy: from the start to the present, less the waits in it, each moment once");
+        Equal(3.6, v[Metrics.CpuWait.Name], "CPU wait: for the earlier frame, and in it");
+        Equal(4.0, Measure.Of(frames, shown, null, null, null)[Metrics.CpuBusy.Name], "CPU busy without waits");
+        Equal(46.7, v[Metrics.Latency.Name], "display latency: the median, from the start to the showing");
+        Equal(16.7, v[Metrics.Displayed.Name], "displayed time");
+        Equal(Math.Round(16.7 / 9, 2), v[Metrics.AnimationError.Name], "animation error: one step of nine off by 16.7 ms");
+    }
+
+    // The zones named with a part's change: those that went its way, past the floors, the most first
+    private static void ZonesMoved()
+    {
+        PartRecord Part(double gpu, params (string Zone, double Ms)[] zones)
+        {
+            var p = new PartRecord { Name = "earth4", Frames = 100, Seconds = 1 };
+            p.Values[Metrics.GpuBusy.Name] = gpu;
+            foreach (var (zone, ms) in zones)
+                p.Values[Metrics.ZoneName("gpu", zone)] = ms;
+            return p;
+        }
+        var c = Comparison.Of([("earth", Part(10, ("Clouds Raymarching", 3.0), ("Ocean", 2.0), ("Stars", 0.33)))],
+            [("earth", Part(11.4, ("Clouds Raymarching", 4.2), ("Ocean", 1.9), ("Stars", 0.36), ("Godrays", 0.3)))]);
+        var part = c.Parts.Single();
+        Equal(Change.Worse, part.Decides?.Change, "14 % more GPU time: past the screen's 5 %");
+        Equal("earth earth4 GPU busy +1.4 ms: Clouds Raymarching +1.20, Godrays +0.30", part.Line(), "the zones that moved its way");
+        Contains([c.Sentence().Text], "GPU time 14 % higher (screen)", "the sentence");
+    }
+
+    // Finish puts the parts' zones and the slow frames the triggers kept into the record
+    private static void ZonesInRecord()
+    {
+        var dir = Run("zoned", frameMs: 20, gpuMs: 8);
+        var store = RunStore.For(dir)!;
+        store.AddZoneStats(new PartKey(1, 1, "earth", "earth1"), "main", "PrepareFrame", 100, 100, 1500, 1200, 15, 16, 20, 1);
+        store.AddZoneStats(new PartKey(1, 1, "earth", "earth1"), "gpu", "GPU", 90, 90, 720, 0, 8, 8, 9, 0);
+        store.AddZoneStats(new PartKey(1, 1, "earth", "earth1"), "gpu", "Ocean", 90, 90, 270, 270, 3, 3, 3, 0);
+        store.AddMoment(1, 100, 120, new PartKey(1, 1, "earth", "earth1"), "PrepareFrame 101 ms; vkWaitForPresentKHR 95 ms; GPU 97 ms");
+        var record = Finished(dir);
+        var part = Part(record);
+        Equal<double?>(12.0, part[Metrics.ZoneName("main", "PrepareFrame")], "the main thread's zone: own ms a frame of the part");
+        Equal<double?>(3.0, part[Metrics.ZoneName("gpu", "Ocean")], "the GPU's zone: own ms a frame of the GPU's profiler");
+        Check(part.Measurings.All(m => !m.Values.Keys.Any(Metrics.IsZone)), "no zones in a measuring's own numbers");
+        Equal(1, record.Moments.Count, "the slow frame");
+        Contains([File.ReadAllText(Path.Combine(dir, "report.md"))], "| earth | earth1 | 120 | PrepareFrame 101 ms; vkWaitForPresentKHR 95 ms; GPU 97 ms |", "report.md's slow frames");
+        Contains([File.ReadAllText(Path.Combine(dir, "report.html"))], "Where the time goes", "the page's zones");
+    }
+
+    // A run whose folder has options.json, not plan.json: report --again keeps its test, mode and limits, and its facts
+    private static void BeforePlans()
+    {
+        var dir = Run("before-plans", frameMs: 20);
+        File.Delete(Path.Combine(dir, RunPlan.FileName));
+        File.WriteAllText(Path.Combine(dir, "options.json"), """
+            {"script":"","only":"mixed","test":"mixed","mode":"views","warmUp":true,"repeat":2,"session":1,"facts":[{"key":"Power","value":"AC Power"}]}
+            """);
+        Equal("mixed views", RunPlan.Read(dir) is { } p ? $"{p.Play.Test} {p.Play.Mode}" : "", "the plan from the options");
+        Equal("warm-up measured measured", string.Join(" ", RunPlan.Read(dir)!.Passes.Select(RunPlan.Name)), "its passes");
+        File.WriteAllText(Path.Combine(dir, RunRecord.FileName), """{"schema":3,"facts":[{"key":"Chip","value":"Apple M5"}]}""");
+        var record = Finish.Again(dir);
+        Equal("mixed", record.Test, "its test");
+        Equal("views", record.Mode, "its mode");
+        Equal("Apple M5", record.Fact("Chip"), "the older record's facts");
+    }
+
+    // A session's warm-up, measured and profiled passes: the part's numbers are the measured pass's, the profiled pass's
+    // apart, and the warm-up is set against the measured pass alone
+    private static void ProfiledPass()
+    {
+        var dir = Path.Combine(_scratch, "profiled");
+        Directory.CreateDirectory(dir);
+        new RunPlan { Play = new() { Test = "mixed", Mode = "views" }, Passes = [PassKind.WarmUp, PassKind.Measured, PassKind.Profiled] }.Write(dir);
+        var events = new EventLog(dir, 1);
+        events.Add("session");
+        var frames = new FrameLog(dir, 1);
+        foreach (var (pass, kind, gpu) in new[] { (0, "warm-up", 10.0), (1, "measured", 10.0), (2, "profiled", 11.3) })
+        {
+            events.Pass = frames.Pass = pass;
+            events.Add("pass", text: kind);
+            events.Add("scenario", "earth", text: "views");
+            events.Add("open", "earth", "earth1", game: 0, value: 0);
+            for (int i = 0; i < 50; i++)
+                frames.Add(i, "earth", "earth1", "Measure", 16, new FrameStats { Present = (ulong)(pass * 100 + i + 1), GpuMs = gpu }, null);
+            events.Add("close", "earth", "earth1");
+            events.Add(kind == "warm-up" ? "warmed" : "done");
+        }
+        events.Add("ended", text: "quit normally");
+        var record = Finished(dir);
+        var part = Part(record);
+        Equal<double?>(10.0, part[Metrics.GpuBusy], "the measured pass's GPU busy");
+        Equal(1, part.Runs, "one measuring");
+        Equal<double?>(11.3, part.Profiled?.GetValueOrDefault(Metrics.GpuBusy.Name), "the profiled pass's, apart");
+        Equal<double?>(10.0, record.WarmUp?.MeasuredGpuMs, "the warm-up against the measured pass alone");
+        Check(!Notes(record).Any(n => n.Contains("warmed up", StringComparison.Ordinal)), "no warming noted");
+    }
+
     private static Image Gradient(int width, int height)
     {
         var rgb = new byte[width * height * 3];
@@ -698,25 +883,28 @@ internal static class Tests
         return new Image(width, height, rgb);
     }
 
-    // The run's store: the game's run.db and the host's host.db hold what the files hold, the record from either is the
-    // same, and a store that says otherwise is noted
+    // The run's store: the game's run.db and the host's host.db, each process's events read in time order with the other's,
+    // the frames, and the zip's copies with the home folder's name as ~
     private static void Store()
     {
         var dir = Run("stored", frameMs: 20, gpuMs: 8);
         RunStore.ProcessFile = RunStore.HostFile;
-        new EventLog(dir, 1).Add("session-memory", text: "pressure normal, swap 0 -> 0 MB");
+        new EventLog(dir, 1).Add("session-memory", text: $"pressure normal, swap 0 -> 0 MB, {_scratch}/swap");
         RunStore.ProcessFile = RunStore.GameFile;
+        new EventLog(dir, 1).Add("note", text: "after the host's");
+        Equal(100, FrameLog.Read(dir).Count, "frames");
+        Equal(60.0, FrameLog.Read(dir)[99].FrameMs, "a frame");
+        var types = EventLog.Read(dir).Select(e => e.Type).ToList();
+        Equal("start", types.FirstOrDefault(), "the first event");
+        Equal("session-memory note", string.Join(" ", types.TakeLast(2)), "the host's event, then the game's");
         var record = Finished(dir);
-        Equal(0, Notes(record).Length, "notes, the store as the files");
+        Equal(0, Notes(record).Length, "notes");
         Check(File.Exists(Path.Combine(dir, RunStore.GameFile)) && File.Exists(Path.Combine(dir, RunStore.HostFile)), "both files");
-        var stored = RunStore.Read(dir) ?? throw new Exception("no store read");
-        Equal(100, stored.Frames.Count, "frames");
-        Equal(string.Join(" ", EventLog.Read(dir).Select(e => e.Type)), string.Join(" ", stored.Events.Select(e => e.Type)), "events in order");
-        Equal(FrameLog.Read(dir)[42], stored.Frames[42], "a frame");
-        RunStore.CloseAll();
-        using (var db = Sqlite.Open(Path.Combine(dir, RunStore.GameFile)))
-            db.Exec("UPDATE frames SET frame_ms = frame_ms * 2 WHERE rowid = 5");
-        Contains(Notes(Finished(dir)), "the run's store says otherwise than its files about scenario earth", "a store that differs");
+        var unpacked = Path.Combine(_scratch, "unpacked");
+        ZipFile.ExtractToDirectory(Path.Combine(dir, "stored.zip"), unpacked);
+        var events = RunStore.ReadEvents(Path.Combine(unpacked, "stored"));
+        Contains(events.Select(e => e.Text ?? ""), "swap 0 -> 0 MB, ~/swap", "the zip's store: the home folder as ~");
+        Equal(100, RunStore.ReadFrames(Path.Combine(unpacked, "stored")).Count, "the zip's store: the frames");
     }
 
     // The records KSA Metal's drain hands over, read back field by field
@@ -858,7 +1046,7 @@ internal static class Tests
         Equal(5, rule.Max, "max");
         Equal("frame>50ms: moment, screenshot, max 5", rule.ToString(), "as written");
         Equal(rule.ToString(), Triggers.Parse(rule.ToString()).ToString(), "read again as written");
-        // A limit in ms reaches the game as it was written (options.json has the rules as text)
+        // A limit in ms reaches the game as it was written (plan.json has the rules as text)
         foreach (var ms in new[] { 33.33333, 0.0001, 16.7 })
             Equal(ms, Triggers.Parse(Triggers.Parse(FormattableString.Invariant($"frame>{ms}ms: moment")).ToString()).Ms, $"frame>{ms}ms read again");
         Equal("broken: passes, capture", Triggers.Parse("broken: passes, capture, passes").ToString(), "an action once");
@@ -889,9 +1077,9 @@ internal static class Tests
         Check(!Triggers.HoldCheckpoints(Triggers.For(["frame>50ms: passes"])), "a slow frame's pass dump holds no checkpoint");
         Check(Triggers.TakeMinutes(Triggers.For(["frame>50ms: passes"])), "a slow frame's pass dump takes minutes");
         Check(!Triggers.TakeMinutes(Triggers.For([])), "the defaults take no minutes");
-        // A run's options: its rules as written, one that can't be read left out
+        // A run's plan: its rules as written, one that can't be read left out
         Equal("broken: screenshot; frame>100ms: moment; stuck: sample, stop",
-            string.Join("; ", Triggers.For(new RunOptions { On = ["broken: screenshot", "nonsense"] })), "the rules of a run's options");
+            string.Join("; ", Triggers.For(new RunPlan { On = ["broken: screenshot", "nonsense"] })), "the rules of a run's plan");
     }
 
     private static void Disturbed()
@@ -914,15 +1102,19 @@ internal static class Tests
         // As the tab's Record leaves it (Runs.BeginHere, Director's here mode): one scenario and part, here, in the running game
         var dir = Path.Combine(_scratch, "here");
         Directory.CreateDirectory(dir);
-        new RunOptions { Test = "here", Mode = "flight", Only = "here", InGame = true, Stay = true, Here = 20, Facts = [new("port settings", "defaults")] }.Write(dir);
+        new RunPlan
+        {
+            Play = new() { Test = "here", Mode = "flight", Only = "here", Stay = true, Here = 20 },
+            Host = new() { InGame = true, Facts = [new("port settings", "defaults")] },
+        }.Write(dir);
         var events = new EventLog(dir, 1);
         events.Add("start", text: "in the running game, as it was played, from its settings");
         events.Add("session");
         events.Add("scenario", "here", text: "flight");
         events.Add("open", "here", "here", game: 100, value: 0);
-        using (var frames = new FrameLog(dir, 1))
-            for (int i = 0; i < 100; i++)
-                frames.Add(i * 0.016, "here", "here", "Measure", 16, null, null);
+        var frames = new FrameLog(dir, 1);
+        for (int i = 0; i < 100; i++)
+            frames.Add(i * 0.016, "here", "here", "Measure", 16, null, null);
         events.Add("close", "here", "here");
         events.Add("done");
         events.Add("ended", text: "kept running");

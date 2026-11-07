@@ -1,5 +1,7 @@
-// What happened during a run, in order (events.jsonl in its folder, a line each): what benchmark.sh or the Mac Port tab
-// did around the game and what the director did in it. Each writer appends whole lines; Finish.cs reads them all.
+// What happened during a run, in order (the events table of the run's store, Store.cs): what benchmark.sh or the Mac Port
+// tab did around the game and what the director did in it. Each process writes its own file (the game run.db, benchmark.sh
+// host.db); reading a run's events reads both, in time order. benchmark.sh watches the game's heartbeats there, and the
+// game benchmark.sh's recording event.
 //
 //   start      the run began: Text how (a new game from benchmark.sh, the tab's restart, the running game)
 //   session    a game session began (Session counts from 1; Pass, on every event, which time the scenarios play in it)
@@ -26,10 +28,7 @@
 //   disturbed  a trigger's heavy work went on while a part measured, which leaves the numbers: Scenario, Part, Text
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace KsaPort.Common.Benchmark;
 
@@ -48,15 +47,7 @@ public sealed record RunEvent
 
 public sealed class EventLog
 {
-    public const string FileName = "events.jsonl";
-
-    private static readonly JsonSerializerOptions Json = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-    };
-
-    private readonly string _path, _dir;
-    private readonly object _lock = new();
+    private readonly string _dir;
 
     public int Session { get; set; }
     public int Pass { get; set; } = 1;
@@ -64,44 +55,19 @@ public sealed class EventLog
     public EventLog(string dir, int session = 0)
     {
         _dir = dir;
-        _path = Path.Combine(dir, FileName);
         Session = session;
     }
 
-    // Adds an event as a line of its own, at once, so that a game that dies keeps the ones before; and to the run's store
-    // (Store.cs), in the same order
-    public void Add(string type, string? scenario = null, string? part = null, string? text = null, double? game = null, double? value = null)
-    {
-        var e = new RunEvent { Type = type, Session = Session, Pass = Pass, Scenario = scenario, Part = part, Text = text, Game = game, Value = value };
-        var line = JsonSerializer.Serialize(e, Json) + "\n";
-        lock (_lock)
-        {
-            File.AppendAllText(_path, line);
-            RunStore.For(_dir)?.Add(e);
-        }
-    }
+    // Adds an event to this process's file of the run's store, which writes it at once, so that a game that dies keeps the
+    // ones before
+    public void Add(string type, string? scenario = null, string? part = null, string? text = null, double? game = null, double? value = null) =>
+        RunStore.For(_dir)?.Add(new RunEvent { Type = type, Session = Session, Pass = Pass, Scenario = scenario, Part = part, Text = text, Game = game, Value = value });
 
-    // Every event of a run's folder; a line cut short (a game that died while writing it) is left out
+    // Every event of a run's folder, both processes' in time order; what this process gave its store is written first
     public static List<RunEvent> Read(string dir)
     {
-        var path = Path.Combine(dir, FileName);
-        var events = new List<RunEvent>();
-        if (!File.Exists(path))
-            return events;
-        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        using var reader = new StreamReader(stream);
-        while (reader.ReadLine() is { } line)
-        {
-            try
-            {
-                if (line.Length > 0 && JsonSerializer.Deserialize<RunEvent>(line, Json) is { } e)
-                    events.Add(e);
-            }
-            catch (JsonException)
-            {
-            }
-        }
-        return events;
+        RunStore.Flush(dir);
+        return RunStore.ReadEvents(dir);
     }
 
     // The last heartbeat of a session, or null: where its script was, and when

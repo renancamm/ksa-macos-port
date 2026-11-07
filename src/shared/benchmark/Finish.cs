@@ -1,6 +1,5 @@
-// The end of a run: its record (run.json) made from what it left (options.json, events.jsonl, frames.csv, the game's
-// logs, the screenshots), checked against the run's store (Store.cs), then its report (report.md, report.html) and the
-// zip to share. Both hosts call it: benchmark.sh's
+// The end of a run: its record (run.json) made from what it left (plan.json, the run's store, the game's logs, the
+// screenshots), then its report (report.md, report.html) and the zip to share. Both hosts call it: benchmark.sh's
 // program after the game, and the Mac Port tab's runs in the game. It changes nothing it reads, so a run can be finished
 // again when a summary or a check improves.
 using System;
@@ -16,14 +15,25 @@ namespace KsaPort.Common.Benchmark;
 public static class Finish
 {
     // asksMac: whether to ask macOS about this Mac (the tests' runs are of no Mac)
-    public static RunRecord Run(string dir, bool asksMac = true)
+    public static RunRecord Run(string dir, bool asksMac = true) => Culture(() => Make(dir, asksMac, null));
+
+    // A run finished again from its store, as this version of the benchmark makes a record: its facts as its record had
+    // them (the Mac and the app may have changed since), its numbers, checks and pages new. A record of any schema
+    // gives its facts; without one, the Mac is asked
+    public static RunRecord Again(string dir) => Culture(() =>
+    {
+        var kept = KeptFacts(dir);
+        return Make(dir, kept == null, kept);
+    });
+
+    private static RunRecord Culture(Func<RunRecord> make)
     {
         // Its numbers are written the same whatever the culture of the thread it runs on (in the game, the player's)
         var culture = System.Globalization.CultureInfo.CurrentCulture;
         System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.InvariantCulture;
         try
         {
-            return Make(dir, asksMac);
+            return make();
         }
         finally
         {
@@ -31,81 +41,70 @@ public static class Finish
         }
     }
 
-    private static RunRecord Make(string dir, bool asksMac)
+    // The facts a run's record (of any schema) has, but those Make adds itself; null without a record
+    private static List<Fact>? KeptFacts(string dir)
     {
-        // This process's rows of the run's store into its files, before anything reads them
-        RunStore.FlushAll();
-        var options = RunOptions.Read(dir) ?? new RunOptions();
+        try
+        {
+            var node = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(dir, RunRecord.FileName)));
+            if (node?["facts"] is not System.Text.Json.Nodes.JsonArray facts)
+                return null;
+            return facts.OfType<System.Text.Json.Nodes.JsonObject>()
+                .Select(f => new Fact((string?)f["key"] ?? "", (string?)f["value"] ?? ""))
+                .Where(f => f.Key is not ("Warm-up" or "While A played" or "While B played")).ToList();
+        }
+        catch (Exception e) when (e is IOException or System.Text.Json.JsonException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private static RunRecord Make(string dir, bool asksMac, List<Fact>? kept)
+    {
+        var plan = RunPlan.Read(dir) ?? new RunPlan();
         var events = EventLog.Read(dir);
         var frames = FrameLog.Read(dir);
         var logs = Logs(dir);
         var name = Path.GetFileName(Path.GetFullPath(dir).TrimEnd('/'));
-        var record = Core(dir, name, options, events, frames);
-        record.Facts = Facts.Gather(dir, options.App, options.Facts, logs.FirstOrDefault().Lines ?? [], asksMac);
+        var record = Core(dir, name, plan, events, frames);
+        record.Moments = RunStore.ReadMoments(dir);
+        record.Facts = kept ?? Facts.Gather(dir, plan.Host.App, plan.Host.Facts, logs.FirstOrDefault().Lines ?? [], asksMac);
         if (record.WarmUp is { } warmUp)
             record.Facts.Add(new Fact("Warm-up", warmUp.GpuMs is { } gpu
                 ? $"a pass first, left out (GPU {gpu:F1} ms a frame)" : "a pass first, left out"));
         record.Facts.AddRange(SideMemory(events));
         var crashes = CrashReports(record.Started.ToUniversalTime());
         record.Findings = Checks.Run(new RunEvidence(dir, record, events, logs, crashes));
-        if (StoreDiffers(dir, name, options, record, events) is { } where)
-            record.Findings.Add(new Finding(Severity.Note, "store", $"the run's store says otherwise than its files about {where}"));
         record.Status = events.Any(e => e.Type == "stopped") ? Status.Stopped : record.Problems.Any() ? Status.Failed : Status.Passed;
         record.Write(dir);
         Pages.WriteReport(dir, record);
-        Package(dir, crashes);
-        // The game's store of a tab's run, and benchmark.sh's own, closed: the run is over
+        // The game's store of a tab's run, and benchmark.sh's own, closed before the zip takes them: the run is over
         RunStore.Close(dir);
+        Package(dir, crashes);
         return record;
     }
 
     // What the record says from the run's events and frames: how it played, and each part's numbers
-    private static RunRecord Core(string dir, string name, RunOptions options, List<RunEvent> events, List<FrameRow> frames)
+    private static RunRecord Core(string dir, string name, RunPlan plan, List<RunEvent> events, List<FrameRow> frames)
     {
         var record = new RunRecord
         {
             Schema = RunRecord.CurrentSchema,
             Name = name,
             Started = events.FirstOrDefault()?.At.ToLocalTime() ?? Directory.GetCreationTime(dir),
-            Test = options.Test.Length > 0 ? options.Test : "places",
-            Mode = options.Mode,
+            Test = plan.Play.Test.Length > 0 ? plan.Play.Test : "places",
+            Mode = plan.Play.Mode,
             Start = events.LastOrDefault(e => e.Type == "start")?.Text ?? "",
             Sessions = Math.Max(1, events.Select(e => e.Session).DefaultIfEmpty(1).Max()),
             Passes = Math.Max(1, events.Select(e => e.Pass).DefaultIfEmpty(1).Max()),
             LoadSeconds = events.FirstOrDefault(e => e.Type == "loaded")?.Value,
             Drawable = events.LastOrDefault(e => e.Type == "drawable")?.Text,
-            Scenarios = Scenarios(events, frames),
+            Scenarios = Scenarios(events, frames, RunStore.ReadShown(dir), RunStore.ReadWaits(dir), RunStore.ReadZones(dir)),
         };
-        SetLimits(record, options);
+        SetLimits(record, plan);
         if (events.FirstOrDefault(e => e.Type == "warmed") is { } warmed)
-            record.WarmUp = WarmUp(record, frames, warmed.Session);
+            record.WarmUp = WarmUp(record, frames, warmed.Session, PassKinds(events));
         return record;
-    }
-
-    // The run's store (Store.cs) against the files the record is made from: what the record would say from each, compared;
-    // the first part that differs, or null when they agree or the run has no store. A game that crashed, hung or was
-    // killed leaves each with what it had written by then (the store commits four times a second, frames.csv every
-    // second): such a run isn't compared
-    private static string? StoreDiffers(string dir, string name, RunOptions options, RunRecord fromFiles, List<RunEvent> events)
-    {
-        if (events.Any(e => e.Type == "ended" && e.Text is not ("quit normally" or "kept running")) || RunStore.Read(dir) is not { } stored)
-            return null;
-        var fromStore = Core(dir, name, options, stored.Events, stored.Frames);
-        static string Json(object? o) => System.Text.Json.JsonSerializer.Serialize(o);
-        var parts = new (string What, Func<RunRecord, object?> Of)[]
-        {
-            ("its start", r => new { r.Started, r.Start }), ("its sessions and passes", r => new { r.Sessions, r.Passes }),
-            ("its loading", r => new { r.LoadSeconds, r.Drawable }), ("its warm-up", r => r.WarmUp),
-        };
-        foreach (var (what, of) in parts)
-            if (Json(of(fromFiles)) != Json(of(fromStore)))
-                return what;
-        if (fromFiles.Scenarios.Count != fromStore.Scenarios.Count)
-            return "its scenarios";
-        foreach (var (a, b) in fromFiles.Scenarios.Zip(fromStore.Scenarios))
-            if (Json(a) != Json(b))
-                return $"scenario {a.Name}";
-        return null;
     }
 
     // An A/B run's memory on each side, from its sessions: macOS's worst memory pressure and the swap the Mac grew while
@@ -137,14 +136,25 @@ public static class Finish
         }
     }
 
-    // The scenarios as they played, in order: each part's measurings (sessions, passes, but the warm-up's) summed up from
-    // their frames and merged, the screenshots of the first pass (a warm-up's too) with their limits. An A/B run's
-    // scenarios are there once for each side, the sessions of each merged
-    private static List<ScenarioRecord> Scenarios(List<RunEvent> events, List<FrameRow> frames)
+    // What each pass of each session was (the pass event's kind): warm-up, measured or profiled; a run of before pass
+    // events had its warm-up as pass 0 and measured the rest
+    public static Func<int, int, string> PassKinds(IEnumerable<RunEvent> events)
+    {
+        var kinds = events.Where(e => e.Type == "pass" && e.Text != null).GroupBy(e => (e.Session, e.Pass)).ToDictionary(g => g.Key, g => g.First().Text!);
+        return (session, pass) => kinds.GetValueOrDefault((session, pass)) ?? (pass == 0 ? "warm-up" : "measured");
+    }
+
+    // The scenarios as they played, in order: each part's measurings (the measured passes of every session) from their
+    // frames, KSA Metal's shown records and the zones, merged; a profiled pass's apart; the screenshots of the first pass
+    // (a warm-up's too) with their limits. An A/B run's scenarios are there once for each side, the sessions of each
+    // merged
+    private static List<ScenarioRecord> Scenarios(List<RunEvent> events, List<FrameRow> frames, Dictionary<ulong, ShownRow> shown, List<WaitRow> waits,
+        List<ZoneRow> zones)
     {
         var variants = events.Where(e => e.Type == "session").GroupBy(e => e.Session)
             .ToDictionary(g => g.Key, g => g.First().Text is { Length: > 0 } v ? v : null);
         string? VariantOf(int session) => variants.GetValueOrDefault(session);
+        var kindOf = PassKinds(events);
         var scenarios = new List<ScenarioRecord>();
         foreach (var e in events.Where(e => e.Type == "scenario" && e.Scenario != null))
         {
@@ -158,21 +168,41 @@ public static class Finish
             });
         }
         var rows = frames.Where(r => r.Part.Length > 0).GroupBy(r => (r.Scenario, r.Part, r.Session, r.Pass)).ToDictionary(g => g.Key, g => (IReadOnlyList<FrameRow>)g.ToList());
+        var zoneRows = zones.GroupBy(z => (z.Scenario, z.Part, z.Session, z.Pass)).ToDictionary(g => g.Key, g => g.ToList());
         // A part a trigger's heavy work disturbed (Triggers.cs) leaves the numbers in that pass
         var disturbed = events.Where(e => e.Type == "disturbed").Select(e => (e.Scenario, e.Part, e.Session, e.Pass)).ToHashSet();
         foreach (var scenario in scenarios)
         {
-            var opens = events.Where(e => e.Type == "open" && e.Scenario == scenario.Name && e.Pass > 0 && VariantOf(e.Session) == scenario.Variant &&
-                                          !disturbed.Contains((e.Scenario, e.Part, e.Session, e.Pass))).ToList();
+            var opens = events.Where(e => e.Type == "open" && e.Scenario == scenario.Name && kindOf(e.Session, e.Pass) != "warm-up" &&
+                                          VariantOf(e.Session) == scenario.Variant && !disturbed.Contains((e.Scenario, e.Part, e.Session, e.Pass))).ToList();
             foreach (var part in opens.Select(e => e.Part!).Distinct().ToList())
             {
-                var measurings = opens.Where(e => e.Part == part)
-                    .Select(open => rows.TryGetValue((scenario.Name, part, open.Session, open.Pass), out var r)
-                        ? Summary.Of(part, r, scenario.Kind == Kind.Timed ? open.Game : null, (long?)open.Value)
-                        : null)
-                    .OfType<PartRecord>().ToList();
-                if (measurings.Count > 0)
-                    scenario.Parts.Add(Summary.Merge(measurings));
+                var measured = new List<(RunEvent Open, Dictionary<string, double> Values, int Frames, double Seconds)>();
+                var profiled = new List<Dictionary<string, double>>();
+                foreach (var open in opens.Where(e => e.Part == part))
+                {
+                    var key = (scenario.Name, part, open.Session, open.Pass);
+                    if (!rows.TryGetValue(key, out var r))
+                        continue;
+                    var values = Measure.Of(r, shown, zoneRows.GetValueOrDefault(key), scenario.Kind == Kind.Timed ? open.Game : null, (long?)open.Value, waits);
+                    if (kindOf(open.Session, open.Pass) == "profiled")
+                        profiled.Add(values);
+                    else
+                        measured.Add((open, values, r.Count, Math.Round(r.Sum(f => f.FrameMs) / 1000, 2)));
+                }
+                if (measured.Count == 0)
+                    continue;
+                var merged = Measure.Merge(measured.Select(m => (IReadOnlyDictionary<string, double>)m.Values).ToList());
+                scenario.Parts.Add(new PartRecord
+                {
+                    Name = part, Runs = measured.Count, Frames = measured[0].Frames, Seconds = measured[0].Seconds,
+                    Values = new SortedDictionary<string, double>(merged, StringComparer.Ordinal),
+                    Measurings = measured.Select(m => new MeasuringRecord(m.Open.Session, m.Open.Pass,
+                        new SortedDictionary<string, double>(m.Values.Where(kv => !Metrics.IsZone(kv.Key)).ToDictionary(), StringComparer.Ordinal))).ToList(),
+                    Profiled = profiled.Count > 0
+                        ? new SortedDictionary<string, double>(Measure.Merge(profiled.Select(p => (IReadOnlyDictionary<string, double>)p).ToList()), StringComparer.Ordinal)
+                        : null,
+                });
             }
             var firstPass = events.Where(e => e.Type == "shot" && e.Scenario == scenario.Name && VariantOf(e.Session) == scenario.Variant)
                 .GroupBy(e => (e.Session, e.Pass)).FirstOrDefault();
@@ -184,7 +214,7 @@ public static class Finish
 
     // The warm-up pass's GPU time against the measured passes' in the game it warmed, both as the headline weighs its
     // parts
-    private static WarmUpRecord WarmUp(RunRecord record, List<FrameRow> frames, int session)
+    private static WarmUpRecord WarmUp(RunRecord record, List<FrameRow> frames, int session, Func<int, int, string> kindOf)
     {
         var timed = record.Scenarios.Where(s => s.Kind == Kind.Timed).Select(s => s.Name).ToHashSet();
         var first = frames.Where(f => f.Part.Length > 0 && !timed.Contains(f.Scenario) && f.Session == session).ToList();
@@ -192,23 +222,27 @@ public static class Finish
         {
             double weighted = 0, seconds = 0;
             foreach (var part in rows.GroupBy(r => (r.Scenario, r.Part, r.Pass)))
-                if (Summary.Of(part.Key.Part, part.ToList(), null, null) is { GpuMsMedian: { } gpu, Seconds: > 0 } p)
-                    (weighted, seconds) = (weighted + gpu * p.Seconds, seconds + p.Seconds);
+            {
+                var r = part.ToList();
+                double s = r.Sum(f => f.FrameMs) / 1000;
+                if (Measure.Of(r, null, null, null, null).TryGetValue(Metrics.GpuBusy.Name, out var gpu) && s > 0)
+                    (weighted, seconds) = (weighted + gpu * s, seconds + s);
+            }
             return seconds > 0 ? Math.Round(weighted / seconds, 2) : null;
         }
-        return new WarmUpRecord(Gpu(first.Where(f => f.Pass == 0)), Gpu(first.Where(f => f.Pass > 0)));
+        return new WarmUpRecord(Gpu(first.Where(f => kindOf(session, f.Pass) == "warm-up")), Gpu(first.Where(f => kindOf(session, f.Pass) == "measured")));
     }
 
-    // Each part's limit from its test's noise profile: benchmark.sh calibrate's (RunOptions.NoiseFolder) before the one in
+    // Each part's limit from its test's noise profile: benchmark.sh calibrate's (RunPlan.Host.NoiseFolder) before the one in
     // the app, next to its lineup
-    private static void SetLimits(RunRecord record, RunOptions options)
+    private static void SetLimits(RunRecord record, RunPlan plan)
     {
-        if (!File.Exists(options.Script))
+        if (!File.Exists(plan.Play.Script))
             return;
         Lineup lineup;
         try
         {
-            lineup = Lineup.Read(options.Script);
+            lineup = Lineup.Read(plan.Play.Script);
         }
         catch (LineupException)
         {
@@ -218,8 +252,8 @@ public static class Finish
         {
             if (lineup.TestOf(scenario.Name) is not { } test)
                 continue;
-            var folder = options.NoiseFolder.Length > 0 && File.Exists(NoiseProfile.PathFor(options.NoiseFolder, test.Name))
-                ? options.NoiseFolder : Path.GetDirectoryName(options.Script)!;
+            var folder = plan.Host.NoiseFolder.Length > 0 && File.Exists(NoiseProfile.PathFor(plan.Host.NoiseFolder, test.Name))
+                ? plan.Host.NoiseFolder : Path.GetDirectoryName(plan.Play.Script)!;
             var noise = NoiseProfile.Read(folder, test.Name);
             foreach (var part in scenario.Parts)
                 if (noise.Parts.ContainsKey(part.Name))
@@ -251,6 +285,23 @@ public static class Finish
             .Where(crash => File.GetCreationTimeUtc(crash) >= startedUtc && TheGame(crash)).ToList();
     }
 
+    // A copy of a file of the run's store with the home folder's name as ~ in its events' texts
+    private static void Store(string from, string to, string home)
+    {
+        File.Copy(from, to);
+        if (home.Length == 0)
+            return;
+        try
+        {
+            using var db = Sqlite.Open(to);
+            using var update = db.Prepare("UPDATE events SET text = replace(text, ?, '~') WHERE instr(text, ?) > 0");
+            update.Run(home, home);
+        }
+        catch (SqliteException)
+        {
+        }
+    }
+
     // <dir>/<name>.zip: what a shared run holds, with the game's crash reports of the run, the home folder's name as ~
     private static void Package(string dir, List<string> crashes)
     {
@@ -264,8 +315,9 @@ public static class Finish
             foreach (var file in Directory.GetFiles(dir))
             {
                 var f = Path.GetFileName(file);
-                if (f is RunRecord.FileName or "report.md" or "report.html" or EventLog.FileName or FrameLog.FileName or RunOptions.FileName
-                        or "settings.toml" or "profile.md" or "trace.md" ||
+                if (f is RunStore.GameFile or RunStore.HostFile)
+                    Store(file, Path.Combine(stage, f), home);
+                else if (f is RunRecord.FileName or "report.md" or "report.html" or RunPlan.FileName or "settings.toml" or "profile.md" or "trace.md" ||
                     f.StartsWith("game", StringComparison.Ordinal) && f.EndsWith(".log", StringComparison.Ordinal) ||
                     f.StartsWith("stuck", StringComparison.Ordinal) && f.EndsWith(".txt", StringComparison.Ordinal))
                     File.WriteAllText(Path.Combine(stage, f), File.ReadAllText(file).Replace(home, "~"));

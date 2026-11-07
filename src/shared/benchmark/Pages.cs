@@ -1,5 +1,6 @@
-// The benchmark's pages, all from a run's record (Record.cs): report.md and report.html, what a run measured with its
-// screenshots, and compare.html, two runs side by side. Each page is one file with its style and script inside, needing
+// The benchmark's pages, all from runs' records (Record.cs) and their metrics (Metrics.cs): report.md and report.html,
+// what a run measured with its screenshots, and compare.html, two runs side by side (Comparison.cs), the verdict and the
+// zones that moved first, the statistics folded. Each page is one file with its style and script inside, needing
 // nothing from the network. Images are the run folder's screenshots by relative path: PNG in a run folder, JPEG in a
 // shared zip, so an image that isn't there tries the other.
 using System;
@@ -15,9 +16,6 @@ namespace KsaPort.Common.Benchmark;
 // One screenshot of a comparison: what was found. State: same, differs, unreadable, or free (a view that may change from
 // run to run as it likes, not compared)
 public sealed record ShotResult(string Name, double ChangedPercent, double MeanChange, double Allowed, string State);
-
-// One part of both runs of a comparison: its numbers in each, and whether it changed past the noise
-public sealed record PartChange(string Scenario, PartRecord A, PartRecord B, bool Marked, double Change);
 
 public static class Pages
 {
@@ -78,6 +76,15 @@ public static class Pages
         }
     }
 
+    // The parts' table's columns, in the report and on its page
+    private static readonly Metric[] Columns =
+    [
+        Metrics.Fps, Metrics.FrameTime, Metrics.CpuBusy, Metrics.GpuBusy, Metrics.FrameP99, Metrics.Low1, Metrics.Hitches, Metrics.Over100,
+        Metrics.Latency, Metrics.Footprint,
+    ];
+
+    private static string Cell(PartRecord p, Metric m) => p[m] is { } v ? m.Format(v) : "";
+
     private static string MarkdownOf(RunRecord r)
     {
         var md = new StringBuilder();
@@ -104,10 +111,10 @@ public static class Pages
         var h = r.Headline();
         var headline = new List<string>();
         if (h.Fps is { } fps)
-            headline.Add($"**{fps:F0} FPS** across the parts{(h.GpuMs is { } gpu ? $", GPU {gpu:F1} ms a frame" : "")}");
+            headline.Add($"**{fps:F0} FPS** across the parts{(h.GpuMs is { } gpu ? $", GPU busy {gpu:F1} ms a frame" : "")}");
         // The slowest of several parts
         if (h.Slowest is { } slowest && r.AllParts().Skip(1).Any())
-            headline.Add($"slowest {slowest.Scenario.Name} {slowest.Part.Name}, {slowest.Part.AverageFps:F0} FPS");
+            headline.Add($"slowest {slowest.Scenario.Name} {slowest.Part.Name}, {slowest.Part[Metrics.Fps]:F0} FPS");
         if (h.WarpDays > 0)
             headline.Add($"**{h.WarpDays:F1} game days** in time warp");
         if (h.MemoryMb > 0)
@@ -127,21 +134,17 @@ public static class Pages
                 md.AppendLine($"- {n.Text}");
         }
         md.AppendLine();
-        var plain = r.Scenarios.Where(s => s.Parts.Count > 0).ToList();
+        var plain = r.Scenarios.Where(s => s.Parts.Any(p => !p.Warped)).ToList();
         if (plain.Count > 0)
         {
-            md.AppendLine("| Scenario | Part | FPS | Frame ms | p95 ms | GPU ms | Over 50 ms | Over 100 ms | Worst ms | Draws | Memory MB | GPU memory MB | Shaders |");
-            md.AppendLine("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
+            md.AppendLine($"| Scenario | Part | {string.Join(" | ", Columns.Select(Heading))} |");
+            md.AppendLine($"|---|---|{string.Concat(Columns.Select(_ => "---:|"))}");
             foreach (var s in plain)
             {
                 string name = Label(s);
-                foreach (var p in s.Parts)
+                foreach (var p in s.Parts.Where(p => !p.Warped))
                 {
-                    string frame = F(p.FrameMsMedian, "0.0");
-                    if (p.FrameMsRange is [var lo, var hi])
-                        frame += $" ({F(lo, "0.0")}-{F(hi, "0.0")})";
-                    md.AppendLine($"| {name} | {p.Name} | {F(p.AverageFps, "0.0")} | {frame} | {F(p.FrameMsP95, "0.0")} | {N(p.GpuMsMedian, "0.0")} | {p.FramesOver50Ms} | {p.FramesOver100Ms} | " +
-                                  $"{F(p.FrameMsMax, "0")} | {N(p.DrawsMedian, "0")} | {p.FootprintPeakMb} | {p.GpuMemoryPeakMb} | {p.ShadersCompiled} |");
+                    md.AppendLine($"| {name} | {p.Name} | {string.Join(" | ", Columns.Select(m => Cell(p, m) + (m == Metrics.FrameTime && p.Range(m) is [var lo, var hi] ? $" ({F(lo, "0.0")}-{F(hi, "0.0")})" : "")))} |");
                     name = "";
                 }
             }
@@ -152,34 +155,51 @@ public static class Pages
                 md.AppendLine("Your Game is your own play as it happened: no two recordings play the same.");
             else if (plain.Any(s => s.Kind == Kind.Flight) && !r.Mode.Contains("jump"))
                 md.AppendLine("A part of the Planetary Tour is measured along the way, between two screenshots.");
-            md.AppendLine("Frame: time between two frames (median, 95th percentile). GPU: time the GPU worked on a frame. Over 50 ms, over 100 ms: the frames that took longer, the stutters you see. " +
-                          "Memory: the game's footprint at its peak, and what KSA Metal allocated for the GPU. Shaders: compiled while measuring (each one a stutter).");
+            md.AppendLine(Glossary);
         }
-        var ab = AB(r);
-        if (ab.Count > 0)
+        var slow = r.Moments.Where(m => m.Part.Length > 0).Take(10).ToList();
+        if (slow.Count > 0)
         {
             md.AppendLine();
-            md.AppendLine($"A/B: B played with {r.Fact("A/B") ?? "the setting changed"}, A with the run's own value of it, in sessions taken in turn.");
+            md.AppendLine($"Slow frames ({r.Moments.Count(m => m.Part.Length > 0)}), and what took their time:");
             md.AppendLine();
-            md.AppendLine("| Scenario | Part | GPU ms A | GPU ms B | Change |");
-            md.AppendLine("|---|---|---:|---:|---:|");
-            foreach (var (scenario, a, b, moved, change) in ab)
+            md.AppendLine("| Scenario | Part | ms | What took the time |");
+            md.AppendLine("|---|---|---:|---|");
+            foreach (var m in slow)
+                md.AppendLine($"| {m.Scenario} | {m.Part} | {F(m.FrameMs, "0")} | {m.Cause} |");
+        }
+        var profiled = r.AllParts().Where(x => x.Part.Profiled != null && !x.Part.Warped).ToList();
+        if (profiled.Count > 0)
+        {
+            md.AppendLine();
+            md.AppendLine("The GPU's zones in the profiled pass, own ms a frame (zones run one after another there: compare them only with other profiles):");
+            md.AppendLine();
+            foreach (var (s, p) in profiled)
+                md.AppendLine($"- {s.Name} {p.Name} (GPU busy {N(p.Profiled!.GetValueOrDefault(Metrics.GpuBusy.Name), "0.0")}): " +
+                              string.Join(", ", p.Zones(Metrics.GpuZones, profiled: true).Take(6).Select(z => $"{Metrics.ZoneLabel(z.Name)} {F(z.Ms, "0.00")}")));
+        }
+        if (AB(r) is { } ab)
+        {
+            md.AppendLine();
+            var (sentence, _) = ab.Sentence();
+            md.AppendLine($"A/B: B played with {r.Fact("A/B") ?? "the setting changed"}, A with the run's own value of it, in sessions taken in turn. **{sentence}**.");
+            md.AppendLine();
+            md.AppendLine("| Scenario | Part | GPU ms A | GPU ms B | Change | Zones that moved |");
+            md.AppendLine("|---|---|---:|---:|---:|---|");
+            foreach (var c in ab.Parts.Where(c => c.Decides != null))
             {
-                string Range(PartRecord p) => (p.GpuMsMedian ?? p.FrameMsMedian).ToString("0.0", CultureInfo.InvariantCulture) +
-                                              (p.GpuMsRange is [var lo, var hi] ? $" ({F(lo, "0.0")}-{F(hi, "0.0")})" : "");
-                md.AppendLine($"| {scenario} | {a.Name} | {Range(a)} | {Range(b)} | " +
-                              (moved ? $"**{Math.Abs(change) * 100:F0} % {(change < 0 ? "faster" : "slower")}**" : $"{change * 100:+0;-0;0} %") + " |");
+                var v = c.Decides!;
+                md.AppendLine($"| {c.Scenario} | {c.Name} | {Range(c.A, v.Metric)} | {Range(c.B, v.Metric)} | {Marked(v)} | {Zones(c)} |");
             }
             md.AppendLine();
-            md.AppendLine("A change is marked past the noise: with several passes or sessions, when the ranges of A's and B's measurings don't overlap and it is over 2 %; " +
-                          "with one, past the part's limit (5 % without a noise profile).");
+            md.AppendLine(BasisNote(ab.Basis));
             if (r.Fact("While A played") is { } memoryA && r.Fact("While B played") is { } memoryB)
             {
                 md.AppendLine();
                 md.AppendLine($"macOS's memory while each side played: A {memoryA}; B {memoryB}.");
             }
         }
-        var warp = r.AllParts().Where(x => x.Part.Warp != null).ToList();
+        var warp = r.AllParts().Where(x => x.Part.Warped).ToList();
         if (warp.Count > 0)
         {
             md.AppendLine();
@@ -187,14 +207,13 @@ public static class Pages
             md.AppendLine();
             md.AppendLine("Speed: game seconds per second, against what was asked (1 is real time). To 90 %: seconds until it ran at 90 % of what was asked. Physics: the slowest vehicle job. A speed far under what was asked means the simulation held it back.");
             md.AppendLine();
-            md.AppendLine("| Scenario | Part | Game days | Speed | Asked | To 90 % s | GPU ms | Worst ms | Physics ms | Substeps | Vehicles | Bubbles |");
+            md.AppendLine("| Scenario | Part | Game days | Speed | Asked | To 90 % s | GPU busy | Worst ms | Physics ms | Substeps | Vehicles | Bubbles |");
             md.AppendLine("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
             foreach (var (s, p) in warp)
             {
-                var w = p.Warp!;
-                var speed = $"x{w.Speed:F0}" + (w.SpeedRange is [var lo, var hi] ? $" ({lo:F0}-{hi:F0})" : "");
-                md.AppendLine($"| {s.Name} | {p.Name} | {F(w.GameDays, "0.##")} | {speed} | x{w.SpeedAsked:F0} | {(w.SecondsToSpeed is { } t ? F(t, "0.0") : "never")} | " +
-                              $"{N(p.GpuMsMedian, "0.0")} | {F(p.FrameMsMax, "0")} | {F(w.SimMsMax, "0.0")} | {w.Substeps} | {w.VehiclesMax} | {w.BubblesMax} |");
+                var speed = $"x{Cell(p, Metrics.Speed)}" + (p.Range(Metrics.Speed) is [var lo, var hi] ? $" ({lo:F0}-{hi:F0})" : "");
+                md.AppendLine($"| {s.Name} | {p.Name} | {F(p[Metrics.GameDays] ?? 0, "0.##")} | {speed} | x{Cell(p, Metrics.SpeedAsked)} | {(p[Metrics.ToSpeed] is { } t ? F(t, "0.0") : "never")} | " +
+                              $"{Cell(p, Metrics.GpuBusy)} | {Cell(p, Metrics.Worst)} | {Cell(p, Metrics.SimTick)} | {Cell(p, Metrics.Substeps)} | {Cell(p, Metrics.Vehicles)} | {Cell(p, Metrics.Bubbles)} |");
             }
         }
         md.AppendLine();
@@ -209,29 +228,48 @@ public static class Pages
         if (r.LoadSeconds is > 0 and var load)
             md.AppendLine($"| Loading | {F(load, "0.0")} s |");
         if (r.AllParts().Select(x => x.Part.Runs).DefaultIfEmpty(1).Max() is > 1 and var runs)
-            md.AppendLine($"| Runs | {runs}: each number is the median of the runs, Frame ms shows their range |");
+            md.AppendLine($"| Runs | {runs}: each number is the median of the runs, Frame time shows their range |");
         return md.ToString();
     }
 
-    // An A/B run's parts, B's against A's: whether each moved past the noise, and by how much (GPU time, or frame time)
-    public static List<(string Scenario, PartRecord A, PartRecord B, bool Moved, double Change)> AB(RunRecord r)
+    // What the parts' table's numbers are, PresentMon's names
+    public const string Glossary =
+        "Frame time: between two frames (median). CPU busy: a frame's work from its start to its present, its waits for a drawable or the GPU left out. GPU busy: the GPU's time on a frame. " +
+        "P99: 99 % of frames took less. 1% low: the mean of the worst 1 %. Hitches: frames over 50 ms and twice the median before them, the stutters you see. " +
+        "Latency: from a frame's start to its showing. Memory: the game's footprint at its peak, MB.";
+
+    private static string Heading(Metric m) => m == Metrics.Footprint ? "Memory MB" : m.Unit == "ms" ? $"{m.Label} ms" : m.Label;
+
+    // A number with its measurings' range: "12.3 (12.1-12.6)"
+    private static string Range(PartRecord p, Metric m) =>
+        (p[m] is { } v ? m.Format(v) : "") + (p.Range(m) is [var lo, var hi] ? $" ({m.Format(lo)}-{m.Format(hi)})" : "");
+
+    // A verdict for a Markdown table: a change marked bold
+    public static string Marked(Verdict v) => v.Changed ? $"**{Comparison.Text(v)}**" : Comparison.Text(v);
+
+    // The zones that moved with a part: "Clouds Raymarching +1.20"
+    public static string Zones(PartComparison c) =>
+        string.Join(", ", c.Zones.Select(z => $"{z.Label} {F(z.Delta, "+0.00;-0.00")}"));
+
+    // What a comparison's verdicts stand on, in a sentence
+    public static string BasisNote(Basis basis) => basis switch
     {
-        var list = new List<(string, PartRecord, PartRecord, bool, double)>();
-        foreach (var a in r.Scenarios.Where(s => s.Variant == "A"))
-        {
-            if (r.Scenarios.FirstOrDefault(s => s.Name == a.Name && s.Variant == "B") is not { } b)
-                continue;
-            foreach (var pa in a.Parts.Where(p => p.Warp == null))
-            {
-                if (b.Part(pa.Name) is not { } pb)
-                    continue;
-                bool gpu = pa.GpuMsMedian != null && pb.GpuMsMedian != null;
-                double x = gpu ? pa.GpuMsMedian!.Value : pa.FrameMsMedian, y = gpu ? pb.GpuMsMedian!.Value : pb.FrameMsMedian;
-                list.Add((a.Name, pa, pb, Noise.Moved(x, y, gpu ? pa.GpuMsRange : pa.FrameMsRange, gpu ? pb.GpuMsRange : pb.FrameMsRange, pa.Limit),
-                    x > 0 ? (y - x) / x : 0));
-            }
-        }
-        return list;
+        Basis.Sessions => $"Each side's sample is a game session's median. A change is marked when Mann-Whitney's p is under {F(Statistics.Alpha, "0.00")}, " +
+                          $"Cliff's delta is past {F(Statistics.NegligibleDelta, "0.000")} and it is past the part's limit (CPU busy also by 0.25 ms); with fewer than {Statistics.SessionsNeeded} " +
+                          "sessions a side it is inconclusive (?).",
+        Basis.QuickRead => "A quick read of one game session a side: a change is marked when the ranges of its passes don't overlap and it is over 2 %. " +
+                           "Sessions of their own decide (./benchmark.sh measure --sessions 5).",
+        _ => "A screen of one run a side: a change past a part's limit (its test's noise profile, else 5 %) is marked; smaller ones are within run-to-run noise. " +
+             "A Mac's heat moves GPU time too: measure both sides to be sure (./benchmark.sh measure --sessions 5).",
+    };
+
+    // An A/B run's two sides compared, B against A; null in other runs
+    public static Comparison? AB(RunRecord r)
+    {
+        var a = r.Scenarios.Where(s => s.Variant == "A").SelectMany(s => s.Parts.Select(p => (s.Name, p)));
+        var b = r.Scenarios.Where(s => s.Variant == "B").SelectMany(s => s.Parts.Select(p => (s.Name, p)));
+        var c = Comparison.Of(a, b);
+        return c.Parts.Count + c.Warps.Count > 0 ? c : null;
     }
 
     // --- report.html
@@ -268,9 +306,9 @@ public static class Pages
         if (h.Fps is { } fps)
             Tile(html, F(fps, "0"), "FPS", "across the measured parts");
         if (h.GpuMs is { } gpu)
-            Tile(html, F(gpu), "ms", "GPU time a frame");
+            Tile(html, F(gpu), "ms", "GPU busy a frame");
         if (h.Slowest is { } slowest && r.AllParts().Skip(1).Any())
-            Tile(html, F(slowest.Part.AverageFps, "0"), "FPS", $"slowest part: {slowest.Scenario.Name} {slowest.Part.Name}");
+            Tile(html, F(slowest.Part[Metrics.Fps] ?? 0, "0"), "FPS", $"slowest part: {slowest.Scenario.Name} {slowest.Part.Name}");
         if (h.WarpDays > 0)
             Tile(html, F(h.WarpDays, h.WarpDays >= 100 ? "0" : "0.#"), "days", "game time in the Warp Test");
         if (h.MemoryMb > 0)
@@ -289,13 +327,16 @@ public static class Pages
 
         var shown = order.Select(s => Path.GetFileNameWithoutExtension(s.File)).ToHashSet();
         Parts(html, r, shown, ext);
+        SlowFrames(html, r);
+        WhereTheTimeGoes(html, r);
+        AllNumbers(html, r);
         ABTable(html, r);
         var timelines = Timelines(dir);
         WarpCharts(html, r, timelines);
         FrameCharts(html, r, timelines);
         Gallery(html, r, order, ext);
         FactsTable(html, r);
-        html.Append("<footer>Every frame's numbers are in <code>frames.csv</code>, the run's record in <code>run.json</code>, the same numbers as text in <code>report.md</code>, the game's log in <code>game.log</code>.</footer>");
+        html.Append("<footer>Every frame's numbers are in <code>run.db</code> (SQLite: <code>./benchmark.sh query</code>), the run's record in <code>run.json</code>, the same numbers as text in <code>report.md</code>, the game's log in <code>game.log</code>.</footer>");
         html.Append("</main>");
         Close(html);
         File.WriteAllText(Path.Combine(dir, "report.html"), html.ToString());
@@ -320,58 +361,169 @@ public static class Pages
     // The parts as a table, a bar for each one's frame time on one scale
     private static void Parts(StringBuilder html, RunRecord r, HashSet<string> shots, string ext)
     {
-        var parts = r.AllParts().Where(x => x.Part.Warp == null).ToList();
+        var parts = r.AllParts().Where(x => !x.Part.Warped).ToList();
         if (parts.Count == 0)
             return;
-        double scale = Math.Max(parts.Max(x => Math.Max(x.Part.FrameMsMedian, x.Part.GpuMsMedian ?? 0)), 1);
-        html.Append("<section><h2>Part by part</h2><p class=\"lead\">Frame: the time between two frames. GPU: the time the GPU worked on one. Over 50 ms, over 100 ms: the frames that took longer, the stutters you see.</p>");
-        html.Append("<div class=\"key\"><i class=\"s1\"></i>Frame ms<i class=\"s2\"></i>GPU ms</div>");
-        html.Append("<div class=\"table-scroll\"><table class=\"parts\"><thead><tr><th>Part</th><th class=\"bar-cell\"></th><th>FPS</th><th>Frame ms</th><th>GPU ms</th><th>p95 ms</th><th>Worst ms</th><th>Over 50 ms</th><th>Over 100 ms</th><th>Draws</th><th>Memory MB</th></tr></thead><tbody>");
+        double scale = Math.Max(parts.Max(x => Math.Max(x.Part[Metrics.FrameTime] ?? 0, x.Part[Metrics.GpuBusy] ?? 0)), 1);
+        html.Append($"<section><h2>Part by part</h2><p class=\"lead\">{E(Glossary)}</p>");
+        html.Append("<div class=\"key\"><i class=\"s1\"></i>Frame time<i class=\"s2\"></i>GPU busy</div>");
+        html.Append("<div class=\"table-scroll\"><table class=\"parts\"><thead><tr><th>Part</th><th class=\"bar-cell\"></th>");
+        foreach (var m in Columns)
+            html.Append($"<th title=\"{E(m.Help)}\">{E(Heading(m))}</th>");
+        html.Append("</tr></thead><tbody>");
         string last = "";
         foreach (var (s, p) in parts)
         {
             if (Label(s) != last && r.Scenarios.Count > 1)
-                html.Append($"<tr class=\"group\"><th colspan=\"11\">{E(Label(s))}</th></tr>");
+                html.Append($"<tr class=\"group\"><th colspan=\"{Columns.Length + 2}\">{E(Label(s))}</th></tr>");
             last = Label(s);
             var shot = $"{s.Name}_{p.Name}";
-            string frame = F(p.FrameMsMedian, "0.0");
-            if (p.FrameMsRange is [var lo, var hi])
-                frame += $" <small>{F(lo, "0.0")}-{F(hi, "0.0")}</small>";
             html.Append($"<tr><td class=\"part\">{(shots.Contains(shot) ? $"<a href=\"#{E(shot)}\">{Image(shot + ext, "")}</a>" : "<span class=\"no-thumb\"></span>")}{E(p.Name)}</td>");
             html.Append("<td class=\"bar-cell\">");
-            html.Append($"<div class=\"bar s1\" style=\"width:{F(100 * p.FrameMsMedian / scale, "0.0")}%\" title=\"Frame {F(p.FrameMsMedian)} ms\"></div>");
-            if (p.GpuMsMedian is { } g)
-                html.Append($"<div class=\"bar s2\" style=\"width:{F(100 * g / scale, "0.0")}%\" title=\"GPU {F(g)} ms\"></div>");
+            if (p[Metrics.FrameTime] is { } f)
+                html.Append($"<div class=\"bar s1\" style=\"width:{F(100 * f / scale, "0.0")}%\" title=\"Frame time {F(f)} ms\"></div>");
+            if (p[Metrics.GpuBusy] is { } g)
+                html.Append($"<div class=\"bar s2\" style=\"width:{F(100 * g / scale, "0.0")}%\" title=\"GPU busy {F(g)} ms\"></div>");
             html.Append("</td>");
-            html.Append($"<td>{F(p.AverageFps, "0.0")}</td><td>{frame}</td><td>{N(p.GpuMsMedian, "0.0")}</td><td>{F(p.FrameMsP95, "0.0")}</td><td>{F(p.FrameMsMax, "0")}</td><td>{p.FramesOver50Ms}</td><td>{p.FramesOver100Ms}</td><td>{N(p.DrawsMedian, "0")}</td><td>{p.FootprintPeakMb}</td></tr>");
+            foreach (var m in Columns)
+                html.Append(m == Metrics.FrameTime && p.Range(m) is [var lo, var hi]
+                    ? $"<td>{Cell(p, m)} <small>{F(lo, "0.0")}-{F(hi, "0.0")}</small></td>"
+                    : $"<td>{Cell(p, m)}</td>");
+            html.Append("</tr>");
         }
         html.Append("</tbody></table></div></section>");
+    }
+
+    // The slow frames the triggers kept, and what took their time
+    private static void SlowFrames(StringBuilder html, RunRecord r)
+    {
+        var slow = r.Moments.Where(m => m.Part.Length > 0).ToList();
+        if (slow.Count == 0)
+            return;
+        html.Append($"<section><h2>Slow frames</h2><p class=\"lead\">{slow.Count} frame{(slow.Count > 1 ? "s" : "")} of 100 ms or more while measuring, with what took the time: the main thread's zones with the most time of their own, KSA Metal's waits, the GPU's time around it.</p>");
+        html.Append("<div class=\"table-scroll\"><table class=\"parts\"><thead><tr><th>Part</th><th>ms</th><th class=\"cause\">What took the time</th></tr></thead><tbody>");
+        foreach (var m in slow.Take(20))
+            html.Append($"<tr><td class=\"part\">{E(m.Scenario)} {E(m.Part)}</td><td>{F(m.FrameMs, "0")}</td><td class=\"cause\">{E(m.Cause)}</td></tr>");
+        html.Append("</tbody></table></div></section>");
+    }
+
+    // Each part's zones with the most own time a frame: the GPU's from a profiled pass, the main thread's and the job
+    // runners' from the measured ones
+    private static void WhereTheTimeGoes(StringBuilder html, RunRecord r)
+    {
+        var parts = r.AllParts().Where(x => !x.Part.Warped && (x.Part.Zones(Metrics.MainZones).Any() || x.Part.Profiled != null)).ToList();
+        if (parts.Count == 0)
+            return;
+        html.Append("<section><h2>Where the time goes</h2><p class=\"lead\">The game's own profilers, a zone's own time a frame (its time less its zones'). The GPU's zones come from a profiled pass (./benchmark.sh profile), where zones run one after another: compare them only with other profiles.</p>");
+        foreach (var (s, p) in parts)
+        {
+            html.Append($"<details><summary>{E(s.Name)} {E(p.Name)}</summary><div class=\"zones\">");
+            void Group(string title, IEnumerable<(string Name, double Ms)> zones)
+            {
+                var list = zones.Take(8).ToList();
+                if (list.Count == 0)
+                    return;
+                html.Append($"<table class=\"facts\"><thead><tr><th>{E(title)}</th><th>ms</th></tr></thead><tbody>");
+                foreach (var (name, ms) in list)
+                    html.Append($"<tr><td>{E(name[(name.IndexOf('/') + 1)..].Replace("zone/", ""))}</td><td>{F(ms, "0.00")}</td></tr>");
+                html.Append("</tbody></table>");
+            }
+            if (p.Profiled != null)
+                Group($"GPU (profiled, {N(p.Profiled.GetValueOrDefault(Metrics.GpuBusy.Name), "0.0")} ms)", p.Zones(Metrics.GpuZones, profiled: true));
+            else
+                Group("GPU", p.Zones(Metrics.GpuZones));
+            Group("Main thread", p.Zones(Metrics.MainZones));
+            Group("Job runners", p.Zones(Metrics.JobZones));
+            html.Append("</div></details>");
+        }
+        html.Append("</section>");
+    }
+
+    // Every metric of every part, folded
+    private static void AllNumbers(StringBuilder html, RunRecord r)
+    {
+        var parts = r.AllParts().ToList();
+        var metrics = Metrics.All.Where(m => parts.Any(x => x.Part[m] != null)).ToList();
+        if (parts.Count == 0)
+            return;
+        html.Append("<section><details><summary>All numbers</summary><div class=\"table-scroll\"><table class=\"parts\"><thead><tr><th>Part</th>");
+        foreach (var m in metrics)
+            html.Append($"<th title=\"{E(m.Name + ": " + m.Help)}\">{E(m.Label)}{(m.Unit.Length > 0 ? $" <small>{E(m.Unit)}</small>" : "")}</th>");
+        html.Append("</tr></thead><tbody>");
+        foreach (var (s, p) in parts)
+        {
+            html.Append($"<tr><td class=\"part\">{E(Label(s))} {E(p.Name)}</td>");
+            foreach (var m in metrics)
+                html.Append($"<td>{Cell(p, m)}</td>");
+            html.Append("</tr>");
+        }
+        html.Append("</tbody></table></div></details></section>");
     }
 
     // A scenario's name, with its side in an A/B run
     private static string Label(ScenarioRecord s) => s.Variant is { } v ? $"{s.Name} ({v})" : s.Name;
 
-    // An A/B run: each part's GPU time with the setting changed (B) and as the run had it (A), and whether it moved
-    // past the noise
+    // An A/B run: each part with the setting changed (B) and as the run had it (A), its verdict and the zones that moved
     private static void ABTable(StringBuilder html, RunRecord r)
     {
-        var ab = AB(r);
-        if (ab.Count == 0)
+        if (AB(r) is not { } ab)
             return;
-        html.Append($"<section><h2>A/B</h2><p class=\"lead\">B played with {E(r.Fact("A/B") ?? "the setting changed")}, A with the run's own value of it, in sessions taken in turn. A change is marked past the noise: ranges that don't overlap, or with one measuring each, the part's limit.</p>");
-        html.Append("<div class=\"table-scroll\"><table class=\"parts\"><thead><tr><th>Part</th><th>A ms</th><th>B ms</th><th>Change</th></tr></thead><tbody>");
-        foreach (var (scenario, a, b, moved, change) in ab)
-        {
-            html.Append($"<tr><td class=\"part\">{E(scenario)} {E(a.Name)}</td><td>{F(a.GpuMsMedian ?? a.FrameMsMedian, "0.0")}</td><td>{F(b.GpuMsMedian ?? b.FrameMsMedian, "0.0")}</td>");
-            html.Append($"<td>{(moved ? Change(change < 0, $"{F(Math.Abs(change) * 100, "0")} % {(change < 0 ? "faster" : "slower")}") : $"<span class=\"quiet\">{F(change * 100, "+0;-0;0")} %</span>")}</td></tr>");
-        }
-        html.Append("</tbody></table></div>");
+        var (sentence, good) = ab.Sentence();
+        html.Append($"<section><h2>A/B</h2><p class=\"lead\">B played with {E(r.Fact("A/B") ?? "the setting changed")}, A with the run's own value of it, in sessions taken in turn. {(good is { } g ? Status(g, sentence) : E(sentence))}</p>");
+        ComparisonTable(html, ab, "A", "B");
+        html.Append($"<p class=\"small\">{E(BasisNote(ab.Basis))}</p>");
+        StatisticsTable(html, ab);
         if (r.Fact("While A played") is { } memoryA && r.Fact("While B played") is { } memoryB)
             html.Append($"<p class=\"lead\">macOS's memory while each side played: A {E(memoryA)}; B {E(memoryB)}.</p>");
         html.Append("</section>");
     }
 
-    // frames.csv by scenario (the first session and measured pass that played it, not the warm-up): for each frame
+    // A comparison's parts: a bar for each side, the deciding numbers, the verdict and the zones that moved
+    private static void ComparisonTable(StringBuilder html, Comparison c, string a, string b)
+    {
+        var parts = c.Parts.Where(p => p.Decides != null).ToList();
+        if (parts.Count == 0)
+            return;
+        double scale = Math.Max(parts.Max(p => Math.Max(p.Decides!.A, p.Decides.B)), 1);
+        html.Append($"<div class=\"key\"><i class=\"s0\"></i>{E(a)}<i class=\"s1\"></i>{E(b)}</div><div class=\"table-scroll\"><table class=\"parts\"><thead><tr><th>Part</th><th class=\"bar-cell\"></th><th></th><th>{E(a)}</th><th>{E(b)}</th><th>Change</th><th class=\"cause\">Zones that moved</th><th>Frame ms {E(a)}</th><th>Frame ms {E(b)}</th></tr></thead><tbody>");
+        string last = "";
+        foreach (var p in parts)
+        {
+            var v = p.Decides!;
+            if (p.Scenario != last && c.Parts.Select(x => x.Scenario).Distinct().Count() > 1)
+                html.Append($"<tr class=\"group\"><th colspan=\"9\">{E(p.Scenario)}</th></tr>");
+            last = p.Scenario;
+            html.Append($"<tr><td class=\"part\">{E(p.Name)}</td><td class=\"bar-cell\"><div class=\"bar s0\" style=\"width:{F(100 * v.A / scale, "0.0")}%\"></div><div class=\"bar s1\" style=\"width:{F(100 * v.B / scale, "0.0")}%\"></div></td>");
+            html.Append($"<td class=\"quiet\">{E(v.Metric.Label)}</td><td>{v.Metric.Format(v.A)}</td><td>{v.Metric.Format(v.B)}</td><td>{Chip(v)}</td>");
+            var zones = p.Zones.Count > 0 ? E(Zones(p)) : v.Metric == Metrics.GpuBusy && v.Changed && !p.GpuZones ? "<span class=\"quiet\">profile both to name them</span>" : "";
+            html.Append($"<td class=\"cause\">{zones}</td><td>{Cell(p.A, Metrics.FrameTime)}</td><td>{Cell(p.B, Metrics.FrameTime)}</td></tr>");
+        }
+        html.Append("</tbody></table></div>");
+    }
+
+    // A verdict as a chip: better, worse, or quiet within the noise
+    private static string Chip(Verdict v) => v.Change switch
+    {
+        Change.Better => Mark(true, Comparison.Text(v)),
+        Change.Worse => Mark(false, Comparison.Text(v)),
+        _ => $"<span class=\"quiet\">{E(Comparison.Text(v))}</span>",
+    };
+
+    // Every judged metric of every part with its test's numbers, folded
+    private static void StatisticsTable(StringBuilder html, Comparison c)
+    {
+        var rows = c.Parts.Concat(c.Warps).SelectMany(p => p.Verdicts.Select(v => (p, v))).ToList();
+        if (rows.Count == 0)
+            return;
+        html.Append("<details><summary>Statistics</summary><div class=\"table-scroll\"><table class=\"parts\"><thead><tr><th>Part</th><th>Metric</th><th>A</th><th>B</th><th>Change</th><th>On</th><th>p</th><th>Cliff's delta</th><th>B/A, 95 %</th><th>Limit</th></tr></thead><tbody>");
+        foreach (var (p, v) in rows)
+            html.Append($"<tr><td class=\"part\">{E(p.Scenario)} {E(p.Name)}</td><td>{E(v.Metric.Label)}</td><td>{v.Metric.Format(v.A)}</td><td>{v.Metric.Format(v.B)}</td><td>{Chip(v)}</td>" +
+                        $"<td>{E(Statistics.Name(v.Basis))}{(v.Basis == Basis.Sessions ? $" {v.SessionsA}/{v.SessionsB}" : "")}</td><td>{N(v.P, "0.000")}</td><td>{N(v.Delta, "+0.00;-0.00;0")}</td>" +
+                        $"<td>{(v.Interval is [var lo, var hi] ? $"{F(lo, "0.000")}-{F(hi, "0.000")}" : "")}</td><td>{F(v.Limit, "0.#")} %</td></tr>");
+        html.Append("</tbody></table></div></details>");
+    }
+
+    // The run's frames by scenario (the first session and measured pass that played it, not the warm-up): for each frame
     // the seconds since the scenario began, the part, frame and GPU ms, the game's clock and the speed asked for
     private sealed record Sample(double T, string Part, double FrameMs, double GpuMs, double Game, double Asked);
 
@@ -398,20 +550,19 @@ public static class Pages
     // Time warp's parts: the speed the game's clock ran at, second by second, on a log scale, one small chart a part
     private static void WarpCharts(StringBuilder html, RunRecord r, Dictionary<string, List<Sample>> timelines)
     {
-        var parts = r.AllParts().Where(x => x.Part.Warp != null).ToList();
+        var parts = r.AllParts().Where(x => x.Part.Warped).ToList();
         if (parts.Count == 0)
             return;
-        double days = parts.Sum(x => x.Part.Warp!.GameDays);
+        double days = parts.Sum(x => x.Part[Metrics.GameDays] ?? 0);
         html.Append($"<section><h2>Time warp</h2><p class=\"lead\">The game got through <b>{F(days, days >= 100 ? "0" : "0.#")} days</b> in the {F(parts.Sum(x => x.Part.Seconds), "0")} s of the parts. Each chart shows how fast the game's clock ran, against the speed asked for.</p>");
         html.Append("<div class=\"key\"><i class=\"s1\"></i>Speed reached<i class=\"line\"></i>Speed asked</div><div class=\"multiples\">");
         foreach (var (s, p) in parts)
         {
-            var w = p.Warp!;
             var samples = timelines.GetValueOrDefault(s.Name)?.Where(x => x.Part == p.Name).ToList() ?? new List<Sample>();
-            html.Append($"<figure><figcaption><b>{E(p.Name)}</b><span>{Count(w.GameDays, "day", "0.#")}</span></figcaption>");
+            html.Append($"<figure><figcaption><b>{E(p.Name)}</b><span>{Count(p[Metrics.GameDays] ?? 0, "day", "0.#")}</span></figcaption>");
             html.Append(SpeedChart(samples));
-            string reached = w.SecondsToSpeed is { } t ? $"reached it in {F(t, "0.0")} s" : "never reached the speed";
-            html.Append($"<p class=\"small\">x{Compact(w.Speed)} of x{Compact(w.SpeedAsked)}, {reached}; GPU {N(p.GpuMsMedian, "0.0")} ms a frame, worst frame {Compact(p.FrameMsMax)} ms, {Count(w.VehiclesMax, "vehicle")}, {Count(w.BubblesMax, "physics bubble")}</p></figure>");
+            string reached = p[Metrics.ToSpeed] is { } t ? $"reached it in {F(t, "0.0")} s" : "never reached the speed";
+            html.Append($"<p class=\"small\">x{Compact(p[Metrics.Speed] ?? 0)} of x{Compact(p[Metrics.SpeedAsked] ?? 0)}, {reached}; GPU busy {N(p[Metrics.GpuBusy], "0.0")} ms a frame, worst frame {Compact(p[Metrics.Worst] ?? 0)} ms, {Count(p[Metrics.Vehicles] ?? 0, "vehicle")}, {Count(p[Metrics.Bubbles] ?? 0, "physics bubble")}</p></figure>");
         }
         html.Append("</div></section>");
     }
@@ -559,7 +710,7 @@ public static class Pages
         {
             var id = Path.GetFileNameWithoutExtension(shot.File);
             var part = r.Scenarios.FirstOrDefault(s => s.Shots.Contains(shot))?.Part(shot.Name);
-            string numbers = part is { Warp: null } ? $"<span>{F(part.AverageFps, "0")} FPS</span>" : "";
+            string numbers = part is { Warped: false } && part[Metrics.Fps] is { } fps ? $"<span>{F(fps, "0")} FPS</span>" : "";
             html.Append($"<figure id=\"{E(id)}\"><a href=\"{E(Url(id + ext))}\" class=\"shot\" data-caption=\"{E(shot.Name)}\">{Image(id + ext, shot.Name)}</a><figcaption><b>{E(shot.Name)}</b>{numbers}</figcaption></figure>");
         }
         html.Append("</div></section>");
@@ -580,8 +731,8 @@ public static class Pages
 
     // --- compare.html
 
-    public static void WriteCompare(string a, string b, RunRecord ra, RunRecord rb, IReadOnlyList<PartChange> parts, IReadOnlyList<PartChange> warp,
-        IReadOnlyList<ShotResult> shots, string verdict, bool? good, IReadOnlyList<(string Key, string A, string B)> differences, string shotsNote)
+    public static void WriteCompare(string a, string b, RunRecord ra, RunRecord rb, Comparison c, IReadOnlyList<ShotResult> shots, string verdict,
+        bool? good, IReadOnlyList<(string Key, string A, string B)> differences, string shotsNote)
     {
         var html = new StringBuilder();
         var test = TestName(rb.Test);
@@ -590,6 +741,24 @@ public static class Pages
         html.Append($"<h1>{E(test)}</h1><p><b>A</b> {E(When(ra))} &nbsp; <b>B</b> {E(When(rb))}</p>");
         html.Append(good is { } better ? Status(better, verdict) : $"<span class=\"status\">{E(verdict)}</span>");
         html.Append("</div></header><main>");
+
+        // What moved first: each part that changed, with its zones
+        var moved = c.Parts.Concat(c.Warps).Where(p => p.Decides is { Changed: true }).ToList();
+        html.Append("<section><h2>What moved</h2>");
+        if (moved.Count == 0)
+            html.Append($"<p class=\"lead\">No part moved past the noise. {E(BasisNote(c.Basis))}</p>");
+        else
+        {
+            html.Append("<ul class=\"moved\">");
+            foreach (var p in moved)
+                html.Append($"<li>{Chip(p.Decides!)} {E(p.Line())}</li>");
+            html.Append("</ul>");
+            if (moved.Any(p => p.Decides!.Metric == Metrics.GpuBusy && !p.GpuZones))
+                html.Append("<p class=\"small\">Profile both runs to name the GPU's zones that moved: <code>./benchmark.sh profile</code>.</p>");
+            html.Append($"<p class=\"small\">{E(BasisNote(c.Basis))}</p>");
+        }
+        html.Append("</section>");
+
         if (differences.Count > 0)
         {
             html.Append("<section><h2>What differs between the runs</h2><div class=\"table-scroll\"><table class=\"facts three\"><thead><tr><th></th><th>A</th><th>B</th></tr></thead><tbody>");
@@ -600,36 +769,25 @@ public static class Pages
         else
             html.Append("<section><p class=\"lead\">Same Mac, same version, same settings.</p></section>");
 
-        // GPU time decides: frame times sit on the display's beat
-        if (parts.Count > 0)
+        if (c.Parts.Count > 0)
         {
-            static double Measure(PartRecord p) => p.GpuMsMedian ?? p.FrameMsMedian;
-            double scale = Math.Max(parts.Max(p => Math.Max(Measure(p.A), Measure(p.B))), 1);
-            html.Append("<section><h2>Part by part</h2><p class=\"lead\">GPU time a frame. Small changes are within run-to-run noise and go unmarked.</p>");
-            html.Append("<div class=\"key\"><i class=\"s0\"></i>A<i class=\"s1\"></i>B</div><div class=\"table-scroll\"><table class=\"parts\"><thead><tr><th>Part</th><th class=\"bar-cell\"></th><th>A ms</th><th>B ms</th><th>Change</th><th>Frame ms A</th><th>Frame ms B</th></tr></thead><tbody>");
-            string last = "";
-            foreach (var p in parts)
-            {
-                if (p.Scenario != last && ra.Scenarios.Count > 1)
-                    html.Append($"<tr class=\"group\"><th colspan=\"7\">{E(p.Scenario)}</th></tr>");
-                last = p.Scenario;
-                double x = Measure(p.A), y = Measure(p.B);
-                html.Append($"<tr><td class=\"part\">{E(p.A.Name)}</td><td class=\"bar-cell\"><div class=\"bar s0\" style=\"width:{F(100 * x / scale, "0.0")}%\"></div><div class=\"bar s1\" style=\"width:{F(100 * y / scale, "0.0")}%\"></div></td>");
-                html.Append($"<td>{F(x, "0.0")}</td><td>{F(y, "0.0")}</td><td>{(p.Marked ? Change(p.Change < 0, $"{F(Math.Abs(p.Change) * 100, "0")} % {(p.Change < 0 ? "faster" : "slower")}") : $"<span class=\"quiet\">{F(p.Change * 100, "+0;-0;0")} %</span>")}</td>");
-                html.Append($"<td>{F(p.A.FrameMsMedian, "0.0")}</td><td>{F(p.B.FrameMsMedian, "0.0")}</td></tr>");
-            }
-            html.Append("</tbody></table></div></section>");
+            html.Append("<section><h2>Part by part</h2><p class=\"lead\">GPU busy a frame where both runs have it (frame times sit on the display's beat). Small changes are within run-to-run noise and go unmarked.</p>");
+            ComparisonTable(html, c, "A", "B");
+            html.Append("</section>");
         }
 
-        if (warp.Count > 0)
+        if (c.Warps.Count > 0)
         {
-            html.Append("<section><h2>Time warp</h2><div class=\"table-scroll\"><table class=\"parts\"><thead><tr><th>Part</th><th>Days A</th><th>Days B</th><th>Speed A</th><th>Speed B</th><th>Change</th><th>GPU ms A</th><th>GPU ms B</th></tr></thead><tbody>");
-            foreach (var p in warp)
-            {
-                var (wa, wb) = (p.A.Warp!, p.B.Warp!);
-                html.Append($"<tr><td class=\"part\">{E(p.A.Name)}</td><td>{F(wa.GameDays, "0.#")}</td><td>{F(wb.GameDays, "0.#")}</td><td>x{Compact(wa.Speed)}</td><td>x{Compact(wb.Speed)}</td><td>{(p.Marked ? Change(p.Change > 0, $"{F(Math.Abs(p.Change) * 100, "0")} % {(p.Change > 0 ? "faster" : "slower")}") : $"<span class=\"quiet\">{F(p.Change * 100, "+0;-0;0")} %</span>")}</td><td>{N(p.A.GpuMsMedian, "0.0")}</td><td>{N(p.B.GpuMsMedian, "0.0")}</td></tr>");
-            }
+            html.Append("<section><h2>Time warp</h2><div class=\"table-scroll\"><table class=\"parts\"><thead><tr><th>Part</th><th>Days A</th><th>Days B</th><th>Speed A</th><th>Speed B</th><th>Change</th><th>GPU busy A</th><th>GPU busy B</th></tr></thead><tbody>");
+            foreach (var p in c.Warps.Where(p => p.Decides != null))
+                html.Append($"<tr><td class=\"part\">{E(p.Name)}</td><td>{F(p.A[Metrics.GameDays] ?? 0, "0.#")}</td><td>{F(p.B[Metrics.GameDays] ?? 0, "0.#")}</td><td>x{Compact(p.Decides!.A)}</td><td>x{Compact(p.Decides.B)}</td><td>{Chip(p.Decides)}</td><td>{Cell(p.A, Metrics.GpuBusy)}</td><td>{Cell(p.B, Metrics.GpuBusy)}</td></tr>");
             html.Append("</tbody></table></div></section>");
+        }
+        if (c.Parts.Count + c.Warps.Count > 0)
+        {
+            html.Append("<section>");
+            StatisticsTable(html, c);
+            html.Append("</section>");
         }
 
         if (shotsNote.Length > 0)
@@ -641,7 +799,7 @@ public static class Pages
             html.Append($"<section><h2>Screenshots</h2><p class=\"lead\">{(differ == 0 ? "None differs." : $"{differ} of {shots.Count} differ.")} Drag across a picture to go from A to B. Changed: the share of its blocks whose colour moved.</p><div class=\"gallery compare\">");
             foreach (var s in shots.OrderByDescending(s => s.State is "differs" or "unreadable"))
             {
-                var label = s.State switch { "differs" => Change(false, "differs"), "unreadable" => Change(false, "unreadable"), "free" => "<span class=\"quiet\">not compared</span>", _ => "<span class=\"quiet\">same</span>" };
+                var label = s.State switch { "differs" => Mark(false, "differs"), "unreadable" => Mark(false, "unreadable"), "free" => "<span class=\"quiet\">not compared</span>", _ => "<span class=\"quiet\">same</span>" };
                 html.Append($"<figure class=\"slider\" style=\"--at:50%\"><div class=\"pair\">{Image(Path.Combine(relative, s.Name), "A: " + s.Name)}<div class=\"over\">{Image(s.Name, "B: " + s.Name)}</div><i class=\"handle\"></i><span class=\"tag a\">A</span><span class=\"tag b\">B</span><input type=\"range\" min=\"0\" max=\"100\" value=\"50\" aria-label=\"From A to B\"></div>");
                 html.Append($"<figcaption><b>{E(Path.GetFileNameWithoutExtension(s.Name))}</b><span>{(s.State == "free" ? "" : F(s.ChangedPercent, "0.00") + " % · ")}{label}</span></figcaption>");
                 if (s.State == "differs")
@@ -655,7 +813,7 @@ public static class Pages
         File.WriteAllText(Path.Combine(b, "compare.html"), html.ToString());
     }
 
-    private static string Change(bool better, string text) => $"<span class=\"chip {(better ? "good" : "bad")}\">{(better ? "▲" : "▼")} {E(text)}</span>";
+    private static string Mark(bool better, string text) => $"<span class=\"chip {(better ? "good" : "bad")}\">{(better ? "▲" : "▼")} {E(text)}</span>";
 
     // --- the page around it
 
@@ -709,7 +867,7 @@ public static class Pages
         .parts th:first-child, .parts td:first-child { text-align: left; padding-left: 0; } .parts small { color: var(--ink-3); }
         .parts .group th { padding-top: 16px; text-align: left; font-weight: 600; font-size: 13px; color: var(--ink-2); text-transform: capitalize; }
         .part { font-weight: 550; } .part img, .no-thumb { display: inline-block; width: 52px; height: 32px; object-fit: cover; border-radius: 4px; vertical-align: middle; margin-right: 10px; background: var(--hair); } .no-thumb { background: none; }
-        .bar-cell { width: 28%; min-width: 140px; } .bar { height: 6px; border-radius: 0 3px 3px 0; margin: 2px 0; }
+        .bar-cell { width: 16%; min-width: 96px; } .bar { height: 6px; border-radius: 0 3px 3px 0; margin: 2px 0; }
         .multiples { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
         figure { margin: 0; } figure.wide { margin-top: 12px; } figcaption { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; font-size: 14px; margin-bottom: 4px; } figcaption span { color: var(--ink-2); font-size: 13px; font-variant-numeric: tabular-nums; }
         .chart { display: block; width: 100%; height: auto; background: var(--raised); border: 1px solid var(--hair); border-radius: 8px; }
@@ -725,6 +883,8 @@ public static class Pages
         .pair input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: ew-resize; }
         .chip { font-weight: 600; font-size: 13px; padding: 1px 8px; border-radius: 999px; } .chip.good { color: var(--good); background: var(--good-wash); } .chip.bad { color: var(--bad); background: var(--bad-wash); } .quiet { color: var(--ink-3); }
         details { border-top: 1px solid var(--hair); padding-top: 10px; } summary { cursor: pointer; font-weight: 600; } .facts { margin-top: 8px; font-size: 13.5px; } .facts th, .facts td { text-align: left; padding: 5px 12px 5px 0; vertical-align: top; border-bottom: 1px solid var(--hair); overflow-wrap: anywhere; } .facts th { font-weight: 500; color: var(--ink-2); white-space: nowrap; }
+        .parts td.cause, .parts th.cause { text-align: left; white-space: normal; min-width: 240px; } .zones { display: flex; flex-wrap: wrap; gap: 8px 32px; margin: 4px 0 12px; } .zones .facts { width: auto; min-width: 260px; } .zones .facts td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+        .moved { margin: 6px 0 0; padding-left: 0; list-style: none; } .moved li { margin: 6px 0; } section details + details { border-top: 0; padding-top: 4px; }
         footer { margin-top: 36px; color: var(--ink-3); font-size: 13px; } code { font: 12.5px ui-monospace, Menlo, monospace; } a { color: inherit; }
         dialog { border: 0; padding: 0; background: transparent; max-width: 96vw; max-height: 96vh; color: #fff; } dialog::backdrop { background: rgba(0,0,0,.88); } dialog img { display: block; max-width: 96vw; max-height: 90vh; border-radius: 6px; } dialog p { margin: 8px 0 0; text-align: center; }
         @media (max-width: 640px) { h1 { font-size: 28px; } main { padding: 8px 16px 40px; } .hero-text { padding: 24px 16px; } .compare, .multiples { grid-template-columns: 1fr; } }

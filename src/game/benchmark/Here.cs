@@ -1,4 +1,4 @@
-// The director's here mode (RunOptions.Here): the player's own game recorded as they play it, from the Mac Port tab. No
+// The director's here mode (RunPlan.Play.Here): the player's own game recorded as they play it, from the Mac Port tab. No
 // script and nothing of the game touched: a screenshot of the view first, then one scenario and one part, both named here,
 // measured for the seconds asked with everything a run records (the store, KSA Metal's drain, the game's profilers, the
 // triggers). Nothing of it runs before the player asks for it.
@@ -50,12 +50,11 @@ public partial class Director
         }
         _row = (wall, HereName, Phase.Measure.ToString(), dt * 1000, _drain ? _present ?? DriverStats.Read() : DriverStats.Read(), ReadSim());
         _measured = HereName;
-        if (wall < _options.Here)
+        if (wall < _plan.Play.Here)
             return;
         CloseHere();
         _events.Add("done");
         _active = false;
-        _frames?.Dispose();
         _frames = null;
         CloseDrain();
         StopProfilers();

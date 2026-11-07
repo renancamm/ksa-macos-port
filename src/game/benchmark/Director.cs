@@ -1,10 +1,10 @@
 // The benchmark's director: plays the benchmark's script in one game session and measures it.
 //
-// The runs in the game start it (Runs.cs, after every frame the hooks give them) with a run's options (RunOptions, in
-// src/shared/benchmark/): when the game starts with KSA_BENCH_OUT naming a run's folder that holds them as options.json,
-// which benchmark.sh's program writes, or with the same options from the Mac Port tab in the game's settings. Without a
-// folder and a script (or explore mode) there is nothing to play. It measures nothing itself: what happens goes into
-// events.jsonl (Events.cs; a heartbeat every second, so a game that hangs shows), every frame into frames.csv
+// The runs in the game start it (Runs.cs, after every frame the hooks give them) with a run's plan (RunPlan, in
+// src/shared/benchmark/): when the game starts with KSA_BENCH_OUT naming a run's folder that holds it as plan.json,
+// which benchmark.sh's program writes, or with the same plan from the Mac Port tab in the game's settings. Without a
+// folder and a script (or explore mode) there is nothing to play. It measures nothing itself: what happens goes into the
+// run's store (Store.cs) as events (Events.cs; a heartbeat every second, so a game that hangs shows) and every frame
 // (Frames.cs), marked with the part it counts in, and the run's record is made from them when it ends (Finish.cs). Every
 // measured part is a signpost interval (KSA Metal's ksaMtlMarker), so an Instruments trace shows the parts.
 //
@@ -23,7 +23,7 @@
 // How a scenario keeps time is its kind. A flight plays as above. A views scenario sets its vehicles up, then the game
 // stays paused and the camera goes from view to view: at each checkpoint the director waits until the view stops
 // changing (terrain and textures streaming in), measures a second of the view standing there and takes the screenshot.
-// Places of a flight can be jumped to the same way (RunOptions.Fast): the game stays paused through the camera's
+// Places of a flight can be jumped to the same way (RunPlan.Play.Fast): the game stays paused through the camera's
 // flight, and the script's clock jumps from one chosen checkpoint to the next. A timed scenario plays by the Mac's clock
 // alone: its parts take the time they are given whatever the game gets through in it, the game gets the speed the
 // script asks for, as from a player, and nothing waits for it (no catching up; a checkpoint stops where the game has
@@ -81,7 +81,7 @@ public partial class Director
     private readonly Dictionary<string, NoiseProfile> _noise = new();
     private readonly Stopwatch _wall = new();
     private string _outDir = "";
-    // RunOptions.Only: the sections to play, each with the checkpoints chosen in it (null: all of them)
+    // RunPlan.Play.Only: the sections to play, each with the checkpoints chosen in it (null: all of them)
     private Dictionary<string, HashSet<string>?>? _only;
     private FrameLog? _frames;
     private EventLog _events = null!;
@@ -90,7 +90,7 @@ public partial class Director
     private RunStore? _store;
     // The game's profilers (GameProfilers) and the .NET runtime's counters, while a run plays
     private GameProfilers? _profilers;
-    // The game's GPU zones (GpuZones.cs), with RunOptions.GpuZones or ZoneLabels
+    // The game's GPU zones (GpuZones.cs), in a profiled pass or with RunPlan.Record.ZoneLabels
     private GpuZones? _gpuZones;
     private RuntimeCounters? _runtime;
     // The run's triggers (Triggers.cs): which frames are kept as moments, what is caught, when the run stops
@@ -99,7 +99,7 @@ public partial class Director
     private readonly Stopwatch _exitAfterWork = new();
     private FrameStats? _present;
     private readonly List<DriverRecord> _driverRecords = new();
-    // This frame's line of frames.csv, and the part its numbers count in (none: null)
+    // This frame's row of the store's frames, and the part its numbers count in (none: null)
     private (double Script, string? Scenario, string Phase, double FrameMs, FrameStats? Driver, SimSample Sim)? _row;
     private string? _measured;
     // The tools turned on (Probes.cs), and the wait for one's work at a checkpoint with what comes after it
@@ -107,14 +107,16 @@ public partial class Director
     private Wait? _wait;
     private Action _afterWait = () => { };
     private bool _active;
-    // RunOptions.Fast: the places chosen jumped to, the game paused on the way, instead of played
+    // RunPlan.Play.Fast: the places chosen jumped to, the game paused on the way, instead of played
     private bool _jump, _shots = true;
-    // Which time the scenarios play in this session (RunOptions.Repeat): 0 the warm-up pass, then 1, 2...
-    private int _pass = 1, _firstPass = 1;
+    // Which time the scenarios play in this session: its place in RunPlan.Passes, and its number in the events (0 the
+    // warm-up, then 1, 2...)
+    private int _passIndex, _pass = 1;
+    private PassKind PassKind => _passIndex < _plan.Passes.Count ? _plan.Passes[_passIndex] : PassKind.Measured;
 
     // Whether this pass takes screenshots: the first alone, which plays as a run's does (a warm-up's too); the others
     // measure
-    private bool TakesShots => _shots && _pass == _firstPass;
+    private bool TakesShots => _shots && _passIndex == 0;
     private string? _hold;
     private double _nextBeat;
 
@@ -151,12 +153,12 @@ public partial class Director
     private Window? _window;
     // Fast mode's measurement of the view standing at a checkpoint
     private Window? _still;
-    // RunOptions.WaitForRecording, and when it last looked for the event
+    // RunPlan.Host.WaitForRecording, and when it last looked for the event
     private bool _waitFor;
     private double _lookedForRecording = -1;
     private readonly Stopwatch _waiting = new();
 
-    private readonly RunOptions _options;
+    private readonly RunPlan _plan;
     private readonly CameraOperator _camera;
     // Explore mode (Explore.cs): no script, a console command that captures the camera's place
     private readonly Explorer? _explorer;
@@ -168,33 +170,33 @@ public partial class Director
     // Whether the script has ended (played to its end, or stopped)
     public bool Done { get; private set; }
 
-    // Starts a run with these options, or null when there is nothing to play. The caller calls OnFrame after every
+    // Starts a run with this plan, or null when there is nothing to play. The caller calls OnFrame after every
     // frame of the game.
-    public static Director? Begin(RunOptions options)
+    public static Director? Begin(RunPlan plan)
     {
-        var director = new Director(options);
+        var director = new Director(plan);
         return director._active || director._explorer != null ? director : null;
     }
 
-    private Director(RunOptions options)
+    private Director(RunPlan plan)
     {
-        _options = options;
+        _plan = plan;
         _camera = new CameraOperator(_clock);
         _vehicles = new Vehicles(_camera);
         _camera.Watch(_vehicles);
         _handlers = Handlers();
-        var script = options.Script;
-        _outDir = options.Out;
+        var script = plan.Play.Script;
+        _outDir = plan.Out;
         if (string.IsNullOrEmpty(_outDir))
             return;
-        _events = new EventLog(_outDir, options.Session);
-        if (options.Explore)
+        _events = new EventLog(_outDir, plan.Host.Session);
+        if (plan.Play.Explore)
             _explorer = new Explorer(_outDir);
         // The player's game as it plays: no script
-        if (options.Here > 0)
+        if (plan.Play.Here > 0)
         {
             Record();
-            Log(FormattableString.Invariant($"recording the game as it plays for {options.Here:0} s, GPU times {(DriverStats.Available ? "available" : "not available")}, {_triggers!.Name}"));
+            Log(FormattableString.Invariant($"recording the game as it plays for {plan.Play.Here:0} s, GPU times {(DriverStats.Available ? "available" : "not available")}, {_triggers!.Name}"));
             return;
         }
         if (_explorer != null || string.IsNullOrEmpty(script))
@@ -204,11 +206,13 @@ public partial class Director
             Log($"script {script} not found");
             return;
         }
-        _jump = options.Fast;
-        _shots = !options.NoShots;
-        _pass = _firstPass = options.WarmUp ? 0 : 1;
+        _jump = plan.Play.Fast;
+        _shots = !plan.Play.NoShots;
+        if (plan.Passes.Count == 0)
+            plan.Passes = [PassKind.Measured];
+        _pass = plan.Number(0);
         _events.Pass = _pass;
-        _hold = options.Hold is { Length: > 0 } hold ? hold : null;
+        _hold = plan.Play.Hold is { Length: > 0 } hold ? hold : null;
         Lineup lineup;
         try
         {
@@ -224,13 +228,13 @@ public partial class Director
             // benchmark.sh calibrate's profile of the test, if there is one, before the one in the app
             if (lineup.TestOf(scenario.Name) is { } test)
                 _noise[scenario.Name] = NoiseProfile.Read(
-                    options.NoiseFolder.Length > 0 && File.Exists(NoiseProfile.PathFor(options.NoiseFolder, test.Name)) ? options.NoiseFolder : Path.GetDirectoryName(script)!,
+                    plan.Host.NoiseFolder.Length > 0 && File.Exists(NoiseProfile.PathFor(plan.Host.NoiseFolder, test.Name)) ? plan.Host.NoiseFolder : Path.GetDirectoryName(script)!,
                     test.Name);
             var section = new Section { Name = scenario.Name, Needs = scenario.Needs, Live = scenario.Kind == Kind.Timed, Kind = scenario.Kind };
             section.Steps.AddRange(scenario.Steps);
             _sections.Add(section);
         }
-        var only = options.Only;
+        var only = plan.Play.Only;
         if (!string.IsNullOrWhiteSpace(only))
         {
             _only = new Dictionary<string, HashSet<string>?>();
@@ -256,12 +260,13 @@ public partial class Director
         // Only the scenarios chosen, so that the first one is the first played
         if (_only != null)
             _sections.RemoveAll(section => !_only.ContainsKey(section.Name));
-        _waitFor = options.WaitForRecording;
+        _waitFor = plan.Host.WaitForRecording;
         Record();
+        BeginPass();
         // A directive without a handler fails the run at once, before anything plays
         foreach (var missing in UnhandledDirectives())
             Error(missing);
-        Log($"{_sections.Count} scenarios, {options.Mode}{(_shots ? "" : ", no screenshots")}{(_hold != null ? $", holding at {_hold}" : "")}, " +
+        Log($"{_sections.Count} scenarios, {plan.Play.Mode}{(_shots ? "" : ", no screenshots")}{(_hold != null ? $", holding at {_hold}" : "")}, " +
             $"GPU times {(DriverStats.Available ? "available" : "not available")}{string.Concat(_probes.Select(p => ", " + p.Name))}");
     }
 
@@ -285,16 +290,18 @@ public partial class Director
     private void Channels()
     {
         Directory.CreateDirectory(_outDir);
-        _frames = new FrameLog(_outDir, _options.Session) { Pass = _pass };
+        _frames = new FrameLog(_outDir, _plan.Host.Session) { Pass = _pass };
         _store = RunStore.For(_outDir);
         // Waits from a millisecond on: shorter ones are the driver's ordinary work
         _drain = DriverStats.OpenDrain(1);
-        _gpuZones = GpuZones.Start(_options, Log);
+        // Encoders named after the game's GPU zones for the whole run (a trace's, a capture's); a profiled pass turns the
+        // zones on for itself
+        _gpuZones = GpuZones.Start(zones: false, _plan.Record.ZoneLabels, Log, SplitsAlways);
         _profilers = GameProfilers.Start(_store, Log, _gpuZones?.Split == true);
         _runtime = new RuntimeCounters();
         var context = new ProbeContext(_outDir, Error, Log);
-        _probes = Probes.For(_options, context);
-        _triggers = new TriggerRunner(Triggers.For(_options), _options.Against, _options.Session, context, _events);
+        _probes = Probes.For(_plan, context);
+        _triggers = new TriggerRunner(Triggers.For(_plan), _plan.Against, _plan.Host.Session, context, _events);
         _probes.Add(_triggers);
     }
 
@@ -312,16 +319,16 @@ public partial class Director
         {
             _frames?.Add(r.Script, r.Scenario, _measured, r.Phase, r.FrameMs, r.Driver, r.Sim, runtime);
             if (_measured != null)
-                part = new PartKey(_options.Session, _pass, r.Scenario ?? "", _measured);
+                part = new PartKey(_plan.Host.Session, _pass, r.Scenario ?? "", _measured);
         }
         _profilers?.Frame(part);
         // Every frame, so that their work goes on while the director waits or holds
         if (_triggers?.Frame(_row?.FrameMs ?? 0, part, _row?.Scenario, _pass) == true && _row is { } row)
-            _profilers?.Moment(row.FrameMs, part ?? new PartKey(_options.Session, _pass, row.Scenario ?? "", ""));
+            _profilers?.Moment(row.FrameMs, part ?? new PartKey(_plan.Host.Session, _pass, row.Scenario ?? "", ""));
         if (_triggers?.Stop is { } stop && !Done)
         {
             Stop(stop.Why, stop.Failed);
-            if (!_options.Stay)
+            if (!_plan.Play.Stay)
                 Program.TerminalInterface.Execute("exit");
         }
         // The script's end: a dump or capture a trigger started is finished first, for 150 s at most
@@ -337,7 +344,7 @@ public partial class Director
         _explorer?.Frame();
         if (!_active)
             return;
-        if (_options.Here > 0)
+        if (_plan.Play.Here > 0)
         {
             HereFrame();
             return;
@@ -433,7 +440,7 @@ public partial class Director
         if (_waiting.Elapsed.TotalSeconds < _lookedForRecording + 0.5)
             return false;
         _lookedForRecording = _waiting.Elapsed.TotalSeconds;
-        return EventLog.Read(_outDir).Any(e => e.Type == "recording" && e.Session == _options.Session);
+        return EventLog.Read(_outDir).Any(e => e.Type == "recording" && e.Session == _plan.Host.Session);
     }
 
     // Before the game works out its next step of the simulation (the hooks call it from Universe.GetJobSimStep): the
@@ -496,7 +503,7 @@ public partial class Director
     {
         _wall.Start();
         // A run in a running game has no loading of its own
-        if (!_options.InGame)
+        if (!_plan.Host.InGame)
         {
             double load = Math.Round((DateTime.Now - Process.GetCurrentProcess().StartTime).TotalSeconds - _waiting.Elapsed.TotalSeconds, 1);
             _events.Add("loaded", value: load);
@@ -558,7 +565,6 @@ public partial class Director
         if (_section >= _sections.Count)
         {
             _active = false;
-            _frames?.Dispose();
             _frames = null;
             CloseDrain();
             StopProfilers();
@@ -572,7 +578,7 @@ public partial class Director
             _camera.EndRig();
             Done = true;
             // Out of the game once the triggers' work is done (OnFrame)
-            if (!_options.Stay)
+            if (!_plan.Play.Stay)
                 _exitAfterWork.Start();
             return;
         }
@@ -584,20 +590,22 @@ public partial class Director
         Log(FormattableString.Invariant($"scenario {ScenarioName} (game time {Universe.GetElapsedSeconds():F1} s, {_wall.Elapsed.TotalSeconds:F1} s into the run)"));
     }
 
-    // At the end of the scenarios: the next pass, if there is one (true), from the script's start. A measured pass ends
-    // with "done", the warm-up with "warmed" (the record sets its frames against the measured passes')
+    // At the end of the scenarios: the next pass, if there is one (true), from the script's start. A measured or profiled
+    // pass ends with "done", the warm-up with "warmed" (the record sets its frames against the measured passes')
     private bool NextPass()
     {
-        if (_pass == 0)
+        if (PassKind == PassKind.WarmUp)
         {
             _events.Add("warmed");
             Log(FormattableString.Invariant($"warm-up done after {_wall.Elapsed.TotalSeconds:F1} s"));
         }
         else
             _events.Add("done");
-        if (_pass >= _options.Repeat)
+        EndPass();
+        if (_passIndex + 1 >= _plan.Passes.Count)
             return false;
-        _pass++;
+        _passIndex++;
+        _pass = _plan.Number(_passIndex);
         _events.Pass = _pass;
         if (_frames != null)
             _frames.Pass = _pass;
@@ -606,10 +614,40 @@ public partial class Director
         _sectionStart = 0;
         _clock.Rewind();
         _camera.Restart();
-        Log($"pass {_pass} of {_options.Repeat}");
+        BeginPass();
         NextSection();
         return true;
     }
+
+    // A pass begins: what it is for, said; a profiled pass's GPU zones on, KSA Metal splitting render passes at them
+    private void BeginPass()
+    {
+        _events.Add("pass", text: RunPlan.Name(PassKind));
+        if (_plan.Passes.Count > 1)
+            Log($"pass {_passIndex + 1} of {_plan.Passes.Count}, {RunPlan.Name(PassKind)}");
+        if (PassKind != PassKind.Profiled || _gpuZones?.Split == true)
+            return;
+        _gpuZones?.Stop();
+        _gpuZones = GpuZones.Start(zones: true, _plan.Record.ZoneLabels, Log);
+        if (_gpuZones?.Split == true)
+            _profilers?.Gpu(true);
+        else
+            Error("the profiled pass can't time the game's GPU zones (the log says why)");
+    }
+
+    // A pass ends: a profiled pass's zones off again, the labels of the run as they were
+    private void EndPass()
+    {
+        if (PassKind != PassKind.Profiled || _gpuZones == null)
+            return;
+        _profilers?.Gpu(false);
+        _gpuZones.Stop();
+        _gpuZones = GpuZones.Start(zones: false, _plan.Record.ZoneLabels, Log, SplitsAlways);
+    }
+
+    // Whether zone labels split the zones all run long (a game started with gpu_zones for a trace): not when a profiled
+    // pass is there to split them, so that the other passes measure without
+    private bool SplitsAlways => !_plan.Passes.Contains(PassKind.Profiled);
 
     // KSA Metal's drain into the run's store (every present, frame shown, wait and large allocation), and its latest
     // present kept as the frame's driver numbers
@@ -688,11 +726,10 @@ public partial class Director
     {
         if (Done)
             return;
-        _events.Add(failed ? "error" : "stopped", ScenarioName ?? (_options.Here > 0 ? HereName : null), text: why);
+        _events.Add(failed ? "error" : "stopped", ScenarioName ?? (_plan.Play.Here > 0 ? HereName : null), text: why);
         EndSection();
         CloseHere();
         _active = false;
-        _frames?.Dispose();
         _frames = null;
         CloseDrain();
         StopProfilers();

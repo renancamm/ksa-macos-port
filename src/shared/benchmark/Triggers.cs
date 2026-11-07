@@ -1,5 +1,5 @@
 // A run's triggers: rules of the form "<condition>: <action>, <action>", each run when its condition holds, a limited
-// number of times. The run's host writes them into the run's options (RunOptions.On: benchmark.sh's --on, and its
+// number of times. The run's host writes them into the run's plan (RunPlan.On: benchmark.sh's --on, and its
 // investigate catch and passes); the director runs them in the game (src/game/benchmark/Triggers.cs), and the host
 // watching the game the actions only it can take (a thread sample of a stuck game). Every run carries the defaults; a
 // rule of the run's own for the same condition takes the default's place.
@@ -7,7 +7,7 @@
 //   Condition       Holds                                                              Actions
 //   frame>N ms      a frame of a measured part took N ms or more                       moment, screenshot, passes, capture, stop
 //   broken          a checkpoint's screenshot looks broken: 30 % pure white, or        screenshot, passes, capture, stop
-//                   against a clean run's (RunOptions.Against) far smaller or far
+//                   against a clean run's (RunPlan.Against) far smaller or far
 //                   more pure black
 //   checkpoint      a checkpoint's screenshot is there                                 screenshot, passes, capture
 //   stuck           the game draws its frames but its clock stands still               sample, stop
@@ -139,11 +139,11 @@ public static class Triggers
         return rules;
     }
 
-    // The rules in a run's options; a rule that can't be read is left out (the host checked them before the game started)
-    public static List<Rule> For(RunOptions options)
+    // The rules in a run's plan; a rule that can't be read is left out (the host checked them before the game started)
+    public static List<Rule> For(RunPlan plan)
     {
         var own = new List<string>();
-        foreach (var text in options.On)
+        foreach (var text in plan.On)
         {
             try
             {

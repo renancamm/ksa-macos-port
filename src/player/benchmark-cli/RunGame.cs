@@ -22,6 +22,15 @@ public static partial class Program
         // The script stands at one moment on purpose with --hold, and for as long as a tool takes at a checkpoint
         private bool StandsStill => _hold.Length > 0 || _capture || Triggers.HoldCheckpoints(_rules);
 
+        // The passes of each game session, by what the run is for: measure's a warm-up and its measured passes, profile's a
+        // warm-up, a measured and a profiled one; one measured pass otherwise
+        private List<PassKind> Passes() => _purpose switch
+        {
+            Purpose.Measure => [PassKind.WarmUp, .. Enumerable.Repeat(PassKind.Measured, _repeat)],
+            Purpose.Profile => [PassKind.WarmUp, PassKind.Measured, PassKind.Profiled],
+            _ => [PassKind.Measured],
+        };
+
         // The game's environment for the run, on top of this program's
         private ProcessStartInfo Game(Dictionary<string, string> env)
         {
@@ -45,7 +54,7 @@ public static partial class Program
             Directory.CreateDirectory(output);
             Tool.Exec("caffeinate", ["-u", "-t", "1"], out _);
             Output.Step($"Exploring KSA {_installed}: fly the free camera, type benchkey [name] in the console (\\) at each place, quit when done");
-            new RunOptions { Explore = true }.Write(output);
+            new RunPlan { Play = new() { Explore = true } }.Write(output);
             using (var game = Process.Start(Game(new() { ["KSA_BENCH_OUT"] = output }))!)
             {
                 // Ctrl-C here quits the game too, as it did the game in the foreground
@@ -174,14 +183,13 @@ public static partial class Program
             Process.Start("caffeinate", ["-d", "-i", "-w", Environment.ProcessId.ToString(CultureInfo.InvariantCulture)]);
             Tool.Exec("caffeinate", ["-u", "-t", "1"], out _);
 
-            // What the tools add to the game's environment, and to the run's options
+            // What the tools add to the game's environment, and to the run's plan
             var env = new Dictionary<string, string>();
-            var options = new RunOptions();
-            if (_profile)
+            var plan = new RunPlan { Passes = Passes() };
+            if (_purpose == Purpose.Profile)
             {
-                // KSA Metal splits render passes at the game's GPU zones, with memory for every attachment
+                // KSA Metal can split render passes at the game's GPU zones in the profiled pass: memory for every attachment
                 env["KSA_MTL_GPU_ZONES"] = "1";
-                options.GpuZones = true;
             }
             if (_hud)
             {
@@ -193,25 +201,25 @@ public static partial class Program
             }
             if (_trace)
             {
-                options.WaitForRecording = true;
+                plan.Host.WaitForRecording = true;
                 env["KSA_MTL_LABELS"] = "1";
             }
             if (_capture)
             {
                 env["MTL_CAPTURE_ENABLED"] = env["KSA_MTL_LABELS"] = "1";
-                options.Capture = true;
+                plan.Record.Capture = true;
             }
             // Encoders named after the game's GPU zones, where the tool shows their names
-            options.ZoneLabels = env.ContainsKey("KSA_MTL_LABELS");
+            plan.Record.ZoneLabels = env.ContainsKey("KSA_MTL_LABELS");
             // The triggers, the defaults among them; catch's own look at every 31st image besides, KSA Metal's watch
-            options.On = _rules.Select(r => r.ToString()).ToList();
-            options.Against = _catch;
+            plan.On = _rules.Select(r => r.ToString()).ToList();
+            plan.Against = _catch;
             if (_catch.Length > 0)
                 env["KSA_MTL_WATCH"] = Path.Combine(_out, "caught");
             if (_rules.Any(r => r.Has(TriggerAction.Capture)))
                 env["MTL_CAPTURE_ENABLED"] = env["KSA_MTL_LABELS"] = "1";
-            options.Film = _film;
-            options.Trace = _cameraLog;
+            plan.Record.Film = _film;
+            plan.Record.CameraLog = _cameraLog;
 
             // Loading takes up to a few minutes on a first start (shader compilation), then the script's own length, plus
             // the time slower Macs spend catching up at checkpoints. Once playing, the director writes a heartbeat event
@@ -224,8 +232,8 @@ public static partial class Program
                 ? s.Length * 10 + 30 * s.Steps.Count(st => st.Words[0] is "@shot" or "@measure")
                 : s.Length * 2;
             int pass = (int)lengths.Sum(l => _lineup.Scenario(l.Section) is { } s ? Pass(s) : l.Seconds * 2);
-            // measure plays a warm-up pass and its passes in each session
-            int timeout = pass * (_repeat + (_purpose == Purpose.Measure ? 1 : 0)) + 300;
+            // Each session plays its plan's passes
+            int timeout = pass * plan.Passes.Count + 300;
             // KSA_BENCH_HANG_LIMIT: other seconds (not a number: no hang check)
             var limit = Environment.GetEnvironmentVariable("KSA_BENCH_HANG_LIMIT");
             int HangLimit(int otherwise) => limit is not { Length: > 0 } ? otherwise : int.TryParse(limit, out var s) ? s : int.MaxValue;
@@ -252,8 +260,14 @@ public static partial class Program
                 if (_test.Length > 0)
                     what = $"{_test}, {what}";
                 int games = _sessions * (_ab.Length > 0 ? 2 : 1);
-                if (_purpose == Purpose.Measure)
-                    what = $"{what} a pass, a warm-up and {_repeat} pass{(_repeat > 1 ? "es" : "")} {(games > 1 ? $"in each of {games} game sessions" : "in one game session")}";
+                // The passes: "a warm-up and 3 measured passes", "a warm-up, a measured and a profiled pass"
+                var passes = Passes();
+                if (passes.Count > 1)
+                {
+                    var said = passes.GroupBy(k => k).Select(g => g.Key == PassKind.WarmUp ? "a warm-up" : $"{(g.Count() == 1 ? "a" : g.Count().ToString(CultureInfo.InvariantCulture))} {RunPlan.Name(g.Key)}").ToList();
+                    what = $"{what} a pass, {string.Join(", ", said.SkipLast(1))} and {said[^1]} pass{(passes.Count(k => k == passes[^1]) > 1 ? "es" : "")} " +
+                           (games > 1 ? $"in each of {games} game sessions" : "in one game session");
+                }
                 Output.Step($"Benchmarking KSA {_installed} ({what})");
                 Output.Info("The game takes over the screen. Leave the mouse and keyboard alone until it is done, or press Ctrl-C here to stop it.");
             }
@@ -289,7 +303,7 @@ public static partial class Program
                 foreach (var variant in variants)
                     foreach (var group in groups)
                         if (!_stopped && !StoppedByTrigger(session))
-                            PlayOnce(++session, group, variant, env, options, lengths, timeout, hang, events, ref pressure);
+                            PlayOnce(++session, group, variant, env, plan, lengths, timeout, hang, events, ref pressure);
             Console.CancelKeyPress -= stop;
             term.Dispose();
             // --defaults: the settings as the game saved them, with its defaults filled in
@@ -306,7 +320,7 @@ public static partial class Program
                 Output.Step($"Done: {_out}");
                 return 0;
             }
-            if (_profile)
+            if (_purpose == Purpose.Profile)
                 Soft(() => Quiet(() => Profile(_out)));
 
             // The record, the report and the zip to share: the report, every frame's numbers, the logs and crash reports of
@@ -344,9 +358,9 @@ public static partial class Program
             EventLog.Read(_out).Any(e => e.Session == session && e.Type is "stopped" or "error" &&
                                          e.Text?.StartsWith("stopped by the trigger", StringComparison.Ordinal) == true);
 
-        // One game session: its options in the run's folder, the game watched until it ends, hangs or is stopped, its
+        // One game session: its plan in the run's folder, the game watched until it ends, hangs or is stopped, its
         // ending and its log
-        private void PlayOnce(int n, List<string> only, string variant, Dictionary<string, string> env, RunOptions options,
+        private void PlayOnce(int n, List<string> only, string variant, Dictionary<string, string> env, RunPlan plan,
             List<(string Section, double Seconds)> lengths, int timeout, int hang, EventLog events, ref int pressure)
         {
             // This session's memory pressure at its worst and the swap at its start: an A/B run's report gives each side
@@ -360,22 +374,20 @@ public static partial class Program
             // A/B: B's port settings with the setting changed, A's without
             if (_ab.Length > 0)
                 PortSettingsFor(variant == "B");
-            options.Only = string.Join(' ', only);
-            options.Fast = _fast;
-            options.Mode = Mode;
-            options.Hold = _hold;
+            plan.Play.Only = string.Join(' ', only);
+            plan.Play.Fast = _fast;
+            plan.Play.Mode = Mode;
+            plan.Play.Hold = _hold;
             // The first session alone takes screenshots: the others measure (in full, each test's own)
-            options.NoShots = _noShots || n > (_test == "full" ? Lineup.Full.Count : 1);
-            options.Repeat = _repeat;
-            options.WarmUp = _purpose == Purpose.Measure;
-            options.Variant = variant;
-            options.NoiseFolder = Benchmarks;
-            options.Session = n;
-            options.Test = _test;
-            options.Script = _script;
-            options.App = _app;
-            options.Facts = HostFacts();
-            options.Write(_out);
+            plan.Play.NoShots = _noShots || n > (_test == "full" ? Lineup.Full.Count : 1);
+            plan.Host.Variant = variant;
+            plan.Host.NoiseFolder = Benchmarks;
+            plan.Host.Session = n;
+            plan.Play.Test = _test;
+            plan.Play.Script = _script;
+            plan.Host.App = _app;
+            plan.Host.Facts = HostFacts();
+            plan.Write(_out);
             using var game = Process.Start(Game(new Dictionary<string, string>(env) { ["KSA_BENCH_OUT"] = _out }))!;
             var started = DateTime.UtcNow;
             string ending = "";
@@ -484,9 +496,6 @@ public static partial class Program
             if (tracer.HasExited)
                 Output.Warn($"Instruments did not start: {string.Join(' ', File.ReadAllLines(log).TakeLast(3))}");
             Thread.Sleep(2000);
-            // Twice, a second apart: the game writes its heartbeat to the same file, and two writes at one moment can lose one
-            events.Add("recording");
-            Thread.Sleep(1000);
             events.Add("recording");
             return tracer;
         }

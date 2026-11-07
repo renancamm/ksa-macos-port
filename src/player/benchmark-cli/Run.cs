@@ -22,7 +22,7 @@ public static partial class Program
         private readonly List<string> _places = [], _sets = [], _ports = [], _tools = [];
         private string _preset = "", _system = "", _hold = "", _settingsFile = "", _reference = "", _catch = "";
         private string _template = "Metal System Trace", _test = "";
-        private bool _defaults, _explore, _fast, _noShots, _profile, _hud, _trace, _capture, _catchCapture, _passes, _cameraLog, _holding;
+        private bool _defaults, _explore, _fast, _noShots, _hud, _trace, _capture, _catchCapture, _passes, _cameraLog, _holding;
         private string _repeatText = "", _sessionsText = "1", _ab = "", _filmText = "0";
         private double _film;
         // measure: the measured passes in each game session, the sessions (taken in turn for A and B with --ab)
@@ -37,7 +37,7 @@ public static partial class Program
         // Ctrl-C (or TERM): the game is stopped, and what it measured is reported
         private volatile bool _stopped;
 
-        // How it plays (RunOptions.Mode): the kinds of its scenarios, or "jump"
+        // How it plays (RunPlan.Play.Mode): the kinds of its scenarios, or "jump"
         private string Mode = "";
         private Lineup _lineup = null!;
 
@@ -69,10 +69,12 @@ public static partial class Program
             if (_purpose == Purpose.Investigate)
             {
                 if (args.Length == 0)
-                    Die("investigate <tool> <places...>: profile, trace, capture, hud, catch <clean run>, passes, film <seconds>, camera-log or hold.");
+                    Die("investigate <tool> <places...>: trace, capture, hud, catch <clean run>, passes, film <seconds>, camera-log or hold.");
                 switch (args[i++])
                 {
-                    case "profile": _profile = true; break;
+                    case "profile":
+                        Die("profile is a command of its own: ./benchmark.sh profile [test | places].");
+                        break;
                     case "trace": _trace = true; break;
                     case "capture": _capture = true; break;
                     case "hud": _hud = true; break;
@@ -89,7 +91,7 @@ public static partial class Program
                         status = 0;
                         return false;
                     case var tool:
-                        Die($"no tool '{tool}' (profile, trace, capture, hud, catch <clean run>, passes, film <seconds>, camera-log or hold).");
+                        Die($"no tool '{tool}' (trace, capture, hud, catch <clean run>, passes, film <seconds>, camera-log or hold).");
                         break;
                 }
             }
@@ -111,7 +113,7 @@ public static partial class Program
                     case "--defaults": _defaults = true; break;
                     case "--system": _system = args[++i]; break;
                     // What each verb adds
-                    case "--compare" when _purpose is Purpose.Run or Purpose.Check or Purpose.Measure: _reference = args[++i]; break;
+                    case "--compare" when _purpose is Purpose.Run or Purpose.Check or Purpose.Measure or Purpose.Profile: _reference = args[++i]; break;
                     case "--no-shots" when _purpose is Purpose.Run: _noShots = true; break;
                     case "--fast" when _purpose is Purpose.Run: _fast = true; break;
                     case "--repeat" when _purpose is Purpose.Measure: _repeatText = args[++i]; break;
@@ -124,7 +126,10 @@ public static partial class Program
                         Console.WriteLine(CommandUsage);
                         return false;
                     // A developer's option of before the verbs: said where it went
-                    case "--profile" or "--trace" or "--capture" or "--hud" or "--passes" or "--camera-log" or "--catch" or "--film" or "--hold":
+                    case "--profile":
+                        Die("--profile is a command of its own: ./benchmark.sh profile [test | places].");
+                        break;
+                    case "--trace" or "--capture" or "--hud" or "--passes" or "--camera-log" or "--catch" or "--film" or "--hold":
                         Die($"{a} is a tool of investigate: ./benchmark.sh investigate {a[2..]}{a switch { "--catch" => " <clean run>", "--film" => " <seconds>", _ => "" }} " +
                             $"{(a == "--hold" ? "<place>" : "<places...>")}.");
                         break;
@@ -156,8 +161,8 @@ public static partial class Program
                 if (_places.Count > 1 || _places.Count == 1 && !LineupHasTest(_places[0]))
                     Die("check takes one test (mixed, tour, warp or full; default mixed).");
             }
-            // A tool looks at places: jumped to in a flight, the game paused on the way
-            if (_purpose == Purpose.Investigate && _places.Count > 0 && !(_places.Count == 1 && LineupHasTest(_places[0])))
+            // A tool and a profile look at places: jumped to in a flight, the game paused on the way
+            if (_purpose is Purpose.Investigate or Purpose.Profile && _places.Count > 0 && !(_places.Count == 1 && LineupHasTest(_places[0])))
                 _fast = true;
             return true;
         }
@@ -209,6 +214,10 @@ public static partial class Program
             _script = Path.Combine(_res, "Benchmark", "benchmark.txt");
             if (!File.Exists(_script) || !File.Exists(Path.Combine(_res, "Hooks", "KsaMetal.Hooks.dll")))
                 Die($"the app at {_app} has no benchmark: update it with ./port.sh.");
+            // The app's director reads the run's plan (plan.json): one made before reads the options this program no
+            // longer writes, and would play nothing
+            if (BenchmarkOlder())
+                Die($"the app at {_app} has an older benchmark than this port folder's: update it with ./port.sh.");
 
             try
             {
@@ -316,6 +325,13 @@ public static partial class Program
         private static List<int> GamesRunning() =>
             Ask("pgrep", "-f", "dotnet (KSA|StarMap).dll").Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToList();
 
+        // Whether the app's director is older than plans (its assembly names no RunPlan); a stand-in without one is not
+        private bool BenchmarkOlder()
+        {
+            var director = Path.Combine(_res, "Benchmark", "KsaMetal.Benchmark.dll");
+            return File.Exists(director) && !Encoding.Latin1.GetString(File.ReadAllBytes(director)).Contains("RunPlan", StringComparison.Ordinal);
+        }
+
         // Whether the app's KSA Metal has that benchmark function
         private bool DriverHas(string function)
         {
@@ -331,20 +347,18 @@ public static partial class Program
         private void CheckTools()
         {
             // Each game session of full would write over the one before
-            if (_test == "full" && (_profile || _hud || _trace || _capture || _catch.Length > 0 || _passes || _film > 0 || _cameraLog))
+            if (_test == "full" && (_purpose == Purpose.Profile || _hud || _trace || _capture || _catch.Length > 0 || _passes || _film > 0 || _cameraLog))
                 Die("the tools look at one test: choose mixed, tour or warp (or places).");
-            if (_profile || _hud || _trace || _capture || _catch.Length > 0 || _passes)
+            if (_purpose == Purpose.Profile || _hud || _trace || _capture || _catch.Length > 0 || _passes)
             {
                 if (!DriverHas("ksaMtlFrameStats"))
                     Die("the tools need the app's KSA Metal driver, which this app doesn't have.");
             }
-            if (_profile)
+            if (_purpose == Purpose.Profile)
             {
                 if (!DriverHas("ksaMtlZoneMode"))
                     Die("this app's KSA Metal can't time the game's GPU zones: update it with ./port.sh.");
-                if (_hud)
-                    Die("--profile and --hud can't run together: both use the GPU's counters.");
-                _tools.Add("the game's GPU zones");
+                _tools.Add(RunPlan.ProfiledTool);
             }
             if (_hud)
                 _tools.Add("Metal HUD");

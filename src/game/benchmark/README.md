@@ -46,8 +46,8 @@ numbers compare best with other runs played the same way, and `compare` doesn't 
 
 ### Reading a run
 
-The terminal shows the result and each part's numbers. `report.html` in the run's folder shows them with the run's
-screenshots and charts:
+The terminal shows the result, each part's numbers, and the slow frames with what took their time. `report.html` in the
+run's folder shows them with the run's screenshots and charts:
 
 ```bash
 ./benchmark.sh report       # the last run, here and in your browser
@@ -106,16 +106,20 @@ paused on the way.
 
 ## For work on the port
 
-The same tests are the project's tool for looking into the driver, the shaders and the game. Five commands of
+The same tests are the project's tool for looking into the driver, the shaders and the game. These commands of
 `benchmark.sh` are for that work.
 
 | Command | What it does |
 |---|---|
 | `check [test]` | the standard test of a change: the test (default `mixed`) at a fresh install's settings, compared with the baseline `main` of that test, or else the last run of it that passed played the same way; exits with 1 when screenshots differ |
 | `measure [test] [--repeat n] [--sessions n] [--ab key=value]` | numbers to judge a change by: a warm-up pass first, left out of the numbers, then `n` passes (3) in one game session; the report shows each part's median and range; `--sessions` plays more games of it; `--ab` plays games with the port setting `key=value` (B) and as the run has it (A, `--port` can give its value) in turn, and sets B against A part by part, with macOS's memory pressure and swap while each side played |
+| `profile [test \| places...]` | where the time goes: a warm-up, a measured pass and a profiled pass in one game session. The profiled pass turns the game's GPU zones on ("Clouds Raymarching", "Ocean", "Stars") and `profile.md` lists, per part, the zones with the most own time a frame; the measured pass gives the run's numbers |
 | `investigate <tool> <places...>` | a tool on places jumped to, or a whole test (below) |
 | `calibrate [test] [n]` | how much a test moves between runs of the same build on this Mac: `n` runs (3) at a fresh install's settings, written as the test's noise profile |
 | `baseline [set <name> [run...] \| remove <name>]` | names runs, one of each test, to compare with; a baseline's name stands for its run wherever a run is named, and `clean` keeps it |
+| `query [run] '<sql>'` | SQL on a run's [store](#a-runs-record) (default: the last run) |
+| `timeline [run]` | the run in Perfetto's viewer, in your browser: its parts, frame and GPU times, each frame's way to the screen, KSA Metal's waits, the game's zones around slow frames |
+| `report <run> --again` | the run's record, report and page made again from its store by this version of the benchmark, the facts about the Mac as the run had them |
 
 ```bash
 # A change to the driver: before, name the runs; after, check
@@ -129,6 +133,23 @@ The same tests are the project's tool for looking into the driver, the shaders a
 A Mac's heat moves GPU time: after a rest a run reads up to about a tenth low until the chip warms up. `measure`'s
 warm-up pass takes care of that. A `benchmark.sh` run without one notes when the Mac had rested more than ten minutes
 before it.
+
+### Verdicts
+
+A comparison judges each part by its GPU busy (its frame time where a run has no GPU time, the speed reached in time
+warp), and the other numbers beside it ([`../../shared/benchmark/Comparison.cs`](../../shared/benchmark/Comparison.cs),
+[`Statistics.cs`](../../shared/benchmark/Statistics.cs)). What a verdict stands on depends on the runs:
+
+| Runs | Basis | A change is |
+|---|---|---|
+| one game session a side, one pass (`check`, two runs) | screen | past the part's limit: its noise profile's, else 5 % |
+| one game session a side, several passes (`measure`) | quick read | the passes' ranges don't overlap and it is over 2 % |
+| several game sessions a side (`measure --sessions`, `--ab`) | sessions | each session's median is a sample: Mann-Whitney's p under 0.05, Cliff's delta from 0.147 (not negligible) and past the limit; with fewer than 5 sessions a side, inconclusive |
+
+The verdict names its basis (`GPU time 12 % lower (screen)`), and the comparison names the zones that moved with each
+part that changed: the GPU's when both runs were profiled (`earth4 GPU busy +1.4 ms: Clouds Raymarching +1.20`), else
+the main thread's for a frame time. `compare.html` shows the verdict and what moved first; every judged number, with
+its p, delta and the 95 % interval of B against A, is under Statistics.
 
 ### Noise profiles
 
@@ -147,14 +168,13 @@ tool on. A place is a screenshot's name; a whole test works for the tools that d
 
 | Tool | |
 |---|---|
-| `profile` | the game's own GPU zones in every measured part ("Clouds Raymarching", "Ocean", "Stars"): KSA Metal splits render passes at each zone, so a zone inside a pass gets its own time, and `profile.md` lists, per part, the zones with the most own time a frame; they are in the run's store too (`zone_stats`, group `gpu`). Every zone boundary waits for all the work before it, so a profiled run's GPU time is about 13 % higher than a run's without (the Mixed Test), a zone called many times a frame reads high by about 20 µs for each call (up to 70), and a zone at a render pass's edge carries the store and load of the pass's images. Against an Instruments trace of the same frames, the zones called once a frame read a median 4 % high, 52 of 56 within 10 % (four places of the Tour) |
 | `trace` | an Instruments trace of the places (the Metal System Trace template, or another with `--trace-template <name>`), each measured part marked under Points of Interest; `trace.md` sums up the GPU time per part by channel (compute, vertex, fragment). Needs Xcode, 10 GB free, and places |
 | `capture` | an Xcode GPU frame capture at each place: every draw and dispatch, the resources, the shader profiler and debugger. Needs places, 20 GB free |
-| `hud` | Apple's Metal Performance HUD over the game, its per-frame log in `hud.log`; the HUD's menu, in the menu bar while the game runs, writes its reports to `hud/`. Not with `profile`: both use the GPU's counters |
+| `hud` | Apple's Metal Performance HUD over the game, its per-frame log in `hud.log`; the HUD's menu, in the menu bar while the game runs, writes its reports to `hud/` |
 | `catch <clean run>` | for a picture that goes wrong now and then: the trigger `broken: passes, screenshot` with each screenshot held against that clean run's (30 % pure white, under half the size, or far more pure black), and KSA Metal looking at the image a few times a second, which dumps on its own; `watch.txt` says when each fault began and ended (at most 3 of each; about 40 MB each; 1 GB free). `--catch-capture` adds `capture` to the rule (40 GB free) |
 | `passes` | the trigger `checkpoint: passes, screenshot`: a pass dump at every place, the clean run a caught dump is compared with |
 | `film <seconds>` | a screenshot every that many seconds of the script's clock, in `film/`, to see the camera's moves |
-| `camera-log` | the camera's place every frame in `trace.csv`, to check its moves are smooth |
+| `camera-log` | the camera's place every frame in `camera-log.csv`, to check its moves are smooth |
 | `hold` | jump to one place and stay there, paused, until you quit the game: for a close look with Apple's overlay or Xcode |
 
 With `trace`, `capture` and `hud`, KSA Metal names every encoder after the game's GPU zone it began in and its
@@ -175,7 +195,7 @@ two side by side.
 
 A trigger is a rule: when its condition holds, its actions run, a limited number of times
 ([`../../shared/benchmark/Triggers.cs`](../../shared/benchmark/Triggers.cs), and [`Triggers.cs`](Triggers.cs) in the
-game). `--on '<rule>'` adds one to `run`, `check`, `measure` or `investigate` (again for more):
+game). `--on '<rule>'` adds one to `run`, `check`, `measure`, `profile` or `investigate` (again for more):
 
 ```bash
 ./benchmark.sh run tour --on 'frame>50ms: moment'             # every frame of 50 ms or more kept, 20 a pass at most
@@ -267,10 +287,10 @@ table when it starts. Around it:
 | `Camera.cs`, `Path.cs`, `Rig.cs` | the camera: its flights through the `@key` places (`Path.cs`), the vehicle camera that follows or watches a vehicle (`Rig.cs`), the cockpit and front views |
 | `Vehicles.cs` | the vehicle directives: launch pads, flights, kittens, staging, explosions |
 | `Probes.cs` | the tools of `investigate`: each watches the parts, the checkpoints or the frames; one that works on a view holds its checkpoint until it is done |
-| `Here.cs` | the tab's recording of the player's own game (`RunOptions.Here`): no script, one part named `here`, everything a run records, a screenshot at its start |
+| `Here.cs` | the tab's recording of the player's own game (the plan's `play.here`): no script, one part named `here`, everything a run records, a screenshot at its start |
 | `Triggers.cs` | the run's [triggers](#triggers): every frame and after every checkpoint's screenshot, their conditions looked at and their actions run |
 | `GameProfilers.cs` | the game's own profilers, on while a run plays and read every frame into the run's store |
-| `GpuZones.cs` | the game's GPU zones for `profile` (KSA Metal splitting render passes at them) and encoders named after them for `trace`, `capture` and `hud` |
+| `GpuZones.cs` | the game's GPU zones for `profile`'s profiled pass (KSA Metal splitting render passes at them) and encoders named after them for `trace`, `capture` and `hud` |
 | `World.cs` | a new game's world, and the sea's waves settled at once for a view standing still |
 | `Explore.cs` | `explore`'s console command |
 | `Runs.cs` | the runs in the game: those `benchmark.sh` starts, those of the Mac Port tab, and its watchdog |
@@ -284,15 +304,19 @@ about 25 of its boosters' exhaust lights still burn in the explosion view. Their
 
 ### A run's record
 
-The director measures nothing itself. It writes what happens to `events.jsonl` (a scenario starting, a part opened and
-closed, a screenshot, a checkpoint's moment, an error, a heartbeat every second) and every frame to `frames.csv`, marked
-with the part its numbers count in; `benchmark.sh` adds its own events around the game (a session, how it ended, and
+The director measures nothing itself. It plays the run's plan, `plan.json`
+([`../../shared/benchmark/RunPlan.cs`](../../shared/benchmark/RunPlan.cs)), which `benchmark.sh` or the Mac Port tab
+writes: what plays, its passes (a warm-up, measured, profiled), what the tools record, and the triggers; a plan never
+changes a setting. It writes what happens into the run's store as events (a pass beginning, a scenario starting, a part
+opened and closed, a screenshot, a checkpoint's moment, an error, a heartbeat every second) and every frame, marked with
+the part its numbers count in; `benchmark.sh` adds its own events around the game (a session, how it ended, and
 macOS's memory pressure and swap, over the run and in each game session: an A/B run's report shows them for each
-side). When the run ends, one step makes its record, `run.json`, from them
-([`../../shared/benchmark/Finish.cs`](../../shared/benchmark/Finish.cs)): each part's numbers from its frames, the facts
-about the Mac and the settings, and one list of checks that decides what fails the run and what is worth knowing. The
-report, its page, the comparison and the list of runs all read records. `benchmark.sh` and the Mac Port tab's runs make
-it the same way; for a run with a `report.json` and no `run.json`, the report is read into a record.
+side). When the run ends, one step makes its record, `run.json`, from the store
+([`../../shared/benchmark/Finish.cs`](../../shared/benchmark/Finish.cs)): each part's [metrics](#metrics) over its
+measured passes, each measuring's own, a profiled pass's apart, the zones and the slow frames, the facts about the Mac
+and the settings, and one list of checks that decides what fails the run and what is worth knowing. The report, its
+page, the comparison and the list of runs all read records. `benchmark.sh` and the Mac Port tab's runs make it the same
+way. A record of an older version isn't read: `report <run> --again` makes it again from the run's store.
 
 A game counts as hung when its last heartbeat is a minute old, three in the Warp Test or with a tool that holds a
 checkpoint, and as stuck when its heartbeats still come but have said the same moment of the script for as long, with
@@ -313,30 +337,28 @@ noted, not a failure. Before the game starts, the script refuses what would wast
 take, a `--compare` run that shares nothing with this one or played another way, an app or a test that isn't there. It
 warns when the GPU is already busy.
 
-`compare` reads GPU time first, as frame times sit on the display's beat. It marks a number as changed when it moved by
-more than its noise profile's limit, or 5 %. Between runs with several passes it marks a change when the ranges don't
-overlap and the difference is over 2 %. Screenshots are compared in blocks of 16 by 16 pixels: a block counts as changed
-when its mean colour moved by more than 12 (of 255), and a screenshot differs when more of its blocks changed than its
-limit allows.
+Screenshots are compared in blocks of 16 by 16 pixels: a block counts as changed when its mean colour moved by more than
+12 (of 255), and a screenshot differs when more of its blocks changed than its limit allows. The numbers are judged as
+[Verdicts](#verdicts) says.
 
-Every frame of a run goes into `frames.csv`: the script's time, the scenario and part, frame and GPU time, draws and
-passes, memory, thermal state, shaders compiled so far, the time between the last two images the display showed, and in
-time warp the game's clock and the physics' work. The record's numbers are summaries of it, and it goes into the zip,
-so a shared run can answer questions nobody asked when it was made. While a part is measured, KSA Metal also marks it
-as a signpost interval, which is how an Instruments trace knows where each part is.
+Every frame of a run is a row of the store's `frames`: the script's time, the scenario and part, frame and GPU time,
+draws and passes, memory, thermal state, shaders compiled so far, the time between the last two images the display
+showed, in time warp the game's clock and the physics' work, and the .NET runtime's work in it (GC pause, collections,
+JIT time and methods, lock contentions, MB allocated). The record's numbers are summaries of it, and the store goes into
+the zip, so a shared run can answer questions nobody asked when it was made. While a part is measured, KSA Metal also
+marks it as a signpost interval, which is how an Instruments trace knows where each part is.
 
-The run's store holds the same events and frames, and more, in SQLite files in the run's folder
-([`../../shared/benchmark/Store.cs`](../../shared/benchmark/Store.cs)): the game writes `run.db`, `benchmark.sh` writes
-`host.db`, so two processes never write one file, and every row carries the time on one clock, the Mac's monotonic clock
-in seconds, which KSA Metal's own times use. Besides the events and frames, `run.db` has what KSA Metal hands the
-director through its drain while a run plays: every present with its numbers (`presents`), when each frame began, was
-presented, finished on the GPU and was shown (`shown`), every wait of a millisecond or more that blocked the game, such
-as a fence or the next drawable (`waits`; the wait for an earlier frame's present too, the game's every frame under
-V-Sync), and every allocation or free of 16 MB or more (`memory`). Each frame also has the .NET runtime's work in it: GC
-pause, collections, JIT time and methods, lock contentions, MB allocated.
+The run's store is SQLite files in the run's folder ([`../../shared/benchmark/Store.cs`](../../shared/benchmark/Store.cs)):
+the game writes `run.db`, `benchmark.sh` writes `host.db`, so two processes never write one file; `benchmark.sh` watches
+the game's heartbeats there, and the game its recording event. Every row carries the time on one clock, the Mac's
+monotonic clock in seconds, which KSA Metal's own times use. Besides the events and frames, `run.db` has what KSA Metal
+hands the director through its drain while a run plays: every present with its numbers (`presents`), when each frame
+began, was presented, finished on the GPU and was shown (`shown`), every wait of a millisecond or more that blocked the
+game, such as a fence or the next drawable (`waits`; the wait for an earlier frame's present too, the game's every frame
+under V-Sync), and every allocation or free of 16 MB or more (`memory`).
 
 During a run the director switches on the game's own profilers, the main thread's and the job runners' (orbit and vehicle
-solvers and the others), with `profile` its GPU profiler too (group `gpu`, [`GpuZones.cs`](GpuZones.cs)), and reads them every frame ([`GameProfilers.cs`](GameProfilers.cs),
+solvers and the others), in `profile`'s profiled pass its GPU profiler too (group `gpu`, [`GpuZones.cs`](GpuZones.cs)), and reads them every frame ([`GameProfilers.cs`](GameProfilers.cs),
 [`../../shared/benchmark/Zones.cs`](../../shared/benchmark/Zones.cs)): `zone_stats` has every zone of each part, its total
 and own time, its median, 95th percentile and worst in a frame, and what it allocated. A frame a trigger keeps is a moment
 (`moments`; by default a measured part's frame of 100 ms or more, 20 a pass): its cause names the main thread's zones with the most own time in it, KSA Metal's
@@ -344,22 +366,57 @@ waits of 2 ms or more and the GPU time of the presents around it, and the first 
 zone from half a second before to a quarter of a second after it (`slices`). Reading them costs the game about 20 µs a
 frame; `KSA_BENCH_ZONES=0` in front of `benchmark.sh` leaves the profilers off.
 
-The record is made from `events.jsonl` and `frames.csv`; a run whose store says otherwise gets a note. macOS's `sqlite3`
-reads the files:
+A profiled pass's zones run one after another: every zone boundary waits for all the work before it, so the profiled
+pass's GPU time is about 13 % higher than the measured pass's (the Mixed Test), a zone called many times a frame reads
+high by about 20 µs for each call (up to 70), and a zone at a render pass's edge carries the store and load of the
+pass's images. Against an Instruments trace of the same frames, the zones called once a frame read a median 4 % high,
+52 of 56 within 10 % (four places of the Tour). The record keeps the profiled pass's numbers apart from the measured
+ones.
+
+`query` runs SQL on a run's store, with `host.db` attached as `host`; macOS's `sqlite3` reads the files too:
 
 ```bash
-sqlite3 run.db "SELECT what, COUNT(*), ROUND(MAX(ms), 1) FROM waits GROUP BY what ORDER BY 3 DESC"
-sqlite3 run.db "SELECT part, ROUND(frame_ms), cause FROM moments"
+./benchmark.sh query "SELECT what, COUNT(*), ROUND(MAX(ms), 1) FROM waits GROUP BY what ORDER BY 3 DESC"
+./benchmark.sh query 2026-11-07_1939 "SELECT part, ROUND(frame_ms), cause FROM moments"
 sqlite3 run.db "SELECT zone, ROUND(self_ms / frames, 2) FROM zone_stats WHERE part = 'earth4' ORDER BY self_ms DESC LIMIT 10"
 ```
+
+`timeline` writes the store as a trace for Perfetto's viewer, `timeline.pftrace`, and opens `timeline.html`, whose
+button hands it to ui.perfetto.dev in your browser; the trace goes nowhere else
+([`../../shared/benchmark/Timeline.cs`](../../shared/benchmark/Timeline.cs)). Its tracks: the parts, the run's events,
+frame time and GPU busy, each frame from its start to its present and to the GPU's end and its time on screen, KSA
+Metal's waits by kind, the game's zones around the slow frames, and memory.
+
+### Metrics
+
+Every number a record, a report or a comparison shows has one name in
+[`../../shared/benchmark/Metrics.cs`](../../shared/benchmark/Metrics.cs), with its unit, which way is better, how a
+part's passes and sessions combine (their median, or the most for counts) and its limit. The frame metrics are
+PresentMon's:
+
+| Metric | |
+|---|---|
+| `frame/time` | the time between two frames, the median |
+| `frame/cpu_busy` | a frame's work from its start (its wait for an earlier frame over) to its present, less KSA Metal's waits in it (a drawable, a fence) |
+| `frame/cpu_wait` | those waits and the wait for the earlier frame: with CPU busy, the frame |
+| `gpu/busy` | the GPU's time on a frame |
+| `frame/latency` | from a frame's start to its showing |
+| `frame/displayed` | how long a frame stayed on screen |
+| `frame/animation_error` | how far the step between two frames' starts differs from the step between their showing, on average: a judder the frame rate doesn't show |
+| `frame/p99`, `frame/low1` | 99 % of frames took less; the mean of the slowest 1 % |
+| `frame/hitches`, `frame/over100` | frames over 50 ms and twice the median of the 60 before them; frames over 100 ms |
+
+A zone of the game's profilers is a metric too, its own time a frame: `gpu/zone/Clouds Raymarching`,
+`cpu/zone/PrepareFrame`, `job/VehicleSolver/<zone>`. The report's All numbers lists every metric of every part.
 
 The build runs the benchmark's tests, which need no game, and stops when one fails. Those in
 [`../../player/benchmark-cli/tests/`](../../player/benchmark-cli/tests/) check the record (what passes and fails a run,
 the conditions it notes, passes and sessions merged into medians, numbers the same on a Mac in any region, an older
-run's report), the run's store against its files, KSA Metal's drain records, its report and zip, the comparison of two
-runs, the PNG reader, and the lineup itself.
+record refused), PresentMon's numbers from KSA Metal's times, the statistics against values worked out by hand, the
+verdicts on each basis and the zones that moved, the run's store, KSA Metal's drain records, its report and zip, the
+comparison of two runs, the PNG reader, and the lineup itself.
 [`command.sh`](../../player/benchmark-cli/tests/command.sh) plays [`benchmark.sh`](../../player/port-folder/benchmark.sh)
-against a stand-in for the game that writes events and frames as the director does: its commands, what it refuses, and
+against a stand-in for the game that writes the run's store as the director does: its commands, what it refuses, and
 a run that passes, crashes, hangs or is stopped. [`../../player/benchmark-cli/`](../../player/benchmark-cli/) holds
 `benchmark.sh`'s program, compiled against nothing of the game.
 
@@ -389,20 +446,20 @@ flight's. Fly the free camera to a place, open the console (`\`) and type `bench
 | `--port <key>=<value>` | change a [port setting](../../../README.md#the-mac-port-tab) for the run, on top of yours (with a preset or `--defaults`, on top of the defaults); the report shows the port settings and what the hooks did |
 | `--compare <run>` | compare with that run at the end (its folder, zip or name, `last`, `previous`, a baseline's name), checked before the game starts; the script fails when screenshots differ |
 | `--app <path>` | the app to measure (default: `~/Applications/Kitten Space Agency.app`) |
-| `--on '<rule>'` | with `run`, `check`, `measure` or `investigate`: a [trigger](#triggers) (repeat for more) |
+| `--on '<rule>'` | with `run`, `check`, `measure`, `profile` or `investigate`: a [trigger](#triggers) (repeat for more) |
 
 | Command | |
 |---|---|
 | `list` | the tests, their scenarios and their places |
 | `runs [n]` | your last runs (15, or n), the newest first |
-| `report [run] [test]` | a run's report in the terminal, and its page in your browser (default: the last run; a baseline with runs of several tests needs the test) |
+| `report [run] [test] [--again]` | a run's report in the terminal, and its page in your browser (default: the last run; a baseline with runs of several tests needs the test; `--again`: made again from its store first) |
 | `compare [run] [run]` | how the second run differs from the first (with one run: against the last; with none: the last against the one before it); exits with 1 when screenshots differ, 2 when the runs don't compare |
 | `clean [--keep n] [--yes]` | delete all but your last runs (30, or n) and the baselines' runs, after asking (`--yes`: without asking); only folders a run leaves |
-| `check`, `measure`, `investigate`, `calibrate`, `baseline`, `explore` | for work on the port (above) |
+| `check`, `measure`, `profile`, `investigate`, `calibrate`, `baseline`, `query`, `timeline`, `explore` | for work on the port (above) |
 
 | File | |
 |---|---|
-| `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/` | the results: `report.html`, `report.md`, `run.json` (the record), `events.jsonl`, `frames.csv`, `run.db` and `host.db` (the run's store), `options.json`, the screenshots, `game.log`, `stuck.txt` from a stuck game, `compare.html` and `compare.md` after a comparison, `caught/` with what the triggers kept, and what the tools wrote |
+| `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/` | the results: `report.html`, `report.md`, `run.json` (the record), `run.db` and `host.db` (the run's store), `plan.json`, the screenshots, `game.log`, `stuck.txt` from a stuck game, `compare.html` and `compare.md` after a comparison, `timeline.html` and `timeline.pftrace` after `timeline`, `profile.md` after `profile`, `caught/` with what the triggers kept, and what the tools wrote |
 | `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/<date>.zip` | the run to share |
 | `~/Documents/My Games/Kitten Space Agency/benchmarks/baselines.json`, `noise/` | the baselines' names, and the noise profiles `calibrate` measured on this Mac |
 | `~/Library/Caches/ksa-macos-port/benchmark/instance/` | the game's documents folder for a run that starts the game |

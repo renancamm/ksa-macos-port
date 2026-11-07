@@ -1,11 +1,12 @@
-// The game's GPU zones in a run (RunOptions.GpuZones and ZoneLabels): KSA Metal's zone mode (src/game/driver/diagnostics/
-// zones.mm) and the game's GPU profiler on. GpuZones: KSA Metal splits render passes at the profiler's timestamps, so a
-// zone inside a pass reads its own time, and GameProfilers reads the profiler's frames with the CPU ones (group gpu).
+// The game's GPU zones in a run (a profiled pass, and RunPlan.Record.ZoneLabels): KSA Metal's zone mode (src/game/driver/
+// diagnostics/zones.mm) and the game's GPU profiler on. Zones: KSA Metal splits render passes at the profiler's timestamps,
+// so a zone inside a pass reads its own time, and GameProfilers reads the profiler's frames with the CPU ones (group gpu).
 // Zone labels: KSA Metal answers the timestamps at once, and a postfix on the profiler's zone begin and end (the inlined
 // Begin and End call them only while it is active) tells it the zone each encoder runs in, which names the encoder in a
-// trace or a frame capture. In a game started with gpu_zones the zones are always split and read, labels or not: a trace
-// then times the same encoders as the zones, one for each. The postfixes go in the first time a run asks for labels and do nothing outside one. All of
-// it goes back as it was at the run's end.
+// trace or a frame capture. In a game started with gpu_zones labels split and read the zones too, so that a trace times
+// the same encoders as the zones, one for each; not when the run has a profiled pass, which splits them for itself. The
+// postfixes go in the first time a run asks for labels and do nothing outside one. All of it goes back as it was at the
+// run's end.
 using System;
 using System.Collections.Generic;
 using System.Reflection;
@@ -42,10 +43,12 @@ internal sealed class GpuZones
         _labels = labels;
     }
 
-    // On for a run that asks for them; null when it doesn't, or when KSA Metal or the game can't
-    public static GpuZones? Start(RunOptions options, Action<string> log)
+    // On, the zones split and read (a profiled pass) or the encoders named after them (labels), or both; null when
+    // neither is asked for, or when KSA Metal or the game can't. Labels alone split too in a game started with
+    // gpu_zones, unless splitting is the profiled pass's alone (mayAlwaysSplit false)
+    public static GpuZones? Start(bool zones, bool labels, Action<string> log, bool mayAlwaysSplit = true)
     {
-        if (!options.GpuZones && !options.ZoneLabels)
+        if (!zones && !labels)
             return null;
         if (!Profiler.Gpu.IsSupported)
         {
@@ -53,14 +56,14 @@ internal sealed class GpuZones
             return null;
         }
         // Split when asked, or when the game has gpu_zones (KSA Metal refuses it otherwise)
-        bool split = DriverStats.ZoneMode(ZoneMode.Split);
-        if (!split && (options.GpuZones || !DriverStats.ZoneMode(ZoneMode.Labels)))
+        bool split = (zones || mayAlwaysSplit) && DriverStats.ZoneMode(ZoneMode.Split);
+        if (!split && (zones || !DriverStats.ZoneMode(ZoneMode.Labels)))
         {
-            log(options.GpuZones ? "the game's GPU zones: KSA Metal can't split its render passes (does the game have KSA_MTL_GPU_ZONES=1?)"
+            log(zones ? "the game's GPU zones: KSA Metal can't split its render passes (does the game have KSA_MTL_GPU_ZONES=1?)"
                 : "zone labels: KSA Metal has no zone mode");
             return null;
         }
-        if (options.ZoneLabels && !PatchLabels(log))
+        if (labels && !PatchLabels(log))
         {
             log("zone labels: the game's zone begin and end can't be patched; encoders keep their pipelines' names");
             // Without names, labels are of no use: the game's timestamps as they came
@@ -70,7 +73,7 @@ internal sealed class GpuZones
                 return null;
             }
         }
-        return new GpuZones(options.ZoneLabels && _patched, split);
+        return new GpuZones(labels && _patched, split);
     }
 
     // The run's end: as they were

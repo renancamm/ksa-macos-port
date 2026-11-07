@@ -18,8 +18,8 @@ namespace KsaMetal.Benchmark.Cli;
 
 public static partial class Program
 {
-    // The game's GPU zones (investigate profile: RunOptions.GpuZones) from the run's store: per measured part, the zones
-    // with the most own time a frame (their time less their zones'), against the GPU time the parts measured
+    // The game's GPU zones of a profiled pass (benchmark.sh profile) from the run's store: per part, the zones with the
+    // most own time a frame (their time less their zones'), against the GPU time the measured passes took
     private static int Profile(string dir)
     {
         var db = Path.Combine(dir, RunStore.GameFile);
@@ -30,9 +30,10 @@ public static partial class Program
         }
         using var store = Sqlite.Open(db, readOnly: true);
         var parts = new List<(string Scenario, string Part, long Frames, double GpuFrame, List<(string Zone, double Self, double Total, double Calls, double P95)> Zones)>();
-        // Passes and sessions together
+        // The profiled passes, sessions together
+        const string Profiled = "(session, pass) IN (SELECT session, pass FROM events WHERE type = 'pass' AND text = 'profiled')";
         using (var q = store.Prepare("SELECT scenario, part, zone, SUM(frames), SUM(calls), SUM(total_ms), SUM(self_ms), MAX(p95_ms), zone = 'GPU' " +
-                                     "FROM zone_stats WHERE grp = 'gpu' AND pass > 0 GROUP BY scenario, part, zone ORDER BY scenario, part, SUM(self_ms) DESC"))
+                                     $"FROM zone_stats WHERE grp = 'gpu' AND {Profiled} GROUP BY scenario, part, zone ORDER BY scenario, part, SUM(self_ms) DESC"))
         {
             while (q.Step())
             {
@@ -51,12 +52,13 @@ public static partial class Program
         }
         if (parts.Count == 0)
         {
-            Console.Error.WriteLine("no GPU zones in the run's store (does the app's KSA Metal have gpu_zones?)");
+            Console.Error.WriteLine("no GPU zones of a profiled pass in the run's store (does the app's KSA Metal have gpu_zones?)");
             return 1;
         }
         // What the GPU measured for the same parts, the median of their frames
         var measured = new Dictionary<(string, string), double>();
-        using (var q = store.Prepare("SELECT scenario, part, gpu_ms FROM frames WHERE part <> '' AND pass > 0 AND gpu_ms > 0"))
+        using (var q = store.Prepare("SELECT scenario, part, gpu_ms FROM frames WHERE part <> '' AND gpu_ms > 0 AND " +
+                                     "(session, pass) IN (SELECT session, pass FROM events WHERE type = 'pass' AND text = 'measured')"))
         {
             var all = new Dictionary<(string, string), List<double>>();
             while (q.Step())
@@ -75,12 +77,12 @@ public static partial class Program
         var md = new StringBuilder();
         md.AppendLine("## GPU zones");
         md.AppendLine();
-        md.AppendLine("Per measured part, the game's GPU zones, as its GPU profiler names them, with KSA Metal splitting render passes at each " +
-                      "zone so that a zone inside a pass has its own time. Own time is a zone's time less its zones'. Every zone boundary waits " +
-                      "for all the work before it, so zones run one after the other, and the profiled frame takes longer than a frame measured " +
-                      "without them (about 13 % in the Mixed Test). A zone called many times a frame reads high by about 20 µs for each call (up to " +
-                      "70), and a zone at a render " +
-                      "pass's edge carries the store and load of the pass's images: compare these numbers only with other profiles.");
+        md.AppendLine("Per part, the game's GPU zones in the profiled pass, as its GPU profiler names them, with KSA Metal splitting render passes " +
+                      "at each zone so that a zone inside a pass has its own time. Own time is a zone's time less its zones'. Every zone boundary waits " +
+                      "for all the work before it, so zones run one after the other, and the profiled frame takes longer than the measured pass's " +
+                      "frame of the same session (about 13 % in the Mixed Test). A zone called many times a frame reads high by about 20 µs for each " +
+                      "call (up to 70), and a zone at a render pass's edge carries the store and load of the pass's images: compare these numbers only " +
+                      "with other profiles.");
         foreach (var (scenario, part, frames, gpuFrame, zones) in parts)
         {
             md.AppendLine();
