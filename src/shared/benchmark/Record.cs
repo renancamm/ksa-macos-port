@@ -176,8 +176,10 @@ public sealed class PartRecord
     public double FrameMsP95 { get; set; }
     public double FrameMsP99 { get; set; }
     public double FrameMsMax { get; set; }
-    // Frames longer than twice the part's median: stutters, whatever the frame rate
-    public int Hitches { get; set; }
+    // Frames longer than 50 and 100 ms (under 20 and 10 FPS): the stutters a player sees, whatever the frame rate (twice
+    // the median counted V-Sync's own steps at 120 Hz); null in a record made before they were counted
+    public int? FramesOver50Ms { get; set; }
+    public int? FramesOver100Ms { get; set; }
     public double? GpuMsMedian { get; set; }
     public double? GpuMsP95 { get; set; }
     public double? DrawsMedian { get; set; }

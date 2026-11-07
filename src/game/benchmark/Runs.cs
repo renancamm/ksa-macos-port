@@ -54,8 +54,12 @@ public static class Runs
     // The options of a run that starts with the game (run.json in KSA_BENCH_OUT's folder)
     private static RunOptions? _options;
     private static readonly MemoryWatch Memory = new();
-    // A run from the tab has no script to stop a game that has hung: a thread of its own does, by the same rule
+    // A run from the tab has no script to stop a game that has hung or is stuck: a thread of its own does, by the same rules
     private static bool _watching;
+    private static volatile StuckRun? _stuck;
+
+    // A run the watch found stuck, and the words for its end
+    private sealed record StuckRun(Director Run, string Why);
     private static Result? _last;
     private static bool _lastLooked;
 
@@ -238,8 +242,11 @@ public static class Runs
             _watching = true;
             new Thread(WatchForHang) { IsBackground = true, Name = "Benchmark watch" }.Start();
         }
+        // The watch found the run stuck
+        if (_stuck is { } stuck && stuck.Run == _run)
+            _run.Stop(stuck.Why, failed: true);
         // Esc stops a run from the game (it opens the settings)
-        if (_mode != Mode.Script && (GameSettings.Show || EscMenu.Open))
+        else if (_mode != Mode.Script && (GameSettings.Show || EscMenu.Open))
         {
             GameSettings.Close();
             EscMenu.Open = false;
@@ -268,8 +275,16 @@ public static class Runs
         while (true)
         {
             Thread.Sleep(1000);
-            if (_run == null || Watchdog.Hung(_out, 1, limit) is not { } stale)
+            if (_run is not { Done: false } run)
                 continue;
+            var played = EventLog.Read(_out);
+            if (Watchdog.Hung(played, 1, limit) is not { } stale)
+            {
+                // A stuck game still draws its frames: the run stops there, as with Esc, failed, and the player's game comes back
+                if (_stuck?.Run != run && Watchdog.Stuck(played, 1, limit) is { } still)
+                    _stuck = new StuckRun(run, $"stuck{Watchdog.Where(still)} (its clock stood still for {limit} s)");
+                continue;
+            }
             // What the director measured is in its events and frames, and the player's game is in the save on disk
             Log($"BenchmarkRun: no frame for {limit} s: stopping the game. Your game is in the save \"{SafetySave}\", the run's results in {_out.Replace(Home, "~")}");
             try

@@ -530,12 +530,13 @@ public partial class Director
         return true;
     }
 
-    // Ends the run before the script's end (the player stopped it): the results say why, and that it did not complete
-    public void Stop(string why)
+    // Ends the run before the script's end: the player stopped it, or it failed (the watch found it stuck); the results
+    // say why, and that it did not complete
+    public void Stop(string why, bool failed = false)
     {
         if (Done)
             return;
-        _events.Add("stopped", ScenarioName, text: why);
+        _events.Add(failed ? "error" : "stopped", ScenarioName, text: why);
         EndSection();
         _active = false;
         _frames?.Dispose();

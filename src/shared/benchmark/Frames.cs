@@ -139,7 +139,8 @@ public static class Summary
             FrameMsP95 = Round(Percentile(frameMs, 95)),
             FrameMsP99 = Round(Percentile(frameMs, 99)),
             FrameMsMax = Round(frameMs.Length > 0 ? frameMs[^1] : 0),
-            Hitches = frameMs.Count(x => x > 2 * Percentile(frameMs, 50)),
+            FramesOver50Ms = frameMs.Count(x => x > 50),
+            FramesOver100Ms = frameMs.Count(x => x > 100),
         };
         if (gpu.Length > 0)
         {
@@ -199,7 +200,7 @@ public static class Summary
     }
 
     // Several measurings of one part (passes, sessions): the median of each number, the most of those that count events
-    // (hitches, shaders compiled, the Mac's heat, physics), the range of frame and GPU time and of the speed reached; the
+    // (slow frames, shaders compiled, the Mac's heat, physics), the range of frame and GPU time and of the speed reached; the
     // first measuring's frames and seconds
     public static PartRecord Merge(IReadOnlyList<PartRecord> runs)
     {
@@ -224,7 +225,8 @@ public static class Summary
             FrameMsP95 = Median(runs.Select(r => r.FrameMsP95)),
             FrameMsP99 = Median(runs.Select(r => r.FrameMsP99)),
             FrameMsMax = Median(runs.Select(r => r.FrameMsMax)),
-            Hitches = runs.Max(r => r.Hitches),
+            FramesOver50Ms = runs.Max(r => r.FramesOver50Ms),
+            FramesOver100Ms = runs.Max(r => r.FramesOver100Ms),
             GpuMsMedian = MedianOf(runs.Select(r => r.GpuMsMedian)),
             GpuMsP95 = MedianOf(runs.Select(r => r.GpuMsP95)),
             DrawsMedian = MedianOf(runs.Select(r => r.DrawsMedian)),
