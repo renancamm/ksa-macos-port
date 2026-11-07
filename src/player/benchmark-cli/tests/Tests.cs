@@ -51,6 +51,8 @@ internal static class Tests
             ("the run's store", Store),
             ("KSA Metal's drain", Drain),
             ("the game's zones", ZoneSums),
+            ("the triggers' rules", Rules),
+            ("a part a trigger disturbed", Disturbed),
         };
         foreach (var (name, run) in tests)
         {
@@ -503,6 +505,13 @@ internal static class Tests
         var bothRecord = Finished(both);
         Equal(Status.Stopped, bothRecord.Status, "stopped with Esc");
         Contains(Problems(bothRecord), "'@launch' failed", "a real problem stays");
+        // A trigger's stop: the run's own, said so
+        var triggered = Run("trigger stopped", done: false);
+        new EventLog(triggered, 1).Add("stopped", "earth", text: "stopped by the trigger frame>50ms: stop (a frame of 60 ms in earth1)");
+        var triggeredRecord = Finished(triggered);
+        Equal(Status.Stopped, triggeredRecord.Status, "a trigger's stop");
+        Contains(Notes(triggeredRecord), "the trigger frame>50ms: stop (a frame of 60 ms in earth1)", "the trigger's stop noted");
+        Contains([File.ReadAllText(Path.Combine(triggered, "report.md"))], "**Stopped** by a trigger", "report.md");
         // A repeat stopped along the way is part of the same stop
         var repeat = Run("repeat stopped");
         var more = new EventLog(repeat);
@@ -788,6 +797,11 @@ internal static class Tests
         t += 0.120;
         log.EndFrame(t, part);
         log.Hitch(t, 120, part);
+        // The frame after it, 20 ms, kept too: its cause is its own, not the slow frame's that ended just before it
+        log.Add(new ZoneFrame("main", "Main Thread", [new(0, -1, t + 0.0005, 19.5, 0), new(3, 0, t + 0.001, 18, 0)]));
+        t += 0.020;
+        log.EndFrame(t, part);
+        log.Hitch(t, 20, part);
         for (int f = 0; f < 20; f++, t += 0.016)
         {
             log.Add(new ZoneFrame("main", "Main Thread", [new(0, -1, t, 16, 0), new(1, 0, t + 0.001, 10, 0)]));
@@ -814,7 +828,7 @@ internal static class Tests
             Equal(4.0, q.Double(1), "RecordCommandBuffer: worst");
             Equal(10.0, Math.Round(q.Double(2), 3), "RecordCommandBuffer: MB allocated");
         }
-        using (var q = db.Prepare("SELECT id, frame_ms, part, cause FROM moments"))
+        using (var q = db.Prepare("SELECT id, frame_ms, part, cause FROM moments ORDER BY id"))
         {
             Check(q.Step(), "a moment");
             Equal(120.0, q.Double(1), "the moment's frame");
@@ -822,7 +836,9 @@ internal static class Tests
             Check(q.Text(3).StartsWith("VehicleUpdate 100.0 ms", StringComparison.Ordinal), $"the cause: {q.Text(3)}");
             Contains([q.Text(3)], "waited in vkWaitForPresentKHR 95.0 ms", "the cause's wait");
             Contains([q.Text(3)], "GPU up to 97.0 ms a frame", "the cause's GPU time");
-            Check(!q.Step(), "one moment");
+            Check(q.Step(), "the frame after it");
+            Check(q.Text(3).StartsWith("VehicleUpdate 18.0 ms", StringComparison.Ordinal), $"the frame after it, its own cause: {q.Text(3)}");
+            Check(!q.Step(), "two moments");
         }
         using (var q = db.Prepare("SELECT COUNT(*), MAX(ms) FROM slices WHERE moment = 1"))
         {
@@ -830,5 +846,65 @@ internal static class Tests
             Check(q.Long(0) > 3, "the moment's slices");
             Equal(120.0, q.Double(1), "the slow frame among them");
         }
+    }
+
+    private static void Rules()
+    {
+        var rule = Triggers.Parse("Frame > 50 ms: moment, screenshot, max 5");
+        Equal(Condition.Frame, rule.When, "frame's condition");
+        Equal(50.0, rule.Ms, "frame's limit");
+        Equal("moment,screenshot", string.Join(",", rule.Actions.Select(Triggers.Name)), "the actions in order");
+        Equal(5, rule.Max, "max");
+        Equal("frame>50ms: moment, screenshot, max 5", rule.ToString(), "as written");
+        Equal(rule.ToString(), Triggers.Parse(rule.ToString()).ToString(), "read again as written");
+        // A limit in ms reaches the game as it was written (options.json has the rules as text)
+        foreach (var ms in new[] { 33.33333, 0.0001, 16.7 })
+            Equal(ms, Triggers.Parse(Triggers.Parse(FormattableString.Invariant($"frame>{ms}ms: moment")).ToString()).Ms, $"frame>{ms}ms read again");
+        Equal("broken: passes, capture", Triggers.Parse("broken: passes, capture, passes").ToString(), "an action once");
+        Equal(3, Triggers.Parse("broken: passes").Max, "broken's default max");
+        foreach (var (text, says) in new[]
+                 {
+                     ("frame>50ms moment", "a rule is"), ("frame>0ms: moment", "more than 0 ms"), ("warp: stop", "no condition 'warp'"),
+                     ("frame>50ms: dance", "no action 'dance'"), ("frame>50ms: sample", "frame>50ms can't sample"),
+                     ("checkpoint: stop", "checkpoint can't stop"), ("stuck: max 2", "no action"), ("broken: passes, max 0", "max takes"),
+                     ("frame>50ms: 1", "no action '1'"),
+                 })
+        {
+            try
+            {
+                Triggers.Parse(text);
+                Check(false, $"'{text}' read as a rule");
+            }
+            catch (FormatException e)
+            {
+                Contains([e.Message], says, $"'{text}'");
+            }
+        }
+        // The defaults, and a rule of the run's own in a default's place
+        Equal("frame>100ms: moment; stuck: sample, stop", string.Join("; ", Triggers.For([])), "the defaults");
+        Equal("frame>50ms: capture, max 1; checkpoint: passes; stuck: sample, stop",
+            string.Join("; ", Triggers.For(["frame>50ms: capture, max 1", "checkpoint: passes"])), "own rules first, the other defaults after");
+        Check(Triggers.HoldCheckpoints(Triggers.For(["checkpoint: passes"])), "a pass dump at checkpoints holds them");
+        Check(!Triggers.HoldCheckpoints(Triggers.For(["frame>50ms: passes"])), "a slow frame's pass dump holds no checkpoint");
+        Check(Triggers.TakeMinutes(Triggers.For(["frame>50ms: passes"])), "a slow frame's pass dump takes minutes");
+        Check(!Triggers.TakeMinutes(Triggers.For([])), "the defaults take no minutes");
+        // A run's options: its rules as written, one that can't be read left out
+        Equal("broken: screenshot; frame>100ms: moment; stuck: sample, stop",
+            string.Join("; ", Triggers.For(new RunOptions { On = ["broken: screenshot", "nonsense"] })), "the rules of a run's options");
+    }
+
+    private static void Disturbed()
+    {
+        // Two sessions; a trigger's capture worked while the first measured earth1
+        var dir = Run("disturbed", sessions: 2);
+        new EventLog(dir, 1).Add("disturbed", "earth", "earth1", text: "the trigger's capture worked while it measured");
+        var record = Finished(dir);
+        Equal(1, Part(record).Runs, "the disturbed measuring left out");
+        Contains(Notes(record), "earth earth1: left out of the numbers, the trigger's capture worked while it measured", "the note");
+        Equal(Status.Passed, record.Status, "a note, not a failure");
+        // Disturbed in every session: no numbers for the part
+        var all = Run("disturbed everywhere");
+        new EventLog(all, 1).Add("disturbed", "earth", "earth1", text: "the trigger's passes worked while it measured");
+        Equal(0, Finished(all).Scenarios.Single().Parts.Count, "no part left");
     }
 }

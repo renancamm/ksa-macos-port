@@ -158,9 +158,12 @@ public static class Finish
             });
         }
         var rows = frames.Where(r => r.Part.Length > 0).GroupBy(r => (r.Scenario, r.Part, r.Session, r.Pass)).ToDictionary(g => g.Key, g => (IReadOnlyList<FrameRow>)g.ToList());
+        // A part a trigger's heavy work disturbed (Triggers.cs) leaves the numbers in that pass
+        var disturbed = events.Where(e => e.Type == "disturbed").Select(e => (e.Scenario, e.Part, e.Session, e.Pass)).ToHashSet();
         foreach (var scenario in scenarios)
         {
-            var opens = events.Where(e => e.Type == "open" && e.Scenario == scenario.Name && e.Pass > 0 && VariantOf(e.Session) == scenario.Variant).ToList();
+            var opens = events.Where(e => e.Type == "open" && e.Scenario == scenario.Name && e.Pass > 0 && VariantOf(e.Session) == scenario.Variant &&
+                                          !disturbed.Contains((e.Scenario, e.Part, e.Session, e.Pass))).ToList();
             foreach (var part in opens.Select(e => e.Part!).Distinct().ToList())
             {
                 var measurings = opens.Where(e => e.Part == part)

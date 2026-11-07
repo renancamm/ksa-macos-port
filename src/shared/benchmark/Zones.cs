@@ -8,9 +8,9 @@
 //
 //   zone_stats  per part and group, each zone: the game frames it was in, the calls, total and self ms over the part, the
 //               median, 95th percentile and worst of its time in a game frame (frames without it count as 0), MB allocated
-//   moments     a slow frame of a measured part: when, how long, the part, and its cause: the three zones of the main
-//               thread's slowest frame there with the most self time, KSA Metal's waits of 2 ms or more in it, and the most
-//               GPU time a present around it took
+//   moments     a frame a trigger kept (Triggers.cs; by default a measured part's of 100 ms or more, 20 a pass): when,
+//               how long, the part (none: ""), and its cause: the three zones of the main thread's slowest frame there with
+//               the most self time, KSA Metal's waits of 2 ms or more in it, and the most GPU time a present around it took
 //   slices      every zone around a kept moment (the first MaxSliced of the measured passes): from half a second before the
 //               slow frame to a quarter of a second after it, each with its start on the store's clock, length, own time
 //               and depth
@@ -133,7 +133,7 @@ public sealed class ZoneLog
         _writing.RemoveAll(w => w.IsCompleted);
     }
 
-    // A slow frame of a measured part, which ended at t: written as a moment once the zones after it are in
+    // A frame kept as a moment, which ended at t: written once the zones after it are in
     public void Hitch(double t, double frameMs, PartKey part) => _pending.Add((t, frameMs, part));
 
     // The run's end: the part and the moments left, and everything written
@@ -194,9 +194,10 @@ public sealed class ZoneLog
             _sliced++;
         Write(() =>
         {
-            // The main thread's slowest frame that ended in the slow frame's time, and its zones with the most self time
+            // The main thread's frame of the slow frame, the last that ended by its end (the one before ends a frame earlier,
+            // within the clocks' slack), and its zones with the most self time
             var main = frames.Where(f => f.Group == "main" && f.End <= m.At + 0.002 && f.End >= m.At - m.FrameMs / 1000 - 0.002)
-                .OrderByDescending(f => f.Zones.Length > 0 ? f.Zones[0].Ms : 0).FirstOrDefault();
+                .OrderByDescending(f => f.End).FirstOrDefault();
             var cause = new List<string>();
             if (main != null)
             {

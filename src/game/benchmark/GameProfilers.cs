@@ -32,6 +32,8 @@ internal sealed class GameProfilers
     // What reading and summing cost the game's main thread: in all, the frames, the worst frame
     private long _spent, _worst;
     private int _frames;
+    // When the last frame ended, on the store's clock
+    private double _now;
 
     public ZoneLog Zones { get; }
 
@@ -67,9 +69,8 @@ internal sealed class GameProfilers
         }
     }
 
-    // Every frame: the sources read, and the game frame's zones counted in its part (none: null); a slow frame of a part
-    // kept as a moment
-    public void Frame(PartKey? part, double slowMs)
+    // Every frame: the sources read, and the game frame's zones counted in its part (none: null)
+    public void Frame(PartKey? part)
     {
         long started = Stopwatch.GetTimestamp();
         // On again each frame: the game's profiler window, once a player opened it, sets them every frame
@@ -81,13 +82,15 @@ internal sealed class GameProfilers
         double now = RunClock.Now();
         Read();
         Zones.EndFrame(now, part);
-        if (part is { } p && slowMs > 0)
-            Zones.Hitch(now, slowMs, p);
+        _now = now;
         long spent = Stopwatch.GetTimestamp() - started;
         _spent += spent;
         _worst = Math.Max(_worst, spent);
         _frames++;
     }
+
+    // The frame Frame just counted, of that many ms, kept as a moment of this part (a trigger's)
+    public void Moment(double frameMs, PartKey part) => Zones.Hitch(_now, frameMs, part);
 
     // What the sources finished since
     private void Read()

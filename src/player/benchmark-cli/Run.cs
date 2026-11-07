@@ -29,6 +29,9 @@ public static partial class Program
         private int _repeat = 1, _sessions = 1;
         private string _app = PortFolder.DefaultApp, _res = "", _script = "", _installed = "";
         private List<string> _only = [];
+        // --on: the run's own triggers as written, and all its rules with the defaults (Triggers.cs)
+        private readonly List<string> _on = [];
+        private List<Rule> _rules = [];
         private string _setKeys = " ";
         private string _settings = "", _out = "";
         // Ctrl-C (or TERM): the game is stopped, and what it measured is reported
@@ -91,7 +94,7 @@ public static partial class Program
                 }
             }
             var withValue = new[] { "--set", "--port", "--settings", "--compare", "--app", "--preset", "--system", "--repeat", "--sessions", "--ab",
-                "--trace-template" };
+                "--trace-template", "--on" };
             for (; i < args.Length; i++)
             {
                 var a = args[i];
@@ -116,6 +119,7 @@ public static partial class Program
                     case "--ab" when _purpose is Purpose.Measure: _ab = args[++i]; break;
                     case "--trace-template" when _trace: _template = args[++i]; break;
                     case "--catch-capture" when _catch.Length > 0: _catchCapture = true; break;
+                    case "--on" when _purpose is not Purpose.Explore: _on.Add(args[++i]); break;
                     case "-h" or "--help":
                         Console.WriteLine(CommandUsage);
                         return false;
@@ -390,6 +394,7 @@ public static partial class Program
             }
             if (_catchCapture && _catch.Length == 0)
                 Die("--catch-capture goes with --catch.");
+            CheckTriggers();
             if (_passes)
             {
                 if (_catch.Length > 0 || _capture)
@@ -413,6 +418,55 @@ public static partial class Program
                 if (!Directory.Exists("/Applications/Xcode.app"))
                     Output.Warn("the captures open in Xcode, which isn't in /Applications.");
                 _tools.Add("GPU frame capture");
+            }
+        }
+
+        // The run's triggers: --on's rules, investigate catch's and passes', and the defaults; what their actions need
+        private void CheckTriggers()
+        {
+            var own = new List<string>(_on);
+            // A picture that goes wrong now and then: dumped when it looks broken against the clean run
+            if (_catch.Length > 0)
+                own.Add(_catchCapture ? "broken: passes, capture, screenshot" : "broken: passes, screenshot");
+            if (_passes)
+                own.Add("checkpoint: passes, screenshot");
+            try
+            {
+                _rules = Triggers.For(own);
+            }
+            catch (FormatException e)
+            {
+                Die($"--on {e.Message}.");
+            }
+            foreach (var rule in _rules.Take(_on.Count))
+            {
+                if (rule.When is Condition.Broken or Condition.Checkpoint && _noShots)
+                    Die($"--on '{rule}' acts at the screenshots: it can't go with --no-shots.");
+                if (_test == "full" && rule.Actions.Any(Triggers.Heavy))
+                    Die("triggers that dump or capture look at one test: choose mixed, tour or warp (or places).");
+                if (rule.When is Condition.Checkpoint && rule.Has(TriggerAction.Capture) && Named == 0)
+                    Die("a capture takes several GB at every screenshot: choose places (./benchmark.sh investigate capture jupiter2).");
+                if (rule.When is Condition.Checkpoint && rule.Has(TriggerAction.Passes) && Named == 0 && !_fast && _test != "mixed")
+                    Die("passes take minutes at every screenshot: choose places, or the Mixed Test.");
+                // A moment needs the game's profilers alone
+                if (rule.Actions.Any(a => a is TriggerAction.Screenshot or TriggerAction.Passes or TriggerAction.Capture) &&
+                    !DriverHas("ksaMtlFrameStats"))
+                    Die("triggers need the app's KSA Metal driver, which this app doesn't have.");
+                if (rule.Has(TriggerAction.Passes) && !DriverHas("ksaMtlPassDump"))
+                    Die("this app's KSA Metal can't dump passes: update it with ./port.sh.");
+                if (rule.Has(TriggerAction.Passes) && FreeGb() < 1)
+                    Die($"a trigger that dumps passes needs 1 GB free on this disk ({FreeGb()} GB free).");
+                if (rule.Has(TriggerAction.Capture) && _capture)
+                    Die("investigate capture captures at every place already: a trigger's capture can't go with it.");
+                if (rule.Has(TriggerAction.Capture))
+                {
+                    if (!DriverHas("ksaMtlCapture"))
+                        Die("this app's KSA Metal can't capture frames: update it with ./port.sh.");
+                    if (FreeGb() < 20)
+                        Die($"a trigger that captures frames needs 20 GB free on this disk ({FreeGb()} GB free).");
+                }
+                if (rule.Actions.Any(Triggers.Heavy))
+                    _tools.Add($"the trigger {rule}");
             }
         }
     }

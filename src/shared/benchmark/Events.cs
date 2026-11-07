@@ -21,6 +21,9 @@
 //   memory     macOS's memory pressure at its worst and the swap used before and after: Text
 //   session-memory  the same for one game session: Session, Text
 //   gpu        the GPU was busy before the run: Value its utilisation in percent
+//   trigger    a trigger's rule ran (Triggers.cs): Scenario, Part (a part, or a checkpoint's screenshot), Text the rule
+//              and why
+//   disturbed  a trigger's heavy work went on while a part measured, which leaves the numbers: Scenario, Part, Text
 using System;
 using System.Collections.Generic;
 using System.IO;

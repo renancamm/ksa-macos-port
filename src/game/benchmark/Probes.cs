@@ -1,7 +1,7 @@
 // The tools for work on the port, plugged into a run (RunOptions turns them on, benchmark.sh's program gives the game
 // what each needs from KSA Metal): each one watches the run's parts, its checkpoints or its frames, and none of them
-// changes how the run plays. A probe that works on a checkpoint's view (a frame capture before the screenshot, a pass
-// dump after it) holds the checkpoint until it is done: it returns a wait, which the director asks every frame.
+// changes how the run plays. A probe that works on a checkpoint's view (a frame capture before the screenshot, a
+// trigger's pass dump after it) holds the checkpoint until it is done: it returns a wait, which the director asks every frame.
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -52,8 +52,6 @@ internal static class Probes
             probes.Add(new ProfileProbe(options.Profile, context));
         if (options.Capture)
             probes.Add(new CaptureProbe(context));
-        if (options.Catch.Length > 0 || options.Passes)
-            probes.Add(new CatchProbe(options.Catch.Length > 0 ? options.Catch : null, options.CatchCapture, options.Passes, context));
         if (options.Film > 0)
             probes.Add(new FilmProbe(options.Film, context));
         if (options.Trace)
@@ -125,99 +123,6 @@ internal sealed class CaptureProbe(ProbeContext context) : IProbe
                 context.Error($"{view.Shot}: no frame capture");
             return null;
         });
-    }
-}
-
-// For a picture that goes wrong now and then (RunOptions.Catch): a screenshot that looks broken against a clean run's
-// gets KSA Metal's pass dump of the next frame in caught/<scenario>_<shot>/, an image of a frame after it in caught/, and
-// with CatchCapture an Xcode frame capture, at most MaxCatches a run. With Passes, the same at every checkpoint, broken
-// or not: a clean run's, to compare a caught one with
-internal sealed class CatchProbe(string? against, bool capture, bool everywhere, ProbeContext context) : IProbe
-{
-    private const int MaxCatches = 3;
-    // Far smaller than the clean run's file, far more pure black (percent), or this much pure white (percent): broken
-    private const double Below = 0.5, MoreBlack = 25, White = 30;
-    private int _catches;
-
-    public string Name => everywhere ? "a pass dump at every checkpoint" : "pass dumps of broken pictures";
-
-    public Wait? AfterShot(View view)
-    {
-        var caught = Path.Combine(context.Dir, "caught", Path.GetFileNameWithoutExtension(view.Path));
-        var image = Path.Combine(context.Dir, "caught", Path.GetFileName(view.Path));
-        var gputrace = caught + ".gputrace";
-        // A dump the watch started takes a moment; this view's own comes after it. The size counts once the driver has
-        // written all of the file
-        return Probes.Then(Probes.Until(() => !DriverStats.PassDumping() && Images.Read(view.Path) != null, 30), () =>
-        {
-            if (Images.Read(view.Path) == null || (everywhere ? "a clean run's passes" : LooksBroken(view.Path)) is not { } reason)
-                return null;
-            if (DriverStats.GpuErrors() > 0)
-            {
-                context.Log($"{view.Shot}: {reason}, no pass dump: the GPU has failed and refuses this game's work");
-                return null;
-            }
-            if (!everywhere && _catches >= MaxCatches)
-            {
-                context.Log($"{view.Shot}: {reason}, no pass dump: limit reached");
-                return null;
-            }
-            if (!DriverStats.PassDump(caught))
-            {
-                context.Log($"{view.Shot}: {reason}, no pass dump: KSA Metal could not start one");
-                return null;
-            }
-            _catches++;
-            context.Log($"{view.Shot}: {reason}, its passes in caught/ (present {DriverStats.Read()?.Present})");
-            return Probes.Then(Probes.Until(() => !DriverStats.PassDumping(), 120), () =>
-            {
-                if (DriverStats.PassDumping())
-                    context.Log($"{view.Shot}: the pass dump did not finish");
-                // A capture of a frame that the GPU ran, or none: one taken after a hang replays as nonsense
-                Wait? captured = capture && DriverStats.GpuErrors() == 0 && DriverStats.Capture(gputrace, 1)
-                    ? Probes.Then(Probes.Until(() => !DriverStats.Capturing(), 120), () =>
-                    {
-                        context.Log($"{view.Shot}: frame capture {(Directory.Exists(gputrace) || File.Exists(gputrace) ? Path.GetFileName(gputrace) : "missing")}");
-                        return null;
-                    })
-                    : null;
-                // Whether the fault lasted through the dumped frame: an image of a frame after it
-                return Probes.Then(captured ?? (() => true), () =>
-                {
-                    DriverStats.Screenshot(image);
-                    return Probes.Until(() => Images.Read(image) != null, 10);
-                });
-            });
-        });
-    }
-
-    // What is wrong with the screenshot, or null. A real view reaches about a fifth of pure white, whatever the clean run
-    // shows. Against the clean run's, at the same size in pixels (at another, the bytes say nothing): far smaller, or far
-    // more pure black, which a dark view has anyway
-    private string? LooksBroken(string path)
-    {
-        var shot = Images.Read(path);
-        if (shot == null || against == null)
-            return null;
-        if (Images.WhitePercent(shot) >= White)
-            return "pure white";
-        var clean = new FileInfo(Path.Combine(against, Path.GetFileName(path)));
-        var reference = clean.Exists ? Images.Read(clean.FullName) : null;
-        if (reference == null || shot.Width != reference.Width || shot.Height != reference.Height)
-            return null;
-        if (new FileInfo(path).Length < clean.Length * Below)
-            return "far smaller than in the clean run";
-        return PureBlackPercent(shot) > PureBlackPercent(reference) + MoreBlack ? "far more black than in the clean run" : null;
-    }
-
-    private static double PureBlackPercent(Image image)
-    {
-        long black = 0;
-        var rgb = image.Rgb;
-        for (int i = 0; i < rgb.Length; i += 3)
-            if (rgb[i] <= 1 && rgb[i + 1] <= 1 && rgb[i + 2] <= 1)
-                black++;
-        return 100.0 * black / Math.Max(1, rgb.Length / 3);
     }
 }
 

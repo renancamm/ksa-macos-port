@@ -147,8 +147,8 @@ tool on. A place is a screenshot's name; a whole test works for the tools that d
 | `trace` | an Instruments trace of the places (the Metal System Trace template, or another with `--trace-template <name>`), each measured part marked under Points of Interest; `trace.md` sums up the GPU time per part by channel (compute, vertex, fragment). Needs Xcode, 10 GB free, and places |
 | `capture` | an Xcode GPU frame capture at each place: every draw and dispatch, the resources, the shader profiler and debugger. Needs places, 20 GB free |
 | `hud` | Apple's Metal Performance HUD over the game, its per-frame log in `hud.log`; the HUD's menu, in the menu bar while the game runs, writes its reports to `hud/`. Not with `profile`: both use the GPU's counters |
-| `catch <clean run>` | for a picture that goes wrong now and then: KSA Metal looks at the image a few times a second, and each screenshot is compared with that clean run's (30 % pure white, under half the size, or far more pure black). A broken one gets a pass dump in `caught/`, with `passes.txt` and an image of a frame after it; `watch.txt` says when each fault began and ended (at most 3 of each; about 40 MB each; 1 GB free). `--catch-capture` adds an Xcode frame capture after each dump (40 GB free). After a GPU failure nothing more is dumped |
-| `passes` | a pass dump at every place: the clean run a caught dump is compared with |
+| `catch <clean run>` | for a picture that goes wrong now and then: the trigger `broken: passes, screenshot` with each screenshot held against that clean run's (30 % pure white, under half the size, or far more pure black), and KSA Metal looking at the image a few times a second, which dumps on its own; `watch.txt` says when each fault began and ended (at most 3 of each; about 40 MB each; 1 GB free). `--catch-capture` adds `capture` to the rule (40 GB free) |
+| `passes` | the trigger `checkpoint: passes, screenshot`: a pass dump at every place, the clean run a caught dump is compared with |
 | `film <seconds>` | a screenshot every that many seconds of the script's clock, in `film/`, to see the camera's moves |
 | `camera-log` | the camera's place every frame in `trace.csv`, to check its moves are smooth |
 | `hold` | jump to one place and stay there, paused, until you quit the game: for a close look with Apple's overlay or Xcode |
@@ -163,6 +163,44 @@ hashes, how many other pipelines it ran) instead of an anonymous encoder.
 # Stay at earth4 for Xcode
 ./benchmark.sh investigate hold earth4
 ```
+
+### Triggers
+
+A trigger is a rule: when its condition holds, its actions run, a limited number of times
+([`../../shared/benchmark/Triggers.cs`](../../shared/benchmark/Triggers.cs), and [`Triggers.cs`](Triggers.cs) in the
+game). `--on '<rule>'` adds one to `run`, `check`, `measure` or `investigate` (again for more):
+
+```bash
+./benchmark.sh run tour --on 'frame>50ms: moment'             # every frame of 50 ms or more kept, 20 a pass at most
+./benchmark.sh run tour --on 'frame>200ms: passes, max 1'     # the passes after the first frame of 200 ms
+./benchmark.sh run mixed --on 'broken: passes, screenshot'    # a picture gone pure white, dumped
+```
+
+| Condition | Holds when | Its actions |
+|---|---|---|
+| `frame>N ms` | a frame of a measured part took N ms or more | `moment`, `screenshot`, `passes`, `capture`, `stop` |
+| `broken` | a checkpoint's screenshot is 30 % pure white (with `investigate catch`, also far smaller or far more pure black than the clean run's) | `screenshot`, `passes`, `capture`, `stop` |
+| `checkpoint` | a checkpoint's screenshot is there | `screenshot`, `passes`, `capture` |
+| `stuck` | the game is stuck (see [A run's record](#a-runs-record)); it stops whatever the rule says | `sample`, `stop` |
+| `gpu-error` | a command buffer failed: the GPU refuses the game's work from then on | `moment`, `screenshot`, `stop` |
+
+| Action | |
+|---|---|
+| `moment` | the frame's cause and zones in the run's store (`moments`, `slices`) |
+| `screenshot` | an image of a frame after it, in `caught/` |
+| `passes` | KSA Metal's pass dump of the next frame, in `caught/<name>/` with `passes.txt` (about 40 MB) |
+| `capture` | an Xcode GPU frame capture of the next frame, `caught/<name>.gputrace` (20 GB free) |
+| `sample` | macOS's `sample` of the game's threads for 5 s, in `stuck.txt` |
+| `stop` | the run ends there: stopped, or failed after a GPU error |
+
+`max N` among the actions runs the rule N times a pass at most (by default 20 for `frame`, 3 for `broken`, 1 for
+`gpu-error`), so a warm-up's slow frames leave the measured passes theirs. Every run carries two rules, `frame>100ms: moment` and `stuck: sample, stop`; a rule of yours for the same
+condition takes the default's place. Each time a rule runs, a `trigger` event says which and why, and `benchmark.sh`
+prints those that did more than keep a moment. At a checkpoint the actions hold it until they are done (the dump first,
+then the capture, then the image, the work a slow frame started before them); after a frame the run plays on while they
+work, and a `stop` waits for them. Anything but a moment or a stop slows
+the game's frames: a part measured while one works leaves that pass's numbers, and the run gets a note (`disturbed`).
+After a GPU failure no pass dump or capture starts.
 
 ## The tests' scenarios
 
@@ -222,6 +260,7 @@ table when it starts. Around it:
 | `Camera.cs`, `Path.cs`, `Rig.cs` | the camera: its flights through the `@key` places (`Path.cs`), the vehicle camera that follows or watches a vehicle (`Rig.cs`), the cockpit and front views |
 | `Vehicles.cs` | the vehicle directives: launch pads, flights, kittens, staging, explosions |
 | `Probes.cs` | the tools of `investigate`: each watches the parts, the checkpoints or the frames; one that works on a view holds its checkpoint until it is done |
+| `Triggers.cs` | the run's [triggers](#triggers): every frame and after every checkpoint's screenshot, their conditions looked at and their actions run |
 | `GameProfilers.cs` | the game's own profilers, on while a run plays and read every frame into the run's store |
 | `World.cs` | a new game's world, and the sea's waves settled at once for a view standing still |
 | `Explore.cs` | `explore`'s console command |
@@ -250,10 +289,10 @@ A game counts as hung when its last heartbeat is a minute old, three in the Warp
 checkpoint, and as stuck when its heartbeats still come but have said the same moment of the script for as long, with
 no screenshot, checkpoint or part begun or ended there (the game's clock stopped, so a checkpoint waits for ever;
 [`Watchdog.cs`](../../shared/benchmark/Watchdog.cs)). `benchmark.sh` stops either game, keeping what it measured; for a
-stuck one it first records what the game's threads were doing in `stuck.txt` (`stuck-<n>.txt` for the nth game of a
-run; macOS's `sample`, 5 s), which the zip to share holds too. It doesn't look for a stuck game with `hold` or a tool
-that waits at checkpoints (`capture`, `catch`, `passes`). The tab stops a hung game the same way, and a stuck run as Esc
-does, failed, giving the player's game back.
+stuck one the trigger `stuck: sample, stop` first records what the game's threads were doing in `stuck.txt`
+(`stuck-<n>.txt` for the nth game of a run), which the zip to share holds too. It doesn't look for a stuck game with
+`hold`, `capture` or a trigger that dumps or captures at checkpoints. The tab stops a hung game the same way, and a stuck
+run, after the same sample, as Esc does, failed, giving the player's game back.
 
 A run fails when the game crashed, hung or was stuck, a step of the test failed, a vehicle broke apart before it should, a
 screenshot is missing, the game's log has errors (during the Warp Test the game's own errors are only noted, since
@@ -290,8 +329,8 @@ pause, collections, JIT time and methods, lock contentions, MB allocated.
 During a run the director switches on the game's own profilers, the main thread's and the job runners' (orbit and vehicle
 solvers and the others), and reads them every frame ([`GameProfilers.cs`](GameProfilers.cs),
 [`../../shared/benchmark/Zones.cs`](../../shared/benchmark/Zones.cs)): `zone_stats` has every zone of each part, its total
-and own time, its median, 95th percentile and worst in a frame, and what it allocated. A frame of 100 ms or more in a
-measured part is a moment (`moments`): its cause names the main thread's zones with the most own time in it, KSA Metal's
+and own time, its median, 95th percentile and worst in a frame, and what it allocated. A frame a trigger keeps is a moment
+(`moments`; by default a measured part's frame of 100 ms or more, 20 a pass): its cause names the main thread's zones with the most own time in it, KSA Metal's
 waits of 2 ms or more and the GPU time of the presents around it, and the first ten of the measured passes keep every
 zone from half a second before to a quarter of a second after it (`slices`). Reading them costs the game about 20 µs a
 frame; `KSA_BENCH_ZONES=0` in front of `benchmark.sh` leaves the profilers off.
@@ -341,6 +380,7 @@ flight's. Fly the free camera to a place, open the console (`\`) and type `bench
 | `--port <key>=<value>` | change a [port setting](../../../README.md#the-mac-port-tab) for the run, on top of yours (with a preset or `--defaults`, on top of the defaults); the report shows the port settings and what the hooks did |
 | `--compare <run>` | compare with that run at the end (its folder, zip or name, `last`, `previous`, a baseline's name), checked before the game starts; the script fails when screenshots differ |
 | `--app <path>` | the app to measure (default: `~/Applications/Kitten Space Agency.app`) |
+| `--on '<rule>'` | with `run`, `check`, `measure` or `investigate`: a [trigger](#triggers) (repeat for more) |
 
 | Command | |
 |---|---|
@@ -353,7 +393,7 @@ flight's. Fly the free camera to a place, open the console (`\`) and type `bench
 
 | File | |
 |---|---|
-| `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/` | the results: `report.html`, `report.md`, `run.json` (the record), `events.jsonl`, `frames.csv`, `run.db` and `host.db` (the run's store), `options.json`, the screenshots, `game.log`, `stuck.txt` from a stuck game, `compare.html` and `compare.md` after a comparison, and what the tools wrote |
+| `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/` | the results: `report.html`, `report.md`, `run.json` (the record), `events.jsonl`, `frames.csv`, `run.db` and `host.db` (the run's store), `options.json`, the screenshots, `game.log`, `stuck.txt` from a stuck game, `compare.html` and `compare.md` after a comparison, `caught/` with what the triggers kept, and what the tools wrote |
 | `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/<date>.zip` | the run to share |
 | `~/Documents/My Games/Kitten Space Agency/benchmarks/baselines.json`, `noise/` | the baselines' names, and the noise profiles `calibrate` measured on this Mac |
 | `~/Library/Caches/ksa-macos-port/benchmark/instance/` | the game's documents folder for a run that starts the game |

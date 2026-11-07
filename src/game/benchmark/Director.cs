@@ -88,11 +88,13 @@ public partial class Director
     // KSA Metal's drain (DriverStats.Drain): open while a run plays, its latest present the frame's driver numbers
     private bool _drain;
     private RunStore? _store;
-    // The game's profilers (GameProfilers) and the .NET runtime's counters, while a run plays; a frame of a measured part
-    // this long or longer is kept as a moment (ZoneLog)
+    // The game's profilers (GameProfilers) and the .NET runtime's counters, while a run plays
     private GameProfilers? _profilers;
     private RuntimeCounters? _runtime;
-    private const double HitchMs = 100;
+    // The run's triggers (Triggers.cs): which frames are kept as moments, what is caught, when the run stops
+    private TriggerRunner? _triggers;
+    // Since the script ended, waiting for the triggers' work before the game quits
+    private readonly Stopwatch _exitAfterWork = new();
     private FrameStats? _present;
     private readonly List<DriverRecord> _driverRecords = new();
     // This frame's line of frames.csv, and the part its numbers count in (none: null)
@@ -253,7 +255,10 @@ public partial class Director
         _drain = DriverStats.OpenDrain(1);
         _profilers = GameProfilers.Start(_store, Log);
         _runtime = new RuntimeCounters();
-        _probes = Probes.For(options, new ProbeContext(_outDir, Error, Log));
+        var context = new ProbeContext(_outDir, Error, Log);
+        _probes = Probes.For(options, context);
+        _triggers = new TriggerRunner(Triggers.For(options), options.Against, options.Session, context, _events);
+        _probes.Add(_triggers);
         _active = true;
         // A directive without a handler fails the run at once, before anything plays
         foreach (var missing in UnhandledDirectives())
@@ -278,7 +283,22 @@ public partial class Director
             if (_measured != null)
                 part = new PartKey(_options.Session, _pass, r.Scenario ?? "", _measured);
         }
-        _profilers?.Frame(part, part != null && _row is { FrameMs: >= HitchMs } slow ? slow.FrameMs : 0);
+        _profilers?.Frame(part);
+        // Every frame, so that their work goes on while the director waits or holds
+        if (_triggers?.Frame(_row?.FrameMs ?? 0, part, _row?.Scenario, _pass) == true && _row is { } row)
+            _profilers?.Moment(row.FrameMs, part ?? new PartKey(_options.Session, _pass, row.Scenario ?? "", ""));
+        if (_triggers?.Stop is { } stop && !Done)
+        {
+            Stop(stop.Why, stop.Failed);
+            if (!_options.Stay)
+                Program.TerminalInterface.Execute("exit");
+        }
+        // The script's end: a dump or capture a trigger started is finished first, for 150 s at most
+        if (_exitAfterWork.IsRunning && (_triggers?.Busy != true || _exitAfterWork.Elapsed.TotalSeconds >= 150))
+        {
+            _exitAfterWork.Reset();
+            Program.TerminalInterface.Execute("exit");
+        }
     }
 
     private void FrameBody()
@@ -515,8 +535,9 @@ public partial class Director
             _camera.Unhold();
             _camera.EndRig();
             Done = true;
+            // Out of the game once the triggers' work is done (OnFrame)
             if (!_options.Stay)
-                Program.TerminalInterface.Execute("exit");
+                _exitAfterWork.Start();
             return;
         }
         // A flight plays at real time, wherever the scenario before it left the speed (the Mixed Test ends paused)

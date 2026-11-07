@@ -83,7 +83,11 @@ public static class Pages
         md.AppendLine($"## KSA Metal benchmark: {Title(r)}");
         md.AppendLine();
         var problems = r.Problems.ToList();
-        if (r.Status == Benchmark.Status.Stopped)
+        if (r.Status == Benchmark.Status.Stopped && r.Notes.Any(f => f.Code == "trigger-stop"))
+            md.AppendLine(r.AllParts().Any()
+                ? "**Stopped** by a trigger. Below is what it measured until then."
+                : "**Stopped** by a trigger, before it finished measuring a part.");
+        else if (r.Status == Benchmark.Status.Stopped)
             md.AppendLine(r.AllParts().Any()
                 ? "**Stopped**: you stopped the run. Below is what it measured until then."
                 : "**Stopped**: you stopped the run before it finished measuring a part.");

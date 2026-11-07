@@ -285,7 +285,13 @@ public static class Runs
             {
                 // A stuck game still draws its frames: the run stops there, as with Esc, failed, and the player's game comes back
                 if (_stuck?.Run != run && Watchdog.Stuck(played, 1, limit) is { } still)
+                {
+                    // What the game's threads are doing, before the run stops (the stuck trigger)
+                    if (Triggers.For(RunOptions.Read(_out) ?? new RunOptions()).Any(r => r.When == Condition.Stuck && r.Has(TriggerAction.Sample)) &&
+                        !Watchdog.Sample(Environment.ProcessId, _out, 1, out var why))
+                        Log($"BenchmarkRun: the stuck game's sample: {why}");
                     _stuck = new StuckRun(run, $"stuck{Watchdog.Where(still)} (its clock stood still for {limit} s)");
+                }
                 continue;
             }
             // What the director measured is in its events and frames, and the player's game is in the save on disk
