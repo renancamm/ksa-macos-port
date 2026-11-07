@@ -312,8 +312,10 @@ void KCommandBuffer::beginRender(MTLRenderPassDescriptor* rp, uint32_t w, uint32
             dumpDepthLoad = rp.depthAttachment.loadAction;
         }
     }
-    // A tessellated draw, or a game timestamp with gpu_zones, suspends the pass and resumes it
-    deferredStores = kmtlConfig().tessellation || kmtlConfig().gpuZones;
+    // A tessellated draw, or a game timestamp while zones are split (gpu_zones), suspends the pass and resumes it; a pass
+    // begun before the split takes its timestamps at its end (writeTimestamp). A resumed pass keeps what it began with
+    if (!resuming)
+        deferredStores = kmtlConfig().tessellation || (kmtlConfig().gpuZones && kmtlZoneMode() == kZonesSplit);
     if (deferredStores) {
         if (!resuming) {
             for (int i = 0; i < 8; i++) colorStores[i] = rp.colorAttachments[i].storeAction;

@@ -1,7 +1,7 @@
 // A run's record (run.json in its folder): everything its report, page, comparison and zip say, in one typed file.
 // Finish.cs makes it from what the run left (Events.cs, Frames.cs, the game's logs, the screenshots); nothing else
-// writes it, and everything that shows a run reads it. A run older than this format has its report.json read into one
-// (Legacy.cs).
+// writes it, and everything that shows a run reads it. A record of an older schema isn't read: its run is too old to
+// compare.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -27,7 +27,7 @@ public sealed record WarmUpRecord(double? GpuMs, double? MeasuredGpuMs);
 
 public sealed class RunRecord
 {
-    public const int CurrentSchema = 3;
+    public const int CurrentSchema = 4;
     public const string FileName = "run.json";
 
     // CurrentSchema in a record Finish made (an older run's run.json, its options, reads as 0)
@@ -35,7 +35,7 @@ public sealed class RunRecord
     // The folder's name, the date and time it started
     public string Name { get; set; } = "";
     public DateTime Started { get; set; }
-    // The test (mixed, tour, warp, full; "places" for places chosen) and how it played (RunOptions.Mode)
+    // The test (mixed, tour, warp, full; "places" for places chosen) and how it played (RunPlan.Play.Mode)
     public string Test { get; set; } = "";
     public string Mode { get; set; } = "";
     public Status Status { get; set; }
@@ -54,6 +54,8 @@ public sealed class RunRecord
     // benchmark.sh measure's warm-up pass, left out of the numbers: its GPU time and the measured passes' in the same
     // game
     public WarmUpRecord? WarmUp { get; set; }
+    // The slow frames a trigger kept (by default a measured part's frames of 100 ms or more), with what took their time
+    public List<MomentRecord> Moments { get; set; } = [];
 
     [JsonIgnore]
     public bool InGame => Start.StartsWith("in the running game", StringComparison.Ordinal);
@@ -79,23 +81,23 @@ public sealed class RunRecord
         (ScenarioRecord, PartRecord)? worst = null;
         foreach (var (s, p) in AllParts())
         {
-            memory = Math.Max(memory, p.FootprintPeakMb ?? 0);
-            if (p.Warp is { } warp)
+            memory = Math.Max(memory, p[Metrics.Footprint] ?? 0);
+            if (p.Warped)
             {
-                days += warp.GameDays;
+                days += p[Metrics.GameDays] ?? 0;
                 continue;
             }
-            if (p.Seconds <= 0)
+            if (p.Seconds <= 0 || p[Metrics.Fps] is not { } fps)
                 continue;
-            frames += p.AverageFps * p.Seconds;
+            frames += fps * p.Seconds;
             seconds += p.Seconds;
-            if (p.GpuMsMedian is { } gpu)
+            if (p[Metrics.GpuBusy] is { } gpu)
             {
                 gpuWeighted += gpu * p.Seconds;
                 gpuSeconds += p.Seconds;
             }
-            if (p.AverageFps < slowest)
-                (slowest, worst) = (p.AverageFps, (s, p));
+            if (fps < slowest)
+                (slowest, worst) = (fps, (s, p));
         }
         return new Headline(seconds > 0 ? frames / seconds : null, gpuSeconds > 0 ? gpuWeighted / gpuSeconds : null, worst, days, memory);
     }
@@ -114,20 +116,19 @@ public sealed class RunRecord
         File.Move(path + ".new", path, overwrite: true);
     }
 
-    // The record in a run's folder, or one made from an older run's report.json; null when it has neither
+    // The record in a run's folder; null when it has none of this schema
     public static RunRecord? Read(string dir)
     {
         var path = Path.Combine(dir, FileName);
         try
         {
-            if (File.Exists(path) && JsonSerializer.Deserialize<RunRecord>(File.ReadAllText(path), Json) is { Schema: CurrentSchema } record)
-                return record;
+            return File.Exists(path) && JsonSerializer.Deserialize<RunRecord>(File.ReadAllText(path), Json) is { Schema: CurrentSchema } record ? record : null;
         }
         catch (JsonException)
         {
-            // run.json is an older run's options, not a record
+            // An older run's run.json, its options or a record of another schema
+            return null;
         }
-        return Legacy.Read(dir);
     }
 }
 
@@ -160,54 +161,58 @@ public sealed class ScenarioRecord
 
 public sealed record ShotRecord(string Name, string File, double Limit);
 
-// A measured part: medians over its passes (the range of frame and GPU time across them when there were several)
+// A measured part: its numbers by metric (Metrics.cs), its measurings (passes and sessions) merged, and each measuring's
+// own; the zones' times are in the merged numbers only
 public sealed class PartRecord
 {
     public string Name { get; set; } = "";
     // How many times it was measured (passes and sessions together)
     public int Runs { get; set; } = 1;
     // How far its GPU or frame time may move between two runs of the same build before a comparison marks it (percent; the
-    // test's noise profile: null, the comparison's own)
+    // test's noise profile: null, the metric's own)
     public double? Limit { get; set; }
+    // The first measuring's frames and seconds
     public int Frames { get; set; }
     public double Seconds { get; set; }
-    public double AverageFps { get; set; }
-    public double FrameMsMedian { get; set; }
-    public double FrameMsP95 { get; set; }
-    public double FrameMsP99 { get; set; }
-    public double FrameMsMax { get; set; }
-    // Frames longer than 50 and 100 ms (under 20 and 10 FPS): the stutters a player sees, whatever the frame rate (twice
-    // the median counted V-Sync's own steps at 120 Hz); null in a record made before they were counted
-    public int? FramesOver50Ms { get; set; }
-    public int? FramesOver100Ms { get; set; }
-    public double? GpuMsMedian { get; set; }
-    public double? GpuMsP95 { get; set; }
-    public double? DrawsMedian { get; set; }
-    public long? GpuMemoryPeakMb { get; set; }
-    // The game's memory footprint at its peak (what Activity Monitor shows)
-    public long? FootprintPeakMb { get; set; }
-    // The Mac's thermal state at its worst: 0 nominal, 1 fair, 2 serious, 3 critical (macOS slows the chip down from 2)
-    public int? ThermalMax { get; set; }
-    // Shaders compiled and pipelines made while measuring: each is a stutter that a warm shader cache avoids
-    public int? ShadersCompiled { get; set; }
-    public int? PipelinesCreated { get; set; }
-    public double[]? FrameMsRange { get; set; }
-    public double[]? GpuMsRange { get; set; }
+    public SortedDictionary<string, double> Values { get; set; } = new(StringComparer.Ordinal);
+    public List<MeasuringRecord> Measurings { get; set; } = [];
+    // A profiled pass's numbers (benchmark.sh profile): its GPU and frame time with the GPU zones on, and the zones; kept
+    // apart, never compared with a measured pass
+    public SortedDictionary<string, double>? Profiled { get; set; }
+
+    public double? this[Metric m] => Values.TryGetValue(m.Name, out var v) ? v : null;
+
+    public double? this[string metric] => Values.TryGetValue(metric, out var v) ? v : null;
+
     // A timed scenario's part: how far time warp got
-    public WarpRecord? Warp { get; set; }
+    [JsonIgnore]
+    public bool Warped => Values.ContainsKey(Metrics.Speed.Name);
+
+    // The lowest and highest of its measurings, with more than one
+    public double[]? Range(Metric m) =>
+        Measurings.Select(x => x.Values.TryGetValue(m.Name, out var v) ? v : (double?)null).OfType<double>().Order().ToArray() is { Length: > 1 } r
+            ? [r[0], r[^1]] : null;
+
+    // Each game session's number: the median of its measurings, in the order the sessions played (a verdict's samples)
+    public double[] Sessions(Metric m) =>
+        Measurings.GroupBy(x => x.Session).OrderBy(g => g.Key)
+            .Select(g => g.Select(x => x.Values.TryGetValue(m.Name, out var v) ? v : (double?)null).OfType<double>().ToList())
+            .Where(v => v.Count > 0).Select(v => Measure.Median(v)).ToArray();
+
+    // The measurings' numbers, in the order they played
+    public double[] Samples(Metric m) =>
+        Measurings.Select(x => x.Values.TryGetValue(m.Name, out var v) ? v : (double?)null).OfType<double>().ToArray();
+
+    // Its zones of a group of metrics (Metrics.GpuZones...), the most own time first, from the measured passes or the
+    // profiled one
+    public IEnumerable<(string Name, double Ms)> Zones(string prefix, bool profiled = false) =>
+        ((profiled ? Profiled : Values) ?? []).Where(kv => kv.Key.StartsWith(prefix, StringComparison.Ordinal))
+        .OrderByDescending(kv => kv.Value).Select(kv => (kv.Key, kv.Value));
 }
 
-// The game days the part got through, the speed it ran at and was asked for (1 is real time), the seconds it took to reach
-// 90 % of that (null: it never did), the slowest vehicle job, substeps, and the most physics bubbles and vehicles
-public sealed class WarpRecord
-{
-    public double GameDays { get; set; }
-    public double Speed { get; set; }
-    public double SpeedAsked { get; set; }
-    public double? SecondsToSpeed { get; set; }
-    public double SimMsMax { get; set; }
-    public long Substeps { get; set; }
-    public int BubblesMax { get; set; }
-    public int VehiclesMax { get; set; }
-    public double[]? SpeedRange { get; set; }
-}
+// One measuring of a part: the game session and pass it played in, and its numbers (no zones)
+public sealed record MeasuringRecord(int Session, int Pass, SortedDictionary<string, double> Values);
+
+// A frame a trigger kept: where, how long, and what took its time (the main thread's zones with the most own time, KSA
+// Metal's waits, the GPU's time around it)
+public sealed record MomentRecord(string Scenario, string Part, int Session, int Pass, double FrameMs, string Cause);

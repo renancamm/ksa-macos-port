@@ -84,7 +84,7 @@ public static partial class Program
             profile.Shots[shot.Name] = new ShotNoise { Spread = Math.Round(most, 2), Limit = Math.Round(NoiseProfile.Margin * most, 2) };
         }
         // Each part: how far its GPU and frame times spread across the runs, against their median
-        foreach (var (scenario, part) in first.AllParts().Where(x => x.Part.Warp == null))
+        foreach (var (scenario, part) in first.AllParts().Where(x => !x.Part.Warped))
         {
             var mine = runs.Select(r => r.Record.Scenario(scenario.Name)?.Part(part.Name)).OfType<PartRecord>().ToList();
             static double Spread(IEnumerable<double> values)
@@ -92,10 +92,10 @@ public static partial class Program
                 var v = values.OrderBy(x => x).ToArray();
                 return v.Length < 2 || v[v.Length / 2] <= 0 ? 0 : (v[^1] - v[0]) / v[v.Length / 2] * 100;
             }
-            double gpu = Spread(mine.Select(p => p.GpuMsMedian).OfType<double>()), frame = Spread(mine.Select(p => p.FrameMsMedian));
+            double gpu = Spread(mine.Select(p => p[Metrics.GpuBusy]).OfType<double>()), frame = Spread(mine.Select(p => p[Metrics.FrameTime]).OfType<double>());
             // A comparison judges GPU time where the runs have it, frame time where they don't; never under what two
             // runs of anything differ by: 2 %
-            var judged = mine.All(p => p.GpuMsMedian != null) ? gpu : frame;
+            var judged = mine.All(p => p[Metrics.GpuBusy] != null) ? gpu : frame;
             profile.Parts[part.Name] = new PartNoise
             {
                 GpuSpread = Math.Round(gpu, 2), FrameSpread = Math.Round(frame, 2), Limit = Math.Round(Math.Max(NoiseProfile.Margin * judged, 2), 1)

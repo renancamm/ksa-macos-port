@@ -1,12 +1,12 @@
-// A run's store: what a run recorded, in SQLite files in its folder, one per process that records, so that two processes
-// never write one file. The game writes run.db (the director's frames and events, the tab's runs' events, and what KSA
+// A run's store: everything a run recorded, in SQLite files in its folder, one per process that records, so that two
+// processes never write one file. The game writes run.db (the director's frames and events, the tab's runs' events, and what KSA
 // Metal measured: every present, when each was shown, the waits that blocked the game, large allocations); benchmark.sh's
 // program writes host.db (its events around the game). Every row carries the time on one clock (RunClock: the Mac's
 // monotonic clock in seconds, which KSA Metal's own times use), so the tables of both files line up.
 //
 //   meta      key, value: the schema's version
 //   events    a run event (Events.cs) and its time
-//   frames    a frame as frames.csv has it (Frames.cs), and its time
+//   frames    a frame (Frames.cs) and its time
 //   presents  every present: KSA Metal's numbers for it (DriverStats.FrameStats)
 //   shown     a present: when its frame began (the game's wait for an earlier frame ended), was presented, finished on the
 //             GPU and was shown, how long the frame waited, whether pacing ended the wait
@@ -15,11 +15,11 @@
 //   zone_stats, moments, slices  the game's profiler zones summed per part, the slow frames and what took their time
 //             (Zones.cs)
 //
-// frames has, after frames.csv's columns, the .NET runtime's work in each frame (RuntimeCounters): GC pause, collections
+// frames has, after the director's columns, the .NET runtime's work in each frame (RuntimeCounters): GC pause, collections
 // by generation, JIT time and methods compiled, lock contentions, MB allocated.
 //
-// The record is made from events.jsonl and frames.csv, and Finish.cs checks the store against them: a run whose store
-// says something else gets a note.
+// The run's record is made from the store (Finish.cs). An event is written within milliseconds (the other process watches
+// for them: benchmark.sh the game's heartbeats, the game benchmark.sh's recording), the rest four times a second.
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -102,6 +102,16 @@ public sealed class RunStore : IDisposable
             stores = Open.Values.ToList();
         foreach (var store in stores)
             store.Flush();
+    }
+
+    // What this process gave its store in a run's folder, written to its file (none open: nothing to do)
+    public static void Flush(string dir)
+    {
+        var path = Path.GetFullPath(Path.Combine(dir, ProcessFile));
+        RunStore? store;
+        lock (Open)
+            store = Open.GetValueOrDefault(path);
+        store?.Flush();
     }
 
     // This process's stores of a run's folder written and closed: once the run is finished
@@ -223,10 +233,17 @@ public sealed class RunStore : IDisposable
         }
     }
 
-    public void Add(RunEvent e) =>
+    // An event, written at once
+    public void Add(RunEvent e)
+    {
         Enqueue(Table.Event, RunClock.Now(), e.At.ToUniversalTime().Ticks, e.Session, e.Pass, e.Type, e.Scenario, e.Part, e.Text, e.Game, e.Value);
+        _wake.Set();
+    }
 
-    // A frame: its time, frames.csv's columns in their order (FrameLog.Columns), and the runtime's work in it
+    // What was given so far into the file soon, without waiting for it
+    public void Wake() => _wake.Set();
+
+    // A frame: its time, the director's columns in their order (FrameLog.Columns), and the runtime's work in it
     public void AddFrame(double t, object?[] columns, RuntimeSample? runtime)
     {
         var r = runtime ?? default;
@@ -333,7 +350,14 @@ public sealed class RunStore : IDisposable
         _closing = true;
         AppDomain.CurrentDomain.ProcessExit -= OnExit;
         _wake.Set();
-        _writer.Join(5000);
+        // A writer still in a statement after that keeps its statements and connection: left open, not freed under it
+        if (!_writer.Join(5000))
+        {
+            Say($"RunStore: {_path}: its writer didn't finish in 5 s; the file is left open");
+            lock (Open)
+                Open.Remove(_path);
+            return;
+        }
         lock (_writing)
         {
             foreach (var s in _inserts.Values)
@@ -371,51 +395,95 @@ public sealed class RunStore : IDisposable
             Open.Remove(_path);
     }
 
-    // What a run's folder's stores hold: the events of every process in time order, the game's frames in the order they
-    // came; null when the folder has no game store
-    public static (List<RunEvent> Events, List<FrameRow> Frames)? Read(string dir)
+    // The events of a run's folder's stores, both processes' in time order (an event's time, then the host's first, then the
+    // order each wrote them); none when the folder has no store or it can't be read
+    public static List<RunEvent> ReadEvents(string dir)
     {
-        var game = Path.Combine(dir, GameFile);
-        if (!File.Exists(game))
-            return null;
+        var events = new List<(long At, int File, long Row, RunEvent Event)>();
+        int file = 0;
+        foreach (var path in new[] { Path.Combine(dir, HostFile), Path.Combine(dir, GameFile) })
+        {
+            file++;
+            Query(path, "SELECT rowid, at, session, pass, type, scenario, part, text, game, value FROM events ORDER BY rowid", q =>
+            {
+                long at = q.Long(1);
+                events.Add((at, file, q.Long(0), new RunEvent
+                {
+                    At = new DateTime(at, DateTimeKind.Utc), Session = (int)q.Long(2), Pass = (int)q.Long(3), Type = q.Text(4),
+                    Scenario = q.NullableText(5), Part = q.NullableText(6), Text = q.NullableText(7), Game = q.NullableDouble(8),
+                    Value = q.NullableDouble(9),
+                }));
+            });
+        }
+        return events.OrderBy(e => e.At).ThenBy(e => e.File).ThenBy(e => e.Row).Select(e => e.Event).ToList();
+    }
+
+    // The game's frames in a run's folder, in the order they came
+    public static List<FrameRow> ReadFrames(string dir)
+    {
+        var frames = new List<FrameRow>();
+        Query(Path.Combine(dir, GameFile), "SELECT time, session, pass, script, scenario, part, phase, frame_ms, present, gpu_ms, draws, metal_mb, " +
+                                            "footprint_mb, thermal, shaders, pipelines, game_s, asked, sim_ms, substeps, bubbles, vehicles, gc_pause_ms, jit_ms " +
+                                            "FROM frames ORDER BY rowid", f =>
+            frames.Add(new FrameRow(f.Double(0), (int)f.Long(1), (int)f.Long(2), f.Double(3), f.Text(4), f.Text(5), f.Text(6), f.Double(7),
+                (ulong)f.Long(8), f.NullableDouble(9), (uint)f.Long(10), f.Long(11), f.Long(12), (int)f.Long(13), (uint)f.Long(14),
+                (uint)f.Long(15), f.NullableDouble(16), f.NullableDouble(17), f.NullableDouble(18), f.NullableLong(19),
+                (int?)f.NullableLong(20), (int?)f.NullableLong(21), f.NullableDouble(22), f.NullableDouble(23))));
+        return frames;
+    }
+
+    // KSA Metal's shown records in a run's folder, by present
+    public static Dictionary<ulong, ShownRow> ReadShown(string dir)
+    {
+        var shown = new Dictionary<ulong, ShownRow>();
+        Query(Path.Combine(dir, GameFile), "SELECT present, began, presented, gpu_end, shown, waited_ms FROM shown", q =>
+            shown[(ulong)q.Long(0)] = new ShownRow((ulong)q.Long(0), q.Double(1), q.Double(2), q.Double(3), q.Double(4), q.Double(5)));
+        return shown;
+    }
+
+    // KSA Metal's waits in a run's folder, in the order they began
+    public static List<WaitRow> ReadWaits(string dir)
+    {
+        var waits = new List<WaitRow>();
+        Query(Path.Combine(dir, GameFile), "SELECT t, ms, what FROM waits ORDER BY t", q => waits.Add(new WaitRow(q.Double(0), q.Double(1), q.Text(2))));
+        return waits;
+    }
+
+    // The zones' sums in a run's folder, per measuring
+    public static List<ZoneRow> ReadZones(string dir)
+    {
+        var zones = new List<ZoneRow>();
+        Query(Path.Combine(dir, GameFile), "SELECT session, pass, scenario, part, grp, zone, frames, calls, total_ms, self_ms FROM zone_stats", q =>
+            zones.Add(new ZoneRow((int)q.Long(0), (int)q.Long(1), q.Text(2), q.Text(3), q.Text(4), q.Text(5), (int)q.Long(6), (int)q.Long(7),
+                q.Double(8), q.Double(9))));
+        return zones;
+    }
+
+    // The moments in a run's folder, in the order kept
+    public static List<MomentRecord> ReadMoments(string dir)
+    {
+        var moments = new List<MomentRecord>();
+        Query(Path.Combine(dir, GameFile), "SELECT scenario, part, session, pass, frame_ms, cause FROM moments ORDER BY t", q =>
+            moments.Add(new MomentRecord(q.Text(0), q.Text(1), (int)q.Long(2), (int)q.Long(3), Math.Round(q.Double(4), 1), q.Text(5))));
+        return moments;
+    }
+
+    // Each row of a query on one of a run's files; nothing when the file isn't there, can't be read or lacks the table
+    // (a process that died before it made them)
+    public static void Query(string path, string sql, Action<Sqlite.Statement> row)
+    {
+        if (!File.Exists(path))
+            return;
         try
         {
-            var events = new List<(long At, int File, long Row, RunEvent Event)>();
-            var frames = new List<FrameRow>();
-            int file = 0;
-            foreach (var path in new[] { Path.Combine(dir, HostFile), game }.Where(File.Exists))
-            {
-                file++;
-                // Not read-only: a file in WAL mode may need its side files made to be read
-                using var db = Sqlite.Open(path);
-                using (var q = db.Prepare("SELECT rowid, at, session, pass, type, scenario, part, text, game, value FROM events ORDER BY rowid"))
-                {
-                    while (q.Step())
-                    {
-                        long at = q.Long(1);
-                        events.Add((at, file, q.Long(0), new RunEvent
-                        {
-                            At = new DateTime(at, DateTimeKind.Utc), Session = (int)q.Long(2), Pass = (int)q.Long(3), Type = q.Text(4),
-                            Scenario = q.NullableText(5), Part = q.NullableText(6), Text = q.NullableText(7), Game = q.NullableDouble(8),
-                            Value = q.NullableDouble(9),
-                        }));
-                    }
-                }
-                if (path != game)
-                    continue;
-                using var f = db.Prepare("SELECT time, session, pass, script, scenario, part, phase, frame_ms, present, gpu_ms, draws, metal_mb, " +
-                                         "footprint_mb, thermal, shaders, pipelines, game_s, asked, sim_ms, substeps, bubbles, vehicles FROM frames ORDER BY rowid");
-                while (f.Step())
-                    frames.Add(new FrameRow(f.Double(0), (int)f.Long(1), (int)f.Long(2), f.Double(3), f.Text(4), f.Text(5), f.Text(6), f.Double(7),
-                        (ulong)f.Long(8), f.NullableDouble(9), (uint)f.Long(10), f.Long(11), f.Long(12), (int)f.Long(13), (uint)f.Long(14),
-                        (uint)f.Long(15), f.NullableDouble(16), f.NullableDouble(17), f.NullableDouble(18), f.NullableLong(19),
-                        (int?)f.NullableLong(20), (int?)f.NullableLong(21)));
-            }
-            return (events.OrderBy(e => e.At).ThenBy(e => e.File).ThenBy(e => e.Row).Select(e => e.Event).ToList(), frames);
+            // Not read-only: a file in WAL mode may need its side files made to be read
+            using var db = Sqlite.Open(path);
+            using var q = db.Prepare(sql);
+            while (q.Step())
+                row(q);
         }
         catch (Exception e) when (e is SqliteException or DllNotFoundException or EntryPointNotFoundException)
         {
-            return null;
         }
     }
 }

@@ -72,13 +72,11 @@ public static partial class Program
         return md.ToString();
     }
 
-    // Whether a folder is a run: named by its date and time, with a record (or an older run's report)
+    // Whether a folder is a run: named by its date and time, with a record
     private static bool IsRun(string dir) => Regex.IsMatch(Path.GetFileName(dir), @"^\d{4}-\d{2}-\d{2}_\d{4}") && HasRecord(dir);
 
-    // A record, or an older run's report (in an older run, run.json was its options, with no events beside it)
-    private static bool HasRecord(string dir) =>
-        File.Exists(Path.Combine(dir, RunRecord.FileName)) && File.Exists(Path.Combine(dir, EventLog.FileName)) ||
-        File.Exists(Path.Combine(dir, "report.json"));
+    // A record of this program's schema (a run older than it isn't read)
+    private static bool HasRecord(string dir) => RunRecord.Read(dir) != null;
 
     // The last runs of a benchmarks folder, newest first: when, what, how it ended, its main numbers
     internal static int Runs(string folder, int count)

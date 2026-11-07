@@ -1,5 +1,5 @@
 // What a run's record says about the Mac, the app and the run: macOS's answers, the app's Info.plist, what the run's
-// host gave (RunOptions.Facts: the test, the settings, the tools...), what the game's log says the port ran with, and
+// host gave (RunPlan.Host.Facts: the test, the settings, the tools...), what the game's log says the port ran with, and
 // the window from the run's settings.toml. Asked once the run has ended, so that the asking isn't measured.
 using System;
 using System.Collections.Generic;

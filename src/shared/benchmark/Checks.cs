@@ -169,7 +169,12 @@ public static class Checks
         }
         if (run.Record.InGame)
             yield return Note("in-game", "played in a running game, after what was played before: its numbers compare best with runs started the same way, and its screenshots aren't compared");
-        if (Fact("Tools") is { Length: > 0 } tools && tools != "none")
+        // A profiled pass costs the measured ones nothing but the game's start with GPU zones; other tools' cost is in them
+        var tools = Fact("Tools").Replace(RunPlan.ProfiledTool + ", ", "").Replace(RunPlan.ProfiledTool, "").Trim(' ', ',');
+        if (Fact("Tools").Contains(RunPlan.ProfiledTool, StringComparison.Ordinal))
+            yield return Note("profiled", "the game started with GPU zones for its profiled pass, so KSA Metal gave every image memory of its own: " +
+                                          "the measured pass's memory, and a little its GPU time, may differ from a plain run's; the profiled pass's numbers are kept apart");
+        if (tools.Length > 0 && tools != "none")
             yield return Note("tools", $"measured with {tools}: their own cost is in the numbers");
         foreach (var e in run.Events.Where(e => e.Type == "disturbed"))
             yield return Note("disturbed", $"{(e.Pass > 1 ? $"pass {e.Pass}: " : "")}{e.Scenario} {e.Part}: left out of the numbers, {e.Text}");
@@ -199,9 +204,9 @@ public static class Checks
     // Heat that slowed the chip, shaders compiled while measuring
     private static IEnumerable<Finding> PartConditions(RunEvidence run)
     {
-        var hot = run.Record.AllParts().Where(x => x.Part.ThermalMax >= 2).Select(x => $"{x.Scenario.Name} {x.Part.Name}").ToList();
-        var compiled = run.Record.AllParts().Where(x => x.Part.ShadersCompiled > 0)
-            .Select(x => $"{x.Scenario.Name} {x.Part.Name} ({x.Part.ShadersCompiled})").ToList();
+        var hot = run.Record.AllParts().Where(x => x.Part[Metrics.Thermal] >= 2).Select(x => $"{x.Scenario.Name} {x.Part.Name}").ToList();
+        var compiled = run.Record.AllParts().Where(x => x.Part[Metrics.Shaders] > 0)
+            .Select(x => $"{x.Scenario.Name} {x.Part.Name} ({x.Part[Metrics.Shaders]})").ToList();
         if (hot.Count > 0)
             yield return Note("hot", $"the Mac was hot enough to slow down during {string.Join(", ", hot)}");
         if (compiled.Count > 0)
@@ -261,7 +266,7 @@ public static class Checks
             yield break;
         var name = Path.GetFileName(Path.GetFullPath(run.Dir).TrimEnd('/'));
         var before = Directory.GetDirectories(folder).Select(d => Path.GetFileName(d)!)
-            .Where(d => string.CompareOrdinal(d, name) < 0 && File.Exists(Path.Combine(folder, d, EventLog.FileName)))
+            .Where(d => string.CompareOrdinal(d, name) < 0 && File.Exists(Path.Combine(folder, d, RunStore.GameFile)))
             .OrderByDescending(d => d, StringComparer.Ordinal).FirstOrDefault();
         if (before == null || EventLog.Read(Path.Combine(folder, before)).LastOrDefault() is not { } ended)
             yield break;

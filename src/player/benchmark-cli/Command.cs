@@ -24,7 +24,7 @@ public static partial class Program
         run's folder to share if you like.
 
         Usage: ./benchmark.sh [run] [options] [mixed | tour | warp | full | <places...>]
-               ./benchmark.sh list | runs [n] | report [run] [test] | compare [run] [run] | clean [--keep n] [--yes]
+               ./benchmark.sh list | runs [n] | report [run] [test] [--again] | compare [run] [run] | clean [--keep n] [--yes]
           mixed      the Mixed Test (the default, about a minute): rockets, smoke, an explosion, a kitten and a cockpit, each
                      view standing still, the game paused
           tour       the Planetary Tour (about 5 minutes): the flight from Earth to Jupiter
@@ -37,7 +37,8 @@ public static partial class Program
 
           list       the tests, their scenarios and their places
           runs       your last runs (15, or n), the newest first
-          report     a run's report here, and its page in your browser (default: the last run)
+          report     a run's report here, and its page in your browser (default: the last run); --again: made
+                     again from the run's store first, by this version of the benchmark
           compare    how the second run differs from the first: a verdict, the Macs, settings, numbers part by part, and
                      screenshots (exits with 1 when screenshots differ), and a page to see them side by side (with one run:
                      against the last; with none: the last against the one before it)
@@ -45,21 +46,23 @@ public static partial class Program
           A run is a run's folder, its zip, the folder's name in your benchmarks folder, "last", "previous", or a
           baseline's name (below).
 
-        Options:
-          --preset <name>    low, medium or high: fixed settings in a 1280x800 window, the same on every Mac (default: yours)
-          --defaults         the settings of a fresh install instead of yours: the game's own and the port's defaults
+        Options, what plays:
           --system <name>    sol (the solar system) or earth (Earth and the Moon only: for Macs with 8 GB of memory)
                              (default: earth when what plays is all on Earth or the Moon, otherwise sol)
+          --fast             with places: jump to them, the game paused on the way, instead of flying there
+          --app <path>       the app to measure (default: ~/Applications/Kitten Space Agency.app)
+        With what settings:
+          --preset <name>    low, medium or high: fixed settings in a 1280x800 window, the same on every Mac (default: yours)
+          --defaults         the settings of a fresh install instead of yours: the game's own and the port's defaults
           --set <key=value>  change one setting of settings.toml for the run (again for more), on top of the preset;
                              <section>.<key>=<value> adds it to that section when the file has no such key
           --settings <file>  change the settings in that file ("key = value" lines, as in settings.toml; a bare word
                              needs no quotes), on top of the preset and before --set
           --port <key=value>  change one setting of port-settings.toml for the run (again for more), on top of yours (with
                              a preset or --defaults: on top of the defaults)
-          --compare <run>    compare with that run at the end (and fail when screenshots differ); checked before the game starts
+        What it records, and what follows:
           --no-shots         take no screenshots
-          --fast             with places: jump to them, the game paused on the way, instead of flying there
-          --app <path>       the app to measure (default: ~/Applications/Kitten Space Agency.app)
+          --compare <run>    compare with that run at the end (and fail when screenshots differ); checked before the game starts
 
         For work on the port (see the benchmark's README):
           ./benchmark.sh check [test] [options]
@@ -70,20 +73,29 @@ public static partial class Program
                              numbers to judge a change by: a warm-up pass first (left out), then n passes (3) in one game
                              session, each part's median and range; --sessions plays more games of it; --ab plays games with
                              the port setting key=value (B) and as the run has it (A) in turn and sets B against A, part by part
+          ./benchmark.sh profile [test | places...] [options]
+                             where the time goes: a warm-up, a measured pass and a profiled pass in one game session; the
+                             profiled pass names the game's GPU zones in each part (profile.md), its own cost kept apart
           ./benchmark.sh calibrate [test] [n]
                              how much the test moves between runs of the same build on this Mac: n runs (3) at a fresh
                              install's settings, the spread of each screenshot and part, written as the test's noise profile
                              (the benchmarks folder's noise/), which comparisons hold each screenshot and part to
           ./benchmark.sh investigate <tool> <places...> [options]
-                             a tool on places jumped to (or a whole test): profile (the game's GPU zones: profile.md),
-                             trace (an Instruments trace; --trace-template <name>), capture (an Xcode GPU frame capture at
+                             a tool on places jumped to (or a whole test): trace (an Instruments trace;
+                             --trace-template <name>), capture (an Xcode GPU frame capture at
                              each place), hud (Apple's Metal Performance HUD), catch <clean run> (a pass dump of a picture
                              that goes wrong now and then; --catch-capture adds a frame capture), passes (a pass dump at every
                              place: a clean run for catch), film <seconds> (screenshots along the way), camera-log (the
                              camera's place every frame), hold (stay at one place, paused, until you quit the game)
-          --on '<rule>'      with run, check, measure or investigate: a trigger, '<condition>: <action>, ...' (again for
+          --on '<rule>'      with run, check, measure, profile or investigate: a trigger, '<condition>: <action>, ...' (again for
                              more). Conditions: frame>N ms, broken, checkpoint, stuck, gpu-error; actions: moment,
                              screenshot, passes, capture, sample, stop, max N ('frame>50ms: moment, max 5')
+          ./benchmark.sh query [run] '<sql>'
+                             SQL on a run's store (run.db, with host.db as host): frames, presents, shown, waits,
+                             memory, zone_stats, moments, slices, events (default: the last run)
+          ./benchmark.sh timeline [run]
+                             the run in Perfetto's viewer, in your browser: its parts, frame and GPU times, each frame's way
+                             to the screen, KSA Metal's waits, the game's zones around slow frames
           ./benchmark.sh baseline [set <name> [run...] | remove <name>]
                              name runs to compare with, one of each test (check compares with main)
           ./benchmark.sh explore
@@ -131,13 +143,16 @@ public static partial class Program
             {
                 ["list", ..] => ListTests(),
                 ["runs", .. var n] => RunsCommand(n.Take(1).ToArray()),
-                ["report", .. var run] => ReportCommand(run.Length > 0 ? run[0] : "last", run.Length > 1 ? run[1] : null),
+                ["report", .. var run] => ReportCommand(run.Where(a => a != "--again").ToArray(), run.Contains("--again")),
                 ["compare", .. var runs] => CompareCommand(runs),
+                ["query", .. var rest] => QueryCommand(rest),
+                ["timeline", .. var rest] => TimelineCommand(rest),
                 ["clean", .. var rest] => Clean(rest),
                 ["baseline", .. var rest] => BaselineCommand(rest),
                 ["run", .. var rest] => new BenchmarkRun().Run(rest, Purpose.Run),
                 ["check", .. var rest] => new BenchmarkRun().Run(rest, Purpose.Check),
                 ["measure", .. var rest] => new BenchmarkRun().Run(rest, Purpose.Measure),
+                ["profile", .. var rest] => new BenchmarkRun().Run(rest, Purpose.Profile),
                 ["calibrate", .. var rest] => Calibrate(rest),
                 ["investigate", .. var rest] => new BenchmarkRun().Run(rest, Purpose.Investigate),
                 ["explore", .. var rest] => new BenchmarkRun().Run(rest, Purpose.Explore),
@@ -182,7 +197,7 @@ public static partial class Program
         Tool.Exec(tool, args, out var output) == 0 ? output.Trim() : "";
 
     // What a command does
-    private enum Purpose { Run, Check, Measure, Investigate, Calibrate, Explore }
+    private enum Purpose { Run, Check, Measure, Profile, Investigate, Calibrate, Explore }
 
     // The folder or zip a run's name stands for: a path, a folder's name in the benchmarks folder, "last" or "previous", or
     // a baseline's name (its run of that test)
@@ -212,9 +227,11 @@ public static partial class Program
             }
             Die($"there is no {name} run in {Benchmarks}.");
         }
-        if (HasRecord(name) || File.Exists(name))
+        // A run with a record, a zip, or a run with only its store (an older record: report --again makes a new one)
+        static bool Known(string dir) => HasRecord(dir) || File.Exists(Path.Combine(dir, RunStore.GameFile));
+        if (Known(name) || File.Exists(name))
             return name;
-        if (HasRecord(Path.Combine(Benchmarks, name)))
+        if (Known(Path.Combine(Benchmarks, name)))
             return Path.Combine(Benchmarks, name);
         Die($"no run '{name}' (no record there, and not a zip). ./benchmark.sh runs lists your runs.");
         return "";
@@ -244,13 +261,21 @@ public static partial class Program
         return status;
     }
 
-    // A run, or a baseline's run of a test
-    private static int ReportCommand(string name, string? test)
+    // A run, or a baseline's run of a test; --again: made again from its store first
+    private static int ReportCommand(string[] args, bool again)
     {
-        var run = RunFolder(name, test);
+        if (args.Length > 2 || args.Any(a => a.StartsWith('-')))
+            Die("report [run] [test] [--again].");
+        var run = RunFolder(args.Length > 0 ? args[0] : "last", args.Length > 1 ? args[1] : null);
         if (!Directory.Exists(run))
             Die("report takes a run's folder, not its zip.");
-        if (!File.Exists(Path.Combine(run, "report.html")) && RunRecord.Read(run) is { } record)
+        if (again)
+        {
+            if (!File.Exists(Path.Combine(run, RunStore.GameFile)))
+                Die($"{Path.GetFileName(run.TrimEnd('/'))} has no store (run.db) to make it again from: a run older than the store has none.");
+            Finish.Again(run);
+        }
+        else if (!File.Exists(Path.Combine(run, "report.html")) && RunRecord.Read(run) is { } record)
             Pages.WriteReport(run, record);
         Show(run);
         Console.WriteLine();

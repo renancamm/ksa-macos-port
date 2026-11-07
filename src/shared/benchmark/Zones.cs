@@ -36,7 +36,7 @@ public sealed record ZoneFrame(string Group, string Thread, ZoneSample[] Zones)
     public double End => Zones.Length > 0 ? Zones[0].Start + Zones[0].Ms / 1000 : 0;
 }
 
-// The part a game frame's numbers count in, as frames.csv names it
+// The part a game frame's numbers count in, as the frames table names it
 public readonly record struct PartKey(int Session, int Pass, string Scenario, string Part);
 
 public sealed class ZoneLog

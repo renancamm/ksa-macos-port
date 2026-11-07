@@ -19,7 +19,7 @@ namespace KsaMetal.Benchmark;
 // Metal Hooks call AfterFrame (src/game/hooks/BenchmarkRun.cs, a postfix on Program.OnFrame). A run starts in one of
 // three ways:
 // - benchmark.sh in the port folder starts the game with KSA_BENCH_OUT naming the run's folder, which holds the run's
-//   options (RunOptions, options.json), in a documents folder of its own (STARMAP_INSTANCE_PATH): the director begins with
+//   plan (RunPlan, plan.json), in a documents folder of its own (STARMAP_INSTANCE_PATH): the director begins with
 //   the game's first frame and quits the game at the end, and the script writes the report.
 // - The Mac Port tab's RUN buttons, in the running game: the player's game is saved (to disk, in case the game doesn't
 //   survive the run, and in memory), the world becomes a new game's (its clock at the start, no vehicles), the test
@@ -55,8 +55,8 @@ public static class Runs
     private static Task? _finishing;
     // The system the run plays in, for its record (which asks macOS about the Mac after the run, not during it)
     private static string _system = "";
-    // The options of a run that starts with the game (run.json in KSA_BENCH_OUT's folder)
-    private static RunOptions? _options;
+    // The plan of a run that starts with the game (plan.json in KSA_BENCH_OUT's folder)
+    private static RunPlan? _plan;
     private static readonly MemoryWatch Memory = new();
     // A run from the tab has no script to stop a game that has hung or is stuck: a thread of its own does, by the same rules
     private static bool _watching;
@@ -94,11 +94,11 @@ public static class Runs
         _installed = true;
         if (Environment.GetEnvironmentVariable("KSA_BENCH_OUT") is not { Length: > 0 } output)
             return "ready";
-        _options = RunOptions.Read(output);
-        if (_options == null)
-            return $"ready (no run in {output.Replace(Home, "~")}: its {RunOptions.FileName} can't be read)";
+        _plan = RunPlan.Read(output);
+        if (_plan == null)
+            return $"ready (no run in {output.Replace(Home, "~")}: its {RunPlan.FileName} can't be read)";
         _out = output;
-        _mode = _options.Restarted ? Mode.Restarted : Mode.Script;
+        _mode = _plan.Host.Restarted ? Mode.Restarted : Mode.Script;
         return _mode == Mode.Restarted ? "a run starts with the game, restarted from its settings" : "a run starts with the game";
     }
 
@@ -180,8 +180,8 @@ public static class Runs
                 _lastLooked = true;
                 var runs = Path.Combine(Constants.DocumentsFolderPath, "benchmarks");
                 var newest = Directory.Exists(runs)
-                    ? Directory.GetDirectories(runs).Where(d => Regex.IsMatch(Path.GetFileName(d), @"^\d{4}-\d{2}-\d{2}_\d{4}") && (File.Exists(Path.Combine(d, RunRecord.FileName)) || File.Exists(Path.Combine(d, "report.json"))))
-                        .OrderBy(d => d, StringComparer.Ordinal).LastOrDefault()
+                    ? Directory.GetDirectories(runs).Where(d => Regex.IsMatch(Path.GetFileName(d), @"^\d{4}-\d{2}-\d{2}_\d{4}"))
+                        .OrderByDescending(d => d, StringComparer.Ordinal).FirstOrDefault(d => RunRecord.Read(d) != null)
                     : null;
                 if (newest != null)
                     _last = ReadResult(newest);
@@ -247,14 +247,14 @@ public static class Runs
             _firstFrame = false;
             if (_mode is Mode.Script or Mode.Restarted)
             {
-                if (_options!.Test.Length > 0)
-                    _test = _options.Test;
+                if (_plan!.Play.Test.Length > 0)
+                    _test = _plan.Play.Test;
                 _system = Universe.CurrentSystem?.Id ?? "?";
                 // benchmark.sh says what it did itself; a restart from the tab says it here
                 if (_mode == Mode.Restarted)
-                    Hosted(_options, "a new game, restarted from the game's settings");
+                    Hosted(_plan, "a new game, restarted from the game's settings");
                 AddVehicles();
-                _run = Director.Begin(_options);
+                _run = Director.Begin(_plan);
                 Memory.Start();
             }
         }
@@ -328,7 +328,7 @@ public static class Runs
                 if (_stuck?.Run != run && Watchdog.Stuck(played, 1, limit) is { } still)
                 {
                     // What the game's threads are doing, before the run stops (the stuck trigger)
-                    if (Triggers.For(RunOptions.Read(_out) ?? new RunOptions()).Any(r => r.When == Condition.Stuck && r.Has(TriggerAction.Sample)) &&
+                    if (Triggers.For(RunPlan.Read(_out) ?? new RunPlan()).Any(r => r.When == Condition.Stuck && r.Has(TriggerAction.Sample)) &&
                         !Watchdog.Sample(Environment.ProcessId, _out, 1, out var why))
                         Log($"BenchmarkRun: the stuck game's sample: {why}");
                     _stuck = new StuckRun(run, $"stuck{Watchdog.Where(still)} (its clock stood still for {limit} s)");
@@ -367,19 +367,23 @@ public static class Runs
                 Log($"BenchmarkRun: the vehicle {Path.GetFileName(dir)} could not be read");
     }
 
-    // The director's options for a run from the tab
-    private static RunOptions Options(string output)
+    // The director's plan for a run from the tab: one measured pass
+    private static RunPlan Plan(string output)
     {
         var script = Path.Combine(_folder, Lineup.FileName);
         // The test's scenarios; full plays the three in one game here
         var lineup = Lineup.Read(script);
         var tests = (_test == "full" ? Lineup.Full : [_test]).Select(t => lineup.Test(t)!).ToList();
-        return new RunOptions
+        return new RunPlan
         {
-            Script = script, Out = output, Only = string.Join(' ', tests.SelectMany(t => t.Scenarios)), Test = _test, Stay = true,
-            Mode = string.Join(' ', tests.Select(t => Lineup.Name(t.Kind))),
+            Out = output,
+            Play = new()
+            {
+                Script = script, Only = string.Join(' ', tests.SelectMany(t => t.Scenarios)), Test = _test, Stay = true,
+                Mode = string.Join(' ', tests.Select(t => Lineup.Name(t.Kind))),
+            },
             // The noise profiles benchmark.sh calibrate measured on this Mac, next to the runs
-            NoiseFolder = Path.GetDirectoryName(output) ?? ""
+            Host = new() { NoiseFolder = Path.GetDirectoryName(output) ?? "" },
         };
     }
 
@@ -396,14 +400,14 @@ public static class Runs
 
     // What a run from the tab says about itself for its record, which adds the Mac's (and the defaults of those left out:
     // no preset, no settings changed, no tools)
-    private static List<Fact> HostFacts(RunOptions options, string start)
+    private static List<Fact> HostFacts(RunPlan plan, string start)
     {
         var outside = PortSettings.All.Where(s => s.Outside != null).Select(s => s.Outside!.Replace(Home, "~")).ToList();
         var port = PortSettings.All.Where(s => s.Variable.Length > 0 && s.Running != s.Default).Select(s => $"{s.Key} = {s.Running}").ToList();
         return
         [
             new("StarMap", AppDomain.CurrentDomain.GetAssemblies().Any(a => a.GetName().Name == "StarMap.Core") ? "in the app" : "none"),
-            new("System", Universe.CurrentSystem?.Id ?? _system), new("Test", _test), new("Scenarios", options.Only), new("Mode", options.Mode),
+            new("System", Universe.CurrentSystem?.Id ?? _system), new("Test", _test), new("Scenarios", plan.Play.Only), new("Mode", plan.Play.Mode),
             new("Start", start), new("KSA Metal switches", outside.Count > 0 ? string.Join(' ', outside) : "none"),
             // What this game ran with: the port settings that aren't at their defaults, and what the hooks did
             new("port settings", port.Count > 0 ? string.Join(", ", port) : "defaults"), new("Hooks", _hooksSummary().Replace(Home, "~"))
@@ -415,12 +419,12 @@ public static class Runs
     public static string ConsoleLog => Path.Combine(Path.GetDirectoryName(PortSettings.FilePath) ?? Constants.DocumentsFolderPath, "logs", "console.log");
 
     // In the running game
-    // A run the game hosts itself: its options as the record will read them, and its start
-    private static void Hosted(RunOptions options, string start)
+    // A run the game hosts itself: its plan as the record will read it, and its start
+    private static void Hosted(RunPlan plan, string start)
     {
-        options.App = App;
-        options.Facts = HostFacts(options, start);
-        options.Write(_out);
+        plan.Host.App = App;
+        plan.Host.Facts = HostFacts(plan, start);
+        plan.Write(_out);
         var events = new EventLog(_out, 1);
         events.Add("start", text: start);
         events.Add("session");
@@ -430,12 +434,12 @@ public static class Runs
     {
         _mode = Mode.InGame;
         _out = NewRunFolder();
-        var options = _options = Options(_out);
-        options.InGame = true;
+        var plan = _plan = Plan(_out);
+        plan.Host.InGame = true;
         GameSettings.Current.Save();
         File.Copy(Path.Combine(Constants.DocumentsFolderPath, "settings.toml"), Path.Combine(_out, "settings.toml"), true);
         _system = Universe.CurrentSystem?.Id ?? "?";
-        Hosted(options, "in the running game, from its settings");
+        Hosted(plan, "in the running game, from its settings");
         Console.Out.Flush();
         _logStart = File.Exists(ConsoleLog) ? new FileInfo(ConsoleLog).Length : 0;
         Log($"BenchmarkRun: playing in this game, into {_out.Replace(Home, "~")}");
@@ -446,7 +450,7 @@ public static class Runs
         var ui = GameSettings.Current.Interface;
         (ui.CelestialNames, ui.LocationNames) = (false, false);
         AddVehicles();
-        _run = Director.Begin(options);
+        _run = Director.Begin(plan);
         Memory.Start();
         if (_run == null)
         {
@@ -464,21 +468,22 @@ public static class Runs
         _mode = Mode.Here;
         _test = "here";
         _out = NewRunFolder();
-        var options = _options = new RunOptions
+        var plan = _plan = new RunPlan
         {
-            Out = _out, Here = HereSeconds, Test = _test, Mode = Lineup.Name(Kind.Flight), Only = "here", Stay = true, InGame = true,
-            NoiseFolder = Path.GetDirectoryName(_out) ?? "",
+            Out = _out,
+            Play = new() { Here = HereSeconds, Test = _test, Mode = Lineup.Name(Kind.Flight), Only = "here", Stay = true },
+            Host = new() { InGame = true, NoiseFolder = Path.GetDirectoryName(_out) ?? "" },
         };
         // The settings the game runs with, as they are on disk (the player's own file, not written again)
         var settings = Path.Combine(Constants.DocumentsFolderPath, "settings.toml");
         if (File.Exists(settings))
             File.Copy(settings, Path.Combine(_out, "settings.toml"), true);
         _system = Universe.CurrentSystem?.Id ?? "?";
-        Hosted(options, "in the running game, as it was played, from its settings");
+        Hosted(plan, "in the running game, as it was played, from its settings");
         Console.Out.Flush();
         _logStart = File.Exists(ConsoleLog) ? new FileInfo(ConsoleLog).Length : 0;
         Log($"BenchmarkRun: recording this game for {HereSeconds} s, into {_out.Replace(Home, "~")}");
-        _run = Director.Begin(options);
+        _run = Director.Begin(plan);
         Memory.Start();
         if (_run == null)
         {
@@ -532,7 +537,7 @@ public static class Runs
     }
 
     // With "Restart for a Clean Run": the player's game saved, the run's documents folder and its settings, then the game
-    // starts again with the director's options
+    // starts again with the director's plan
     private static void RestartForRun()
     {
         if (UncompressedSave.Make(SafetySave) == null)
@@ -564,9 +569,9 @@ public static class Runs
         File.WriteAllLines(Path.Combine(instance, "settings.toml"), settings);
         var output = NewRunFolder();
         File.Copy(Path.Combine(instance, "settings.toml"), Path.Combine(output, "settings.toml"));
-        var options = Options(output);
-        options.Restarted = true;
-        options.Write(output);
+        var plan = Plan(output);
+        plan.Host.Restarted = true;
+        plan.Write(output);
         Log($"BenchmarkRun: the game starts again for it, into {output.Replace(Home, "~")}");
         var restart = _restart ?? throw new InvalidOperationException("the game was not started by the app");
         restart(new Dictionary<string, string> { ["STARMAP_INSTANCE_PATH"] = instance, ["KSA_BENCH_OUT"] = output });

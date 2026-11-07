@@ -1,6 +1,7 @@
 // A test's noise profile (lineup/noise/<test>.json): how much each screenshot and each part's numbers moved between
 // repeated runs of the same build on the same Mac, and the limits a comparison takes from that, so that a change shows
-// and noise doesn't. benchmark.sh calibrate measures it; the build copies the profiles into the app next to the lineup.
+// and noise doesn't (Statistics.cs applies them). benchmark.sh calibrate measures it; the build copies the profiles into
+// the app next to the lineup.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -77,21 +78,4 @@ public sealed class PartNoise
     public double GpuSpread { get; set; }
     public double FrameSpread { get; set; }
     public double Limit { get; set; }
-}
-
-// Whether a number moved past the noise between two runs: past the part's limit (its noise profile's, or 5 %), or with
-// repeats on both sides, ranges that don't overlap and a move past 2 %
-public static class Noise
-{
-    public const double Significant = 0.05, SignificantRepeated = 0.02;
-
-    public static bool Moved(double a, double b, double[]? rangeA, double[]? rangeB, double? limitPercent = null)
-    {
-        if (a <= 0)
-            return false;
-        double change = Math.Abs(b - a) / a;
-        if (rangeA is [var loA, var hiA] && rangeB is [var loB, var hiB])
-            return change > SignificantRepeated && (hiB < loA || loB > hiA);
-        return change > (limitPercent is { } limit ? limit / 100 : Significant);
-    }
 }

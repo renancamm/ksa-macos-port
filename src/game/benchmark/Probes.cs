@@ -1,4 +1,4 @@
-// The tools for work on the port, plugged into a run (RunOptions turns them on, benchmark.sh's program gives the game
+// The tools for work on the port, plugged into a run (RunPlan turns them on, benchmark.sh's program gives the game
 // what each needs from KSA Metal): each one watches the run's parts, its checkpoints or its frames, and none of them
 // changes how the run plays. A probe that works on a checkpoint's view (a frame capture before the screenshot, a
 // trigger's pass dump after it) holds the checkpoint until it is done: it returns a wait, which the director asks every frame.
@@ -44,15 +44,15 @@ internal sealed record ProbeContext(string Dir, Action<string> Error, Action<str
 
 internal static class Probes
 {
-    // The probes these options turn on
-    public static List<IProbe> For(RunOptions options, ProbeContext context)
+    // The probes this plan turns on
+    public static List<IProbe> For(RunPlan plan, ProbeContext context)
     {
         var probes = new List<IProbe>();
-        if (options.Capture)
+        if (plan.Record.Capture)
             probes.Add(new CaptureProbe(context));
-        if (options.Film > 0)
-            probes.Add(new FilmProbe(options.Film, context));
-        if (options.Trace)
+        if (plan.Record.Film > 0)
+            probes.Add(new FilmProbe(plan.Record.Film, context));
+        if (plan.Record.CameraLog)
             probes.Add(new CameraLogProbe(context));
         return probes;
     }
@@ -125,7 +125,7 @@ internal sealed class FilmProbe(double every, ProbeContext context) : IProbe
     }
 }
 
-// The camera's place every frame in trace.csv, to check its moves are smooth: where it is, where it looks, its up, and over
+// The camera's place every frame in camera-log.csv, to check its moves are smooth: where it is, where it looks, its up, and over
 // the celestial it follows, its latitude, longitude and altitude and the ground under it
 internal sealed class CameraLogProbe : IProbe
 {
@@ -133,7 +133,7 @@ internal sealed class CameraLogProbe : IProbe
 
     public CameraLogProbe(ProbeContext context)
     {
-        _out = new StreamWriter(Path.Combine(context.Dir, "trace.csv"));
+        _out = new StreamWriter(Path.Combine(context.Dir, "camera-log.csv"));
         _out.WriteLine("wall,script,phase,following,x,y,z,fx,fy,fz,ux,uy,uz,lat,lon,alt,ground");
     }
 
