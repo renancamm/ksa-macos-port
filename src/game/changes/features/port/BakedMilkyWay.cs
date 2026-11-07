@@ -7,21 +7,21 @@ using KsaPort.Common;
 
 namespace KsaPort.Cli;
 
-// The edit for the hooks' Milky Way bake (features/milky-way-bake.edits), made by code, which the port's program
+// The edit for Baked Milky Way (features/baked-milky-way.edits), made by code, which the port's program
 // compiles: it moves a whole block of MilkyWay.frag. The clouds' noise moves into a function, portMilkyWayClouds;
 // main reads the clouds through portMilkyWayCloudsAt, which takes them from the strip the hooks bind in
-// milkyWayNoise's place (it isn't square), or works them out as the game does. MilkyWayBake.comp, the compute shader
+// milkyWayNoise's place (it isn't square), or works them out as the game does. BakedMilkyWay.comp, the compute shader
 // that fills the strip, is MilkyWay.frag without its inputs, outputs and main, the cubemap's binding replaced by the
 // strip's: for each texel of a strip that spans the band, the longitude -PI..PI across and sampleDir.y
 // -BAND_HEIGHT..BAND_HEIGHT down (texel centres), the clouds the fragment shader would see in that direction. Its
 // patterns are Perl's, with ASCII classes as Perl matched them on the shader's bytes ([ \t\r\n\f\v] for \s).
-public static class MilkyWay
+public static class BakedMilkyWay
 {
     private const RegexOptions Lines = RegexOptions.Multiline | RegexOptions.CultureInvariant;
 
     public static ShaderEdits.Status Apply(string shaders, Action<string> print)
     {
-        string path = Path.Combine(shaders, "MilkyWay.frag"), bake = Path.Combine(shaders, "MilkyWayBake.comp");
+        string path = Path.Combine(shaders, "MilkyWay.frag"), bake = Path.Combine(shaders, "BakedMilkyWay.comp");
         void Status(string status, string file, string what) => print($"    [{status}] {file}: {what}");
         ShaderEdits.Status Warned(string what)
         {
@@ -34,6 +34,8 @@ public static class MilkyWay
             Status("WARN", "MilkyWay.frag", "not found");
             return ShaderEdits.Status.Warn;
         }
+        // An earlier version of the port wrote the bake's shader under another name
+        File.Delete(Path.Combine(shaders, "MilkyWayBake.comp"));
         var text = ShaderEdits.ReadBytes(path);
         var nl = text.Contains("\r\n") ? "\r\n" : "\n";
         // The lookup, the part of the edit that is the port's own: a file edited by another version of the port says so
@@ -55,6 +57,13 @@ public static class MilkyWay
             File.Delete(bake);
             return ShaderEdits.Status.Warn;
         }
+        // What the function's comment says, and what an earlier version of the port wrote there, with its shader's name
+        var comment = string.Join(nl,
+            "// macOS port: the clouds depend on the view direction alone. The hooks' Baked Milky Way fills a strip with them",
+            "// once (BakedMilkyWay.comp, made from this file) and binds it in milkyWayNoise's place: it isn't square.");
+        var earlier = string.Join(nl,
+            "// macOS port: the clouds depend on the view direction alone. The hooks' Milky Way bake fills a strip with them",
+            "// once (MilkyWayBake.comp, made from this file) and binds it in milkyWayNoise's place: it isn't square.");
         var result = ShaderEdits.Status.Ok;
         if (!edited)
         {
@@ -76,20 +85,24 @@ public static class MilkyWay
             var rest = Regex.Match(text, @"^void main\(\)(.*)", Lines | RegexOptions.Singleline).Groups[1].Value;
             if (Regex.IsMatch(rest, @"(?<![A-Za-z0-9_])(?:cloudsLowA|cloudsLowB|cloudsHigh|seamClouds|seamThresh|seamMask|SEED_[A-Za-z0-9_]+)(?![A-Za-z0-9_])"))
                 return Warned(function);
-            var fn = string.Join(nl,
-                    "// macOS port: the clouds depend on the view direction alone. The hooks' Milky Way bake fills a strip with them",
-                    "// once (MilkyWayBake.comp, made from this file) and binds it in milkyWayNoise's place: it isn't square.",
-                    "float portMilkyWayClouds(vec2 cloudUV, vec3 sampleDir)",
-                    "{") + body + string.Join(nl, "    return cloudsFinal;", "}", "", lookup, "", "");
+            var fn = string.Join(nl, comment, "float portMilkyWayClouds(vec2 cloudUV, vec3 sampleDir)", "{") + body + string.Join(nl, "    return cloudsFinal;", "}", "", lookup, "", "");
             var main = Regex.Match(text, @"^void main\(\)", Lines);
             text = text[..main.Index] + fn + text[main.Index..];
             File.WriteAllBytes(path, Encoding.Latin1.GetBytes(text));
-            Status("FIXED", "MilkyWay.frag", "put the clouds in a function the hooks' bake shares");
+            Status("FIXED", "MilkyWay.frag", "put the clouds in a function Baked Milky Way shares");
+            result = ShaderEdits.Status.Fixed;
+        }
+        else if (text.Contains(earlier, StringComparison.Ordinal))
+        {
+            // Ported by an earlier version: its comment
+            text = text.Replace(earlier, comment, StringComparison.Ordinal);
+            File.WriteAllBytes(path, Encoding.Latin1.GetBytes(text));
+            Status("FIXED", "MilkyWay.frag", "updated: put the clouds in a function Baked Milky Way shares");
             result = ShaderEdits.Status.Fixed;
         }
         else
         {
-            Status("OK", "MilkyWay.frag", "already puts the clouds in a function the hooks' bake shares");
+            Status("OK", "MilkyWay.frag", "already puts the clouds in a function Baked Milky Way shares");
         }
 
         // The bake: this file without its inputs, outputs and main, the cubemap's binding replaced by the strip's
@@ -113,7 +126,7 @@ public static class MilkyWay
         if (!version.Success)
             return Warned("the bake's version line");
         int after = version.Index + version.Length;
-        comp = comp[..after] + "// macOS port: made from MilkyWay.frag by the port, for the hooks' Milky Way bake" + nl + comp[after..];
+        comp = comp[..after] + "// macOS port: made from MilkyWay.frag by the port, for the hooks' Baked Milky Way" + nl + comp[after..];
         comp += string.Join(nl,
             "void main()",
             "{",
@@ -129,11 +142,11 @@ public static class MilkyWay
             "}", "");
         if (File.Exists(bake) && ShaderEdits.ReadBytes(bake) == comp)
         {
-            Status("OK", "MilkyWayBake.comp", "already made the Milky Way bake's shader");
+            Status("OK", "BakedMilkyWay.comp", "already made Baked Milky Way's shader");
             return result;
         }
         File.WriteAllBytes(bake, Encoding.Latin1.GetBytes(comp));
-        Status("FIXED", "MilkyWayBake.comp", "made the Milky Way bake's shader");
+        Status("FIXED", "BakedMilkyWay.comp", "made Baked Milky Way's shader");
         return result == ShaderEdits.Status.Ok ? ShaderEdits.Status.Fixed : result;
     }
 }

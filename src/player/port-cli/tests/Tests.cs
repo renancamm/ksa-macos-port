@@ -100,7 +100,7 @@ internal static class Tests
         Check(steps.Count > 40, $"only {steps.Count} steps");
         foreach (var s in steps.Where(s => s.Kind == "edit"))
             Check(s.Find != s.Replace, $"{s.Id}: its replacement is its find");
-        Check(steps.Any(s => s.Kind == "code" && s.Id == "milky-way"), "no milky-way code edit");
+        Check(steps.Any(s => s.Kind == "code" && s.Id == "baked-milky-way"), "no baked-milky-way code edit");
     }
 
     private static void EditTwice()

@@ -12,17 +12,17 @@ using RenderCore.Shaders;
 
 namespace KsaMetal.Hooks.Features;
 
-// Milky Way bake. MilkyWay.frag draws the Milky Way's dust clouds for every pixel of the band it covers, from the view
+// Baked Milky Way. MilkyWay.frag draws the Milky Way's dust clouds for every pixel of the band it covers, from the view
 // direction alone: about 90 lookups of a noise texture each, 1 to 2 ms of a frame with much sky on an M5 (5 to 7 at the game's Milky
 // Way Quality Ultra). The port's shader edit
-// (src/game/changes/features/milky-way-bake.edits) moves the clouds into a function, makes MilkyWayBake.comp from
+// (src/game/changes/features/baked-milky-way.edits) moves the clouds into a function, makes BakedMilkyWay.comp from
 // the same file. When MilkyWayRenderer has made its noise texture, the patch makes a strip of the clouds over the
 // whole band (8192 x 512), puts it in the noise's place, so the game binds it to the shader, and fills it with the
 // bake, again when the game's Milky Way Quality changes (it sets the clouds' octaves). The shader reads the clouds
 // from the strip when the texture it is given isn't square: nearly the same image, the clouds sampled from the strip
 // instead of worked out at each pixel.
 [Hook(Phase.Default, Switch = nameof(Settings.BakedMilkyWay))]
-internal static class MilkyWayBake
+internal static class BakedMilkyWay
 {
     private const int Width = 8192, Height = 512;
     private static FieldInfo? _noiseImage;
@@ -35,16 +35,16 @@ internal static class MilkyWayBake
     public static string Apply(Harmony harmony)
     {
         string shaders = Path.Combine(Hooks.Resources, "Content", "Core", "Shaders");
-        _shader = Path.Combine(shaders, "MilkyWayBake.comp");
+        _shader = Path.Combine(shaders, "BakedMilkyWay.comp");
         if (!File.Exists(_shader) || !File.ReadAllText(Path.Combine(shaders, "MilkyWay.frag")).Contains("portMilkyWayCloudsAt"))
             throw new Skip("the port's Milky Way shader edit isn't there");
         _noiseImage = Find.Field(typeof(MilkyWayRenderer), "_noiseImage");
         harmony.Patch(Find.Method(typeof(MilkyWayRenderer), "GenerateNoise"),
-            postfix: new HarmonyMethod(typeof(MilkyWayBake), nameof(GenerateNoisePostfix)));
+            postfix: new HarmonyMethod(typeof(BakedMilkyWay), nameof(GenerateNoisePostfix)));
         harmony.Patch(Find.Method(typeof(MilkyWayRenderer), "BuildPipeline"),
-            postfix: new HarmonyMethod(typeof(MilkyWayBake), nameof(BuildPipelinePostfix)));
+            postfix: new HarmonyMethod(typeof(BakedMilkyWay), nameof(BuildPipelinePostfix)));
         harmony.Patch(Find.Method(typeof(MilkyWayRenderer), nameof(MilkyWayRenderer.Dispose)),
-            postfix: new HarmonyMethod(typeof(MilkyWayBake), nameof(DisposePostfix)));
+            postfix: new HarmonyMethod(typeof(BakedMilkyWay), nameof(DisposePostfix)));
         return "on";
     }
 
@@ -65,7 +65,7 @@ internal static class MilkyWayBake
         catch (Exception e)
         {
             _failed = true;
-            Hooks.Fail(nameof(MilkyWayBake), e);
+            Hooks.Fail(nameof(BakedMilkyWay), e);
             if (!_submitted)
                 _strip?.Dispose();
             _strip = null;
@@ -85,7 +85,7 @@ internal static class MilkyWayBake
         catch (Exception e)
         {
             _failed = true;
-            Hooks.Fail(nameof(MilkyWayBake), e);
+            Hooks.Fail(nameof(BakedMilkyWay), e);
         }
     }
 
@@ -98,7 +98,7 @@ internal static class MilkyWayBake
         _noise = _strip = null;
     }
 
-    // MilkyWayBake.comp over the strip, as GenerateNoise fills the noise: one submit, waited for. Filled again, it
+    // BakedMilkyWay.comp over the strip, as GenerateNoise fills the noise: one submit, waited for. Filled again, it
     // waits for the GPU first, which may still draw the sky from it. The wrapper describes the noise in the General
     // layout while it is in ShaderReadOnlyOptimal: KSA Metal has no image layouts.
     private static unsafe void Bake(int quality)
@@ -127,7 +127,7 @@ internal static class MilkyWayBake
             };
             IRenderImage strip = _strip!, noise = _noise!;
             pipeline = new ComputePipelineWrapper(new Span<IRenderImage>(ref strip), default, default, default, reference,
-                default, default, renderer.MaxFramesInFlight, renderer, "MilkyWayRenderer.PortBake",
+                default, default, renderer.MaxFramesInFlight, renderer, "MilkyWayRenderer.BakedMilkyWay",
                 Program.LinearClampedSampler, Program.LinearClampedSampler, specializationInfo: specialization,
                 colorSamplerLinearRepeatRenderTargets: new Span<IRenderImage>(ref noise),
                 linearRepeatSampler: Program.LinearRepeatSampler);

@@ -131,7 +131,7 @@ internal static class Presets
         // at Medium. Its clouds are at High: Medium's grain at cloud edges shows in motion, and High costs 0.1-0.6 ms
         // more near the ground (the Tour's descent to earth4)
         exhausts ??= effects;
-        // With the Milky Way bake (Performance, Balanced and Quality), Milky Way High costs what Low and Medium do (M5,
+        // With Baked Milky Way (Performance, Balanced and Quality), Milky Way High costs what Low and Medium do (M5,
         // fast run: every view within 0.1 ms). Cloud Shadows Low costs what Medium does, so no preset goes below Medium.
         //
         // Ambient occlusion, the ocean and fur cost little (0-3 %): lower in Performance only
@@ -182,7 +182,7 @@ internal static class Presets
 
     // The port settings a preset gives, from the table's presets column (Performance, Balanced, Quality; -1: the
     // defaults). Every Extra Performance row is on in Performance, and in Balanced where its change is small; Quality
-    // keeps the game's own image but for what costs much and barely shows: the Milky Way bake (sky pixels at most 1 of
+    // keeps the game's own image but for what costs much and barely shows: Baked Milky Way (sky pixels at most 1 of
     // 255 apart, the game's Milky Way High at no cost) and the simpler PCSS search. The tumbling physics, the debris
     // settling and the warp cloud shadows change warp, not the image, and are on in Balanced too: warp is too much of
     // the game to leave to Performance. The slower crew portraits are on in Performance only
