@@ -119,8 +119,8 @@ public static partial class Program
             }
             PortSettings.FilePath = portSettings;
             // --defaults is a fresh install's first start, with Auto Memory Saving on: this Mac's Memory rows, under
-            // --port. A preset's run gets them too (without them an 8 GB Mac runs out of memory; with 8 GB or less
-            // they include Fewer Effects at Once), not the game's limits, which change the image
+            // --port. A preset's run gets them too (without them an 8 GB Mac runs out of memory), not the game's
+            // limits, which change the image
             if (_defaults || _preset.Length > 0)
                 PortSettings.Save(AutoMemorySaving.Port(AutoMemorySaving.ThisMac()));
             if (_ports.Count == 0 && _ab.Length == 0)

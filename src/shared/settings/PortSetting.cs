@@ -9,12 +9,12 @@ namespace KsaPort.Common;
 // port-settings.toml holds and the one the game runs with
 public sealed class PortSetting
 {
-    public string Section = "", Key = "", Type = "", Default = "", Label = "", Help = "";
+    public string Section = "", Key = "", Type = "", Default = "", Tag = "", Label = "", Help = "";
     public string[] Needs = [], By = [];
     // Its values in the Mac Port tab's presets Performance, Balanced and Quality (none: the presets leave it alone)
     public string[] Presets = [];
     // Its values with Auto Memory Saving on, for 8 GB of memory or less, 16 GB or less, and more (none: Auto Memory
-    // Saving leaves it alone; an empty one: its preset's there)
+    // Saving leaves it alone)
     public string[] Memory = [];
     // Applies while the game runs (the table's "live"); shown in the Mac Port tab (its section's)
     public bool Live, InTab;

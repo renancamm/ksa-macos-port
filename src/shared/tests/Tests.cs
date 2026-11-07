@@ -24,6 +24,10 @@ internal static class Tests
     // The characters a value can have before a control runs out of room for it
     private const int ValueWidth = 18;
 
+    // The words a row's tooltip has at most: the game's own run 10-25
+    private const int HelpWords = 25;
+    private static int Words(string text) => text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+
     private static int Main(string[] args)
     {
         _repo = Path.GetFullPath(args.Length > 0 ? args[0] : ".");
@@ -86,8 +90,9 @@ internal static class Tests
     // Each line of the table: its key and variable are its own, its default is one of its values, its needs name
     // settings that exist (or the game's that the tab checks) with values they take, without a loop, its presets'
     // values are three of its own (every Extra Performance row on in Performance), its Auto Memory Saving values are
-    // three of its own, the last its default (every Memory row has them), the tab draws its kind and its values fit,
-    // and its help can be read back. Each of the tab's sections has a caption.
+    // three of its own, the last its default (every Memory row has them, and no row has both), the tab draws its kind,
+    // its values and its help fit, its tag is a Memory row's trade-off, and its help can be read back. Each of the
+    // tab's sections has a caption.
     private static void TableRules()
     {
         var all = PortSettings.All;
@@ -110,6 +115,8 @@ internal static class Tests
                 Check(s.Label.Length > 0, $"{s.Key} has no label for its row in the tab");
                 foreach (var (_, label) in s.Choices.Where(c => c.Label.Length > ValueWidth))
                     Check(false, $"{s.Key}'s value '{label}' is longer than the tab's {ValueWidth} characters");
+                foreach (var help in s.OptionHelp.Values.Prepend(s.Help).Where(h => Words(h) > HelpWords))
+                    Check(false, $"{s.Key}'s help has {Words(help)} words, more than a tooltip's {HelpWords}: {help}");
             }
             foreach (var need in s.Needs)
             {
@@ -137,12 +144,13 @@ internal static class Tests
             Check(s.Presets.Length == 0 || s.InTab, $"{s.Key} is the file's only, and the presets leave those alone");
             // Auto Memory Saving: a value per tier, the last the default; every row of the Memory section has them
             Check(s.Memory.Length is 0 or 3, $"{s.Key} has {s.Memory.Length} Auto Memory Saving values, not 3");
-            foreach (var value in s.Memory.Where(v => v.Length > 0 && !s.Valid(v)))
+            foreach (var value in s.Memory.Where(v => !s.Valid(v)))
                 Check(false, $"{s.Key}'s Auto Memory Saving value '{value}' is none of its values");
             Check(s.Memory.Length == 0 || s.InTab, $"{s.Key} is the file's only, and Auto Memory Saving leaves those alone");
-            Check(s.Memory.Length != 3 || s.Memory[2].Length == 0 || s.Memory[2] == s.Default, $"{s.Key}: with more than 16 GB Auto Memory Saving gives it {s.Memory.LastOrDefault()}, not its default");
-            if (s.Section == "memory")
-                Check(s.Memory.Length == 3 && s.Memory.All(v => v.Length > 0), $"{s.Key} is a Memory row, but Auto Memory Saving doesn't set it in every tier");
+            Check(s.Memory.Length != 3 || s.Memory[2] == s.Default, $"{s.Key}: with more than 16 GB Auto Memory Saving gives it {s.Memory.LastOrDefault()}, not its default");
+            Check((s.Section == "memory") == (s.Memory.Length == 3), $"{s.Key}: Auto Memory Saving sets the Memory rows, and only those");
+            Check(s.Memory.Length == 0 || s.Presets.Length == 0, $"{s.Key} has presets and Auto Memory Saving values: the graphics presets leave the Memory rows alone");
+            Check(s.Tag.Length == 0 || s.Tag == "trade-off" && s.Section == "memory", $"{s.Key}'s tag '{s.Tag}' isn't a Memory row's trade-off");
         }
     }
 
@@ -173,7 +181,7 @@ internal static class Tests
 
     private static void MalformedTable()
     {
-        File.WriteAllText(Path.Combine(_scratch, "port-settings.txt"), "[image] Image | The 3D view.\nupscaling | choice:off=Off | off\n");
+        File.WriteAllText(Path.Combine(_scratch, "port-settings.txt"), "[upscaling] Upscaling | The 3D view.\nupscaling | choice:off=Off | off\n");
         try
         {
             PortSettings.LoadTable(_scratch);
@@ -190,7 +198,7 @@ internal static class Tests
         PortSettings.FilePath = Path.Combine(_scratch, "port-settings.toml");
         File.WriteAllLines(PortSettings.FilePath,
         [
-            "# Port settings", "", "[image]", "upscaling = \"metalfx\"   # a comment", "render_scale = 0.75",
+            "# Port settings", "", "[upscaling]", "upscaling = \"metalfx\"   # a comment", "render_scale = 0.75",
             "skip_game_anti_aliasing = false", "unknown_setting = 1", "fit_hud_to_display = \"sideways\"", "trail_shadows = \"4,128\"",
             "trail_caches = \"0, 0, 16\"", "log_file = \"~/a#b \\\"q\\\".log\"  # a comment", "shot_dir = '/tmp/x#y'",
             "dump_msl = /tmp/msl # a comment",
@@ -214,7 +222,7 @@ internal static class Tests
         PortSettings.FilePath = Path.Combine(_scratch, "port-settings.toml");
         PortSettings.TemplatePath = Path.Combine(_scratch, "template.toml");
         File.WriteAllLines(PortSettings.TemplatePath,
-            ["# Port settings", "", "[image]", "", "# upscaling: help", "upscaling = \"off\"", "", "[interface]", "fit_hud_to_display = true", ""]);
+            ["# Port settings", "", "[upscaling]", "", "# upscaling: help", "upscaling = \"off\"", "", "[interface]", "fit_hud_to_display = true", ""]);
         PortSettings.Save(new Dictionary<string, string>
         {
             ["upscaling"] = "metalfx", ["render_scale"] = "0.5", ["skip_hidden_crew_portraits"] = "false", ["trail_shadows"] = "4,128,3000",
@@ -289,7 +297,7 @@ internal static class Tests
     private static void HooksLoad()
     {
         var file = Path.Combine(_scratch, "port-settings.toml");
-        File.WriteAllLines(file, ["[interface]", "fit_hud_to_display = false", "[image]", "upscaling = \"metalfx\""]);
+        File.WriteAllLines(file, ["[interface]", "fit_hud_to_display = false", "[upscaling]", "upscaling = \"metalfx\""]);
         var variables = new Dictionary<string, string?>
         {
             ["KSA_PORT_SETTINGS"] = file, ["KSA_PORT_OUTSIDE"] = "KSA_MTL_RENDER_SCALE", ["KSA_MTL_RENDER_SCALE"] = "Always",
@@ -332,12 +340,12 @@ internal static class Tests
         var small = AutoMemorySaving.Port(AutoMemorySaving.Tier.Small);
         Check(small.Count == rows.Count && small.Values.All(v => v == "true"), "with 8 GB every row on");
         var medium = AutoMemorySaving.Port(AutoMemorySaving.Tier.Medium);
-        Check(!medium.ContainsKey("fewer_effects_at_once"), "fewer effects left to its preset with 16 GB");
+        Equal("false", medium.GetValueOrDefault("fewer_effects_at_once"), "fewer effects with 16 GB");
         Equal("true", medium.GetValueOrDefault("unload_far_terrain"), "far terrain with 16 GB");
         var large = AutoMemorySaving.Port(AutoMemorySaving.Tier.Large);
-        Check(large.Count == rows.Count - 1 && large.All(kv => kv.Value == Setting(kv.Key).Default), "with more than 16 GB: the defaults");
+        Check(large.Count == rows.Count && large.All(kv => kv.Value == Setting(kv.Key).Default), "with more than 16 GB: the defaults");
         var off = AutoMemorySaving.Off();
-        Check(off.Count == large.Count && off.All(kv => kv.Value == Setting(kv.Key).Default) && !off.ContainsKey("fewer_effects_at_once"), "Off: the defaults, the shared row left alone");
+        Check(off.Count == rows.Count && off.All(kv => kv.Value == Setting(kv.Key).Default), "Off: the defaults");
         Equal(2048, AutoMemorySaving.Limit(0, 2048), "automatic takes the limit");
         Equal(2048, AutoMemorySaving.Limit(4096, 2048), "above the limit");
         Equal(1024, AutoMemorySaving.Limit(1024, 2048), "below the limit");

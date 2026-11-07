@@ -68,15 +68,13 @@ public static class PortSettings
                 All[^1].OptionHelp[c[0]] = c[1];
                 continue;
             }
-            if (c.Length < 10)
-                throw new FormatException($"{table}, line {n + 1}: {c.Length} columns, not 10");
+            if (c.Length < 11)
+                throw new FormatException($"{table}, line {n + 1}: {c.Length} columns, not 11");
             string[] List(string column) => column.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             var s = new PortSetting
             {
                 Section = section, InTab = Sections[^1].InTab, Key = c[0], Type = c[1], Default = c[2], Needs = List(c[3]), Live = c[4] == "live",
-                By = List(c[5]), Presets = List(c[6]), Label = c[8], Help = string.Join('|', c[9..]),
-                // A tier's value can be empty: the row is left to its preset there
-                Memory = c[7].Length == 0 ? [] : c[7].Split(',', StringSplitOptions.TrimEntries),
+                By = List(c[5]), Presets = List(c[6]), Memory = List(c[7]), Tag = c[8], Label = c[9], Help = string.Join('|', c[10..]),
             };
             if (s.Memory.Length is not (0 or 3))
                 throw new FormatException($"{table}, line {n + 1}: the memory column holds {s.Memory.Length} values, not 3 or none");
