@@ -1,5 +1,6 @@
 // The end of a run: its record (run.json) made from what it left (options.json, events.jsonl, frames.csv, the game's
-// logs, the screenshots), then its report (report.md, report.html) and the zip to share. Both hosts call it: benchmark.sh's
+// logs, the screenshots), checked against the run's store (Store.cs), then its report (report.md, report.html) and the
+// zip to share. Both hosts call it: benchmark.sh's
 // program after the game, and the Mac Port tab's runs in the game. It changes nothing it reads, so a run can be finished
 // again when a summary or a check improves.
 using System;
@@ -32,17 +33,40 @@ public static class Finish
 
     private static RunRecord Make(string dir, bool asksMac)
     {
+        // This process's rows of the run's store into its files, before anything reads them
+        RunStore.FlushAll();
         var options = RunOptions.Read(dir) ?? new RunOptions();
         var events = EventLog.Read(dir);
         var frames = FrameLog.Read(dir);
         var logs = Logs(dir);
         var name = Path.GetFileName(Path.GetFullPath(dir).TrimEnd('/'));
-        var started = events.FirstOrDefault()?.At.ToLocalTime() ?? Directory.GetCreationTime(dir);
+        var record = Core(dir, name, options, events, frames);
+        record.Facts = Facts.Gather(dir, options.App, options.Facts, logs.FirstOrDefault().Lines ?? [], asksMac);
+        if (record.WarmUp is { } warmUp)
+            record.Facts.Add(new Fact("Warm-up", warmUp.GpuMs is { } gpu
+                ? $"a pass first, left out (GPU {gpu:F1} ms a frame)" : "a pass first, left out"));
+        record.Facts.AddRange(SideMemory(events));
+        var crashes = CrashReports(record.Started.ToUniversalTime());
+        record.Findings = Checks.Run(new RunEvidence(dir, record, events, logs, crashes));
+        if (StoreDiffers(dir, name, options, record, events) is { } where)
+            record.Findings.Add(new Finding(Severity.Note, "store", $"the run's store says otherwise than its files about {where}"));
+        record.Status = events.Any(e => e.Type == "stopped") ? Status.Stopped : record.Problems.Any() ? Status.Failed : Status.Passed;
+        record.Write(dir);
+        Pages.WriteReport(dir, record);
+        Package(dir, crashes);
+        // The game's store of a tab's run, and benchmark.sh's own, closed: the run is over
+        RunStore.Close(dir);
+        return record;
+    }
+
+    // What the record says from the run's events and frames: how it played, and each part's numbers
+    private static RunRecord Core(string dir, string name, RunOptions options, List<RunEvent> events, List<FrameRow> frames)
+    {
         var record = new RunRecord
         {
             Schema = RunRecord.CurrentSchema,
             Name = name,
-            Started = started,
+            Started = events.FirstOrDefault()?.At.ToLocalTime() ?? Directory.GetCreationTime(dir),
             Test = options.Test.Length > 0 ? options.Test : "places",
             Mode = options.Mode,
             Start = events.LastOrDefault(e => e.Type == "start")?.Text ?? "",
@@ -53,21 +77,35 @@ public static class Finish
             Scenarios = Scenarios(events, frames),
         };
         SetLimits(record, options);
-        record.Facts = Facts.Gather(dir, options.App, options.Facts, logs.FirstOrDefault().Lines ?? [], asksMac);
         if (events.FirstOrDefault(e => e.Type == "warmed") is { } warmed)
-        {
             record.WarmUp = WarmUp(record, frames, warmed.Session);
-            record.Facts.Add(new Fact("Warm-up", record.WarmUp.GpuMs is { } gpu
-                ? $"a pass first, left out (GPU {gpu:F1} ms a frame)" : "a pass first, left out"));
-        }
-        record.Facts.AddRange(SideMemory(events));
-        var crashes = CrashReports(record.Started.ToUniversalTime());
-        record.Findings = Checks.Run(new RunEvidence(dir, record, events, logs, crashes));
-        record.Status = events.Any(e => e.Type == "stopped") ? Status.Stopped : record.Problems.Any() ? Status.Failed : Status.Passed;
-        record.Write(dir);
-        Pages.WriteReport(dir, record);
-        Package(dir, crashes);
         return record;
+    }
+
+    // The run's store (Store.cs) against the files the record is made from: what the record would say from each, compared;
+    // the first part that differs, or null when they agree or the run has no store. A game that crashed, hung or was
+    // killed leaves each with what it had written by then (the store commits four times a second, frames.csv every
+    // second): such a run isn't compared
+    private static string? StoreDiffers(string dir, string name, RunOptions options, RunRecord fromFiles, List<RunEvent> events)
+    {
+        if (events.Any(e => e.Type == "ended" && e.Text is not ("quit normally" or "kept running")) || RunStore.Read(dir) is not { } stored)
+            return null;
+        var fromStore = Core(dir, name, options, stored.Events, stored.Frames);
+        static string Json(object? o) => System.Text.Json.JsonSerializer.Serialize(o);
+        var parts = new (string What, Func<RunRecord, object?> Of)[]
+        {
+            ("its start", r => new { r.Started, r.Start }), ("its sessions and passes", r => new { r.Sessions, r.Passes }),
+            ("its loading", r => new { r.LoadSeconds, r.Drawable }), ("its warm-up", r => r.WarmUp),
+        };
+        foreach (var (what, of) in parts)
+            if (Json(of(fromFiles)) != Json(of(fromStore)))
+                return what;
+        if (fromFiles.Scenarios.Count != fromStore.Scenarios.Count)
+            return "its scenarios";
+        foreach (var (a, b) in fromFiles.Scenarios.Zip(fromStore.Scenarios))
+            if (Json(a) != Json(b))
+                return $"scenario {a.Name}";
+        return null;
     }
 
     // An A/B run's memory on each side, from its sessions: macOS's worst memory pressure and the swap the Mac grew while

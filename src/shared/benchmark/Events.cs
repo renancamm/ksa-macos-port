@@ -52,7 +52,7 @@ public sealed class EventLog
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    private readonly string _path;
+    private readonly string _path, _dir;
     private readonly object _lock = new();
 
     public int Session { get; set; }
@@ -60,17 +60,22 @@ public sealed class EventLog
 
     public EventLog(string dir, int session = 0)
     {
+        _dir = dir;
         _path = Path.Combine(dir, FileName);
         Session = session;
     }
 
-    // Adds an event as a line of its own, at once, so that a game that dies keeps the ones before
+    // Adds an event as a line of its own, at once, so that a game that dies keeps the ones before; and to the run's store
+    // (Store.cs), in the same order
     public void Add(string type, string? scenario = null, string? part = null, string? text = null, double? game = null, double? value = null)
     {
         var e = new RunEvent { Type = type, Session = Session, Pass = Pass, Scenario = scenario, Part = part, Text = text, Game = game, Value = value };
         var line = JsonSerializer.Serialize(e, Json) + "\n";
         lock (_lock)
+        {
             File.AppendAllText(_path, line);
+            RunStore.For(_dir)?.Add(e);
+        }
     }
 
     // Every event of a run's folder; a line cut short (a game that died while writing it) is left out

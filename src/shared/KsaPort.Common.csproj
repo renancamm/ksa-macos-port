@@ -2,7 +2,8 @@
 	<!-- What the port's programs share, in the game and outside it: the port settings (settings/: the table,
 	     port-settings.toml and the environment), the port folder's names and the apps this port made (PortFolder.cs),
 	     KSA Metal's measurements and screenshots (DriverStats.cs), and the benchmark's core (benchmark/: the lineup and
-	     its directives, a run's options, events and frames, its record, checks, pages and the screenshots' comparison).
+	     its directives, a run's options, events and frames, its store, its record, checks, pages and the screenshots'
+	     comparison).
 	     The hooks' loader, the hooks and the benchmark's director use it in the game, next to the hooks in the app's Hooks
 	     folder; the port's program, benchmark.sh's program, the settings' generator and the tests use it too. References
 	     nothing of the game. -->

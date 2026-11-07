@@ -12,7 +12,8 @@ using KsaPort.Common.Benchmark;
 // on the Mac's region, an older run's report read), its report, page and zip, the comparison of two runs, the list of
 // runs, and the PNG reader and writer the director shares. The runs are written with the director's own classes
 // (Events.cs, Frames.cs) the way the game and benchmark.sh leave them, so the tests also check that the record reads
-// what the director writes. The build runs them (ctest); a failure stops the build.
+// what the director writes, and every finished run checks its store against its files (a test that wants no notes
+// fails when they differ). The build runs them (ctest); a failure stops the build.
 //
 // Usage: dotnet KsaMetal.Benchmark.Cli.Tests.dll
 internal static class Tests
@@ -47,6 +48,8 @@ internal static class Tests
             ("the list of runs", ListOfRuns),
             ("the terminal's layout", Layout),
             ("the tests' script", Script),
+            ("the run's store", Store),
+            ("KSA Metal's drain", Drain),
         };
         foreach (var (name, run) in tests)
         {
@@ -63,6 +66,8 @@ internal static class Tests
             finally
             {
                 CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+                RunStore.CloseAll();
+                RunStore.ProcessFile = RunStore.GameFile;
                 Directory.Delete(_scratch, true);
             }
         }
@@ -680,5 +685,83 @@ internal static class Tests
         for (int i = 0; i < rgb.Length; i++)
             rgb[i] = (byte)(i * 7 % 251);
         return new Image(width, height, rgb);
+    }
+
+    // The run's store: the game's run.db and the host's host.db hold what the files hold, the record from either is the
+    // same, and a store that says otherwise is noted
+    private static void Store()
+    {
+        var dir = Run("stored", frameMs: 20, gpuMs: 8);
+        RunStore.ProcessFile = RunStore.HostFile;
+        new EventLog(dir, 1).Add("session-memory", text: "pressure normal, swap 0 -> 0 MB");
+        RunStore.ProcessFile = RunStore.GameFile;
+        var record = Finished(dir);
+        Equal(0, Notes(record).Length, "notes, the store as the files");
+        Check(File.Exists(Path.Combine(dir, RunStore.GameFile)) && File.Exists(Path.Combine(dir, RunStore.HostFile)), "both files");
+        var stored = RunStore.Read(dir) ?? throw new Exception("no store read");
+        Equal(100, stored.Frames.Count, "frames");
+        Equal(string.Join(" ", EventLog.Read(dir).Select(e => e.Type)), string.Join(" ", stored.Events.Select(e => e.Type)), "events in order");
+        Equal(FrameLog.Read(dir)[42], stored.Frames[42], "a frame");
+        RunStore.CloseAll();
+        using (var db = Sqlite.Open(Path.Combine(dir, RunStore.GameFile)))
+            db.Exec("UPDATE frames SET frame_ms = frame_ms * 2 WHERE rowid = 5");
+        Contains(Notes(Finished(dir)), "the run's store says otherwise than its files about scenario earth", "a store that differs");
+    }
+
+    // The records KSA Metal's drain hands over, read back field by field
+    private static void Drain()
+    {
+        var bytes = new MemoryStream();
+        var w = new BinaryWriter(bytes);
+        void Header(ushort type, ushort size)
+        {
+            w.Write(type);
+            w.Write(size);
+            w.Write(0u);
+        }
+        Header(1, (ushort)(8 + 8 + 88));
+        w.Write(12.5);
+        w.Write(7UL);
+        w.Write(16.6);
+        w.Write(9.25);
+        foreach (var x in new uint[] { 1200, 30, 22, 3 })
+            w.Write(x);
+        w.Write(4096L);
+        w.Write(1);
+        foreach (var x in new uint[] { 5, 6, 3024, 1964, 0 })
+            w.Write(x);
+        w.Write(8000L);
+        w.Write(8.33);
+        Header(2, 64);
+        w.Write(7UL);
+        foreach (var x in new[] { 12.49, 12.5, 12.51, 12.52, 0.4 })
+            w.Write(x);
+        w.Write(1u);
+        w.Write(0u);
+        Header(3, 72);
+        w.Write(13.0);
+        w.Write(4.5);
+        w.Write(8UL);
+        w.Write(System.Text.Encoding.UTF8.GetBytes("vkWaitForFences".PadRight(40, '\0')));
+        Header(4, 40);
+        w.Write(14.0);
+        w.Write(-(64L << 20));
+        w.Write(2u);
+        w.Write(0u);
+        w.Write(9UL);
+        var records = new List<DriverRecord>();
+        DriverStats.Parse(bytes.ToArray(), records);
+        Equal(4, records.Count, "records");
+        if (records.Count < 4)
+            return;
+        var present = (PresentRecord)records[0];
+        Equal(12.5, present.T, "present's time");
+        Equal(7UL, present.Stats.Present, "present");
+        Equal(9.25, present.Stats.GpuMs, "GPU ms");
+        Equal(1964u, present.Stats.DrawableHeight, "drawable");
+        Equal(8.33, present.Stats.DisplayMs, "display ms");
+        Equal(new ShownRecord(7, 12.49, 12.5, 12.51, 12.52, 0.4, true), records[1], "shown");
+        Equal(new WaitRecord(13, 4.5, 8, "vkWaitForFences"), records[2], "wait");
+        Equal(new MemoryRecord(14, -(64L << 20), 2, 9), records[3], "memory");
     }
 }

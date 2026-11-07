@@ -41,6 +41,7 @@ void KDevice::commitResidency() {
         double t0 = CACurrentMediaTime();
         [residency commit];
         double ms = (CACurrentMediaTime() - t0) * 1000.0;
+        if (kmtlDrainOn()) kmtlDrainWait("residency commit", t0, ms);
         if (kmtlConfig().stalls > 0 && ms >= kmtlConfig().stalls) {
             char name[64] = "";
             pthread_getname_np(pthread_self(), name, sizeof name);

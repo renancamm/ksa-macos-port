@@ -21,6 +21,9 @@ public static partial class Program
         // the culture is the player's.
         CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
         CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+        // Its events go to the run's host.db, the game's to its run.db (Store.cs)
+        RunStore.ProcessFile = RunStore.HostFile;
+        RunStore.Log = Console.Error.WriteLine;
         if (args.Length >= 1 && args[0] == "command")
             return Command(args[1..]);
         Console.Error.WriteLine("usage: command <benchmark.sh's arguments> (benchmark.sh runs it)");

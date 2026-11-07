@@ -71,15 +71,22 @@ const PortSettings& kmtlConfig();
 bool kmtlEarlyFragmentTests();
 
 uint64_t kmtlPresentCount();  // instruments.mm
-// KSA_MTL_STALLS: a scope that logs when it took longer than the threshold
+// The benchmark's drain (diagnostics/drain.mm): on once a reader opened it; a wait goes in when it reached the reader's
+// threshold
+extern std::atomic<bool> g_kmtlDrainOn;
+inline bool kmtlDrainOn() { return g_kmtlDrainOn.load(std::memory_order_relaxed); }
+void kmtlDrainWait(const char* what, double start, double ms);
+// KSA_MTL_STALLS: a scope that logs when it took longer than the threshold; with the drain open it goes there too
 struct KStallTimer {
     const char* what;
     double start;
-    explicit KStallTimer(const char* w) : what(w), start(kmtlConfig().stalls > 0 ? CACurrentMediaTime() : 0) {}
+    explicit KStallTimer(const char* w) : what(w), start(kmtlConfig().stalls > 0 || kmtlDrainOn() ? CACurrentMediaTime() : 0) {}
     ~KStallTimer() {
         if (start == 0) return;
         double ms = (CACurrentMediaTime() - start) * 1000.0;
-        if (ms >= kmtlConfig().stalls) KLOG(0, "stall: %s %.1f ms at %.3f present %llu", what, ms, start, (unsigned long long)kmtlPresentCount());
+        if (kmtlConfig().stalls > 0 && ms >= kmtlConfig().stalls)
+            KLOG(0, "stall: %s %.1f ms at %.3f present %llu", what, ms, start, (unsigned long long)kmtlPresentCount());
+        if (kmtlDrainOn()) kmtlDrainWait(what, start, ms);
     }
 };
 
