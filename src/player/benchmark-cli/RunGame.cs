@@ -19,6 +19,9 @@ public static partial class Program
 {
     private sealed partial class BenchmarkRun
     {
+        // The script stands at one moment on purpose with --hold, and for as long as a tool takes at a checkpoint
+        private bool StandsStill => _hold.Length > 0 || _capture || _catch.Length > 0 || _passes;
+
         // The game's environment for the run, on top of this program's
         private ProcessStartInfo Game(Dictionary<string, string> env)
         {
@@ -381,7 +384,8 @@ public static partial class Program
             while (!game.HasExited)
             {
                 int elapsed = (int)(DateTime.UtcNow - started).TotalSeconds;
-                var beat = EventLog.LastHeartbeat(_out, n);
+                var played = EventLog.Read(_out);
+                var beat = EventLog.LastHeartbeat(played, n);
                 progress.Show(beat, elapsed);
                 // --trace: once the game is up (its first heartbeat), Instruments attaches, and the run starts when it records
                 if (_trace && tracer == null && beat != null)
@@ -400,8 +404,22 @@ public static partial class Program
                 }
                 if (_stopped)
                     ending = "was stopped with Ctrl-C";
-                else if (Watchdog.Hung(_out, n, hang) is { } stale)
+                else if (Watchdog.Hung(played, n, hang) is { } stale)
                     ending = $"hung{Watchdog.Where(stale)} (no frame for {hang} s): stopped";
+                else if (!StandsStill && Watchdog.Stuck(played, n, hang) is { } still)
+                {
+                    // What its threads were doing, before it is stopped
+                    try
+                    {
+                        Tool.Exec("/usr/bin/sample", [game.Id.ToString(CultureInfo.InvariantCulture), "5", "-file",
+                            Path.Combine(_out, n > 1 ? $"stuck-{n}.txt" : "stuck.txt")], out _);
+                    }
+                    catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)
+                    {
+                        Output.Warn($"sample: {e.Message}");
+                    }
+                    ending = $"stuck{Watchdog.Where(still)} (its clock stood still for {hang} s): stopped";
+                }
                 else if (timeout > 0 && elapsed >= timeout)
                     ending = $"did not finish in {timeout} s: stopped";
                 if (ending.Length > 0)

@@ -97,6 +97,8 @@ public sealed class EventLog
     }
 
     // The last heartbeat of a session, or null: where its script was, and when
-    public static RunEvent? LastHeartbeat(string dir, int session) =>
-        Read(dir).LastOrDefault(e => e.Session == session && e.Type is "heartbeat" or "loaded" or "scenario");
+    public static RunEvent? LastHeartbeat(string dir, int session) => LastHeartbeat(Read(dir), session);
+
+    public static RunEvent? LastHeartbeat(IEnumerable<RunEvent> events, int session) =>
+        events.LastOrDefault(e => e.Session == session && e.Type is "heartbeat" or "loaded" or "scenario");
 }

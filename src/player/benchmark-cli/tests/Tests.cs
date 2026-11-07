@@ -40,6 +40,7 @@ internal static class Tests
             ("the Warp Test in the report", WarpReport),
             ("the PNG reader and writer", Png),
             ("a run stopped on purpose", Stopped),
+            ("a game stuck at one moment", StuckGame),
             ("a screenshot of nothing", BlankShot),
             ("runs that can't compare", NothingInCommon),
             ("an older run's report", OlderRun),
@@ -112,7 +113,7 @@ internal static class Tests
     private static PartRecord Part(RunRecord r) => r.Scenarios.FirstOrDefault()?.Parts.FirstOrDefault() ?? throw new Exception("no part in the record");
 
     // A run's folder as the director and benchmark.sh leave it: its options with these facts, one session that played the
-    // scenario earth (of this kind) with one part, earth1, of 100 frames (one of them a hitch), and ended
+    // scenario earth (of this kind) with one part, earth1, of 100 frames (the last one three times as long), and ended
     private static string Run(string name, double frameMs = 10, string mode = "views", Fact[]? facts = null, double? gpuMs = null,
         Kind kind = Kind.Views, string ending = "quit normally", bool done = true, int sessions = 1)
     {
@@ -189,16 +190,17 @@ internal static class Tests
 
     private static void Passed()
     {
-        var dir = Run("passed");
+        var dir = Run("passed", frameMs: 20);
         var record = Finished(dir);
         Equal(Status.Passed, record.Status, "passed");
         Equal(0, Problems(record).Length, "problems");
         Equal(0, Notes(record).Length, "notes");
         var part = Part(record);
         Equal(100, part.Frames, "frames");
-        Equal(10.0, part.FrameMsMedian, "frame time's median");
-        Equal(30.0, part.FrameMsMax, "worst frame");
-        Equal(1, part.Hitches, "hitches");
+        Equal(20.0, part.FrameMsMedian, "frame time's median");
+        Equal(60.0, part.FrameMsMax, "worst frame");
+        Equal(1, part.FramesOver50Ms, "frames over 50 ms");
+        Equal(0, part.FramesOver100Ms, "frames over 100 ms");
         Equal(1.5, record.LoadSeconds, "loading");
         Equal(Status.Passed, RunRecord.Read(dir)?.Status, "run.json read back");
         var md = File.ReadAllText(Path.Combine(dir, "report.md"));
@@ -455,6 +457,28 @@ internal static class Tests
         File.WriteAllBytes(path, File.ReadAllBytes(path)[..40]);
         Check(Images.Read(path) == null, "a PNG cut short (still being written) reads as none");
         Check(Images.Read(Path.Combine(_scratch, "none.png")) == null, "a missing file reads as none");
+    }
+
+    // Heartbeats a second apart for 90 s, all at the script's 3.0 s in mixed: stuck past a limit of 60 s, unless a
+    // screenshot was taken there along the way (the Mixed Test's views all stand at one moment)
+    private static void StuckGame()
+    {
+        static List<RunEvent> Beats(int shotAt)
+        {
+            var start = DateTime.UtcNow.AddSeconds(-90);
+            var events = new List<RunEvent> { new() { Type = "scenario", Session = 1, Scenario = "mixed", At = start } };
+            for (int i = 0; i <= 90; i++)
+            {
+                if (i == shotAt)
+                    events.Add(new RunEvent { Type = "shot", Session = 1, Scenario = "mixed", Part = "kitten", At = start.AddSeconds(i) });
+                events.Add(new RunEvent { Type = "heartbeat", Session = 1, Scenario = "mixed", Value = 3.0, At = start.AddSeconds(i) });
+            }
+            return events;
+        }
+        Equal(" in mixed at 3.0 s", Watchdog.Stuck(Beats(-1), 1, 60) is { } beat ? Watchdog.Where(beat) : "", "stuck");
+        Equal(null, Watchdog.Stuck(Beats(45), 1, 60), "a screenshot on the way");
+        Equal(null, Watchdog.Stuck(Beats(-1), 2, 60), "another session");
+        Equal(null, Watchdog.Hung(Beats(-1), 1, 60), "not hung");
     }
 
     private static void Stopped()

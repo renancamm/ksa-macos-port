@@ -73,6 +73,7 @@ case "${FAKE_GAME:-pass}" in
     crash) kill -ABRT $$ ;;
     hang) sleep 60; exit 0 ;;
     long) for i in 1 2 3 4 5 6 7 8 9 10; do sleep 1; event "\"type\":\"heartbeat\",\"scenario\":\"${first}\",\"value\":1.5"; done; exit 0 ;;
+    stuck) for i in $(seq 1 60); do sleep 1; event "\"type\":\"heartbeat\",\"scenario\":\"${first}\",\"value\":1.5"; done; exit 0 ;;
 esac
 event "\"type\":\"scenario\",\"scenario\":\"${first}\",\"text\":\"views\""
 event "\"type\":\"open\",\"scenario\":\"${first}\",\"part\":\"part1\",\"game\":0,\"value\":0"
@@ -197,6 +198,10 @@ expect "a game that dies at the start" 1 "before its first frame"
 sleep 1
 KSA_BENCH_HANG_LIMIT=2 FAKE_GAME=hang bench --app "${APP}"
 expect "a game that hangs" 1 "hung in mixed at 1.5 s"
+sleep 1
+KSA_BENCH_HANG_LIMIT=2 FAKE_GAME=stuck bench --app "${APP}"
+expect "a game whose clock stops" 1 "stuck in mixed at 1.5 s"
+ls "${T}/home/Documents/My Games/Kitten Space Agency/benchmarks/"*/stuck.txt > /dev/null 2>&1 || fail "a game whose clock stops: no stuck.txt"
 sleep 1
 # As a terminal does it: the signal to the whole process group, once the run has started (a job started with & has SIGINT
 # ignored and shares this script's group: perl gives it a group of its own and puts the signal back)

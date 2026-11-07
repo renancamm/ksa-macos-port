@@ -124,8 +124,8 @@ public static class Pages
         var plain = r.Scenarios.Where(s => s.Parts.Count > 0).ToList();
         if (plain.Count > 0)
         {
-            md.AppendLine("| Scenario | Part | FPS | Frame ms | p95 ms | GPU ms | Hitches | Worst ms | Draws | Memory MB | GPU memory MB | Shaders |");
-            md.AppendLine("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
+            md.AppendLine("| Scenario | Part | FPS | Frame ms | p95 ms | GPU ms | Over 50 ms | Over 100 ms | Worst ms | Draws | Memory MB | GPU memory MB | Shaders |");
+            md.AppendLine("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
             foreach (var s in plain)
             {
                 string name = Label(s);
@@ -134,7 +134,7 @@ public static class Pages
                     string frame = F(p.FrameMsMedian, "0.0");
                     if (p.FrameMsRange is [var lo, var hi])
                         frame += $" ({F(lo, "0.0")}-{F(hi, "0.0")})";
-                    md.AppendLine($"| {name} | {p.Name} | {F(p.AverageFps, "0.0")} | {frame} | {F(p.FrameMsP95, "0.0")} | {N(p.GpuMsMedian, "0.0")} | {p.Hitches} | " +
+                    md.AppendLine($"| {name} | {p.Name} | {F(p.AverageFps, "0.0")} | {frame} | {F(p.FrameMsP95, "0.0")} | {N(p.GpuMsMedian, "0.0")} | {p.FramesOver50Ms} | {p.FramesOver100Ms} | " +
                                   $"{F(p.FrameMsMax, "0")} | {N(p.DrawsMedian, "0")} | {p.FootprintPeakMb} | {p.GpuMemoryPeakMb} | {p.ShadersCompiled} |");
                     name = "";
                 }
@@ -144,7 +144,7 @@ public static class Pages
                 md.AppendLine("A part of the Mixed Test, or of places jumped to, is the view standing still (the game paused) at the screenshot of that name.");
             if (plain.Any(s => s.Kind == Kind.Flight) && !r.Mode.Contains("jump"))
                 md.AppendLine("A part of the Planetary Tour is measured along the way, between two screenshots.");
-            md.AppendLine("Frame: time between two frames (median, 95th percentile). GPU: time the GPU worked on a frame. Hitches: frames longer than twice the median. " +
+            md.AppendLine("Frame: time between two frames (median, 95th percentile). GPU: time the GPU worked on a frame. Over 50 ms, over 100 ms: the frames that took longer, the stutters you see. " +
                           "Memory: the game's footprint at its peak, and what KSA Metal allocated for the GPU. Shaders: compiled while measuring (each one a stutter).");
         }
         var ab = AB(r);
@@ -316,14 +316,14 @@ public static class Pages
         if (parts.Count == 0)
             return;
         double scale = Math.Max(parts.Max(x => Math.Max(x.Part.FrameMsMedian, x.Part.GpuMsMedian ?? 0)), 1);
-        html.Append("<section><h2>Part by part</h2><p class=\"lead\">Frame: the time between two frames. GPU: the time the GPU worked on one. A hitch is a frame longer than twice the usual one.</p>");
+        html.Append("<section><h2>Part by part</h2><p class=\"lead\">Frame: the time between two frames. GPU: the time the GPU worked on one. Over 50 ms, over 100 ms: the frames that took longer, the stutters you see.</p>");
         html.Append("<div class=\"key\"><i class=\"s1\"></i>Frame ms<i class=\"s2\"></i>GPU ms</div>");
-        html.Append("<div class=\"table-scroll\"><table class=\"parts\"><thead><tr><th>Part</th><th class=\"bar-cell\"></th><th>FPS</th><th>Frame ms</th><th>GPU ms</th><th>p95 ms</th><th>Worst ms</th><th>Hitches</th><th>Draws</th><th>Memory MB</th></tr></thead><tbody>");
+        html.Append("<div class=\"table-scroll\"><table class=\"parts\"><thead><tr><th>Part</th><th class=\"bar-cell\"></th><th>FPS</th><th>Frame ms</th><th>GPU ms</th><th>p95 ms</th><th>Worst ms</th><th>Over 50 ms</th><th>Over 100 ms</th><th>Draws</th><th>Memory MB</th></tr></thead><tbody>");
         string last = "";
         foreach (var (s, p) in parts)
         {
             if (Label(s) != last && r.Scenarios.Count > 1)
-                html.Append($"<tr class=\"group\"><th colspan=\"10\">{E(Label(s))}</th></tr>");
+                html.Append($"<tr class=\"group\"><th colspan=\"11\">{E(Label(s))}</th></tr>");
             last = Label(s);
             var shot = $"{s.Name}_{p.Name}";
             string frame = F(p.FrameMsMedian, "0.0");
@@ -335,7 +335,7 @@ public static class Pages
             if (p.GpuMsMedian is { } g)
                 html.Append($"<div class=\"bar s2\" style=\"width:{F(100 * g / scale, "0.0")}%\" title=\"GPU {F(g)} ms\"></div>");
             html.Append("</td>");
-            html.Append($"<td>{F(p.AverageFps, "0.0")}</td><td>{frame}</td><td>{N(p.GpuMsMedian, "0.0")}</td><td>{F(p.FrameMsP95, "0.0")}</td><td>{F(p.FrameMsMax, "0")}</td><td>{p.Hitches}</td><td>{N(p.DrawsMedian, "0")}</td><td>{p.FootprintPeakMb}</td></tr>");
+            html.Append($"<td>{F(p.AverageFps, "0.0")}</td><td>{frame}</td><td>{N(p.GpuMsMedian, "0.0")}</td><td>{F(p.FrameMsP95, "0.0")}</td><td>{F(p.FrameMsMax, "0")}</td><td>{p.FramesOver50Ms}</td><td>{p.FramesOver100Ms}</td><td>{N(p.DrawsMedian, "0")}</td><td>{p.FootprintPeakMb}</td></tr>");
         }
         html.Append("</tbody></table></div></section>");
     }
@@ -471,7 +471,7 @@ public static class Pages
         var flights = r.Scenarios.Where(s => s.Kind == Kind.Flight && !r.Mode.Contains("jump") && timelines.ContainsKey(s.Name)).ToList();
         if (flights.Count == 0)
             return;
-        html.Append("<section><h2>Along the flight</h2><p class=\"lead\">Frame and GPU time as the camera goes, with the slowest frame of each moment. Spikes are hitches.</p>");
+        html.Append("<section><h2>Along the flight</h2><p class=\"lead\">Frame and GPU time as the camera goes, with the slowest frame of each moment. Spikes are stutters.</p>");
         html.Append("<div class=\"key\"><i class=\"s1\"></i>Frame ms<i class=\"s2\"></i>GPU ms</div>");
         foreach (var s in flights)
             html.Append($"<figure class=\"wide\"><figcaption><b>{E(s.Name)}</b></figcaption>{FrameChart(timelines[s.Name])}</figure>");

@@ -246,10 +246,15 @@ report, its page, the comparison and the list of runs all read records. `benchma
 it the same way; for a run with a `report.json` and no `run.json`, the report is read into a record.
 
 A game counts as hung when its last heartbeat is a minute old, three in the Warp Test or with a tool that holds a
-checkpoint ([`Watchdog.cs`](../../shared/benchmark/Watchdog.cs)): `benchmark.sh` and the tab's runs stop it the same way,
-keeping what it measured.
+checkpoint, and as stuck when its heartbeats still come but have said the same moment of the script for as long, with
+no screenshot, checkpoint or part begun or ended there (the game's clock stopped, so a checkpoint waits for ever;
+[`Watchdog.cs`](../../shared/benchmark/Watchdog.cs)). `benchmark.sh` stops either game, keeping what it measured; for a
+stuck one it first records what the game's threads were doing in `stuck.txt` (`stuck-<n>.txt` for the nth game of a
+run; macOS's `sample`, 5 s), which the zip to share holds too. It doesn't look for a stuck game with `hold` or a tool
+that waits at checkpoints (`capture`, `catch`, `passes`). The tab stops a hung game the same way, and a stuck run as Esc
+does, failed, giving the player's game back.
 
-A run fails when the game crashed or hung, a step of the test failed, a vehicle broke apart before it should, a
+A run fails when the game crashed, hung or was stuck, a step of the test failed, a vehicle broke apart before it should, a
 screenshot is missing, the game's log has errors (during the Warp Test the game's own errors are only noted, since
 settings that hold warp back cause them), one of the hooks was skipped (the game's code it changes has moved) or
 failed, the game could not read the run's settings, a screenshot is one colour from edge to edge or 30 % of it or more
@@ -318,7 +323,7 @@ flight's. Fly the free camera to a place, open the console (`\`) and type `bench
 
 | File | |
 |---|---|
-| `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/` | the results: `report.html`, `report.md`, `run.json` (the record), `events.jsonl`, `frames.csv`, `options.json`, the screenshots, `game.log`, `compare.html` and `compare.md` after a comparison, and what the tools wrote |
+| `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/` | the results: `report.html`, `report.md`, `run.json` (the record), `events.jsonl`, `frames.csv`, `options.json`, the screenshots, `game.log`, `stuck.txt` from a stuck game, `compare.html` and `compare.md` after a comparison, and what the tools wrote |
 | `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/<date>.zip` | the run to share |
 | `~/Documents/My Games/Kitten Space Agency/benchmarks/baselines.json`, `noise/` | the baselines' names, and the noise profiles `calibrate` measured on this Mac |
 | `~/Library/Caches/ksa-macos-port/benchmark/instance/` | the game's documents folder for a run that starts the game |

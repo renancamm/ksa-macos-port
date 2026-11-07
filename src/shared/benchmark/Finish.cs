@@ -225,7 +225,8 @@ public static class Finish
                 var f = Path.GetFileName(file);
                 if (f is RunRecord.FileName or "report.md" or "report.html" or EventLog.FileName or FrameLog.FileName or RunOptions.FileName
                         or "settings.toml" or "profile.md" or "trace.md" ||
-                    f.StartsWith("game", StringComparison.Ordinal) && f.EndsWith(".log", StringComparison.Ordinal))
+                    f.StartsWith("game", StringComparison.Ordinal) && f.EndsWith(".log", StringComparison.Ordinal) ||
+                    f.StartsWith("stuck", StringComparison.Ordinal) && f.EndsWith(".txt", StringComparison.Ordinal))
                     File.WriteAllText(Path.Combine(stage, f), File.ReadAllText(file).Replace(home, "~"));
                 else if (f.Contains('_') && f.EndsWith(".png", StringComparison.Ordinal))
                     Facts.Run("/usr/bin/sips", "-s", "format", "jpeg", "-s", "formatOptions", "70", "-Z", "1600", file, "--out",

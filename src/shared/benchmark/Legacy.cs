@@ -88,7 +88,6 @@ public static class Legacy
             FrameMsP95 = Number(w["frameMsP95"]) ?? 0,
             FrameMsP99 = Number(w["frameMsP99"]) ?? 0,
             FrameMsMax = Number(w["frameMsMax"]) ?? 0,
-            Hitches = (int)(Number(w["hitches"]) ?? 0),
             GpuMsMedian = Number(w["gpuMsMedian"]),
             GpuMsP95 = Number(w["gpuMsP95"]),
             DrawsMedian = Number(w["drawsMedian"]),
