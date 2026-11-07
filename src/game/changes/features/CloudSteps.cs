@@ -13,14 +13,14 @@ namespace KsaMetal.Hooks.Features;
 // 650 km), and their dither, which the game's temporal upscaling averages out, stays as fine. Longer steps at the
 // largest one too changed the look of the lower layer seen from orbit, for no time saved.
 [Hook(Phase.Default, Switch = nameof(Settings.FewerCloudSteps))]
-internal static class CloudMarch
+internal static class CloudSteps
 {
     private const float Factor = 1.5f;
 
     public static string Apply(Harmony harmony)
     {
         harmony.Patch(Find.Method(typeof(CloudLayerRenderData), "GetStaticLayerDataToWrite"),
-            postfix: new HarmonyMethod(typeof(CloudMarch), nameof(Postfix)));
+            postfix: new HarmonyMethod(typeof(CloudSteps), nameof(Postfix)));
         return $"steps x{Factor.ToString(CultureInfo.InvariantCulture)} below the largest";
     }
 

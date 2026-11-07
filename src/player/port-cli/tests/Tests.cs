@@ -130,6 +130,18 @@ internal static class Tests
         Equal(ShaderEdits.Status.Fixed, Apply(Replace + "@@ earlier\n    x = h();  // old port\n")["swap"], "upgraded");
         Equal("    [FIXED] a.frag: updated: swapped the call", Printed.Single(), "line");
         Equal("    x = g();  // macOS port\n", File.ReadAllText(Shader("a.frag")), "edited");
+        // Two earlier versions: either is made again
+        const string earlier = "@@ earlier\n    x = h();  // newer port\n@@ earlier\n    x = h();  // old port\n";
+        foreach (var old in new[] { "newer", "old" })
+        {
+            File.WriteAllText(Shader("a.frag"), $"    x = h();  // {old} port\n");
+            Equal(ShaderEdits.Status.Fixed, Apply(Replace + earlier)["swap"], $"upgraded from the {old} one");
+            Equal("    x = g();  // macOS port\n", File.ReadAllText(Shader("a.frag")), $"edited from the {old} one");
+        }
+        // An older version that holds a newer one: the whole older one is replaced, whatever their order
+        File.WriteAllText(Shader("a.frag"), "    x = h();\n    y = 1;\n");
+        Equal(ShaderEdits.Status.Fixed, Apply(Replace + "@@ earlier\n    x = h();\n@@ earlier\n    x = h();\n    y = 1;\n")["swap"], "the longer one");
+        Equal("    x = g();  // macOS port\n", File.ReadAllText(Shader("a.frag")), "nothing of the older one left");
     }
 
     private static void EditDoneIf()

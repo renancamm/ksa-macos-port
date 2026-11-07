@@ -25,7 +25,9 @@ public static class ShaderEdits
     {
         public string Kind = "", Id = "", Path = "", What = "", DoneIf = "", DoneIfLine = "", Source = "";
         public string[] Needs = [];
-        public string? Find, Replace, Earlier;
+        public string? Find, Replace;
+        // What earlier versions of the port made of find
+        public readonly List<string> Earlier = new();
         // A check's expectations: text the file (or another, by its path) contains, and how often words appear
         public readonly List<(string Path, string Text)> Contains = new();
         public readonly List<(string Path, string Word, int[] Counts)> Counts = new();
@@ -121,7 +123,7 @@ public static class ShaderEdits
                     step.Replace = Block();
                     break;
                 case "earlier" when step is { Kind: "edit" }:
-                    step.Earlier = Block();
+                    step.Earlier.Add(Block());
                     break;
                 case "contains" when step is { Kind: "check" }:
                     var other = rest.Length > 0 ? rest : step.Path;
@@ -202,8 +204,9 @@ public static class ShaderEdits
     }
 
     // An edit on one file, which keeps its line endings (the shaders use CRLF). In this order: the replacement there
-    // already is made; an earlier version's replacement there once is made again; done-if there is made; find there
-    // once is replaced; anything else is a [WARN]
+    // already is made; the longest earlier version's replacement there once is made again (one an older version's
+    // holds would leave the rest of it behind); done-if there is made; find there once is replaced; anything else is a
+    // [WARN]
     private static Status Edit(string path, Step step, out string line)
     {
         if (!File.Exists(path))
@@ -221,10 +224,10 @@ public static class ShaderEdits
             return Status.Ok;
         }
         var what = step.What;
-        // The earlier edit first: it can hold find (the line a declaration was added after)
-        if (step.Earlier != null && Count(text, Lines(step.Earlier)) == 1)
+        // The earlier edits first: one can hold find (the line a declaration was added after)
+        if (step.Earlier.Select(Lines).Where(e => Count(text, e) == 1).MaxBy(e => e.Length) is { } earlier)
         {
-            find = Lines(step.Earlier);
+            find = earlier;
             what = $"updated: {what}";
         }
         else if ((step.DoneIf.Length > 0 && text.Contains(Bytes(step.DoneIf), StringComparison.Ordinal)) ||

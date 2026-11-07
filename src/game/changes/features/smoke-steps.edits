@@ -1,8 +1,8 @@
-# For Fewer Smoke Steps (the hooks' SmokeMarch.cs): where the hooks set the trail data's spare fireLightPadding0 to 1
+# For Fewer Smoke Steps (the hooks' SmokeSteps.cs): where the hooks set the trail data's spare fireLightPadding0 to 1
 # (0 without them: the game's step), the smoke's raymarch steps twice as far through trails and 1.5 times as far through
 # explosion gas: the march's own explosionGas, which the check below finds declared just before the step's one use.
 
-@@ check smoke-march-padding VolumetricTrail/SegmentData.glsl
+@@ check smoke-steps-padding VolumetricTrail/SegmentData.glsl
 @@ what the smoke's longer steps
 @@ contains
     // Match the padding after VolumetricTrailData.FireLightCount for 16 byte alignment
@@ -14,12 +14,14 @@
         adaptiveStepSize = adaptiveSegmentRadius > 0.0 ?
             stepSizeScale * (ADAPTIVE_STEP_SIZE_RADIUS_FRACTION * adaptiveSegmentRadius +
 
-@@ edit smoke-march VolumetricTrail/RaymarchVolumetricTrail.comp
+@@ edit smoke-steps VolumetricTrail/RaymarchVolumetricTrail.comp
 @@ what made the smoke's steps longer where the hooks ask
-@@ needs smoke-march-padding
+@@ needs smoke-steps-padding
 @@ find
 #define ADAPTIVE_STEP_SIZE_RADIUS_FRACTION 0.075 // Multiplied by the selected adaptive radius
 @@ replace
+#define ADAPTIVE_STEP_SIZE_RADIUS_FRACTION (segmentParams.fireLightPadding0 != 0 ? (explosionGas ? 0.1125 : 0.15) : 0.075) // Multiplied by the selected adaptive radius; macOS port: Fewer Smoke Steps
+@@ earlier
 #define ADAPTIVE_STEP_SIZE_RADIUS_FRACTION (segmentParams.fireLightPadding0 != 0 ? (explosionGas ? 0.1125 : 0.15) : 0.075) // Multiplied by the selected adaptive radius; macOS port: Lighter Smoke March
 @@ earlier
 #define ADAPTIVE_STEP_SIZE_RADIUS_FRACTION (segmentParams.fireLightPadding0 != 0 ? 0.1125 : 0.075) // Multiplied by the selected adaptive radius; macOS port: Lighter Smoke March
