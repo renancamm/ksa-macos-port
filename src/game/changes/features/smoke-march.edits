@@ -1,4 +1,4 @@
-# For Lighter Smoke March (the hooks' SmokeMarch.cs): where the hooks set the trail data's spare fireLightPadding0 to 1
+# For Fewer Smoke Steps (the hooks' SmokeMarch.cs): where the hooks set the trail data's spare fireLightPadding0 to 1
 # (0 without them: the game's step), the smoke's raymarch steps twice as far through trails and 1.5 times as far through
 # explosion gas: the march's own explosionGas, which the check below finds declared just before the step's one use.
 

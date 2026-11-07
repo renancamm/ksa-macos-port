@@ -50,8 +50,8 @@ render_scale | scale:0.5:2 | 1.0 | upscaling!=off | restart | hooks:RenderScale 
 skip_game_anti_aliasing | bool | true | upscaling=metalfx | restart | hooks:RenderScale | true,true,true | | | Skip Game Anti-Aliasing | Turns off the game's Anti-Aliasing (Display) with MetalFX Temporal, which smooths edges itself.
 
 [performance] Extra Performance | Faster, with small trade-offs.
-lighter_cloud_march | bool | false | | restart | hooks:CloudMarch | true,true,false | | | Lighter Cloud March | Draws nearby clouds in fewer steps. Faster with clouds in view.
-lighter_smoke_march | bool | false | | restart | hooks:SmokeMarch | true,true,false | | | Lighter Smoke March | Draws rocket smoke in fewer steps. Faster in big plumes and explosions; a launch's plume looks a little different up close.
+fewer_cloud_steps | bool | false | | restart | hooks:CloudMarch | true,true,false | | | Fewer Cloud Steps | Draws nearby clouds in fewer, longer steps. Faster with clouds in view.
+fewer_smoke_steps | bool | false | | restart | hooks:SmokeMarch | true,true,false | | | Fewer Smoke Steps | Draws rocket smoke in fewer, longer steps. Faster in big plumes and explosions; a launch's plume looks a little different up close.
 fewer_cloud_shadow_updates | bool | false | | restart | hooks:CloudShadows | true,true,false | | | Fewer Cloud Shadow Updates | Updates the shadows of clouds on the ground less often. A little faster; the shadows lag behind moving clouds.
 lighter_warp_cloud_shadows | bool | false | | restart | hooks:WarpCloudShadows | true,true,false | | | Lighter Warp Cloud Shadows | At very high time warp, cloud shadows aren't rebuilt every frame, so warp keeps its speed. They fall out of place, then catch up.
 lighter_plume_shadows | bool | false | game:plume_trail_shadows | restart | hooks:PlumeShadows | true,true,false | | | Lighter Plume Shadows | With Plume trail shadows (Graphics), rocket smoke casts coarser shadows, only within 3 km. A big rocket's smoke draws about 10-20 % faster.
