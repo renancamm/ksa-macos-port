@@ -23,6 +23,10 @@ game comes back when it ends; Esc stops it. With **Restart for a Clean Run** on,
 benchmark" and the game starts again for it instead, the way `./benchmark.sh` plays it, and quits at the end with the
 report open. **Show report** under the buttons opens the last report.
 
+**Your Game**'s **RECORD** button records your own game instead: 20 seconds of your play from when the settings close,
+with the frame rate, the stutters and what caused them, as a report to share when the game stutters somewhere. Nothing
+in your game changes, and nothing of the benchmark runs before you press it; Esc stops it.
+
 From the port folder, after `./port.sh`:
 
 ```bash
@@ -260,6 +264,7 @@ table when it starts. Around it:
 | `Camera.cs`, `Path.cs`, `Rig.cs` | the camera: its flights through the `@key` places (`Path.cs`), the vehicle camera that follows or watches a vehicle (`Rig.cs`), the cockpit and front views |
 | `Vehicles.cs` | the vehicle directives: launch pads, flights, kittens, staging, explosions |
 | `Probes.cs` | the tools of `investigate`: each watches the parts, the checkpoints or the frames; one that works on a view holds its checkpoint until it is done |
+| `Here.cs` | the tab's recording of the player's own game (`RunOptions.Here`): no script, one part named `here`, everything a run records, a screenshot at its start |
 | `Triggers.cs` | the run's [triggers](#triggers): every frame and after every checkpoint's screenshot, their conditions looked at and their actions run |
 | `GameProfilers.cs` | the game's own profilers, on while a run plays and read every frame into the run's store |
 | `World.cs` | a new game's world, and the sea's waves settled at once for a view standing still |

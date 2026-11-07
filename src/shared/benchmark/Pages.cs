@@ -33,6 +33,7 @@ public static class Pages
         "tour" => "Planetary Tour",
         "warp" => "Warp Test",
         "full" => "Full Run",
+        "here" => "Your Game",
         _ => "Chosen Places"
     };
 
@@ -104,7 +105,8 @@ public static class Pages
         var headline = new List<string>();
         if (h.Fps is { } fps)
             headline.Add($"**{fps:F0} FPS** across the parts{(h.GpuMs is { } gpu ? $", GPU {gpu:F1} ms a frame" : "")}");
-        if (h.Slowest is { } slowest)
+        // The slowest of several parts
+        if (h.Slowest is { } slowest && r.AllParts().Skip(1).Any())
             headline.Add($"slowest {slowest.Scenario.Name} {slowest.Part.Name}, {slowest.Part.AverageFps:F0} FPS");
         if (h.WarpDays > 0)
             headline.Add($"**{h.WarpDays:F1} game days** in time warp");
@@ -146,7 +148,9 @@ public static class Pages
             md.AppendLine();
             if (plain.Any(s => s.Kind == Kind.Views) || r.Mode.Contains("jump"))
                 md.AppendLine("A part of the Mixed Test, or of places jumped to, is the view standing still (the game paused) at the screenshot of that name.");
-            if (plain.Any(s => s.Kind == Kind.Flight) && !r.Mode.Contains("jump"))
+            if (r.Test == "here")
+                md.AppendLine("Your Game is your own play as it happened: no two recordings play the same.");
+            else if (plain.Any(s => s.Kind == Kind.Flight) && !r.Mode.Contains("jump"))
                 md.AppendLine("A part of the Planetary Tour is measured along the way, between two screenshots.");
             md.AppendLine("Frame: time between two frames (median, 95th percentile). GPU: time the GPU worked on a frame. Over 50 ms, over 100 ms: the frames that took longer, the stutters you see. " +
                           "Memory: the game's footprint at its peak, and what KSA Metal allocated for the GPU. Shaders: compiled while measuring (each one a stutter).");
@@ -265,7 +269,7 @@ public static class Pages
             Tile(html, F(fps, "0"), "FPS", "across the measured parts");
         if (h.GpuMs is { } gpu)
             Tile(html, F(gpu), "ms", "GPU time a frame");
-        if (h.Slowest is { } slowest)
+        if (h.Slowest is { } slowest && r.AllParts().Skip(1).Any())
             Tile(html, F(slowest.Part.AverageFps, "0"), "FPS", $"slowest part: {slowest.Scenario.Name} {slowest.Part.Name}");
         if (h.WarpDays > 0)
             Tile(html, F(h.WarpDays, h.WarpDays >= 100 ? "0" : "0.#"), "days", "game time in the Warp Test");

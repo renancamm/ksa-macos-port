@@ -103,6 +103,9 @@ public static class Checks
         {
             var errors = new Dictionary<string, int>();
             bool gpuReset = false, inTimed = false;
+            // A recording of the player's own game: its errors (the game's own, a mod's) are theirs, noted
+            bool own = run.Record.Test == "here";
+            int ownErrors = 0;
             foreach (var raw in lines)
             {
                 var line = Ansi.Replace(raw, "").Trim();
@@ -115,6 +118,11 @@ public static class Checks
                     yield return Fail("settings", $"{name}: the game could not read the run's settings.toml and played with its defaults");
                 if (Network.IsMatch(line))
                     continue;
+                if (own && GameError.IsMatch(line))
+                {
+                    ownErrors++;
+                    continue;
+                }
                 if (line.StartsWith("[ksa-metal ERROR]", StringComparison.Ordinal) || GameError.IsMatch(line) && !inTimed ||
                     line.StartsWith("Unhandled exception", StringComparison.Ordinal))
                 {
@@ -129,6 +137,8 @@ public static class Checks
             if (gpuReset)
                 yield return Fail("gpu-reset", $"{name}: the GPU hung or faulted and macOS reset it: from then on the game's frames were thrown away, " +
                                                "so the numbers after it are not real");
+            if (ownErrors > 0)
+                yield return Note("own-errors", $"{name}: the game logged {ownErrors} error{(ownErrors > 1 ? "s" : "")} while it was played (its own or a mod's)");
             foreach (var (line, count) in errors.Take(10))
                 yield return Fail("log", $"{name}: {line}{(count > 1 ? $" ({count} times)" : "")}");
             if (errors.Count > 10)
