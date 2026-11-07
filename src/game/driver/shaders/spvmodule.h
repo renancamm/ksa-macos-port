@@ -1,6 +1,6 @@
 // A SPIR-V module as a list of instructions, with the few edits the driver's SPIR-V rewrites need (rtspirv.cpp,
-// tessspirv.cpp), and the SPIRV-Tools steps both end with: linking and dead-code elimination. Header-only; no Metal
-// or Vulkan dependencies.
+// tessspirv.cpp), and the SPIRV-Tools steps rtspirv.cpp ends with: linking and dead-code elimination. Header-only; no
+// Metal or Vulkan dependencies.
 #pragma once
 #define SPV_ENABLE_UTILITY_CODE
 #include "spirv.hpp"

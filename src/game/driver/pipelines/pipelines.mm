@@ -361,7 +361,7 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
                                                          : "it has only one of the control and evaluation stages");
         return nullptr;
     }
-    KTessStages tessPlain;
+    KTessStages tessStages;
     bool passthrough = false;
     KTranslated htr, dtr, tmodes;
     if (tess) {
@@ -373,7 +373,7 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
         if (hm.hasDomain) { tmodes.quads = hm.quads; tmodes.hasDomain = true; }
         if (hm.hasWinding && !tmodes.hasWinding) { tmodes.cw = hm.cw; tmodes.hasWinding = true; }
         if (hm.hasPartition && !tmodes.hasPartition) { tmodes.partition = hm.partition; tmodes.hasPartition = true; }
-        if (!buildTessKernels(dev, ci, vs, tcs, layout, &tessPlain, &htr, tmodes, &passthrough)) return nullptr;
+        if (!buildTessKernels(dev, ci, vs, tcs, layout, &tessStages, &htr, tmodes, &passthrough)) return nullptr;
     }
     if (!vs) {
         KERR("graphics pipeline without vertex shader");
@@ -551,14 +551,14 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
     p->primitive = primitiveType(topo);
     if (tess) {
         p->tess = true;
-        p->tessPlain = tessPlain;
+        p->tessStages = tessStages;
         p->tessInCP = ci->pTessellationState ? ci->pTessellationState->patchControlPoints : 3;
         p->tessOutCP = tmodes.outputVertices ? tmodes.outputVertices : p->tessInCP;
         p->tessQuads = tmodes.quads;
         p->tessPassthrough = passthrough;  // the control points stay as the vertex kernel wrote them
         KLOG(1, "tessellation pipeline: %u -> %u control points, strides vertex %lu control %lu patch %lu%s", p->tessInCP,
-             p->tessOutCP, (unsigned long)tessPlain.vertexStride, (unsigned long)tessPlain.controlStride,
-             (unsigned long)tessPlain.patchStride, p->tessPassthrough ? ", passthrough control stage" : "");
+             p->tessOutCP, (unsigned long)tessStages.vertexStride, (unsigned long)tessStages.controlStride,
+             (unsigned long)tessStages.patchStride, p->tessPassthrough ? ", passthrough control stage" : "");
     }
     p->triangleFan = topo == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
     p->vertexUsesDrawId = vtr.usesDrawId;

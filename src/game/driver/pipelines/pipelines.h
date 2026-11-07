@@ -41,7 +41,7 @@ struct KPipeline {
     bool triangleFan = false;  // emulated with a generated index buffer
     // Tessellation: the vertex and control stages as compute kernels
     bool tess = false;
-    KTessStages tessPlain;
+    KTessStages tessStages;
     id<MTLRenderPipelineState> renderEarly = nil;  // its fragment function tests depth first (kmtlEarlyFragmentTests)
     uint32_t tessInCP = 3, tessOutCP = 3;
     bool tessQuads = false;

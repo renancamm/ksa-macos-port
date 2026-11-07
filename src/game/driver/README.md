@@ -314,7 +314,7 @@ The complete mapping:
 | MSAA resolves | a pass that resolves signals an `MTLEvent`; the next compute or blit encoder that reads fragment output waits on it |
 | Render pass, dynamic rendering | `MTLRenderPassDescriptor` |
 | Multiview | one draw per view |
-| Tessellation | vertex and control stages as compute kernels into scratch buffers, `drawPatches` with the evaluation shader as post-tessellation vertex function; with a passthrough control stage, the vertex shader linked into the evaluation shader and `drawIndexedPatches` with the index buffer as control point index buffer |
+| Tessellation | vertex and control stages as compute kernels into scratch buffers, `drawPatches` with the evaluation shader as post-tessellation vertex function; a passthrough control stage loses its copies, and the evaluation stage reads the vertex kernel's output |
 | Acceleration structures, ray query | Metal acceleration structures placed in their buffer's heap (`compact_ray_tracing_memory`; private heaps only, else standalone); instances converted on the CPU to indirect instance descriptors |
 | Ray tracing pipeline | one compute kernel with ray queries (`rtspirv.cpp`) |
 | Triangle fans | a shared (0, i, i+1) index buffer |

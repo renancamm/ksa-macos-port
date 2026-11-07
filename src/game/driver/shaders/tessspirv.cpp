@@ -48,7 +48,7 @@ static std::set<uint32_t> rooted(const Module& m, uint32_t var) {
     return ids;
 }
 
-// A type's full structure, decorations that shape its layout included, comparable across modules
+// A type's full structure, decorations that shape its layout included
 static std::string deepSig(const Module& m, uint32_t id) {
     const Inst* t = m.def(id);
     if (!t) return "?";

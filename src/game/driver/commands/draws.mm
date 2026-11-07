@@ -56,7 +56,7 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
         maxVerts = (uint64_t)t.count * t.instances;
     }
     uint64_t maxPatches = maxVerts / p->tessInCP;
-    const KTessStages& st = p->tessPlain;
+    const KTessStages& st = p->tessStages;
     if (!maxPatches || !st.vertex[idxType] || !st.control) return;
     // Scratch layout: vertex outputs, control outputs, per-patch outputs, tessellation factors
     auto align = [](uint64_t n) { return kmtlAlignUp<uint64_t>(n, 256); };
