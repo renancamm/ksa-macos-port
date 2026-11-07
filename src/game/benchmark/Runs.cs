@@ -33,7 +33,11 @@ public static class Runs
 {
     public record Result(string Folder, bool Passed, bool Stopped, string Summary, string Outcome, string Date);
 
-    private enum Mode { None, Script, InGame, Restarted }
+    // InGame: a test in the running game; Here: the player's own game recorded as it plays (Director's here mode)
+    private enum Mode { None, Script, InGame, Restarted, Here }
+
+    // How long the Mac Port tab's recording of the player's game lasts
+    public const int HereSeconds = 20;
 
     private const string SafetySave = "Before the benchmark";
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
@@ -41,7 +45,7 @@ public static class Runs
     private static string _folder = "";
     private static bool _installed;
     private static Mode _mode;
-    private static bool _firstFrame = true, _startRequested;
+    private static bool _firstFrame = true, _startRequested, _hereRequested, _awake;
     private static Director? _run;
     private static string _out = "";
     private static string _test = "mixed";
@@ -101,7 +105,7 @@ public static class Runs
     {
         if (!_installed)
             return "The benchmark is not in this app, or this KSA version moved the game's code it needs (logs/console.log says which).";
-        if (_run != null || _startRequested || _finishing is { IsCompleted: false })
+        if (_run != null || _startRequested || _hereRequested || _finishing is { IsCompleted: false })
             return "A benchmark is running.";
         if (_mode == Mode.Script)
             return "This game is a benchmark.sh run.";
@@ -120,6 +124,27 @@ public static class Runs
             return $"The benchmark's tests can't be read ({e.Message}): make the app again with port.sh.";
         }
         return null;
+    }
+
+    // Why the player's game can't be recorded now, or null
+    public static string? CannotRecord()
+    {
+        if (!_installed)
+            return "The benchmark is not in this app, or this KSA version moved the game's code it needs (logs/console.log says which).";
+        if (_run != null || _startRequested || _hereRequested || _finishing is { IsCompleted: false })
+            return "A benchmark is running.";
+        if (_mode == Mode.Script)
+            return "This game is a benchmark.sh run.";
+        if (Universe.CurrentSystem == null)
+            return "No game is loaded.";
+        return null;
+    }
+
+    // The tab's Record: the player's game recorded from when the settings have closed
+    public static void RecordFromTab()
+    {
+        _hereRequested = true;
+        GameSettings.Close();
     }
 
     public static void StartFromTab(string test, bool restart)
@@ -236,6 +261,12 @@ public static class Runs
             _startRequested = false;
             BeginInGame();
         }
+        // Once the settings and the Esc menu are closed: the player plays on
+        if (_hereRequested && !GameSettings.Show && !EscMenu.Open)
+        {
+            _hereRequested = false;
+            BeginHere();
+        }
         if (_finishing is { IsCompleted: true })
             Finished();
         if (_run == null)
@@ -245,14 +276,31 @@ public static class Runs
             _watching = true;
             new Thread(WatchForHang) { IsBackground = true, Name = "Benchmark watch" }.Start();
         }
+        // A display that sleeps stops the frames (benchmark.sh does the same for its runs); a recording of the player's
+        // game leaves their Mac's sleep alone
+        if (!_awake && _mode is Mode.InGame or Mode.Restarted)
+        {
+            _awake = true;
+            try
+            {
+                Process.Start("/usr/bin/caffeinate", ["-d", "-i", "-w", Environment.ProcessId.ToString(Inv)]);
+            }
+            catch (Exception e)
+            {
+                Log($"BenchmarkRun: caffeinate: {e.Message}");
+            }
+        }
         // The watch found the run stuck
         if (_stuck is { } stuck && stuck.Run == _run)
             _run.Stop(stuck.Why, failed: true);
-        // Esc stops a run from the game (it opens the settings)
+        // Esc stops a run from the game (it opens the settings); a recording of the player's game leaves their menu open
         else if (_mode != Mode.Script && (GameSettings.Show || EscMenu.Open))
         {
-            GameSettings.Close();
-            EscMenu.Open = false;
+            if (_mode != Mode.Here)
+            {
+                GameSettings.Close();
+                EscMenu.Open = false;
+            }
             _run.Stop("stopped with Esc");
         }
         else
@@ -264,22 +312,13 @@ public static class Runs
 
     private static void WatchForHang()
     {
-        // A display that sleeps stops the frames (benchmark.sh does the same for its runs)
-        try
-        {
-            Process.Start("/usr/bin/caffeinate", ["-d", "-i", "-w", Environment.ProcessId.ToString(Inv)]);
-        }
-        catch (Exception e)
-        {
-            Log($"BenchmarkRun: caffeinate: {e.Message}");
-        }
-        // Any test of the tab's may have time warp (full has the Warp Test)
-        int limit = Watchdog.Limit(_test is "warp" or "full");
         while (true)
         {
             Thread.Sleep(1000);
             if (_run is not { Done: false } run)
                 continue;
+            // The run's test may have time warp (full has the Warp Test)
+            int limit = Watchdog.Limit(_test is "warp" or "full");
             var played = EventLog.Read(_out);
             if (Watchdog.Hung(played, 1, limit) is not { } stale)
             {
@@ -292,6 +331,14 @@ public static class Runs
                         Log($"BenchmarkRun: the stuck game's sample: {why}");
                     _stuck = new StuckRun(run, $"stuck{Watchdog.Where(still)} (its clock stood still for {limit} s)");
                 }
+                continue;
+            }
+            // The player's own game, recorded: theirs to wait for or quit, never stopped by the benchmark
+            if (_mode == Mode.Here)
+            {
+                if (_stuck?.Run != run)
+                    Log($"BenchmarkRun: no frame for {limit} s in the recording");
+                _stuck = new StuckRun(run, $"hung{Watchdog.Where(stale)} (no frame for {limit} s)");
                 continue;
             }
             // What the director measured is in its events and frames, and the player's game is in the save on disk
@@ -406,6 +453,38 @@ public static class Runs
         }
     }
 
+    // The player's game recorded as it plays: nothing saved, loaded or changed
+    private static void BeginHere()
+    {
+        // Never over a run
+        if (_run != null || _mode != Mode.None)
+            return;
+        _mode = Mode.Here;
+        _test = "here";
+        _out = NewRunFolder();
+        var options = _options = new RunOptions
+        {
+            Out = _out, Here = HereSeconds, Test = _test, Mode = Lineup.Name(Kind.Flight), Only = "here", Stay = true, InGame = true,
+            NoiseFolder = Path.GetDirectoryName(_out) ?? "",
+        };
+        // The settings the game runs with, as they are on disk (the player's own file, not written again)
+        var settings = Path.Combine(Constants.DocumentsFolderPath, "settings.toml");
+        if (File.Exists(settings))
+            File.Copy(settings, Path.Combine(_out, "settings.toml"), true);
+        _system = Universe.CurrentSystem?.Id ?? "?";
+        Hosted(options, "in the running game, as it was played, from its settings");
+        Console.Out.Flush();
+        _logStart = File.Exists(ConsoleLog) ? new FileInfo(ConsoleLog).Length : 0;
+        Log($"BenchmarkRun: recording this game for {HereSeconds} s, into {_out.Replace(Home, "~")}");
+        _run = Director.Begin(options);
+        Memory.Start();
+        if (_run == null)
+        {
+            Log("BenchmarkRun: nothing to record");
+            _mode = Mode.None;
+        }
+    }
+
     // The player's game as it was, once (also when that fails halfway: the save on disk then has it)
     private static void PutBack()
     {
@@ -500,7 +579,7 @@ public static class Runs
         if (mode == Mode.InGame)
             PutBack();
         var events = new EventLog(_out, 1);
-        events.Add("ended", text: mode == Mode.InGame ? "kept running" : "quit normally");
+        events.Add("ended", text: mode is Mode.InGame or Mode.Here ? "kept running" : "quit normally");
         events.Add("memory", text: Memory.Text());
         CopyLog(mode);
         var output = _out;
@@ -515,7 +594,7 @@ public static class Runs
         if (!File.Exists(ConsoleLog))
             return;
         using var log = new FileStream(ConsoleLog, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        log.Seek(mode == Mode.InGame ? Math.Min(_logStart, log.Length) : 0, SeekOrigin.Begin);
+        log.Seek(mode is Mode.InGame or Mode.Here ? Math.Min(_logStart, log.Length) : 0, SeekOrigin.Begin);
         File.WriteAllText(Path.Combine(_out, "game.log"), new StreamReader(log).ReadToEnd().Replace(Home, "~"));
     }
 
@@ -525,7 +604,7 @@ public static class Runs
             Log($"BenchmarkRun: the report could not be written: {e.InnerException ?? e}");
         _finishing = null;
         _last = ReadResult(_out);
-        Log($"BenchmarkRun: {(_last.Passed ? "passed" : "done, with problems")}, report in {_out.Replace(Home, "~")}");
+        Log($"BenchmarkRun: {(_last.Passed ? "passed" : _last.Stopped ? "stopped" : "done, with problems")}, report in {_out.Replace(Home, "~")}");
         if (_mode == Mode.Restarted)
         {
             Show(_out);

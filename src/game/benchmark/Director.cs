@@ -188,6 +188,13 @@ public partial class Director
         _events = new EventLog(_outDir, options.Session);
         if (options.Explore)
             _explorer = new Explorer(_outDir);
+        // The player's game as it plays: no script
+        if (options.Here > 0)
+        {
+            Record();
+            Log(FormattableString.Invariant($"recording the game as it plays for {options.Here:0} s, GPU times {(DriverStats.Available ? "available" : "not available")}, {_triggers!.Name}"));
+            return;
+        }
         if (_explorer != null || string.IsNullOrEmpty(script))
             return;
         if (!File.Exists(script))
@@ -248,23 +255,44 @@ public partial class Director
         if (_only != null)
             _sections.RemoveAll(section => !_only.ContainsKey(section.Name));
         _waitFor = options.WaitForRecording;
-        Directory.CreateDirectory(_outDir);
-        _frames = new FrameLog(_outDir, options.Session) { Pass = _pass };
-        // Waits from a millisecond on: shorter ones are the driver's ordinary work
-        _store = RunStore.For(_outDir);
-        _drain = DriverStats.OpenDrain(1);
-        _profilers = GameProfilers.Start(_store, Log);
-        _runtime = new RuntimeCounters();
-        var context = new ProbeContext(_outDir, Error, Log);
-        _probes = Probes.For(options, context);
-        _triggers = new TriggerRunner(Triggers.For(options), options.Against, options.Session, context, _events);
-        _probes.Add(_triggers);
-        _active = true;
+        Record();
         // A directive without a handler fails the run at once, before anything plays
         foreach (var missing in UnhandledDirectives())
             Error(missing);
         Log($"{_sections.Count} scenarios, {options.Mode}{(_shots ? "" : ", no screenshots")}{(_hold != null ? $", holding at {_hold}" : "")}, " +
             $"GPU times {(DriverStats.Available ? "available" : "not available")}{string.Concat(_probes.Select(p => ", " + p.Name))}");
+    }
+
+    // What a run records, on from here: its frames, its store, KSA Metal's drain, the game's profilers and the runtime's
+    // counters, the tools and the triggers
+    private void Record()
+    {
+        try
+        {
+            Channels();
+        }
+        catch
+        {
+            // Nothing left on in the game or its driver
+            Abandon();
+            throw;
+        }
+        _active = true;
+    }
+
+    private void Channels()
+    {
+        Directory.CreateDirectory(_outDir);
+        _frames = new FrameLog(_outDir, _options.Session) { Pass = _pass };
+        _store = RunStore.For(_outDir);
+        // Waits from a millisecond on: shorter ones are the driver's ordinary work
+        _drain = DriverStats.OpenDrain(1);
+        _profilers = GameProfilers.Start(_store, Log);
+        _runtime = new RuntimeCounters();
+        var context = new ProbeContext(_outDir, Error, Log);
+        _probes = Probes.For(_options, context);
+        _triggers = new TriggerRunner(Triggers.For(_options), _options.Against, _options.Session, context, _events);
+        _probes.Add(_triggers);
     }
 
     public void OnFrame()
@@ -306,6 +334,11 @@ public partial class Director
         _explorer?.Frame();
         if (!_active)
             return;
+        if (_options.Here > 0)
+        {
+            HereFrame();
+            return;
+        }
         if (!_wall.IsRunning && _waitFor)
         {
             // Views: the game paused from its first frame, so that the wait leaves nothing behind in the clouds and the sea
@@ -645,8 +678,9 @@ public partial class Director
     {
         if (Done)
             return;
-        _events.Add(failed ? "error" : "stopped", ScenarioName, text: why);
+        _events.Add(failed ? "error" : "stopped", ScenarioName ?? (_options.Here > 0 ? HereName : null), text: why);
         EndSection();
+        CloseHere();
         _active = false;
         _frames?.Dispose();
         _frames = null;

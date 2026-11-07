@@ -154,7 +154,7 @@ internal sealed class TriggerRunner : IProbe
         // own comes after them. The size counts once the driver has written all of the file
         _holding = true;
         var work = Probes.Then(Probes.Until(() => _queue.Count == 0 && _working == null && !DriverStats.PassDumping() && !DriverStats.Capturing() &&
-                                                  Written(view.Path), WorkSeconds), () =>
+                                                  Images.Written(view.Path), WorkSeconds), () =>
         {
             // A stop that came meanwhile (a GPU error): nothing more
             if (_stop != null || Images.Read(view.Path) == null)
@@ -193,25 +193,6 @@ internal sealed class TriggerRunner : IProbe
         });
     }
 
-    // Whether KSA Metal has written all of a PNG: its last chunk, IEND, is there (cheaper than reading the image)
-    private static bool Written(string path)
-    {
-        try
-        {
-            using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            if (file.Length < 12)
-                return false;
-            var end = new byte[8];
-            file.Seek(-8, SeekOrigin.End);
-            file.ReadExactly(end);
-            return end[0] == 'I' && end[1] == 'E' && end[2] == 'N' && end[3] == 'D';
-        }
-        catch (IOException)
-        {
-            return false;
-        }
-    }
-
     // A heavy action under this name in caught/, and the wait for its work; null when it can't run. For the log: what
     // it was for
     private Wait? Start(TriggerAction action, string name, string label)
@@ -225,7 +206,7 @@ internal sealed class TriggerRunner : IProbe
                 var image = path + ".png";
                 if (!DriverStats.Screenshot(image))
                     return null;
-                return Probes.Until(() => Written(image), 10);
+                return Probes.Until(() => Images.Written(image), 10);
             case TriggerAction.Passes or TriggerAction.Capture when DriverStats.GpuErrors() > 0:
                 _context.Log($"{label}: no {Triggers.Name(action)}: the GPU has failed and refuses this game's work");
                 return null;

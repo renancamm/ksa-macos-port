@@ -31,6 +31,25 @@ public static class Images
 
     private static readonly byte[] Signature = { 137, 80, 78, 71, 13, 10, 26, 10 };
 
+    // Whether KSA Metal has written all of a PNG: its last chunk, IEND, is there (cheaper than reading the image)
+    public static bool Written(string path)
+    {
+        try
+        {
+            using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            if (file.Length < 12)
+                return false;
+            var end = new byte[8];
+            file.Seek(-8, SeekOrigin.End);
+            file.ReadExactly(end);
+            return end[0] == 'I' && end[1] == 'E' && end[2] == 'N' && end[3] == 'D';
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+    }
+
     // The image in a PNG file; null when there is none or it cannot be read (the driver may still be writing it)
     public static Image? Read(string path)
     {

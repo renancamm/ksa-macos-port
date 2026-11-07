@@ -53,6 +53,7 @@ internal static class Tests
             ("the game's zones", ZoneSums),
             ("the triggers' rules", Rules),
             ("a part a trigger disturbed", Disturbed),
+            ("a recording of the player's game", YourGame),
         };
         foreach (var (name, run) in tests)
         {
@@ -906,5 +907,34 @@ internal static class Tests
         var all = Run("disturbed everywhere");
         new EventLog(all, 1).Add("disturbed", "earth", "earth1", text: "the trigger's passes worked while it measured");
         Equal(0, Finished(all).Scenarios.Single().Parts.Count, "no part left");
+    }
+
+    private static void YourGame()
+    {
+        // As the tab's Record leaves it (Runs.BeginHere, Director's here mode): one scenario and part, here, in the running game
+        var dir = Path.Combine(_scratch, "here");
+        Directory.CreateDirectory(dir);
+        new RunOptions { Test = "here", Mode = "flight", Only = "here", InGame = true, Stay = true, Here = 20, Facts = [new("port settings", "defaults")] }.Write(dir);
+        var events = new EventLog(dir, 1);
+        events.Add("start", text: "in the running game, as it was played, from its settings");
+        events.Add("session");
+        events.Add("scenario", "here", text: "flight");
+        events.Add("open", "here", "here", game: 100, value: 0);
+        using (var frames = new FrameLog(dir, 1))
+            for (int i = 0; i < 100; i++)
+                frames.Add(i * 0.016, "here", "here", "Measure", 16, null, null);
+        events.Add("close", "here", "here");
+        events.Add("done");
+        events.Add("ended", text: "kept running");
+        // A mod's error while the player played: theirs, noted, not the run's problem
+        File.WriteAllText(Path.Combine(dir, "game.log"), "12:00:01 ERROR SomeMod: could not find its part\n");
+        var record = Finished(dir);
+        Equal(Status.Passed, record.Status, "passed");
+        Contains(Notes(record), "the game logged 1 error while it was played", "the player's own errors noted");
+        Equal("Your Game", Pages.Title(record), "its title");
+        Equal(100, Part(record).Frames, "its frames");
+        var report = File.ReadAllText(Path.Combine(dir, "report.md"));
+        Contains([report], "no two recordings play the same", "what it is");
+        Check(!report.Contains("slowest", StringComparison.Ordinal), "no slowest of one part");
     }
 }

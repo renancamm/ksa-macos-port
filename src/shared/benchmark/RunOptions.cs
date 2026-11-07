@@ -54,6 +54,9 @@ public sealed class RunOptions
     public bool Trace { get; set; }
     // A screenshot every that many seconds of the script's clock, into film/, to see moves
     public double Film { get; set; }
+    // No script: the player's own game recorded as it plays for that many seconds, one part named here, from the Mac Port
+    // tab (Director's here mode); nothing of the game is changed
+    public double Here { get; set; }
     // No script: the explore mode's console command instead (Explore.cs)
     public bool Explore { get; set; }
     // The game goes on when the script ends (Done), instead of quitting
