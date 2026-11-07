@@ -8,7 +8,9 @@ namespace KsaMetal.Hooks.Features;
 // MiB>[,<minimum segments>]): the raymarch reads a dense cell of smoke from a baked lattice when the cell has a
 // volume cache, and otherwise walks a subset of the cell's segments, about five times slower. The game gives each of
 // the three lattice sizes an 8 MiB atlas (60 caches of 16^3, 481 of 8^3, 3,855 of 4^3) and caches only cells with 33
-// segments or more.
+// segments or more. Simpler Dense Smoke (simpler_dense_smoke, Extra Performance) sets 0,0,16: no room for the 16^3
+// and 8^3 caches, twice the room for the 4^3 ones; the densest smoke about 4 % faster on an M5 at Balanced, a dense
+// carpet a little coarser seen from afar. trail_caches set wins over it.
 [Hook(Phase.Default)]
 internal static class TrailCaches
 {
@@ -17,6 +19,9 @@ internal static class TrailCaches
     public static string Apply(Harmony harmony)
     {
         _values = Array.ConvertAll(Settings.TrailCaches, v => (int)v);
+        bool simpler = _values.Length == 0 && Settings.SimplerDenseSmoke;
+        if (simpler)
+            _values = [0, 0, 16];
         if (_values.Length == 0)
             return "game's";
         // With no room for any cache the game's atlases would be 1x1x1 texels, which its renderer refuses at start
@@ -25,7 +30,7 @@ internal static class TrailCaches
                 " leaves no room for any cache, which the game can't start with)";
         harmony.Patch(Find.Method(typeof(VolumetricTrailVolumeCache), "CreateVolumeCacheAtlasResources"),
             prefix: new HarmonyMethod(typeof(TrailCaches), nameof(Prefix)));
-        return string.Join(',', _values);
+        return (simpler ? "simpler dense smoke, " : "") + string.Join(',', _values);
     }
 
     private static void Prefix(VolumetricTrailVolumeCache __instance)
