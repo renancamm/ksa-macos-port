@@ -326,7 +326,7 @@ tabs; each row's tooltip says what it changes and what it costs.
 |---|---|
 | Presets | Performance, Balanced and Quality, and Game Defaults, which sets them back: the game's graphics settings and the port's, changed together. Auto Memory Saving, a second preset beside them, sets the Memory rows to suit the Mac's memory, on from the first start |
 | Upscaling | Apple's MetalFX and the Render Scale, off by default, with a picture of the 3D view's size against the window's |
-| Extra Performance | small trade-offs for a higher frame rate; off by default, on in Performance |
+| Extra Performance | faster, with small trade-offs; off by default, on in Performance |
 | Optimizations | faster, with no visible change; on by default |
 | Memory | less memory, for Macs short of it; Auto Memory Saving sets them, and a trade-off tag marks a row with a cost |
 | GPU Features | what the Mac's GPU and display offer the game, with the game's own settings still deciding |

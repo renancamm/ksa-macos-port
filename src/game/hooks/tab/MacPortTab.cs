@@ -511,7 +511,7 @@ internal static partial class MacPortTab
         var title = count > 0 ? memory.Label + " *" : memory.Label;
         // The switch past the panel's right edge rather than over the name, with a very large interface scale
         float left = MathF.Max(width - padX * 2f - gap - control, LabelWidth(title));
-        var lines = WrapSmall("Memory optimization preset for this Mac.", left);
+        var lines = WrapSmall("Fits the game to this Mac's memory.", left);
         float titleHeight = LabelHeight(), line = MathF.Round(SmallHeight());
         float height = MathF.Max(titleHeight + space + line * lines.Length, ConsoleStyle.FrameHeightPx) + padY * 2f;
         var end = at + new float2(width, height);

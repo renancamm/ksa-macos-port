@@ -37,11 +37,11 @@
 #   tag       a word the tab shows after the row's label: trade-off, on a Memory row with a cost a player can see
 #   label     its row in the tab; help: the row's tooltip and the file's comment, which the values' help follows
 
-[presets] Presets | Sets the game's graphics and this tab together.
+[presets] Presets | The game's graphics and this tab, set together.
 preset | choice:performance=Performance/balanced=Balanced/quality=Quality/game_defaults=Game Defaults | game_defaults | | live | tab | | | | Preset | The preset card picked last. Its name gets a * when settings differ from it.
 auto_memory_saving | bool | true | | live | tab | | | | Auto Memory Saving | Sets the Memory rows for this Mac's memory. With 8 GB or less, it also lowers texture and shadow sizes.
 
-[upscaling] Upscaling | Draw the 3D view smaller and scale it up.
+[upscaling] Upscaling | A smaller 3D view, scaled up to the display.
 upscaling | choice:off=Off/metalfx=Temporal/spatial=Spatial | off | | restart | hooks:RenderScale | spatial,metalfx,off | | | MetalFX | Draws the 3D view at the Render Scale and scales it up with Apple's MetalFX.
     off | The game's own: the 3D view is drawn at the window's size.
     metalfx | Builds each image from the ones before it: the sharpest, and it smooths edges. Fast motion can look a little soft.
@@ -49,7 +49,7 @@ upscaling | choice:off=Off/metalfx=Temporal/spatial=Spatial | off | | restart | 
 render_scale | scale:0.5:2 | 1.0 | upscaling!=off | restart | hooks:RenderScale | 0.5,0.75,1.0 | | | Render Scale | The 3D view's size before MetalFX scales it up. Lower is faster and softer. Above 100 % is sharper on Retina displays, and much slower.
 skip_game_anti_aliasing | bool | true | upscaling=metalfx | restart | hooks:RenderScale | true,true,true | | | Skip Game Anti-Aliasing | Turns off the game's Anti-Aliasing (Display) with MetalFX Temporal, which smooths edges itself.
 
-[performance] Extra Performance | Small trade-offs for a higher frame rate.
+[performance] Extra Performance | Faster, with small trade-offs.
 lighter_cloud_march | bool | false | | restart | hooks:CloudMarch | true,true,false | | | Lighter Cloud March | Draws nearby clouds in fewer steps. Faster with clouds in view.
 lighter_smoke_march | bool | false | | restart | hooks:SmokeMarch | true,true,false | | | Lighter Smoke March | Draws rocket smoke in fewer steps. Faster in big plumes and explosions; a launch's plume looks a little different up close.
 fewer_cloud_shadow_updates | bool | false | | restart | hooks:CloudShadows | true,true,false | | | Fewer Cloud Shadow Updates | Updates the shadows of clouds on the ground less often. A little faster; the shadows lag behind moving clouds.
@@ -83,7 +83,7 @@ in_place_shader_parameters | bool | true | | restart | driver | | | | In-Place S
 idle_thread_sleep | bool | true | | restart | hooks:WorkerPark | | | | Idle Thread Sleep | Background threads sleep while they wait, instead of keeping the CPU busy. Less CPU use.
 loading_screen_fps_cap | bool | true | | restart | hooks:LoadingPace | | | | Loading Screen FPS Cap | Draws the loading screen at 30 FPS. The game loads about 2 seconds faster.
 
-[memory] Memory | Reduce memory usage.
+[memory] Memory | Less memory use.
 textures_kept_on_disk | bool | false | | restart | ktx-shim | | true,true,false | | Textures Kept on Disk | Lets macOS drop textures from memory and read them back when needed. About 3.5 GB less.
 release_freed_memory | bool | false | | restart | launcher, hooks:FreedMemory | | true,true,false | | Release Freed Memory | Gives memory the game frees back to macOS at once, instead of keeping it for reuse.
 compact_ray_tracing_memory | bool | false | ray_queries | restart | driver | | true,true,false | | Compact Ray Tracing Memory | Ray tracing data for grass and the cockpit shares memory the game already set aside. About 0.4 GB less.
@@ -100,7 +100,7 @@ ray_queries | bool | true | | restart | driver | | | | Ray Queries | Lets the ga
 ray_tracing | bool | true | ray_queries | restart | driver | | | | Ray Tracing | Lets the game use ray tracing in the cockpit. Its IVA Ray Tracing setting (Graphics) still decides.
 hdr_output | bool | true | | restart | driver | | | | HDR Output | Lets the game show HDR on a display that has it. Its HDR (Experimental) setting (Display) still decides.
 
-[interface] Interface | Additional UI features.
+[interface] Interface | Additional interface features.
 fit_hud_to_display | bool | true | | live | hooks:HudLayout | | | | Fit HUD to Display | Keeps the flight HUD's fullscreen size in a window, scaled to fit narrower displays. If panels overlap, lower HUD Scale (Interface).
 metal_performance_hud | bool | false | | restart | metal:MTL_HUD_ENABLED | | | | Metal Performance HUD | Apple's overlay with the frame rate, GPU time and memory.
 
