@@ -107,7 +107,7 @@ metal_performance_hud | bool | false | | restart | metal:MTL_HUD_ENABLED | | | |
 [benchmark] Benchmark | Test your settings and get a report. Esc to stop.
 report_detail | choice:standard=Standard/profile=Profile/memory=Memory | standard | | live | tab | | | | Report Detail | What a test's report holds besides its frame rate.
     standard | Frame rate, frame times and screenshots.
-    profile | Also plays the test twice more to name what takes the GPU's time. Restarts and quits, as Restart for a Clean Run.
+    profile | Also plays the test twice more to name what takes the GPU's time, with a timeline of every frame. Restarts and quits.
     memory | Also lists what holds the game's memory at each view.
 restart_for_a_clean_run | bool | false | | live | tab | | | | Restart for a Clean Run | On: saves your game as "Before the benchmark", restarts without mods, and quits at the end. Off: runs in this game.
 
