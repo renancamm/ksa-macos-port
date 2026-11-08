@@ -590,36 +590,55 @@ internal static partial class MacPortTab
         ("full", "Full", "9 min", "All three, one after the other.", "The Mixed Test, the Planetary Tour and the Warp Test, in one game."),
     ];
 
-    // The Benchmark section's table: a row for each test with its buttons, then what the last run left, and under them
-    // why no test can start
+    // A table's header: its columns' names, small and muted, over a hairline across the content's width. Returns where
+    // its rows start
+    private static float TableHeader(float y, params (string Name, float X)[] columns)
+    {
+        float s = ConsoleStyle.EffectiveInterfaceScale, left = ImGui.GetCursorScreenPos().X;
+        var draw = ImGui.GetWindowDrawList();
+        ConsoleStyle.PushSignatureFont();
+        foreach (var (name, x) in columns)
+            draw.AddText(new float2(x, y), ConsoleStyle.ApplyAlpha(ConsoleStyle.TextMutedU32), name);
+        ConsoleStyle.PopFont();
+        y += SmallHeight() + 6f * s;
+        draw.AddLine(new float2(left + ConsoleWidgets.RowLabelInsetPx, y), new float2(left + ConsoleStyle.ContentAvailWidth(), y),
+            ConsoleStyle.ApplyAlpha(ConsoleStyle.HairlineU32), ConsoleStyle.WindowBorderThicknessPx);
+        return y;
+    }
+
+    // The heading of the Benchmark section's settings, under its tables
+    private static void AdvancedHeader()
+    {
+        float s = ConsoleStyle.EffectiveInterfaceScale;
+        var at = ImGui.GetCursorScreenPos();
+        float y = TableHeader(at.Y + 14f * s, ("Advanced Settings", at.X + ConsoleWidgets.RowLabelInsetPx));
+        ImGui.SetCursorScreenPos(new float2(at.X, y));
+        Gap(4f * s);
+    }
+
+    // The Benchmark section's tables: the tests with their buttons and under them why none can start, then the newest
+    // reports. Its settings follow, under Advanced Settings
     private static void DrawBenchmark()
     {
         var temporary = _temporary.GetValue(null);
         bool changes = temporary != null && (bool)_hasAnyTabChanged.Invoke(null, [temporary])!;
         var why = changes ? "Apply or discard the changes first." : Runs.CannotStart();
         var whyNot = changes ? "Apply or discard the changes first." : Runs.CannotRecord();
-        var last = Runs.Last;
-        const string show = "SHOW REPORT", open = "OPEN";
+        var recent = Runs.Recent;
+        const string run = "RUN", record = "RECORD", show = "SHOW REPORT";
         float s = ConsoleStyle.EffectiveInterfaceScale, inset = ConsoleWidgets.RowLabelInsetPx, gap = 12f * s;
         Gap(6f * s);
         float x = ImGui.GetCursorScreenPos().X + inset, right = ImGui.GetCursorScreenPos().X + ConsoleStyle.ContentAvailWidth();
-        const string run = "RUN", record = "RECORD";
-        float buttonWidth = MathF.Max(MathF.Max(ConsoleWidgets.ButtonWidth(show), ConsoleWidgets.ButtonWidth(run)), ConsoleWidgets.ButtonWidth(record));
-        float nameWidth = MathF.Max(MathF.Max(MathF.Max(Tests.Max(t => LabelWidth(t.Name)), LabelWidth("Last Run")), LabelWidth(Here.Name)), LabelWidth("Timeline"));
+        // One set of columns for both tables
+        float buttonWidth = new[] { run, record, show }.Max(b => ConsoleWidgets.ButtonWidth(b));
+        float nameWidth = Tests.Select(t => t.Name).Append(Here.Name).Concat(recent.Select(r => r.Name)).Max(LabelWidth);
         float small = SmallHeight(), line = MathF.Round(small);
         string hereTime = $"{Runs.HereSeconds} s";
-        float timeWidth = MathF.Max(MathF.Max(Tests.Max(t => SmallWidth(t.Time)), SmallWidth(hereTime)), last != null ? SmallWidth(last.Date) : 0f);
+        float timeWidth = Tests.Select(t => t.Time).Append(hereTime).Concat(recent.Select(r => r.Date)).Max(SmallWidth);
         float what = x + nameWidth + gap, button = right - buttonWidth, time = button - gap - timeWidth, whatWidth = time - gap - what;
         var draw = ImGui.GetWindowDrawList();
         uint hairline = ConsoleStyle.ApplyAlpha(ConsoleStyle.HairlineU32), muted = ConsoleStyle.ApplyAlpha(ConsoleStyle.TextMutedU32), label = ConsoleStyle.ApplyAlpha(ConsoleStyle.TextLabelU32);
-        float y = ImGui.GetCursorScreenPos().Y;
-        ConsoleStyle.PushSignatureFont();
-        draw.AddText(new float2(x, y), muted, "Test");
-        draw.AddText(new float2(what, y), muted, "What It Plays");
-        draw.AddText(new float2(time, y), muted, "Time");
-        ConsoleStyle.PopFont();
-        y += small + 6f * s;
-        draw.AddLine(new float2(x, y), new float2(right, y), hairline, ConsoleStyle.WindowBorderThicknessPx);
+        float y = TableHeader(ImGui.GetCursorScreenPos().Y, ("Test", x), ("What It Plays", what), ("Time", time));
         string? tip = null;
 
         // One row with its button: whether it was pressed
@@ -667,23 +686,25 @@ internal static partial class MacPortTab
         }
         if (Row(Here.Name, WrapSmall(Here.What, whatWidth), muted, hereTime, record, "MacPort_record_here", whyNot ?? Here.Help, whyNot != null))
             Runs.RecordFromTab();
-        if (last != null)
-            draw.AddLine(new float2(x, y), new float2(right, y), hairline, ConsoleStyle.WindowBorderThicknessPx);
-        if (last != null && Row("Last Run", [last.Outcome], ConsoleStyle.ApplyAlpha(last.Passed || last.Stopped ? ConsoleStyle.TextLabelU32 : ConsoleStyle.DangerU32), last.Date, show, "MacPort_show_report", last.Summary, false))
-            Runs.Show(last.Folder);
-        // The last run frame by frame, in Perfetto's viewer
-        if (last != null && File.Exists(Path.Combine(last.Folder, RunStore.GameFile)))
-        {
-            draw.AddLine(new float2(x, y), new float2(right, y), hairline, ConsoleStyle.WindowBorderThicknessPx);
-            if (Row("Timeline", WrapSmall("Every frame of the last run, in your browser.", whatWidth), muted, "", open, "MacPort_show_timeline",
-                    "Opens the last run in your browser, frame by frame: each frame's time, what the game waited for, and the game's work around its slow frames. It stays on this Mac.",
-                    Runs.WritingTimeline))
-                Runs.ShowTimeline(last.Folder);
-        }
         ImGui.SetCursorScreenPos(new float2(x - inset, y));
         Gap(4f * s);
         if ((why ?? whyNot) is { } reason)
             Caption(reason, inset);
+
+        if (recent.Count > 0)
+        {
+            y = TableHeader(ImGui.GetCursorScreenPos().Y + 14f * s, ("Report", x), ("Result", what), ("Date", time));
+            for (int i = 0; i < recent.Count; i++)
+            {
+                var r = recent[i];
+                if (i > 0)
+                    draw.AddLine(new float2(x, y), new float2(right, y), hairline, ConsoleStyle.WindowBorderThicknessPx);
+                if (Row(r.Name, [r.Outcome], ConsoleStyle.ApplyAlpha(r.Passed || r.Stopped ? ConsoleStyle.TextLabelU32 : ConsoleStyle.DangerU32), r.Date, show, "MacPort_show_report_" + i, r.Summary, false))
+                    Runs.Show(r.Folder);
+            }
+            ImGui.SetCursorScreenPos(new float2(x - inset, y));
+            Gap(4f * s);
+        }
         if (tip != null)
             Tooltip(tip);
     }

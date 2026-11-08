@@ -346,14 +346,18 @@ internal static partial class MacPortTab
             if (!inTab || section == "presets")
                 continue;
             SectionHeader(title, caption);
+            // The benchmark's tests and reports come first, its rows under them
+            if (section == "benchmark")
+            {
+                DrawBenchmark();
+                AdvancedHeader();
+            }
             foreach (var s in PortSettings.All.Where(s => s.Section == section))
             {
                 DrawRow(s);
                 if (s.Key == "upscaling")
                     DrawRenderBoxes();
             }
-            if (section == "benchmark")
-                DrawBenchmark();
         }
     }
 

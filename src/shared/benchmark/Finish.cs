@@ -14,8 +14,9 @@ namespace KsaPort.Common.Benchmark;
 
 public static class Finish
 {
-    // asksMac: whether to ask macOS about this Mac (the tests' runs are of no Mac)
-    public static RunRecord Run(string dir, bool asksMac = true) => Culture(() => Make(dir, asksMac, null));
+    // asksMac: whether to ask macOS about this Mac (the tests' runs are of no Mac); timeline: whether to write the run's
+    // timeline now (a few hundred MB for a long run: the running game writes it when its report is opened)
+    public static RunRecord Run(string dir, bool asksMac = true, bool timeline = true) => Culture(() => Make(dir, asksMac, null, timeline));
 
     // A run finished again from its store, as this version of the benchmark makes a record: its facts as its record had
     // them (the Mac and the app may have changed since), its numbers, checks and pages new. A record of any schema
@@ -23,7 +24,7 @@ public static class Finish
     public static RunRecord Again(string dir) => Culture(() =>
     {
         var kept = KeptFacts(dir);
-        return Make(dir, kept == null, kept);
+        return Make(dir, kept == null, kept, true);
     });
 
     private static RunRecord Culture(Func<RunRecord> make)
@@ -59,7 +60,7 @@ public static class Finish
         }
     }
 
-    private static RunRecord Make(string dir, bool asksMac, List<Fact>? kept)
+    private static RunRecord Make(string dir, bool asksMac, List<Fact>? kept, bool timeline)
     {
         var plan = RunPlan.Read(dir) ?? new RunPlan();
         var events = EventLog.Read(dir);
@@ -88,6 +89,15 @@ public static class Finish
         record.Findings = Checks.Run(new RunEvidence(dir, record, events, logs, crashes));
         record.Status = events.Any(e => e.Type == "stopped") ? Status.Stopped : record.Problems.Any() ? Status.Failed : Status.Passed;
         record.Write(dir);
+        // The timeline, which the report's Open Timeline button loads; without it, the button says how to write it
+        try
+        {
+            if (timeline)
+                Timeline.Write(dir);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or SqliteException)
+        {
+        }
         Pages.WriteReport(dir, record);
         // The game's store of a tab's run, and benchmark.sh's own, closed before the zip takes them: the run is over
         RunStore.Close(dir);

@@ -1,5 +1,6 @@
 // query and timeline: a run's store read directly. query runs SQL on it (run.db, with host.db attached as host) and
-// prints the rows; timeline writes it as a trace for Perfetto's viewer and opens the page that hands it over (Timeline.cs).
+// prints the rows; timeline writes it as a trace for Perfetto's viewer and opens the report, whose Open Timeline button
+// hands it over (Timeline.cs).
 using System;
 using System.IO;
 using System.Linq;
@@ -60,9 +61,17 @@ public static partial class Program
             Die("timeline [run]: one run.");
         var dir = StoreOf(args.Length == 1 ? args[0] : "last");
         Timeline.Write(dir);
-        Output.Info($"The timeline: {Path.Combine(dir, Timeline.PageFile)} (its trace: {Timeline.TraceFile}, for ui.perfetto.dev)");
-        if (!Console.IsOutputRedirected)
-            Tool.Exec("open", [Path.Combine(dir, Timeline.PageFile)], out _);
+        // Its report again, with the Open Timeline button the timeline gives it; a record this version can't read keeps
+        // its report as it is
+        var record = RunRecord.Read(dir);
+        if (record != null)
+            Pages.WriteReport(dir, record);
+        var page = Path.Combine(dir, "report.html");
+        Output.Info(record != null
+            ? $"The timeline: {Path.Combine(dir, Timeline.TraceFile)} (for ui.perfetto.dev), and the report's Open Timeline button: {page}"
+            : $"The timeline: {Path.Combine(dir, Timeline.TraceFile)}, for ui.perfetto.dev (the run's record is of an older benchmark: report --again gives its report the button)");
+        if (!Console.IsOutputRedirected && record != null && File.Exists(page))
+            Tool.Exec("open", [page], out _);
         return 0;
     }
 
