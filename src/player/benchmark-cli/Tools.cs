@@ -57,8 +57,13 @@ public static partial class Program
         }
         // What the GPU measured for the same parts, the median of their frames
         var measured = new Dictionary<(string, string), double>();
-        using (var q = store.Prepare("SELECT scenario, part, gpu_ms FROM frames WHERE part <> '' AND gpu_ms > 0 AND " +
-                                     "(session, pass) IN (SELECT session, pass FROM events WHERE type = 'pass' AND text = 'measured')"))
+        // Each frame's own GPU time where the store has it (frame_gpu), else the frames' column
+        bool own = store.Prepare("SELECT name FROM sqlite_master WHERE name = 'frame_gpu'") is var t && t.Step();
+        t.Dispose();
+        using (var q = store.Prepare($"SELECT f.scenario, f.part, {(own ? "COALESCE(g.gpu_ms, f.gpu_ms)" : "f.gpu_ms")} FROM frames f " +
+                                     (own ? "LEFT JOIN frame_gpu g ON g.session = f.session AND g.present = f.present " : "") +
+                                     "WHERE f.part <> '' AND f.gpu_ms > 0 AND " +
+                                     "(f.session, f.pass) IN (SELECT session, pass FROM events WHERE type = 'pass' AND text = 'measured')"))
         {
             var all = new Dictionary<(string, string), List<double>>();
             while (q.Step())

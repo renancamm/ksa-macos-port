@@ -102,6 +102,13 @@ public static class Timeline
         ulong cpu = tracks.Add("Frame: start to present", Root), gpu = tracks.Add("Frame: present to GPU end", Root), screen = tracks.Add("On screen", Root);
         ulong footprint = tracks.Add("Memory footprint", Root, "MB"), metal = tracks.Add("GPU memory", Root, "MB"), gc = tracks.Add("GC pause", Root, "ms");
         long lastPresent = -1;
+        // GPU busy: each frame's own, when its present completed (frame_gpu); a run of before has the frames' column
+        bool own = false;
+        RunStore.Query(game, "SELECT t, gpu_ms FROM frame_gpu ORDER BY t", q =>
+        {
+            own = true;
+            counters.Add((gpuMs, q.Double(0), q.Double(1)));
+        });
         RunStore.Query(game, "SELECT t, frame_ms, present, gpu_ms, footprint_mb, metal_mb, gc_pause_ms FROM frames ORDER BY rowid", q =>
         {
             double t = q.Double(0);
@@ -109,7 +116,8 @@ public static class Timeline
             if (q.NullableDouble(3) is { } g && q.Long(2) != lastPresent)
             {
                 lastPresent = q.Long(2);
-                counters.Add((gpuMs, t, g));
+                if (!own)
+                    counters.Add((gpuMs, t, g));
                 counters.Add((footprint, t, q.Long(4)));
                 counters.Add((metal, t, q.Long(5)));
             }
@@ -139,7 +147,8 @@ public static class Timeline
                 byName[name] = (c.Track, value);
             });
         double lastShown = 0;
-        RunStore.Query(game, "SELECT present, began, presented, gpu_end, shown FROM shown ORDER BY present", q =>
+        // In the order they began: each game session counts its presents from 1
+        RunStore.Query(game, "SELECT present, began, presented, gpu_end, shown FROM shown ORDER BY began", q =>
         {
             long present = q.Long(0);
             double began = q.Double(1), presented = q.Double(2), gpuEnd = q.Double(3), shown = q.Double(4);

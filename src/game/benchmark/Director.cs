@@ -668,14 +668,16 @@ public partial class Director
         DriverStats.Drain(_driverRecords);
         foreach (var record in _driverRecords)
         {
-            _store?.Add(record);
+            _store?.Add(record, _plan.Host.Session);
             if (record is PresentRecord p)
             {
                 // The newest by its number: the one the drain's opening adds may come after a newer present
                 if (_present is not { } latest || p.Stats.Present >= latest.Present)
                     _present = p.Stats;
-                _profilers?.Zones.AddPresent(p.T, p.Stats.GpuMs);
             }
+            // A frame's own GPU time: what a moment's cause names (the present record's is what completed between presents)
+            else if (record is FrameGpuRecord g)
+                _profilers?.Zones.AddPresent(g.T, g.GpuMs);
             else if (record is WaitRecord w)
                 _profilers?.Zones.AddWait(w.T, w.Ms, w.What);
         }

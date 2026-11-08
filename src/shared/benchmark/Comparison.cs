@@ -219,8 +219,13 @@ public static class Ground
 {
     // The facts that make two runs' numbers unlike when they differ; a study's sessions of one variant also share its build
     private static readonly string[] MacFacts = ["Chip", "GPU cores", "Memory", "macOS", "Power", "Low Power Mode"];
-    // What the run played in: a study's variant may set these on purpose
-    private static readonly string[] PlayFacts = ["Window", "Vsync"];
+    // What the run played in: a study's variant may set these on purpose; and how its GPU busy was measured
+    private static readonly string[] PlayFacts = ["Window", "Vsync", "GPU time"];
+
+    // The GPU time fact of a run that measured each frame's own; a run without the fact measured what completed between presents
+    public const string OwnGpuTime = "each frame's own";
+
+    private static string FactOf(RunRecord r, string key) => r.Fact(key) ?? (key == "GPU time" ? "what completed between presents" : "?");
     private static readonly string[] BuildFacts = ["Port", "KSA"];
 
     // The notes that move a run's numbers (Checks.cs)
@@ -234,7 +239,7 @@ public static class Ground
         var unlike = new List<(string, string[])>();
         foreach (var key in MacFacts.Concat(play ? PlayFacts : []).Concat(build ? BuildFacts : []))
         {
-            var values = runs.Select(r => r.Fact(key) ?? "?").ToArray();
+            var values = runs.Select(r => FactOf(r, key)).ToArray();
             if (values.Distinct().Count() > 1)
                 unlike.Add((key, values));
         }

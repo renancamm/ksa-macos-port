@@ -414,6 +414,8 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
             [b endEncoding];
             [cb addCompletedHandler:^(id<MTLCommandBuffer> c) { kmtlNoteGpuTime(c); }];
             kmtlOnPresent(q->device, sc, img, cb);
+            // This present's number as the present record has it (kmtlOnPresent counted it), for its frame's GPU time
+            uint64_t counted = kmtlPresentCount();
             {
                 // For vkWaitForPresentKHR: when this present was made, ended on the GPU, and was shown
                 std::shared_ptr<KPresentState> state = sc->presentState;
@@ -431,7 +433,11 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
                 bool shownAtEnd = !drawable;
                 [cb addCompletedHandler:^(id<MTLCommandBuffer> c) {
                     std::lock_guard<std::mutex> lock(state->m);
-                    state->gpuMs[state->gpuSamples++ % 8] = kmtlTakeFrameGpuTime() * 1e3;
+                    // The frame's own GPU time: its work up to this command buffer, which completes in order after it
+                    // (kmtlNoteGpuTime, the handler before, counted this buffer)
+                    double ms = kmtlTakeFrameGpuTime() * 1e3;
+                    state->gpuMs[state->gpuSamples++ % 8] = ms;
+                    if (kmtlDrainOn()) kmtlDrainFrameGpu(counted, CACurrentMediaTime(), ms);
                     if (KPresentState::Frame* f = findFrame(*state, n)) {
                         f->gpuDone = true;
                         f->gpuEnd = c.GPUEndTime;

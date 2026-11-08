@@ -455,16 +455,20 @@ the game writes `run.db`, `benchmark.sh` writes `host.db`, so two processes neve
 the game's heartbeats there, and the game its recording event. Every row carries the time on one clock, the Mac's
 monotonic clock in seconds, which KSA Metal's own times use. Besides the events and frames, `run.db` has what KSA Metal
 hands the director through its drain while a run plays: every present with its numbers (`presents`), when each frame
-began, was presented, finished on the GPU and was shown (`shown`), every wait of a millisecond or more that blocked the
-game, such as a fence or the next drawable (`waits`; the wait for an earlier frame's present too, the game's every frame
-under V-Sync), and every allocation or free of 16 MB or more (`memory`).
+began, was presented, finished on the GPU and was shown (`shown`), each frame's own GPU time, taken when its present's
+command buffer completed (`frame_gpu`), every wait of a millisecond or more that blocked the game, such as a fence or the
+next drawable (`waits`; the wait for an earlier frame's present too, the game's every frame under V-Sync), and every
+allocation or free of 16 MB or more (`memory`). A part's GPU busy is its frames' own GPU time; the `GPU time` of
+`frames` and `presents` is what completed between two presents, which lags by the frames in flight and holds two frames'
+work after a stall (a run that has only that says so in its GPU time fact, and a comparison with it is not like for
+like). `shown` and `frame_gpu` carry the game session: each session's game counts its presents from 1.
 
 During a run the director switches on the game's own profilers, the main thread's and the job runners' (orbit and vehicle
 solvers and the others), in `profile`'s profiled pass its GPU profiler too (group `gpu`, [`GpuZones.cs`](GpuZones.cs)), and reads them every frame ([`GameProfilers.cs`](GameProfilers.cs),
 [`../../shared/benchmark/Zones.cs`](../../shared/benchmark/Zones.cs)): `zone_stats` has every zone of each part, its total
 and own time, its median, 95th percentile and worst in a frame, and what it allocated. A frame a trigger keeps is a moment
 (`moments`; by default a measured part's frame of 100 ms or more, 20 a pass): its cause names the main thread's zones with the most own time in it, KSA Metal's
-waits of 2 ms or more and the GPU time of the presents around it, and the first ten of the measured passes keep every
+waits of 2 ms or more and the most GPU time a frame around it took, and the first ten of the measured passes keep every
 zone from half a second before to a quarter of a second after it (`slices`). Reading them costs the game about 20 µs a
 frame; `--channels -zones` leaves the profilers off.
 

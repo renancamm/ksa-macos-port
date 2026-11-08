@@ -70,7 +70,8 @@ public static class Finish
         var probeMetrics = RunStore.ReadMetrics(dir);
         foreach (var m in probeMetrics)
             Metrics.Register(m);
-        var record = Core(dir, name, plan, events, frames);
+        var frameGpu = RunStore.ReadFrameGpu(dir);
+        var record = Core(dir, name, plan, events, frames, frameGpu);
         record.Moments = RunStore.ReadMoments(dir);
         record.ProbeMetrics = probeMetrics;
         record.Census = RunStore.ReadCensus(dir);
@@ -79,6 +80,10 @@ public static class Finish
         if (record.WarmUp is { } warmUp)
             record.Facts.Add(new Fact("Warm-up", warmUp.GpuMs is { } gpu
                 ? $"a pass first, left out (GPU {gpu:F1} ms a frame)" : "a pass first, left out"));
+        // How its GPU busy was measured: each frame's own (frame_gpu), or what completed between presents (a run of before)
+        record.Facts.RemoveAll(f => f.Key == "GPU time");
+        if (frameGpu.Count > 0)
+            record.Facts.Add(new Fact("GPU time", Ground.OwnGpuTime));
         var crashes = CrashReports(record.Started.ToUniversalTime());
         record.Findings = Checks.Run(new RunEvidence(dir, record, events, logs, crashes));
         record.Status = events.Any(e => e.Type == "stopped") ? Status.Stopped : record.Problems.Any() ? Status.Failed : Status.Passed;
@@ -91,7 +96,8 @@ public static class Finish
     }
 
     // What the record says from the run's events and frames: how it played, and each part's numbers
-    private static RunRecord Core(string dir, string name, RunPlan plan, List<RunEvent> events, List<FrameRow> frames)
+    private static RunRecord Core(string dir, string name, RunPlan plan, List<RunEvent> events, List<FrameRow> frames,
+        Dictionary<int, Dictionary<ulong, double>> frameGpu)
     {
         var record = new RunRecord
         {
@@ -105,11 +111,12 @@ public static class Finish
             Passes = Math.Max(1, events.Select(e => e.Pass).DefaultIfEmpty(1).Max()),
             LoadSeconds = events.FirstOrDefault(e => e.Type == "loaded")?.Value,
             Drawable = events.LastOrDefault(e => e.Type == "drawable")?.Text,
-            Scenarios = Scenarios(events, frames, RunStore.ReadShown(dir), RunStore.ReadWaits(dir), RunStore.ReadZones(dir), RunStore.ReadCounters(dir)),
+            Scenarios = Scenarios(events, frames, RunStore.ReadShown(dir), RunStore.ReadWaits(dir), RunStore.ReadZones(dir), RunStore.ReadCounters(dir),
+                frameGpu),
         };
         SetLimits(record, plan);
         if (events.FirstOrDefault(e => e.Type == "warmed") is { } warmed)
-            record.WarmUp = WarmUp(record, frames, warmed.Session, PassKinds(events));
+            record.WarmUp = WarmUp(record, frames, warmed.Session, PassKinds(events), frameGpu.GetValueOrDefault(warmed.Session));
         return record;
     }
 
@@ -124,8 +131,9 @@ public static class Finish
     // The scenarios as they played, in order: each part's measurings (the measured passes of every session) from their
     // frames, KSA Metal's shown records and the zones, merged; a profiled pass's apart; the screenshots of the first pass
     // (a warm-up's too) with their limits
-    private static List<ScenarioRecord> Scenarios(List<RunEvent> events, List<FrameRow> frames, Dictionary<ulong, ShownRow> shown, List<WaitRow> waits,
-        List<ZoneRow> zones, Dictionary<(string Scenario, string Part, int Session, int Pass), Dictionary<string, List<double>>> counters)
+    private static List<ScenarioRecord> Scenarios(List<RunEvent> events, List<FrameRow> frames, Dictionary<int, Dictionary<ulong, ShownRow>> shown, List<WaitRow> waits,
+        List<ZoneRow> zones, Dictionary<(string Scenario, string Part, int Session, int Pass), Dictionary<string, List<double>>> counters,
+        Dictionary<int, Dictionary<ulong, double>> frameGpu)
     {
         var kindOf = PassKinds(events);
         var scenarios = new List<ScenarioRecord>();
@@ -161,8 +169,9 @@ public static class Finish
                     var key = (scenario.Name, part, open.Session, open.Pass);
                     if (!rows.TryGetValue(key, out var r))
                         continue;
-                    var values = Measure.Of(r, shown, zoneRows.GetValueOrDefault(key), scenario.Kind == Kind.Timed ? open.Game : null, (long?)open.Value, waits,
-                        before.GetValueOrDefault(key));
+                    // Its session's presents: each game counts its own from 1
+                    var values = Measure.Of(r, shown.GetValueOrDefault(open.Session), zoneRows.GetValueOrDefault(key), scenario.Kind == Kind.Timed ? open.Game : null,
+                        (long?)open.Value, waits, before.GetValueOrDefault(key), frameGpu.GetValueOrDefault(open.Session));
                     // The probes' counters over the part's frames: their median, or the most (Across)
                     foreach (var (metric, samples) in counters.GetValueOrDefault(key) ?? [])
                         values[metric] = Math.Round(Metrics.Find(metric)?.Across switch { Across.Most => samples.Max(), Across.Mean => samples.Average(), _ => Measure.Median(samples) }, 3);
@@ -200,18 +209,19 @@ public static class Finish
 
     // The warm-up pass's GPU time against the measured passes' in the game it warmed, both as the headline weighs its
     // parts
-    private static WarmUpRecord WarmUp(RunRecord record, List<FrameRow> frames, int session, Func<int, int, string> kindOf)
+    private static WarmUpRecord WarmUp(RunRecord record, List<FrameRow> frames, int session, Func<int, int, string> kindOf,
+        IReadOnlyDictionary<ulong, double>? frameGpu)
     {
         var timed = record.Scenarios.Where(s => s.Kind == Kind.Timed).Select(s => s.Name).ToHashSet();
         var first = frames.Where(f => f.Part.Length > 0 && !timed.Contains(f.Scenario) && f.Session == session).ToList();
-        static double? Gpu(IEnumerable<FrameRow> rows)
+        double? Gpu(IEnumerable<FrameRow> rows)
         {
             double weighted = 0, seconds = 0;
             foreach (var part in rows.GroupBy(r => (r.Scenario, r.Part, r.Pass)))
             {
                 var r = part.ToList();
                 double s = r.Sum(f => f.FrameMs) / 1000;
-                if (Measure.Of(r, null, null, null, null).TryGetValue(Metrics.GpuBusy.Name, out var gpu) && s > 0)
+                if (Measure.Of(r, null, null, null, null, frameGpu: frameGpu).TryGetValue(Metrics.GpuBusy.Name, out var gpu) && s > 0)
                     (weighted, seconds) = (weighted + gpu * s, seconds + s);
             }
             return seconds > 0 ? Math.Round(weighted / seconds, 2) : null;

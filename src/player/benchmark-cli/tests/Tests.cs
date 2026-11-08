@@ -1106,10 +1106,14 @@ internal static class Tests
         w.Write(2u);
         w.Write(0u);
         w.Write(9UL);
+        Header(5, 32);
+        w.Write(7UL);
+        w.Write(12.53);
+        w.Write(8.75);
         var records = new List<DriverRecord>();
         DriverStats.Parse(bytes.ToArray(), records);
-        Equal(4, records.Count, "records");
-        if (records.Count < 4)
+        Equal(5, records.Count, "records");
+        if (records.Count < 5)
             return;
         var present = (PresentRecord)records[0];
         Equal(12.5, present.T, "present's time");
@@ -1120,6 +1124,29 @@ internal static class Tests
         Equal(new ShownRecord(7, 12.49, 12.5, 12.51, 12.52, 0.4, true), records[1], "shown");
         Equal(new WaitRecord(13, 4.5, 8, "vkWaitForFences"), records[2], "wait");
         Equal(new MemoryRecord(14, -(64L << 20), 2, 9), records[3], "memory");
+        Equal(new FrameGpuRecord(7, 12.53, 8.75), records[4], "a frame's own GPU time");
+        // GPU busy from each frame's own GPU time where there is one: the frame after a stall carried two frames' work
+        FrameRow Row(ulong present, double gpu) => new(present, 1, 1, 0, "earth", "earth1", "Measure", 16.7, present, gpu, 100, 1000, 2000, 0, 0, 0,
+            null, null, null, null, null, null);
+        var rows = new List<FrameRow> { Row(1, 10), Row(2, 0.5), Row(3, 20), Row(4, 10), Row(5, 10) };
+        var own = new Dictionary<ulong, double> { [1] = 10, [2] = 10, [3] = 10, [4] = 10, [5] = 10 };
+        Equal(10.0, Measure.Of(rows, null, null, null, null, frameGpu: own)[Metrics.GpuP95.Name], "P95 of the frames' own: 10");
+        Equal(20.0, Measure.Of(rows, null, null, null, null)[Metrics.GpuP95.Name], "P95 of what completed between presents: 20");
+        var few = new Dictionary<ulong, double> { [1] = 10 };
+        Equal(20.0, Measure.Of(rows, null, null, null, null, frameGpu: few)[Metrics.GpuP95.Name], "a part its own times barely cover: the column, never both");
+        // Each game session counts its presents from 1: the store keeps them apart
+        var dir = Path.Combine(_scratch, "sessions-gpu");
+        Directory.CreateDirectory(dir);
+        var store = RunStore.For(dir)!;
+        store.Add(new FrameGpuRecord(1, 1.0, 10), session: 1);
+        store.Add(new FrameGpuRecord(1, 9.0, 30), session: 2);
+        store.Add(new ShownRecord(1, 1, 1.01, 1.02, 1.03, 0, false), session: 1);
+        store.Add(new ShownRecord(1, 9, 9.01, 9.02, 9.05, 0, false), session: 2);
+        RunStore.Close(dir);
+        var byGpu = RunStore.ReadFrameGpu(dir);
+        Equal(10.0, byGpu[1][1], "session 1's present 1");
+        Equal(30.0, byGpu[2][1], "session 2's present 1");
+        Equal(9.05, RunStore.ReadShown(dir)[2][1].Shown, "session 2's shown record of its present 1");
     }
 
     // The game's profiler zones summed per part, and a slow frame kept as a moment with its cause and slices
