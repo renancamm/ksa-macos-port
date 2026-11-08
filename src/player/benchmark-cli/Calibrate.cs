@@ -1,9 +1,11 @@
-// calibrate [test] [n]: how much a test moves between runs of the same build on this Mac, as its noise profile. It plays
-// the test n times (3 unless said) at a fresh install's settings without Vsync (--capped: with the game's own), each run a game of its own as a comparison sets two runs
-// against each other, then takes for each screenshot the most of its blocks that changed between any two of the runs and
-// for each part how far its GPU and frame times spread, and writes the limits (NoiseProfile.Margin times the spread) to
-// noise/<test>.json in the benchmarks folder. Runs and comparisons on this Mac use it from then on; copied into
-// src/game/benchmark/lineup/noise/ it ships with the app.
+// calibrate [test] [n]: how much a test moves between runs of the same build on this Mac, as its noise profile. It
+// plays the test n times (3 unless said) at a fresh install's settings without Vsync (--capped: with the game's own),
+// after a run that warms the Mac up and is left out (a first run's GPU reads about 7 % fast while the chip warms:
+// three runs in a row on 2026-11-08, the first at 1,508 MHz and 13.3 W, the next two at 1,400 MHz and 11 W), each run a
+// game of its own as a comparison sets two runs against each other, then takes for each screenshot the most of its
+// blocks that changed between any two of the runs and for each part how far its GPU and frame times spread, and writes
+// the limits (NoiseProfile.Margin times the spread) to noise/<test>.json in the benchmarks folder. Runs and comparisons
+// on this Mac use it from then on; copied into src/game/benchmark/lineup/noise/ it ships with the app.
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -35,17 +37,20 @@ public static partial class Program
             else
                 Die($"calibrate [mixed | tour] [runs, 2 to 20] [--app <path>] [--system <name>] [--capped], not '{a}'.");
         }
-        Output.Step($"Calibrating the {Pages.TestName(test)}: {n} runs at a fresh install's settings{(passOn.Contains("--capped") ? "" : " without Vsync")}, each a game of its own");
+        Output.Step($"Calibrating the {Pages.TestName(test)}: {n} runs at a fresh install's settings{(passOn.Contains("--capped") ? "" : " without Vsync")}, " +
+                    "each a game of its own, after one that warms the Mac up");
         var runs = new List<(string Dir, RunRecord Record)>();
-        for (int i = 1; i <= n; i++)
+        for (int i = 0; i <= n; i++)
         {
-            Output.Info($"Run {i} of {n}");
+            Output.Info(i == 0 ? "Warming up (left out)" : $"Run {i} of {n}");
             var run = new BenchmarkRun();
             run.Run([test, "--defaults", .. passOn], Purpose.Calibrate);
-            if (run.Folder is { Length: > 0 } dir && RunRecord.Read(dir) is { Status: Status.Passed } record)
+            if (i > 0 && run.Folder is { Length: > 0 } dir && RunRecord.Read(dir) is { Status: Status.Passed } record)
                 runs.Add((dir, record));
-            else
+            else if (i > 0)
                 Output.Warn($"run {i} did not pass: it is left out.");
+            else if (!(run.Folder is { Length: > 0 } w && RunRecord.Read(w) is { Status: Status.Passed }))
+                Output.Warn("the warm-up did not pass: run 1 may read a cold Mac.");
             if (run.Stopped)
                 Die("stopped: no profile written.");
         }

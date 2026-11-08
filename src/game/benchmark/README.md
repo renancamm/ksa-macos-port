@@ -123,7 +123,7 @@ The same tests are the project's tool for looking into the driver, the shaders a
 | `study <file>`, `study resume [study]`, `study report [study]` | variants of one `measure` or `profile` command, each in game sessions of its own, played in turn and set against a baseline variant by their sessions ([below](#studies)) |
 | `profile [test \| places...]` | where the time goes: a warm-up, a measured pass and a profiled pass in one game session. The profiled pass turns the game's GPU zones on ("Clouds Raymarching", "Ocean", "Stars") and `profile.md` lists, per part, the zones with the most own time a frame; the measured pass gives the run's numbers |
 | `investigate <tool> <places...>` | a tool on places jumped to, or a whole test (below) |
-| `calibrate [test] [n]` | how much a test moves between runs of the same build on this Mac: `n` runs (3) at a fresh install's settings without Vsync, written as the test's noise profile |
+| `calibrate [test] [n]` | how much a test moves between runs of the same build on this Mac: `n` runs (3) at a fresh install's settings without Vsync, after one that warms the Mac up and is left out, written as the test's noise profile |
 | `baseline [set <name> [run...] \| remove <name>]` | names runs, one of each test, to compare with; a baseline's name stands for its run wherever a run is named, and `clean` keeps it |
 | `query [run] '<sql>'` | SQL on a run's [store](#a-runs-record) (default: the last run) |
 | `timeline [run]` | the run in Perfetto's viewer, in your browser: its parts, frame and GPU times, each frame's way to the screen, KSA Metal's waits, the game's zones around slow frames, and the counters (the GPU's power and clock, the probes') |

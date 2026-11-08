@@ -86,8 +86,9 @@ public static partial class Program
                              profiled pass names the game's GPU zones in each part (profile.md), its own cost kept apart
           ./benchmark.sh calibrate [test] [n]
                              how much the test moves between runs of the same build on this Mac: n runs (3) at a fresh
-                             install's settings without Vsync, the spread of each screenshot and part, written as the test's noise profile
-                             (the benchmarks folder's noise/), which comparisons hold each screenshot and part to
+                             install's settings without Vsync, after one that warms the Mac up and is left out, the spread
+                             of each screenshot and part, written as the test's noise profile (the benchmarks folder's
+                             noise/), which comparisons hold each screenshot and part to
           ./benchmark.sh investigate <tool> <places...> [options]
                              a tool on places jumped to (or a whole test): trace (an Instruments trace;
                              --trace-template <name>), capture (an Xcode GPU frame capture at
