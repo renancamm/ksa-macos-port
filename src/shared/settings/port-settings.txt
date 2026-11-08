@@ -69,7 +69,6 @@ skip_unused_outlines | bool | true | | restart | hooks:OutlineSkip | | | | Skip 
 skip_unused_overlays | bool | true | | restart | hooks:OverlaySkip | | | | Skip Unused Overlays | Draws gizmos and orbit lines only on frames that have some.
 skip_hidden_vessel_parts | bool | true | | restart | hooks:HiddenPartsSkip | | | | Skip Hidden Vessel Parts | Skips shading the parts of a vessel hidden behind something else. Faster, most in the cockpit.
 skip_unused_ocean_blending | bool | true | | restart | hooks:OceanBlending | | | | Skip Unused Ocean Blending | Below 9 km, skips a step of drawing the ocean that only views from higher up need.
-clear_faded_smoke | bool | true | | restart | hooks:FadedSmoke | | | | Clear Faded Smoke | Removes smoke trails that have faded out, which slow the game after time warp.
 skip_hidden_crew_portraits | bool | true | | live | hooks:CrewPortraits | | | | Skip Hidden Crew Portraits | Draws the crew panel's portraits only while the panel is open.
 skip_shadows_on_unlit_sides | bool | true | | restart | driver | | | | Skip Shadows on Unlit Sides | Skips shadow work where no light reaches. Much faster in the cockpit.
 shared_shadow_samples | bool | true | | restart | driver | | | | Shared Shadow Samples | Neighbouring pixels share the work of terrain shadows. A little faster near the ground.
