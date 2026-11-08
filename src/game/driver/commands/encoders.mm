@@ -50,6 +50,7 @@ void KCommandBuffer::beginCommands() {
     for (auto& f : lastFence) f = queue->chain;
     for (auto& m : needMask) m = 0;
     encRoles = 0;
+    stampedLast = false;
     encWaited.clear();
     fenceNext = 0;
     resolveWaited = resolveSignaled;
@@ -83,6 +84,7 @@ static void collectWaits(KCommandBuffer* cb, uint32_t roles, std::vector<id<MTLF
 template <typename E> void KCommandBuffer::waitForRoles(E enc, uint32_t roles) {
     if (strictSync()) roles = kClassAll;
     encRoles = roles;
+    stampedLast = false;
     encWaited.clear();
     collectWaits(this, roles, encWaited);
     for (id<MTLFence> f : encWaited) [enc waitForFence:f];
@@ -90,6 +92,7 @@ template <typename E> void KCommandBuffer::waitForRoles(E enc, uint32_t roles) {
 template <> void KCommandBuffer::waitForRoles(id<MTLRenderCommandEncoder> enc, uint32_t roles) {
     if (strictSync()) roles = kClassAll;
     encRoles = roles;
+    stampedLast = false;
     encWaited.clear();
     // Waiting before the vertex stage covers the fragment stage too
     collectWaits(this, roles & ~kClassFragment, encWaited);
@@ -382,15 +385,10 @@ void KCommandBuffer::stampSplit() {
     resumeRender();
 }
 
-// The split's timestamps, the pass suspended. The first half's stores are waited for by an event: the fences that order
-// the timestamps and the second half can signal before the stores are written, and the second half's loads then read
-// some of them stale (the cockpit lost its lights in most sessions)
+// The split's timestamps, the pass suspended (each waits for the first half through stampTimestamp's event)
 void KCommandBuffer::takeSplitStamps() {
     if (!tsSplit) return;
     tsSplit = false;
-    if (!splitEvent) splitEvent = [device->mtl newEvent];
-    [mtl encodeSignalEvent:splitEvent value:++splitSignaled];
-    [mtl encodeWaitForEvent:splitEvent value:splitSignaled];
     for (auto& d : tsDeferred) stampTimestamp(d.first, d.second);
     tsDeferred.clear();
 }

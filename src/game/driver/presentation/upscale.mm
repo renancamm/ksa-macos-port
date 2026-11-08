@@ -224,6 +224,8 @@ static void eventBarrier(id<MTLCommandBuffer> cb, id<MTLEvent> event, uint64_t* 
 static void fullBarrier(KCommandBuffer* cb) {
     if (!cb->fxEvent) cb->fxEvent = [cb->device->mtl newEvent];
     eventBarrier(cb->mtl, cb->fxEvent, &cb->fxValue);
+    // The encoders around it are MetalFX's own: a timestamp after them waits through its own event (stampTimestamp)
+    cb->stampedLast = false;
 }
 
 VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA* info) {

@@ -119,8 +119,10 @@ struct KCommandBuffer : KDispatchable {
     std::vector<TimestampWrite> tsWrites;
     std::vector<std::pair<KQueryPool*, uint32_t>> tsDeferred;
     bool tsSplit = false;  // tsDeferred split the pass at its next draw (stampSplit)
-    id<MTLEvent> splitEvent = nil;
-    uint64_t splitSignaled = 0;
+    // The event before a timestamp's blit (stampTimestamp), and whether the last encoder was such a blit
+    id<MTLEvent> stampEvent = nil;
+    uint64_t stampSignaled = 0;
+    bool stampedLast = false;
     void writeTimestamp(KQueryPool* pool, uint32_t query);
     void stampTimestamp(KQueryPool* pool, uint32_t query);
     void stampSplit();
