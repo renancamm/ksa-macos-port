@@ -1,17 +1,17 @@
-// A run's folder: what a player opens and shares on top (report.html, to-share_<run>.zip), everything else in data/ (the
-// run's store and record, its plan, logs, screenshots and the tools' files). A run's folder from before data/ has it all
-// on top: Data finds either, so every reader takes both, and only a new run's folder is made with data/ (Create).
+// A run's folder: what a person opens and shares on top (report.html, compare.html after a comparison,
+// to-share_<run>.zip), everything else in data/ (the run's store and record, its plan, logs, screenshots and the tools'
+// files).
 using System.IO;
 
 namespace KsaPort.Common.Benchmark;
 
 public static class RunFiles
 {
-    public const string DataFolder = "data", Page = "report.html";
+    public const string DataFolder = "data", Page = "report.html", ComparePage = "compare.html";
 
-    // Where a run's files are: its data/, or the folder itself when it has none (a run of before). Given data/, data/
+    // Where a run's files are: its data/, given the run's folder or data/ itself
     public static string Data(string dir) =>
-        Directory.Exists(Path.Combine(dir, DataFolder)) ? Path.Combine(dir, DataFolder) : dir;
+        Path.GetFileName(Path.TrimEndingDirectorySeparator(dir)) == DataFolder ? dir : Path.Combine(dir, DataFolder);
 
     // A new run's folder with its data/, which it returns
     public static string Create(string run)

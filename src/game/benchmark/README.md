@@ -71,9 +71,9 @@ To compare two runs:
 
 A run is its folder's name (`2026-11-02_0158`), its path, its zip, `last` or `previous`. The comparison starts with a
 verdict, lists what differs between the two Macs and their settings, shows each part's numbers side by side, and names
-the screenshots that changed. `compare.html` in the second run's `data/` shows the screenshots of both runs with a
+the screenshots that changed. `compare.html` on top of the second run's folder shows the screenshots of both runs with a
 slider to go from one to the other, and a copy of each changed screenshot, with the changed blocks marked in red, goes
-to `diff/` there.
+to `diff/` in its `data/`.
 
 Runs add up, up to a few hundred MB each with their screenshots. `./benchmark.sh clean` deletes all but the last 30,
 after asking (`--keep <n>` keeps another number), never while a run plays; studies keep their runs until you delete a
@@ -576,8 +576,8 @@ flight's. Fly the free camera to a place, open the console (`\`) and type `bench
 
 | File | |
 |---|---|
-| `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/` | the run: `report.html` to open, `to-share_<date>.zip` to share, and `data/` |
-| `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/data/` | the results: `report.md`, `run.json` (the record), `run.db` and `host.db` (the run's store), `plan.json`, the screenshots, `game.log`, `stuck.txt` from a stuck game, `compare.html` and `compare.md` after a comparison, `timeline.pftrace` and `timeline.js` (the report's Open Timeline) after `profile` or `timeline`, `profile.md` after `profile`, `caught/` with what the triggers kept, and what the tools wrote |
+| `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/` | the run: `report.html` to open, `compare.html` after a comparison, `to-share_<date>.zip` to share, and `data/` |
+| `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/data/` | the results: `report.md`, `run.json` (the record), `run.db` and `host.db` (the run's store), `plan.json`, the screenshots, `game.log`, `stuck.txt` from a stuck game, `compare.md` and `diff/` after a comparison, `timeline.pftrace` and `timeline.js` (the report's Open Timeline) after `profile` or `timeline`, `profile.md` after `profile`, `caught/` with what the triggers kept, and what the tools wrote |
 | `~/Documents/My Games/Kitten Space Agency/benchmarks/baselines.json`, `noise/` | the baselines' names, and the noise profiles `calibrate` measured on this Mac |
 | `~/Library/Caches/ksa-macos-port/benchmark/instance/` | the game's documents folder for a run that starts the game |
 | `Contents/Resources/Benchmark/` in the app | the director, `benchmark.sh`'s program, the tests, their vehicles and noise profiles |

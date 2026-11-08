@@ -77,7 +77,7 @@ public static partial class Program
                 game.WaitForExit();
                 Console.CancelKeyPress -= quit;
             }
-            Output.Info(File.Exists(Path.Combine(output, "keys.txt")) ? $"Captured keys: {output}/keys.txt" : "No keys captured.");
+            Output.Info(File.Exists(Path.Combine(RunFiles.Data(output), "keys.txt")) ? $"Captured keys: {RunFiles.Data(output)}/keys.txt" : "No keys captured.");
             return 0;
         }
 
