@@ -102,6 +102,9 @@ struct UpscaleState {
     id<MTLFXTemporalScaler> temporal = nil;
     id<MTLFXSpatialScaler> spatial = nil;
     uint32_t inW = 0, inH = 0, outW = 0, outH = 0;
+    // The game's image and the output's formats, which the scalers are made for (KSA 2026.11.10 draws its main view in
+    // RG11B10Float; a scaler reads a texture of another format as noise)
+    MTLPixelFormat colorFormat = MTLPixelFormatInvalid, outFormat = MTLPixelFormatInvalid;
     bool spatialMode = false;
     bool scalerFailed = false;  // MetalFX made no scaler for these sizes and mode: not tried again until they change
     // Past the temporal upscaler's largest scale: its output, which the spatial upscaler scales the rest of the way
@@ -131,7 +134,8 @@ struct UpscaleState {
 UpscaleState& g_up = *new UpscaleState;  // never destroyed: releasing a scaler at exit aborts in MetalFX's MPSGraph teardown
 }
 
-static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uint32_t outH, bool spatial) {
+static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uint32_t outH, bool spatial,
+                    MTLPixelFormat colorFormat, MTLPixelFormat outFormat) {
     if (g_up.failed) return false;
     id<MTLDevice> d = dev->mtl;
     if (!g_up.motion) {
@@ -149,9 +153,11 @@ static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uin
             return false;
         }
     }
-    if (g_up.inW == inW && g_up.inH == inH && g_up.outW == outW && g_up.outH == outH && g_up.spatialMode == spatial)
+    if (g_up.inW == inW && g_up.inH == inH && g_up.outW == outW && g_up.outH == outH && g_up.spatialMode == spatial &&
+        g_up.colorFormat == colorFormat && g_up.outFormat == outFormat)
         return !g_up.scalerFailed;
     g_up.inW = inW; g_up.inH = inH; g_up.outW = outW; g_up.outH = outH;
+    g_up.colorFormat = colorFormat; g_up.outFormat = outFormat;
     g_up.spatialMode = spatial;
     g_up.scalerFailed = false;
     g_up.temporal = nil;
@@ -160,19 +166,21 @@ static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uin
     g_up.restTex = nil;
     if (spatial) {
         MTLFXSpatialScalerDescriptor* sd = [MTLFXSpatialScalerDescriptor new];
-        sd.colorTextureFormat = MTLPixelFormatRGBA16Float;
-        sd.outputTextureFormat = MTLPixelFormatRGBA16Float;
+        sd.colorTextureFormat = colorFormat;
+        sd.outputTextureFormat = outFormat;
         sd.inputWidth = inW; sd.inputHeight = inH; sd.outputWidth = outW; sd.outputHeight = outH;
         sd.colorProcessingMode = MTLFXSpatialScalerColorProcessingModeHDR;
         g_up.spatial = [sd newSpatialScalerWithDevice:d];
     } else {
         MTLFXTemporalScalerDescriptor* td = [MTLFXTemporalScalerDescriptor new];
-        td.colorTextureFormat = MTLPixelFormatRGBA16Float;
-        td.depthTextureFormat = MTLPixelFormatDepth32Float;
-        td.motionTextureFormat = MTLPixelFormatRG16Float;
-        td.outputTextureFormat = MTLPixelFormatRGBA16Float;
         float most = [MTLFXTemporalScalerDescriptor supportedInputContentMaxScaleForDevice:d];
         uint32_t midW = std::min(outW, (uint32_t)(inW * most)), midH = std::min(outH, (uint32_t)(inH * most));
+        bool rest = midW != outW || midH != outH;
+        td.colorTextureFormat = colorFormat;
+        td.depthTextureFormat = MTLPixelFormatDepth32Float;
+        td.motionTextureFormat = MTLPixelFormatRG16Float;
+        // Past its largest scale, into an RGBA16Float image the spatial scaler takes the rest of the way
+        td.outputTextureFormat = rest ? MTLPixelFormatRGBA16Float : outFormat;
         td.inputWidth = inW; td.inputHeight = inH; td.outputWidth = midW; td.outputHeight = midH;
         td.autoExposureEnabled = YES;
         td.requiresSynchronousInitialization = YES;
@@ -186,10 +194,10 @@ static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uin
         g_up.motionTex = [d newTextureWithDescriptor:md];
         md.pixelFormat = MTLPixelFormatR8Unorm;
         g_up.reactiveTex = [d newTextureWithDescriptor:md];
-        if (g_up.temporal && (midW != outW || midH != outH)) {
+        if (g_up.temporal && rest) {
             MTLFXSpatialScalerDescriptor* sd = [MTLFXSpatialScalerDescriptor new];
             sd.colorTextureFormat = MTLPixelFormatRGBA16Float;
-            sd.outputTextureFormat = MTLPixelFormatRGBA16Float;
+            sd.outputTextureFormat = outFormat;
             sd.inputWidth = midW; sd.inputHeight = midH; sd.outputWidth = outW; sd.outputHeight = outH;
             sd.colorProcessingMode = MTLFXSpatialScalerColorProcessingModeHDR;
             g_up.rest = [sd newSpatialScalerWithDevice:d];
@@ -238,7 +246,8 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
     bool spatial = (info->flags & kUpscaleSpatial) || !depth;
     uint32_t outW = (uint32_t)out->mtl.width, outH = (uint32_t)out->mtl.height;
     std::lock_guard<std::mutex> lock(g_up.m);
-    bool ready = prepare(cb->device, info->inputWidth, info->inputHeight, outW, outH, spatial);
+    bool ready = prepare(cb->device, info->inputWidth, info->inputHeight, outW, outH, spatial, color->mtl.pixelFormat,
+                         out->mtl.pixelFormat);
     if (!ready && !g_up.stretch) return;
     cb->endEncoder();
     cb->waitForAllResolves();
@@ -342,7 +351,7 @@ VKFN(void) vkCmdUpscaleSnapshotKSA(VkCommandBuffer commandBuffer, VkImage image,
     std::lock_guard<std::mutex> lock(g_up.m);
     id<MTLTexture> src = color->mtl;
     __strong id<MTLTexture>& snapshot = g_up.snapshots[stage];
-    if (!snapshot || snapshot.width != src.width || snapshot.height != src.height) {
+    if (!snapshot || snapshot.width != src.width || snapshot.height != src.height || snapshot.pixelFormat != src.pixelFormat) {
         MTLTextureDescriptor* d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:src.pixelFormat width:src.width
                                                                                    height:src.height mipmapped:NO];
         d.usage = MTLTextureUsageShaderRead;
