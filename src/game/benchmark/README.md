@@ -22,13 +22,13 @@ your own settings. It plays in the game you have open. Your game is saved first,
 and your game comes back when it ends; Esc stops it. With **Restart for a Clean Run** on (under **Advanced Settings**),
 your game is saved as "Before the benchmark" and the game starts again for it instead, the way `./benchmark.sh` plays
 it, and quits at the end with the report open. The **Report** table under the tests lists the newest reports; **SHOW
-REPORT** opens one, and the report's **Open Timeline** button shows the run frame by frame in your browser (it stays on
-this Mac).
+REPORT** opens one.
 
 **Report Detail**, also under Advanced Settings, says what a test's report holds besides its frame rate: **Standard**,
 its numbers and screenshots; **Profile**, also the GPU's work named in each part ("Clouds Raymarching", "Ocean"), from
 the test played twice more in a game started again, which quits at the end as with Restart for a Clean Run
-(`./benchmark.sh profile`; not with Full); **Memory**, also what holds the game's memory at each view.
+(`./benchmark.sh profile`; not with Full), and the report's **Open Timeline** button, which shows the run frame by frame
+in your browser (it stays on this Mac); **Memory**, also what holds the game's memory at each view.
 
 **Your Game**'s **RECORD** button records your own game instead: 20 seconds of your play from when the settings close,
 with the frame rate, the stutters and what caused them, as a report to share when the game stutters somewhere. Nothing
@@ -488,11 +488,10 @@ ones.
 sqlite3 run.db "SELECT zone, ROUND(self_ms / frames, 2) FROM zone_stats WHERE part = 'earth4' ORDER BY self_ms DESC LIMIT 10"
 ```
 
-A run's store becomes a trace for Perfetto's viewer, `timeline.pftrace`, and the same as `timeline.js`, which the
-report loads: its **Open Timeline** button hands the trace to ui.perfetto.dev in your browser, and it goes nowhere else.
-`benchmark.sh` and a restarted game write them at the run's end; the running game writes them when the tab's **SHOW
-REPORT** first opens the report (a few hundred MB for a long run, kept out of your game's play). `timeline` writes them
-for a run without them, and opens the report
+A run's store becomes a trace for Perfetto's viewer, `timeline.pftrace`, and the same as `timeline.js`, which the report
+loads: its **Open Timeline** button hands the trace to ui.perfetto.dev in your browser, and it goes nowhere else. A
+profiled run writes them at its end (a few hundred MB at the peak for a long run, never in a player's game: a profiled
+game quits at the end); `timeline` writes them for any run, and opens the report
 ([`../../shared/benchmark/Timeline.cs`](../../shared/benchmark/Timeline.cs)). Its tracks: the parts, the run's events,
 frame time and GPU busy, each frame from its start to its present and to the GPU's end and its time on screen, KSA
 Metal's waits by kind, the game's zones around the slow frames, and memory.
@@ -575,7 +574,7 @@ flight's. Fly the free camera to a place, open the console (`\`) and type `bench
 
 | File | |
 |---|---|
-| `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/` | the results: `report.html`, `report.md`, `run.json` (the record), `run.db` and `host.db` (the run's store), `plan.json`, the screenshots, `game.log`, `stuck.txt` from a stuck game, `compare.html` and `compare.md` after a comparison, `timeline.pftrace` and `timeline.js` (the report's Open Timeline), `profile.md` after `profile`, `caught/` with what the triggers kept, and what the tools wrote |
+| `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/` | the results: `report.html`, `report.md`, `run.json` (the record), `run.db` and `host.db` (the run's store), `plan.json`, the screenshots, `game.log`, `stuck.txt` from a stuck game, `compare.html` and `compare.md` after a comparison, `timeline.pftrace` and `timeline.js` (the report's Open Timeline) after `profile` or `timeline`, `profile.md` after `profile`, `caught/` with what the triggers kept, and what the tools wrote |
 | `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/<date>.zip` | the run to share |
 | `~/Documents/My Games/Kitten Space Agency/benchmarks/baselines.json`, `noise/` | the baselines' names, and the noise profiles `calibrate` measured on this Mac |
 | `~/Library/Caches/ksa-macos-port/benchmark/instance/` | the game's documents folder for a run that starts the game |

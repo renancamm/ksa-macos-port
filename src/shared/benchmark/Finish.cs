@@ -14,9 +14,8 @@ namespace KsaPort.Common.Benchmark;
 
 public static class Finish
 {
-    // asksMac: whether to ask macOS about this Mac (the tests' runs are of no Mac); timeline: whether to write the run's
-    // timeline now (a few hundred MB for a long run: the running game writes it when its report is opened)
-    public static RunRecord Run(string dir, bool asksMac = true, bool timeline = true) => Culture(() => Make(dir, asksMac, null, timeline));
+    // asksMac: whether to ask macOS about this Mac (the tests' runs are of no Mac)
+    public static RunRecord Run(string dir, bool asksMac = true) => Culture(() => Make(dir, asksMac, null));
 
     // A run finished again from its store, as this version of the benchmark makes a record: its facts as its record had
     // them (the Mac and the app may have changed since), its numbers, checks and pages new. A record of any schema
@@ -24,7 +23,7 @@ public static class Finish
     public static RunRecord Again(string dir) => Culture(() =>
     {
         var kept = KeptFacts(dir);
-        return Make(dir, kept == null, kept, true);
+        return Make(dir, kept == null, kept);
     });
 
     private static RunRecord Culture(Func<RunRecord> make)
@@ -60,7 +59,7 @@ public static class Finish
         }
     }
 
-    private static RunRecord Make(string dir, bool asksMac, List<Fact>? kept, bool timeline)
+    private static RunRecord Make(string dir, bool asksMac, List<Fact>? kept)
     {
         var plan = RunPlan.Read(dir) ?? new RunPlan();
         var events = EventLog.Read(dir);
@@ -89,10 +88,11 @@ public static class Finish
         record.Findings = Checks.Run(new RunEvidence(dir, record, events, logs, crashes));
         record.Status = events.Any(e => e.Type == "stopped") ? Status.Stopped : record.Problems.Any() ? Status.Failed : Status.Passed;
         record.Write(dir);
-        // The timeline, which the report's Open Timeline button loads; without it, the button says how to write it
+        // A profiled run's timeline, which its report's Open Timeline button loads (a few hundred MB at its peak for a long
+        // run: a profiled run's game quits at the end, so it never lands in a player's game)
         try
         {
-            if (timeline)
+            if (plan.Passes.Contains(PassKind.Profiled))
                 Timeline.Write(dir);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or SqliteException)

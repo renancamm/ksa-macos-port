@@ -291,8 +291,9 @@ public static class Pages
         html.Append($"<h1>{E(TestName(r.Test))}{(r.Mode.Split(' ').Contains("jump") ? " <span>places</span>" : "")}</h1>");
         html.Append($"<p>{E(When(r))} · {E(MacLine(r))}</p>");
         html.Append(Status(r.Status == Benchmark.Status.Passed, r.Status.ToString()));
-        // Every frame of the run in Perfetto's viewer, from the timeline written beside the report from its store (Timeline.cs)
-        bool timeline = File.Exists(Path.Combine(dir, RunStore.GameFile));
+        // Every frame of the run in Perfetto's viewer, from the timeline beside the report (a profiled run's, Finish.cs, or
+        // ./benchmark.sh timeline's; Timeline.cs)
+        bool timeline = File.Exists(Path.Combine(dir, Timeline.ScriptFile));
         if (timeline)
             html.Append("<button id=\"timeline\" class=\"open-timeline\" title=\"Every frame of this run, in Perfetto's viewer in your browser. The run stays on this Mac.\">Open Timeline</button><p id=\"timeline-said\" class=\"said\"></p>");
         html.Append("</div></header><main>");
@@ -339,7 +340,7 @@ public static class Pages
         FrameCharts(html, r, timelines);
         Gallery(html, r, order, ext);
         FactsTable(html, r);
-        html.Append("<footer>Every frame's numbers are in <code>run.db</code> (SQLite: <code>./benchmark.sh query</code>), the run's record in <code>run.json</code>, the same numbers as text in <code>report.md</code>, the game's log in <code>game.log</code>, the timeline in <code>timeline.pftrace</code> (for ui.perfetto.dev).</footer>");
+        html.Append($"<footer>Every frame's numbers are in <code>run.db</code> (SQLite: <code>./benchmark.sh query</code>), the run's record in <code>run.json</code>, the same numbers as text in <code>report.md</code>, the game's log in <code>game.log</code>{(timeline ? ", the timeline in <code>timeline.pftrace</code> (for ui.perfetto.dev)" : "")}.</footer>");
         html.Append("</main>");
         if (timeline)
             html.Append($"<script src=\"{Timeline.ScriptFile}\" defer></script>");

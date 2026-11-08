@@ -118,7 +118,7 @@ public static class Runs
     {
         if (!_installed)
             return "The benchmark is not in this app, or this KSA version moved the game's code it needs (logs/console.log says which).";
-        if (_run != null || _startRequested || _hereRequested || _finishing is { IsCompleted: false } || _showing is { IsCompleted: false })
+        if (_run != null || _startRequested || _hereRequested || _finishing is { IsCompleted: false })
             return "A benchmark is running.";
         if (_mode == Mode.Script)
             return "This game is a benchmark.sh run.";
@@ -152,7 +152,7 @@ public static class Runs
     {
         if (!_installed)
             return "The benchmark is not in this app, or this KSA version moved the game's code it needs (logs/console.log says which).";
-        if (_run != null || _startRequested || _hereRequested || _finishing is { IsCompleted: false } || _showing is { IsCompleted: false })
+        if (_run != null || _startRequested || _hereRequested || _finishing is { IsCompleted: false })
             return "A benchmark is running.";
         if (_mode == Mode.Script)
             return "This game is a benchmark.sh run.";
@@ -213,34 +213,12 @@ public static class Runs
         }
     }
 
-    // Its page in the browser, or the folder of a run that has none. A run finished in the running game has no timeline
-    // yet (Finish.Run): written first, in the background (a long run takes a second and a few hundred MB)
+    // Its page in the browser, or the folder of a run that has none
     public static void Show(string folder)
     {
-        if (_showing is { IsCompleted: false })
-            return;
         var page = Path.Combine(folder, "report.html");
-        if (!File.Exists(page) || File.Exists(Path.Combine(folder, Timeline.ScriptFile)) || !File.Exists(Path.Combine(folder, RunStore.GameFile)))
-        {
-            Process.Start("/usr/bin/open", new[] { File.Exists(page) ? page : folder });
-            return;
-        }
-        _showing = Task.Run(() =>
-        {
-            try
-            {
-                Timeline.Write(folder);
-            }
-            // Whatever went wrong: the report still opens, its button saying the timeline isn't there
-            catch (Exception e)
-            {
-                Log($"BenchmarkRun: the timeline could not be written: {e.Message}");
-            }
-            Process.Start("/usr/bin/open", new[] { page });
-        });
+        Process.Start("/usr/bin/open", new[] { File.Exists(page) ? page : folder });
     }
-
-    private static Task? _showing;
 
     // After every frame of the game
     public static void AfterFrame()
@@ -420,7 +398,7 @@ public static class Runs
             {
                 new EventLog(_out, 1).Add("ended", text: $"hung{Watchdog.Where(stale)} (no frame for {limit} s): stopped");
                 CopyLog(_mode);
-                Finish.Run(_out, timeline: false);
+                Finish.Run(_out);
             }
             catch (Exception e)
             {
@@ -725,8 +703,7 @@ public static class Runs
         events.Add("memory", text: Memory.Text());
         CopyLog(mode);
         var output = _out;
-        // The timeline when its report is opened, but in a game that quits at the end
-        _finishing = Task.Run(() => Finish.Run(output, timeline: mode == Mode.Restarted));
+        _finishing = Task.Run(() => Finish.Run(output));
         Log("BenchmarkRun: writing the report");
     }
 
@@ -773,7 +750,7 @@ public static class Runs
         // Its main number: "Passed, 30 FPS"
         if (record.Headline().Short() is { Length: > 0 } headline)
             outcome += $", {headline}";
-        return new Result(folder, Pages.TestName(record.Test), passed, stopped, summary + " Opens its page, with its numbers, screenshots and timeline.", outcome,
+        return new Result(folder, Pages.TestName(record.Test), passed, stopped, summary + " Opens its page, with its numbers and screenshots.", outcome,
             RunDate(folder));
     }
 
