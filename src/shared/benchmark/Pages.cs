@@ -282,11 +282,11 @@ public static class Pages
     // --- report.html
 
     // report.html on top of the run's folder, report.md with its other files in data/ (RunFiles), which the page's
-    // pictures and timeline are read from (at: data/, or nothing for a run of before)
+    // pictures and timeline are read from
     public static void WriteReport(string dir, RunRecord r)
     {
-        dir = RunFiles.Data(RunFiles.Folder(dir));
-        var at = Path.GetRelativePath(RunFiles.Folder(dir), dir) is "." ? "" : RunFiles.DataFolder + "/";
+        dir = RunFiles.Data(dir);
+        const string at = RunFiles.DataFolder + "/";
         File.WriteAllText(Path.Combine(dir, "report.md"), Markdown(r));
         var ext = Directory.GetFiles(dir, "*_*.png").Length > 0 ? ".png" : ".jpg";
         var order = r.Scenarios.SelectMany(s => s.Shots).Where(s => File.Exists(Path.Combine(dir, s.File)) || File.Exists(Path.Combine(dir, Path.ChangeExtension(s.File, ".jpg")))).ToList();
@@ -352,7 +352,7 @@ public static class Pages
         FrameCharts(html, r, timelines);
         Gallery(html, r, order, at, ext);
         FactsTable(html, r);
-        html.Append($"<footer>In {(at.Length > 0 ? "the <code>data</code> folder" : "this folder")}: every frame's numbers in <code>run.db</code> (SQLite: <code>./benchmark.sh query</code>), the run's record in <code>run.json</code>, the same numbers as text in <code>report.md</code>, the game's log in <code>game.log</code>{(timeline ? ", the timeline in <code>timeline.pftrace</code> (for ui.perfetto.dev)" : "")}.</footer>");
+        html.Append($"<footer>In the <code>data</code> folder: every frame's numbers in <code>run.db</code> (SQLite: <code>./benchmark.sh query</code>), the run's record in <code>run.json</code>, the same numbers as text in <code>report.md</code>, the game's log in <code>game.log</code>{(timeline ? ", the timeline in <code>timeline.pftrace</code> (for ui.perfetto.dev)" : "")}.</footer>");
         html.Append("</main>");
         if (timeline)
             html.Append($"<script src=\"{at}{Timeline.ScriptFile}\" defer></script>");
@@ -837,23 +837,24 @@ public static class Pages
             html.Append($"<section><h2>Screenshots</h2><p class=\"lead\">{E(shotsNote)}</p></section>");
         if (shots.Count > 0)
         {
-            var relative = Path.GetRelativePath(RunFiles.Data(b), RunFiles.Data(a));
+            // From the page, on top of b's folder: a's screenshots, b's in its data/
+            var relative = Path.GetRelativePath(RunFiles.Folder(b), RunFiles.Data(a));
             int differ = shots.Count(s => s.State is "differs" or "unreadable");
             html.Append($"<section><h2>Screenshots</h2><p class=\"lead\">{(differ == 0 ? "None differs." : $"{differ} of {shots.Count} differ.")} Drag across a picture to go from A to B. Changed: the share of its blocks whose colour moved.</p><div class=\"gallery compare\">");
             foreach (var s in shots.OrderByDescending(s => s.State is "differs" or "unreadable"))
             {
                 var label = s.State switch { "differs" => Mark(false, "differs"), "unreadable" => Mark(false, "unreadable"), "free" => "<span class=\"quiet\">not compared</span>", _ => "<span class=\"quiet\">same</span>" };
-                html.Append($"<figure class=\"slider\" style=\"--at:50%\"><div class=\"pair\">{Image(Path.Combine(relative, s.Name), "A: " + s.Name)}<div class=\"over\">{Image(s.Name, "B: " + s.Name)}</div><i class=\"handle\"></i><span class=\"tag a\">A</span><span class=\"tag b\">B</span><input type=\"range\" min=\"0\" max=\"100\" value=\"50\" aria-label=\"From A to B\"></div>");
+                html.Append($"<figure class=\"slider\" style=\"--at:50%\"><div class=\"pair\">{Image(Path.Combine(relative, s.Name), "A: " + s.Name)}<div class=\"over\">{Image(RunFiles.DataFolder + "/" + s.Name, "B: " + s.Name)}</div><i class=\"handle\"></i><span class=\"tag a\">A</span><span class=\"tag b\">B</span><input type=\"range\" min=\"0\" max=\"100\" value=\"50\" aria-label=\"From A to B\"></div>");
                 html.Append($"<figcaption><b>{E(Path.GetFileNameWithoutExtension(s.Name))}</b><span>{(s.State == "free" ? "" : F(s.ChangedPercent, "0.00") + " % · ")}{label}</span></figcaption>");
                 if (s.State == "differs")
-                    html.Append($"<a class=\"small\" href=\"diff/{E(Url(s.Name))}\">The changed blocks, in red</a>");
+                    html.Append($"<a class=\"small\" href=\"{RunFiles.DataFolder}/diff/{E(Url(s.Name))}\">The changed blocks, in red</a>");
                 html.Append("</figure>");
             }
             html.Append("</div></section>");
         }
         html.Append("</main>");
         Close(html);
-        File.WriteAllText(Path.Combine(RunFiles.Data(b), "compare.html"), html.ToString());
+        File.WriteAllText(Path.Combine(RunFiles.Folder(b), RunFiles.ComparePage), html.ToString());
     }
 
     // A study's page (report.html in its folder): each variant's verdict against the baseline, the parts as a matrix of

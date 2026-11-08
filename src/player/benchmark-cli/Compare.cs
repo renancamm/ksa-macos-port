@@ -57,7 +57,7 @@ public static partial class Program
             Console.WriteLine($"The runs played in different modes ({ra.Mode}, {rb.Mode}): {(c.Warps.Count > 0 ? "only the time warp's parts compare" : "neither their numbers nor their screenshots compare")}.");
             return 2;
         }
-        // Their files: each run's data/ (RunFiles), where compare.md, compare.html and diff/ go too
+        // Their files: each run's data/ (RunFiles), where compare.md and diff/ go too (compare.html on top of b's folder)
         string dirA = RunFiles.Data(Directory.Exists(a) ? a : Path.GetDirectoryName(a)!), dirB = RunFiles.Data(Directory.Exists(b) ? b : Path.GetDirectoryName(b)!);
         if (c.Parts.Count + c.Warps.Count == 0)
         {
@@ -156,7 +156,7 @@ public static partial class Program
         Pages.WriteCompare(dirA, dirB, ra, rb, c, shots, verdict, good, differences, warnings, shotsNote.Trim());
         Console.Write(Terminal.Layout(printed.ToString()));
         Console.WriteLine();
-        Console.WriteLine($"Side by side: {Path.Combine(dirB, "compare.html")}");
+        Console.WriteLine($"Side by side: {Path.Combine(RunFiles.Folder(dirB), RunFiles.ComparePage)}");
         return differ > 0 ? 1 : 0;
     }
 

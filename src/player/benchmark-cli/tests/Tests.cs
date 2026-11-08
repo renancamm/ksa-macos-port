@@ -206,7 +206,7 @@ internal static class Tests
         events.Add("done");
         events.Add("ended", text: "quit normally");
         if (log != null)
-            File.WriteAllText(Path.Combine(dir, "game.log"), log);
+            File.WriteAllText(Path.Combine(RunFiles.Data(dir), "game.log"), log);
         return dir;
     }
 
@@ -226,7 +226,7 @@ internal static class Tests
         Equal<double?>(60.0, part[Metrics.Low1], "the 1% low: the slowest frame of 100");
         Equal(1.5, record.LoadSeconds, "loading");
         Equal(Status.Passed, RunRecord.Read(dir)?.Status, "run.json read back");
-        var md = File.ReadAllText(Path.Combine(dir, "report.md"));
+        var md = File.ReadAllText(Path.Combine(RunFiles.Data(dir), "report.md"));
         Contains([md], "**Passed**", "report.md");
         Contains([md], "| earth | earth1 | ", "report.md's part");
         Check(md.IndexOf("| earth | earth1 | ", StringComparison.Ordinal) < md.IndexOf(Pages.FactsHeading, StringComparison.Ordinal), "the numbers before the facts");
@@ -246,7 +246,7 @@ internal static class Tests
         var events = new EventLog(dir, 1);
         events.Add("error", "earth", text: "12.0 s: '@launch Rocket at Pad' failed");
         events.Add("alongside");
-        File.WriteAllLines(Path.Combine(dir, "game.log"),
+        File.WriteAllLines(Path.Combine(RunFiles.Data(dir), "game.log"),
         [
             "[ksa-metal ERROR] pipeline: no function", "[ksa-metal ERROR] pipeline: no function", "[ksa-metal ERROR] pipeline: no function",
             "[ksa-metal ERROR] command buffer: kIOGPUCommandBufferCallbackErrorHang", "\x1b[31m21:04:05 ERROR Something broke\x1b[0m",
@@ -268,7 +268,7 @@ internal static class Tests
         Check(!problems.Any(p => p.Contains("master server", StringComparison.Ordinal)), "the game's servers out of reach: no problem");
         Contains(Notes(record), "could not reach its master server", "but a note");
         Equal(10, problems.Length, "problems");
-        Contains([File.ReadAllText(Path.Combine(dir, "report.md"))], "**Failed**: 10 problems", "report.md");
+        Contains([File.ReadAllText(Path.Combine(RunFiles.Data(dir), "report.md"))], "**Failed**: 10 problems", "report.md");
     }
 
     private static void Notes()
@@ -323,7 +323,7 @@ internal static class Tests
         Equal("10,20", string.Join(",", part.Range(Metrics.FrameTime) ?? []), "frame time's range");
         Equal("12,10,20", string.Join(",", part.Sessions(Metrics.FrameTime)), "each session's number, in the order they played");
         Equal(3, part.Runs, "the part's runs");
-        Contains([File.ReadAllText(Path.Combine(dir, "report.md"))], "| 12.0 (10.0-20.0) |", "report.md's range");
+        Contains([File.ReadAllText(Path.Combine(RunFiles.Data(dir), "report.md"))], "| 12.0 (10.0-20.0) |", "report.md's range");
         // A part that never got to its speed in one repeat never did
         var merged = Measure.Merge([Measure.Of(Warped(1), null, null, 1000, 0), Measure.Of(Warped(0.5), null, null, 1000, 0), Measure.Of(Warped(1), null, null, 1000, 0)]);
         Check(!merged.ContainsKey(Metrics.ToSpeed.Name), "seconds to speed: never, in one of the runs");
@@ -338,13 +338,12 @@ internal static class Tests
         new EventLog(dir).Add("memory", text: "pressure normal, swap 100.00 -> 600.00 MB");
         var record = Finished(dir);
         Equal(Status.Passed, record.Status, "passed");
-        Contains([File.ReadAllText(Path.Combine(dir, "report.md"))], "| 16.7 |", "report.md's frame time");
+        Contains([File.ReadAllText(Path.Combine(RunFiles.Data(dir), "report.md"))], "| 16.7 |", "report.md's frame time");
         Equal<double?>(16.7, Part(record)[Metrics.FrameTime], "the record's frame time");
         Contains(Notes(record), "swapped memory", "swap read with a decimal point");
     }
 
-    // A run from benchmark.sh, in a folder with data/ as a new run's: its plan without the port settings and the hooks,
-    // which come from the game's log
+    // A run from benchmark.sh: its plan without the port settings and the hooks, which come from the game's log
     private static void FinishZip()
     {
         var dir = Path.Combine(_scratch, "2026-10-26_0100");
@@ -376,7 +375,7 @@ internal static class Tests
         var events = new EventLog(said);
         Session(said, events, 1, 10, null, Kind.Views);
         events.Add("hooks", text: "TerrainCache: on; FarTerrain: on, by altitude");
-        File.WriteAllLines(Path.Combine(said, "game.log"),
+        File.WriteAllLines(Path.Combine(RunFiles.Data(said), "game.log"),
             ["[hooks] TerrainCache: on", "[hooks] FarTerrain: on, by altitude", "[hooks] FarTerrain: EarthScale level 17 built (jump, waited 161 ms)",
              "[hooks] TerrainCache: failed while the game ran (NullReferenceException: x)"]);
         var hooked = Finished(said);
@@ -390,8 +389,8 @@ internal static class Tests
         var a = Run("a", frameMs: 10);
         var b = Run("b", frameMs: 12);
         var view = Gradient(64, 48);
-        Images.Write(Path.Combine(a, "earth_earth1.png"), view);
-        Images.Write(Path.Combine(b, "earth_earth1.png"), view);
+        Images.Write(Path.Combine(RunFiles.Data(a), "earth_earth1.png"), view);
+        Images.Write(Path.Combine(RunFiles.Data(b), "earth_earth1.png"), view);
         foreach (var dir in new[] { a, b })
             new EventLog(dir, 1).Add("shot", "earth", "earth1", "earth_earth1.png", value: 1);
         Finished(a);
@@ -400,7 +399,7 @@ internal static class Tests
         Equal(0, status, "exit status: the same screenshots");
         Contains([output], "Same image (1 of 1 screenshots)", "the verdict");
         Check(!output.Contains("|", StringComparison.Ordinal), "aligned columns, no Markdown");
-        var written = File.ReadAllText(Path.Combine(b, "compare.md"));
+        var written = File.ReadAllText(Path.Combine(RunFiles.Data(b), "compare.md"));
         Contains([written], "| 10.0 | 12.0 | **20 % slower** |", "a part 20 % slower, marked: past the screen's 10 %");
         Contains([written], "| earth_earth1.png | 0.00% | 0.0 | same (up to 1%) |", "the same screenshot");
         Contains([written], "Same Mac, same version, same settings.", "the settings");
@@ -409,18 +408,18 @@ internal static class Tests
         // Half the view changed
         var changed = Gradient(64, 48);
         Array.Fill(changed.Rgb, (byte)255, 0, changed.Rgb.Length / 2);
-        Images.Write(Path.Combine(b, "earth_earth1.png"), changed);
+        Images.Write(Path.Combine(RunFiles.Data(b), "earth_earth1.png"), changed);
         (status, output) = Said(() => KsaMetal.Benchmark.Cli.Program.Compare(a, b));
         Equal(1, status, "exit status: a screenshot differs");
         Contains([output], "differs (up to 1%)", "the screenshot that differs");
-        Check(File.Exists(Path.Combine(b, "diff", "earth_earth1.png")), "the marked copy in b/diff/");
+        Check(File.Exists(Path.Combine(RunFiles.Data(b), "diff", "earth_earth1.png")), "the marked copy in b/diff/");
 
         // Within noise
         var c = Run("c", frameMs: 10.2);
         Finished(c);
         Said(() => KsaMetal.Benchmark.Cli.Program.Compare(a, c));
-        Contains([File.ReadAllText(Path.Combine(c, "compare.md"))], "| 10.0 | 10.2 | +2 % |", "a change within noise, unmarked");
-        Check(!File.ReadAllText(Path.Combine(c, "compare.md")).Contains("in a row", StringComparison.Ordinal), "one session a side: no word on heat");
+        Contains([File.ReadAllText(Path.Combine(RunFiles.Data(c), "compare.md"))], "| 10.0 | 10.2 | +2 % |", "a change within noise, unmarked");
+        Check(!File.ReadAllText(Path.Combine(RunFiles.Data(c), "compare.md")).Contains("in a row", StringComparison.Ordinal), "one session a side: no word on heat");
 
         // Sessions a side, played run after run: the heat's warning, on the page too
         var (d, e) = (Run("d", sessions: 5), Run("e", sessions: 5));
@@ -435,11 +434,11 @@ internal static class Tests
         Finished(f);
         Finished(g);
         Said(() => KsaMetal.Benchmark.Cli.Program.Compare(f, g));
-        Contains([File.ReadAllText(Path.Combine(g, "compare.md"))], "| Hooks | CloudSteps: off | CloudSteps: on |", "the hooks that differ");
+        Contains([File.ReadAllText(Path.Combine(RunFiles.Data(g), "compare.md"))], "| Hooks | CloudSteps: off | CloudSteps: on |", "the hooks that differ");
         var h = Run("h", facts: [new("Hooks", "CloudSteps: off; TerrainCache: on")]);
         Finished(h);
         Said(() => KsaMetal.Benchmark.Cli.Program.Compare(f, h));
-        Contains([File.ReadAllText(Path.Combine(h, "compare.md"))], "Same Mac, same version, same settings.", "the same hooks in another order");
+        Contains([File.ReadAllText(Path.Combine(RunFiles.Data(h), "compare.md"))], "Same Mac, same version, same settings.", "the same hooks in another order");
     }
 
     private static void CompareModes()
@@ -471,14 +470,14 @@ internal static class Tests
     {
         var a = WarpRun("a", 1);
         Finished(a);
-        var md = File.ReadAllText(Path.Combine(a, "report.md"));
+        var md = File.ReadAllText(Path.Combine(RunFiles.Data(a), "report.md"));
         Contains([md], "**0.2 game days** in time warp", "the headline");
         Contains([md], "Time warp: 0.2 game days", "the table's line");
         Contains([md], "| warpdebris | debris | 0.17 |", "the part's row");
         var b = WarpRun("b", 0.5);
         Finished(b);
         Said(() => KsaMetal.Benchmark.Cli.Program.Compare(a, b));
-        var written = File.ReadAllText(Path.Combine(b, "compare.md"));
+        var written = File.ReadAllText(Path.Combine(RunFiles.Data(b), "compare.md"));
         Contains([written], "| Warp part |", "the warp table of a comparison");
         Contains([written], "**50 % slower**", "a part at half the speed");
         // The game's own errors in a timed scenario are a note, after it a problem again
@@ -536,7 +535,7 @@ internal static class Tests
         var record = Finished(dir);
         Equal(Status.Stopped, record.Status, "stopped");
         Equal(0, Problems(record).Length, "no problems");
-        Contains([File.ReadAllText(Path.Combine(dir, "report.md"))], "**Stopped**", "report.md");
+        Contains([File.ReadAllText(Path.Combine(RunFiles.Data(dir), "report.md"))], "**Stopped**", "report.md");
         // Stopped, with something wrong besides
         var both = Run("both", ending: "was stopped with Ctrl-C", done: false);
         var events = new EventLog(both, 1);
@@ -551,7 +550,7 @@ internal static class Tests
         var triggeredRecord = Finished(triggered);
         Equal(Status.Stopped, triggeredRecord.Status, "a trigger's stop");
         Contains(Notes(triggeredRecord), "the trigger frame>50ms: stop (a frame of 60 ms in earth1)", "the trigger's stop noted");
-        Contains([File.ReadAllText(Path.Combine(triggered, "report.md"))], "**Stopped** by a trigger", "report.md");
+        Contains([File.ReadAllText(Path.Combine(RunFiles.Data(triggered), "report.md"))], "**Stopped** by a trigger", "report.md");
         // A repeat stopped along the way is part of the same stop
         var repeat = Run("repeat stopped");
         var more = new EventLog(repeat);
@@ -569,15 +568,15 @@ internal static class Tests
         Check(!Images.Blank(stars), "one star is a picture");
         var dir = Run("2026-10-26_0200");
         new EventLog(dir, 1).Add("shot", "earth", "earth1", "earth_earth1.png", value: 1);
-        Images.Write(Path.Combine(dir, "earth_earth1.png"), black);
+        Images.Write(Path.Combine(RunFiles.Data(dir), "earth_earth1.png"), black);
         Contains(Problems(Finished(dir)), "earth_earth1.png: the screenshot is one colour", "the problem");
         // The sky gone white around a planet, as when the game's light breaks: a picture, but not a right one
         var flood = new Image(32, 32, new byte[32 * 32 * 3]);
         Array.Fill(flood.Rgb, (byte)255, 0, flood.Rgb.Length * 3 / 4);
         Equal(75.0, Images.WhitePercent(flood), "the white share");
-        Images.Write(Path.Combine(dir, "earth_earth1.png"), flood);
+        Images.Write(Path.Combine(RunFiles.Data(dir), "earth_earth1.png"), flood);
         Contains(Problems(Finished(dir)), "75 % of the screenshot is pure white", "the problem");
-        Images.Write(Path.Combine(dir, "earth_earth1.png"), stars);
+        Images.Write(Path.Combine(RunFiles.Data(dir), "earth_earth1.png"), stars);
         Equal(0, Problems(Finished(dir)).Length, "a picture: no problem, and none left from before");
     }
 
@@ -612,13 +611,13 @@ internal static class Tests
         new EventLog(old, 1).Add("shot", "earth", "earth1", "earth_earth1.png", value: 70);
         var fresh = Run("fresh");
         new EventLog(fresh, 1).Add("shot", "earth", "earth1", "earth_earth1.png", value: 1);
-        Images.Write(Path.Combine(old, "earth_earth1.png"), Gradient(64, 48));
+        Images.Write(Path.Combine(RunFiles.Data(old), "earth_earth1.png"), Gradient(64, 48));
         Finished(old);
         Finished(fresh);
         Contains([Said(() => KsaMetal.Benchmark.Cli.Program.Compare(old, fresh)).Output], "b has no PNG", "no pictures in b");
         var changedPicture = Gradient(64, 48);
         Array.Fill(changedPicture.Rgb, (byte)255, 0, changedPicture.Rgb.Length / 2);
-        Images.Write(Path.Combine(fresh, "earth_earth1.png"), changedPicture);
+        Images.Write(Path.Combine(RunFiles.Data(fresh), "earth_earth1.png"), changedPicture);
         Equal(1, Said(() => KsaMetal.Benchmark.Cli.Program.Compare(old, fresh)).Status, "an old run's loose limit doesn't hide a change");
     }
 
@@ -626,10 +625,10 @@ internal static class Tests
     private static void OlderRun()
     {
         var dir = Path.Combine(_scratch, "2026-11-02_2057");
-        Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, RunRecord.FileName), $$"""{"schema":{{RunRecord.CurrentSchema - 1}},"name":"2026-11-02_2057","test":"mixed","scenarios":[]}""");
+        RunFiles.Create(dir);
+        File.WriteAllText(Path.Combine(RunFiles.Data(dir), RunRecord.FileName), $$"""{"schema":{{RunRecord.CurrentSchema - 1}},"name":"2026-11-02_2057","test":"mixed","scenarios":[]}""");
         Check(RunRecord.Read(dir) == null, "an older schema");
-        File.WriteAllText(Path.Combine(dir, RunRecord.FileName), """{"script":"benchmark.txt","only":"mixed"}""");
+        File.WriteAllText(Path.Combine(RunFiles.Data(dir), RunRecord.FileName), """{"script":"benchmark.txt","only":"mixed"}""");
         Check(RunRecord.Read(dir) == null, "an older run's plan");
     }
 
@@ -987,7 +986,7 @@ internal static class Tests
         Equal<double?>(3.0, part[Metrics.ZoneName("gpu", "Ocean")], "the GPU's zone: own ms a frame of the GPU's profiler");
         Check(part.Measurings.All(m => !m.Values.Keys.Any(Metrics.IsZone)), "no zones in a measuring's own numbers");
         Equal(1, record.Moments.Count, "the slow frame");
-        Contains([File.ReadAllText(Path.Combine(dir, "report.md"))], "| earth | earth1 | 120 | PrepareFrame 101 ms; vkWaitForPresentKHR 95 ms; GPU 97 ms |", "report.md's slow frames");
+        Contains([File.ReadAllText(Path.Combine(RunFiles.Data(dir), "report.md"))], "| earth | earth1 | 120 | PrepareFrame 101 ms; vkWaitForPresentKHR 95 ms; GPU 97 ms |", "report.md's slow frames");
         Contains([File.ReadAllText(Path.Combine(dir, "report.html"))], "Where the time goes", "the page's zones");
     }
 
@@ -995,13 +994,13 @@ internal static class Tests
     private static void BeforePlans()
     {
         var dir = Run("before-plans", frameMs: 20);
-        File.Delete(Path.Combine(dir, RunPlan.FileName));
-        File.WriteAllText(Path.Combine(dir, "options.json"), """
+        File.Delete(Path.Combine(RunFiles.Data(dir), RunPlan.FileName));
+        File.WriteAllText(Path.Combine(RunFiles.Data(dir), "options.json"), """
             {"script":"","only":"mixed","test":"mixed","mode":"views","warmUp":true,"repeat":2,"session":1,"facts":[{"key":"Power","value":"AC Power"}]}
             """);
         Equal("mixed views", RunPlan.Read(dir) is { } p ? $"{p.Play.Test} {p.Play.Mode}" : "", "the plan from the options");
         Equal("warm-up measured measured", string.Join(" ", RunPlan.Read(dir)!.Passes.Select(RunPlan.Name)), "its passes");
-        File.WriteAllText(Path.Combine(dir, RunRecord.FileName), """{"schema":3,"facts":[{"key":"Chip","value":"Apple M5"}]}""");
+        File.WriteAllText(Path.Combine(RunFiles.Data(dir), RunRecord.FileName), """{"schema":3,"facts":[{"key":"Chip","value":"Apple M5"}]}""");
         var record = Finish.Again(dir);
         Equal("mixed", record.Test, "its test");
         Equal("views", record.Mode, "its mode");
@@ -1063,7 +1062,7 @@ internal static class Tests
         Equal("session-memory note", string.Join(" ", types.TakeLast(2)), "the host's event, then the game's");
         var record = Finished(dir);
         Equal(0, Notes(record).Length, "notes");
-        Check(File.Exists(Path.Combine(dir, RunStore.GameFile)) && File.Exists(Path.Combine(dir, RunStore.HostFile)), "both files");
+        Check(File.Exists(Path.Combine(RunFiles.Data(dir), RunStore.GameFile)) && File.Exists(Path.Combine(RunFiles.Data(dir), RunStore.HostFile)), "both files");
         var unpacked = Path.Combine(_scratch, "unpacked");
         ZipFile.ExtractToDirectory(Path.Combine(dir, "to-share_stored.zip"), unpacked);
         var events = RunStore.ReadEvents(Path.Combine(unpacked, "stored"));
@@ -1190,7 +1189,7 @@ internal static class Tests
         log.EndFrame(t + 0.02, null);
         log.Close();
         RunStore.CloseAll();
-        using var db = Sqlite.Open(Path.Combine(dir, RunStore.GameFile));
+        using var db = Sqlite.Open(Path.Combine(RunFiles.Data(dir), RunStore.GameFile));
         using (var q = db.Prepare("SELECT frames, calls, total_ms, self_ms, median_ms, max_ms, alloc_mb FROM zone_stats WHERE zone = 'Render'"))
         {
             Check(q.Step(), "Render's numbers");
@@ -1310,13 +1309,13 @@ internal static class Tests
         events.Add("done");
         events.Add("ended", text: "kept running");
         // A mod's error while the player played: theirs, noted, not the run's problem
-        File.WriteAllText(Path.Combine(dir, "game.log"), "12:00:01 ERROR SomeMod: could not find its part\n");
+        File.WriteAllText(Path.Combine(RunFiles.Data(dir), "game.log"), "12:00:01 ERROR SomeMod: could not find its part\n");
         var record = Finished(dir);
         Equal(Status.Passed, record.Status, "passed");
         Contains(Notes(record), "the game logged 1 error while it was played", "the player's own errors noted");
         Equal("Your Game", Pages.Title(record), "its title");
         Equal(100, Part(record).Frames, "its frames");
-        var report = File.ReadAllText(Path.Combine(dir, "report.md"));
+        var report = File.ReadAllText(Path.Combine(RunFiles.Data(dir), "report.md"));
         Contains([report], "no two recordings play the same", "what it is");
         Check(!report.Contains("slowest", StringComparison.Ordinal), "no slowest of one part");
     }
@@ -1443,7 +1442,7 @@ internal static class Tests
         Equal("Game VRAM", RunRecord.Read(Path.Combine(_scratch, "probed-a"))?.ProbeMetrics[0].Label, "read back");
         Equal(5, a.Census.Count, "the census: its 4 owners and the game's total");
         Equal(400.0, a.Census.Single(c => c.Kind == "game-total").Mb, "the game's tags all together");
-        var md = File.ReadAllText(Path.Combine(_scratch, "probed-a", "report.md"));
+        var md = File.ReadAllText(Path.Combine(_scratch, "probed-a", RunFiles.DataFolder, "report.md"));
         Contains([md], "| earth | earth1 | 5001 | 4.00 |", "report.md's probe numbers");
         Contains([md], "- earth earth1: game 400 (Planet Textures 300, Shadow Cascades 100), KSA Metal 420, .NET heap 0", "report.md's census");
         var page = File.ReadAllText(Path.Combine(_scratch, "probed-a", "report.html"));
@@ -1453,7 +1452,7 @@ internal static class Tests
         var hosted = Run("hosted", frameMs: 20, gpuMs: 10);
         double from = 0, to = 0;
         RunStore.Flush(hosted);  // the part's open and close in the file, not still on the writer's queue
-        RunStore.Query(Path.Combine(hosted, RunStore.GameFile), "SELECT t, type FROM events WHERE type IN ('open', 'close')", q =>
+        RunStore.Query(Path.Combine(RunFiles.Data(hosted), RunStore.GameFile), "SELECT t, type FROM events WHERE type IN ('open', 'close')", q =>
         {
             if (q.Text(1) == "open")
                 from = q.Double(0);

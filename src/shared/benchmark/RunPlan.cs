@@ -53,8 +53,8 @@ public sealed class RunPlan
 
     public void Write(string folder)
     {
-        Directory.CreateDirectory(folder);
         Out = RunFiles.Data(folder);
+        Directory.CreateDirectory(Out);
         File.WriteAllText(Path.Combine(Out, FileName), JsonSerializer.Serialize(this, Json));
     }
 
