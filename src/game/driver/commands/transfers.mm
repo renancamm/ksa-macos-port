@@ -276,15 +276,9 @@ void KCommandBuffer::writeTimestamp(KQueryPool* pool, uint32_t query) {
         return;
     }
     if (render) {
-        // Split: the pass ends here and goes on after the timestamp, which waits for its first half and is waited for by
-        // its second (beginRender's roles)
-        if (mode == kZonesSplit && deferredStores && passDesc) {
-            suspendRender();
-            stampTimestamp(pool, query);
-            resumeRender();
-            return;
-        }
+        // Taken when the pass ends; split: at its next draw (stampSplit)
         tsDeferred.push_back({pool, query});
+        if (mode == kZonesSplit && deferredStores && passDesc) tsSplit = true;
         return;
     }
     stampTimestamp(pool, query);
@@ -352,6 +346,7 @@ void KCommandBuffer::releaseTimestamps() {
     tsSamples = nil;
     tsWrites.clear();
     tsDeferred.clear();
+    tsSplit = false;
 }
 
 VKFN(void) vkCmdResetQueryPool(VkCommandBuffer, VkQueryPool pool, uint32_t first, uint32_t n) {

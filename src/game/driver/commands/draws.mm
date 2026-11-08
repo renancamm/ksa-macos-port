@@ -88,6 +88,7 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
 
     // The vertex and control kernels are the draw's vertex work: they wait on what the draw's vertex stage would
     cb->suspendRender();
+    cb->takeSplitStamps();
     id<MTLComputeCommandEncoder> enc = cb->computeEncoder(KCommandBuffer::kClassVertex);
     id<MTLBuffer> args = nil;
     NSUInteger argsOff = 0;
