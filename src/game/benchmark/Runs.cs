@@ -108,12 +108,12 @@ public static class Runs
         return _mode == Mode.Restarted ? "a run starts with the game, restarted from its settings" : "a run starts with the game";
     }
 
-    // Why a run can't start from the tab now, or null
-    public static string? CannotStart()
+    // Why a run can't start from the tab now (of this test: what its Report Detail and captures need), or null
+    public static string? CannotStart(string? test = null)
     {
         if (!_installed)
             return "The benchmark is not in this app, or this KSA version moved the game's code it needs (logs/console.log says which).";
-        if (_run != null || _startRequested || _hereRequested || _finishing is { IsCompleted: false })
+        if (_run != null || _startRequested || _hereRequested || _finishing is { IsCompleted: false } || WritingTimeline)
             return "A benchmark is running.";
         if (_mode == Mode.Script)
             return "This game is a benchmark.sh run.";
@@ -123,6 +123,14 @@ public static class Runs
             return "No game is loaded.";
         if (PortSettings.Get("restart_for_a_clean_run")?.Saved == "true" && _restart == null)
             return "The game was not started by the app, so it can't start itself again.";
+        if (Detail == "profile" && _restart == null)
+            return "Profile restarts the game, and the game was not started by the app.";
+        if (Detail == "profile" && test == "full")
+            return "Profile plays one test: choose the Mixed Test, the Planetary Tour or the Warp Test.";
+        if (Captured(test) && _restart == null)
+            return "Frame captures restart the game, and the game was not started by the app.";
+        if (Captured(test) && FreeGb() < 40)
+            return "Frame captures need 40 GB free on this disk.";
         try
         {
             Lineup.Read(Path.Combine(_folder, Lineup.FileName));
@@ -158,7 +166,8 @@ public static class Runs
     public static void StartFromTab(string test, bool restart)
     {
         _test = test;
-        if (!restart)
+        // Profile needs the game's GPU zones from its start, frame captures need them allowed: a game started again
+        if (!restart && !NeedsStart)
         {
             // On the next frame, outside the settings window's drawing
             _startRequested = true;
@@ -202,6 +211,31 @@ public static class Runs
         var page = Path.Combine(folder, "report.html");
         Process.Start("/usr/bin/open", new[] { File.Exists(page) ? page : folder });
     }
+
+    // Its timeline in Perfetto's viewer, in the browser: written from its store in the background (a long run takes
+    // seconds), then opened
+    public static void ShowTimeline(string folder)
+    {
+        if (WritingTimeline)
+            return;
+        _timeline = Task.Run(() =>
+        {
+            try
+            {
+                if (Timeline.Write(folder))
+                    Process.Start("/usr/bin/open", new[] { Path.Combine(folder, Timeline.PageFile) });
+            }
+            // Whatever went wrong (its store, the browser): said, never a crash of the game
+            catch (Exception e)
+            {
+                Log($"BenchmarkRun: the timeline could not be written: {e.Message}");
+            }
+        });
+    }
+
+    public static bool WritingTimeline => _timeline is { IsCompleted: false };
+
+    private static Task? _timeline;
 
     // After every frame of the game
     public static void AfterFrame()
@@ -374,14 +408,39 @@ public static class Runs
     }
 
     // The director's plan for a run from the tab: one measured pass
+    // The tab's Report Detail (report_detail): standard, profile (a warm-up, a measured and a profiled pass, as
+    // benchmark.sh profile), memory (the memory probe); and its frame captures (benchmark_captures, the file's
+    // Diagnostics), at each view of the Mixed Test at Standard (a profile's three passes would capture three times)
+    private static string Detail => PortSettings.Get("report_detail")?.Saved ?? "standard";
+
+    private static bool Captured(string? test) => test == "mixed" && Detail == "standard" && PortSettings.Get("benchmark_captures")?.Saved == "true";
+
+    // Whether the run needs a game started for it
+    private static bool NeedsStart => Detail == "profile" || Captured(_test);
+
+    private static long FreeGb()
+    {
+        try
+        {
+            return new DriveInfo(Constants.DocumentsFolderPath).AvailableFreeSpace >> 30;
+        }
+        catch (Exception e) when (e is IOException or ArgumentException or UnauthorizedAccessException)
+        {
+            return long.MaxValue;
+        }
+    }
+
     private static RunPlan Plan(string output)
     {
         var script = Path.Combine(_folder, Lineup.FileName);
         // The test's scenarios; full plays the three in one game here
         var lineup = Lineup.Read(script);
         var tests = (_test == "full" ? Lineup.Full : [_test]).Select(t => lineup.Test(t)!).ToList();
+        bool capture = Captured(_test);
         return new RunPlan
         {
+            Passes = Detail == "profile" ? [PassKind.WarmUp, PassKind.Measured, PassKind.Profiled] : [PassKind.Measured],
+            Record = new() { Probes = Detail == "memory" ? ["memory"] : [], Capture = capture, ZoneLabels = capture },
             Out = output,
             Play = new()
             {
@@ -416,8 +475,21 @@ public static class Runs
             new("System", Universe.CurrentSystem?.Id ?? _system), new("Test", _test), new("Scenarios", plan.Play.Only), new("Mode", plan.Play.Mode),
             new("Start", start), new("KSA Metal switches", outside.Count > 0 ? string.Join(' ', outside) : "none"),
             // What this game ran with: the port settings that aren't at their defaults, and what the hooks did
-            new("port settings", port.Count > 0 ? string.Join(", ", port) : "defaults"), new("Hooks", _hooksSummary().Replace(Home, "~"))
+            new("port settings", port.Count > 0 ? string.Join(", ", port) : "defaults"), new("Hooks", _hooksSummary().Replace(Home, "~")),
+            // The Report Detail's and the captures' tools, and its probe
+            .. Tools(plan) is { Count: > 0 } tools ? [new Fact("Tools", string.Join(", ", tools))] : Array.Empty<Fact>(),
+            .. plan.Record.Probes.Count > 0 ? [new Fact("Probes", string.Join(", ", plan.Record.Probes))] : Array.Empty<Fact>()
         ];
+    }
+
+    private static List<string> Tools(RunPlan plan)
+    {
+        var tools = new List<string>();
+        if (plan.Passes.Contains(PassKind.Profiled))
+            tools.Add(RunPlan.ProfiledTool);
+        if (plan.Record.Capture)
+            tools.Add("GPU frame capture");
+        return tools;
     }
 
     private static string Home => Environment.GetEnvironmentVariable("HOME") ?? "~";
@@ -580,7 +652,12 @@ public static class Runs
         plan.Write(output);
         Log($"BenchmarkRun: the game starts again for it, into {output.Replace(Home, "~")}");
         var restart = _restart ?? throw new InvalidOperationException("the game was not started by the app");
-        restart(new Dictionary<string, string> { ["STARMAP_INSTANCE_PATH"] = instance, ["KSA_BENCH_OUT"] = output });
+        var env = new Dictionary<string, string> { ["STARMAP_INSTANCE_PATH"] = instance, ["KSA_BENCH_OUT"] = output };
+        if (plan.Passes.Contains(PassKind.Profiled))
+            env["KSA_MTL_GPU_ZONES"] = "1";
+        if (plan.Record.Capture)
+            env["MTL_CAPTURE_ENABLED"] = env["KSA_MTL_LABELS"] = "1";
+        restart(env);
         Program.Instance.RequestExit(0);
     }
 

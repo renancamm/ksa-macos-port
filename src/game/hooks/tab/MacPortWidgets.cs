@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using Brutal.ImGuiApi;
@@ -9,6 +10,7 @@ using KSA;
 using KsaMetal.Benchmark;
 using KsaMetal.Hooks.Features;
 using KsaPort.Common;
+using KsaPort.Common.Benchmark;
 
 namespace KsaMetal.Hooks.Tab;
 
@@ -597,13 +599,13 @@ internal static partial class MacPortTab
         var why = changes ? "Apply or discard the changes first." : Runs.CannotStart();
         var whyNot = changes ? "Apply or discard the changes first." : Runs.CannotRecord();
         var last = Runs.Last;
-        const string show = "SHOW REPORT";
+        const string show = "SHOW REPORT", open = "OPEN";
         float s = ConsoleStyle.EffectiveInterfaceScale, inset = ConsoleWidgets.RowLabelInsetPx, gap = 12f * s;
         Gap(6f * s);
         float x = ImGui.GetCursorScreenPos().X + inset, right = ImGui.GetCursorScreenPos().X + ConsoleStyle.ContentAvailWidth();
         const string run = "RUN", record = "RECORD";
         float buttonWidth = MathF.Max(MathF.Max(ConsoleWidgets.ButtonWidth(show), ConsoleWidgets.ButtonWidth(run)), ConsoleWidgets.ButtonWidth(record));
-        float nameWidth = MathF.Max(MathF.Max(Tests.Max(t => LabelWidth(t.Name)), LabelWidth("Last Run")), LabelWidth(Here.Name));
+        float nameWidth = MathF.Max(MathF.Max(MathF.Max(Tests.Max(t => LabelWidth(t.Name)), LabelWidth("Last Run")), LabelWidth(Here.Name)), LabelWidth("Timeline"));
         float small = SmallHeight(), line = MathF.Round(small);
         string hereTime = $"{Runs.HereSeconds} s";
         float timeWidth = MathF.Max(MathF.Max(Tests.Max(t => SmallWidth(t.Time)), SmallWidth(hereTime)), last != null ? SmallWidth(last.Date) : 0f);
@@ -657,7 +659,9 @@ internal static partial class MacPortTab
         {
             var (test, name, minutes, playing, help) = Tests[i];
             var text = WrapSmall(playing, whatWidth);
-            if (Row(name, text, muted, minutes, run, "MacPort_run_" + test, why ?? help + "\n\nIt plays with the settings above, and writes its report to the benchmarks folder in the game's documents folder. Leave the mouse and keyboard alone until it is done; Esc stops it.", why != null))
+            // This test's own reason, with Profile or frame captures
+            var whyThis = changes ? why : Runs.CannotStart(test);
+            if (Row(name, text, muted, minutes, run, "MacPort_run_" + test, whyThis ?? help + "\n\nIt plays with the settings above, and writes its report to the benchmarks folder in the game's documents folder. Leave the mouse and keyboard alone until it is done; Esc stops it.", whyThis != null))
                 Runs.StartFromTab(test, PortSettings.Get("restart_for_a_clean_run")?.Saved == "true");
             draw.AddLine(new float2(x, y), new float2(right, y), hairline, ConsoleStyle.WindowBorderThicknessPx);
         }
@@ -667,6 +671,15 @@ internal static partial class MacPortTab
             draw.AddLine(new float2(x, y), new float2(right, y), hairline, ConsoleStyle.WindowBorderThicknessPx);
         if (last != null && Row("Last Run", [last.Outcome], ConsoleStyle.ApplyAlpha(last.Passed || last.Stopped ? ConsoleStyle.TextLabelU32 : ConsoleStyle.DangerU32), last.Date, show, "MacPort_show_report", last.Summary, false))
             Runs.Show(last.Folder);
+        // The last run frame by frame, in Perfetto's viewer
+        if (last != null && File.Exists(Path.Combine(last.Folder, RunStore.GameFile)))
+        {
+            draw.AddLine(new float2(x, y), new float2(right, y), hairline, ConsoleStyle.WindowBorderThicknessPx);
+            if (Row("Timeline", WrapSmall("Every frame of the last run, in your browser.", whatWidth), muted, "", open, "MacPort_show_timeline",
+                    "Opens the last run in your browser, frame by frame: each frame's time, what the game waited for, and the game's work around its slow frames. It stays on this Mac.",
+                    Runs.WritingTimeline))
+                Runs.ShowTimeline(last.Folder);
+        }
         ImGui.SetCursorScreenPos(new float2(x - inset, y));
         Gap(4f * s);
         if ((why ?? whyNot) is { } reason)

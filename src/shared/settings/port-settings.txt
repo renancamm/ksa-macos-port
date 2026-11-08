@@ -105,6 +105,10 @@ fit_hud_to_display | bool | true | | live | hooks:HudLayout | | | | Fit HUD to D
 metal_performance_hud | bool | false | | restart | metal:MTL_HUD_ENABLED | | | | Metal Performance HUD | Apple's overlay with the frame rate, GPU time and memory.
 
 [benchmark] Benchmark | Test your settings and get a report. Esc to stop.
+report_detail | choice:standard=Standard/profile=Profile/memory=Memory | standard | | live | tab | | | | Report Detail | What a test's report holds besides its frame rate.
+    standard | Frame rate, frame times and screenshots.
+    profile | Also plays the test twice more to name what takes the GPU's time. Restarts and quits, as Restart for a Clean Run.
+    memory | Also lists what holds the game's memory at each view.
 restart_for_a_clean_run | bool | false | | live | tab | | | | Restart for a Clean Run | On: saves your game as "Before the benchmark", restarts without mods, and quits at the end. Off: runs in this game.
 
 [troubleshooting] Troubleshooting | Turn a part of the port off, or run it strictly, to find out what causes a problem. | file
@@ -123,7 +127,8 @@ stalls | number:0:10000 | 0 | | restart | driver | | | | | Log what blocks the g
 frames | text | | | restart | driver | | | | | A CSV file of every frame: CPU frame time, GPU busy time, draws, dispatches and allocated memory.
 latency | text | | | restart | driver | | | | | A CSV file of every frame's timing: when it began, was presented, was done on the GPU and was shown.
 labels | bool | false | | restart | driver | | | | | Name every encoder after its pipelines, for Instruments, the Metal HUD and Xcode's frame capture.
-frame_capture | bool | false | | restart | metal:MTL_CAPTURE_ENABLED, driver | | | | | Allow Xcode frame captures, for the console's framecapture command; encoders are named too.
+frame_capture | bool | false | | restart | metal:MTL_CAPTURE_ENABLED, driver | | | | | Allow Xcode frame captures; encoders are named too.
+benchmark_captures | bool | false | | restart | tab | | | | | The Mixed Test from the tab at Report Detail Standard also saves an Xcode frame capture of each view (several GB each), in a game started again with frame captures allowed.
 gpu_errors | bool | false | | restart | driver | | | | | A command buffer that fails logs each encoder's state (completed, faulted, affected, pending); with labels the log names them.
 gpu_zones | bool | false | | restart | driver | | | | | Time the game's GPU profiler's zones right inside render passes: a pass splits at each of its timestamps, and attachments kept in tile memory get memory of their own (more memory, times grow a little). The benchmark's profile sets it.
 watch | text | | | restart | driver | | | | | A folder: every 31 presents, a look at a sample of the presented image; when it looks broken (mostly pure white, pure black for a second, or specks of pure primary colours), the image and a pass dump go there.
