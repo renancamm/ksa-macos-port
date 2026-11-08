@@ -31,13 +31,18 @@ internal sealed class GameProfilers
     // The game's profilers time with Stopwatch; the store's clock is the same Mac clock, give or take this
     private readonly double _offset;
     private readonly Action<string> _log;
-    // What reading and summing cost the game's main thread: in all, the frames, the worst frame
-    private long _spent, _worst;
-    private int _frames;
+    // What reading and summing cost the game's main thread: in all, the bytes it allocated, the frames, the worst frame
+    // (which, in which part, and the JIT's compiling and the GC's pause inside it), the collections that began while it read
+    private long _spent, _worst, _allocated;
+    private int _frames, _worstFrame, _collections, _collectionsInside;
+    private TimeSpan _pausedInside, _worstJit, _worstGc;
+    private string _worstPart = "outside the parts";
     // When the last frame ended, on the store's clock
     private double _now;
 
     public ZoneLog Zones { get; }
+
+    private readonly int _collectionsAtStart = GC.CollectionCount(0);
 
     private GameProfilers(RunStore? store, Action<string> log, bool gpu)
     {
@@ -75,6 +80,8 @@ internal sealed class GameProfilers
     public void Frame(PartKey? part)
     {
         long started = Stopwatch.GetTimestamp();
+        var (jit, gc, bytes) = (System.Runtime.JitInfo.GetCompilationTime(currentThread: true), GC.GetTotalPauseDuration(), GC.GetAllocatedBytesForCurrentThread());
+        int collections = GC.CollectionCount(0);
         // On again each frame: the game's profiler window, once a player opened it, sets them every frame
         foreach (var s in _sources)
         {
@@ -87,7 +94,15 @@ internal sealed class GameProfilers
         _now = now;
         long spent = Stopwatch.GetTimestamp() - started;
         _spent += spent;
-        _worst = Math.Max(_worst, spent);
+        _allocated += GC.GetAllocatedBytesForCurrentThread() - bytes;
+        if (GC.CollectionCount(0) - collections is > 0 and var inside)
+        {
+            _collectionsInside += inside;
+            _pausedInside += GC.GetTotalPauseDuration() - gc;
+        }
+        if (spent > _worst)
+            (_worst, _worstFrame, _worstPart, _worstJit, _worstGc) = (spent, _frames, part is { } p ? $"in {p.Scenario} {p.Part}" : "outside the parts",
+                System.Runtime.JitInfo.GetCompilationTime(currentThread: true) - jit, GC.GetTotalPauseDuration() - gc);
         _frames++;
     }
 
@@ -168,6 +183,7 @@ internal sealed class GameProfilers
     // The run's end: what is left written, the switches as they were
     public void Stop()
     {
+        _collections = GC.CollectionCount(0) - _collectionsAtStart;
         try
         {
             Read();
@@ -183,6 +199,6 @@ internal sealed class GameProfilers
         }
         double us = 1e6 / Stopwatch.Frequency;
         _log(FormattableString.Invariant(
-            $"the game's profilers: {_sources.Count} sources, read in {(_frames > 0 ? _spent * us / _frames : 0):F1} us a frame (worst {_worst * us:F0} us) over {_frames} frames"));
+            $"the game's profilers: {_sources.Count} sources, read in {(_frames > 0 ? _spent * us / _frames : 0):F1} us and {(_frames > 0 ? _allocated / 1024.0 / _frames : 0):F1} KB a frame (worst {_worst * us:F0} us, frame {_worstFrame} {_worstPart}: JIT {_worstJit.TotalMicroseconds:F0} us, GC pause {_worstGc.TotalMicroseconds:F0} us) over {_frames} frames; {_collectionsInside} of the run's {_collections} collections began while it read, {_pausedInside.TotalMilliseconds:F1} ms of pause"));
     }
 }
