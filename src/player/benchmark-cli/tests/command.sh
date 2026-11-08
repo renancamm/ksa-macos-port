@@ -164,6 +164,14 @@ bench --app "${APP}" --on 'frame>50ms: sample'
 expect "--on: an action its condition can't take" 1 "frame>50ms can't sample"
 bench --app "${APP}" --no-shots --on 'checkpoint: passes'
 expect "--on: screenshots needed" 1 "it can't go with --no-shots"
+bench --app "${APP}" --probe nonsense
+expect "--probe: neither the benchmark's nor an assembly" 1 "--probe takes memory or a probe's assembly"
+bench --app "${APP}" --probe "${T}/none.dll"
+expect "--probe: no such assembly" 1 "--probe: no "
+bench --app "${APP}" --probe memory --knob light=2
+expect "--knob: no probe's name" 1 "--knob needs <probe>.<key>=<value>"
+bench --app "${APP}" --channels -zones,+nothing
+expect "--channels: no such channel" 1 "--channels takes -zones, -runtime or +memory"
 [ "$(runs_count)" = 0 ] || fail "a refused run left a folder"
 
 # A run that passes
@@ -282,6 +290,14 @@ OUTPUT="$(cat "${T}/stopped.txt")"
 expect "Ctrl-C" 1 "you stopped the run"
 pgrep -f "${APP}/Contents/MacOS/KSA" > /dev/null
 [ $? = 1 ] || fail "Ctrl-C left the game running (or pgrep can't look)"
+
+# Probes, knobs and channels reach the game's plan
+sleep 1
+FAKE_GAME=pass bench --app "${APP}" --probe memory --knob memory.every=2 --channels -runtime --no-shots
+expect "a run with a probe" 0 "Passed"
+P="$(ls -d "${T}/home/Documents/My Games/Kitten Space Agency/benchmarks/"20* | sort | tail -1)/plan.json"
+[ "$(plutil -extract record.probes.0 raw -o - "${P}")" = memory ] && grep -q '"memory.every": "2"' "${P}" &&
+    [ "$(plutil -extract record.off.0 raw -o - "${P}")" = runtime ] || fail "probes, knobs, channels: not in ${P}"
 
 # Clean: only runs, the oldest
 B="${T}/home/Documents/My Games/Kitten Space Agency/benchmarks"

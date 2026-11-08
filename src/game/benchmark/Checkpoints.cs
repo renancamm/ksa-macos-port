@@ -185,7 +185,11 @@ public partial class Director
     private string ShotPath() => Path.Combine(_outDir, $"{ScenarioName}_{_shotName}.png");
 
     // The probes' work on the view before its screenshot (a frame capture), then the screenshot
-    private void CaptureThenShoot(double wall) => WaitThen(_probes.Select(p => (Func<Wait?>)(() => p.BeforeShot(new View(ScenarioName ?? "", _shotName, ShotPath())))), Shoot);
+    private void CaptureThenShoot(double wall)
+    {
+        Probes.At = (_plan.Host.Session, _pass, ScenarioName, _shotName);
+        WaitThen(_probes.Select(p => (Func<Wait?>)(() => Probes.Try(p, () => p.BeforeShot(new View(ScenarioName ?? "", _shotName, ShotPath()))))), Shoot);
+    }
 
     // The probes' work one after the other, each started when the one before is done, holding the checkpoint, then what
     // comes after them
@@ -222,8 +226,7 @@ public partial class Director
         var sim = ReadSim();
         _events.Add("open", ScenarioName, window.Name, window.Vehicle, sim.GameSeconds, sim.Substeps);
         DriverStats.Marker(window.Name, true);
-        foreach (var probe in _probes)
-            probe.Opened(ScenarioName ?? "", window.Name);
+        Probes.Each(_probes, p => p.Opened(ScenarioName ?? "", window.Name));
     }
 
     // The screenshot is there, or isn't: noted, then the probes' work on it (a pass dump) and the checkpoint's end
@@ -237,7 +240,7 @@ public partial class Director
             return;
         }
         _events.Add("shot", ScenarioName, _shotName, Path.GetFileName(path), value: _shotLimit);
-        WaitThen(_probes.Select(p => (Func<Wait?>)(() => p.AfterShot(new View(ScenarioName ?? "", _shotName, path)))), EndCheckpoint);
+        WaitThen(_probes.Select(p => (Func<Wait?>)(() => Probes.Try(p, () => p.AfterShot(new View(ScenarioName ?? "", _shotName, path))))), EndCheckpoint);
     }
 
     private static string ProbePath() => Path.Combine(Path.GetTempPath(), "ksa-metal-benchmark-probe.png");
@@ -303,6 +306,7 @@ public partial class Director
 
     private void EndCheckpoint()
     {
+        Probes.At = Probes.At with { Shot = null };
         if (!Holding)
         {
             Resume();
@@ -345,6 +349,7 @@ public partial class Director
         DriverStats.Marker(window.Name, false);
         _frames?.Flush();
         _events.Add("close", ScenarioName, window.Name);
+        Probes.Each(_probes, p => p.Closed(ScenarioName ?? "", window.Name));
         Log($"measured {window.Name}");
     }
 

@@ -66,8 +66,14 @@ public static class Finish
         var frames = FrameLog.Read(dir);
         var logs = Logs(dir);
         var name = Path.GetFileName(Path.GetFullPath(dir).TrimEnd('/'));
+        // The probes' metrics known before the parts' numbers take them
+        var probeMetrics = RunStore.ReadMetrics(dir);
+        foreach (var m in probeMetrics)
+            Metrics.Register(m);
         var record = Core(dir, name, plan, events, frames);
         record.Moments = RunStore.ReadMoments(dir);
+        record.ProbeMetrics = probeMetrics;
+        record.Census = RunStore.ReadCensus(dir);
         record.Facts = kept ?? Facts.Gather(dir, plan.Host.App, plan.Host.Facts, logs.FirstOrDefault().Lines ?? [], asksMac);
         if (record.WarmUp is { } warmUp)
             record.Facts.Add(new Fact("Warm-up", warmUp.GpuMs is { } gpu
@@ -98,7 +104,7 @@ public static class Finish
             Passes = Math.Max(1, events.Select(e => e.Pass).DefaultIfEmpty(1).Max()),
             LoadSeconds = events.FirstOrDefault(e => e.Type == "loaded")?.Value,
             Drawable = events.LastOrDefault(e => e.Type == "drawable")?.Text,
-            Scenarios = Scenarios(events, frames, RunStore.ReadShown(dir), RunStore.ReadWaits(dir), RunStore.ReadZones(dir)),
+            Scenarios = Scenarios(events, frames, RunStore.ReadShown(dir), RunStore.ReadWaits(dir), RunStore.ReadZones(dir), RunStore.ReadCounters(dir)),
         };
         SetLimits(record, plan);
         if (events.FirstOrDefault(e => e.Type == "warmed") is { } warmed)
@@ -118,7 +124,7 @@ public static class Finish
     // frames, KSA Metal's shown records and the zones, merged; a profiled pass's apart; the screenshots of the first pass
     // (a warm-up's too) with their limits
     private static List<ScenarioRecord> Scenarios(List<RunEvent> events, List<FrameRow> frames, Dictionary<ulong, ShownRow> shown, List<WaitRow> waits,
-        List<ZoneRow> zones)
+        List<ZoneRow> zones, Dictionary<(string Scenario, string Part, int Session, int Pass), Dictionary<string, List<double>>> counters)
     {
         var kindOf = PassKinds(events);
         var scenarios = new List<ScenarioRecord>();
@@ -150,6 +156,9 @@ public static class Finish
                     if (!rows.TryGetValue(key, out var r))
                         continue;
                     var values = Measure.Of(r, shown, zoneRows.GetValueOrDefault(key), scenario.Kind == Kind.Timed ? open.Game : null, (long?)open.Value, waits);
+                    // The probes' counters over the part's frames: their median, or the most (Across)
+                    foreach (var (metric, samples) in counters.GetValueOrDefault(key) ?? [])
+                        values[metric] = Math.Round(Metrics.Find(metric)?.Across == Across.Most ? samples.Max() : Measure.Median(samples), 3);
                     if (kindOf(open.Session, open.Pass) == "profiled")
                         profiled.Add(values);
                     else

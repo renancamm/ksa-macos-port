@@ -14,7 +14,7 @@ using KsaPort.Common.Benchmark;
 
 namespace KsaMetal.Benchmark;
 
-internal sealed class TriggerRunner : IProbe
+internal sealed class TriggerRunner : Probe
 {
     // Far smaller than the clean run's file, far more pure black (percent): broken
     private const double Below = 0.5, MoreBlack = 25;
@@ -52,7 +52,9 @@ internal sealed class TriggerRunner : IProbe
         _gpuErrors = DriverStats.GpuErrors();
     }
 
-    public string Name => "triggers " + string.Join("; ", _rules);
+    public override string Name => "triggers";
+
+    public override string Says => "triggers " + string.Join("; ", _rules);
 
     // Whether work the rules started goes on: a slow frame's, or a checkpoint's
     public bool Busy => _queue.Count > 0 || _working != null || _holding;
@@ -144,7 +146,7 @@ internal sealed class TriggerRunner : IProbe
     }
 
     // After a checkpoint's screenshot: the rules of broken pictures and of checkpoints, their work holding the checkpoint
-    public Wait? AfterShot(View view)
+    public override Wait? AfterShot(View view)
     {
         var rules = Enumerable.Range(0, _rules.Count)
             .Where(i => _rules[i].When is Condition.Broken or Condition.Checkpoint && _ran[i] < _rules[i].Max).ToList();

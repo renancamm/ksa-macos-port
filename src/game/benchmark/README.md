@@ -262,6 +262,33 @@ work, and a `stop` waits for them. Anything but a moment or a stop slows
 the game's frames: a part measured while one works leaves that pass's numbers, and the run gets a note (`disturbed`).
 After a GPU failure no pass dump or capture starts.
 
+### Probes
+
+A probe is a tool plugged into a run: it watches the run (its game session, passes, parts, checkpoints and frames) and
+records through the run's store ([`Probes.cs`](Probes.cs)). `--probe <name>` adds one of the benchmark's, `--probe
+<path>.dll` an assembly of your own, and `--knob <probe>.<key>=<value>` gives it a value, which a study can vary as it
+varies a setting (`axis --knob example.level=1 example.level=2`).
+
+| Probe | What it records |
+|---|---|
+| `memory` | once a second the game's VRAM, its host-visible memory, KSA Metal's memory and the .NET heap (metrics `mem/game_vram`, `mem/game_host_visible`, `mem/driver`, `mem/gc_heap`); at every screenshot a census: each of the game's memory tags with its bytes ("CascadedShadowMap.ShadowTarget.Depth"), KSA Metal's memory by type, the .NET heap and the footprint (the report shows the first pass's). It reads what the game and the driver count anyway |
+
+A probe of your own is a class of `Probe` with a public constructor without parameters (in `KsaMetal.Benchmark.dll`, built
+against it and the game); one that throws is left out of the rest of the run, which fails:
+
+| Member | |
+|---|---|
+| `Name`, `Says`, `Cost` | its name (its knobs' and counters' prefix), what the log says it does, and what it costs: `Free`, `Cheap`, `Perturbing` (its patches change the game's timing) or `Heavy` (it holds the game); a run with a perturbing or heavy probe gets a note |
+| `Loading()` | the game is starting, its world not loaded: patches that change what loads go here (runs that start with the game) |
+| `Start()`, `PassBegan`, `PassEnded`, `Opened`, `Closed`, `BeforeShot`, `AfterShot`, `Frame`, `End` | the run: the session, a pass, a measured part, a checkpoint's view (a returned `Wait` holds the checkpoint until the probe's work is done), every frame, its end |
+| `Host.Counter(name, unit, ...)` | a counter, `probe/<probe>/<name>`: its value written every frame, a metric the record, comparisons and studies judge (the median of a part's frames, or the most) |
+| `Host.Zone(name)` | `using (Host.Zone("solve")) { ... }` on any thread: its time a frame, a counter |
+| `Host.Event`, `Host.Artefact`, `Host.Census` | an event in the store, a file in the run's `probes/<probe>/`, an owner of memory at the checkpoint (in `BeforeShot` or `AfterShot`) |
+| `Host.Knob(key)`, `Host.Method(type, name, ...)`, `Host.Patch(target, prefix, postfix, transpiler)` | its knobs; the hooks' lookup of the game's methods, which says in the log when a KSA update moved one, and their Harmony |
+
+`--channels` turns off what every run records (`-zones`: the game's profilers, `-runtime`: .NET's counters) or adds the
+benchmark's probes (`+memory`).
+
 ## The tests' scenarios
 
 A test is a list of scenarios, and a scenario has a kind: how it keeps time.
@@ -396,7 +423,7 @@ and own time, its median, 95th percentile and worst in a frame, and what it allo
 (`moments`; by default a measured part's frame of 100 ms or more, 20 a pass): its cause names the main thread's zones with the most own time in it, KSA Metal's
 waits of 2 ms or more and the GPU time of the presents around it, and the first ten of the measured passes keep every
 zone from half a second before to a quarter of a second after it (`slices`). Reading them costs the game about 20 µs a
-frame; `KSA_BENCH_ZONES=0` in front of `benchmark.sh` leaves the profilers off.
+frame; `--channels -zones` leaves the profilers off.
 
 A profiled pass's zones run one after another: every zone boundary waits for all the work before it, so the profiled
 pass's GPU time is about 13 % higher than the measured pass's (the Mixed Test), a zone called many times a frame reads
@@ -481,6 +508,8 @@ flight's. Fly the free camera to a place, open the console (`\`) and type `bench
 | `--on '<rule>'` | with `run`, `check`, `measure`, `profile` or `investigate`: a [trigger](#triggers) (repeat for more) |
 | `--env <NAME>=<value>` | the game's environment for the run, such as a KSA Metal switch (`KSA_MTL_...`; repeat for more); the report lists them |
 | `--save-plan <file>` | with `measure` or `profile`: write the command line as a [study's](#studies) file and play nothing |
+| `--probe <name \| path>`, `--knob <probe>.<key>=<value>` | a [probe](#probes) (`memory`, or an assembly; repeat for more) and a value for it |
+| `--channels <list>` | `-zones`, `-runtime`: channels every run records turned off; `+memory`: a probe added, as `--probe memory` |
 
 | Command | |
 |---|---|

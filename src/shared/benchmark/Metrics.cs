@@ -12,6 +12,10 @@
 // between their showing (a judder the frame rate doesn't show). A hitch is a frame over 50 ms and over twice the median
 // of the 60 before it; frames over 100 ms are counted apart. The 1% low is the mean of the slowest 1 % of frames.
 //
+// A probe's counters are metrics too (probe/<probe>/<counter>, the memory census's mem/...): a probe registers them with
+// the run, its store keeps them and its record carries them, and Register makes them known wherever the record is read,
+// so that comparisons and studies judge them as the others.
+//
 // Measure makes a measuring's numbers (one part in one pass of one session) from its frames, KSA Metal's shown records
 // of its presents and the game's zone sums; Merge puts a part's measurings together.
 using System;
@@ -103,6 +107,34 @@ public static class Metrics
 
     private static readonly Dictionary<string, Metric> ByName = All.ToDictionary(m => m.Name, StringComparer.Ordinal);
 
+    // The probes' metrics known so far: from the runs read in this process
+    private static readonly Dictionary<string, Metric> ByProbes = new(StringComparer.Ordinal);
+
+    private static Metric? Registered(string name)
+    {
+        lock (ByProbes)
+            return ByProbes.GetValueOrDefault(name);
+    }
+
+    // A probe's metric made known (a built-in one's name stays the built-in's)
+    public static void Register(Metric m)
+    {
+        if (ByName.ContainsKey(m.Name))
+            return;
+        lock (ByProbes)
+            ByProbes[m.Name] = m;
+    }
+
+    // The metrics a comparison judges: the built-in ones, then the probes'
+    public static IReadOnlyList<Metric> Judged
+    {
+        get
+        {
+            lock (ByProbes)
+                return [.. All, .. ByProbes.Values.OrderBy(m => m.Name, StringComparer.Ordinal)];
+        }
+    }
+
     // The zones' metrics: a zone's own time a frame in a group of the game's profilers
     public const string GpuZones = "gpu/zone/", MainZones = "cpu/zone/", JobZones = "job/";
 
@@ -118,6 +150,7 @@ public static class Metrics
     // A metric by its name: one of All, or a zone's (made on the way); null for a name that is neither
     public static Metric? Find(string name) =>
         ByName.TryGetValue(name, out var m) ? m
+        : Registered(name) is { } r ? r
         : IsZone(name) ? new Metric(name, ZoneLabel(name), "ms", Better.Lower, Across.Median, 2, "the zone's own time a frame") { Limit = 10 }
         : null;
 }

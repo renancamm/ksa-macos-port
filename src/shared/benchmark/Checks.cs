@@ -176,6 +176,10 @@ public static class Checks
                                           "the measured pass's memory, and a little its GPU time, may differ from a plain run's; the profiled pass's numbers are kept apart");
         if (tools.Length > 0 && tools != "none")
             yield return Note("tools", $"measured with {tools}: their own cost is in the numbers");
+        // A probe that changes the game's timing or holds it
+        var costly = run.Events.Where(e => e.Type == "probe-cost" && e.Text != null).Select(e => e.Text!).Distinct().ToList();
+        if (costly.Count > 0)
+            yield return Note("probe-cost", $"measured with probes that cost the game time ({string.Join(", ", costly)}): their own cost is in the numbers");
         foreach (var e in run.Events.Where(e => e.Type == "disturbed"))
             yield return Note("disturbed", $"{(e.Pass > 1 ? $"pass {e.Pass}: " : "")}{e.Scenario} {e.Part}: left out of the numbers, {e.Text}");
     }

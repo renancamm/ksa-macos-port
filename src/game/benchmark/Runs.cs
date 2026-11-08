@@ -80,13 +80,17 @@ public static class Runs
         Path.GetFullPath(Path.Combine(Path.GetDirectoryName(typeof(Runs).Assembly.Location)!, ".."));
 
     // Called by the hooks once they call AfterFrame after every frame: what the hooks lend (their log, their summary, the
-    // game's restart, and a postfix on a method of the game, which a run puts in only when it asks for it), and the run
-    // that starts with the game (KSA_BENCH_OUT). Returns what the log says.
-    public static string Install(Action<string> log, Func<string> hooksSummary,
-        Action<IReadOnlyDictionary<string, string>>? restart, Action<System.Reflection.MethodBase, System.Reflection.MethodInfo> postfix)
+    // game's restart, their patches of the game's methods (prefix, postfix, transpiler), which a run puts in only when it
+    // asks for them, and their lookup of a method by name), and the run that starts with the game (KSA_BENCH_OUT). Returns
+    // what the log says.
+    public static string Install(Action<string> log, Func<string> hooksSummary, Action<IReadOnlyDictionary<string, string>>? restart,
+        Action<System.Reflection.MethodBase, System.Reflection.MethodInfo?, System.Reflection.MethodInfo?, System.Reflection.MethodInfo?> patch,
+        Func<Type, string, Type[], System.Reflection.MethodInfo> method)
     {
         _log = log;
-        GpuZones.Patch = postfix;
+        GpuZones.Patch = (target, postfix) => patch(target, null, postfix, null);
+        Probes.Patcher = patch;
+        Probes.Find = method;
         RunStore.Log = log;
         _hooksSummary = hooksSummary;
         _restart = restart;
@@ -99,6 +103,8 @@ public static class Runs
             return $"ready (no run in {output.Replace(Home, "~")}: its {RunPlan.FileName} can't be read)";
         _out = output;
         _mode = _plan.Host.Restarted ? Mode.Restarted : Mode.Script;
+        // Probes that change what loads patch it now, before the world loads
+        Probes.Preload(_plan, log);
         return _mode == Mode.Restarted ? "a run starts with the game, restarted from its settings" : "a run starts with the game";
     }
 

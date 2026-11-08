@@ -150,6 +150,12 @@ public sealed class RecordPlan
     public double Film { get; set; }
     // The camera's place every frame into camera-log.csv, to check its moves are smooth
     public bool CameraLog { get; set; }
+    // Probes (Probes.cs): the benchmark's own by their names (memory), assemblies by their paths
+    public List<string> Probes { get; set; } = [];
+    // The probes' knobs, <probe>.<key> to its value as written (cloud.light: the knob light of the probe cloud)
+    public Dictionary<string, string> Knobs { get; set; } = [];
+    // Channels every run records, turned off: zones (the game's profilers), runtime (.NET's counters)
+    public List<string> Off { get; set; } = [];
 }
 
 // What the run's host says: the game session, where noise profiles are, the app, and the facts for the record

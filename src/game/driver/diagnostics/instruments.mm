@@ -68,6 +68,8 @@ static double g_gpuBusyFrame = 0;  // the same, since the last present completed
 //                                does not allow it (the game needs MTL_CAPTURE_ENABLED=1); ksaMtlCapturing() is true
 //                                until the file is written
 //   ksaMtlDrain*                 the drain: every present, frame shown, wait and large allocation as records (drain.mm)
+//   ksaMtlMemory(out, n)         the bytes the driver holds now: device memory by type (private, shared write-combined,
+//                                shared cached), then its own (descriptor pool chunks, upload rings); returns how many it wrote
 // KsaMtlFrameStats, the struct, is in diagnostics.h.
 static KsaMtlFrameStats g_lastFrame{};
 static std::vector<std::string> g_shotRequests;
@@ -121,6 +123,13 @@ KMTL_EXPORT bool ksaMtlCapture(const char* path, uint32_t frames) {
 }
 
 KMTL_EXPORT bool ksaMtlCapturing() { return g_capturing; }
+
+KMTL_EXPORT uint32_t ksaMtlMemory(int64_t* out, uint32_t n) {
+    const int64_t all[4] = {g_allocatedByType[0].load(), g_allocatedByType[1].load(), g_allocatedByType[2].load(), g_internalBytes.load()};
+    uint32_t written = std::min<uint32_t>(n, 4);
+    for (uint32_t i = 0; i < written; i++) out[i] = all[i];
+    return written;
+}
 
 // At a present: starts a requested capture (the next frames' command buffers go into it) or ends a running one
 static void captureAtPresent(KDevice* dev, KSwapchain* swapchain) {

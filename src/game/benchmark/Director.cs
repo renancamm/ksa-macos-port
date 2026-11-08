@@ -103,7 +103,7 @@ public partial class Director
     private (double Script, string? Scenario, string Phase, double FrameMs, FrameStats? Driver, SimSample Sim)? _row;
     private string? _measured;
     // The tools turned on (Probes.cs), and the wait for one's work at a checkpoint with what comes after it
-    private List<IProbe> _probes = new();
+    private List<Probe> _probes = new();
     private Wait? _wait;
     private Action _afterWait = () => { };
     private bool _active;
@@ -267,7 +267,7 @@ public partial class Director
         foreach (var missing in UnhandledDirectives())
             Error(missing);
         Log($"{_sections.Count} scenarios, {plan.Play.Mode}{(_shots ? "" : ", no screenshots")}{(_hold != null ? $", holding at {_hold}" : "")}, " +
-            $"GPU times {(DriverStats.Available ? "available" : "not available")}{string.Concat(_probes.Select(p => ", " + p.Name))}");
+            $"GPU times {(DriverStats.Available ? "available" : "not available")}{string.Concat(_probes.Select(p => ", " + p.Says))}");
     }
 
     // What a run records, on from here: its frames, its store, KSA Metal's drain, the game's profilers and the runtime's
@@ -297,9 +297,11 @@ public partial class Director
         // Encoders named after the game's GPU zones for the whole run (a trace's, a capture's); a profiled pass turns the
         // zones on for itself
         _gpuZones = GpuZones.Start(zones: false, _plan.Record.ZoneLabels, Log, SplitsAlways);
-        _profilers = GameProfilers.Start(_store, Log, _gpuZones?.Split == true);
-        _runtime = new RuntimeCounters();
-        var context = new ProbeContext(_outDir, Error, Log);
+        // The channels every run records, but those the plan turns off
+        _profilers = _plan.Record.Off.Contains("zones") ? null : GameProfilers.Start(_store, Log, _gpuZones?.Split == true);
+        _runtime = _plan.Record.Off.Contains("runtime") ? null : new RuntimeCounters();
+        Probes.Store = _store;
+        var context = new ProbeContext(_outDir, Error, Log, _events);
         _probes = Probes.For(_plan, context);
         _triggers = new TriggerRunner(Triggers.For(_plan), _plan.Against, _plan.Host.Session, context, _events);
         _probes.Add(_triggers);
@@ -322,6 +324,7 @@ public partial class Director
                 part = new PartKey(_plan.Host.Session, _pass, r.Scenario ?? "", _measured);
         }
         _profilers?.Frame(part);
+        Probes.Sample(_probes, _store, _plan.Host.Session, _pass, _row?.Scenario, _measured);
         // Every frame, so that their work goes on while the director waits or holds
         if (_triggers?.Frame(_row?.FrameMs ?? 0, part, _row?.Scenario, _pass) == true && _row is { } row)
             _profilers?.Moment(row.FrameMs, part ?? new PartKey(_plan.Host.Session, _pass, row.Scenario ?? "", ""));
@@ -413,8 +416,7 @@ public partial class Director
         if (_window != null && _clock.Script >= _window.EndsAt)
             CloseWindow();
         _camera.UpdateCamera(dt);
-        foreach (var probe in _probes)
-            probe.Frame(wall, _clock.Script, _phase.ToString());
+        Probes.Each(_probes, p => p.Frame(wall, _clock.Script, _phase.ToString()));
 
         while (_phase == Phase.Play && _active)
         {
@@ -568,8 +570,7 @@ public partial class Director
             _frames = null;
             CloseDrain();
             StopProfilers();
-            foreach (var probe in _probes)
-                probe.End();
+            Probes.Each(_probes, p => p.End());
             if (_clock.ShortSteps > 0)
                 Log($"the setup's steps: the game fell short of {_clock.ShortSteps} of them (slow frames of physics), finished in the frame after");
             Log(FormattableString.Invariant($"done after {_wall.Elapsed.TotalSeconds:F1} s"));
@@ -623,6 +624,8 @@ public partial class Director
     private void BeginPass()
     {
         _events.Add("pass", text: RunPlan.Name(PassKind));
+        var (kind, number) = (PassKind, _pass);
+        Probes.Each(_probes, p => p.PassBegan(kind, number));
         if (_plan.Passes.Count > 1)
             Log($"pass {_passIndex + 1} of {_plan.Passes.Count}, {RunPlan.Name(PassKind)}");
         if (PassKind != PassKind.Profiled || _gpuZones?.Split == true)
@@ -638,6 +641,8 @@ public partial class Director
     // A pass ends: a profiled pass's zones off again, the labels of the run as they were
     private void EndPass()
     {
+        var (kind, number) = (PassKind, _pass);
+        Probes.Each(_probes, p => p.PassEnded(kind, number));
         if (PassKind != PassKind.Profiled || _gpuZones == null)
             return;
         _profilers?.Gpu(false);
@@ -733,8 +738,7 @@ public partial class Director
         _frames = null;
         CloseDrain();
         StopProfilers();
-        foreach (var probe in _probes)
-            probe.End();
+        Probes.Each(_probes, p => p.End());
         Log($"stopped: {why}");
         _camera.Unhold();
         _camera.EndRig();

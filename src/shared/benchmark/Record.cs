@@ -56,6 +56,10 @@ public sealed class RunRecord
     public WarmUpRecord? WarmUp { get; set; }
     // The slow frames a trigger kept (by default a measured part's frames of 100 ms or more), with what took their time
     public List<MomentRecord> Moments { get; set; } = [];
+    // The metrics the run's probes registered (their values are in the parts'), and who held the memory at each checkpoint
+    // of the first pass that took a census (the memory probe)
+    public List<Metric> ProbeMetrics { get; set; } = [];
+    public List<CensusRecord> Census { get; set; } = [];
 
     [JsonIgnore]
     public bool InGame => Start.StartsWith("in the running game", StringComparison.Ordinal);
@@ -122,7 +126,12 @@ public sealed class RunRecord
         var path = Path.Combine(dir, FileName);
         try
         {
-            return File.Exists(path) && JsonSerializer.Deserialize<RunRecord>(File.ReadAllText(path), Json) is { Schema: CurrentSchema } record ? record : null;
+            if (!File.Exists(path) || JsonSerializer.Deserialize<RunRecord>(File.ReadAllText(path), Json) is not { Schema: CurrentSchema } record)
+                return null;
+            // Its probes' metrics, judged as the others wherever it is compared
+            foreach (var m in record.ProbeMetrics)
+                Metrics.Register(m);
+            return record;
         }
         catch (JsonException)
         {
@@ -210,6 +219,10 @@ public sealed class PartRecord
 
 // One measuring of a part: the game session and pass it played in, and its numbers (no zones)
 public sealed record MeasuringRecord(int Session, int Pass, SortedDictionary<string, double> Values);
+
+// An owner of memory at a checkpoint: one of the game's memory tags (kind "game"), a kind of KSA Metal's memory
+// ("driver"), the .NET heap ("runtime"), in MB
+public sealed record CensusRecord(string Scenario, string Shot, string Owner, string Kind, double Mb);
 
 // A frame a trigger kept: where, how long, and what took its time (the main thread's zones with the most own time, KSA
 // Metal's waits, the GPU's time around it)

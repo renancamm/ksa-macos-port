@@ -119,7 +119,11 @@ public static partial class Program
                 new("StarMap", Starmap()), new("System", SystemId), new("Test", _test.Length > 0 ? _test : "places"), new("Scenarios", Sections),
                 new("Mode", $"{Mode}{(_noShots ? ", no screenshots" : "")}"), new("Preset", preset), new("Settings changed", changed),
                 new("Start", Start), new("KSA Metal switches", switches.Length > 0 ? switches : "none"), new("Tools", tools),
-                .. environment.Length > 0 ? [new Fact("Environment", environment)] : Array.Empty<Fact>()
+                .. environment.Length > 0 ? [new Fact("Environment", environment)] : Array.Empty<Fact>(),
+                .. _probes.Count > 0 || _knobs.Count > 0
+                    ? [new Fact("Probes", string.Join(", ", _probes.Select(p => p.Replace(home, "~"))) + (_knobs.Count > 0 ? $" ({string.Join(' ', _knobs)})" : ""))]
+                    : Array.Empty<Fact>(),
+                .. _off.Count > 0 ? [new Fact("Channels off", string.Join(", ", _off.Distinct()))] : Array.Empty<Fact>()
             ];
         }
 
@@ -242,6 +246,10 @@ public static partial class Program
                 env["MTL_CAPTURE_ENABLED"] = env["KSA_MTL_LABELS"] = "1";
             plan.Record.Film = _film;
             plan.Record.CameraLog = _cameraLog;
+            plan.Record.Probes = [.. _probes];
+            foreach (var kv in _knobs)
+                plan.Record.Knobs[kv[..kv.IndexOf('=')]] = kv[(kv.IndexOf('=') + 1)..];
+            plan.Record.Off = [.. _off.Distinct()];
 
             // Loading takes up to a few minutes on a first start (shader compilation), then the script's own length, plus
             // the time slower Macs spend catching up at checkpoints. Once playing, the director writes a heartbeat event
