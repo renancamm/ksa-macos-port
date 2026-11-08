@@ -147,7 +147,7 @@ public static class Conversion
 }
 
 // Marks 64-bit .NET assemblies built for AMD64 as ARM64, so .NET on Apple Silicon loads them. A 64-bit (PE32+)
-// assembly carries the machine type it was built for: AMD64 (0x8664) for KSA.dll and StarMap.dll. .NET on Apple
+// assembly carries the machine type it was built for: AMD64 (0x8664) for KSA.dll. .NET on Apple
 // Silicon only loads 64-bit assemblies marked ARM64 (0xAA64). These contain only IL code, so changing the mark is
 // enough. Platform-neutral (PE32) assemblies load as they are and are left alone, and so are files that are not
 // assemblies. Safe to run again.

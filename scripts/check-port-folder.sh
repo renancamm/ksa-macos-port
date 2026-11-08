@@ -1,7 +1,7 @@
 #!/bin/bash
 # Audits the port folder after a build: the commands and VERSION are there; every library in the app, the launcher and
 # BRUTAL's crash-dump helper are arm64, run on MACOS_MIN, have a valid signature and depend only on macOS and the
-# app's libraries, and the launcher's signature requires the app's identifier; StarMap is marked ARM64; every
+# app's libraries, and the launcher's signature requires the app's identifier; StarMap isn't marked AMD64; every
 # component has its licence; and nothing of the game is in it. Needs otool (Command Line Tools).
 #
 # Usage: scripts/check-port-folder.sh [port folder]   (default: dist/ksa-macos-port)
@@ -68,10 +68,14 @@ done
 codesign -d -r- "${LAUNCHER}" 2> /dev/null | grep -qx "designated => identifier \"${BUNDLE_ID}\"" ||
     problem "the launcher's signature doesn't require only the app's identifier"
 
-# StarMap.dll must carry the ARM64 mark (0xAA64) after its PE header signature
-pe=$(od -An -tu4 -j 60 -N 4 "${FOLDER}/payload/starmap/StarMap.dll" | tr -d ' ')
-[ "$(od -An -tx1 -j $((pe + 4)) -N 2 "${FOLDER}/payload/starmap/StarMap.dll" | tr -d ' \n')" = "64aa" ] ||
-    problem "StarMap.dll is not marked ARM64"
+# StarMap's assemblies must not carry the AMD64 mark (0x8664 after the PE header signature), which .NET on Apple
+# Silicon refuses
+for dll in "${FOLDER}"/payload/starmap/*.dll; do
+    [ -f "${dll}" ] || continue
+    pe=$(od -An -tu4 -j 60 -N 4 "${dll}" | tr -d ' ')
+    [ "$(od -An -tx1 -j $((pe + 4)) -N 2 "${dll}" | tr -d ' \n')" != "6486" ] ||
+        problem "$(basename "${dll}") is marked AMD64"
+done
 [ ! -e "${FOLDER}/payload/starmap/StarMap.exe" ] || problem "StarMap.exe is in the folder"
 
 for component in ksa-macos-port brutal spirv-cross spirv-tools spirv-headers vulkan-headers dotnet fmod starmap \
