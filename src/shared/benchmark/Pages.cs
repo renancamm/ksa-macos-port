@@ -83,6 +83,14 @@ public static class Pages
         Metrics.Latency, Metrics.Footprint,
     ];
 
+    // The page's Part by part: the numbers a player reads; the others are in its All numbers
+    private static readonly Metric[] PageColumns = [Metrics.Fps, Metrics.FrameTime, Metrics.GpuBusy, Metrics.Hitches, Metrics.Footprint];
+
+    private const string PageGlossary =
+        "Frame time: between two frames (median). GPU busy: the GPU's time on a frame. " +
+        "Hitches: frames over 50 ms and twice the median before them, the stutters you see. Memory: the game's footprint at its peak, MB. " +
+        "Every other number is in All numbers, below.";
+
     private static string Cell(PartRecord p, Metric m) => p[m] is { } v ? m.Format(v) : "";
 
     private static string MarkdownOf(RunRecord r)
@@ -371,17 +379,17 @@ public static class Pages
         if (parts.Count == 0)
             return;
         double scale = Math.Max(parts.Max(x => Math.Max(x.Part[Metrics.FrameTime] ?? 0, x.Part[Metrics.GpuBusy] ?? 0)), 1);
-        html.Append($"<section><h2>Part by part</h2><p class=\"lead\">{E(Glossary)}</p>");
+        html.Append($"<section><h2>Part by part</h2><p class=\"lead\">{E(PageGlossary)}</p>");
         html.Append("<div class=\"key\"><i class=\"s1\"></i>Frame time<i class=\"s2\"></i>GPU busy</div>");
         html.Append("<div class=\"table-scroll\"><table class=\"parts\"><thead><tr><th>Part</th><th class=\"bar-cell\"></th>");
-        foreach (var m in Columns)
+        foreach (var m in PageColumns)
             html.Append($"<th title=\"{E(m.Help)}\">{E(Heading(m))}</th>");
         html.Append("</tr></thead><tbody>");
         string last = "";
         foreach (var (s, p) in parts)
         {
             if (s.Name != last && r.Scenarios.Count > 1)
-                html.Append($"<tr class=\"group\"><th colspan=\"{Columns.Length + 2}\">{E(s.Name)}</th></tr>");
+                html.Append($"<tr class=\"group\"><th colspan=\"{PageColumns.Length + 2}\">{E(s.Name)}</th></tr>");
             last = s.Name;
             var shot = $"{s.Name}_{p.Name}";
             html.Append($"<tr><td class=\"part\">{(shots.Contains(shot) ? $"<a href=\"#{E(shot)}\">{Image(shot + ext, "")}</a>" : "<span class=\"no-thumb\"></span>")}{E(p.Name)}</td>");
@@ -391,7 +399,7 @@ public static class Pages
             if (p[Metrics.GpuBusy] is { } g)
                 html.Append($"<div class=\"bar s2\" style=\"width:{F(100 * g / scale, "0.0")}%\" title=\"GPU busy {F(g)} ms\"></div>");
             html.Append("</td>");
-            foreach (var m in Columns)
+            foreach (var m in PageColumns)
                 html.Append(m == Metrics.FrameTime && p.Range(m) is [var lo, var hi]
                     ? $"<td>{Cell(p, m)} <small>{F(lo, "0.0")}-{F(hi, "0.0")}</small></td>"
                     : $"<td>{Cell(p, m)}</td>");
