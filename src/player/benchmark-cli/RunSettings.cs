@@ -66,9 +66,10 @@ public static partial class Program
                     Die($"--set needs key=value, not '{kv}'.");
                 SetSetting(kv[..kv.IndexOf('=')], TomlValue(kv[(kv.IndexOf('=') + 1)..]));
             }
-            // --defaults: only the lines set above, in their sections. The game gives every setting the file leaves out its
-            // default, as on a fresh install, and saves the whole file when it starts.
-            if (_defaults)
+            // --defaults and presets: only the lines set above, in their sections. The game gives every setting the file
+            // leaves out its default, as on a fresh install, and saves the whole file when it starts: a preset plays the
+            // same on every Mac, none of your own settings under it
+            if (_defaults || _preset.Length > 0)
             {
                 var kept = new StringBuilder();
                 string section = "";

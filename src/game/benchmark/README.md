@@ -75,7 +75,8 @@ to go from one to the other, and a copy of each changed screenshot, with the cha
 `diff/` there.
 
 Runs add up, up to a few hundred MB each with their screenshots. `./benchmark.sh clean` deletes all but the last 30,
-after asking (`--keep <n>` keeps another number).
+after asking (`--keep <n>` keeps another number), never while a run plays; studies keep their runs until you delete a
+study's folder.
 
 ### Sharing a run
 
@@ -83,8 +84,8 @@ Each run writes its results to `~/Documents/My Games/Kitten Space Agency/benchma
 folder (`<date>.zip`). The zip holds the report, the run's record, every frame's numbers, the game's log and any crash
 report of the run, the settings and the screenshots as JPEG; your home folder's name is replaced by `~` throughout. To
 share one, open an issue with the **Benchmark report** template and attach the zip. For numbers that compare across
-Macs, run with a preset (`--preset low`, `medium` or `high`): fixed settings that are the same on every Mac. `compare`
-takes a zip in place of a run folder.
+Macs, run with a preset (`--preset low`, `medium` or `high`): fixed settings over a fresh install's defaults, the
+same on every Mac. `compare` takes a zip in place of a run folder.
 
 ### The three tests
 
@@ -202,8 +203,10 @@ The sessions play round after round, each variant once a round, the next round t
 Mac's heat falls on every variant the same. Each session is a run of its own in the study's folder (the benchmarks
 folder's `studies/`), from your settings as they were when the study began, and each variant's first round takes the
 screenshots. The study waits while another game runs; Ctrl-C stops the session playing and the study, and
-`study resume` plays the rest, after a crash or a reboot too. A session that failed is played again at once, and left
-out when it fails twice. The report, `report.html` in the study's folder, has each variant's verdict against
+`study resume` plays the rest, after a crash or a reboot too; one terminal at a time plays a study. A session that
+failed, or couldn't start (its app gone), is played again at once, and left out when it fails twice; one that a game
+or another run got in ahead of waits again. A session recorded by an older benchmark counts as played, its record made
+again from its store. The report, `report.html` in the study's folder, has each variant's verdict against
 the baseline with its screenshots held against the baseline's, the parts as a matrix of variants with the 95 %
 interval of each ratio, the zones that moved, and every session's run. `measure --ab` is such a study, and
 `--save-plan <file>` writes a `measure` or `profile` command line as a study's file to add variants to.
@@ -319,7 +322,7 @@ GPU's power and clock) or adds the benchmark's probes (`+memory`).
 
 `benchmark.sh` also records the GPU's power and clock while each game session plays, from macOS's IOReport (as
 Activity Monitor's energy figures are, without root): `host/gpu_power` (W), `host/gpu_active` (the share of the time
-the GPU wasn't off) and `host/gpu_clock` (MHz, its states' time weighted by their frequencies), every half second into
+the GPU wasn't off) and `host/gpu_clock` (MHz, its states' time weighted by their frequencies), every 0.2 s into
 `host.db`, each sample in the part it fell in ([`Power.cs`](../../player/benchmark-cli/Power.cs)). Power is shown, not
 judged: a comparison judges the GPU's energy a frame ([`gpu/energy`](#metrics)). A run from the tab has no host, and none
 of them. Where macOS doesn't give them, the run says so and goes on.
@@ -344,10 +347,12 @@ A test is a list of scenarios, and a scenario has a kind: how it keeps time.
 
 The benchmark is in the app, in `Contents/Resources/Benchmark/`, and [KSA Metal Hooks](../hooks/) give it every frame
 of the game. For a run of `./benchmark.sh`, the game starts from a documents folder of its own,
-`~/Library/Caches/ksa-macos-port/benchmark/instance/`, with a copy of your settings (with the preset on top, if any)
-and of your port settings (the defaults with a preset), and no mods, so your saves, settings and mods are never
-touched. The command changes only the settings that start the game straight into the test (no system menu, the chosen
-system, the game's test vessel in orbit); every quality setting stays yours or the preset's. A run in the game you
+`~/Library/Caches/ksa-macos-port/benchmark/instance/`, with a copy of your settings (a fresh install's with a preset or
+`--defaults`) and of your port settings (the defaults with a preset or `--defaults`), and no mods, so your saves,
+settings and mods are never touched. The command changes only the settings that start the game straight into the test
+(no system menu, the chosen system, the game's test vessel in orbit); every quality setting stays yours or the
+preset's. The game's environment is the command's: variables that change how it runs (Metal's, .NET's, the port's,
+StarMap's) are listed in the run's Environment fact, KSA Metal's switches in their own. A run in the game you
 have open keeps its system: the benchmark saves your game, sets the world to a new game's, and loads your game again
 at the end.
 
@@ -415,21 +420,24 @@ way. A record of an older version isn't read: `report <run> --again` makes it ag
 A game counts as hung when its last heartbeat is a minute old, three in the Warp Test or with a tool that holds a
 checkpoint, and as stuck when its heartbeats still come but have said the same moment of the script for as long, with
 no screenshot, checkpoint or part begun or ended there (the game's clock stopped, so a checkpoint waits for ever;
-[`Watchdog.cs`](../../shared/benchmark/Watchdog.cs)). `benchmark.sh` stops either game, keeping what it measured; for a
-stuck one the trigger `stuck: sample, stop` first records what the game's threads were doing in `stuck.txt`
-(`stuck-<n>.txt` for the nth game of a run), which the zip to share holds too. It doesn't look for a stuck game with
-`hold`, `capture` or a trigger that dumps or captures at checkpoints. The tab stops a hung game the same way, and a stuck
-run, after the same sample, as Esc does, failed, giving the player's game back.
+[`Watchdog.cs`](../../shared/benchmark/Watchdog.cs)). `benchmark.sh` stops either game, TERM first so that it writes
+what it measured, KILL after 10 s; for a stuck one the trigger `stuck: sample, stop` first records what the game's
+threads were doing in `stuck.txt` (`stuck-<n>.txt` for the nth game of a run), which the zip to share holds too. It
+doesn't look for a stuck game with `hold`, `capture` or a trigger that dumps or captures at checkpoints. The tab stops a
+hung game the same way, and a stuck run, after the same sample, as Esc does, failed, giving the player's game back.
+`benchmark.sh` also stops a game that hasn't finished loading after 10 minutes.
 
 A run fails when the game crashed, hung or was stuck, a step of the test failed, a vehicle broke apart before it should, a
 screenshot is missing, the game's log has errors (during the Warp Test the game's own errors are only noted, since
 settings that hold warp back cause them), one of the hooks was skipped (the game's code it changes has moved) or
 failed, the game could not read the run's settings, a screenshot is one colour from edge to edge or 30 % of it or more
 pure white (a real view reaches about a fifth), or another game ran at the same time; the script then exits with 1. A
-run you stop (Esc, Ctrl-C) ends with what it measured and exits with 1 too. The game failing to reach its servers is
+run you stop (Esc, Ctrl-C, TERM, or closing the terminal) ends with what it measured and exits with 1 too; with
+Instruments recording, a second Ctrl-C stops waiting for its trace. The game failing to reach its servers is
 noted, not a failure. Before the game starts, the script refuses what would waste the run: a value a port setting can't
-take, a `--compare` run that shares nothing with this one or played another way, an app or a test that isn't there. It
-warns when the GPU is already busy.
+take, a `--compare` run that shares nothing with this one or played another way, an app or a test that isn't there, a
+game already running (or its launcher waiting to start one), and it refuses to start when it can't tell (`pgrep`
+gave no answer). It warns when the GPU is already busy.
 
 Screenshots are compared in blocks of 16 by 16 pixels: a block counts as changed when its mean colour moved by more than
 12 (of 255), and a screenshot differs when more of its blocks changed than its limit allows. The numbers are judged as
@@ -529,7 +537,7 @@ flight's. Fly the free camera to a place, open the console (`\`) and type `bench
 
 | Option | |
 |---|---|
-| `--preset low`, `--preset medium`, `--preset high` | fixed settings in a 1280x800 window without Vsync, the same on every Mac (default: your settings) |
+| `--preset low`, `--preset medium`, `--preset high` | fixed settings over a fresh install's defaults, in a 1280x800 window without Vsync, the same on every Mac (default: your settings) |
 | `--defaults` | the settings of a fresh install instead of yours: the game's own defaults and the port settings' (a preset, `--set` and `--port` go on top) |
 | `--system earth` | Earth and the Moon only (the game's smaller system): skips Mars, Saturn and Jupiter, and needs less memory (default: `earth` when what plays is all on Earth or the Moon, otherwise `sol`) |
 | `mixed`, `tour`, `warp`, `full` | the test to play (default: `mixed`) |

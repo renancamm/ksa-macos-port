@@ -1,5 +1,6 @@
 // The power channel: the GPU's power and clock while a game session plays, from macOS's IOReport (a private interface,
-// read without root, as Activity Monitor's energy figures are), sampled every half second into the run's host.db as
+// read without root, as Activity Monitor's energy figures are), sampled every 0.2 s (a Mixed Test part lasts a second:
+// about 5 samples; the sampling is this program's work, not the game's) into the run's host.db as
 // counters: host/gpu_power (W, from the Energy Model group's GPU Energy), host/gpu_active (the share of the time the GPU
 // wasn't off, from GPU Stats' performance states) and host/gpu_clock (MHz, the states' residency weighted by their
 // frequencies, the IORegistry's pmgr voltage-states9). Finish puts each sample in the part it fell in, by time. Off
@@ -44,7 +45,7 @@ internal sealed class Power : IDisposable
     [DllImport(CF)] private static extern void CFRelease(IntPtr value);
 
     private const uint Utf8 = 0x08000100;
-    private const double Every = 0.5;
+    private const double Every = 0.2;
 
     // Shown, not judged: a faster frame does more of the GPU's work a second (gpu/energy, a frame's, is judged)
     public static readonly Metric GpuPower = new("host/gpu_power", "GPU power", "W", Better.Neither, Across.Median, 1,
@@ -99,7 +100,10 @@ internal sealed class Power : IDisposable
                 said("No power channel: macOS refused the subscription.");
                 return null;
             }
-            return new Power(subscription, subscribed, channels, store, session, Clocks(), said);
+            var clocks = Clocks();
+            if (clocks.Length == 0)
+                said("No GPU clock: the IORegistry has no frequency table this channel reads (power and activity still).");
+            return new Power(subscription, subscribed, channels, store, session, clocks, said);
         }
         catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException)
         {
@@ -109,16 +113,19 @@ internal sealed class Power : IDisposable
     }
 
     // The GPU's frequency of each performance state in MHz (the first, off, 0), from the IORegistry; none when it isn't there
+    // or doesn't read as such a table (another chip's may hold other units): frequencies that rise, from 100 MHz to 5 GHz
     private static double[] Clocks()
     {
         if (Tool.Exec("ioreg", ["-r", "-n", "pmgr", "-l"], out var text) != 0 ||
             Regex.Match(text, "\"voltage-states9\" = <([0-9a-f]+)>") is not { Success: true } m)
             return [];
         var bytes = Convert.FromHexString(m.Groups[1].Value);
-        return Enumerable.Range(0, bytes.Length / 8).Select(i => BitConverter.ToUInt32(bytes, i * 8) / 1e6).ToArray();
+        var clocks = Enumerable.Range(0, bytes.Length / 8).Select(i => BitConverter.ToUInt32(bytes, i * 8) / 1e6).ToArray();
+        var on = clocks.Skip(1).ToArray();
+        return on.Length > 0 && on.All(c => c is >= 100 and <= 5000) && on.Zip(on.Skip(1)).All(p => p.Second > p.First) ? clocks : [];
     }
 
-    // Every half second until stopped; a failure ends the channel, said once, never the run
+    // Every 0.2 s until stopped; a failure ends the channel, said once, never the run
     private void Sample()
     {
         var last = IntPtr.Zero;
@@ -168,7 +175,8 @@ internal sealed class Power : IDisposable
         using var key = new CfString("IOReportChannels");
         var items = CFDictionaryGetValue(delta, key.Ref);
         double dt = to - from, t = (from + to) / 2;
-        if (items == IntPtr.Zero || dt <= 0)
+        // Stopped: its session is over, and nothing of it goes into the next
+        if (items == IntPtr.Zero || dt <= 0 || _stop)
             return;
         double? joules = null;
         long on = 0, all = 0;
@@ -233,9 +241,11 @@ internal sealed class Power : IDisposable
     public void Dispose()
     {
         _stop = true;
-        // Released only once the sampler is done with them
-        if (_thread.Join(2000))
+        // Released only once the sampler is done with them (a sampler stuck in IOReport keeps them, and writes nothing more)
+        if (_thread.Join(5000))
             Release(_subscription, _channels, _all);
+        else
+            _said("The power channel's sampler didn't stop: left as it is.");
     }
 
     // A CFString made from a .NET one, released after use

@@ -124,8 +124,8 @@ public static partial class Program
     // The benchmark's own probes (--probe memory)
     internal static readonly string[] OwnProbes = ["memory"];
 
-    // Presets: fixed settings, the same on every Mac, so reports compare. Without one, your own settings are used. All run
-    // in a 1280x800 window without Vsync (frame times are then the game's, not the display's).
+    // Presets: fixed settings on a fresh install's, the same on every Mac, so reports compare. Without one, your own
+    // settings are used. All run in a 1280x800 window without Vsync (frame times are then the game's, not the display's).
     private static readonly string[] PresetCommon = ["mode=\"Windowed\"", "width=1280", "height=800", "vsync=false", "fpslimit=240"];
     private static readonly Dictionary<string, string[]> Presets = new()
     {
@@ -366,6 +366,10 @@ public static partial class Program
             Output.Info("No runs.");
             return 0;
         }
+        // Studies keep their runs: said, not deleted
+        if (Directory.Exists(Studies) && Directory.GetDirectories(Studies).Where(d => File.Exists(Path.Combine(d, Study.FileName))).ToArray() is { Length: > 0 } studies)
+            Output.Info($"{studies.Length} stud{(studies.Length > 1 ? "ies" : "y")} in {Studies} ({Ask("du", ["-shc", .. studies]).Split('\n')[^1].Split('\t')[0].Trim()}) stay: " +
+                        "delete a study's folder when you are done with it.");
         // A baseline's runs stay, whatever their age
         var named = ReadBaselines().Values.SelectMany(t => t.Values).ToHashSet();
         var names = Directory.GetFileSystemEntries(Benchmarks).Select(p => Path.GetFileName(p)!)
@@ -390,8 +394,10 @@ public static partial class Program
                 return 0;
             }
         }
-        foreach (var d in old)
-            Directory.Delete(d, true);
+        // Not while a run plays: its folder would go with the others
+        using (BenchmarkRun.Playing() ?? throw new PortException("a benchmark run is playing: clean when it is done."))
+            foreach (var d in old)
+                Directory.Delete(d, true);
         Output.Info("Deleted.");
         return 0;
     }

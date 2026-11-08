@@ -11,7 +11,7 @@ BENCH="${PORT_FOLDER}/benchmark.sh"
 RESOURCES="${PORT_FOLDER}/payload/app/Contents/Resources"
 
 # benchmark.sh refuses to play beside a real game: then there is nothing to test here, and nothing to disturb
-if pgrep -f "dotnet (KSA|StarMap).dll" > /dev/null 2>&1; then
+if pgrep -f "dotnet (KSA|StarMap)\.dll|\.app/Contents/MacOS/KSA( |$)" > /dev/null 2>&1; then
     echo "    The benchmark script's tests: skipped (the game is running)."
     exit 0
 fi

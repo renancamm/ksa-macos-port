@@ -35,12 +35,16 @@ public static partial class Program
         private ProcessStartInfo Game(Dictionary<string, string> env)
         {
             // Started as bash starts a job with &: SIGINT and SIGQUIT ignored, so that Ctrl-C at the terminal, which goes to
-            // the whole process group, stops the run here and reaches the game only as the kill below. Its output goes
-            // nowhere and it reads nothing, as a job's
+            // the whole process group, stops the run here and reaches the game only as the stop below; SIGHUP too, so that
+            // a closed terminal stops it the same way. Its output goes nowhere and it reads nothing, as a job's
             var start = new ProcessStartInfo("/bin/sh");
-            foreach (var a in new[] { "-c", "trap '' INT QUIT; exec \"$0\" \"$@\" < /dev/null > /dev/null 2>&1", Path.Combine(_app, "Contents", "MacOS", "KSA") })
+            foreach (var a in new[] { "-c", "trap '' INT QUIT HUP; exec \"$0\" \"$@\" < /dev/null > /dev/null 2>&1", Path.Combine(_app, "Contents", "MacOS", "KSA") })
                 start.ArgumentList.Add(a);
             start.Environment["STARMAP_INSTANCE_PATH"] = _instance;
+            // The game runs as a player's: a shell's allocator switch (MallocNanoZone=0, which some terminals and tools set)
+            // is left out
+            foreach (var name in LeftOut)
+                start.Environment.Remove(name);
             foreach (var (k, v) in env)
                 start.Environment[k] = v;
             return start;
@@ -110,7 +114,13 @@ public static partial class Program
             foreach (var (k, v) in Env().Where(kv => kv.Key.StartsWith("KSA_MTL_", StringComparison.Ordinal)))
                 own[k] = v;
             var switches = string.Join(' ', own.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key}={kv.Value}".Replace(home, "~")));
-            var environment = string.Join(' ', Env().Where(kv => !kv.Key.StartsWith("KSA_MTL_", StringComparison.Ordinal)).Select(kv => $"{kv.Key}={kv.Value}".Replace(home, "~")));
+            // The rest of the game's environment that changes how it runs: what this program had (a shell's MTL_HUD_ENABLED,
+            // DOTNET_ settings, KSA_STARMAP_DIR...) and --env's
+            var inherited = Environment.GetEnvironmentVariables().Keys.Cast<string>().Where(Changes)
+                .ToDictionary(k => k, k => Environment.GetEnvironmentVariable(k) ?? "");
+            foreach (var (k, v) in Env().Where(kv => !kv.Key.StartsWith("KSA_MTL_", StringComparison.Ordinal)))
+                inherited[k] = v;
+            var environment = string.Join(' ', inherited.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key}={kv.Value}".Replace(home, "~")));
             var tools = _tools.Count > 0 ? string.Join(", ", _tools) : "none";
             var preset = PresetFact;
             var changed = ChangedFact;
@@ -129,9 +139,18 @@ public static partial class Program
 
         private const string Start = "a new game, from benchmark.sh";
 
+        // This program's variables the game never gets
+        private static readonly string[] LeftOut = ["MallocNanoZone"];
+
+        // A variable of this program's environment that changes the game: Metal's, .NET's, the port's and StarMap's, the
+        // dynamic loader's and the allocator's (KSA Metal's switches are a fact of their own; benchmark.sh sets two itself)
+        private static bool Changes(string name) =>
+            name is not ("KSA_PORT_FOLDER" or "DOTNET_ROOT" or "DOTNET_CLI_TELEMETRY_OPTOUT") && !LeftOut.Contains(name) && !name.StartsWith("KSA_MTL_", StringComparison.Ordinal) &&
+            new[] { "MTL_", "METAL_", "DOTNET_", "COMPlus_", "KSA_", "STARMAP", "DYLD_", "Malloc", "OBJC_" }.Any(p => name.StartsWith(p, StringComparison.Ordinal));
+
         // The settings facts of the run: the preset and what changed on top of it
-        private string PresetFact => _defaults ? $"{(_preset.Length > 0 ? _preset : "none")}, a fresh install's settings"
-            : _preset.Length > 0 ? _preset : "none, own settings";
+        private string PresetFact => _preset.Length > 0 ? $"{_preset}, on a fresh install's settings"
+            : _defaults ? "none, a fresh install's settings" : "none, own settings";
 
         private string ChangedFact
         {
@@ -309,18 +328,31 @@ public static partial class Program
             else
                 busy = "";
 
-            // Ctrl-C (or TERM) while the game plays: stopped, and what it measured reported; after that, as usual
+            // Ctrl-C, TERM or a closed terminal (HUP) while the game plays: stopped, and what it measured reported; after
+            // that, as usual. Ctrl-C at a terminal reaches the whole process group (Instruments too); a second one stops
+            // the wait for Instruments' trace
             ConsoleCancelEventHandler stop = (_, e) =>
             {
                 e.Cancel = true;
                 _stopped = true;
+                _stoppedBy ??= "Ctrl-C";
+                Interlocked.Increment(ref _interrupts);
             };
             Console.CancelKeyPress += stop;
-            var term = PosixSignalRegistration.Create(PosixSignal.SIGTERM, c =>
+            PosixSignalRegistration Signal(PosixSignal signal, string name) => PosixSignalRegistration.Create(signal, c =>
             {
                 c.Cancel = true;
                 _stopped = true;
+                _stoppedBy ??= name;
+                // A closed terminal takes the console with it: what is said from now on would fail the run
+                if (signal == PosixSignal.SIGHUP)
+                {
+                    Console.SetOut(TextWriter.Null);
+                    Console.SetError(TextWriter.Null);
+                }
             });
+            var term = Signal(PosixSignal.SIGTERM, "TERM");
+            var hangup = Signal(PosixSignal.SIGHUP, "a closed terminal (HUP)");
             if (busy.Length > 0)
                 events.Add("gpu", value: int.Parse(busy));
             // The sessions: in full each test in a game of its own; measure's sessions
@@ -334,8 +366,9 @@ public static partial class Program
                         PlayOnce(++session, group, env, plan, lengths, timeout, hang, events, ref pressure);
             Console.CancelKeyPress -= stop;
             term.Dispose();
-            // --defaults: the settings as the game saved them, with its defaults filled in
-            if (_defaults)
+            hangup.Dispose();
+            // --defaults and presets: the settings as the game saved them, with its defaults filled in
+            if (_defaults || _preset.Length > 0)
                 File.Copy(_settings, Path.Combine(_out, "settings.toml"), true);
             var swapAfter = Swap();
             events.Session = 0;
@@ -426,6 +459,7 @@ public static partial class Program
             string ending = "";
             bool alongside = false;
             Process? tracer = null;
+            DateTime? tracing = null;
             var progress = new ProgressLine(lengths.Where(l => only.Any(o => o.Split('_')[0] == l.Section)).ToList());
             while (!game.HasExited)
             {
@@ -434,10 +468,19 @@ public static partial class Program
                 var beat = EventLog.LastHeartbeat(played, n);
                 progress.Show(beat, elapsed);
                 // --trace: once the game is up (its first heartbeat), Instruments attaches, and the run starts when it records
+                // (the game waits for it): looked at every second, the watch going on meanwhile
                 if (_trace && tracer == null && beat != null)
-                    tracer = StartTrace(game.Id, events);
+                {
+                    _recordingSaid = null;
+                    (tracer, tracing) = (StartTrace(game.Id), DateTime.UtcNow);
+                }
+                if (tracer != null && tracing is { } since && Recording(tracer, since))
+                {
+                    events.Add("recording");
+                    tracing = null;
+                }
                 // Another game at the same time shares the Mac's GPU and memory (and may be the end of this one)
-                if (!alongside && GamesRunning().Any(pid => pid != game.Id))
+                if (!alongside && GamesRunning()?.Any(pid => pid != game.Id && !Ours(pid, game.Id)) == true)
                 {
                     alongside = true;
                     Output.Warn("another game is running at the same time: this run's numbers won't count.");
@@ -449,7 +492,10 @@ public static partial class Program
                     sessionPressure = Math.Max(sessionPressure, level);
                 }
                 if (_stopped)
-                    ending = "was stopped with Ctrl-C";
+                    ending = $"was stopped with {_stoppedBy}";
+                // Loading takes a minute or two, a few with a first start's shader compiles
+                else if (beat == null && hang < int.MaxValue && elapsed >= LoadLimit)
+                    ending = $"did not finish loading in {LoadLimit / 60} minutes: stopped";
                 else if (Watchdog.Hung(played, n, hang) is { } stale)
                     ending = $"hung{Watchdog.Where(stale)} (no frame for {hang} s): stopped";
                 else if (!StandsStill && Watchdog.Stuck(played, n, hang) is { } still)
@@ -466,19 +512,14 @@ public static partial class Program
                     progress.End();
                     if (!_stopped)
                         Output.Warn($"the game {ending}.");
-                    try
-                    {
-                        game.Kill();
-                    }
-                    catch (InvalidOperationException)
-                    {
-                    }
+                    End(game);
                     break;
                 }
                 game.WaitForExit(1000);
             }
             progress.End();
-            game.WaitForExit();
+            if (!game.WaitForExit(TimeSpan.FromSeconds(30)))
+                Output.Warn("the game was still there 30 s after it was stopped.");
             if (ending.Length == 0)
             {
                 // Where the game had got to
@@ -490,22 +531,29 @@ public static partial class Program
                     : $"quit with status {status}{where}";
             }
             if (_stopped)
-                events.Add("stopped", text: "stopped with Ctrl-C");
+                events.Add("stopped", text: $"stopped with {_stoppedBy}");
             events.Add("ended", text: ending);
             var swapEnd = Swap();
             events.Add("session-memory", text: $"pressure {Pressure(sessionPressure)}, swap " +
                                                $"{(swapStart.Length > 0 ? swapStart : "?")} -> {(swapEnd.Length > 0 ? swapEnd : "?")} MB");
             if (alongside)
                 events.Add("alongside");
-            // Instruments stops recording when the game quits; it then writes the trace
+            // Instruments stops recording when the game quits; it then writes the trace. Ctrl-C at the terminal reached it
+            // already: a second INT would cut the trace short
             if (tracer != null)
             {
-                Output.Info("Instruments is writing the trace");
-                Tool.Exec("kill", ["-INT", tracer.Id.ToString(CultureInfo.InvariantCulture)], out _);
+                Output.Info("Instruments is writing the trace (Ctrl-C again stops waiting for it)");
+                if (!tracer.HasExited && _interrupts == 0)
+                    Tool.Exec("kill", ["-INT", tracer.Id.ToString(CultureInfo.InvariantCulture)], out _);
                 // It can stay at "Stopping recording" for good: after 10 minutes the trace is left as far as it got
-                if (!tracer.WaitForExit(TimeSpan.FromMinutes(10)))
+                int interrupts = _interrupts;
+                var writing = Stopwatch.StartNew();
+                while (!tracer.WaitForExit(1000) && writing.Elapsed < TimeSpan.FromMinutes(10) && _interrupts <= Math.Max(interrupts, 1))
                 {
-                    Output.Warn("Instruments was still writing the trace after 10 minutes: stopped, the trace left as it is (no summary)");
+                }
+                if (!tracer.HasExited)
+                {
+                    Output.Warn("Instruments was still writing the trace: stopped, the trace left as it is (no summary)");
                     Tool.Exec("kill", ["-TERM", tracer.Id.ToString(CultureInfo.InvariantCulture)], out _);
                     if (!tracer.WaitForExit(TimeSpan.FromSeconds(30)))
                         tracer.Kill(entireProcessTree: true);
@@ -519,7 +567,50 @@ public static partial class Program
                 File.WriteAllText(Path.Combine(_out, n > 1 ? $"game-{n}.log" : "game.log"), File.ReadAllText(log).Replace(PortFolder.Home, "~"));
         }
 
-        private Process? StartTrace(int pid, EventLog events)
+        // Whether a process is the game's own (a stand-in game's subshells look like it)
+        private static bool Ours(int pid, int game) =>
+            int.TryParse(Ask("ps", "-o", "ppid=", "-p", pid.ToString(CultureInfo.InvariantCulture)), out var parent) && parent == game;
+
+        // The game stopped: TERM first, so that it writes what it measured (its store closes as it exits), then KILL
+        private static void End(Process game)
+        {
+            try
+            {
+                if (game.HasExited)
+                    return;
+                Tool.Exec("kill", ["-TERM", game.Id.ToString(CultureInfo.InvariantCulture)], out _);
+                if (!game.WaitForExit(TimeSpan.FromSeconds(10)))
+                    game.Kill();
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+
+        // How long a game may load before its first heartbeat
+        private const int LoadLimit = 600;
+
+        // Whether Instruments records (2 s after it said so, as it settles), or has had a minute to say so (the game waits for
+        // it either way)
+        private bool Recording(Process tracer, DateTime since)
+        {
+            var log = tracer.StartInfo.ArgumentList[2];
+            if (_recordingSaid == null && File.Exists(log) && Regex.IsMatch(File.ReadAllText(log), "recording|ctrl-c", RegexOptions.IgnoreCase))
+                _recordingSaid = DateTime.UtcNow;
+            if (_recordingSaid is { } said)
+                return DateTime.UtcNow - said >= TimeSpan.FromSeconds(2);
+            if (tracer.HasExited)
+            {
+                Output.Warn($"Instruments did not start: {string.Join(' ', File.Exists(log) ? File.ReadAllLines(log).TakeLast(3) : [])}");
+                return true;
+            }
+            if (DateTime.UtcNow - since < TimeSpan.FromSeconds(60))
+                return false;
+            Output.Warn("Instruments didn't say it records after a minute: the trace may miss the run's start.");
+            return true;
+        }
+
+        private Process StartTrace(int pid)
         {
             var log = Path.Combine(_out, "xctrace.log");
             // Points of Interest holds the parts (KSA Metal's signposts)
@@ -528,18 +619,7 @@ public static partial class Program
                          "Points of Interest", "--attach", pid.ToString(CultureInfo.InvariantCulture), "--output", Path.Combine(_out, "trace.trace"),
                          "--no-prompt" })
                 start.ArgumentList.Add(a);
-            var tracer = Process.Start(start)!;
-            for (int waited = 0; waited < 60 && !tracer.HasExited; waited++)
-            {
-                if (File.Exists(log) && Regex.IsMatch(File.ReadAllText(log), "recording|ctrl-c", RegexOptions.IgnoreCase))
-                    break;
-                Thread.Sleep(1000);
-            }
-            if (tracer.HasExited)
-                Output.Warn($"Instruments did not start: {string.Join(' ', File.ReadAllLines(log).TakeLast(3))}");
-            Thread.Sleep(2000);
-            events.Add("recording");
-            return tracer;
+            return Process.Start(start)!;
         }
 
         // The tools' output
