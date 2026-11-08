@@ -89,10 +89,10 @@ set(HARMONY_VERSION 2.4.3)
 # StarMap, the mod loader in payload/starmap/: its release (the Windows build, platform-neutral .NET) and the
 # licences of StarMap and of Harmony, which it includes, at the matching tags. It also includes Microsoft's
 # Microsoft.Extensions.DependencyInjection, under the .NET runtime's licence.
-set(STARMAP_VERSION 0.5.3)
+set(STARMAP_VERSION 0.5.4)
 FetchContent_Declare(starmap
     URL https://github.com/StarMapLoader/StarMap/releases/download/${STARMAP_VERSION}/StarMap-${STARMAP_VERSION}.zip
-    URL_HASH SHA256=92696e630a05b23f3f06a7d52101e148184c4b7a8344aff11be1100ec72dd410)
+    URL_HASH SHA256=bcf14ac68dfb6558152586fd98776fc5013006a0406c37792f5f6afcf0561366)
 FetchContent_Declare(starmap_license
     URL https://raw.githubusercontent.com/StarMapLoader/StarMap/${STARMAP_VERSION}/LICENSE.txt
     URL_HASH SHA256=cd27b291fba83ca3016cd50b6ce9032413f3a3cc4fa87a035bbb826feb50e313
