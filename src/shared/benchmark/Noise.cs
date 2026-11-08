@@ -72,10 +72,12 @@ public sealed class ShotNoise
     public double Limit { get; set; }
 }
 
-// A part: how far its median GPU and frame times spread across the runs (percent of their median), and its limit
+// A part: how far its median GPU and frame times spread across the runs (percent of their median), the limit of the one a
+// comparison judges it by (GPU time where the runs have it) and the frame time's own (null in a profile of before)
 public sealed class PartNoise
 {
     public double GpuSpread { get; set; }
     public double FrameSpread { get; set; }
     public double Limit { get; set; }
+    public double? FrameLimit { get; set; }
 }

@@ -55,6 +55,7 @@ internal static class Tests
             ("a recording of the player's game", YourGame),
             ("the statistics", StatisticsTests),
             ("verdicts on sessions, passes and one run", Verdicts),
+            ("the ground two runs stand on, and shaders from the frame before a part", GroundAndCounts),
             ("PresentMon's numbers", PresentMon),
             ("the zones that moved", ZonesMoved),
             ("a run's zones and slow frames in its record", ZonesInRecord),
@@ -381,7 +382,7 @@ internal static class Tests
     private static void Compare()
     {
         var a = Run("a", frameMs: 10);
-        var b = Run("b", frameMs: 11);
+        var b = Run("b", frameMs: 12);
         var view = Gradient(64, 48);
         Images.Write(Path.Combine(a, "earth_earth1.png"), view);
         Images.Write(Path.Combine(b, "earth_earth1.png"), view);
@@ -394,7 +395,7 @@ internal static class Tests
         Contains([output], "Same image (1 of 1 screenshots)", "the verdict");
         Check(!output.Contains("|", StringComparison.Ordinal), "aligned columns, no Markdown");
         var written = File.ReadAllText(Path.Combine(b, "compare.md"));
-        Contains([written], "| 10.0 | 11.0 | **10 % slower** |", "a part 10 % slower, marked");
+        Contains([written], "| 10.0 | 12.0 | **20 % slower** |", "a part 20 % slower, marked: past the screen's 10 %");
         Contains([written], "| earth_earth1.png | 0.00% | 0.0 | same (up to 1%) |", "the same screenshot");
         Contains([written], "Same Mac, same version, same settings.", "the settings");
         Check(File.Exists(Path.Combine(b, "compare.html")), "the page");
@@ -763,7 +764,72 @@ internal static class Tests
         Equal(Change.Same, screen.Change, "4 %: under the 5 % limit");
         var limited = Measured([10.0]);
         limited.Limit = 3;
-        Equal(Change.Worse, Statistics.Judge(limited, Measured([10.4]), Metrics.GpuBusy)!.Change, "4 %: past a calibrated limit of 3 %");
+        Equal(Change.Same, Statistics.Judge(limited, Measured([10.4]), Metrics.GpuBusy)!.Change, "4 %: past a calibrated limit of 3 %, a screen's drift");
+        Equal(Change.Worse, Statistics.Judge(limited, Measured([11.2]), Metrics.GpuBusy)!.Change, "12 %: past the screen's 10 %");
+        var tight = Measured([10.0, 10.1, 9.9]);
+        tight.Limit = 6;
+        Equal(Change.Same, Statistics.Judge(tight, Measured([10.5, 10.6, 10.4]), Metrics.GpuBusy)!.Change, "a quick read of 5 %: under a calibrated limit of 6 %");
+        // The sessions' own spread is the noise: a calibrated limit of a run doesn't hold them back
+        var wide = Measured(Sessions(10.0, 10.1, 9.9, 10.05, 9.95));
+        wide.Limit = 6.7;
+        var small = Statistics.Judge(wide, Measured(Sessions(9.6, 9.65, 9.55, 9.62, 9.58)), Metrics.GpuBusy)!;
+        Equal(Change.Better, small.Change, "4 % less in every session: past p and delta, under the run's limit of 6.7 %");
+        // The interval that goes with the test: 5 a side cut the 3 lowest and highest of the 25 ratios
+        Equal(2, small.Interval!.Length, "an interval");
+        Check(small.Interval[0] > 0.94 && small.Interval[1] < 0.97, $"its interval leaves out 1: {small.Interval[0]}-{small.Interval[1]}");
+        var same = Statistics.Judge(a, Measured(Sessions(10.02, 9.98, 10.08, 9.93, 10.0)), Metrics.GpuBusy)!;
+        Check(same.Interval![0] < 1 && same.Interval[1] > 1, $"the same: its interval holds 1, {same.Interval[0]}-{same.Interval[1]}");
+        // 5 a side: the 3rd lowest and the 3rd highest of the 25 ratios; and an interval that leaves out 1 is a p under 0.05
+        double[] xs = [10.0, 10.1, 9.9, 10.05, 9.95], ys = [9.6, 9.65, 9.55, 9.62, 9.58];
+        var ratios = xs.SelectMany(x => ys.Select(y => y / x)).Order().ToArray();
+        Equal(Math.Round(ratios[2], 4), small.Interval[0], "the interval's low end: the 3rd lowest ratio");
+        Equal(Math.Round(ratios[^3], 4), small.Interval[1], "its high end: the 3rd highest");
+        var random = new Random(7);
+        for (int trial = 0; trial < 200; trial++)
+        {
+            var sa = Enumerable.Range(0, 5).Select(_ => 10 + random.NextDouble()).ToArray();
+            var sb = Enumerable.Range(0, 5).Select(_ => 10 + random.NextDouble() + random.NextDouble() * 0.6).ToArray();
+            var iv = Statistics.RatioInterval(sa, sb)!;
+            if (Statistics.MannWhitney(sa, sb) < 0.05 != (iv[0] > 1 || iv[1] < 1))
+                Check(false, $"trial {trial}: p {Statistics.MannWhitney(sa, sb)}, interval {iv[0]}-{iv[1]}");
+        }
+        Check(Statistics.RatioInterval([1, 2, 3], [2, 3, 4]) == null, "3 a side: no interval at 95 %");
+        // Frame time by its own limit, and in a record of before (no FrameLimit) by the part's when it has no GPU time
+        PartRecord Frames(double ms, double? limit, double? frameLimit, bool gpu)
+        {
+            var p = new PartRecord { Name = "earth1", Frames = 100, Limit = limit, FrameLimit = frameLimit };
+            p.Measurings.Add(new MeasuringRecord(1, 1, new SortedDictionary<string, double> { [Metrics.FrameTime.Name] = ms }));
+            p.Measurings.Add(new MeasuringRecord(1, 2, new SortedDictionary<string, double> { [Metrics.FrameTime.Name] = ms + 0.01 }));
+            p.Values[Metrics.FrameTime.Name] = ms;
+            if (gpu)
+                p.Values[Metrics.GpuBusy.Name] = 10;
+            return p;
+        }
+        Equal(8.0, Statistics.Judge(Frames(10, 3, 8, true), Frames(10.5, 3, 8, true), Metrics.FrameTime)!.Limit, "frame time: its own calibrated limit");
+        Equal(6.0, Statistics.Judge(Frames(10, 6, null, false), Frames(10.5, 6, null, false), Metrics.FrameTime)!.Limit, "a record of before: the part's limit, frame time's");
+        Equal(2.0, Statistics.Judge(Frames(10, 6, null, true), Frames(10.5, 6, null, true), Metrics.FrameTime)!.Limit, "a record of before with GPU time: no frame limit, 2 %");
+        // Counts merge as their mean, a worst state as the worst
+        var merged = Measure.Merge([new Dictionary<string, double> { [Metrics.Hitches.Name] = 4, [Metrics.Thermal.Name] = 0 },
+            new Dictionary<string, double> { [Metrics.Hitches.Name] = 0, [Metrics.Thermal.Name] = 2 }]);
+        Equal(2.0, merged[Metrics.Hitches.Name], "hitches: the mean");
+        Equal(2.0, merged[Metrics.Thermal.Name], "the thermal state: the worst");
+        // A probe's metric: the first definition read stands
+        Metrics.Register(new Metric("probe/test/first", "First", "", Better.Lower, Across.Median, 0, "") { Limit = 3 });
+        Metrics.Register(new Metric("probe/test/first", "First", "", Better.Lower, Across.Median, 0, "") { Limit = 30 });
+        Equal(3.0, Metrics.Find("probe/test/first")!.Limit, "the first definition stands");
+        // A count from 0 moves by its floor
+        PartRecord Count(Metric m, int frames, params double[] values)
+        {
+            var p = new PartRecord { Name = "earth1", Frames = frames, Seconds = 1 };
+            p.Measurings.Add(new MeasuringRecord(1, 1, new SortedDictionary<string, double> { [m.Name] = values[0] }));
+            p.Values[m.Name] = values[0];
+            return p;
+        }
+        Equal(Change.Worse, Statistics.Judge(Count(Metrics.Hitches, 300, 0), Count(Metrics.Hitches, 300, 3), Metrics.Hitches)!.Change, "hitches 0 to 3");
+        Equal(Change.Same, Statistics.Judge(Count(Metrics.Hitches, 300, 0), Count(Metrics.Hitches, 300, 1), Metrics.Hitches)!.Change, "hitches 0 to 1: under the floor");
+        Equal("0.0 to 3.0 frames", Comparison.Text(Statistics.Judge(Count(Metrics.Hitches, 300, 0), Count(Metrics.Hitches, 300, 3), Metrics.Hitches)!), "a count from 0 in words");
+        Check(Statistics.Judge(Count(Metrics.FrameP99, 40, 30), Count(Metrics.FrameP99, 40, 60), Metrics.FrameP99) == null, "a P99 of 40 frames: not judged");
+        Equal(Change.Worse, Statistics.Judge(Count(Metrics.FrameP99, 400, 30), Count(Metrics.FrameP99, 400, 40), Metrics.FrameP99)!.Change, "a P99 of 400 frames, 33 % higher");
         // A few percent of a small number: under CPU busy's floor of 0.25 ms
         PartRecord Cpu(params double[] ms)
         {
@@ -779,6 +845,80 @@ internal static class Tests
             "CPU busy 0.4 ms faster: past both");
         var comparison = Comparison.Of([("earth", a)], [("earth", Measured(Sessions(10.0, 10.1, 9.9)))]);
         Contains([comparison.Sentence().Text], "inconclusive (3 sessions a side, 5 needed)", "the sentence of too few sessions");
+        // The sentence names the parts that moved, even when the others move back: one part 20 % higher, four 5 % lower
+        PartRecord One(string name, double gpu, double frame, double mb)
+        {
+            var p = new PartRecord { Name = name, Frames = 100, Seconds = 1 };
+            p.Measurings.Add(new MeasuringRecord(1, 1, new SortedDictionary<string, double> { [Metrics.GpuBusy.Name] = gpu }));
+            (p.Values[Metrics.GpuBusy.Name], p.Values[Metrics.FrameTime.Name], p.Values[Metrics.Footprint.Name]) = (gpu, frame, mb);
+            return p;
+        }
+        string[] names = ["kitten", "explosion", "liftoff", "topdown", "cockpit"];
+        var mixed = Comparison.Of(names.Select(n => ("mixed", One(n, 10, 10, 8000))),
+            names.Select((n, i) => ("mixed", One(n, i == 0 ? 12 : 9.5, i == 0 ? 12 : 9.5, i == 0 ? 9000 : 8000))));
+        var (text, good) = mixed.Sentence();
+        Contains([text], "GPU time 20 % higher in kitten, 4 other parts within noise (screen)", "one part higher, the others within a screen's drift");
+        Contains([text], "Memory 12 % higher in kitten", "memory, which doesn't drift, on a screen");
+        Check(!text.Contains("Frame time", StringComparison.Ordinal), $"a frame time that moved with its GPU time is the same story: {text}");
+        Equal(false, good, "a part got worse");
+        // With Vsync a frame time that jumped a display step while its GPU time didn't move isn't another number that moved
+        var stepped = Comparison.Of([("mixed", One("kitten", 25, 25, 8000))], [("mixed", One("kitten", 26, 28.6, 8000))], steps: true);
+        Equal("GPU time within noise (screen)", stepped.Sentence().Text, "the frame time on the display's steps");
+        // ... by sessions too, where a frame time and a latency are judged: 5 sessions a side, GPU the same, the display a step on
+        PartRecord Paced(double frame, double latency)
+        {
+            var p = new PartRecord { Name = "kitten", Frames = 100, Seconds = 1 };
+            for (int i = 0; i < 5; i++)
+                p.Measurings.Add(new MeasuringRecord(i + 1, 1, new SortedDictionary<string, double>
+                    { [Metrics.GpuBusy.Name] = 15 + i * 0.01, [Metrics.FrameTime.Name] = frame + i * 0.01, [Metrics.Latency.Name] = latency + i * 0.01 }));
+            foreach (var (k, v) in Measure.Merge(p.Measurings.Select(m => (IReadOnlyDictionary<string, double>)m.Values).ToList()))
+                p.Values[k] = v;
+            return p;
+        }
+        var vsync = Comparison.Of([("mixed", Paced(16.7, 40))], [("mixed", Paced(33.3, 70))], steps: true).Sentence();
+        Equal("GPU time: no change shown (5 sessions a side; the parts' 95 % intervals 0 to 0 %)", vsync.Text, "with Vsync, the display's step isn't another number that moved");
+        Equal(true, vsync.Good, "nothing got worse");
+        var free = Comparison.Of([("mixed", Paced(16.7, 40))], [("mixed", Paced(33.3, 70))]).Sentence();
+        Contains([free.Text], "Frame time 99 % slower in kitten", "without Vsync the frame time is another number that moved");
+        // A part only its other numbers moved in, with nothing that decides it (no GPU or frame time)
+        var bare = Comparison.Of([("mixed", new PartRecord { Name = "kitten", Frames = 100, Values = { [Metrics.Footprint.Name] = 8000 } })],
+            [("mixed", new PartRecord { Name = "kitten", Frames = 100, Values = { [Metrics.Footprint.Name] = 9000 } })]);
+        Check(bare.Parts.Single().Decides == null && !bare.Parts.Single().ZonesWanted, "nothing decides it, no zones wanted");
+        Contains([bare.Sentence().Text], "Memory 12 % higher in kitten", "its memory moved");
+        Equal("mixed kitten Memory 8000 to 9000 MB (12 % higher)", bare.Parts.Single().Line(bare.Parts.Single().Others.Single()), "the line of another number");
+        // Parts that went both ways: the counts first
+        var both = Comparison.Of(Enumerable.Range(0, 8).Select(i => ("mixed", One($"p{i}", 10, 10, 8000))),
+            Enumerable.Range(0, 8).Select(i => ("mixed", One($"p{i}", i < 4 ? 11.2 : 8.93, 10, 8000))));
+        Contains([both.Sentence().Text], "GPU time: 4 of 8 parts lower, 4 higher (screen)", "the counts, no mean that rounds to 0");
+    }
+
+    private static void GroundAndCounts()
+    {
+        RunRecord Rec(string power, string vsync, string port, params Finding[] notes) => new()
+        {
+            Facts = [new("Chip", "Apple M5"), new("Power", power), new("Vsync", vsync), new("Port", port)], Findings = [.. notes],
+        };
+        var busy = new Finding(Severity.Note, "gpu-busy", "the GPU was busy before the run (40 %): something else may have shared it");
+        var unlike = Ground.Unlike([Rec("AC Power", "true, FPS limit 240", "1"), Rec("Battery Power", "false, FPS limit 240", "1")]);
+        Equal("Power Vsync", string.Join(' ', unlike.Select(u => u.Key)), "the power source and Vsync differ");
+        Equal(0, Ground.Unlike([Rec("AC Power", "true", "1"), Rec("AC Power", "true", "2")]).Count, "another build is what two runs compare");
+        Equal(1, Ground.Notes(Rec("AC Power", "true", "1", busy, new Finding(Severity.Note, "network", "no server"))).Count(), "the notes that move numbers");
+        Check(Ground.Steps(Rec("AC Power", "true, FPS limit 240", "1")) && !Ground.Steps(Rec("AC Power", "false, FPS limit 240", "1")), "Vsync's steps");
+        // A study whose variant sets Vsync isn't warned about it; a variant whose sessions played two builds is
+        var warnings = StudyPage.Ground(new Dictionary<string, List<RunRecord>>
+        {
+            ["base"] = [Rec("AC Power", "true", "1", busy), Rec("AC Power", "true", "1")],
+            ["uncapped"] = [Rec("AC Power", "false", "1"), Rec("AC Power", "false", "2")],
+        });
+        Check(!warnings.Any(w => w.Contains("Vsync", StringComparison.Ordinal)), $"the variant's own Vsync: {string.Join(" | ", warnings)}");
+        Contains(warnings, "uncapped's own sessions differ: Port 1 (1), 2 (1).", "a variant's two builds");
+        Contains(warnings, "The GPU was busy before the run (40 %): something else may have shared it (in 1 of 4 sessions).", "a note, counted");
+        // Shaders compiled in a part count from the frame before it: its first frame's own compiles too
+        FrameRow Row(string part, uint shaders, ulong present) =>
+            new(present, 1, 1, 0, "earth", part, "Measure", 16.7, present, 8, 100, 1000, 2000, 0, shaders, 0, null, null, null, null, null, null);
+        var rows = new List<FrameRow> { Row("earth1", 5, 1), Row("earth1", 7, 2) };
+        Equal(3.0, Measure.Of(rows, null, null, null, null, before: Row("", 4, 0))[Metrics.Shaders.Name], "from the frame before");
+        Equal(2.0, Measure.Of(rows, null, null, null, null)[Metrics.Shaders.Name], "without one, from the first frame");
     }
 
     // CPU busy, CPU wait, display latency, displayed time and animation error from KSA Metal's times of each present
@@ -821,9 +961,9 @@ internal static class Tests
         var c = Comparison.Of([("earth", Part(10, ("Clouds Raymarching", 3.0), ("Ocean", 2.0), ("Stars", 0.33)))],
             [("earth", Part(11.4, ("Clouds Raymarching", 4.2), ("Ocean", 1.9), ("Stars", 0.36), ("Godrays", 0.3)))]);
         var part = c.Parts.Single();
-        Equal(Change.Worse, part.Decides?.Change, "14 % more GPU time: past the screen's 5 %");
+        Equal(Change.Worse, part.Decides?.Change, "14 % more GPU time: past the screen's 10 %");
         Equal("earth earth4 GPU busy +1.4 ms: Clouds Raymarching +1.20, Godrays +0.30", part.Line(), "the zones that moved its way");
-        Contains([c.Sentence().Text], "GPU time 14 % higher (screen)", "the sentence");
+        Contains([c.Sentence().Text], "GPU time 14 % higher in earth4 (screen)", "the sentence");
     }
 
     // Finish puts the parts' zones and the slow frames the triggers kept into the record
@@ -1219,14 +1359,14 @@ internal static class Tests
         var c = Comparison.Of(Study.Merged(a), merged);
         Equal(Basis.Sessions, c.Basis, "judged by sessions");
         Equal(Change.Worse, c.Parts.Single().Decides!.Change, "20 % more GPU time in every session");
-        Contains([c.Sentence().Text], "GPU time 20 % higher (5 sessions a side)", "the sentence");
+        Contains([c.Sentence().Text], "GPU time 20 % higher in earth1 (5 sessions a side)", "the sentence");
         var (sentence, good) = c.Sentence();
         var page = new StudyPage("2026-11-08_0100_light", "./benchmark.sh measure mixed", "base", [], 5,
             [new StudyPage.Variant("light2", ["--port", "cloud_light=2"], c, sentence, good, [], 0, null),
              new StudyPage.Variant("broken", [], null, "no session of it passed yet", null, [], 0, null)],
-            [new StudyPage.Session(1, 1, "base", "01-base", "passed"), new StudyPage.Session(2, 1, "light2", null, "to play")], a[0]);
+            [new StudyPage.Session(1, 1, "base", "01-base", "passed"), new StudyPage.Session(2, 1, "light2", null, "to play")], a[0], []);
         var md = page.Markdown();
-        Contains([md], "| light2 | **GPU time 20 % higher (5 sessions a side)** |", "report.md: the variant's verdict, marked when worse");
+        Contains([md], "| light2 | **GPU time 20 % higher in earth1 (5 sessions a side)** |", "report.md: the variant's verdict, marked when worse");
         Contains([md], "| earth | earth1 | GPU busy | 10.0 ms | **20 % slower** (", "report.md: the part's row, with its interval");
         Contains([md], "- light2: earth earth1 GPU busy +2.0 ms (20 % slower)", "report.md: what moved");
         Contains([md], "| 2 | 1 | light2 | to play |", "report.md: a session still to play");

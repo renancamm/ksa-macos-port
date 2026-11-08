@@ -60,6 +60,7 @@ public static partial class Program
         Console.WriteLine();
         Output.Step($"The {Pages.TestName(test)}'s noise profile: {NoiseProfile.PathFor(folder, test)}");
         Output.Info("Runs and comparisons on this Mac use it from now on. To ship it with the app, copy it into src/game/benchmark/lineup/noise/.");
+        Output.Info(FormattableString.Invariant($"Runs played minutes apart move less than runs played hours apart: one run against another marks a time past its limit or {Statistics.ScreenDrift:0} %, whichever is larger."));
         return 0;
     }
 
@@ -98,7 +99,8 @@ public static partial class Program
             var judged = mine.All(p => p[Metrics.GpuBusy] != null) ? gpu : frame;
             profile.Parts[part.Name] = new PartNoise
             {
-                GpuSpread = Math.Round(gpu, 2), FrameSpread = Math.Round(frame, 2), Limit = Math.Round(Math.Max(NoiseProfile.Margin * judged, 2), 1)
+                GpuSpread = Math.Round(gpu, 2), FrameSpread = Math.Round(frame, 2), Limit = Math.Round(Math.Max(NoiseProfile.Margin * judged, 2), 1),
+                FrameLimit = Math.Round(Math.Max(NoiseProfile.Margin * frame, 2), 1),
             };
         }
         return profile;

@@ -149,17 +149,32 @@ warp), and the other numbers beside it ([`../../shared/benchmark/Comparison.cs`]
 
 | Runs | Basis | A change is |
 |---|---|---|
-| one game session a side, one pass (`check`, two runs) | screen | past the part's limit: its noise profile's, else 5 % |
-| one game session a side, several passes (`measure`) | quick read | the passes' ranges don't overlap and it is over 2 % |
-| several game sessions a side (a [study](#studies), `measure --sessions`) | sessions | each session's median is a sample: Mann-Whitney's p under 0.05, Cliff's delta from 0.147 (not negligible) and past the limit; with fewer than 5 sessions a side, inconclusive |
+| one game session a side, one pass (`check`, two runs) | screen | a time or an energy past 10 % or the part's limit, whichever is larger; another number past its limit |
+| one game session a side, several passes (`measure`) | quick read | the passes' ranges don't overlap and it is past the part's limit, 2 % at least |
+| several game sessions a side (a [study](#studies), `measure --sessions`) | sessions | each session's median is a sample: Mann-Whitney's p under 0.05, Cliff's delta from 0.147 (not negligible), and a move of 1 % for the GPU and frame times, past its limit for another number; with fewer than 5 sessions a side, inconclusive |
 
-Two `measure --sessions` runs compared played their sessions one run after the other, and a Mac's heat over such a
-series moves GPU time on its own (several % in half an hour): `compare` says so. A study plays the sides in turns.
+A screen's 10 % is what two runs of the same build played at other times differ by: the Mac's heat and the apps
+sharing its GPU (two runs two hours apart: +4 to +10 % on every Mixed part). A quick read's two sessions played at
+other times too. Sessions played in turns tell smaller changes: 5 a side tell about 5 % apart on a quiet Mac, more
+sessions less. Two `measure --sessions` runs compared played their sessions one run after the other, and a Mac's heat
+over such a series moves GPU time on its own (several % in half an hour): `compare` says so. A study plays the sides
+in turns.
 
-The verdict names its basis (`GPU time 12 % lower (screen)`), and the comparison names the zones that moved with each
-part that changed: the GPU's when both runs were profiled (`earth4 GPU busy +1.4 ms: Clouds Raymarching +1.20`), else
-the main thread's for a frame time. `compare.html` shows the verdict and what moved first; every judged number, with
-its p, delta and the 95 % interval of B against A, is under Statistics.
+Besides the number that decides a part, a comparison judges CPU busy, the P99 frame time and the 1% low (in parts of
+200 frames or more), hitches, frames over 100 ms, display latency, the GPU's energy, and the memory footprint and GPU
+memory. On a screen only those that don't drift with the Mac's heat count (memory, hitches); with Vsync the numbers
+the display paces (frame time, its P99 and 1% low, latency, energy) jump a display's step with their GPU time, the same
+story. The rest (FPS, P95, the worst frame, GC pauses, JIT, shaders, pipelines, draws, the thermal state, the physics'
+numbers, the GPU's power) is shown in each run's report, not judged.
+
+The verdict names each part that moved and its basis (`GPU time 12 % lower in earth4, 19 other parts within noise
+(screen)`), then any other number that moved, and the comparison names the zones that moved with each part that
+changed: the GPU's when both runs were profiled (`earth4 GPU busy +1.4 ms: Clouds Raymarching +1.20`), else the main
+thread's for a frame time. Without a change, a verdict by sessions gives the parts' 95 % intervals: what the sessions
+can't tell apart. Above the numbers stand what makes them unlike: a Mac, a power source, a window or a Vsync that
+differs, and each run's notes that move numbers (the GPU busy before the run, the Mac hot or just rested, on battery).
+`compare.html` shows the verdict and what moved first; every judged number, with its p, delta and the 95 % interval of
+B against A that goes with the test (Hodges-Lehmann), is under Statistics.
 
 ### Studies
 
@@ -196,8 +211,8 @@ interval of each ratio, the zones that moved, and every session's run. `measure 
 ### Noise profiles
 
 The Mixed Test and the Planetary Tour have a noise profile, `lineup/noise/<test>.json`: how much each screenshot and
-each part's GPU time moved between runs of the same build, and the limit a comparison holds it to (three times that,
-2 % at least). `calibrate` measures it on your Mac and writes it to the benchmarks folder's `noise/`, which runs and
+each part's GPU and frame time moved between runs of the same build, and the limits a comparison holds them to (three
+times that, 2 % at least). `calibrate` measures it on your Mac and writes it to the benchmarks folder's `noise/`, which runs and
 comparisons on that Mac use from then on, the Mac Port tab's runs too; copied into `lineup/noise/` it ships with the
 app. A view standing still gets at least 1 % of its blocks, a view of the flight 3 %. The Warp Test has no profile:
 its screenshots are not compared, since the game's clock is wherever it got to, and its parts are the speed time warp
