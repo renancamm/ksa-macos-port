@@ -38,8 +38,13 @@ public static partial class Program
         private List<Rule> _rules = [];
         private string _setKeys = " ";
         private string _settings = "", _out = "";
-        // Ctrl-C (or TERM): the game is stopped, and what it measured is reported
+        // Ctrl-C, TERM or HUP: the game is stopped, and what it measured is reported
         private volatile bool _stopped;
+        // What stopped it (Ctrl-C, TERM, HUP), and how many Ctrl-Cs came
+        private string? _stoppedBy;
+        private int _interrupts;
+        // When Instruments said it records (RunGame)
+        private DateTime? _recordingSaid;
 
         // How it plays (RunPlan.Play.Mode): the kinds of its scenarios, or "jump"
         private string Mode = "";
@@ -466,8 +471,9 @@ public static partial class Program
 
             if (!File.Exists(Path.Combine(Yours, "settings.toml")))
                 Die("start the game once before benchmarking it (it has no settings yet).");
-            if (!_checking && GamesRunning().Count > 0)
-                Die("the game is running. Quit it first.");
+            if (!_checking && GamesRunning() is var games && games is not { Count: 0 })
+                Die(games == null ? $"can't tell whether a game is running: pgrep failed ({PgrepError}). Quit any game, and run benchmark.sh where pgrep works."
+                    : "the game is running. Quit it first.");
             CheckTools();
             PortFolder.CheckKsaMatch(_installed);
         }
@@ -505,9 +511,24 @@ public static partial class Program
             }
         }
 
-        // The games running on this Mac, by process id
-        public static List<int> GamesRunning() =>
-            Ask("pgrep", "-f", "dotnet (KSA|StarMap).dll").Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToList();
+        // A game: KSA's own (dotnet KSA.dll), StarMap's, or an app's launcher (Contents/MacOS/KSA), which waits for a game
+        // to quit before it starts its own (a restart from the Mac Port tab)
+        private const string GamePattern = @"dotnet (KSA|StarMap)\.dll|\.app/Contents/MacOS/KSA( |$)";
+
+        private static string PgrepError = "";
+
+        // The games running on this Mac, by process id; null when pgrep can't tell (status 2 or more: status 1 is no
+        // game), so that nothing takes "no answer" for "no game"
+        public static List<int>? GamesRunning()
+        {
+            int status = Tool.Exec("pgrep", ["-f", GamePattern], out var output, out var error);
+            if (status > 1)
+            {
+                PgrepError = error.Trim() is { Length: > 0 } e ? e : $"status {status}";
+                return null;
+            }
+            return output.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToList();
+        }
 
         // Whether the app's director is older than plans (its assembly names no RunPlan); a stand-in without one is not
         private bool BenchmarkOlder()

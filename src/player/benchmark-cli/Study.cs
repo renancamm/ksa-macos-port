@@ -87,6 +87,14 @@ public static partial class Program
         return playing != null;
     }
 
+    // Why a session can't play now (a game running, a benchmark run's lock, pgrep without an answer), or null
+    private static string? BusyNow() => BenchmarkRun.GamesRunning() switch
+    {
+        null => "pgrep can't tell whether a game is running",
+        { Count: > 0 } => "A game is running",
+        _ => Free() ? null : "Another benchmark run is playing",
+    };
+
     private static Purpose StudyPurpose(Study study) => study.Verb == "profile" ? Purpose.Profile : Purpose.Measure;
 
     // A study by its folder's path or name in studies/; none: the newest (with sessions still to play, for resume)
@@ -136,7 +144,7 @@ public static partial class Program
             for (; Directory.Exists(Path.Combine(folder, slot.Folder(queue.Count, attempt))); attempt++)
             {
                 var dir = Path.Combine(folder, slot.Folder(queue.Count, attempt));
-                switch (RunRecord.Read(dir)?.Status)
+                switch (Record(dir)?.Status ?? (File.Exists(Path.Combine(dir, "error.txt")) ? Status.Failed : null))
                 {
                     case Status.Passed:
                         passed ??= dir;
@@ -156,9 +164,55 @@ public static partial class Program
         return states;
     }
 
-    // The study's queue played from where it stands, then its report
+    // A record of another schema's status (a benchmark updated while a study played): a session that passed stays played,
+    // its report made again from its store
+    private static Status? OlderStatus(string dir)
+    {
+        try
+        {
+            using var json = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(dir, RunRecord.FileName)));
+            return json.RootElement.TryGetProperty("status", out var s) && Enum.TryParse<Status>(s.GetString(), true, out var status) ? status : null;
+        }
+        catch (Exception e) when (e is IOException or System.Text.Json.JsonException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    // A session's record, made again from its store when it is of another schema (once: it is written as this schema),
+    // so that its state is what this benchmark makes of it; null when there is none or it can't be made
+    private static RunRecord? Record(string dir)
+    {
+        if (RunRecord.Read(dir) is { } record)
+            return record;
+        if (OlderStatus(dir) == null || !File.Exists(Path.Combine(dir, RunStore.GameFile)))
+            return null;
+        Output.Info($"{Path.GetFileName(dir)}: its record is of another schema, made again from its store");
+        try
+        {
+            return Finish.Again(dir);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or SqliteException or System.Text.Json.JsonException
+                                       or FormatException or InvalidOperationException or NullReferenceException)
+        {
+            Output.Warn($"{Path.GetFileName(dir)}: its record could not be made again ({e.Message}): played again");
+            return null;
+        }
+    }
+
+    // The study's queue played from where it stands, then its report; one terminal at a time plays a study (its lock)
     private static int PlayStudy(string folder)
     {
+        FileStream studying;
+        try
+        {
+            studying = new FileStream(Path.Combine(folder, ".playing"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        }
+        catch (IOException)
+        {
+            throw new PortException($"the study {Path.GetFileName(folder)} is playing in another terminal.");
+        }
+        using var held = studying;
         var study = ReadStudy(folder);
         var states = SlotStates(folder, study);
         int total = states.Count, done = states.Count(s => s.State == SlotState.Done);
@@ -186,13 +240,23 @@ public static partial class Program
             // The queue in its order; a session that failed played again at once, in its turn
             foreach (var slot in states.Where(s => s.State == SlotState.ToPlay).Select(s => s.Slot))
             {
-                for (int tries = 0; tries < 2 && !stopped; tries++)
+                for (int tries = 0; tries < 2 && !stopped;)
                 {
                     var now = SlotStates(folder, study)[slot.Number - 1];
                     if (now.State != SlotState.ToPlay)
                         break;
-                    if (!PlaySession(folder, study, slot, now.Next, total, states, took, () => stopped))
-                        stopped = true;
+                    switch (PlaySession(folder, study, slot, now.Next, total, states, took, () => stopped))
+                    {
+                        case Played.Stopped:
+                            stopped = true;
+                            break;
+                        // A game or a run got in first after the wait: waited for again, no try spent
+                        case Played.NotNow:
+                            break;
+                        default:
+                            tries++;
+                            break;
+                    }
                 }
                 if (stopped)
                     break;
@@ -213,21 +277,23 @@ public static partial class Program
         return status;
     }
 
-    // One session of the queue, once no other game is running: false when it was stopped
-    private static bool PlaySession(string folder, Study study, StudySlot slot, int attempt, int total,
+    private enum Played { Yes, Stopped, NotNow }
+
+    // One session of the queue, once no other game is running
+    private static Played PlaySession(string folder, Study study, StudySlot slot, int attempt, int total,
         List<(StudySlot Slot, SlotState State, string? Run, int Next)> states, List<double> took, Func<bool> stopped)
     {
         // The queue waits for a game that is running (another study's, or yours) or a benchmark run starting
         bool said = false;
-        while (!stopped() && (BenchmarkRun.GamesRunning().Count > 0 || !Free()))
+        while (!stopped() && BusyNow() is { } why)
         {
             if (!said)
-                Output.Info("A game is running: the study waits for it to quit.");
+                Output.Info($"{why}: the study waits.");
             said = true;
             Thread.Sleep(10_000);
         }
         if (stopped())
-            return false;
+            return Played.Stopped;
         int left = states.Count(s => s.State == SlotState.ToPlay && s.Slot.Number >= slot.Number);
         Console.WriteLine();
         Output.Step($"Session {slot.Number} of {total}: {slot.Variant.Name} (round {slot.Round}{(attempt > 1 ? $", attempt {attempt}" : "")})" +
@@ -244,14 +310,22 @@ public static partial class Program
         {
             run.Run(study.Arguments(slot.Variant), StudyPurpose(study));
         }
-        // A variant that can't play now (its app gone, a game started meanwhile, a full disk): left as it is, to try again
+        // A game or a run that started since the wait: the session waits again. Anything else (its app gone, a full disk)
+        // is an attempt that failed, its folder holding why, so that a variant that never plays is left out in the end
         catch (Exception e) when (e is PortException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException
                                        or FormatException or InvalidOperationException)
         {
+            if (!Directory.Exists(run.Into) && BusyNow() != null)
+            {
+                Output.Info($"session {slot.Number}: {e.Message}");
+                return Played.NotNow;
+            }
             Output.Warn($"session {slot.Number}: {e.Message}");
+            Directory.CreateDirectory(run.Into);
+            File.WriteAllText(Path.Combine(run.Into, "error.txt"), e.Message + "\n");
         }
         took.Add(started.Elapsed.TotalSeconds);
-        return !run.Stopped;
+        return run.Stopped ? Played.Stopped : Played.Yes;
     }
 
     // The study's report: each variant against the baseline by its sessions, part by part, with its screenshots held
@@ -261,7 +335,7 @@ public static partial class Program
         var study = ReadStudy(folder);
         var states = SlotStates(folder, study);
         var runs = study.Variants.ToDictionary(v => v, v => states.Where(s => s.Slot.Variant == v && s.Run != null)
-            .Select(s => (Dir: s.Run!, Record: RunRecord.Read(s.Run!)!)).ToList());
+            .Select(s => (Dir: s.Run!, Record: Record(s.Run!)!)).Where(r => r.Record != null).ToList());
         var baseRuns = runs[study.Baseline];
         var baseParts = Study.Merged(baseRuns.Select(r => r.Record));
         var variants = new List<StudyPage.Variant>();

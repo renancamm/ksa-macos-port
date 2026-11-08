@@ -44,7 +44,8 @@ public static class Checks
     {
         foreach (var e in run.Events.Where(e => e.Type == "ended"))
         {
-            if (e.Text is not ("quit normally" or "kept running" or "was stopped with Ctrl-C"))
+            // Stopped with Ctrl-C, TERM or a closed terminal: the player's stop
+            if (e.Text is not ("quit normally" or "kept running") && e.Text?.StartsWith("was stopped with ", StringComparison.Ordinal) != true)
                 yield return Fail("ended", $"the game {(run.Record.Sessions > 1 ? $"(session {e.Session}) " : "")}{e.Text}");
         }
         // A trigger's stop (Triggers.cs) is the run's own, not the player's

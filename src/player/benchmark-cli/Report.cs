@@ -95,7 +95,10 @@ public static partial class Program
             if (RunRecord.Read(dir) is not { } r)
                 continue;
             var h = r.Headline();
-            var preset = (r.Fact("Preset") ?? "") switch { "none, own settings" => "own", "none, a fresh install's settings" => "defaults", var named => named };
+            var preset = (r.Fact("Preset") ?? "") switch
+            {
+                "none, own settings" => "own", "none, a fresh install's settings" => "defaults", var named => named.Split(',')[0],
+            };
             var settings = string.Join(", ", new[] { preset, r.Fact("Settings changed") is { Length: > 0 } c && c != "none" ? c : "" }.Where(x => x.Length > 0));
             md.AppendLine($"| {Path.GetFileName(dir)} | {Pages.TestName(r.Test)} | {r.Mode} | {(r.Status == Status.Passed ? "passed" : r.Status == Status.Stopped ? "stopped" : "**failed**")} | " +
                           $"{(h.Fps is { } fps ? fps.ToString("F0") : "")} | {(h.GpuMs is { } gpu ? gpu.ToString("F1") : "")} | {(h.WarpDays > 0 ? h.WarpDays.ToString("F1") : "")} | {settings} |");
