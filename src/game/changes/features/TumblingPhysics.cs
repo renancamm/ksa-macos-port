@@ -72,7 +72,7 @@ internal static class TumblingPhysics
     // ComputeTimestep with SpinStep after (pi/6)^2 / w^2: "ldc Arc, dup, mul, ldloc, div"
     [HarmonyReversePatch(HarmonyReversePatchType.Original)]
     private static double Timestep(in VehicleProperties props, in KinematicStates kinematic, in PhysicsEnvironment environment, double airSpeed,
-        ReadOnlySpan<ActiveChute> chutes, double minDt, double maxDt, double freeDt)
+        ReadOnlySpan<ActiveChute> chutes, double minDt, double maxDt, double freeDt, PhysicsStepLimit freeLimit, out PhysicsStepDetail detail)
     {
         IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
         {
@@ -87,6 +87,7 @@ internal static class TumblingPhysics
             return code;
         }
         _ = Transpiler(null!);
+        detail = default;
         throw new NotImplementedException();
     }
 

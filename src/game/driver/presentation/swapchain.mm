@@ -68,13 +68,13 @@ static bool outdated(KSwapchain* sc) {
 
 // HDR output. The game offers HDR in its Display settings when the surface has an HDR format, which instance.mm gives
 // on a display with EDR (extended dynamic range: brighter than SDR white, as Apple's XDR displays and HDR monitors in
-// HDR mode): HDR10, the game's absolute nits in PQ. The layer shows it with EDR, and its metadata maps the game's paper
-// white (Display > HDR Paper White) to the display's SDR white: its UI then sits at the brightness of other windows,
-// and its highlights reach up to HDR Peak Brightness, tone-mapped by macOS to what the display has to spare. The game
-// sends the peak with vkSetHdrMetadataEXT only when it rebuilds the swapchain and keeps paper white to itself, so the
-// hooks pass both in (ksaMtlHdrNits) whenever the game applies its Display settings.
+// HDR mode): HDR10, the game's absolute nits in PQ. The layer shows it with EDR, and its metadata maps the game's UI
+// brightness (Display > HDR UI Brightness) to the display's SDR white: its UI then sits at the brightness of other
+// windows, and its scene and highlights reach up to HDR Peak Brightness, tone-mapped by macOS to what the display has
+// to spare. The game sends the peak with vkSetHdrMetadataEXT and keeps UI brightness to itself, so the hooks pass both
+// in (ksaMtlHdrNits) whenever the game applies its Display settings.
 static std::mutex g_hdrMutex;
-static float g_hdrPaperWhite = 200, g_hdrPeak = 1000, g_hdrMin = 0;  // the game's defaults, until it or the hooks say
+static float g_hdrUiBrightness = 200, g_hdrPeak = 1000, g_hdrMin = 0;  // the game's defaults, until it or the hooks say
 static CAMetalLayer* g_hdrLayer = nil;  // the HDR layer, which the metadata goes to: KSA has one HDR window
 
 bool kmtlEdrAvailable(CAMetalLayer* layer) {
@@ -125,7 +125,7 @@ static void applyCadence(KSwapchain* sc) {
 static void applyHdrMetadata() {  // g_hdrMutex held
     if (!g_hdrLayer) return;
     g_hdrLayer.EDRMetadata = [CAEDRMetadata HDR10MetadataWithMinLuminance:g_hdrMin maxLuminance:g_hdrPeak
-                                                       opticalOutputScale:g_hdrPaperWhite];
+                                                       opticalOutputScale:g_hdrUiBrightness];
 }
 
 void kmtlSetHdr(KSurface* surface, bool hdr) {
@@ -150,19 +150,19 @@ void kmtlSetHdr(KSurface* surface, bool hdr) {
     surface->hdr = hdr;
 }
 
-float kmtlHdrPaperWhite() {
+float kmtlHdrUiBrightness() {
     std::lock_guard<std::mutex> lock(g_hdrMutex);
-    return g_hdrPaperWhite;
+    return g_hdrUiBrightness;
 }
 
-KMTL_EXPORT void ksaMtlHdrNits(float paperWhite, float peak) {
-    if (paperWhite <= 0 || peak <= 0) return;
+KMTL_EXPORT void ksaMtlHdrNits(float uiBrightness, float peak) {
+    if (uiBrightness <= 0 || peak <= 0) return;
     std::lock_guard<std::mutex> lock(g_hdrMutex);
-    if (g_hdrPaperWhite == paperWhite && g_hdrPeak == peak) return;
-    g_hdrPaperWhite = paperWhite;
+    if (g_hdrUiBrightness == uiBrightness && g_hdrPeak == peak) return;
+    g_hdrUiBrightness = uiBrightness;
     g_hdrPeak = peak;
     applyHdrMetadata();
-    KLOG(1, "HDR paper white %.0f nits, peak %.0f nits", paperWhite, peak);
+    KLOG(1, "HDR UI brightness %.0f nits, peak %.0f nits", uiBrightness, peak);
 }
 
 VKFN(void) vkSetHdrMetadataEXT(VkDevice, uint32_t count, const VkSwapchainKHR*, const VkHdrMetadataEXT* metadata) {

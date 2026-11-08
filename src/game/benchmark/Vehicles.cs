@@ -147,9 +147,9 @@ internal sealed class Vehicles(CameraOperator camera)
             kitten = new KittenRosterEntryData(name, "HunterKitten");
             Universe.KittenRoster.Kittens.Add(kitten);
         }
-        if (!v.AddCrewToFirstAvailableSeat(kitten.NameHash))
+        if (v.AddCrewToFirstAvailableSeat(kitten.NameHash) is var seat && seat != CrewSeatResult.Seated)
         {
-            Director.Log($"@crew: no free seat in '{v.Id}'");
+            Director.Log($"@crew: '{name}' not seated in '{v.Id}' ({seat})");
             return false;
         }
         kitten.StartMission(v.Id);

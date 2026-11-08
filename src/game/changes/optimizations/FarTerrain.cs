@@ -78,6 +78,9 @@ internal static class FarTerrain
     private sealed class Collection(PlanetMeshCollection meshes, List<Celestial> bodies, bool raytraced, bool home, bool ocean)
     {
         public readonly PlanetMeshCollection Meshes = meshes;
+        // Its levels, coarsest first: the cube meshes its references resolved to when the content loaded (a cube mesh is
+        // in one collection only, PlanetMeshLibrary.CheckSharedCubeMeshes)
+        public readonly CubeMesh[] Levels = meshes.Items.Select(level => level.Value!).ToArray();
         public List<Celestial> Bodies = bodies;
         public readonly bool Ocean = ocean;
         // Loading asked for an acceleration structure of the finest level (a body with ground clutter), never an ocean's
@@ -161,7 +164,7 @@ internal static class FarTerrain
                 return;
             bool isOcean = ocean.Count > 0;
             var homeBody = system.HomeBody as Celestial;
-            bool home = isOcean ? OceanId(homeBody) == __instance.Id : homeBody?.BodyTemplate?.MeshCollection == __instance;
+            bool home = isOcean ? OceanId(homeBody) == __instance.Id : homeBody?.BodyTemplate?.MeshCollection?.Value == __instance;
             bool raytraced = !isOcean && (flags & PlanetMeshLibrary.GenerateFlags.AccelerationStructure) != 0;
             Collections[__instance] = new Collection(__instance, isOcean ? ocean : terrain, raytraced, home, isOcean);
             _system = system;
@@ -186,12 +189,12 @@ internal static class FarTerrain
             return;
         try
         {
-            var levels = __instance.Items;
-            int n = levels.Count;
+            var levels = c.Levels;
+            int n = levels.Length;
             if (c.Ocean)
                 foreach (var level in levels)
                     DropOceanBuffers(level);
-            c.Kept = KeptLevel(__instance, c.Ocean);
+            c.Kept = KeptLevel(levels, c.Ocean);
             c.Built = Enumerable.Repeat(true, n).ToArray();
             c.Small = levels.Select(l => Size(l.Mesh) < SmallBytes).ToArray();
             c.Wanted = new bool[n];
@@ -209,7 +212,7 @@ internal static class FarTerrain
             Hooks.Fail(nameof(FarTerrain), e);
             // Loading was told to skip the acceleration structure: clutter's sets need one (ClutterClear keeps clutter
             // off this body)
-            var finest = __instance.Items[^1];
+            var finest = c.Levels[^1];
             if (c.Raytraced && RayQueries && finest.TopLevelAccelerationStructure == null)
                 finest.TopLevelAccelerationStructure = default(AccelerationStructure);
         }
@@ -237,10 +240,10 @@ internal static class FarTerrain
     {
         try
         {
-            if (nearbyCelestial?.BodyTemplate?.MeshCollection is not { } meshes || !Collections.TryGetValue(meshes, out var c) ||
+            if (nearbyCelestial?.BodyTemplate?.MeshCollection?.Value is not { } meshes || !Collections.TryGetValue(meshes, out var c) ||
                 !c.Raytraced || !RayQueries)
                 return true;
-            if (!Real(meshes.Items[^1].TopLevelAccelerationStructure))
+            if (!Real(c.Levels[^1].TopLevelAccelerationStructure))
                 return false;
             c.ClutterFrame = _frame;
             return true;
@@ -256,13 +259,12 @@ internal static class FarTerrain
 
     private static bool RayQueries => Program.GetRenderer().RayQueriesSupported;
 
-    private static int KeptLevel(PlanetMeshCollection meshes, bool ocean)
+    private static int KeptLevel(CubeMesh[] levels, bool ocean)
     {
-        var levels = meshes.Items;
         if (!RayQueries && !ocean)
-            return levels.Count - 1;
+            return levels.Length - 1;
         int kept = 0;
-        for (int i = 1; i < levels.Count; i++)
+        for (int i = 1; i < levels.Length; i++)
             if (Size(levels[i].Mesh) < Size(levels[kept].Mesh))
                 kept = i;
         return kept;
@@ -293,7 +295,7 @@ internal static class FarTerrain
             return;
         try
         {
-            if (!GameSettings.ShowOcean() || atmosphericBody?.BodyTemplate?.OceanReference?.MeshCollection is not { } meshes ||
+            if (!GameSettings.ShowOcean() || atmosphericBody?.BodyTemplate?.OceanReference?.MeshCollection?.Value is not { } meshes ||
                 !Collections.TryGetValue(meshes, out var c) || c.Built.Length == 0)
                 return;
             int level = meshes.GetLodLevel(inViewport.GetCamera().CurrentAltitudeKm * 1000.0);
@@ -322,7 +324,7 @@ internal static class FarTerrain
             return;
         try
         {
-            if (__instance.NearbyCelestial?.BodyTemplate?.MeshCollection is { } meshes &&
+            if (__instance.NearbyCelestial?.BodyTemplate?.MeshCollection?.Value is { } meshes &&
                 Collections.TryGetValue(meshes, out var c) && c.Built.Length > 0)
             {
                 int level = __instance.MeshLodIndex;
@@ -553,13 +555,12 @@ internal static class FarTerrain
     {
         var bodies = new List<Celestial>();
         foreach (var body in system.All.AsSpan())
-            if (body is Celestial celestial && celestial.BodyTemplate?.MeshCollection == meshes)
+            if (body is Celestial celestial && celestial.BodyTemplate?.MeshCollection?.Value == meshes)
                 bodies.Add(celestial);
         return bodies;
     }
 
-    // The bodies with this ocean; by id: loading builds the collections before the ocean renderer resolves its
-    // references to them (OceanRenderer.PopulatePlanets)
+    // The bodies with this ocean; by id, as PlanetMeshLibrary.GenerateInUse finds the collections it builds
     private static List<Celestial> OceanBodies(CelestialSystem system, PlanetMeshCollection meshes)
     {
         var bodies = new List<Celestial>();
@@ -569,7 +570,7 @@ internal static class FarTerrain
         return bodies;
     }
 
-    private static string? OceanId(Astronomical? body) => body?.BodyTemplate?.OceanReference?.MeshCollection?.Id;
+    private static string? OceanId(Astronomical? body) => body?.BodyTemplate?.OceanReference?.MeshCollection?.Value?.Id;
 
     // An acceleration structure with buffers, not the stand-in of a finest level not built
     private static bool Real(AccelerationStructure? structure) => structure is { } s && !s.Buffer.IsNull();
@@ -582,7 +583,7 @@ internal static class FarTerrain
         // A clutter build on FarClutter's worker may be reading the finest level's buffers
         if (free.Contains(c.Finest) && c.Bodies.Any(FarClutter.OnWorker))
             FarClutter.Settle();
-        var levels = c.Meshes.Items;
+        var levels = c.Levels;
         var freed = new List<(SimpleVkMesh Mesh, BufferEx Adjacency, BufferEx Distances)>();
         var structures = new List<AccelerationStructure>();
         foreach (int i in free)
@@ -621,15 +622,15 @@ internal static class FarTerrain
     // changed
     private static List<int> Point(Collection c)
     {
-        var levels = c.Meshes.Items;
+        var levels = c.Levels;
         var changed = new List<int>();
-        for (int i = 0; i < levels.Count; i++)
+        for (int i = 0; i < levels.Length; i++)
         {
             int owner = i;
             if (!c.Built[i])
-                for (int d = 1; d < levels.Count; d++)
+                for (int d = 1; d < levels.Length; d++)
                 {
-                    if (i + d < levels.Count && c.Built[i + d])
+                    if (i + d < levels.Length && c.Built[i + d])
                     {
                         owner = i + d;
                         break;
@@ -664,7 +665,7 @@ internal static class FarTerrain
     // main thread
     private static Task<CubeMesh?[]> Build(Collection c, List<int> build)
     {
-        var levels = c.Meshes.Items.ToArray();
+        var levels = c.Levels;
         int finest = levels.Length - 1;
         bool raytraced = c.Raytraced, ocean = c.Ocean;
         var renderer = Program.GetRenderer();
@@ -733,7 +734,7 @@ internal static class FarTerrain
         var task = c.Building!;
         c.Building = null;
         var built = task.Result;
-        var levels = c.Meshes.Items;
+        var levels = c.Levels;
         var swapped = new List<int>();
         for (int i = 0; i < built.Length; i++)
         {
@@ -803,7 +804,6 @@ internal static class FarTerrain
     {
         if (c.Ocean || changed.Count == 0 || Program.GetPlanetRenderer() is not { } planets)
             return;
-        var meshes = c.Meshes;
         var renderer = Program.GetRenderer();
         var geometry = (Dictionary<KeyHash, VkDescriptorSet>)_geometrySets!.GetValue(planets)!;
         var culling = (Dictionary<KeyHash, VkDescriptorSet[]>)_cullingSets!.GetValue(_culling!.GetValue(planets))!;
@@ -811,7 +811,7 @@ internal static class FarTerrain
         Span<VkDescriptorBufferInfo> infos = stackalloc VkDescriptorBufferInfo[4];
         foreach (int i in changed)
         {
-            var level = meshes.Items[i];
+            var level = c.Levels[i];
             // As PlanetRenderer.BuildFrameResources writes them
             if (geometry.TryGetValue(level.Hash, out var set))
             {
@@ -848,15 +848,19 @@ internal static class FarTerrain
                 WriteClutterSets(c, body);
     }
 
-    // As ClutterCubeCellGrid.BuildFrameResources writes them, one per view slot and frame slot
+    // As ClutterCubeCellGrid.BuildFrameResources writes them, one per view slot and frame slot: its writes go to the
+    // device as one span, so the span is exactly as long as the one it allocates with ray queries (15; a wrong length
+    // throws in the game's method or hands the device empty writes)
+    private const int ClutterGenerateWrites = 15;
+
     private static void WriteClutterSets(Collection c, Celestial body)
     {
         var renderer = Program.GetRenderer();
         if (!c.Raytraced || !renderer.RayQueriesSupported || Program.GetPlanetRenderer()?.GroundClutterRenderer is not { } clutter ||
             !clutter.PlanetEcotypeRenderData.TryGetValue(body.Hash, out var ecotypes))
             return;
-        var finest = c.Meshes.Items[^1];
-        Span<VkWriteDescriptorSet> writes = stackalloc VkWriteDescriptorSet[13];
+        var finest = c.Levels[^1];
+        Span<VkWriteDescriptorSet> writes = stackalloc VkWriteDescriptorSet[ClutterGenerateWrites];
         foreach (var ecotype in ecotypes)
         {
             var grid = ecotype.CubeCellGrid;
@@ -922,8 +926,8 @@ internal static class FarTerrain
                 }
                 if (c.Built.Length == 0 || c.AllBuilt && !c.Ocean)
                     continue;
-                var levels = c.Meshes.Items;
-                for (int i = 0; i < levels.Count; i++)
+                var levels = c.Levels;
+                for (int i = 0; i < levels.Length; i++)
                     if (c.Built[i])
                         Dispose(levels[i]);
                 // The finest level's structures when it is built (or the BVH it keeps); otherwise it holds the stand-in

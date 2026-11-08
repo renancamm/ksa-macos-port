@@ -30,8 +30,8 @@ namespace KsaMetal.Hooks.Optimizations;
 // layer's: the 2D clouds, the distant spheres' maps, the ring's own), so a texture particles or frost use stays.
 // Letting go points the slot and the textures at the game's empty texture of the same kind (cube or 2D) and frees
 // the image after the frames in flight; a biome map is also in sets written once, the body's TextureSet (bindings 9,
-// 10) and each view's MeshSets (10, 11), written again each time. Only TextureReference and TexturePowerReference
-// images, made as their Bind makes them (size cap, reduction, mip chain); the others keep theirs.
+// 10) and each view's MeshSets (10, 11), written again each time. Only TextureReference images, made as their Bind
+// makes them (size cap, reduction, mip chain); the others (a height map's, the streamer's) keep theirs.
 [Hook(Phase.Default, Switch = nameof(Settings.UnloadFarTextures))]
 internal static class FarTextures
 {
@@ -215,26 +215,24 @@ internal static class FarTextures
             if (template.BiomesReference is { } biomeMaps)
             {
                 // CelestialRenderData takes a biome map only when it is a cubemap
-                if (biomeMaps.BiomeIdMap?.Get() is { } id && id.TextureAsset?.Texture.IsCubemap == true)
+                if (biomeMaps.BiomeIdMap?.Value is { } id && id.TextureAsset?.Texture.IsCubemap == true)
                     biomes.Add((id, celestial, 5));
-                if (biomeMaps.BiomeControlMap?.Get() is { } control && control.TextureAsset?.Texture.IsCubemap == true)
+                if (biomeMaps.BiomeControlMap?.Value is { } control && control.TextureAsset?.Texture.IsCubemap == true)
                     biomes.Add((control, celestial, 6));
             }
             foreach (var texture in found)
-                if (texture?.Get() is { } registered)
-                {
-                    if (!candidates.TryGetValue(registered, out var bodies))
-                        candidates[registered] = bodies = new HashSet<Celestial>(ReferenceEqualityComparer.Instance);
-                    bodies.Add(celestial);
-                }
+            {
+                if (!candidates.TryGetValue(texture, out var bodies))
+                    candidates[texture] = bodies = new HashSet<Celestial>(ReferenceEqualityComparer.Instance);
+                bodies.Add(celestial);
+            }
         }
         foreach (var texture in kept)
-            if (texture?.Get() is { } registered)
-                candidates.Remove(registered);
+            candidates.Remove(texture);
         // Every texture the game bound, by slot: a slot is let go only when all of them are candidates
         var slots = new Dictionary<int, List<TextureReference>>();
         foreach (var binder in ModLibrary.Binders)
-            if (binder is TextureReference { Texture: not null } texture && !texture.IsReference())
+            if (binder is TextureReference { Texture: not null } texture)
             {
                 if (!slots.TryGetValue(texture.BindlessHandle, out var list))
                     slots[texture.BindlessHandle] = list = new List<TextureReference>();
@@ -258,21 +256,30 @@ internal static class FarTextures
             string.Join(", ", Images.ConvertAll(i => $"{i.Name} ({string.Join("/", System.Linq.Enumerable.Select(i.Bodies, b => b.Id))})")));
     }
 
-    // The textures under a body's reference: fields of the game's own types and their lists, not back up to a body (the
-    // root may be one), and not into the objects in skip
+    // The textures under a body's reference: fields of the game's own types and their lists, through the content's
+    // references to what they resolved to (a level deeper for none), not back up to a body (the root may be one), and not
+    // into the objects in skip. An object is walked again when reached by a shorter path: a resolved asset is shared
+    // (a clutter material is under its ecotype's MaterialReferences and, deeper, under its objects' LODs), and the
+    // depth limit would otherwise cut its fields on the longer path met first
     private static void Walk(object? root, List<TextureReference> found, HashSet<object>? skip)
     {
-        var seen = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        var seen = new Dictionary<object, int>(ReferenceEqualityComparer.Instance);
         void Visit(object? o, int depth)
         {
-            if (o == null || depth > 8 || !seen.Add(o) || skip != null && skip.Contains(o))
+            if (o == null || depth > 8 || seen.TryGetValue(o, out int was) && was <= depth || skip != null && skip.Contains(o))
                 return;
+            seen[o] = depth;
             if (o is TextureReference texture)
             {
                 found.Add(texture);
                 return;
             }
             var type = o.GetType();
+            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(DataReference<>))
+            {
+                Visit(type.GetField(nameof(DataReference<TextureReference>.Value))!.GetValue(o), depth);
+                return;
+            }
             if (o is IEnumerable list and not string)
             {
                 // Not into lists of values (a mesh's data)
@@ -294,8 +301,7 @@ internal static class FarTextures
     }
 
     private static bool Remakeable(TextureReference r) =>
-        (r.GetType() == typeof(TextureReference) || r.GetType() == typeof(TexturePowerReference)) &&
-        r.TextureAsset != null && !TextureImages.Streamed(r);
+        r.GetType() == typeof(TextureReference) && r.TextureAsset != null && !TextureImages.Streamed(r);
 
     // The views' cameras, and the bodies with a vessel near their surface: GroundClutterRenderer.OnFrameViewport places
     // the clutter it collides with (biome maps, placement maps) wherever the cameras are, within the radius it uses
@@ -446,7 +452,7 @@ internal static class FarTextures
 
     private static void Release(Image image)
     {
-        var empty = (image.Cube ? TextureReference.EmptyCubemap : TextureReference.EmptyWhite).Get();
+        var empty = image.Cube ? TextureReference.EmptyCubemap : TextureReference.EmptyWhite;
         Point(image, empty.Texture, empty.ImageView);
         foreach (var r in image.Refs)
             LetGo.Add(r);

@@ -283,7 +283,7 @@ static void writeHdrPNG(id<MTLTexture> tex, const std::string& path) {
     CIImage* image = [CIImage imageWithMTLTexture:tex options:@{kCIImageColorSpace: (__bridge id)pq}];
     image = [image imageByApplyingOrientation:kCGImagePropertyOrientationDownMirrored];  // Metal's rows start at the top
     image = [image imageByApplyingFilter:@"CIExposureAdjust"
-                     withInputParameters:@{kCIInputEVKey: @(log2(kPqReferenceNits / kmtlHdrPaperWhite()))}];
+                     withInputParameters:@{kCIInputEVKey: @(log2(kPqReferenceNits / kmtlHdrUiBrightness()))}];
     image = [image imageBySettingAlphaOneInExtent:image.extent];  // opaque, as writePNG's
     NSURL* url = [NSURL fileURLWithPath:@(path.c_str())];
     NSError* err = nil;

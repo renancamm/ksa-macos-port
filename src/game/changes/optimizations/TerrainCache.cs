@@ -91,7 +91,7 @@ internal static class TerrainCache
     {
         PlanetViewportData data = __instance.ViewportData(inViewport);
         Celestial? body = data.NearbyCelestial;
-        if (body == null || !body.IsBillboarded() || body.BodyTemplate.MeshCollection is not { } meshes ||
+        if (body == null || !body.IsBillboarded() || body.BodyTemplate.MeshCollection?.Value is not { } meshes ||
             (uint)frameIndex >= Keys.Length)
             return;
         object? buffer = (_buffers!.GetValue(__instance) as Array)?.GetValue(frameIndex);

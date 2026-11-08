@@ -379,7 +379,7 @@
       <ParachuteDeployData InstanceOf="ParachuteDeploy" LocalInstanceId="388" Sequence="5" />
       <ParachuteCutData InstanceOf="ParachuteCut" LocalInstanceId="389" Enabled="false" Sequence="5" />
     </PartRef>
-    <PartRef InstanceOf="CoreFairingA_Prefab_NoseconeB" LocalInstanceId="395" Stage="5">
+    <PartRef InstanceOf="CoreFairingA_Prefab_Nosecone1WBluntA" LocalInstanceId="395" Stage="5">
       <Transform>
         <Position X="1.2315" Y="0" Z="0" />
         <Rotation X="0" Y="0" Z="0" />

@@ -468,6 +468,21 @@ public partial class Director
     private static readonly System.Reflection.FieldInfo? UpdateTask = typeof(Universe).GetField("_vehicleUpdateTask", BindingFlags.NonPublic | BindingFlags.Static);
     private static readonly System.Reflection.FieldInfo? Bubbles = typeof(VehicleUpdateTask).GetField("_bubbles", BindingFlags.NonPublic | BindingFlags.Instance);
 
+    // The physics' substeps since the game's diagnostics panel last drew (it resets them each second it is shown; it
+    // never is in a run): PhysicsStepDiagnostics._window.Substeps, read through a compiled getter as it is read each
+    // frame and the window is a struct
+    private static readonly Func<long>? Substeps = SubstepsReader();
+
+    private static Func<long>? SubstepsReader()
+    {
+        var window = typeof(PhysicsStepDiagnostics).GetField("_window", BindingFlags.NonPublic | BindingFlags.Static);
+        var substeps = window?.FieldType.GetField("Substeps", BindingFlags.Public | BindingFlags.Instance);
+        if (window == null || substeps?.FieldType != typeof(long))
+            return null;
+        var read = System.Linq.Expressions.Expression.Field(System.Linq.Expressions.Expression.Field(null, window), substeps);
+        return System.Linq.Expressions.Expression.Lambda<Func<long>>(read).Compile();
+    }
+
     private static SimSample ReadSim()
     {
         // Fields of the game's: a later version may move them, which only leaves the count out
@@ -479,7 +494,7 @@ public partial class Director
                 vehicles += body is Vehicle ? 1 : 0;
         }
         return new SimSample(Universe.GetElapsedSeconds(), Universe.GetSimulationSpeed(), JobSystems.VehicleSolver?.GetMaxLastTickTime() ?? 0,
-            PhysicsStepDiagnostics.Substeps, bubbles?.Count ?? 0, vehicles);
+            Substeps?.Invoke() ?? 0, bubbles?.Count ?? 0, vehicles);
     }
 
     // Whether the views are measured standing still at their checkpoints: a views scenario's, or a flight's places jumped to
