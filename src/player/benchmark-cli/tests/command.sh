@@ -171,7 +171,7 @@ expect "--probe: no such assembly" 1 "--probe: no "
 bench --app "${APP}" --probe memory --knob light=2
 expect "--knob: no probe's name" 1 "--knob needs <probe>.<key>=<value>"
 bench --app "${APP}" --channels -zones,+nothing
-expect "--channels: no such channel" 1 "--channels takes -zones, -runtime or +memory"
+expect "--channels: no such channel" 1 "--channels takes -zones, -runtime, -power or +memory"
 [ "$(runs_count)" = 0 ] || fail "a refused run left a folder"
 
 # A run that passes
