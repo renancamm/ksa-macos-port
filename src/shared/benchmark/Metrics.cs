@@ -67,6 +67,10 @@ public static class Metrics
     public static readonly Metric GpuBusy = new("gpu/busy", "GPU busy", "ms", Better.Lower, Across.Median, 1,
         "the GPU's time on a frame, the median") { Limit = Default, Calibrated = true };
     public static readonly Metric GpuP95 = new("gpu/p95", "P95 GPU busy", "ms", Better.Lower, Across.Median, 1, "95 % of frames took the GPU less");
+    // The GPU's power (benchmark.sh's power channel, host/gpu_power) times the frame time: what a frame costs in energy, the
+    // same work done cheaper whatever the frame rate (power alone rises when frames come faster)
+    public static readonly Metric GpuEnergy = new("gpu/energy", "GPU energy", "mJ", Better.Lower, Across.Median, 1,
+        "the GPU's energy a frame: its power while the part played times the frame time") { Limit = 10 };
     public static readonly Metric Latency = new("frame/latency", "Display latency", "ms", Better.Lower, Across.Median, 1,
         "from a frame's start to its showing, the median");
     public static readonly Metric Displayed = new("frame/displayed", "Displayed time", "ms", Better.Neither, Across.Median, 1,
@@ -100,7 +104,7 @@ public static class Metrics
 
     public static readonly IReadOnlyList<Metric> All =
     [
-        Fps, FrameTime, FrameP95, FrameP99, Low1, Worst, Hitches, Over100, CpuBusy, CpuWait, GpuBusy, GpuP95, Latency, Displayed,
+        Fps, FrameTime, FrameP95, FrameP99, Low1, Worst, Hitches, Over100, CpuBusy, CpuWait, GpuBusy, GpuP95, GpuEnergy, Latency, Displayed,
         AnimationError, Draws, Footprint, GpuMemory, Thermal, Shaders, Pipelines, GcPause, Jit, GameDays, Speed, SpeedAsked, ToSpeed,
         SimTick, Substeps, Bubbles, Vehicles,
     ];

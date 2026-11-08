@@ -1253,13 +1253,14 @@ internal static class Tests
         });
         RunStore.ProcessFile = RunStore.HostFile;
         var host = RunStore.For(hosted)!;
-        host.AddMetric(new Metric("host/gpu_power", "GPU power", "W", Better.Lower, Across.Median, 1, "the GPU's power") { Limit = 10 });
+        host.AddMetric(new Metric("host/gpu_power", "GPU power", "W", Better.Neither, Across.Median, 1, "the GPU's power"));
         host.AddCounter((from + to) / 2, 1, 0, null, null, "host/gpu_power", 20);
         host.AddCounter(to + 10, 1, 0, null, null, "host/gpu_power", 99);
         RunStore.Close(hosted);
         RunStore.ProcessFile = RunStore.GameFile;
         var hostedPart = Part(Finished(hosted));
         Equal<double?>(20.0, hostedPart["host/gpu_power"], "a host counter in the part open at its time, one after it left out");
+        Equal<double?>(408.0, hostedPart[Metrics.GpuEnergy], "the GPU's energy a frame: 20 W times the mean frame (99 of 20 ms, one of 60)");
         var c = Comparison.Of(a.AllParts().Select(x => (x.Scenario.Name, x.Part)), Probed("probed-b", 5600).AllParts().Select(x => (x.Scenario.Name, x.Part)));
         var vram = c.Parts.Single().Verdicts.FirstOrDefault(v => v.Metric.Name == "mem/game_vram");
         Check(vram != null, "a comparison judges a probe's metric");

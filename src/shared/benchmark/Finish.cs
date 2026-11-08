@@ -159,6 +159,11 @@ public static class Finish
                     // The probes' counters over the part's frames: their median, or the most (Across)
                     foreach (var (metric, samples) in counters.GetValueOrDefault(key) ?? [])
                         values[metric] = Math.Round(Metrics.Find(metric)?.Across == Across.Most ? samples.Max() : Measure.Median(samples), 3);
+                    // The GPU's energy a frame, where the host measured its power: its mean over the part times the mean frame
+                    // (W times ms is mJ; medians would jump between the beats of a capped frame rate); not for time warp,
+                    // whose frames do ever more work
+                    if (scenario.Kind != Kind.Timed && counters.GetValueOrDefault(key)?.GetValueOrDefault("host/gpu_power") is { Count: > 0 } watts)
+                        values[Metrics.GpuEnergy.Name] = Math.Round(watts.Average() * r.Average(f => f.FrameMs), 1);
                     if (kindOf(open.Session, open.Pass) == "profiled")
                         profiled.Add(values);
                     else

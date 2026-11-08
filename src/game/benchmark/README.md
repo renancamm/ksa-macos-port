@@ -125,7 +125,7 @@ The same tests are the project's tool for looking into the driver, the shaders a
 | `calibrate [test] [n]` | how much a test moves between runs of the same build on this Mac: `n` runs (3) at a fresh install's settings, written as the test's noise profile |
 | `baseline [set <name> [run...] \| remove <name>]` | names runs, one of each test, to compare with; a baseline's name stands for its run wherever a run is named, and `clean` keeps it |
 | `query [run] '<sql>'` | SQL on a run's [store](#a-runs-record) (default: the last run) |
-| `timeline [run]` | the run in Perfetto's viewer, in your browser: its parts, frame and GPU times, each frame's way to the screen, KSA Metal's waits, the game's zones around slow frames |
+| `timeline [run]` | the run in Perfetto's viewer, in your browser: its parts, frame and GPU times, each frame's way to the screen, KSA Metal's waits, the game's zones around slow frames, and the counters (the GPU's power and clock, the probes') |
 | `report <run> --again` | the run's record, report and page made again from its store by this version of the benchmark, the facts about the Mac as the run had them |
 
 ```bash
@@ -302,8 +302,9 @@ GPU's power and clock) or adds the benchmark's probes (`+memory`).
 `benchmark.sh` also records the GPU's power and clock while each game session plays, from macOS's IOReport (as
 Activity Monitor's energy figures are, without root): `host/gpu_power` (W), `host/gpu_active` (the share of the time
 the GPU wasn't off) and `host/gpu_clock` (MHz, its states' time weighted by their frequencies), every half second into
-`host.db`, each sample in the part it fell in ([`Power.cs`](../../player/benchmark-cli/Power.cs)). A run from the tab has
-no host, and none of them. Where macOS doesn't give them, the run says so and goes on.
+`host.db`, each sample in the part it fell in ([`Power.cs`](../../player/benchmark-cli/Power.cs)). Power is shown, not
+judged: a comparison judges the GPU's energy a frame ([`gpu/energy`](#metrics)). A run from the tab has no host, and none
+of them. Where macOS doesn't give them, the run says so and goes on.
 
 ## The tests' scenarios
 
@@ -475,6 +476,7 @@ PresentMon's:
 | `frame/cpu_busy` | a frame's work from its start (its wait for an earlier frame over) to its present, less KSA Metal's waits in it (a drawable, a fence) |
 | `frame/cpu_wait` | those waits and the wait for the earlier frame: with CPU busy, the frame |
 | `gpu/busy` | the GPU's time on a frame |
+| `gpu/energy` | the GPU's energy a frame, mJ: its mean power while the part played (`host/gpu_power`, `benchmark.sh` runs) times the mean frame time; not for time warp. Power alone rises when frames come faster; a frame's energy says whether the same work got cheaper |
 | `frame/latency` | from a frame's start to its showing |
 | `frame/displayed` | how long a frame stayed on screen |
 | `frame/animation_error` | how far the step between two frames' starts differs from the step between their showing, on average: a judder the frame rate doesn't show |
