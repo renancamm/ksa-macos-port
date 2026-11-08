@@ -34,6 +34,7 @@ internal static class Tests
             ("a malformed file", Malformed),
             ("the ARM64 mark", MarkArm64),
             ("the cleanup", Cleanup),
+            ("the BRUTAL check", BrutalCheck),
             ("versions", Versions),
         };
         // The port program's messages stay out of the build's output
@@ -279,6 +280,45 @@ internal static class Tests
         Conversion.Cleanup(_scratch);
         var left = Directory.GetFileSystemEntries(_scratch).Select(Path.GetFileName).Order().ToArray();
         Equal("Content KSA.dll notes.txt", string.Join(' ', left), "what is left");
+    }
+
+    // A game whose BRUTAL assembly is newer than the port's package: judged by its Linux library, not by the version
+    private static void BrutalCheck()
+    {
+        var folder = PortFolder.Folder;
+        try
+        {
+            PortFolder.Folder = Path.Combine(_scratch, "port");
+            Directory.CreateDirectory(PortFolder.Lib);
+            byte[] library = [0x7f, (byte)'E', (byte)'L', (byte)'F', 1];
+            var hash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(library));
+            File.WriteAllText(Path.Combine(PortFolder.Lib, "brutal.txt"),
+                $"Ahwoo.BRUTAL.Glfw.Native 2026.10.5 libglfw.so={hash}\nAhwoo.BRUTAL.Monitor.Host 2026.10.3\n");
+            File.WriteAllText(Path.Combine(_scratch, "Brutal.Glfw.dll"), "MZ 2026.11.0+" + new string('a', 40));
+            File.WriteAllText(Path.Combine(_scratch, "Brutal.Monitor.Host.dll"), "MZ 2026.11.0+" + new string('b', 40));
+            File.WriteAllBytes(Path.Combine(_scratch, "libglfw.so"), library);
+            var linux = Conversion.LinuxLibraries(_scratch);
+            Equal("libglfw.so", string.Join(' ', linux.Keys), "the Linux libraries");
+            Equal(0, Conversion.BrutalWarnings(_scratch, linux).Count, "the package's library: no warning");
+            Equal(0, Conversion.BrutalWarnings(_scratch, null).Count, "nothing to compare: no warning");
+            File.WriteAllBytes(Path.Combine(_scratch, "libglfw.so"), [0x7f, (byte)'E', (byte)'L', (byte)'F', 2]);
+            Equal(1, Conversion.BrutalWarnings(_scratch, Conversion.LinuxLibraries(_scratch)).Count, "another library: a warning");
+            File.Move(Path.Combine(_scratch, "libglfw.so"), Path.Combine(_scratch, "libglfw.so.4"));
+            Equal(1, Conversion.BrutalWarnings(_scratch, Conversion.LinuxLibraries(_scratch)).Count, "a library renamed: a warning");
+            File.WriteAllText(Path.Combine(_scratch, "Brutal.Glfw.dll"), "MZ 2026.10.1+" + new string('a', 40));
+            try
+            {
+                Conversion.BrutalWarnings(_scratch, linux);
+                Check(false, "an older game: no error");
+            }
+            catch (PortException)
+            {
+            }
+        }
+        finally
+        {
+            PortFolder.Folder = folder;
+        }
     }
 
     private static void Versions()

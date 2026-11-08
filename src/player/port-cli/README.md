@@ -8,7 +8,7 @@ folder it is `lib/port-cli/`, with its shader edits.
 | File | What it holds |
 |---|---|
 | [`Program.cs`](Program.cs) | the commands, `port.sh`'s steps and its options, `starmap.sh` |
-| [`Conversion.cs`](Conversion.cs) | a game folder converted for macOS: the Linux binaries out, the .NET files for the app's runtime, the BRUTAL version check, the ARM64 mark |
+| [`Conversion.cs`](Conversion.cs) | a game folder converted for macOS: the Linux binaries out, the .NET files for the app's runtime, the BRUTAL check (the game's Linux libraries against the packages'), the ARM64 mark |
 | [`ShaderEdits.cs`](ShaderEdits.cs) | the shader edits: the `.edits` files read and applied |
 | [`App.cs`](App.cs) | the app made around the converted game, or the port's files put into it again; StarMap in the app |
 | [`Update.cs`](Update.cs) | `port.sh --update`: the newest release downloaded and checked |
