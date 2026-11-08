@@ -118,8 +118,13 @@ struct KCommandBuffer : KDispatchable {
     uint32_t tsUsed = 0;
     std::vector<TimestampWrite> tsWrites;
     std::vector<std::pair<KQueryPool*, uint32_t>> tsDeferred;
+    bool tsSplit = false;  // tsDeferred split the pass at its next draw (stampSplit)
+    id<MTLEvent> splitEvent = nil;
+    uint64_t splitSignaled = 0;
     void writeTimestamp(KQueryPool* pool, uint32_t query);
     void stampTimestamp(KQueryPool* pool, uint32_t query);
+    void stampSplit();
+    void takeSplitStamps();
     void submitTimestamps(id<MTLCommandBuffer> c);
     void releaseTimestamps();
 

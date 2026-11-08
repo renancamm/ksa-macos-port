@@ -502,7 +502,16 @@ public static partial class Program
             {
                 Output.Info("Instruments is writing the trace");
                 Tool.Exec("kill", ["-INT", tracer.Id.ToString(CultureInfo.InvariantCulture)], out _);
-                tracer.WaitForExit();
+                // It can stay at "Stopping recording" for good: after 10 minutes the trace is left as far as it got
+                if (!tracer.WaitForExit(TimeSpan.FromMinutes(10)))
+                {
+                    Output.Warn("Instruments was still writing the trace after 10 minutes: stopped, the trace left as it is (no summary)");
+                    Tool.Exec("kill", ["-TERM", tracer.Id.ToString(CultureInfo.InvariantCulture)], out _);
+                    if (!tracer.WaitForExit(TimeSpan.FromSeconds(30)))
+                        tracer.Kill(entireProcessTree: true);
+                    tracer.WaitForExit();
+                    _traceCut = true;
+                }
             }
             // The game's log, without your home folder's name
             var log = Path.Combine(_instance, "logs", "console.log");
@@ -545,7 +554,8 @@ public static partial class Program
                 File.WriteAllLines(Path.Combine(_out, "hud.log"), lines);
                 Output.Info($"Metal HUD: {lines.Count(l => l.Contains("metal-HUD"))} log lines in hud.log, reports in hud/");
             }
-            if (_trace && Directory.Exists(Path.Combine(_out, "trace.trace")))
+            // A trace Instruments was stopped writing is left out: exporting it could hang the same way
+            if (_trace && !_traceCut && Directory.Exists(Path.Combine(_out, "trace.trace")))
             {
                 // Its tables of the parts and of the GPU's work, for the report program's summary (trace.md)
                 var trace = Path.Combine(_out, "trace.trace");

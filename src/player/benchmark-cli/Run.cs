@@ -28,6 +28,7 @@ public static partial class Program
         private bool _defaults, _explore, _fast, _noShots, _hud, _trace, _capture, _catchCapture, _passes, _cameraLog, _holding;
         private string _repeatText = "", _sessionsText = "1", _ab = "", _filmText = "0", _savePlan = "";
         private double _film;
+        private bool _traceCut;  // Instruments was stopped writing the trace (RunGame)
         // measure: the measured passes in each game session, the sessions (taken in turn for A and B with --ab)
         private int _repeat = 1, _sessions = 1;
         private string _app = PortFolder.DefaultApp, _res = "", _script = "", _installed = "";

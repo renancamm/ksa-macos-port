@@ -369,6 +369,30 @@ void KCommandBuffer::endRender() {
     framebuffer = nullptr;
     for (auto& d : tsDeferred) writeTimestamp(d.first, d.second);
     tsDeferred.clear();
+    tsSplit = false;
+}
+
+// The game's timestamps since the last draw, while zones are split: the pass ends there and goes on after them.
+// Timestamps back to back split it once, and those after its last draw are taken when it ends, its stores and resolves
+// in the zone they close; what is encoded between a timestamp and the next draw counts in the zone before it
+void KCommandBuffer::stampSplit() {
+    if (!tsSplit) return;
+    suspendRender();
+    takeSplitStamps();
+    resumeRender();
+}
+
+// The split's timestamps, the pass suspended. The first half's stores are waited for by an event: the fences that order
+// the timestamps and the second half can signal before the stores are written, and the second half's loads then read
+// some of them stale (the cockpit lost its lights in most sessions)
+void KCommandBuffer::takeSplitStamps() {
+    if (!tsSplit) return;
+    tsSplit = false;
+    if (!splitEvent) splitEvent = [device->mtl newEvent];
+    [mtl encodeSignalEvent:splitEvent value:++splitSignaled];
+    [mtl encodeWaitForEvent:splitEvent value:splitSignaled];
+    for (auto& d : tsDeferred) stampTimestamp(d.first, d.second);
+    tsDeferred.clear();
 }
 
 void KCommandBuffer::resetState() {

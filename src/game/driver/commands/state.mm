@@ -143,6 +143,7 @@ VKFN(void) vkCmdSetStencilReference(VkCommandBuffer commandBuffer, VkStencilFace
 // Flushing state before draws and dispatches
 
 bool kmtlFlushGraphics(KCommandBuffer* cb) {
+    cb->stampSplit();
     KPipeline* p = cb->graphicsPipeline;
     id<MTLRenderCommandEncoder> enc = cb->render;
     if (!enc || !p || !p->render) return false;

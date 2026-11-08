@@ -8,9 +8,9 @@
 //                             render pass is taken when the pass ends, so a zone inside a pass reads about 0
 //                           1 labels: answered at once with 0, no encoder and no wait; the game's profiler then only
 //                             names the encoders (with labels)
-//                           2 split: as 0, but one inside a render pass splits the pass there (suspended and resumed),
-//                             so zones inside it read their own time; needs gpu_zones at launch, which also gives the
-//                             attachments kept in tile memory memory of their own (false without it)
+//                           2 split: as 0, but one inside a render pass splits the pass at its next draw (suspended
+//                             and resumed), so zones inside it read their own time; needs gpu_zones at launch, which
+//                             also gives the attachments kept in tile memory memory of their own (false without it)
 //   ksaMtlZoneBegin(commandBuffer, name), ksaMtlZoneEnd(commandBuffer)
 //                           a zone of the game's GPU profiler begins or ends in this recording; with labels, an encoder
 //                           is named after the zone its first draw or dispatch ran in

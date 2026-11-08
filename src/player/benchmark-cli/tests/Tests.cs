@@ -1279,6 +1279,7 @@ internal static class Tests
         // The host's counters (the power channel) fall in the part open at their time
         var hosted = Run("hosted", frameMs: 20, gpuMs: 10);
         double from = 0, to = 0;
+        RunStore.Flush(hosted);  // the part's open and close in the file, not still on the writer's queue
         RunStore.Query(Path.Combine(hosted, RunStore.GameFile), "SELECT t, type FROM events WHERE type IN ('open', 'close')", q =>
         {
             if (q.Text(1) == "open")
