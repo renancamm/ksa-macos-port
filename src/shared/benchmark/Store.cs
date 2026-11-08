@@ -491,31 +491,55 @@ public sealed class RunStore : IDisposable
         return moments;
     }
 
-    // The probes' counters in a run's folder, summed up per measuring: each counter's samples in the part, by metric name
+    // The counters in a run's folder, per measuring: each counter's samples in the part, by metric name. The game's carry
+    // their part; the host's (the power channel) fall in the part that was open at their time
     public static Dictionary<(string Scenario, string Part, int Session, int Pass), Dictionary<string, List<double>>> ReadCounters(string dir)
     {
         var counters = new Dictionary<(string, string, int, int), Dictionary<string, List<double>>>();
-        Query(Path.Combine(dir, GameFile), "SELECT scenario, part, session, pass, name, value FROM counters WHERE part IS NOT NULL AND part != ''", q =>
+        void Add((string, string, int, int) key, string name, double value)
         {
-            var key = (q.Text(0), q.Text(1), (int)q.Long(2), (int)q.Long(3));
             if (!counters.TryGetValue(key, out var byName))
                 counters[key] = byName = new Dictionary<string, List<double>>(StringComparer.Ordinal);
-            if (!byName.TryGetValue(q.Text(4), out var values))
-                byName[q.Text(4)] = values = [];
-            values.Add(q.Double(5));
+            if (!byName.TryGetValue(name, out var values))
+                byName[name] = values = [];
+            values.Add(value);
+        }
+        Query(Path.Combine(dir, GameFile), "SELECT scenario, part, session, pass, name, value FROM counters WHERE part IS NOT NULL AND part != ''", q =>
+            Add((q.Text(0), q.Text(1), (int)q.Long(2), (int)q.Long(3)), q.Text(4), q.Double(5)));
+        // The parts' times, from their open and close events
+        var windows = new List<(double From, double To, (string, string, int, int) Key)>();
+        var open = new Dictionary<(string, string, int, int), double>();
+        Query(Path.Combine(dir, GameFile), "SELECT t, scenario, part, session, pass, type FROM events WHERE type IN ('open', 'close') AND part IS NOT NULL ORDER BY t", q =>
+        {
+            var key = (q.Text(1), q.Text(2), (int)q.Long(3), (int)q.Long(4));
+            if (q.Text(5) == "open")
+                open[key] = q.Double(0);
+            else if (open.Remove(key, out var from))
+                windows.Add((from, q.Double(0), key));
         });
+        if (windows.Count > 0)
+            Query(Path.Combine(dir, HostFile), "SELECT t, session, name, value FROM counters", q =>
+            {
+                double t = q.Double(0);
+                int session = (int)q.Long(1);
+                foreach (var w in windows)
+                    if (w.Key.Item3 == session && t > w.From && t <= w.To)
+                        Add(w.Key, q.Text(2), q.Double(3));
+            });
         return counters;
     }
 
-    // The metrics the run's probes registered
+    // The metrics the run's probes and its host's channels registered
     public static List<Metric> ReadMetrics(string dir)
     {
         var metrics = new List<Metric>();
-        Query(Path.Combine(dir, GameFile), "SELECT name, label, unit, better, across, decimals, limit_pct, help FROM metrics ORDER BY rowid", q =>
-        {
-            if (Enum.TryParse<Better>(q.Text(3), out var better) && Enum.TryParse<Across>(q.Text(4), out var across))
-                metrics.Add(new Metric(q.Text(0), q.Text(1), q.Text(2), better, across, (int)q.Long(5), q.Text(7)) { Limit = q.NullableDouble(6) });
-        });
+        foreach (var file in new[] { GameFile, HostFile })
+            Query(Path.Combine(dir, file), "SELECT name, label, unit, better, across, decimals, limit_pct, help FROM metrics ORDER BY rowid", q =>
+            {
+                if (Enum.TryParse<Better>(q.Text(3), out var better) && Enum.TryParse<Across>(q.Text(4), out var across) &&
+                    !metrics.Any(m => m.Name == q.Text(0)))
+                    metrics.Add(new Metric(q.Text(0), q.Text(1), q.Text(2), better, across, (int)q.Long(5), q.Text(7)) { Limit = q.NullableDouble(6) });
+            });
         return metrics;
     }
 

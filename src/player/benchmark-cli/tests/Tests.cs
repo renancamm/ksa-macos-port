@@ -1241,6 +1241,25 @@ internal static class Tests
         var page = File.ReadAllText(Path.Combine(_scratch, "probed-a", "report.html"));
         Contains([page], "Who holds the memory", "the page's census");
         Contains([page], "Planet Textures &lt;- Streamer.Load", "another probe's census kind, folded");
+        // The host's counters (the power channel) fall in the part open at their time
+        var hosted = Run("hosted", frameMs: 20, gpuMs: 10);
+        double from = 0, to = 0;
+        RunStore.Query(Path.Combine(hosted, RunStore.GameFile), "SELECT t, type FROM events WHERE type IN ('open', 'close')", q =>
+        {
+            if (q.Text(1) == "open")
+                from = q.Double(0);
+            else
+                to = q.Double(0);
+        });
+        RunStore.ProcessFile = RunStore.HostFile;
+        var host = RunStore.For(hosted)!;
+        host.AddMetric(new Metric("host/gpu_power", "GPU power", "W", Better.Lower, Across.Median, 1, "the GPU's power") { Limit = 10 });
+        host.AddCounter((from + to) / 2, 1, 0, null, null, "host/gpu_power", 20);
+        host.AddCounter(to + 10, 1, 0, null, null, "host/gpu_power", 99);
+        RunStore.Close(hosted);
+        RunStore.ProcessFile = RunStore.GameFile;
+        var hostedPart = Part(Finished(hosted));
+        Equal<double?>(20.0, hostedPart["host/gpu_power"], "a host counter in the part open at its time, one after it left out");
         var c = Comparison.Of(a.AllParts().Select(x => (x.Scenario.Name, x.Part)), Probed("probed-b", 5600).AllParts().Select(x => (x.Scenario.Name, x.Part)));
         var vram = c.Parts.Single().Verdicts.FirstOrDefault(v => v.Metric.Name == "mem/game_vram");
         Check(vram != null, "a comparison judges a probe's metric");

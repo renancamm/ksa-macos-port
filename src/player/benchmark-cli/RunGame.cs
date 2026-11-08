@@ -420,6 +420,8 @@ public static partial class Program
             plan.Host.Facts = HostFacts();
             plan.Write(_out);
             using var game = Process.Start(Game(new Dictionary<string, string>(env) { ["KSA_BENCH_OUT"] = _out }))!;
+            // The GPU's power and clock while it plays (host.db), unless turned off
+            using var power = _off.Contains("power") ? null : Power.Start(RunStore.For(_out), n, why => { if (n == 1) Output.Info(why); });
             var started = DateTime.UtcNow;
             string ending = "";
             bool alongside = false;

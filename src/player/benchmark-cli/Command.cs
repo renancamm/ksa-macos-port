@@ -100,7 +100,8 @@ public static partial class Program
                              heap, and who holds them at each checkpoint), or a probe's assembly (.dll)
           --knob <probe>.<key>=<value>
                              a value for a probe (again for more)
-          --channels <list>  -zones (the game's profilers), -runtime (.NET's counters): off; +memory: the probe added
+          --channels <list>  -zones (the game's profilers), -runtime (.NET's counters), -power (the GPU's power and
+                             clock): off; +memory: the probe added
           --on '<rule>'      with run, check, measure, profile or investigate: a trigger, '<condition>: <action>, ...' (again for
                              more). Conditions: frame>N ms, broken, checkpoint, stuck, gpu-error; actions: moment,
                              screenshot, passes, capture, sample, stop, max N ('frame>50ms: moment, max 5')

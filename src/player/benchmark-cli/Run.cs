@@ -250,12 +250,12 @@ public static partial class Program
                     case "--channels" when _purpose is not Purpose.Explore:
                         foreach (var c in args[++i].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                         {
-                            if (c.Length > 1 && c[0] == '-' && c[1..] is "zones" or "runtime")
+                            if (c.Length > 1 && c[0] == '-' && c[1..] is "zones" or "runtime" or "power")
                                 _off.Add(c[1..]);
                             else if (c.Length > 1 && c[0] == '+' && Program.OwnProbes.Contains(c[1..]))
                                 _probes.Add(c[1..]);
                             else
-                                Die($"--channels takes -zones, -runtime or +{string.Join(", +", Program.OwnProbes)}, not '{c}'.");
+                                Die($"--channels takes -zones, -runtime, -power or +{string.Join(", +", Program.OwnProbes)}, not '{c}'.");
                         }
                         break;
                     // What each verb adds

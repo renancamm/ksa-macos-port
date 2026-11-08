@@ -296,8 +296,14 @@ From the tab, Report Detail Memory is the `memory` probe, and the settings file'
 adds an Xcode frame capture at each view of the Mixed Test at Standard, in a game started again with frame captures
 allowed.
 
-`--channels` turns off what every run records (`-zones`: the game's profilers, `-runtime`: .NET's counters) or adds the
-benchmark's probes (`+memory`).
+`--channels` turns off what every run records (`-zones`: the game's profilers, `-runtime`: .NET's counters, `-power`: the
+GPU's power and clock) or adds the benchmark's probes (`+memory`).
+
+`benchmark.sh` also records the GPU's power and clock while each game session plays, from macOS's IOReport (as
+Activity Monitor's energy figures are, without root): `host/gpu_power` (W), `host/gpu_active` (the share of the time
+the GPU wasn't off) and `host/gpu_clock` (MHz, its states' time weighted by their frequencies), every half second into
+`host.db`, each sample in the part it fell in ([`Power.cs`](../../player/benchmark-cli/Power.cs)). A run from the tab has
+no host, and none of them. Where macOS doesn't give them, the run says so and goes on.
 
 ## The tests' scenarios
 
@@ -519,7 +525,7 @@ flight's. Fly the free camera to a place, open the console (`\`) and type `bench
 | `--env <NAME>=<value>` | the game's environment for the run, such as a KSA Metal switch (`KSA_MTL_...`; repeat for more); the report lists them |
 | `--save-plan <file>` | with `measure` or `profile`: write the command line as a [study's](#studies) file and play nothing |
 | `--probe <name \| path>`, `--knob <probe>.<key>=<value>` | a [probe](#probes) (`memory`, or an assembly; repeat for more) and a value for it |
-| `--channels <list>` | `-zones`, `-runtime`: channels every run records turned off; `+memory`: a probe added, as `--probe memory` |
+| `--channels <list>` | `-zones`, `-runtime`, `-power`: channels every run records turned off; `+memory`: a probe added, as `--probe memory` |
 
 | Command | |
 |---|---|
