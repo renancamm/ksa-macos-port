@@ -1,0 +1,15 @@
+# For Terrain Cache (the hooks' TerrainCache.cs). The terrain's prepare pass clears the mesh's vertex colours, its
+# modifiers add theirs premultiplied, and the finalize pass turns them into straight colours where they are: run again
+# without the passes before it, it would divide them by their alpha once more each frame (the Moon's ground goes white).
+# The hooks build this shader a second time with PORT_TERRAIN_CACHE_HIT defined and bind that build when they skip the
+# prepare and modifier passes: the colours of the frame slot's last full run, which had the same inputs, stay as they
+# are. Without the define the shader is the game's.
+
+@@ edit terrain-cache-colors Planet/TerrainMesh/FinalizeModifiers.comp
+@@ what kept the terrain's colours as they are when the terrain cache reuses them
+@@ find
+    outColors[gl_GlobalInvocationID.x] = PremultipliedAlphaToStraight(outColors[gl_GlobalInvocationID.x]);
+@@ replace
+#ifndef PORT_TERRAIN_CACHE_HIT  // macOS port: Terrain Cache's build keeps the straight colours already there
+    outColors[gl_GlobalInvocationID.x] = PremultipliedAlphaToStraight(outColors[gl_GlobalInvocationID.x]);
+#endif

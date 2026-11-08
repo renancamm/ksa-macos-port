@@ -8,7 +8,7 @@ folder it is `lib/port-cli/`, with its shader edits.
 | File | What it holds |
 |---|---|
 | [`Program.cs`](Program.cs) | the commands, `port.sh`'s steps and its options, `starmap.sh` |
-| [`Conversion.cs`](Conversion.cs) | a game folder converted for macOS: the Linux binaries out, the .NET files for the app's runtime, the BRUTAL version check, the ARM64 mark |
+| [`Conversion.cs`](Conversion.cs) | a game folder converted for macOS: the Linux binaries out, the .NET files for the app's runtime, the BRUTAL check (the game's Linux libraries against the packages'), the ARM64 mark |
 | [`ShaderEdits.cs`](ShaderEdits.cs) | the shader edits: the `.edits` files read and applied |
 | [`App.cs`](App.cs) | the app made around the converted game, or the port's files put into it again; StarMap in the app |
 | [`Update.cs`](Update.cs) | `port.sh --update`: the newest release downloaded and checked |
@@ -32,7 +32,6 @@ copy, `tar` extracts the game, `plutil` reads and checks `Info.plist`, `xattr` r
 | `port [options] [archive \| folder]` | `port.sh` |
 | `starmap [--app <path>] [--remove]` | `starmap.sh` |
 | `convert-dotnet <game> <runtime>` | the build, for KSA's assemblies the hooks and the benchmark are built against |
-| `mark-arm64 <file.dll...>` | the build, for StarMap's `StarMap.dll` |
 | `edit-shaders <game>` | by hand: the shader edits alone, on a game folder |
 
 It exits with 0 when done, 1 on a problem (the message says which), 2 on a wrong option, and 75 after

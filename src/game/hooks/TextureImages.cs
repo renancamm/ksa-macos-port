@@ -6,18 +6,16 @@ using RenderCore;
 namespace KsaMetal.Hooks;
 
 // What the far textures and the shared textures hooks have in common about a TextureReference's image: the setters
-// Bind writes, whether the celestial streamer replaces it, the size cap Bind applies, and an image's size
+// Bind writes, whether the celestial streamer makes it, the size cap Bind applies, and an image's size
 internal static class TextureImages
 {
     private static System.Reflection.MethodInfo? _texture, _view;
-    private static Func<TextureReference, int>? _coarseCap;
 
     // Looked up by each hook's Apply before it patches: Skip when the game's code moved
     public static void Lookup()
     {
         _texture = Find.Setter(typeof(TextureReference), nameof(TextureReference.Texture));
         _view = Find.Setter(typeof(TextureReference), nameof(TextureReference.ImageView));
-        _coarseCap = AccessTools.MethodDelegate<Func<TextureReference, int>>(Find.Method(typeof(TextureReference), "StreamingCoarseCap"));
     }
 
     // The texture's image and view, as Bind sets them
@@ -27,8 +25,8 @@ internal static class TextureImages
         _view!.Invoke(texture, [view]);
     }
 
-    // A map the celestial streamer replaces (its coarse cap is set): its image isn't Bind's to keep
-    public static bool Streamed(TextureReference texture) => _coarseCap!(texture) > 0;
+    // A map the celestial streamer makes (Stream in the content, its file read by the streamer): Bind makes none
+    public static bool Streamed(TextureReference texture) => texture.Stream;
 
     // The largest size Bind lets the image have, as it works it out: the category's cap from the game's settings,
     // the manifest's when smaller (0: none)

@@ -149,7 +149,7 @@ The benchmark's mod and the hooks talk to KSA Metal through the only functions i
 | `ksaMtlZoneMode` | how the game's GPU profiler's timestamps are answered: as they come (each one a tiny encoder with counter samples that waits for all the work before it, through an event: such an encoder doesn't keep the fences' order; one inside a render pass is taken at the pass's end, so a zone inside a pass reads about 0), labels only (answered at once, no encoder), or split (a render pass splits before the next draw after them; needs `gpu_zones`) |
 | `ksaMtlZoneBegin`, `ksaMtlZoneEnd` | a zone of the game's GPU profiler begins or ends in a recording; with `labels`, each encoder is named after the zone its first draw or dispatch ran in |
 | `ksaMtlEarlyFragmentTests` | whether draws use the pipelines' states that test depth first (below); the hooks' Skip Hidden Vessel Parts sets it at the start of a frame |
-| `ksaMtlHdrNits` | the game's HDR Paper White and HDR Peak Brightness in nits, which HDR output maps to the display (below); the hooks pass them when the game applies its Display settings |
+| `ksaMtlHdrNits` | the game's HDR UI Brightness and HDR Peak Brightness in nits, which HDR output maps to the display (below); the hooks pass them when the game applies its Display settings |
 
 The benchmark's tools `profile`, `trace`, `capture` and `hud` use them too.
 
@@ -279,11 +279,12 @@ them.
 **HDR.** On a display with EDR (brighter than SDR white), the surface also offers HDR10: `A2B10G10R10` in PQ with Rec.
 2020 primaries, which holds the game's absolute nits, and the game then shows its HDR settings (Display). Not scRGB:
 the game's 1.0 there is 80 nits, macOS's is SDR white. With an HDR10 swapchain the layer takes the PQ colour space,
-EDR, and HDR10 metadata whose optical output scale is the game's HDR Paper White: macOS shows that brightness at SDR
-white, as bright as other windows, and fits the highlights up to HDR Peak Brightness into what the display has above
-it. Paper White then no longer changes how bright the UI is, only how far highlights reach above it. The hooks pass
-both in at every Apply ([`Hdr.cs`](../changes/fixes/Hdr.cs)); `vkSetHdrMetadataEXT` also sets the peak. Screenshots of
-HDR frames are SDR PNGs, paper white at white and brighter highlights clipped. In the benchmark's places, HDR output
+EDR, and HDR10 metadata whose optical output scale is the game's HDR UI Brightness: macOS shows that brightness at
+SDR white, as bright as other windows, and fits the scene (HDR Scene Paper White) and its highlights up to HDR Peak
+Brightness into what the display has above it. UI Brightness then no longer changes how bright the UI is, only how far
+the scene reaches above it. The hooks pass both in at every Apply ([`Hdr.cs`](../changes/fixes/Hdr.cs));
+`vkSetHdrMetadataEXT` also sets the peak. Screenshots of HDR frames are SDR PNGs, UI brightness at white and brighter
+light clipped. In the benchmark's places, HDR output
 takes about 1-5 % more GPU time (M5, one run each).
 
 **MetalFX.** For the port settings, the patched game ([KSA Metal Hooks](../hooks/)) calls entry points that are KSA
@@ -324,7 +325,7 @@ The complete mapping:
 | Present wait | the drawables' presented handlers advance the present ID; a wait also ends when the GPU is about to need the next frame |
 | Transient attachments | memoryless textures (tile memory only) |
 | Swapchain | own textures at the display's pixels, copied into the `CAMetalLayer` drawable at present |
-| HDR10 colour space, `vkSetHdrMetadataEXT` | the layer in PQ with EDR and `CAEDRMetadata`, the game's paper white at SDR white |
+| HDR10 colour space, `vkSetHdrMetadataEXT` | the layer in PQ with EDR and `CAEDRMetadata`, the game's UI brightness at SDR white |
 | `vkCmdUpscaleKSA`, `vkCmdUpscaleSnapshotKSA`, `vkCmdMarkUiKSA`, `vkGetUpscaleMaxScaleKSA` | KSA Metal's own: MetalFX for the hooks |
 
 Buffer indices per shader stage: 0-9 descriptor sets, 10 push constants, 11 draw index, 12 buffer sizes, 13 view

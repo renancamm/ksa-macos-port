@@ -21,7 +21,7 @@ binaries or assets, and none of the licences here apply to the game.
 | Vulkan-Headers | compiled into `libvulkan.1.dylib` | [KhronosGroup/Vulkan-Headers](https://github.com/KhronosGroup/Vulkan-Headers) | Apache-2.0 OR MIT | `vulkan-headers/` |
 | .NET runtime | `Contents/MacOS/dotnet`, `host/`, `shared/` | Microsoft, [dotnet.microsoft.com](https://dotnet.microsoft.com), unmodified | MIT, with the notices in `ThirdPartyNotices.txt` | `dotnet/` |
 | FMOD Engine (core library) | `libfmod.dylib` | Firelight Technologies, from this repository's [`third_party/fmod/`](third_party/fmod/) | FMOD End User Licence Agreement (proprietary, not MIT) | `fmod/` |
-| StarMap mod loader, with Harmony (when added with `starmap.sh`) | `Contents/Resources/StarMap/` | [StarMapLoader/StarMap](https://github.com/StarMapLoader/StarMap) release, `StarMap.exe` left out and `StarMap.dll` marked ARM64; [Harmony](https://github.com/pardeike/Harmony) | MIT; Harmony: MIT | `starmap/`, `harmony/` |
+| StarMap mod loader, with Harmony and Microsoft.Extensions.DependencyInjection (when added with `starmap.sh`) | `Contents/Resources/StarMap/` | [StarMapLoader/StarMap](https://github.com/StarMapLoader/StarMap) release, `StarMap.exe` left out; [Harmony](https://github.com/pardeike/Harmony); Microsoft, [dotnet/runtime](https://github.com/dotnet/runtime) | MIT; Harmony: MIT; Microsoft.Extensions: MIT | `starmap/`, `harmony/`, `dotnet/` |
 | App icon | `AppIcon.icns` | cropped from KSA's [title card](https://ahwoo.com/ksa/title-card.jpg) | © Ahwoo Limited (RocketWerkz), used to identify the game; not covered by any licence here, removed on request | `ksa-icon/` |
 
 The BRUTAL libraries contain these components, each listed with its licence text in the package notices in

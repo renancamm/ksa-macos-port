@@ -16,9 +16,8 @@ namespace KsaMetal.Hooks.Optimizations;
 // the solar system), often in another category, whose size cap the game's settings set (the ring rocks' none, the
 // Moon's rocks the Terrain textures'). A texture of the same file, the same cap (a cap at least the file's size counts
 // as none) and the same manifest (mip chain, formats; XML may give one without a file beside the texture) now takes the image, view and bindless slot of the first one bound, and only that one frees them at exit (TextureReference.Dispose). Nothing else writes a
-// texture's slot or image after binding. TexturePowerReference (normal maps) only adds a value its material reads;
-// the other subclasses load or bind otherwise (cubemaps, heights, Hapke tables) and keep their own, as do the maps the
-// celestial streamer replaces (StreamingCoarseCap). An error of the hook's own while a texture binds fails the hook:
+// texture's slot or image after binding. Height maps load and bind otherwise and keep their own, as do the maps the
+// celestial streamer makes (Stream in the content). An error of the hook's own while a texture binds fails the hook:
 // that texture and every one after it bind as the game binds them, and those already sharing keep their image.
 [Hook(Phase.Default, Switch = nameof(Settings.LoadTexturesOnce))]
 internal static class SharedTextures
@@ -72,8 +71,8 @@ internal static class SharedTextures
     private static bool Bind(TextureReference __instance, Renderer renderer)
     {
         var type = __instance.GetType();
-        if (type != typeof(TextureReference) && type != typeof(TexturePowerReference) || __instance.IsReference() ||
-            (bool)_bound!.GetValue(__instance)! || __instance.TextureAsset == null || TextureImages.Streamed(__instance))
+        if (type != typeof(TextureReference) || (bool)_bound!.GetValue(__instance)! || __instance.TextureAsset == null ||
+            TextureImages.Streamed(__instance))
             return true;
         var manifest = __instance.Manifest ?? new TextureManifest();
         // The largest size Bind lets the image have; one at least the file's size counts as none

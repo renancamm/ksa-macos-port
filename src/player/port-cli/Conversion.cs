@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using KsaPort.Common;
 
 namespace KsaPort.Cli;
@@ -12,8 +14,11 @@ public static class Conversion
 {
     public static void Game(string game, string runtime)
     {
+        RequireGame(game);
+        // The Linux libraries are judged before Cleanup removes them
+        var linux = LinuxLibraries(game);
         Cleanup(game);
-        Dotnet(game, runtime);
+        Dotnet(game, runtime, linux);
         ShaderEdits.Apply(game, ShaderEdits.Read(PortFolder.ShaderEditsFolder), Console.WriteLine);
     }
 
@@ -67,14 +72,14 @@ public static class Conversion
     //      runtime (the one in the app).
     //   4. KSA.dll is a 64-bit assembly marked AMD64, which .NET on Apple Silicon does not load: marked ARM64
     //      (Arm64.Mark). The other game DLLs are platform-neutral and load as they are.
-    public static void Dotnet(string game, string runtime)
+    public static void Dotnet(string game, string runtime, IReadOnlyDictionary<string, string>? linux = null)
     {
         RequireGame(game);
         var shared = Path.Combine(runtime, "shared", "Microsoft.NETCore.App");
         var framework = Directory.Exists(shared) ? Directory.GetDirectories(shared).Order(StringComparer.Ordinal).FirstOrDefault() : null;
         if (framework == null)
             throw new PortException($"no .NET runtime in {runtime}.");
-        CheckBrutal(game);
+        CheckBrutal(game, linux);
 
         int removed = 0;
         foreach (var dll in Directory.GetFiles(framework, "*.dll"))
@@ -111,19 +116,48 @@ public static class Conversion
         Arm64.Mark(Directory.GetFiles(game, "*.dll").Order(StringComparer.Ordinal));
     }
 
-    // The port's BRUTAL libraries come from RocketWerkz's packages listed in lib/brutal.txt, each matching one of the
-    // game's BRUTAL assemblies (Ahwoo.BRUTAL.Glfw.Native: Brutal.Glfw.dll). An older game doesn't work with them (KSA
-    // 2026.10.13 passes the 2026.10 VMA library no Vulkan functions and crashes); a newer one may expect functions
-    // they lack.
-    private static void CheckBrutal(string game)
+    // The game's top-level Linux libraries (.so files and their links), by name: their SHA-256
+    public static Dictionary<string, string> LinuxLibraries(string game)
+    {
+        var found = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var f in Directory.GetFileSystemEntries(game))
+        {
+            var name = Path.GetFileName(f);
+            if (name.Contains(".so") && IsFile(f) && IsElf(f))
+            {
+                using var stream = File.OpenRead(f);
+                found[name] = Convert.ToHexStringLower(SHA256.HashData(stream));
+            }
+        }
+        return found;
+    }
+
+    // The port's BRUTAL libraries are RocketWerkz's macOS builds from the packages in lib/brutal.txt, each matching one
+    // of the game's BRUTAL assemblies (Ahwoo.BRUTAL.Glfw.Native: Brutal.Glfw.dll), with the SHA-256 of the package's
+    // Linux libraries: the game's are those very files when it uses that package's libraries, whatever version its
+    // assemblies carry (KSA 2026.11.10 ships assemblies 2026.11.0, unpublished, with the 2026.10 packages' libraries).
+    // An older game doesn't work with them (KSA 2026.10.13 passes the 2026.10 VMA library no Vulkan functions and
+    // crashes): stop. Other Linux libraries than the package's, or one of its missing (renamed: a new version), may
+    // expect functions the port's lack: a warning. Nothing to compare (an app converted before, the build's own
+    // conversion; a package without libraries, Monitor.Host, whose crash-dump helper the game doesn't load and an upgrade
+    // of the port checks by its code): no word.
+    private static void CheckBrutal(string game, IReadOnlyDictionary<string, string>? linux)
+    {
+        foreach (var warning in BrutalWarnings(game, linux))
+            Output.Warn(warning);
+    }
+
+    public static List<string> BrutalWarnings(string game, IReadOnlyDictionary<string, string>? linux)
     {
         var list = Path.Combine(PortFolder.Lib, "brutal.txt");
         if (!File.Exists(list))
             throw new PortException($"{list} is missing. Download the port again.");
+        var warnings = new List<string>();
         foreach (var line in File.ReadAllLines(list).Where(l => l.Trim().Length > 0))
         {
             var fields = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             string id = fields[0], version = fields.Length > 1 ? fields[1] : "";
+            var libraries = fields.Skip(2).Select(f => f.Split('=', 2)).Where(f => f.Length == 2).ToList();
             var assembly = "Brutal." + id["Ahwoo.BRUTAL.".Length..];
             assembly = (assembly.EndsWith(".Native") ? assembly[..^".Native".Length] : assembly) + ".dll";
             var brutal = PortFolder.FirstMatch(Path.Combine(game, assembly), @"20[0-9]{2}\.[0-9]+\.[0-9]+\+[0-9a-f]{40}");
@@ -133,10 +167,14 @@ public static class Conversion
             if (PortFolder.VersionNewer(version, brutal))
                 throw new PortException($"this KSA is older than the port supports ({assembly} {brutal}, the port's library is " +
                     $"{version}). Download the current Linux version of KSA from https://ksa.ahwoo.com.");
-            if (PortFolder.VersionNewer(brutal, version))
-                Output.Warn($"this KSA uses {assembly} {brutal}, newer than the port's library ({version}). If the game fails " +
-                    "to start, the port needs an update.");
+            if (linux == null || linux.Count == 0 || libraries.Count == 0)
+                continue;
+            var other = libraries.Where(l => !linux.TryGetValue(l[0], out var hash) || hash != l[1]).Select(l => l[0]).ToList();
+            if (other.Count > 0)
+                warnings.Add($"this KSA's Linux libraries for {assembly} {brutal} differ from those the port's library is made " +
+                    $"from ({id} {version}: {string.Join(", ", other)}). If the game fails to start, the port needs an update.");
         }
+        return warnings;
     }
 
     public static void RequireGame(string game)
@@ -147,7 +185,7 @@ public static class Conversion
 }
 
 // Marks 64-bit .NET assemblies built for AMD64 as ARM64, so .NET on Apple Silicon loads them. A 64-bit (PE32+)
-// assembly carries the machine type it was built for: AMD64 (0x8664) for KSA.dll and StarMap.dll. .NET on Apple
+// assembly carries the machine type it was built for: AMD64 (0x8664) for KSA.dll. .NET on Apple
 // Silicon only loads 64-bit assemblies marked ARM64 (0xAA64). These contain only IL code, so changing the mark is
 // enough. Platform-neutral (PE32) assemblies load as they are and are left alone, and so are files that are not
 // assemblies. Safe to run again.

@@ -3,10 +3,13 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection.Emit;
 using Brutal.Numerics;
+using Brutal.ShaderCApi;
 using Brutal.VulkanApi;
 using HarmonyLib;
 using KSA;
+using KSA.Rendering;
 using KSA.Rendering.Planet;
+using RenderCore;
 
 namespace KsaMetal.Hooks.Optimizations;
 
@@ -18,6 +21,9 @@ namespace KsaMetal.Hooks.Optimizations;
 // finalize pass always runs: it moves the mesh to the camera. The normals pass computes normals from those positions,
 // where the camera's translation cancels out: it is skipped too while the mesh's rotation (the snapped billboard and
 // the planet's spin) has turned less than 1e-4 rad since the slot's normals were made. The image is the same.
+// The finalize pass also turns the vertex colours the modifiers added (premultiplied) into straight colours, in place:
+// when the passes before it are skipped, a build of it that leaves them as they are (terrain-cache.edits,
+// PORT_TERRAIN_CACHE_HIT) is bound instead, made the first time the renderer generates a mesh and destroyed with it.
 [Hook(Phase.Default, Switch = nameof(Settings.TerrainCache))]
 internal static class TerrainCache
 {
@@ -35,7 +41,11 @@ internal static class TerrainCache
     private const float NormalTolerance = 1e-4f;
     private static readonly Key[] Keys = new Key[8];
     private static readonly float4x4[] NormalRotations = new float4x4[8];
-    private static System.Reflection.FieldInfo? _buffers;
+    private static System.Reflection.FieldInfo? _buffers, _layout;
+    private static AccessTools.FieldRef<PlanetRenderer, VkPipeline>? _finalize;
+    // The finalize pass's build for a skip, and the renderer it is made for
+    private static VkPipeline _keepColors;
+    private static PlanetRenderer? _keepColorsFor;
 
     [ThreadStatic] private static bool _skip, _skipNormals;
     private static bool _failed;  // the passes run every frame, as without the patch (Hooks.Fail)
@@ -44,8 +54,13 @@ internal static class TerrainCache
     {
         var generate = Find.Method(typeof(PlanetRenderer), "GenerateMeshData");
         _buffers = Find.Field(typeof(PlanetRenderer), "_heightAndGradientBuffers");
+        _layout = Find.Field(typeof(PlanetRenderer), "_meshPipelineLayout");
+        _finalize = AccessTools.FieldRefAccess<PlanetRenderer, VkPipeline>(Find.Field(typeof(PlanetRenderer), "_meshVertexFinalizePipeline"));
+        Find.Method(typeof(ComputePipelineWrapper), nameof(ComputePipelineWrapper.BuildPipeline));
         harmony.Patch(generate, prefix: new HarmonyMethod(typeof(TerrainCache), nameof(Prefix)),
             transpiler: new HarmonyMethod(typeof(TerrainCache), nameof(Transpiler)));
+        harmony.Patch(Find.Method(typeof(PlanetRenderer), nameof(PlanetRenderer.Dispose)),
+            prefix: new HarmonyMethod(typeof(TerrainCache), nameof(Disposing)));
         return "on";
     }
 
@@ -66,6 +81,10 @@ internal static class TerrainCache
             int call = Find.Next(code, isDispatch, $"the dispatch after {pipeline}", load);
             code[call] = new CodeInstruction(OpCodes.Call, ours).MoveLabelsFrom(code[call]).MoveBlocksFrom(code[call]);
         }
+        // The finalize pipeline bound: the colour-keeping build on a skip
+        var finalize = Find.Field(typeof(PlanetRenderer), "_meshVertexFinalizePipeline");
+        int bind = Find.Once(code, c => c.LoadsField(finalize), "_meshVertexFinalizePipeline");
+        code[bind] = new CodeInstruction(OpCodes.Call, Find.Method(typeof(TerrainCache), nameof(FinalizePipeline))).MoveLabelsFrom(code[bind]);
         return code;
     }
 
@@ -76,6 +95,8 @@ internal static class TerrainCache
             return;
         try
         {
+            if (_keepColorsFor != __instance)
+                BuildKeepColors(__instance);
             Compare(__instance, inViewport, frameIndex);
         }
         catch (Exception e)
@@ -91,7 +112,7 @@ internal static class TerrainCache
     {
         PlanetViewportData data = __instance.ViewportData(inViewport);
         Celestial? body = data.NearbyCelestial;
-        if (body == null || !body.IsBillboarded() || body.BodyTemplate.MeshCollection is not { } meshes ||
+        if (body == null || !body.IsBillboarded() || body.BodyTemplate.MeshCollection?.Value is not { } meshes ||
             (uint)frameIndex >= Keys.Length)
             return;
         object? buffer = (_buffers!.GetValue(__instance) as Array)?.GetValue(frameIndex);
@@ -114,6 +135,40 @@ internal static class TerrainCache
         }
         key = new Key { Buffer = buffer, Body = body, Mesh = mesh, Buffers = level.Mesh, Texture = texture, Time = now };
         NormalRotations[frameIndex] = rotation;
+    }
+
+    // The finalize shader as the port edits it, built with PORT_TERRAIN_CACHE_HIT. A game without the edit would get its
+    // own shader again, which on a skip turns the colours twice: the hook fails then (the passes always run)
+    private static void BuildKeepColors(PlanetRenderer renderer)
+    {
+        DestroyKeepColors();
+        var shader = ModLibrary.Get<ShaderReference>("FinalizeModifiersComp") ??
+            throw new InvalidOperationException("no FinalizeModifiersComp shader");
+        if (!System.IO.File.ReadAllText(shader.ModPath).Contains("PORT_TERRAIN_CACHE_HIT"))
+            throw new InvalidOperationException($"{System.IO.Path.GetFileName(shader.ModPath)} lacks the port's edit");
+        using var options = ShaderModuleUtils.CloneDefaultCompileOptions();
+        options.AddMacroDefinition("PORT_TERRAIN_CACHE_HIT"u8, ReadOnlySpan<byte>.Empty);
+        _keepColors = ComputePipelineWrapper.BuildPipeline((VkPipelineLayout)_layout!.GetValue(renderer)!, shader,
+            Program.GetRenderer(), null, options);
+        _keepColorsFor = renderer;
+    }
+
+    private static VkPipeline FinalizePipeline(PlanetRenderer renderer) =>
+        _skip && _keepColorsFor == renderer ? _keepColors : _finalize!(renderer);
+
+    private static void Disposing(PlanetRenderer __instance)
+    {
+        if (_keepColorsFor == __instance)
+            DestroyKeepColors();
+    }
+
+    private static void DestroyKeepColors()
+    {
+        if (_keepColorsFor == null)
+            return;
+        Program.GetRenderer().Device.DestroyPipeline(_keepColors, null);
+        _keepColors = default;
+        _keepColorsFor = null;
     }
 
     // How far the rotation part of b differs from a's (largest change of a unit axis), with the scale divided out

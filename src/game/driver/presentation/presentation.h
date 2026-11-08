@@ -13,7 +13,7 @@ struct KSurface {
 // layer set up for HDR10 or given back its SDR state
 bool kmtlEdrAvailable(CAMetalLayer* layer);
 void kmtlSetHdr(KSurface* surface, bool hdr);
-float kmtlHdrPaperWhite();
+float kmtlHdrUiBrightness();
 
 // Present ids of a swapchain, waited on by vkWaitForPresentKHR, and the recent presents its pacing looks at
 // (swapchain.mm). Shared with the presents' handlers, which may run after the swapchain is destroyed

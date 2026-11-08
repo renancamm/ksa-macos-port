@@ -7,6 +7,8 @@
 # libglfw.3.5.dylib): the copies become links to the one named by the library's install name, so that the game and
 # the GLFW shim, which links that name, load the same GLFW.
 # The folder starts anew when the list of packages changes, so no library of an older package stays behind.
+# Each package's Linux libraries (runtimes/linux-x64/native/, .so files) go by their SHA-256 into BRUTAL_LINUX_<name>
+# for lib/brutal.txt (cmake/port-folder.cmake): the port's program compares them with the game's (Conversion.cs).
 if(NOT "${BRUTAL_PACKAGES}" STREQUAL "$CACHE{KSA_BRUTAL_STAGED}")
     file(REMOVE_RECURSE "${KSA_NATIVES_DIR}")
 endif()
@@ -25,7 +27,15 @@ foreach(entry IN LISTS BRUTAL_PACKAGES)
     # By its name: the download folder keeps the package of an earlier version when the version changes
     set(package "${${name}_SOURCE_DIR}/${lower}.${version}.nupkg")
     file(ARCHIVE_EXTRACT INPUT "${package}" DESTINATION "${unpacked}"
-        PATTERNS "runtimes/osx-arm64/native/*" "*.txt") # every pattern must match: not all packages have LICENSES/
+        PATTERNS "runtimes/osx-arm64/native/*" "runtimes/linux-x64/native/*" "*.txt") # every pattern must match: not
+                                                                                     # all packages have LICENSES/
+    file(GLOB linux LIST_DIRECTORIES false "${unpacked}/runtimes/linux-x64/native/*.so*")
+    set(BRUTAL_LINUX_${name} "")
+    foreach(library IN LISTS linux)
+        get_filename_component(library_name "${library}" NAME)
+        file(SHA256 "${library}" library_hash)
+        string(APPEND BRUTAL_LINUX_${name} " ${library_name}=${library_hash}")
+    endforeach()
     file(GLOB natives LIST_DIRECTORIES false "${unpacked}/runtimes/osx-arm64/native/*")
     if(NOT natives)
         message(FATAL_ERROR "${id} has no macOS libraries.")

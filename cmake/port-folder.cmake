@@ -43,7 +43,9 @@ foreach(entry IN LISTS BRUTAL_PACKAGES)
     string(REGEX MATCHALL "[^ ]+" fields "${entry}")
     list(GET fields 0 id)
     list(GET fields 1 version)
-    string(APPEND brutal_list "${id} ${version}\n")
+    string(TOLOWER "${id}" lower)
+    string(REPLACE "." "_" name "${lower}")
+    string(APPEND brutal_list "${id} ${version}${BRUTAL_LINUX_${name}}\n")
 endforeach()
 file(CONFIGURE OUTPUT "${stage}/lib/brutal.txt" CONTENT "${brutal_list}" @ONLY)
 configure_file(src/player/port-folder/lib/port.env "${stage}/lib/port.env" COPYONLY)
@@ -163,16 +165,12 @@ port_folder_copy("${licenses}/ksa-icon" "${icon}/NOTICE.txt")
 port_folder_copy_as("${licenses}/starmap/LICENSE.txt" "${starmap_license_SOURCE_DIR}/LICENSE.txt")
 port_folder_copy_as("${licenses}/harmony/LICENSE.txt" "${harmony_license_SOURCE_DIR}/LICENSE")
 
-# StarMap, which starmap.sh adds to an app: its release is its Windows build, of which only two files are
-# Windows-specific: StarMap.exe, a launcher the app doesn't need (the launcher runs StarMap.dll with the app's .NET
-# runtime), left out, and StarMap.dll's AMD64 mark, changed to ARM64 like KSA.dll's (KsaPort.Cli mark-arm64). The rest
-# is platform-neutral .NET.
+# StarMap, which starmap.sh adds to an app: its release is its Windows build, of which only StarMap.exe is
+# Windows-specific: a launcher the app doesn't need (the launcher runs StarMap.dll with the app's .NET runtime), left
+# out. The rest is platform-neutral .NET.
 install(CODE "
     set(starmap \"\${CMAKE_INSTALL_PREFIX}/payload/starmap\")
     file(COPY \"${starmap_SOURCE_DIR}/\" DESTINATION \"\${starmap}\" PATTERN StarMap.exe EXCLUDE)
-    file(GLOB assemblies \"\${starmap}/*.dll\")
-    execute_process(COMMAND \"${DOTNET}\" \"${bin}/KsaPort.Cli/KsaPort.Cli.dll\" mark-arm64 \${assemblies}
-        COMMAND_ERROR_IS_FATAL ANY)
     file(WRITE \"\${starmap}/version.txt\" \"${STARMAP_VERSION}\\n\")
 ")
 

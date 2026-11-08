@@ -13,7 +13,6 @@ namespace KsaPort.Cli;
 //   KsaPort.Cli port [options] [archive | folder]   port.sh
 //   KsaPort.Cli starmap [--app <path>] [--remove]   starmap.sh
 //   KsaPort.Cli convert-dotnet <game> <runtime>     the build: KSA's assemblies, for the hooks and the benchmark
-//   KsaPort.Cli mark-arm64 <file.dll...>            the build: StarMap.dll
 //   KsaPort.Cli edit-shaders <game>                 the shader edits alone, on a game folder
 //
 // Exit codes: 0 done, 1 a problem or a wrong option (the message says which), 75 a newer port folder is in .update/
@@ -35,15 +34,12 @@ internal static class Program
                 case ["convert-dotnet", var game, var runtime]:
                     Conversion.Dotnet(game, runtime);
                     return 0;
-                case ["mark-arm64", .. var files]:
-                    Arm64.Mark(files);
-                    return 0;
                 case ["edit-shaders", var game]:
                     ShaderEdits.Apply(game, ShaderEdits.Read(PortFolder.ShaderEditsFolder), Console.WriteLine);
                     return 0;
                 default:
                     Console.Error.WriteLine("usage: KsaPort.Cli port | starmap | convert-dotnet <game> <runtime> | " +
-                        "mark-arm64 <file.dll...> | edit-shaders <game>");
+                        "edit-shaders <game>");
                     return 2;
             }
         }
@@ -66,9 +62,8 @@ internal static class Program
           --remove          take StarMap out of the app again
         """;
 
-    // StarMap's release is its Windows build. Only two of its files are Windows-specific: StarMap.exe, a launcher the app
-    // does not need (it runs StarMap.dll with its own .NET runtime), and StarMap.dll's AMD64 mark, which this port's
-    // build changes to ARM64 like KSA.dll's (Arm64.Mark). The rest is platform-neutral .NET.
+    // StarMap's release is its Windows build. Only StarMap.exe is Windows-specific, a launcher the app does not need (it
+    // runs StarMap.dll with its own .NET runtime), and the build leaves it out. The rest is platform-neutral .NET.
     private static int StarMap(string[] args)
     {
         string app = PortFolder.DefaultApp;
