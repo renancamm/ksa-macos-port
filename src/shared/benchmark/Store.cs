@@ -256,14 +256,8 @@ public sealed class RunStore : IDisposable
     // What was given so far into the file soon, without waiting for it
     public void Wake() => _wake.Set();
 
-    // A frame: its time, the director's columns in their order (FrameLog.Columns), and the runtime's work in it
-    public void AddFrame(double t, object?[] columns, RuntimeSample? runtime)
-    {
-        var r = runtime ?? default;
-        bool has = runtime != null;
-        Enqueue(Table.Frame, [t, .. columns, has ? r.GcPauseMs : null, has ? r.Gen0 : null, has ? r.Gen1 : null, has ? r.Gen2 : null,
-            has ? r.JitMs : null, has ? r.JitMethods : null, has ? r.Contentions : null, has ? r.AllocMb : null]);
-    }
+    // A frame: its row as FrameLog.Columns makes it
+    public void AddFrame(object?[] row) => Enqueue(Table.Frame, row);
 
     public void AddZoneStats(PartKey part, string group, string zone, int frames, int calls, double totalMs, double selfMs, double medianMs,
         double p95Ms, double maxMs, double allocMb) =>
@@ -506,17 +500,12 @@ public sealed class RunStore : IDisposable
         }
         Query(Path.Combine(dir, GameFile), "SELECT scenario, part, session, pass, name, value FROM counters WHERE part IS NOT NULL AND part != ''", q =>
             Add((q.Text(0), q.Text(1), (int)q.Long(2), (int)q.Long(3)), q.Text(4), q.Double(5)));
-        // The parts' times, from their open and close events
+        // The parts' times, from the start of their first frame to the end of their last: the frames the part's numbers
+        // come from (its open and close events are a frame off at either end)
         var windows = new List<(double From, double To, (string, string, int, int) Key)>();
-        var open = new Dictionary<(string, string, int, int), double>();
-        Query(Path.Combine(dir, GameFile), "SELECT t, scenario, part, session, pass, type FROM events WHERE type IN ('open', 'close') AND part IS NOT NULL ORDER BY t", q =>
-        {
-            var key = (q.Text(1), q.Text(2), (int)q.Long(3), (int)q.Long(4));
-            if (q.Text(5) == "open")
-                open[key] = q.Double(0);
-            else if (open.Remove(key, out var from))
-                windows.Add((from, q.Double(0), key));
-        });
+        Query(Path.Combine(dir, GameFile), "SELECT scenario, part, session, pass, MIN(t - frame_ms / 1000.0), MAX(t) FROM frames " +
+                                            "WHERE part IS NOT NULL AND part != '' GROUP BY scenario, part, session, pass", q =>
+            windows.Add((q.Double(4), q.Double(5), (q.Text(0), q.Text(1), (int)q.Long(2), (int)q.Long(3)))));
         if (windows.Count > 0)
             Query(Path.Combine(dir, HostFile), "SELECT t, session, name, value FROM counters", q =>
             {

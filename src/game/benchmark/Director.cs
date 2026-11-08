@@ -393,6 +393,8 @@ public partial class Director
         if (_phase != Phase.Play)
         {
             _camera.UpdateCamera(0);
+            // The probes see the views standing still too: a views part measures in these phases
+            Probes.Each(_probes, p => p.Frame(wall, _clock.Script, _phase.ToString()));
             Checkpoint(wall);
             return;
         }
@@ -725,6 +727,24 @@ public partial class Director
         {
             Log($"the game's profilers: {e.Message}");
         }
+        // The probes' files closed, the camera the game's again
+        try
+        {
+            Probes.Each(_probes, p => p.End());
+        }
+        catch (Exception e)
+        {
+            Log($"the probes: {e.Message}");
+        }
+        try
+        {
+            _camera.Unhold();
+            _camera.EndRig();
+        }
+        catch (Exception e)
+        {
+            Log($"the camera: {e.Message}");
+        }
     }
 
     // Ends the run before the script's end: the player stopped it, or it failed (the watch found it stuck); the results
@@ -752,6 +772,12 @@ public partial class Director
         if (ScenarioName == null)
             return;
         CloseWindow();
+        // A view measured standing still, stopped before its end
+        if (_still != null)
+        {
+            Closed(_still);
+            _still = null;
+        }
         if (DriverStats.Read() is { DrawableWidth: > 0 } d)
             _events.Add("drawable", ScenarioName, text: $"{d.DrawableWidth}x{d.DrawableHeight}");
         _inScenario = false;

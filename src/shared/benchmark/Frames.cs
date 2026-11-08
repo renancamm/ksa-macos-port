@@ -65,25 +65,29 @@ public sealed class FrameLog
 
     public void Add(double script, string? scenario, string? part, string phase, double frameMs, FrameStats? driver, SimSample? sim,
         RuntimeSample? runtime = null) =>
-        _store?.AddFrame(RunClock.Now(), Columns(_since.Elapsed.TotalSeconds, _session, Pass, script, scenario, part, phase, frameMs, driver, sim), runtime);
+        _store?.AddFrame(Columns(RunClock.Now(), _since.Elapsed.TotalSeconds, _session, Pass, script, scenario, part, phase, frameMs, driver, sim, runtime));
 
-    // A frame's values in the store's order, times rounded (to 0.1 ms, the rest to the thousandth); null where the driver
-    // or the simulation said nothing
-    public static object?[] Columns(double time, int session, int pass, double script, string? scenario, string? part, string phase,
-        double frameMs, FrameStats? driver, SimSample? sim)
+    // A frame's row in the store's order (its time on the store's clock first, the runtime's work in it last), times
+    // rounded (to 0.1 ms, the rest to the thousandth); null where the driver, the simulation or the runtime said nothing.
+    // One array a frame: the recorder's own allocations fall in the frames it measures
+    public static object?[] Columns(double t, double time, int session, int pass, double script, string? scenario, string? part, string phase,
+        double frameMs, FrameStats? driver, SimSample? sim, RuntimeSample? runtime = null)
     {
         static double R(double x, int digits) => Math.Round(x, digits, MidpointRounding.AwayFromZero);
         var d = driver ?? default;
         var m = sim ?? default;
-        bool hasDriver = driver != null, hasSim = sim != null;
+        var r = runtime ?? default;
+        bool hasDriver = driver != null, hasSim = sim != null, has = runtime != null;
         return
         [
-            R(time, 4), session, pass, R(script, 3), scenario ?? "", part ?? "", phase, R(frameMs, 3),
+            t, R(time, 4), session, pass, R(script, 3), scenario ?? "", part ?? "", phase, R(frameMs, 3),
             hasDriver ? d.Present : null, hasDriver ? R(d.GpuMs, 3) : null, hasDriver ? R(d.CpuMs, 3) : null, hasDriver ? d.Draws : null,
             hasDriver ? d.Passes : null, hasDriver ? d.AllocatedMb : null, hasDriver ? d.FootprintMb : null, hasDriver ? d.ThermalState : null,
             hasDriver ? d.ShadersCompiled : null, hasDriver ? d.PipelinesCreated : null, hasDriver ? R(d.DisplayMs, 3) : null,
             hasSim ? R(m.GameSeconds, 3) : null, hasSim ? R(m.Asked, 3) : null, hasSim ? R(m.TickMs, 3) : null, hasSim ? m.Substeps : null,
             hasSim ? m.Bubbles : null, hasSim ? m.Vehicles : null,
+            has ? r.GcPauseMs : null, has ? r.Gen0 : null, has ? r.Gen1 : null, has ? r.Gen2 : null, has ? r.JitMs : null, has ? r.JitMethods : null,
+            has ? r.Contentions : null, has ? r.AllocMb : null,
         ];
     }
 
