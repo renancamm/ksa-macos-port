@@ -58,8 +58,7 @@ public partial class Director
         _frames = null;
         CloseDrain();
         StopProfilers();
-        foreach (var probe in _probes)
-            probe.End();
+        Probes.Each(_probes, p => p.End());
         Log(FormattableString.Invariant($"recorded {wall:F1} s of the game"));
         Done = true;
     }

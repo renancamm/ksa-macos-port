@@ -71,7 +71,7 @@ public sealed class Comparison
 
     private static PartComparison Part(string scenario, PartRecord a, PartRecord b)
     {
-        var verdicts = Metrics.All.Select(m => Statistics.Judge(a, b, m)).OfType<Verdict>().ToList();
+        var verdicts = Metrics.Judged.Select(m => Statistics.Judge(a, b, m)).OfType<Verdict>().ToList();
         var decides = a.Warped ? verdicts.FirstOrDefault(v => v.Metric == Metrics.Speed)
             : verdicts.FirstOrDefault(v => v.Metric == Metrics.GpuBusy) ?? verdicts.FirstOrDefault(v => v.Metric == Metrics.FrameTime);
         bool gpu = decides?.Metric == Metrics.GpuBusy;

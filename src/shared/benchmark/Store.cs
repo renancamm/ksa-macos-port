@@ -14,6 +14,11 @@
 //   memory    an allocation (positive) or a free (negative) of 16 MB or more
 //   zone_stats, moments, slices  the game's profiler zones summed per part, the slow frames and what took their time
 //             (Zones.cs)
+//   counters  a probe's counter, sampled once a frame: its metric's name, its value, and the part it counts in
+//   metrics   a metric a probe registered (Metrics.cs): its name, label, unit, which way is better, how a part's
+//             measurings combine, its limit
+//   census    who held the game's memory at a checkpoint: an owner (one of the game's memory tags, a kind of KSA Metal's
+//             memory, the .NET heap), its kind, its bytes
 //
 // frames has, after the director's columns, the .NET runtime's work in each frame (RuntimeCounters): GC pause, collections
 // by generation, JIT time and methods compiled, lock contentions, MB allocated.
@@ -59,7 +64,7 @@ public static class RunClock
 public sealed class RunStore : IDisposable
 {
     public const string GameFile = "run.db", HostFile = "host.db";
-    private const int Schema = 2;
+    private const int Schema = 3;
 
     // The file this process writes: the game's, unless the process says it is the host (benchmark.sh's program)
     public static string ProcessFile { get; set; } = GameFile;
@@ -147,7 +152,7 @@ public sealed class RunStore : IDisposable
             store.Dispose();
     }
 
-    private enum Table { Event, Frame, Present, Shown, Wait, Memory, ZoneStats, Moment, Slice }
+    private enum Table { Event, Frame, Present, Shown, Wait, Memory, ZoneStats, Moment, Slice, Counter, Metric, Census }
 
     private static readonly Dictionary<Table, string> Inserts = new()
     {
@@ -165,6 +170,9 @@ public sealed class RunStore : IDisposable
                             "p95_ms, max_ms, alloc_mb) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         [Table.Moment] = "INSERT INTO moments (id, t, frame_ms, session, pass, scenario, part, cause) VALUES (?,?,?,?,?,?,?,?)",
         [Table.Slice] = "INSERT INTO slices (moment, grp, thread, zone, depth, start, ms, self_ms, bytes) VALUES (?,?,?,?,?,?,?,?,?)",
+        [Table.Counter] = "INSERT INTO counters (t, session, pass, scenario, part, name, value) VALUES (?,?,?,?,?,?,?)",
+        [Table.Metric] = "INSERT OR REPLACE INTO metrics (name, label, unit, better, across, decimals, limit_pct, help) VALUES (?,?,?,?,?,?,?,?)",
+        [Table.Census] = "INSERT INTO census (t, session, pass, scenario, shot, owner, kind, bytes) VALUES (?,?,?,?,?,?,?,?)",
     };
 
     private const string Create = """
@@ -189,6 +197,11 @@ public sealed class RunStore : IDisposable
             cause TEXT);
         CREATE TABLE IF NOT EXISTS slices (moment INTEGER, grp TEXT, thread TEXT, zone TEXT, depth INTEGER, start REAL, ms REAL,
             self_ms REAL, bytes INTEGER);
+        CREATE TABLE IF NOT EXISTS counters (t REAL, session INTEGER, pass INTEGER, scenario TEXT, part TEXT, name TEXT, value REAL);
+        CREATE TABLE IF NOT EXISTS metrics (name TEXT PRIMARY KEY, label TEXT, unit TEXT, better TEXT, across TEXT, decimals INTEGER,
+            limit_pct REAL, help TEXT);
+        CREATE TABLE IF NOT EXISTS census (t REAL, session INTEGER, pass INTEGER, scenario TEXT, shot TEXT, owner TEXT, kind TEXT,
+            bytes INTEGER);
         """;
 
     private readonly string _path;
@@ -262,6 +275,16 @@ public sealed class RunStore : IDisposable
 
     public void AddSlice(int moment, string group, string thread, string zone, int depth, double start, double ms, double selfMs, long bytes) =>
         Enqueue(Table.Slice, moment, group, thread, zone, depth, start, ms, selfMs, bytes);
+
+    // A counter's value in a frame, in the part it counts in (none: outside the parts)
+    public void AddCounter(double t, int session, int pass, string? scenario, string? part, string name, double value) =>
+        Enqueue(Table.Counter, t, session, pass, scenario, part, name, value);
+
+    public void AddMetric(Metric m) =>
+        Enqueue(Table.Metric, m.Name, m.Label, m.Unit, m.Better.ToString(), m.Across.ToString(), m.Decimals, m.Limit, m.Help);
+
+    public void AddCensus(double t, int session, int pass, string? scenario, string shot, string owner, string kind, long bytes) =>
+        Enqueue(Table.Census, t, session, pass, scenario, shot, owner, kind, bytes);
 
     public void Add(DriverRecord record)
     {
@@ -466,6 +489,51 @@ public sealed class RunStore : IDisposable
         Query(Path.Combine(dir, GameFile), "SELECT scenario, part, session, pass, frame_ms, cause FROM moments ORDER BY t", q =>
             moments.Add(new MomentRecord(q.Text(0), q.Text(1), (int)q.Long(2), (int)q.Long(3), Math.Round(q.Double(4), 1), q.Text(5))));
         return moments;
+    }
+
+    // The probes' counters in a run's folder, summed up per measuring: each counter's samples in the part, by metric name
+    public static Dictionary<(string Scenario, string Part, int Session, int Pass), Dictionary<string, List<double>>> ReadCounters(string dir)
+    {
+        var counters = new Dictionary<(string, string, int, int), Dictionary<string, List<double>>>();
+        Query(Path.Combine(dir, GameFile), "SELECT scenario, part, session, pass, name, value FROM counters WHERE part IS NOT NULL AND part != ''", q =>
+        {
+            var key = (q.Text(0), q.Text(1), (int)q.Long(2), (int)q.Long(3));
+            if (!counters.TryGetValue(key, out var byName))
+                counters[key] = byName = new Dictionary<string, List<double>>(StringComparer.Ordinal);
+            if (!byName.TryGetValue(q.Text(4), out var values))
+                byName[q.Text(4)] = values = [];
+            values.Add(q.Double(5));
+        });
+        return counters;
+    }
+
+    // The metrics the run's probes registered
+    public static List<Metric> ReadMetrics(string dir)
+    {
+        var metrics = new List<Metric>();
+        Query(Path.Combine(dir, GameFile), "SELECT name, label, unit, better, across, decimals, limit_pct, help FROM metrics ORDER BY rowid", q =>
+        {
+            if (Enum.TryParse<Better>(q.Text(3), out var better) && Enum.TryParse<Across>(q.Text(4), out var across))
+                metrics.Add(new Metric(q.Text(0), q.Text(1), q.Text(2), better, across, (int)q.Long(5), q.Text(7)) { Limit = q.NullableDouble(6) });
+        });
+        return metrics;
+    }
+
+    // The census at each checkpoint of the run's first pass that took one: of each kind the 25 owners with the most bytes,
+    // and the game's tags all together (kind "game-total"); the store keeps every owner
+    public static List<CensusRecord> ReadCensus(string dir)
+    {
+        var census = new List<CensusRecord>();
+        Query(Path.Combine(dir, GameFile), "SELECT scenario, shot, owner, kind, bytes, session, pass FROM census " +
+                                            "WHERE shot != '' AND (session, pass) IN (SELECT session, pass FROM census WHERE shot != '' ORDER BY rowid LIMIT 1) ORDER BY rowid", q =>
+            census.Add(new CensusRecord(q.NullableText(0) ?? "", q.Text(1), q.Text(2), q.Text(3), Math.Round(q.Long(4) / 1048576.0, 1))));
+        return census.GroupBy(c => (c.Scenario, c.Shot)).SelectMany(at =>
+        {
+            var kept = at.GroupBy(c => c.Kind).SelectMany(k => k.OrderByDescending(c => c.Mb).Take(25)).ToList();
+            if (at.Any(c => c.Kind == "game"))
+                kept.Add(new CensusRecord(at.Key.Scenario, at.Key.Shot, "all tags", "game-total", Math.Round(at.Where(c => c.Kind == "game").Sum(c => c.Mb), 1)));
+            return kept;
+        }).ToList();
     }
 
     // Each row of a query on one of a run's files; nothing when the file isn't there, can't be read or lacks the table

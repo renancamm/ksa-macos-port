@@ -178,6 +178,29 @@ public static class Pages
                 md.AppendLine($"- {s.Name} {p.Name} (GPU busy {N(p.Profiled!.GetValueOrDefault(Metrics.GpuBusy.Name), "0.0")}): " +
                               string.Join(", ", p.Zones(Metrics.GpuZones, profiled: true).Take(6).Select(z => $"{Metrics.ZoneLabel(z.Name)} {F(z.Ms, "0.00")}")));
         }
+        // The probes' numbers, part by part
+        var probed = r.ProbeMetrics.Where(m => r.AllParts().Any(x => x.Part[m] != null)).ToList();
+        if (probed.Count > 0)
+        {
+            md.AppendLine();
+            md.AppendLine($"| Scenario | Part | {string.Join(" | ", probed.Select(m => m.Unit.Length > 0 ? $"{m.Label} {m.Unit}" : m.Label))} |");
+            md.AppendLine($"|---|---|{string.Concat(probed.Select(_ => "---:|"))}");
+            foreach (var (s, p) in r.AllParts())
+                md.AppendLine($"| {s.Name} | {p.Name} | {string.Join(" | ", probed.Select(m => Cell(p, m)))} |");
+        }
+        // Who held the memory at each checkpoint
+        if (r.Census.Count > 0)
+        {
+            md.AppendLine();
+            md.AppendLine("Who held the memory at each checkpoint (MB): the game's, all tags, and its largest; KSA Metal's; the .NET heap:");
+            md.AppendLine();
+            foreach (var at in r.Census.GroupBy(c => (c.Scenario, c.Shot)))
+            {
+                var game = at.Where(c => c.Kind == "game").OrderByDescending(c => c.Mb).ToList();
+                md.AppendLine($"- {at.Key.Scenario} {at.Key.Shot}: game {F(GameTotal(at), "0")} ({string.Join(", ", game.Take(3).Select(c => $"{c.Owner} {F(c.Mb, "0")}"))}), " +
+                              $"KSA Metal {F(at.Where(c => c.Kind == "driver").Sum(c => c.Mb), "0")}, .NET heap {F(at.Where(c => c.Kind == "runtime").Sum(c => c.Mb), "0")}");
+            }
+        }
         var warp = r.AllParts().Where(x => x.Part.Warped).ToList();
         if (warp.Count > 0)
         {
@@ -299,6 +322,7 @@ public static class Pages
         Parts(html, r, shown, ext);
         SlowFrames(html, r);
         WhereTheTimeGoes(html, r);
+        Census(html, r);
         AllNumbers(html, r);
         var timelines = Timelines(dir);
         WarpCharts(html, r, timelines);
@@ -409,10 +433,44 @@ public static class Pages
     }
 
     // Every metric of every part, folded
+    // Who held the memory at each checkpoint (the memory probe): the owners with the most, by kind
+    private static void Census(StringBuilder html, RunRecord r)
+    {
+        if (r.Census.Count == 0)
+            return;
+        html.Append("<section><h2>Who holds the memory</h2><p class=\"lead\">At each checkpoint of the first pass: the game's memory by its tags, KSA Metal's by type, the .NET heap, the process's footprint.</p><div class=\"zones\">");
+        foreach (var at in r.Census.GroupBy(c => (c.Scenario, c.Shot)))
+        {
+            var game = at.Where(c => c.Kind == "game").ToList();
+            html.Append($"<table class=\"facts\"><thead><tr><th>{E(at.Key.Scenario)} {E(at.Key.Shot)}</th><th>MB</th></tr></thead><tbody>");
+            html.Append($"<tr><th>Game, all tags</th><td>{F(GameTotal(at), "0")}</td></tr>");
+            foreach (var c in game.OrderByDescending(c => c.Mb).Take(8))
+                html.Append($"<tr><td>{E(c.Owner)}</td><td>{F(c.Mb, "0")}</td></tr>");
+            foreach (var c in at.Where(c => c.Kind is "host" or "driver" or "runtime" or "process").OrderByDescending(c => c.Mb))
+                html.Append($"<tr><th>{E(c.Kind switch { "host" => "Game, host-visible", "driver" => $"KSA Metal, {c.Owner}", "runtime" => ".NET heap", _ => "Footprint" })}</th><td>{F(c.Mb, "0")}</td></tr>");
+            html.Append("</tbody></table>");
+        }
+        html.Append("</div>");
+        // What other probes counted (the alloc probe's sites), each kind folded
+        foreach (var kind in r.Census.Where(c => c.Kind is not ("game" or "game-total" or "host" or "driver" or "runtime" or "process")).GroupBy(c => c.Kind))
+        {
+            html.Append($"<details><summary>By {E(kind.Key)}</summary><div class=\"table-scroll\"><table class=\"parts\"><thead><tr><th>Checkpoint</th><th class=\"cause\">Owner</th><th>MB</th></tr></thead><tbody>");
+            foreach (var c in kind)
+                html.Append($"<tr><td class=\"part\">{E(c.Scenario)} {E(c.Shot)}</td><td class=\"cause\">{E(c.Owner)}</td><td>{F(c.Mb, "0")}</td></tr>");
+            html.Append("</tbody></table></div></details>");
+        }
+        html.Append("</section>");
+    }
+
+    // The game's memory at a checkpoint, all its tags: the census's total, or its tags' sum
+    private static double GameTotal(IEnumerable<CensusRecord> at) =>
+        at.FirstOrDefault(c => c.Kind == "game-total")?.Mb ?? at.Where(c => c.Kind == "game").Sum(c => c.Mb);
+
     private static void AllNumbers(StringBuilder html, RunRecord r)
     {
         var parts = r.AllParts().ToList();
-        var metrics = Metrics.All.Where(m => parts.Any(x => x.Part[m] != null)).ToList();
+        // The built-in metrics, then the probes'
+        var metrics = Metrics.All.Concat(r.ProbeMetrics).Where(m => parts.Any(x => x.Part[m] != null)).ToList();
         if (parts.Count == 0)
             return;
         html.Append("<section><details><summary>All numbers</summary><div class=\"table-scroll\"><table class=\"parts\"><thead><tr><th>Part</th>");

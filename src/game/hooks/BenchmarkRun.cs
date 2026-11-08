@@ -22,7 +22,9 @@ internal static class BenchmarkRun
             postfix: new HarmonyMethod(typeof(Runs), nameof(Runs.AfterFrame)));
         harmony.Patch(Find.Method(typeof(Universe), "GetJobSimStep", typeof(double)),
             prefix: new HarmonyMethod(typeof(Runs), nameof(Runs.BeforeStep)));
+        static HarmonyMethod? Of(System.Reflection.MethodInfo? m) => m != null ? new HarmonyMethod(m) : null;
         return Runs.Install(Hooks.Log, () => Hooks.Summary, Restart.Launcher != null ? Restart.Run : null,
-            (target, postfix) => harmony.Patch(target, postfix: new HarmonyMethod(postfix)));
+            (target, prefix, postfix, transpiler) => harmony.Patch(target, Of(prefix), Of(postfix), Of(transpiler)),
+            (type, name, parameters) => Find.Method(type, name, parameters));
     }
 }

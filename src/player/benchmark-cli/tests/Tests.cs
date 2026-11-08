@@ -62,6 +62,7 @@ internal static class Tests
             ("a profiled pass beside the measured one", ProfiledPass),
             ("a study's file", StudyFile),
             ("a study's variants by their sessions", StudyVariants),
+            ("a probe's counters, metrics and census", ProbeNumbers),
         };
         foreach (var (name, run) in tests)
         {
@@ -1201,5 +1202,48 @@ internal static class Tests
         Contains([html], "20 % slower", "the page's matrix");
         Contains([html], "01-base/report.html", "the page links each session's run");
         Contains([html], "no session of it passed yet", "a variant with nothing to compare");
+    }
+
+    // A probe's counters in the parts' numbers (the median of the part's frames, or the most), its metric registered and
+    // carried by the record, judged by a comparison; the census in the record, the report and the page
+    private static void ProbeNumbers()
+    {
+        RunRecord Probed(string name, double vram)
+        {
+            var dir = Run(name, frameMs: 20, gpuMs: 10);
+            var store = RunStore.For(dir)!;
+            store.AddMetric(new Metric("mem/game_vram", "Game VRAM", "MB", Better.Lower, Across.Median, 0, "the device memory the game allocated") { Limit = 5 });
+            store.AddMetric(new Metric("probe/sim/tick", "tick", "ms", Better.Lower, Across.Most, 2, "the slowest vehicle job's last tick") { Limit = 5 });
+            for (int i = 0; i < 10; i++)
+            {
+                store.AddCounter(i, 1, 1, "earth", "earth1", "mem/game_vram", vram + (i % 3));
+                store.AddCounter(i, 1, 1, "earth", "earth1", "probe/sim/tick", i == 7 ? 4 : 1);
+                store.AddCounter(i, 1, 1, "earth", null, "probe/sim/tick", 99);
+            }
+            store.AddCensus(5, 1, 1, "earth", "earth1", "Planet Textures", "game", 300L << 20);
+            store.AddCensus(5, 1, 1, "earth", "earth1", "Shadow Cascades", "game", 100L << 20);
+            store.AddCensus(5, 1, 1, "earth", "earth1", "private", "driver", 420L << 20);
+            store.AddCensus(5, 1, 1, "earth", "earth1", "Planet Textures <- Streamer.Load", "site", 300L << 20);
+            return Finished(dir);
+        }
+        var a = Probed("probed-a", 5000);
+        var part = Part(a);
+        Equal<double?>(5001.0, part["mem/game_vram"], "a counter: the median of the part's frames");
+        Equal<double?>(4.0, part["probe/sim/tick"], "a counter that counts the most: its most, the frames outside the part left out");
+        Check(part.Measurings[0].Values.ContainsKey("mem/game_vram"), "a counter in the measuring's own numbers (a session's sample)");
+        Equal("mem/game_vram,probe/sim/tick", string.Join(",", a.ProbeMetrics.Select(m => m.Name)), "the record carries the probes' metrics");
+        Equal("Game VRAM", RunRecord.Read(Path.Combine(_scratch, "probed-a"))?.ProbeMetrics[0].Label, "read back");
+        Equal(5, a.Census.Count, "the census: its 4 owners and the game's total");
+        Equal(400.0, a.Census.Single(c => c.Kind == "game-total").Mb, "the game's tags all together");
+        var md = File.ReadAllText(Path.Combine(_scratch, "probed-a", "report.md"));
+        Contains([md], "| earth | earth1 | 5001 | 4.00 |", "report.md's probe numbers");
+        Contains([md], "- earth earth1: game 400 (Planet Textures 300, Shadow Cascades 100), KSA Metal 420, .NET heap 0", "report.md's census");
+        var page = File.ReadAllText(Path.Combine(_scratch, "probed-a", "report.html"));
+        Contains([page], "Who holds the memory", "the page's census");
+        Contains([page], "Planet Textures &lt;- Streamer.Load", "another probe's census kind, folded");
+        var c = Comparison.Of(a.AllParts().Select(x => (x.Scenario.Name, x.Part)), Probed("probed-b", 5600).AllParts().Select(x => (x.Scenario.Name, x.Part)));
+        var vram = c.Parts.Single().Verdicts.FirstOrDefault(v => v.Metric.Name == "mem/game_vram");
+        Check(vram != null, "a comparison judges a probe's metric");
+        Equal(Change.Worse, vram?.Change, "12 % more game VRAM, past its 5 % limit");
     }
 }

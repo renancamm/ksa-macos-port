@@ -1,7 +1,8 @@
 // What KSA Metal measures for each presented frame, read through its benchmark interface
 // (src/game/driver/diagnostics/instruments.mm: ksaMtlFrameStats, ksaMtlScreenshot, ksaMtlMarker, ksaMtlCapture,
 // ksaMtlCapturing; passdump.mm: ksaMtlPassDump, ksaMtlPassDumping, ksaMtlGpuErrors; zones.mm: ksaMtlZoneMode, ksaMtlZoneBegin, ksaMtlZoneEnd;
-// drain.mm: ksaMtlDrainOpen, ksaMtlDrain, ksaMtlDrainDropped, ksaMtlDrainClose, the records below).
+// drain.mm: ksaMtlDrainOpen, ksaMtlDrain, ksaMtlDrainDropped, ksaMtlDrainClose, the records below; instruments.mm:
+// ksaMtlMemory).
 // The app ships the director with the KSA Metal it was built with, so the driver has all of it. With another Vulkan
 // driver the mod still measures CPU frame times.
 using System;
@@ -86,6 +87,9 @@ public static unsafe class DriverStats
     [DllImport(Driver, EntryPoint = "ksaMtlGpuErrors")]
     private static extern uint GpuErrorsNative();
 
+    [DllImport(Driver, EntryPoint = "ksaMtlMemory")]
+    private static extern uint MemoryNative([Out] long[] values, uint count);
+
     [DllImport(Driver, EntryPoint = "ksaMtlDrainOpen")]
     [return: MarshalAs(UnmanagedType.U1)]
     private static extern bool DrainOpenNative(uint version, double waitMs, uint capacity);
@@ -126,6 +130,23 @@ public static unsafe class DriverStats
 
     // Until they are written
     public static bool PassDumping() => Available && PassDumpingNative();
+
+    // The bytes KSA Metal holds now: device memory by type (private, shared write-combined, shared cached), then its own
+    // (descriptor pools, upload rings); null with a driver of before it
+    public static long[]? Memory()
+    {
+        if (!Available)
+            return null;
+        try
+        {
+            var values = new long[4];
+            return MemoryNative(values, 4) == 4 ? values : null;
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return null;
+        }
+    }
 
     // Command buffers that failed: after a hang the GPU refuses this process's work, and a dump or capture holds nothing
     public static uint GpuErrors() => Available ? GpuErrorsNative() : 0;

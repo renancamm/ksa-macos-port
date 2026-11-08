@@ -20,6 +20,9 @@ public static partial class Program
     private sealed partial class BenchmarkRun
     {
         private readonly List<string> _places = [], _sets = [], _ports = [], _tools = [], _env = [];
+        // --probe, --knob, --channels: the probes (the benchmark's by name, assemblies by absolute path), their knobs, the
+        // channels turned off
+        private readonly List<string> _probes = [], _knobs = [], _off = [];
         private string _preset = "", _system = "", _hold = "", _settingsFile = "", _reference = "", _catch = "";
         private string _template = "Metal System Trace", _test = "";
         private bool _defaults, _explore, _fast, _noShots, _hud, _trace, _capture, _catchCapture, _passes, _cameraLog, _holding;
@@ -225,7 +228,7 @@ public static partial class Program
                 }
             }
             var withValue = new[] { "--set", "--port", "--settings", "--compare", "--app", "--preset", "--system", "--repeat", "--sessions", "--ab",
-                "--trace-template", "--on", "--env", "--save-plan" };
+                "--trace-template", "--on", "--env", "--save-plan", "--probe", "--knob", "--channels" };
             for (; i < args.Length; i++)
             {
                 var a = args[i];
@@ -242,6 +245,19 @@ public static partial class Program
                     case "--defaults": _defaults = true; break;
                     case "--system": _system = args[++i]; break;
                     case "--env": _env.Add(args[++i]); break;
+                    case "--probe" when _purpose is not Purpose.Explore: _probes.Add(args[++i]); break;
+                    case "--knob" when _purpose is not Purpose.Explore: _knobs.Add(args[++i]); break;
+                    case "--channels" when _purpose is not Purpose.Explore:
+                        foreach (var c in args[++i].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                        {
+                            if (c.Length > 1 && c[0] == '-' && c[1..] is "zones" or "runtime")
+                                _off.Add(c[1..]);
+                            else if (c.Length > 1 && c[0] == '+' && Program.OwnProbes.Contains(c[1..]))
+                                _probes.Add(c[1..]);
+                            else
+                                Die($"--channels takes -zones, -runtime or +{string.Join(", +", Program.OwnProbes)}, not '{c}'.");
+                        }
+                        break;
                     // What each verb adds
                     case "--compare" when _purpose is Purpose.Run or Purpose.Check or Purpose.Measure or Purpose.Profile: _reference = args[++i]; break;
                     case "--no-shots" when _purpose is Purpose.Run: _noShots = true; break;
@@ -342,6 +358,22 @@ public static partial class Program
             }
             if (!TakesShots)
                 _noShots = true;
+            // The probes: the benchmark's by name, an assembly by its path (absolute: the game starts from elsewhere)
+            for (int p = 0; p < _probes.Count; p++)
+            {
+                if (OwnProbes.Contains(_probes[p]))
+                    continue;
+                if (!_probes[p].EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                    Die($"--probe takes {string.Join(", ", OwnProbes)} or a probe's assembly (.dll), not '{_probes[p]}'.");
+                _probes[p] = Path.GetFullPath(_probes[p]);
+                if (!File.Exists(_probes[p]))
+                    Die($"--probe: no {_probes[p]}.");
+            }
+            if (_probes.Distinct().Count() < _probes.Count)
+                Die("--probe: the same probe twice.");
+            foreach (var kv in _knobs)
+                if (!System.Text.RegularExpressions.Regex.IsMatch(kv, @"^[A-Za-z0-9_-]+\.[A-Za-z0-9_.-]+="))
+                    Die($"--knob needs <probe>.<key>=<value>, not '{kv}'.");
             if (!double.TryParse(_filmText, NumberStyles.Float, CultureInfo.InvariantCulture, out _film) || _film < 0)
                 Die($"film needs a number of seconds, not '{_filmText}'.");
             if (_settingsFile.Length > 0 && !File.Exists(_settingsFile))

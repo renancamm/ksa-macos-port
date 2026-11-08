@@ -95,6 +95,12 @@ public static partial class Program
                              camera's place every frame), hold (stay at one place, paused, until you quit the game)
           --env <NAME=value> the game's environment for the run (again for more): KSA Metal's switches (KSA_MTL_...)
           --save-plan <file> with measure or profile: the command line as a study's file, to add variants to; plays nothing
+          --probe <name | path>
+                             a probe in the run (again for more): memory (the game's VRAM, KSA Metal's memory and the .NET
+                             heap, and who holds them at each checkpoint), or a probe's assembly (.dll)
+          --knob <probe>.<key>=<value>
+                             a value for a probe (again for more)
+          --channels <list>  -zones (the game's profilers), -runtime (.NET's counters): off; +memory: the probe added
           --on '<rule>'      with run, check, measure, profile or investigate: a trigger, '<condition>: <action>, ...' (again for
                              more). Conditions: frame>N ms, broken, checkpoint, stuck, gpu-error; actions: moment,
                              screenshot, passes, capture, sample, stop, max N ('frame>50ms: moment, max 5')
@@ -113,6 +119,9 @@ public static partial class Program
         The benchmark is in the app (Contents/Resources/Benchmark/), built for the KSA version this port folder was made for.
         The Mac Port tab in the game's settings runs it too.
         """;
+
+    // The benchmark's own probes (--probe memory)
+    internal static readonly string[] OwnProbes = ["memory"];
 
     // Presets: fixed settings, the same on every Mac, so reports compare. Without one, your own settings are used. All run
     // in a 1280x800 window without Vsync (frame times are then the game's, not the display's).

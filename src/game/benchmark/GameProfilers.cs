@@ -5,8 +5,8 @@
 // game's GPU zones (GpuZones.cs: a profiled pass) its GPU profiler's (group gpu: a frame each game frame, published once
 // the GPU has run it, so a frame or two late, its start the time it was read). The worker pools'
 // profilers stay off: switched while a worker is in a burst, the game's profiler is left with a scope open and throws on
-// that worker. Each source's switches are put back at the end. KSA_BENCH_ZONES=0 leaves them all off, to measure what
-// they cost.
+// that worker. Each source's switches are put back at the end. A plan's channel zones off (--channels -zones) leaves them
+// all off, to measure what they cost.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -57,12 +57,9 @@ internal sealed class GameProfilers
         }
     }
 
-    // On for a run, unless KSA_BENCH_ZONES=0, with the GPU profiler's zones or without; null when off or when this game's
-    // profilers can't be reached
+    // On for a run, with the GPU profiler's zones or without; null when this game's profilers can't be reached
     public static GameProfilers? Start(RunStore? store, Action<string> log, bool gpu)
     {
-        if (Environment.GetEnvironmentVariable("KSA_BENCH_ZONES") == "0")
-            return null;
         try
         {
             return new GameProfilers(store, log, gpu);
