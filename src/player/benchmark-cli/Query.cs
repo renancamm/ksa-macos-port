@@ -66,7 +66,7 @@ public static partial class Program
         var record = RunRecord.Read(dir);
         if (record != null)
             Pages.WriteReport(dir, record);
-        var page = Path.Combine(dir, "report.html");
+        var page = RunFiles.PagePath(dir);
         Output.Info(record != null
             ? $"The timeline: {Path.Combine(dir, Timeline.TraceFile)} (for ui.perfetto.dev), and the report's Open Timeline button: {page}"
             : $"The timeline: {Path.Combine(dir, Timeline.TraceFile)}, for ui.perfetto.dev (the run's record is of an older benchmark: report --again gives its report the button)");
@@ -75,12 +75,12 @@ public static partial class Program
         return 0;
     }
 
-    // A run's folder with a store
+    // Where a run with a store keeps its files (its data/, RunFiles)
     private static string StoreOf(string run)
     {
-        var dir = Unpacked(RunFolder(run));
+        var dir = RunFiles.Data(Unpacked(RunFolder(run)));
         if (!File.Exists(Path.Combine(dir, RunStore.GameFile)))
-            Die($"{Path.GetFileName(dir.TrimEnd('/'))} has no store (run.db): a run older than the store has none.");
+            Die($"{RunFiles.Name(dir)} has no store (run.db): a run older than the store has none.");
         return dir;
     }
 }

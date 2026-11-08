@@ -57,7 +57,8 @@ public static partial class Program
             Console.WriteLine($"The runs played in different modes ({ra.Mode}, {rb.Mode}): {(c.Warps.Count > 0 ? "only the time warp's parts compare" : "neither their numbers nor their screenshots compare")}.");
             return 2;
         }
-        string dirA = Directory.Exists(a) ? a : Path.GetDirectoryName(a)!, dirB = Directory.Exists(b) ? b : Path.GetDirectoryName(b)!;
+        // Their files: each run's data/ (RunFiles), where compare.md, compare.html and diff/ go too
+        string dirA = RunFiles.Data(Directory.Exists(a) ? a : Path.GetDirectoryName(a)!), dirB = RunFiles.Data(Directory.Exists(b) ? b : Path.GetDirectoryName(b)!);
         if (c.Parts.Count + c.Warps.Count == 0)
         {
             Console.WriteLine($"The runs have no part in common ({Scenarios(ra)}; {Scenarios(rb)}): nothing to compare.");
@@ -166,8 +167,8 @@ public static partial class Program
     {
         if (RunRecord.Read(dir) is { } record)
             return record;
-        Console.Error.WriteLine(File.Exists(Path.Combine(dir, RunStore.GameFile))
-            ? $"the record at {dir} is older than this benchmark: ./benchmark.sh report {Path.GetFileName(dir.TrimEnd('/'))} --again makes it again from its store"
+        Console.Error.WriteLine(File.Exists(Path.Combine(RunFiles.Data(dir), RunStore.GameFile))
+            ? $"the record at {dir} is older than this benchmark: ./benchmark.sh report {RunFiles.Name(dir)} --again makes it again from its store"
             : $"no run's record at {dir}");
         return null;
     }
@@ -277,6 +278,7 @@ public static partial class Program
     // compared. Returns how many differ, and their table.
     private static (int Differ, string Table) Screenshots(string a, string b, RunRecord ra, RunRecord rb, List<ShotResult> results)
     {
+        (a, b) = (RunFiles.Data(a), RunFiles.Data(b));
         var md = new StringBuilder();
         var shots = Directory.GetFiles(a, "*_*.png").Select(Path.GetFileName).OfType<string>().OrderBy(n => n, StringComparer.Ordinal).ToList();
         if (shots.Count == 0)

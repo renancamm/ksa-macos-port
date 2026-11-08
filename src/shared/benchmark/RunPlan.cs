@@ -31,7 +31,7 @@ public sealed class RunPlan
     public string Against { get; set; } = "";
     public HostPlan Host { get; set; } = new();
 
-    // The run's folder: where run.json is, and the results and screenshots go
+    // Where the run's files go: its folder's data/ (RunFiles), run.json, the results and the screenshots
     [JsonIgnore]
     public string Out { get; set; } = "";
 
@@ -54,8 +54,8 @@ public sealed class RunPlan
     public void Write(string folder)
     {
         Directory.CreateDirectory(folder);
-        File.WriteAllText(Path.Combine(folder, FileName), JsonSerializer.Serialize(this, Json));
-        Out = folder;
+        Out = RunFiles.Data(folder);
+        File.WriteAllText(Path.Combine(Out, FileName), JsonSerializer.Serialize(this, Json));
     }
 
     // The plan in a run's folder, or one made from the options.json of a run of before plans (report --again finishes
@@ -64,10 +64,10 @@ public sealed class RunPlan
     {
         try
         {
-            var path = Path.Combine(folder, FileName);
+            var path = Path.Combine(RunFiles.Data(folder), FileName);
             var plan = File.Exists(path) ? JsonSerializer.Deserialize<RunPlan>(File.ReadAllText(path), Json) : FromOptions(folder);
             if (plan != null)
-                plan.Out = folder;
+                plan.Out = RunFiles.Data(folder);
             return plan;
         }
         catch (System.Exception e) when (e is IOException or JsonException or System.InvalidOperationException)
@@ -79,7 +79,7 @@ public sealed class RunPlan
     // A run's options.json (its one flat list, warmUp and repeat for its passes) as a plan
     private static RunPlan? FromOptions(string folder)
     {
-        var path = Path.Combine(folder, "options.json");
+        var path = Path.Combine(RunFiles.Data(folder), "options.json");
         if (!File.Exists(path) || System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path)) is not System.Text.Json.Nodes.JsonObject o)
             return null;
         System.Text.Json.Nodes.JsonObject Pick(params string[] keys)

@@ -170,7 +170,7 @@ public static partial class Program
     {
         try
         {
-            using var json = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(dir, RunRecord.FileName)));
+            using var json = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(RunFiles.Data(dir), RunRecord.FileName)));
             return json.RootElement.TryGetProperty("status", out var s) && Enum.TryParse<Status>(s.GetString(), true, out var status) ? status : null;
         }
         catch (Exception e) when (e is IOException or System.Text.Json.JsonException or InvalidOperationException)
@@ -185,7 +185,7 @@ public static partial class Program
     {
         if (RunRecord.Read(dir) is { } record)
             return record;
-        if (OlderStatus(dir) == null || !File.Exists(Path.Combine(dir, RunStore.GameFile)))
+        if (OlderStatus(dir) == null || !File.Exists(Path.Combine(RunFiles.Data(dir), RunStore.GameFile)))
             return null;
         Output.Info($"{Path.GetFileName(dir)}: its record is of another schema, made again from its store");
         try
@@ -349,7 +349,7 @@ public static partial class Program
             var c = Comparison.Of(baseParts, Study.Merged(runs[v].Select(r => r.Record)), runs[v].Concat(baseRuns).Any(r => Ground.Steps(r.Record)));
             // The screenshots of each one's first session that took them
             static (string Dir, RunRecord Record)? WithShots(List<(string Dir, RunRecord Record)> of) =>
-                of.Cast<(string Dir, RunRecord Record)?>().FirstOrDefault(r => Directory.GetFiles(r!.Value.Dir, "*_*.png").Length > 0);
+                of.Cast<(string Dir, RunRecord Record)?>().FirstOrDefault(r => Directory.GetFiles(RunFiles.Data(r!.Value.Dir), "*_*.png").Length > 0);
             var shots = new List<ShotResult>();
             string? image = null;
             int different = 0;
@@ -361,7 +361,7 @@ public static partial class Program
                 different = shots.Count(s => s.State is "differs" or "unreadable");
                 if (compared > 0)
                     image = different == 0 ? $"same image ({compared} of {compared} screenshots)" : $"{different} of {compared} screenshots differ";
-                shotsOf = Path.GetRelativePath(folder, b.Dir);
+                shotsOf = Path.GetRelativePath(folder, RunFiles.Data(b.Dir));
             }
             var (sentence, good) = c.Sentence(image, different == 0);
             variants.Add(new StudyPage.Variant(v.Name, v.Options, c, sentence, good, shots, different, shotsOf));

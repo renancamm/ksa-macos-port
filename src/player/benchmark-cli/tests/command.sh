@@ -61,13 +61,14 @@ echo "==> port settings: defaults" > "${STARMAP_INSTANCE_PATH}/logs/console.log"
 case "${FAKE_GAME:-pass}" in
     nothing) exit 134 ;;
 esac
-# The run's plan, which benchmark.sh's program writes for the director
-plan() { plutil -extract "$1" raw -o - "${KSA_BENCH_OUT}/plan.json"; }
+# The run's plan, which benchmark.sh's program writes for the director, in the run's data folder
+OUT="${KSA_BENCH_OUT}/data"
+plan() { plutil -extract "$1" raw -o - "${OUT}/plan.json"; }
 only="$(plan play.only)"
 first="${only%% *}"
 session="$(plan host.session)"
 # The run's store, as the director writes it: an event at a time, with its time in .NET ticks
-db="${KSA_BENCH_OUT}/run.db"
+db="${OUT}/run.db"
 sqlite3 "${db}" "CREATE TABLE IF NOT EXISTS events (t REAL, at INTEGER, session INTEGER, pass INTEGER, type TEXT, scenario TEXT, part TEXT,
     text TEXT, game REAL, value REAL);
   CREATE TABLE IF NOT EXISTS frames (t REAL, time REAL, session INTEGER, pass INTEGER, script REAL, scenario TEXT, part TEXT, phase TEXT,
@@ -182,10 +183,13 @@ expect "how to see it" 0 "./benchmark.sh report"
 case "${OUTPUT}" in *"|---"*) fail "Markdown in the terminal: ${OUTPUT}" ;; esac
 RUN="$(ls "${T}/home/Documents/My Games/Kitten Space Agency/benchmarks" | sort | tail -1)"
 DIR="${T}/home/Documents/My Games/Kitten Space Agency/benchmarks/${RUN}"
-for f in report.md run.json report.html run.db host.db plan.json settings.toml "${RUN}.zip"; do
+for f in report.html "to-share_${RUN}.zip" data/report.md data/run.json data/run.db data/host.db data/plan.json data/settings.toml; do
     [ -f "${DIR}/${f}" ] || fail "a run that passes: no ${f}"
 done
-grep -q '"stuck: sample, stop"' "${DIR}/plan.json" || fail "a run that passes: no default triggers in plan.json"
+ZIPPED="$(unzip -l "${DIR}/to-share_${RUN}.zip")"
+case "${ZIPPED}" in *" ${RUN}/report.html"*" ${RUN}/data/"* | *" ${RUN}/data/"*" ${RUN}/report.html"*) ;;
+    *) fail "a run that passes: its zip isn't its report and data/: ${ZIPPED}" ;; esac
+grep -q '"stuck: sample, stop"' "${DIR}/data/plan.json" || fail "a run that passes: no default triggers in plan.json"
 
 # A relative --app, comparing by name, "last" and "previous"
 sleep 1
@@ -228,8 +232,8 @@ bench study "${T}/light.txt"
 expect "a study" 0 "GPU time inconclusive (2 sessions a side, 5 needed)"
 expect "a study's sessions in turn" 0 "Session 3 of 4: B (round 2)"
 STUDY_DIR="$(ls -d "${S}"/*_light 2> /dev/null | tail -1)"
-[ -f "${STUDY_DIR}/04-A/run.json" ] && [ -f "${STUDY_DIR}/report.html" ] && [ -f "${STUDY_DIR}/study.txt" ] || fail "a study: no runs or report in ${STUDY_DIR}"
-grep -q '"Environment"' "${STUDY_DIR}/02-B/run.json" || fail "a study: --env not among B's facts"
+[ -f "${STUDY_DIR}/04-A/data/run.json" ] && [ -f "${STUDY_DIR}/report.html" ] && [ -f "${STUDY_DIR}/study.txt" ] || fail "a study: no runs or report in ${STUDY_DIR}"
+grep -q '"Environment"' "${STUDY_DIR}/02-B/data/run.json" || fail "a study: --env not among B's facts"
 [ -f "${STUDY_DIR}/settings.toml" ] || fail "a study: no copy of your settings"
 # One benchmark game at a time: a run while another holds the lock is refused
 perl -e 'use Fcntl ":flock"; open(F, ">>", $ARGV[0]) or die; flock(F, LOCK_EX) or die; sleep 4' \
@@ -242,10 +246,10 @@ wait "${holder}"
 bench study resume
 expect "a study that is done" 1 "is done"
 # A session whose record went missing (a reboot in the middle) plays again
-rm "${STUDY_DIR}/03-B/run.json"
+rm "${STUDY_DIR}/03-B/data/run.json"
 bench study resume
 expect "a study resumed" 0 "Session 3 of 4: B (round 2, attempt 2)"
-[ -f "${STUDY_DIR}/03-B-2/run.json" ] || fail "a study resumed: no 03-B-2"
+[ -f "${STUDY_DIR}/03-B-2/data/run.json" ] || fail "a study resumed: no 03-B-2"
 bench study report
 expect "a study's report" 0 "+100 % ?"
 bench study "${T}/nothing.txt"
@@ -271,15 +275,15 @@ expect "a game that hangs" 1 "hung in mixed at 1.5 s"
 sleep 1
 KSA_BENCH_HANG_LIMIT=2 FAKE_GAME=stuck bench --app "${APP}"
 expect "a game whose clock stops" 1 "stuck in mixed at 1.5 s"
-ls "${T}/home/Documents/My Games/Kitten Space Agency/benchmarks/"*/stuck.txt > /dev/null 2>&1 || fail "a game whose clock stops: no stuck.txt"
+ls "${T}/home/Documents/My Games/Kitten Space Agency/benchmarks/"*/data/stuck.txt > /dev/null 2>&1 || fail "a game whose clock stops: no stuck.txt"
 sleep 1
 # As a terminal does it: the signal to the whole process group, once the run has started (a job started with & has SIGINT
 # ignored and shares this script's group: perl gives it a group of its own and puts the signal back)
-before="$(ls -d "${T}/home/Documents/My Games/Kitten Space Agency/benchmarks/"*/plan.json | wc -l)"
+before="$(ls -d "${T}/home/Documents/My Games/Kitten Space Agency/benchmarks/"*/data/plan.json | wc -l)"
 FAKE_GAME=long HOME="${T}/home" perl -e 'setpgrp(0, 0); $SIG{INT} = "DEFAULT"; exec @ARGV' "${BENCH}" --app "${APP}" > "${T}/stopped.txt" 2>&1 &
 script=$!
 for _ in $(seq 1 100); do
-    [ "$(ls -d "${T}/home/Documents/My Games/Kitten Space Agency/benchmarks/"*/plan.json | wc -l)" -gt "${before}" ] && break
+    [ "$(ls -d "${T}/home/Documents/My Games/Kitten Space Agency/benchmarks/"*/data/plan.json | wc -l)" -gt "${before}" ] && break
     sleep 0.2
 done
 sleep 1
@@ -295,7 +299,7 @@ pgrep -f "${APP}/Contents/MacOS/KSA" > /dev/null
 sleep 1
 FAKE_GAME=pass bench --app "${APP}" --probe memory --knob memory.every=2 --channels -runtime --no-shots
 expect "a run with a probe" 0 "Passed"
-P="$(ls -d "${T}/home/Documents/My Games/Kitten Space Agency/benchmarks/"20* | sort | tail -1)/plan.json"
+P="$(ls -d "${T}/home/Documents/My Games/Kitten Space Agency/benchmarks/"20* | sort | tail -1)/data/plan.json"
 [ "$(plutil -extract record.probes.0 raw -o - "${P}")" = memory ] && grep -q '"memory.every": "2"' "${P}" &&
     [ "$(plutil -extract record.off.0 raw -o - "${P}")" = runtime ] || fail "probes, knobs, channels: not in ${P}"
 
@@ -303,7 +307,7 @@ P="$(ls -d "${T}/home/Documents/My Games/Kitten Space Agency/benchmarks/"20* | s
 B="${T}/home/Documents/My Games/Kitten Space Agency/benchmarks"
 mkdir "${B}/2020-01-01_0100" "${B}/2020-01-02_0100_hold" "${B}/2020-01-03_0100_explore" "${B}/a baseline" "${B}/zz renamed"
 # A renamed run isn't the last one
-cp "${DIR}/run.json" "${B}/zz renamed/"
+cp "${DIR}/data/run.json" "${B}/zz renamed/"
 bench report last
 case "${OUTPUT}" in *"zz renamed"*) fail "last took a folder that isn't named by its date: ${OUTPUT}" ;; esac
 touch "${B}/stray.zip"

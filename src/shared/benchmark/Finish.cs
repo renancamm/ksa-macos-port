@@ -46,7 +46,7 @@ public static class Finish
     {
         try
         {
-            var node = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(dir, RunRecord.FileName)));
+            var node = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(RunFiles.Data(dir), RunRecord.FileName)));
             if (node?["facts"] is not System.Text.Json.Nodes.JsonArray facts)
                 return null;
             return facts.OfType<System.Text.Json.Nodes.JsonObject>()
@@ -65,7 +65,7 @@ public static class Finish
         var events = EventLog.Read(dir);
         var frames = FrameLog.Read(dir);
         var logs = Logs(dir);
-        var name = Path.GetFileName(Path.GetFullPath(dir).TrimEnd('/'));
+        var name = RunFiles.Name(dir);
         // The probes' metrics known before the parts' numbers take them
         var probeMetrics = RunStore.ReadMetrics(dir);
         foreach (var m in probeMetrics)
@@ -101,7 +101,7 @@ public static class Finish
         Pages.WriteReport(dir, record);
         // The game's store of a tab's run, and benchmark.sh's own, closed before the zip takes them: the run is over
         RunStore.Close(dir);
-        Package(dir, crashes);
+        Package(dir, record, crashes);
         return record;
     }
 
@@ -272,7 +272,7 @@ public static class Finish
 
     // The game's log of each session: game.log, game-2.log...
     private static List<(string Name, string[] Lines)> Logs(string dir) =>
-        Directory.GetFiles(dir, "game*.log").OrderBy(f => f.Length).ThenBy(f => f, StringComparer.Ordinal)
+        Directory.GetFiles(RunFiles.Data(dir), "game*.log").OrderBy(f => f.Length).ThenBy(f => f, StringComparer.Ordinal)
             .Select(f => (Path.GetFileName(f), File.ReadAllLines(f))).ToList();
 
     // The game's crash reports since the run started
@@ -322,36 +322,40 @@ public static class Finish
         }
     }
 
-    // <dir>/<name>.zip: what a shared run holds, with the game's crash reports of the run, the home folder's name as ~
-    private static void Package(string dir, List<string> crashes)
+    // to-share_<run>.zip beside the run's report: its report and data/, with the game's crash reports of the run, the home
+    // folder's name as ~, and the screenshots as JPEG, which the zip's report is made again for
+    private static void Package(string dir, RunRecord record, List<string> crashes)
     {
-        var name = Path.GetFileName(Path.GetFullPath(dir).TrimEnd('/'));
-        var zip = Path.Combine(dir, name + ".zip");
+        var name = RunFiles.Name(dir);
+        var zip = RunFiles.Zip(dir);
         var home = Environment.GetEnvironmentVariable("HOME") ?? "";
         var stage = Path.Combine(Path.GetTempPath(), $"ksa-metal-benchmark-{Environment.ProcessId}", name);
-        Directory.CreateDirectory(stage);
+        var data = RunFiles.Create(stage);
         try
         {
-            foreach (var file in Directory.GetFiles(dir))
+            foreach (var file in Directory.GetFiles(RunFiles.Data(dir)))
             {
                 var f = Path.GetFileName(file);
                 if (f is RunStore.GameFile or RunStore.HostFile)
-                    Store(file, Path.Combine(stage, f), home);
-                else if (f is RunRecord.FileName or "report.md" or "report.html" or RunPlan.FileName or "settings.toml" or "profile.md" or "trace.md" ||
+                    Store(file, Path.Combine(data, f), home);
+                else if (f is RunRecord.FileName or RunPlan.FileName or "settings.toml" or "profile.md" or "trace.md" ||
                     f.StartsWith("game", StringComparison.Ordinal) && f.EndsWith(".log", StringComparison.Ordinal) ||
                     f.StartsWith("stuck", StringComparison.Ordinal) && f.EndsWith(".txt", StringComparison.Ordinal))
-                    File.WriteAllText(Path.Combine(stage, f), File.ReadAllText(file).Replace(home, "~"));
+                    File.WriteAllText(Path.Combine(data, f), File.ReadAllText(file).Replace(home, "~"));
                 else if (f.Contains('_') && f.EndsWith(".png", StringComparison.Ordinal))
                     Facts.Run("/usr/bin/sips", "-s", "format", "jpeg", "-s", "formatOptions", "70", "-Z", "1600", file, "--out",
-                        Path.Combine(stage, Path.ChangeExtension(f, ".jpg")));
+                        Path.Combine(data, Path.ChangeExtension(f, ".jpg")));
             }
             var user = Environment.UserName;
             foreach (var crash in crashes)
             {
-                Directory.CreateDirectory(Path.Combine(stage, "crashes"));
-                File.WriteAllText(Path.Combine(stage, "crashes", Path.GetFileName(crash)),
+                Directory.CreateDirectory(Path.Combine(data, "crashes"));
+                File.WriteAllText(Path.Combine(data, "crashes", Path.GetFileName(crash)),
                     File.ReadAllText(crash).Replace(home, "~").Replace($"/Users/{user}", "~"));
             }
+            Pages.WriteReport(stage, record);
+            foreach (var page in new[] { RunFiles.PagePath(stage), Path.Combine(data, "report.md") })
+                File.WriteAllText(page, File.ReadAllText(page).Replace(home, "~"));
             File.Delete(zip);
             ZipFile.CreateFromDirectory(Path.GetDirectoryName(stage)!, zip);
         }

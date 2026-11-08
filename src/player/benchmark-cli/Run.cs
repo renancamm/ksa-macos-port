@@ -42,7 +42,8 @@ public static partial class Program
         private readonly List<string> _on = [];
         private List<Rule> _rules = [];
         private string _setKeys = " ";
-        private string _settings = "", _out = "";
+        // _out: the run's folder; _data: its data/, where everything but its report and zip goes (RunFiles)
+        private string _settings = "", _out = "", _data = "";
         // Ctrl-C, TERM or HUP: the game is stopped, and what it measured is reported
         private volatile bool _stopped;
         // What stopped it (Ctrl-C, TERM, HUP), and how many Ctrl-Cs came
@@ -602,7 +603,7 @@ public static partial class Program
                     Die("--catch compares screenshots: it can't go with --no-shots.");
                 if (!Directory.Exists(_catch))
                     Die("catch needs a clean run's folder, with its screenshots, not a zip.");
-                if (!Directory.GetFiles(_catch, "*_*.png").Any())
+                if (!Directory.GetFiles(RunFiles.Data(_catch), "*_*.png").Any())
                     Die($"--catch: {_catch} has no screenshots to compare with.");
                 _catch = Path.GetFullPath(_catch);  // absolute: the game starts from elsewhere
                 if (NotComparable(_catch, Mode, _only) is { } why)

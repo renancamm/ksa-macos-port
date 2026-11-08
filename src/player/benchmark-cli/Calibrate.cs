@@ -85,7 +85,7 @@ public static partial class Program
             double most = 0;
             for (int i = 0; i < runs.Count; i++)
                 for (int j = i + 1; j < runs.Count; j++)
-                    if (Images.Read(Path.Combine(runs[i].Dir, shot.File)) is { } a && Images.Read(Path.Combine(runs[j].Dir, shot.File)) is { } b)
+                    if (Images.Read(Path.Combine(RunFiles.Data(runs[i].Dir), shot.File)) is { } a && Images.Read(Path.Combine(RunFiles.Data(runs[j].Dir), shot.File)) is { } b)
                         most = Math.Max(most, Images.Compare(a, b).ChangedPercent);
             profile.Shots[shot.Name] = new ShotNoise { Spread = Math.Round(most, 2), Limit = Math.Round(NoiseProfile.Margin * most, 2) };
         }

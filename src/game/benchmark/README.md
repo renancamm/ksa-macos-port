@@ -71,9 +71,9 @@ To compare two runs:
 
 A run is its folder's name (`2026-11-02_0158`), its path, its zip, `last` or `previous`. The comparison starts with a
 verdict, lists what differs between the two Macs and their settings, shows each part's numbers side by side, and names
-the screenshots that changed. `compare.html` in the second run's folder shows the screenshots of both runs with a slider
-to go from one to the other, and a copy of each changed screenshot, with the changed blocks marked in red, goes to
-`diff/` there.
+the screenshots that changed. `compare.html` in the second run's `data/` shows the screenshots of both runs with a
+slider to go from one to the other, and a copy of each changed screenshot, with the changed blocks marked in red, goes
+to `diff/` there.
 
 Runs add up, up to a few hundred MB each with their screenshots. `./benchmark.sh clean` deletes all but the last 30,
 after asking (`--keep <n>` keeps another number), never while a run plays; studies keep their runs until you delete a
@@ -81,12 +81,13 @@ study's folder.
 
 ### Sharing a run
 
-Each run writes its results to `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/`, and a zip of them in that
-folder (`<date>.zip`). The zip holds the report, the run's record, every frame's numbers, the game's log and any crash
-report of the run, the settings and the screenshots as JPEG; your home folder's name is replaced by `~` throughout. To
-share one, open an issue with the **Benchmark report** template and attach the zip. For numbers that compare across
-Macs, run with a preset (`--preset low`, `medium` or `high`): fixed settings over a fresh install's defaults, the
-same on every Mac. `compare` takes a zip in place of a run folder.
+Each run writes its results to `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/`: the report to open,
+`report.html`, the zip to share, `to-share_<date>.zip`, and everything else in `data/`. The zip holds the report, the
+run's record, every frame's numbers, the game's log and any crash report of the run, the settings and the screenshots as
+JPEG; your home folder's name is replaced by `~` throughout. To share one, open an issue with the **Benchmark report**
+template and attach the zip. For numbers that compare across Macs, run with a preset (`--preset low`, `medium` or
+`high`): fixed settings over a fresh install's defaults, the same on every Mac. `compare` takes a zip in place of a run
+folder.
 
 ### The three tests
 
@@ -451,18 +452,19 @@ JIT time and methods, lock contentions, MB allocated). The record's numbers are 
 the zip, so a shared run can answer questions nobody asked when it was made. While a part is measured, KSA Metal also
 marks it as a signpost interval, which is how an Instruments trace knows where each part is.
 
-The run's store is SQLite files in the run's folder ([`../../shared/benchmark/Store.cs`](../../shared/benchmark/Store.cs)):
-the game writes `run.db`, `benchmark.sh` writes `host.db`, so two processes never write one file; `benchmark.sh` watches
-the game's heartbeats there, and the game its recording event. Every row carries the time on one clock, the Mac's
-monotonic clock in seconds, which KSA Metal's own times use. Besides the events and frames, `run.db` has what KSA Metal
-hands the director through its drain while a run plays: every present with its numbers (`presents`), when each frame
-began, was presented, finished on the GPU and was shown (`shown`), each frame's own GPU time, taken when its present's
-command buffer completed (`frame_gpu`), every wait of a millisecond or more that blocked the game, such as a fence or the
-next drawable (`waits`; the wait for an earlier frame's present too, the game's every frame under V-Sync), and every
-allocation or free of 16 MB or more (`memory`). A part's GPU busy is its frames' own GPU time; the `GPU time` of
-`frames` and `presents` is what completed between two presents, which lags by the frames in flight and holds two frames'
-work after a stall (a run that has only that says so in its GPU time fact, and a comparison with it is not like for
-like). `shown` and `frame_gpu` carry the game session: each session's game counts its presents from 1.
+The run's store is SQLite files in the run's `data/`
+([`../../shared/benchmark/Store.cs`](../../shared/benchmark/Store.cs)): the game writes `run.db`, `benchmark.sh` writes
+`host.db`, so two processes never write one file; `benchmark.sh` watches the game's heartbeats there, and the game its
+recording event. Every row carries the time on one clock, the Mac's monotonic clock in seconds, which KSA Metal's own
+times use. Besides the events and frames, `run.db` has what KSA Metal hands the director through its drain while a run
+plays: every present with its numbers (`presents`), when each frame began, was presented, finished on the GPU and was
+shown (`shown`), each frame's own GPU time, taken when its present's command buffer completed (`frame_gpu`), every wait
+of a millisecond or more that blocked the game, such as a fence or the next drawable (`waits`; the wait for an earlier
+frame's present too, the game's every frame under V-Sync), and every allocation or free of 16 MB or more (`memory`). A
+part's GPU busy is its frames' own GPU time; the `GPU time` of `frames` and `presents` is what completed between two
+presents, which lags by the frames in flight and holds two frames' work after a stall (a run that has only that says so
+in its GPU time fact, and a comparison with it is not like for like). `shown` and `frame_gpu` carry the game session:
+each session's game counts its presents from 1.
 
 During a run the director switches on the game's own profilers, the main thread's and the job runners' (orbit and vehicle
 solvers and the others), in `profile`'s profiled pass its GPU profiler too (group `gpu`, [`GpuZones.cs`](GpuZones.cs)), and reads them every frame ([`GameProfilers.cs`](GameProfilers.cs),
@@ -574,8 +576,8 @@ flight's. Fly the free camera to a place, open the console (`\`) and type `bench
 
 | File | |
 |---|---|
-| `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/` | the results: `report.html`, `report.md`, `run.json` (the record), `run.db` and `host.db` (the run's store), `plan.json`, the screenshots, `game.log`, `stuck.txt` from a stuck game, `compare.html` and `compare.md` after a comparison, `timeline.pftrace` and `timeline.js` (the report's Open Timeline) after `profile` or `timeline`, `profile.md` after `profile`, `caught/` with what the triggers kept, and what the tools wrote |
-| `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/<date>.zip` | the run to share |
+| `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/` | the run: `report.html` to open, `to-share_<date>.zip` to share, and `data/` |
+| `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/data/` | the results: `report.md`, `run.json` (the record), `run.db` and `host.db` (the run's store), `plan.json`, the screenshots, `game.log`, `stuck.txt` from a stuck game, `compare.html` and `compare.md` after a comparison, `timeline.pftrace` and `timeline.js` (the report's Open Timeline) after `profile` or `timeline`, `profile.md` after `profile`, `caught/` with what the triggers kept, and what the tools wrote |
 | `~/Documents/My Games/Kitten Space Agency/benchmarks/baselines.json`, `noise/` | the baselines' names, and the noise profiles `calibrate` measured on this Mac |
 | `~/Library/Caches/ksa-macos-port/benchmark/instance/` | the game's documents folder for a run that starts the game |
 | `Contents/Resources/Benchmark/` in the app | the director, `benchmark.sh`'s program, the tests, their vehicles and noise profiles |

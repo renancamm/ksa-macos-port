@@ -115,7 +115,7 @@ public sealed class RunRecord
 
     public void Write(string dir)
     {
-        var path = Path.Combine(dir, FileName);
+        var path = Path.Combine(RunFiles.Data(dir), FileName);
         File.WriteAllText(path + ".new", JsonSerializer.Serialize(this, Json));
         File.Move(path + ".new", path, overwrite: true);
     }
@@ -123,7 +123,7 @@ public sealed class RunRecord
     // The record in a run's folder; null when it has none of this schema
     public static RunRecord? Read(string dir)
     {
-        var path = Path.Combine(dir, FileName);
+        var path = Path.Combine(RunFiles.Data(dir), FileName);
         try
         {
             if (!File.Exists(path) || JsonSerializer.Deserialize<RunRecord>(File.ReadAllText(path), Json) is not { Schema: CurrentSchema } record)

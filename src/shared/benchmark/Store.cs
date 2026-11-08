@@ -83,7 +83,7 @@ public sealed class RunStore : IDisposable
     // null when it can't be opened
     public static RunStore? For(string dir)
     {
-        var path = Path.GetFullPath(Path.Combine(dir, ProcessFile));
+        var path = Path.GetFullPath(Path.Combine(RunFiles.Data(dir), ProcessFile));
         lock (Open)
         {
             if (Open.TryGetValue(path, out var store))
@@ -117,7 +117,7 @@ public sealed class RunStore : IDisposable
     // What this process gave its store in a run's folder, written to its file (none open: nothing to do)
     public static void Flush(string dir)
     {
-        var path = Path.GetFullPath(Path.Combine(dir, ProcessFile));
+        var path = Path.GetFullPath(Path.Combine(RunFiles.Data(dir), ProcessFile));
         RunStore? store;
         lock (Open)
             store = Open.GetValueOrDefault(path);
@@ -429,7 +429,7 @@ public sealed class RunStore : IDisposable
     {
         var events = new List<(long At, int File, long Row, RunEvent Event)>();
         int file = 0;
-        foreach (var path in new[] { Path.Combine(dir, HostFile), Path.Combine(dir, GameFile) })
+        foreach (var path in new[] { Path.Combine(RunFiles.Data(dir), HostFile), Path.Combine(RunFiles.Data(dir), GameFile) })
         {
             file++;
             Query(path, "SELECT rowid, at, session, pass, type, scenario, part, text, game, value FROM events ORDER BY rowid", q =>
@@ -450,7 +450,7 @@ public sealed class RunStore : IDisposable
     public static List<FrameRow> ReadFrames(string dir)
     {
         var frames = new List<FrameRow>();
-        Query(Path.Combine(dir, GameFile), "SELECT time, session, pass, script, scenario, part, phase, frame_ms, present, gpu_ms, draws, metal_mb, " +
+        Query(Path.Combine(RunFiles.Data(dir), GameFile), "SELECT time, session, pass, script, scenario, part, phase, frame_ms, present, gpu_ms, draws, metal_mb, " +
                                             "footprint_mb, thermal, shaders, pipelines, game_s, asked, sim_ms, substeps, bubbles, vehicles, gc_pause_ms, jit_ms " +
                                             "FROM frames ORDER BY rowid", f =>
             frames.Add(new FrameRow(f.Double(0), (int)f.Long(1), (int)f.Long(2), f.Double(3), f.Text(4), f.Text(5), f.Text(6), f.Double(7),
@@ -470,10 +470,10 @@ public sealed class RunStore : IDisposable
                 shown[session] = of = new();
             of[(ulong)q.Long(0)] = new ShownRow((ulong)q.Long(0), q.Double(1), q.Double(2), q.Double(3), q.Double(4), q.Double(5));
         }
-        Query(Path.Combine(dir, GameFile), "SELECT present, began, presented, gpu_end, shown, waited_ms, session FROM shown", q => Row((int)q.Long(6), q));
+        Query(Path.Combine(RunFiles.Data(dir), GameFile), "SELECT present, began, presented, gpu_end, shown, waited_ms, session FROM shown", q => Row((int)q.Long(6), q));
         // A store of before: no session
         if (shown.Count == 0)
-            Query(Path.Combine(dir, GameFile), "SELECT present, began, presented, gpu_end, shown, waited_ms FROM shown", q => Row(1, q));
+            Query(Path.Combine(RunFiles.Data(dir), GameFile), "SELECT present, began, presented, gpu_end, shown, waited_ms FROM shown", q => Row(1, q));
         return shown;
     }
 
@@ -481,7 +481,7 @@ public sealed class RunStore : IDisposable
     public static Dictionary<int, Dictionary<ulong, double>> ReadFrameGpu(string dir)
     {
         var gpu = new Dictionary<int, Dictionary<ulong, double>>();
-        Query(Path.Combine(dir, GameFile), "SELECT session, present, gpu_ms FROM frame_gpu", q =>
+        Query(Path.Combine(RunFiles.Data(dir), GameFile), "SELECT session, present, gpu_ms FROM frame_gpu", q =>
         {
             if (!gpu.TryGetValue((int)q.Long(0), out var of))
                 gpu[(int)q.Long(0)] = of = new();
@@ -494,7 +494,7 @@ public sealed class RunStore : IDisposable
     public static List<WaitRow> ReadWaits(string dir)
     {
         var waits = new List<WaitRow>();
-        Query(Path.Combine(dir, GameFile), "SELECT t, ms, what FROM waits ORDER BY t", q => waits.Add(new WaitRow(q.Double(0), q.Double(1), q.Text(2))));
+        Query(Path.Combine(RunFiles.Data(dir), GameFile), "SELECT t, ms, what FROM waits ORDER BY t", q => waits.Add(new WaitRow(q.Double(0), q.Double(1), q.Text(2))));
         return waits;
     }
 
@@ -502,7 +502,7 @@ public sealed class RunStore : IDisposable
     public static List<ZoneRow> ReadZones(string dir)
     {
         var zones = new List<ZoneRow>();
-        Query(Path.Combine(dir, GameFile), "SELECT session, pass, scenario, part, grp, zone, frames, calls, total_ms, self_ms FROM zone_stats", q =>
+        Query(Path.Combine(RunFiles.Data(dir), GameFile), "SELECT session, pass, scenario, part, grp, zone, frames, calls, total_ms, self_ms FROM zone_stats", q =>
             zones.Add(new ZoneRow((int)q.Long(0), (int)q.Long(1), q.Text(2), q.Text(3), q.Text(4), q.Text(5), (int)q.Long(6), (int)q.Long(7),
                 q.Double(8), q.Double(9))));
         return zones;
@@ -512,7 +512,7 @@ public sealed class RunStore : IDisposable
     public static List<MomentRecord> ReadMoments(string dir)
     {
         var moments = new List<MomentRecord>();
-        Query(Path.Combine(dir, GameFile), "SELECT scenario, part, session, pass, frame_ms, cause FROM moments ORDER BY t", q =>
+        Query(Path.Combine(RunFiles.Data(dir), GameFile), "SELECT scenario, part, session, pass, frame_ms, cause FROM moments ORDER BY t", q =>
             moments.Add(new MomentRecord(q.Text(0), q.Text(1), (int)q.Long(2), (int)q.Long(3), Math.Round(q.Double(4), 1), q.Text(5))));
         return moments;
     }
@@ -530,16 +530,16 @@ public sealed class RunStore : IDisposable
                 byName[name] = values = [];
             values.Add(value);
         }
-        Query(Path.Combine(dir, GameFile), "SELECT scenario, part, session, pass, name, value FROM counters WHERE part IS NOT NULL AND part != ''", q =>
+        Query(Path.Combine(RunFiles.Data(dir), GameFile), "SELECT scenario, part, session, pass, name, value FROM counters WHERE part IS NOT NULL AND part != ''", q =>
             Add((q.Text(0), q.Text(1), (int)q.Long(2), (int)q.Long(3)), q.Text(4), q.Double(5)));
         // The parts' times, from the start of their first frame to the end of their last: the frames the part's numbers
         // come from (its open and close events are a frame off at either end)
         var windows = new List<(double From, double To, (string, string, int, int) Key)>();
-        Query(Path.Combine(dir, GameFile), "SELECT scenario, part, session, pass, MIN(t - frame_ms / 1000.0), MAX(t) FROM frames " +
+        Query(Path.Combine(RunFiles.Data(dir), GameFile), "SELECT scenario, part, session, pass, MIN(t - frame_ms / 1000.0), MAX(t) FROM frames " +
                                             "WHERE part IS NOT NULL AND part != '' GROUP BY scenario, part, session, pass", q =>
             windows.Add((q.Double(4), q.Double(5), (q.Text(0), q.Text(1), (int)q.Long(2), (int)q.Long(3)))));
         if (windows.Count > 0)
-            Query(Path.Combine(dir, HostFile), "SELECT t, session, name, value FROM counters", q =>
+            Query(Path.Combine(RunFiles.Data(dir), HostFile), "SELECT t, session, name, value FROM counters", q =>
             {
                 double t = q.Double(0);
                 int session = (int)q.Long(1);
@@ -555,7 +555,7 @@ public sealed class RunStore : IDisposable
     {
         var metrics = new List<Metric>();
         foreach (var file in new[] { GameFile, HostFile })
-            Query(Path.Combine(dir, file), "SELECT name, label, unit, better, across, decimals, limit_pct, help FROM metrics ORDER BY rowid", q =>
+            Query(Path.Combine(RunFiles.Data(dir), file), "SELECT name, label, unit, better, across, decimals, limit_pct, help FROM metrics ORDER BY rowid", q =>
             {
                 if (Enum.TryParse<Better>(q.Text(3), out var better) && Enum.TryParse<Across>(q.Text(4), out var across) &&
                     !metrics.Any(m => m.Name == q.Text(0)))
@@ -569,7 +569,7 @@ public sealed class RunStore : IDisposable
     public static List<CensusRecord> ReadCensus(string dir)
     {
         var census = new List<CensusRecord>();
-        Query(Path.Combine(dir, GameFile), "SELECT scenario, shot, owner, kind, bytes, session, pass FROM census " +
+        Query(Path.Combine(RunFiles.Data(dir), GameFile), "SELECT scenario, shot, owner, kind, bytes, session, pass FROM census " +
                                             "WHERE shot != '' AND (session, pass) IN (SELECT session, pass FROM census WHERE shot != '' ORDER BY rowid LIMIT 1) ORDER BY rowid", q =>
             census.Add(new CensusRecord(q.NullableText(0) ?? "", q.Text(1), q.Text(2), q.Text(3), Math.Round(q.Long(4) / 1048576.0, 1))));
         return census.GroupBy(c => (c.Scenario, c.Shot)).SelectMany(at =>

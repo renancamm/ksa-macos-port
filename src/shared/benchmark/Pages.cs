@@ -281,8 +281,12 @@ public static class Pages
 
     // --- report.html
 
+    // report.html on top of the run's folder, report.md with its other files in data/ (RunFiles), which the page's
+    // pictures and timeline are read from (at: data/, or nothing for a run of before)
     public static void WriteReport(string dir, RunRecord r)
     {
+        dir = RunFiles.Data(RunFiles.Folder(dir));
+        var at = Path.GetRelativePath(RunFiles.Folder(dir), dir) is "." ? "" : RunFiles.DataFolder + "/";
         File.WriteAllText(Path.Combine(dir, "report.md"), Markdown(r));
         var ext = Directory.GetFiles(dir, "*_*.png").Length > 0 ? ".png" : ".jpg";
         var order = r.Scenarios.SelectMany(s => s.Shots).Where(s => File.Exists(Path.Combine(dir, s.File)) || File.Exists(Path.Combine(dir, Path.ChangeExtension(s.File, ".jpg")))).ToList();
@@ -294,7 +298,7 @@ public static class Pages
         Open(html, $"{Title(r)}: {When(r)}", r.Drawable);
         html.Append("<header class=\"hero\">");
         if (Banner(dir, order, ext) is { } banner)
-            html.Append(Image(banner, "", "hero-image"));
+            html.Append(Image(at + banner, "", "hero-image"));
         html.Append("<div class=\"hero-text\"><div class=\"eyebrow\">KSA Metal benchmark</div>");
         html.Append($"<h1>{E(TestName(r.Test))}{(r.Mode.Split(' ').Contains("jump") ? " <span>places</span>" : "")}</h1>");
         html.Append($"<p>{E(When(r))} · {E(MacLine(r))}</p>");
@@ -338,7 +342,7 @@ public static class Pages
         }
 
         var shown = order.Select(s => Path.GetFileNameWithoutExtension(s.File)).ToHashSet();
-        Parts(html, r, shown, ext);
+        Parts(html, r, shown, at, ext);
         SlowFrames(html, r);
         WhereTheTimeGoes(html, r);
         Census(html, r);
@@ -346,14 +350,14 @@ public static class Pages
         var timelines = Timelines(dir);
         WarpCharts(html, r, timelines);
         FrameCharts(html, r, timelines);
-        Gallery(html, r, order, ext);
+        Gallery(html, r, order, at, ext);
         FactsTable(html, r);
-        html.Append($"<footer>Every frame's numbers are in <code>run.db</code> (SQLite: <code>./benchmark.sh query</code>), the run's record in <code>run.json</code>, the same numbers as text in <code>report.md</code>, the game's log in <code>game.log</code>{(timeline ? ", the timeline in <code>timeline.pftrace</code> (for ui.perfetto.dev)" : "")}.</footer>");
+        html.Append($"<footer>In {(at.Length > 0 ? "the <code>data</code> folder" : "this folder")}: every frame's numbers in <code>run.db</code> (SQLite: <code>./benchmark.sh query</code>), the run's record in <code>run.json</code>, the same numbers as text in <code>report.md</code>, the game's log in <code>game.log</code>{(timeline ? ", the timeline in <code>timeline.pftrace</code> (for ui.perfetto.dev)" : "")}.</footer>");
         html.Append("</main>");
         if (timeline)
-            html.Append($"<script src=\"{Timeline.ScriptFile}\" defer></script>");
+            html.Append($"<script src=\"{at}{Timeline.ScriptFile}\" defer></script>");
         Close(html);
-        File.WriteAllText(Path.Combine(dir, "report.html"), html.ToString());
+        File.WriteAllText(RunFiles.PagePath(dir), html.ToString());
     }
 
     // The banner: the first screenshot of the run with some detail, by its file's size, not a view of black space
@@ -373,7 +377,8 @@ public static class Pages
         $"<span class=\"status {(good ? "good" : "bad")}\"><svg viewBox=\"0 0 16 16\" aria-hidden=\"true\"><path d=\"{(good ? "M3 8.5l3.2 3.2L13 4.8" : "M4 4l8 8M12 4l-8 8")}\"/></svg>{E(text)}</span>";
 
     // The parts as a table, a bar for each one's frame time on one scale
-    private static void Parts(StringBuilder html, RunRecord r, HashSet<string> shots, string ext)
+    // at: where the screenshots are from the page (data/)
+    private static void Parts(StringBuilder html, RunRecord r, HashSet<string> shots, string at, string ext)
     {
         var parts = r.AllParts().Where(x => !x.Part.Warped).ToList();
         if (parts.Count == 0)
@@ -392,7 +397,7 @@ public static class Pages
                 html.Append($"<tr class=\"group\"><th colspan=\"{PageColumns.Length + 2}\">{E(s.Name)}</th></tr>");
             last = s.Name;
             var shot = $"{s.Name}_{p.Name}";
-            html.Append($"<tr><td class=\"part\">{(shots.Contains(shot) ? $"<a href=\"#{E(shot)}\">{Image(shot + ext, "")}</a>" : "<span class=\"no-thumb\"></span>")}{E(p.Name)}</td>");
+            html.Append($"<tr><td class=\"part\">{(shots.Contains(shot) ? $"<a href=\"#{E(shot)}\">{Image(at + shot + ext, "")}</a>" : "<span class=\"no-thumb\"></span>")}{E(p.Name)}</td>");
             html.Append("<td class=\"bar-cell\">");
             if (p[Metrics.FrameTime] is { } f)
                 html.Append($"<div class=\"bar s1\" style=\"width:{F(100 * f / scale, "0.0")}%\" title=\"Frame time {F(f)} ms\"></div>");
@@ -731,7 +736,8 @@ public static class Pages
     }
 
     // The screenshots: click one to see it whole, the arrow keys go through them
-    private static void Gallery(StringBuilder html, RunRecord r, List<ShotRecord> order, string ext)
+    // at: where the screenshots are from the page (data/)
+    private static void Gallery(StringBuilder html, RunRecord r, List<ShotRecord> order, string at, string ext)
     {
         if (order.Count == 0)
             return;
@@ -741,7 +747,7 @@ public static class Pages
             var id = Path.GetFileNameWithoutExtension(shot.File);
             var part = r.Scenarios.FirstOrDefault(s => s.Shots.Contains(shot))?.Part(shot.Name);
             string numbers = part is { Warped: false } && part[Metrics.Fps] is { } fps ? $"<span>{F(fps, "0")} FPS</span>" : "";
-            html.Append($"<figure id=\"{E(id)}\"><a href=\"{E(Url(id + ext))}\" class=\"shot\" data-caption=\"{E(shot.Name)}\">{Image(id + ext, shot.Name)}</a><figcaption><b>{E(shot.Name)}</b>{numbers}</figcaption></figure>");
+            html.Append($"<figure id=\"{E(id)}\"><a href=\"{E(Url(at + id + ext))}\" class=\"shot\" data-caption=\"{E(shot.Name)}\">{Image(at + id + ext, shot.Name)}</a><figcaption><b>{E(shot.Name)}</b>{numbers}</figcaption></figure>");
         }
         html.Append("</div></section>");
     }
@@ -831,7 +837,7 @@ public static class Pages
             html.Append($"<section><h2>Screenshots</h2><p class=\"lead\">{E(shotsNote)}</p></section>");
         if (shots.Count > 0)
         {
-            var relative = Path.GetRelativePath(b, a);
+            var relative = Path.GetRelativePath(RunFiles.Data(b), RunFiles.Data(a));
             int differ = shots.Count(s => s.State is "differs" or "unreadable");
             html.Append($"<section><h2>Screenshots</h2><p class=\"lead\">{(differ == 0 ? "None differs." : $"{differ} of {shots.Count} differ.")} Drag across a picture to go from A to B. Changed: the share of its blocks whose colour moved.</p><div class=\"gallery compare\">");
             foreach (var s in shots.OrderByDescending(s => s.State is "differs" or "unreadable"))
@@ -847,7 +853,7 @@ public static class Pages
         }
         html.Append("</main>");
         Close(html);
-        File.WriteAllText(Path.Combine(b, "compare.html"), html.ToString());
+        File.WriteAllText(Path.Combine(RunFiles.Data(b), "compare.html"), html.ToString());
     }
 
     // A study's page (report.html in its folder): each variant's verdict against the baseline, the parts as a matrix of
@@ -908,7 +914,8 @@ public static class Pages
         var differing = shown.Where(v => v.ShotsDiffer > 0 && v.ShotsOf != null).ToList();
         if (differing.Count > 0)
         {
-            var baseShots = s.Sessions.FirstOrDefault(x => x.Variant == s.Baseline && x.Run != null && Directory.GetFiles(Path.Combine(dir, x.Run), "*_*.png").Length > 0)?.Run;
+            var baseShots = s.Sessions.Where(x => x.Variant == s.Baseline && x.Run != null).Select(x => RunFiles.Data(Path.Combine(dir, x.Run!)))
+                .Where(d => Directory.GetFiles(d, "*_*.png").Length > 0).Select(d => Path.GetRelativePath(dir, d)).FirstOrDefault();
             html.Append("<section><h2>Screenshots that differ</h2><p class=\"lead\">Each variant's first session against the baseline's. Drag across a picture to go from the baseline to the variant.</p><div class=\"gallery compare\">");
             foreach (var v in differing)
                 foreach (var shot in v.Shots.Where(x => x.State is "differs" or "unreadable"))

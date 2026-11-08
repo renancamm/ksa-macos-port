@@ -33,7 +33,7 @@ public static partial class Program
     // A run's report for a terminal: the verdict and the numbers, without the facts about the Mac
     internal static int Show(string dir)
     {
-        var file = Path.Combine(dir, "report.md");
+        var file = Path.Combine(RunFiles.Data(dir), "report.md");
         if (!File.Exists(file))
         {
             if (RunRecord.Read(dir) is not { } record)
