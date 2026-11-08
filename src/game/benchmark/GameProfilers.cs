@@ -150,14 +150,15 @@ internal sealed class GameProfilers
             return null;
         var samples = frame.AsSpan();
         double toSeconds = 1.0 / Stopwatch.Frequency, start = frame.WallTimestamp * toSeconds + _offset;
-        var zones = new ZoneSample[samples.Length];
+        // From the pool: the zone log gives it back when its ring lets the frame go
+        var zones = System.Buffers.ArrayPool<ZoneSample>.Shared.Rent(samples.Length);
         for (int i = 0; i < samples.Length; i++)
         {
             var s = samples[i];
             zones[i] = new ZoneSample(s.IdIndex, s.ParentIndex == ushort.MaxValue ? -1 : s.ParentIndex, start + s.StartTicks * toSeconds,
                 s.Ticks * toSeconds * 1000, (long)s.AllocatedBytes);
         }
-        return new ZoneFrame(source.Group, source.Profiler.Name, zones);
+        return new ZoneFrame(source.Group, source.Profiler.Name, zones, samples.Length, Pooled: true);
     }
 
     // A zone's name, on any thread (the zones' writing tasks ask)
@@ -186,8 +187,15 @@ internal sealed class GameProfilers
         _collections = GC.CollectionCount(0) - _collectionsAtStart;
         try
         {
-            Read();
-            Zones.Close();
+            try
+            {
+                Read();
+            }
+            finally
+            {
+                // The part's sums and its moments, even when the last read failed
+                Zones.Close();
+            }
         }
         finally
         {

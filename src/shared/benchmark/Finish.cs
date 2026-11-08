@@ -277,7 +277,18 @@ public static class Finish
     // A copy of a file of the run's store with the home folder's name as ~ in its events' texts
     private static void Store(string from, string to, string home)
     {
-        File.Copy(from, to);
+        // A copy that holds what the store's log (-wal) still had, as SQLite reads it; the file as it is when that fails
+        try
+        {
+            using var source = Sqlite.Open(from, readOnly: true);
+            source.Exec($"VACUUM INTO '{to.Replace("'", "''")}'");
+        }
+        catch (SqliteException)
+        {
+            if (File.Exists(to))
+                File.Delete(to);
+            File.Copy(from, to);
+        }
         if (home.Length == 0)
             return;
         try

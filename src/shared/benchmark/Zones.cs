@@ -15,9 +15,11 @@
 //               slow frame to a quarter of a second after it, each with its start on the store's clock, length, own time
 //               and depth
 //
-// The game's main thread only hands frames over: a part's sums and a moment are written by a task of their own, so writing
-// them makes no slow frame. The game's profilers count time in 32-bit ticks of a nanosecond: a zone of more than 4.29 s
-// reads short.
+// The game's main thread only hands frames over: a part's sums and a moment are written by a task of their own, so
+// writing them makes no slow frame, and a moment while no part is open, so that its work (its allocations, a collection
+// they bring, a first compile) isn't in a part's numbers. A source's frame comes in an array of the profilers' pool
+// (GameProfilers), given back when the ring lets it go, unless a moment still holds it. The game's profilers count time
+// in 32-bit ticks of a nanosecond: a zone of more than 4.29 s reads short.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -29,11 +31,19 @@ namespace KsaPort.Common.Benchmark;
 // store's clock in seconds, its length in milliseconds and the bytes allocated in it
 public readonly record struct ZoneSample(int Zone, int Parent, double Start, double Ms, long Bytes);
 
-// A source's frame: its group, the thread it ran on, and its zones, the frame's own root first
-public sealed record ZoneFrame(string Group, string Thread, ZoneSample[] Zones)
+// A source's frame: its group, the thread it ran on, and its zones, the frame's own root first: the first Count of
+// Samples, an array of ArrayPool's when Pooled
+public sealed record ZoneFrame(string Group, string Thread, ZoneSample[] Samples, int Count, bool Pooled = false)
 {
-    public double Start => Zones.Length > 0 ? Zones[0].Start : 0;
-    public double End => Zones.Length > 0 ? Zones[0].Start + Zones[0].Ms / 1000 : 0;
+    public ZoneFrame(string group, string thread, ZoneSample[] samples) : this(group, thread, samples, samples.Length)
+    {
+    }
+
+    public ArraySegment<ZoneSample> Zones => new(Samples, 0, Count);
+    public double Start => Count > 0 ? Samples[0].Start : 0;
+    public double End => Count > 0 ? Samples[0].Start + Samples[0].Ms / 1000 : 0;
+    // A moment's writing holds it: its array isn't given back
+    public bool Kept { get; set; }
 }
 
 // The part a game frame's numbers count in, as the frames table names it
@@ -58,7 +68,11 @@ public sealed class ZoneLog
     private readonly Queue<(double Start, double Ms, string What)> _waits = new();
     private readonly Queue<(double T, double GpuMs)> _presents = new();
     private readonly List<(double At, double FrameMs, PartKey Part)> _pending = new();
+    // Moments of the open part, written when it closes
+    private readonly List<Action> _later = new();
     private readonly List<Task> _writing = new();
+    // Each zone's children's time in a frame Add counts (the main thread's own)
+    private double[] _children = new double[256];
     private int _moments, _sliced;
 
     private sealed class PartZone
@@ -75,10 +89,12 @@ public sealed class ZoneLog
     public void Add(ZoneFrame frame)
     {
         _ring.Enqueue(frame);
-        var children = Children(frame);
-        for (int i = 0; i < frame.Zones.Length; i++)
+        if (_children.Length < frame.Count)
+            _children = new double[frame.Count * 2];
+        var children = Children(frame, _children);
+        for (int i = 0; i < frame.Count; i++)
         {
-            var z = frame.Zones[i];
+            var z = frame.Samples[i];
             var key = (frame.Group, z.Zone);
             var (ms, self, calls, bytes) = _frame.GetValueOrDefault(key);
             _frame[key] = (ms + z.Ms, self + Math.Max(0, z.Ms - children[i]), calls + 1, bytes + z.Bytes);
@@ -97,6 +113,10 @@ public sealed class ZoneLog
         if (part != _part)
         {
             WritePart();
+            // The closed part's moments, now that their work no longer falls in it
+            foreach (var later in _later)
+                Write(later);
+            _later.Clear();
             _part = part;
         }
         if (part != null)
@@ -118,7 +138,11 @@ public sealed class ZoneLog
         }
         _frame.Clear();
         while (_ring.Count > 0 && _ring.Peek().End < t - Keep)
-            _ring.Dequeue();
+        {
+            var old = _ring.Dequeue();
+            if (old.Pooled && !old.Kept)
+                System.Buffers.ArrayPool<ZoneSample>.Shared.Return(old.Samples);
+        }
         while (_waits.Count > 0 && _waits.Peek().Start < t - Keep)
             _waits.Dequeue();
         while (_presents.Count > 0 && _presents.Peek().T < t - Keep)
@@ -144,6 +168,9 @@ public sealed class ZoneLog
         foreach (var p in _pending)
             WriteMoment(p);
         _pending.Clear();
+        foreach (var later in _later)
+            Write(later);
+        _later.Clear();
         Task.WaitAll(_writing.ToArray(), TimeSpan.FromSeconds(30));
         _writing.Clear();
     }
@@ -186,13 +213,16 @@ public sealed class ZoneLog
     {
         double from = m.At - m.FrameMs / 1000 - Before, to = m.At + After;
         var frames = _ring.Where(f => f.End >= from && f.Start <= to).ToArray();
+        foreach (var f in frames)
+            f.Kept = true;
         var waits = _waits.Where(w => w.Start <= m.At && w.Start + w.Ms / 1000 >= m.At - m.FrameMs / 1000 && w.Ms >= CauseWaitMs).ToArray();
         double gpu = _presents.Where(p => p.T >= m.At - m.FrameMs / 1000 && p.T <= m.At + 0.1).Select(p => p.GpuMs).DefaultIfEmpty(0).Max();
         int id = ++_moments;
         bool sliced = m.Part.Pass > 0 && _sliced < MaxSliced;
         if (sliced)
             _sliced++;
-        Write(() =>
+        // Written when no part is open (its own, or one that opened since, would count its work)
+        Action write = () =>
         {
             // The main thread's frame of the slow frame, the last that ended by its end (the one before ends a frame earlier,
             // within the clocks' slack), and its zones with the most self time
@@ -201,7 +231,7 @@ public sealed class ZoneLog
             var cause = new List<string>();
             if (main != null)
             {
-                var children = Children(main);
+                var children = Children(main, new double[main.Count]);
                 cause.AddRange(main.Zones.Select((z, i) => (Name: i == 0 ? "(the frame's own)" : _name(z.Zone), Self: z.Ms - children[i]))
                     .GroupBy(x => x.Name).Select(g => (g.Key, Self: g.Sum(x => x.Self))).OrderByDescending(x => x.Self).Take(3)
                     .Select(x => FormattableString.Invariant($"{x.Key} {x.Self:F1} ms")));
@@ -215,25 +245,29 @@ public sealed class ZoneLog
                 return;
             foreach (var f in frames)
             {
-                var depth = new int[f.Zones.Length];
-                var children = Children(f);
-                for (int i = 0; i < f.Zones.Length; i++)
+                var depth = new int[f.Count];
+                var children = Children(f, new double[f.Count]);
+                for (int i = 0; i < f.Count; i++)
                 {
                     var z = f.Zones[i];
                     depth[i] = z.Parent >= 0 && z.Parent < i ? depth[z.Parent] + 1 : 0;
                     _store?.AddSlice(id, f.Group, f.Thread, _name(z.Zone), depth[i], z.Start, z.Ms, Math.Max(0, z.Ms - children[i]), z.Bytes);
                 }
             }
-        });
+        };
+        if (_part != null)
+            _later.Add(write);
+        else
+            Write(write);
     }
 
-    // Each zone's children's time, summed
-    private static double[] Children(ZoneFrame frame)
+    // Each zone's children's time, summed, into a buffer of at least the frame's zones
+    private static double[] Children(ZoneFrame frame, double[] children)
     {
-        var children = new double[frame.Zones.Length];
-        for (int i = frame.Zones.Length - 1; i >= 0; i--)
-            if (frame.Zones[i].Parent >= 0 && frame.Zones[i].Parent < i)
-                children[frame.Zones[i].Parent] += frame.Zones[i].Ms;
+        Array.Clear(children, 0, frame.Count);
+        for (int i = frame.Count - 1; i >= 0; i--)
+            if (frame.Samples[i].Parent >= 0 && frame.Samples[i].Parent < i)
+                children[frame.Samples[i].Parent] += frame.Samples[i].Ms;
         return children;
     }
 

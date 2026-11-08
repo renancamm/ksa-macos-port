@@ -69,8 +69,8 @@ public abstract class Probe
     // The screenshot is there
     public virtual Wait? AfterShot(View view) => null;
 
-    // A frame of the script playing: the seconds since the run's first frame, the time of the script's clock, the
-    // director's phase
+    // A frame of the script, playing or at a checkpoint (where a views part measures): the seconds since the run's first
+    // frame, the time of the script's clock, the director's phase
     public virtual void Frame(double wall, double script, string phase) { }
 
     // The run ended

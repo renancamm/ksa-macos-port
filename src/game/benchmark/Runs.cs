@@ -45,7 +45,9 @@ public static class Runs
     private static string _folder = "";
     private static bool _installed;
     private static Mode _mode;
-    private static bool _firstFrame = true, _startRequested, _hereRequested, _awake;
+    private static bool _firstFrame = true, _startRequested, _hereRequested;
+    // caffeinate, while a run lasts
+    private static Process? _awake;
     private static Director? _run;
     private static string _out = "";
     private static string _test = "mixed";
@@ -249,9 +251,27 @@ public static class Runs
         catch (Exception e)
         {
             Log($"BenchmarkRun: {e}");
-            // What the run switched on in the game and its driver, off again
+            // What the run switched on in the game and its driver, off again; a tab's run that was playing says in its
+            // store how it ended and closes it (a report is made from it with report --again; benchmark.sh's own runs
+            // have their host to say it)
+            var failed = _run;
             _run?.Abandon();
             _run = null;
+            LetGo();
+            if (failed != null && _mode != Mode.Script && _out is { Length: > 0 })
+            {
+                try
+                {
+                    var events = new EventLog(_out, _plan?.Host.Session ?? 1);
+                    events.Add("error", text: $"the benchmark failed: {e.GetType().Name}: {e.Message}");
+                    events.Add("ended", text: "the benchmark failed");
+                    RunStore.Close(_out);
+                }
+                catch (Exception again)
+                {
+                    Log($"BenchmarkRun: the run's store: {again.Message}");
+                }
+            }
             try
             {
                 // The player's game back, or out of the game that started again for the run
@@ -315,19 +335,20 @@ public static class Runs
             Finished();
         if (_run == null)
             return;
+        // The watch, for this run only: it ends with it
         if (!_watching && _mode != Mode.Script)
         {
             _watching = true;
-            new Thread(WatchForHang) { IsBackground = true, Name = "Benchmark watch" }.Start();
+            var run = _run;
+            new Thread(() => WatchForHang(run)) { IsBackground = true, Name = "Benchmark watch" }.Start();
         }
-        // A display that sleeps stops the frames (benchmark.sh does the same for its runs); a recording of the player's
-        // game leaves their Mac's sleep alone
-        if (!_awake && _mode is Mode.InGame or Mode.Restarted)
+        // A display that sleeps stops the frames (benchmark.sh does the same for its runs), while the run lasts; a
+        // recording of the player's game leaves their Mac's sleep alone
+        if (_awake == null && _mode is Mode.InGame or Mode.Restarted)
         {
-            _awake = true;
             try
             {
-                Process.Start("/usr/bin/caffeinate", ["-d", "-i", "-w", Environment.ProcessId.ToString(Inv)]);
+                _awake = Process.Start("/usr/bin/caffeinate", ["-d", "-i", "-w", Environment.ProcessId.ToString(Inv)]);
             }
             catch (Exception e)
             {
@@ -354,20 +375,27 @@ public static class Runs
             End();
     }
 
-    private static void WatchForHang()
+    private static void WatchForHang(Director? watched)
     {
+        // What the run holds checkpoints for (frame captures, dumps): the time it may take, and no stuck there, as
+        // benchmark.sh has it
+        var plan = RunPlan.Read(_out) ?? new RunPlan();
+        bool holds = plan.Record.Capture || Triggers.HoldCheckpoints(Triggers.For(plan));
         while (true)
         {
             Thread.Sleep(1000);
+            // Its run over (or another begun): the watch ends
+            if (_run != watched || watched == null)
+                return;
             if (_run is not { Done: false } run)
                 continue;
             // The run's test may have time warp (full has the Warp Test)
-            int limit = Watchdog.Limit(_test is "warp" or "full");
+            int limit = Watchdog.Limit(_test is "warp" or "full" || holds || Triggers.TakeMinutes(Triggers.For(plan)));
             var played = EventLog.Read(_out);
             if (Watchdog.Hung(played, 1, limit) is not { } stale)
             {
                 // A stuck game still draws its frames: the run stops there, as with Esc, failed, and the player's game comes back
-                if (_stuck?.Run != run && Watchdog.Stuck(played, 1, limit) is { } still)
+                if (!holds && _stuck?.Run != run && Watchdog.Stuck(played, 1, limit) is { } still)
                 {
                     // What the game's threads are doing, before the run stops (the stuck trigger)
                     if (Triggers.For(RunPlan.Read(_out) ?? new RunPlan()).Any(r => r.When == Condition.Stuck && r.Has(TriggerAction.Sample)) &&
@@ -663,11 +691,32 @@ public static class Runs
         Program.Instance.RequestExit(0);
     }
 
+    // What the run kept on in the game for its time: the display awake, the watch; never a failure of its own
+    private static void LetGo()
+    {
+        _watching = false;
+        try
+        {
+            if (_awake is { HasExited: false } awake)
+                awake.Kill();
+        }
+        catch (Exception e)
+        {
+            Log($"BenchmarkRun: caffeinate: {e.Message}");
+        }
+        finally
+        {
+            _awake?.Dispose();
+            _awake = null;
+        }
+    }
+
     // The run has ended: the player's game comes back, then the record and the report are made in the background
     private static void End()
     {
         var mode = _mode;
         _run = null;
+        LetGo();
         if (mode == Mode.InGame)
             PutBack();
         var events = new EventLog(_out, 1);
