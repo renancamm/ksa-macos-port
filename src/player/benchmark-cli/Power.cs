@@ -46,9 +46,9 @@ internal sealed class Power : IDisposable
     private const uint Utf8 = 0x08000100;
     private const double Every = 0.5;
 
-    // Neither better nor worse: a faster frame does more of the GPU's work a second
+    // Shown, not judged: a faster frame does more of the GPU's work a second (gpu/energy, a frame's, is judged)
     public static readonly Metric GpuPower = new("host/gpu_power", "GPU power", "W", Better.Neither, Across.Median, 1,
-        "the GPU's power, from macOS's energy model") { Limit = 10 };
+        "the GPU's power, from macOS's energy model");
     public static readonly Metric GpuActive = new("host/gpu_active", "GPU active", "%", Better.Neither, Across.Median, 0,
         "the share of the time the GPU wasn't off");
     public static readonly Metric GpuClock = new("host/gpu_clock", "GPU clock", "MHz", Better.Neither, Across.Median, 0,

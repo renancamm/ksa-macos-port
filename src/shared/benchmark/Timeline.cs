@@ -5,7 +5,8 @@
 //
 // Its tracks, under one for the run: the parts as they were measured, the run's events, frame time and GPU busy, each
 // frame from its start to its present (CPU) and to the GPU's end (GPU) and its time on screen, KSA Metal's waits by
-// kind, the game's zones around the slow frames the triggers kept (a track per thread), and memory. Every time is the
+// kind, the game's zones around the slow frames the triggers kept (a track per thread), memory, and the counters (the
+// GPU's power and clock from benchmark.sh, the probes'), a track each. Every time is the
 // store's clock (the Mac's monotonic clock) in nanoseconds, so an Instruments trace of the same run lines up.
 using System;
 using System.Collections.Generic;
@@ -115,6 +116,28 @@ public static class Timeline
             if (q.NullableDouble(6) is > 0 and var pause)
                 counters.Add((gc, t, pause));
         });
+        // The counters of both files (the host's power channel, the probes'), a track each with its metric's unit; a value
+        // the same as the one before left out
+        var units = RunStore.ReadMetrics(dir).ToDictionary(m => m.Name, m => (m.Label, m.Unit));
+        var byName = new Dictionary<string, (ulong Track, double Last)>();
+        ulong counterGroup = 0;
+        foreach (var file in new[] { Path.Combine(dir, RunStore.HostFile), game })
+            RunStore.Query(file, "SELECT t, name, value FROM counters ORDER BY t", q =>
+            {
+                string name = q.Text(1);
+                double value = q.Double(2);
+                if (!byName.TryGetValue(name, out var c))
+                {
+                    if (counterGroup == 0)
+                        counterGroup = tracks.Add("Counters", Root);
+                    var (label, unit) = units.GetValueOrDefault(name, (name, ""));
+                    c = (tracks.Add(label == name ? name : $"{label} ({name})", counterGroup, unit.Length > 0 ? unit : "value"), double.NaN);
+                }
+                else if (c.Last == value)
+                    return;
+                counters.Add((c.Track, q.Double(0), value));
+                byName[name] = (c.Track, value);
+            });
         double lastShown = 0;
         RunStore.Query(game, "SELECT present, began, presented, gpu_end, shown FROM shown ORDER BY present", q =>
         {
@@ -259,7 +282,7 @@ public static class Timeline
             """);
         html.Append("</style></head><body><main>");
         html.Append($"<h1>Timeline of {System.Net.WebUtility.HtmlEncode(run)}</h1>");
-        html.Append("<p>The run's store as a trace for Perfetto's viewer: the parts, frame and GPU times, each frame's way to the screen, KSA Metal's waits, the game's zones around slow frames. The viewer runs in your browser: the trace goes from this page to it, and nowhere else.</p>");
+        html.Append("<p>The run's store as a trace for Perfetto's viewer: the parts, frame and GPU times, each frame's way to the screen, KSA Metal's waits, the game's zones around slow frames, the counters (the GPU's power and clock, the probes'). The viewer runs in your browser: the trace goes from this page to it, and nowhere else.</p>");
         html.Append($"<p><button id=\"open\">Open in Perfetto</button></p><p id=\"said\"></p><p>Or open <code>{TraceFile}</code> in ui.perfetto.dev yourself.</p>");
         html.Append("<script>");
         html.Append($"const trace = '{Convert.ToBase64String(trace)}', name = '{run}';");

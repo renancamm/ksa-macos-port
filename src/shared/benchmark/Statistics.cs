@@ -53,7 +53,8 @@ public static class Statistics
     // B's number against A's; null when one side lacks it, or the metric isn't judged
     public static Verdict? Judge(PartRecord a, PartRecord b, Metric m)
     {
-        if (a[m] is not { } x || b[m] is not { } y || m.Limit is not { } own)
+        // A number neither better nor worse is shown, never judged (a run may carry a limit for it from before)
+        if (a[m] is not { } x || b[m] is not { } y || m.Limit is not { } own || m.Better == Better.Neither)
             return null;
         var limit = m.Calibrated && (a.Limit ?? b.Limit) != null ? Math.Max(a.Limit ?? 0, b.Limit ?? 0) : own;
         var basis = BasisOf(a, b, m);

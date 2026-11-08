@@ -110,7 +110,7 @@ public static partial class Program
                              memory, zone_stats, moments, slices, events (default: the last run)
           ./benchmark.sh timeline [run]
                              the run in Perfetto's viewer, in your browser: its parts, frame and GPU times, each frame's way
-                             to the screen, KSA Metal's waits, the game's zones around slow frames
+                             to the screen, KSA Metal's waits, the game's zones around slow frames, the counters
           ./benchmark.sh baseline [set <name> [run...] | remove <name>]
                              name runs to compare with, one of each test (check compares with main)
           ./benchmark.sh explore
