@@ -741,7 +741,7 @@ public static class Pages
     // --- compare.html
 
     public static void WriteCompare(string a, string b, RunRecord ra, RunRecord rb, Comparison c, IReadOnlyList<ShotResult> shots, string verdict,
-        bool? good, IReadOnlyList<(string Key, string A, string B)> differences, string shotsNote)
+        bool? good, IReadOnlyList<(string Key, string A, string B)> differences, IReadOnlyList<string> warnings, string shotsNote)
     {
         var html = new StringBuilder();
         var test = TestName(rb.Test);
@@ -750,6 +750,8 @@ public static class Pages
         html.Append($"<h1>{E(test)}</h1><p><b>A</b> {E(When(ra))} &nbsp; <b>B</b> {E(When(rb))}</p>");
         html.Append(good is { } better ? Status(better, verdict) : $"<span class=\"status\">{E(verdict)}</span>");
         html.Append("</div></header><main>");
+        if (warnings.Count > 0)
+            html.Append("<section>").Append(string.Concat(warnings.Select(w => $"<p class=\"lead\">{E(w)}</p>"))).Append("</section>");
 
         // What moved first: each part that changed, with its zones
         var moved = c.Parts.Concat(c.Warps).Where(p => p.Decides is { Changed: true }).ToList();

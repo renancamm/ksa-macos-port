@@ -74,6 +74,8 @@ public static class Runs
     private static Action<IReadOnlyDictionary<string, string>>? _restart;
 
     private static void Log(string message) => _log(message);
+    // What the hooks applied ("TerrainCache: on; ..."), home as ~
+    internal static string HooksSummary => _hooksSummary().Replace(Home, "~");
 
     // The app's Contents/Resources: the benchmark is in its Benchmark folder
     private static string Resources =>
@@ -475,7 +477,7 @@ public static class Runs
             new("System", Universe.CurrentSystem?.Id ?? _system), new("Test", _test), new("Scenarios", plan.Play.Only), new("Mode", plan.Play.Mode),
             new("Start", start), new("KSA Metal switches", outside.Count > 0 ? string.Join(' ', outside) : "none"),
             // What this game ran with: the port settings that aren't at their defaults, and what the hooks did
-            new("port settings", port.Count > 0 ? string.Join(", ", port) : "defaults"), new("Hooks", _hooksSummary().Replace(Home, "~")),
+            new("port settings", port.Count > 0 ? string.Join(", ", port) : "defaults"), new("Hooks", HooksSummary),
             // The Report Detail's and the captures' tools, and its probe
             .. Tools(plan) is { Count: > 0 } tools ? [new Fact("Tools", string.Join(", ", tools))] : Array.Empty<Fact>(),
             .. plan.Record.Probes.Count > 0 ? [new Fact("Probes", string.Join(", ", plan.Record.Probes))] : Array.Empty<Fact>()

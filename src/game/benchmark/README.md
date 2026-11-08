@@ -153,6 +153,9 @@ warp), and the other numbers beside it ([`../../shared/benchmark/Comparison.cs`]
 | one game session a side, several passes (`measure`) | quick read | the passes' ranges don't overlap and it is over 2 % |
 | several game sessions a side (a [study](#studies), `measure --sessions`) | sessions | each session's median is a sample: Mann-Whitney's p under 0.05, Cliff's delta from 0.147 (not negligible) and past the limit; with fewer than 5 sessions a side, inconclusive |
 
+Two `measure --sessions` runs compared played their sessions one run after the other, and a Mac's heat over such a
+series moves GPU time on its own (several % in half an hour): `compare` says so. A study plays the sides in turns.
+
 The verdict names its basis (`GPU time 12 % lower (screen)`), and the comparison names the zones that moved with each
 part that changed: the GPU's when both runs were profiled (`earth4 GPU busy +1.4 ms: Clouds Raymarching +1.20`), else
 the main thread's for a frame time. `compare.html` shows the verdict and what moved first; every judged number, with
