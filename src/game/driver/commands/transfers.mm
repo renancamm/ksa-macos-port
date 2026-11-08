@@ -302,6 +302,15 @@ void KCommandBuffer::stampTimestamp(KQueryPool* pool, uint32_t query) {
     // It waits for everything before it, MSAA resolves too: its wait clears what later encoders would wait for
     // (waitForResolves), so they would no longer wait for those
     waitForAllResolves();
+    // A blit with counter samples doesn't keep the fences' order: work after it can start before the work before it is
+    // done (a split render pass's second half read the first half's stores stale: the cockpit lost its lights in 4 of 9
+    // split game sessions, 0 of 8 with the same blit without its samples, 0 of 5 with no blit between the halves). An
+    // event before it waits for everything recorded so far; timestamps back to back share one
+    if (!stampedLast) {
+        if (!stampEvent) stampEvent = [device->mtl newEvent];
+        [mtl encodeSignalEvent:stampEvent value:++stampSignaled];
+        [mtl encodeWaitForEvent:stampEvent value:stampSignaled];
+    }
     MTLBlitPassDescriptor* d = [MTLBlitPassDescriptor blitPassDescriptor];
     d.sampleBufferAttachments[0].sampleBuffer = tsSamples;
     d.sampleBufferAttachments[0].startOfEncoderSampleIndex = tsUsed;
@@ -312,6 +321,7 @@ void KCommandBuffer::stampTimestamp(KQueryPool* pool, uint32_t query) {
     [b updateFence:finishFence(kClassAll)];
     [b endEncoding];
     encRoles = 0;
+    stampedLast = true;
     tsWrites.push_back({pool, query, tsUsed + 1});
     tsUsed += 2;
 }

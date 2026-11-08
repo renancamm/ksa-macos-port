@@ -4,7 +4,8 @@
 // before it.
 //
 //   ksaMtlZoneMode(mode)    how the game's timestamps are answered from the next one on:
-//                           0 as they come: each one ends the encoder and waits for everything before it; one inside a
+//                           0 as they come: each one ends the encoder and waits for everything before it, through an
+//                             event (an encoder with counter samples doesn't keep the fences' order); one inside a
 //                             render pass is taken when the pass ends, so a zone inside a pass reads about 0
 //                           1 labels: answered at once with 0, no encoder and no wait; the game's profiler then only
 //                             names the encoders (with labels)
