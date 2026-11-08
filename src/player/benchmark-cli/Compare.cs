@@ -252,7 +252,7 @@ public static partial class Program
             md.AppendLine($"Only in a: {string.Join(", ", c.OnlyA)}.");
         if (c.OnlyB.Count > 0)
             md.AppendLine($"Only in b: {string.Join(", ", c.OnlyB)}.");
-        md.AppendLine(Pages.BasisNote(c.Basis) + (c.Basis == Basis.Screen ? " Frame times sit on the display's beat: read GPU busy first." : ""));
+        md.AppendLine(Pages.BasisNote(c.Basis) + (c.Basis == Basis.Screen && c.Parts.Any(p => p.Steps) ? " With Vsync, frame times sit on the display's beat: read GPU busy first." : ""));
         md.AppendLine(Pages.NotJudged);
         md.AppendLine();
     }

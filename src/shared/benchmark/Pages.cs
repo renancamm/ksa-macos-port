@@ -793,7 +793,7 @@ public static class Pages
 
         if (c.Parts.Count > 0)
         {
-            html.Append("<section><h2>Part by part</h2><p class=\"lead\">GPU busy a frame where both runs have it (frame times sit on the display's beat). Small changes are within run-to-run noise and go unmarked.</p>");
+            html.Append("<section><h2>Part by part</h2><p class=\"lead\">GPU busy a frame where both runs have it (with Vsync, frame times sit on the display's beat). Small changes are within run-to-run noise and go unmarked.</p>");
             ComparisonTable(html, c, "A", "B");
             html.Append($"<p class=\"small\">{E(NotJudged)}</p></section>");
         }

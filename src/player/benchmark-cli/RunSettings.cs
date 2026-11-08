@@ -36,6 +36,8 @@ public static partial class Program
             var start = new List<string> { "selectSystemOnStart=false", $"lastSystemId=\"{SystemId}\"", "startGameType=\"Testing\"",
                 "startVehicle=\"Rocket\"", "startParent=\"Earth\"", "startSituation=\"RocketStartingSituation\"", "checkForUpdates=false",
                 "displayChangelogOnChange=false", "celestialNames=false", "locationNames=false" };
+            if (Uncapped)
+                start.Add("vsync=false");
             if (_preset.Length > 0)
                 start.AddRange(PresetCommon.Concat(Presets[_preset]));
             // --defaults is a fresh install's first start, with Auto Memory Saving on: with 8 GB or less, the game's
@@ -106,6 +108,8 @@ public static partial class Program
                 File.Copy(template, portSettings);
             else
                 File.WriteAllText(portSettings, "");
+            if (Uncapped && !GameHas("vsync"))
+                SaidWithoutVsync(portSettings);
             if (_ports.Count == 0 && _ab.Length == 0 && !_defaults && _preset.Length == 0)
                 return;
             // --port: checked against the app's table (a key or value the game doesn't take would run an unchanged
@@ -155,13 +159,36 @@ public static partial class Program
             var file = PortSettings.ReadFile();
             string ValueOf(PortSetting s) => file.GetValueOrDefault(s.Key) ?? s.Default;
             string a = ValueOf(abSetting), b = _ab[(abKey.Length + 1)..];
-            if (!PortSettings.Met(abSetting, ValueOf, _ => true))
+            if (!PortSettings.Met(abSetting, ValueOf, GameHas))
                 Die($"--ab {_ab}: {abKey} needs {string.Join(" and ", abSetting.Needs)}, which the run's settings don't have, so A " +
-                    "and B would play the same. Add it with --port.");
+                    $"and B would play the same. {(abSetting.Needs.Contains("game:vsync") && !GameHas("vsync") ? "This run plays without Vsync: add --capped." : "Add it with --port.")}");
             if (SameValue(abSetting, a, b))
                 Die($"--ab {_ab}: A has {abKey} = {a} too, so A and B would play the same. Give A another value with " +
                     $"--port {abKey}=<value>, or B another with --ab.");
         }
+
+        // The rows of the run's port settings that need Vsync and are set, which do nothing in a run without it: said
+        private void SaidWithoutVsync(string portSettings)
+        {
+            try
+            {
+                PortSettings.LoadTable(_res);
+                PortSettings.FilePath = portSettings;
+                var file = PortSettings.ReadFile();
+                foreach (var row in PortSettings.All.Where(r => r.Needs.Contains("game:vsync") && file.TryGetValue(r.Key, out var v) && !SameValue(r, v, r.Default)))
+                    Output.Info($"{row.Key} needs Vsync, which this run plays without: --capped plays it.");
+            }
+            catch (Exception e) when (e is IOException or FormatException)
+            {
+            }
+        }
+
+        // Whether the run's game settings have one of the game's own a port setting needs (game:vsync: Vsync on)
+        private bool GameHas(string what) => what switch
+        {
+            "vsync" => File.ReadLines(_settings).Select(l => l.Trim()).FirstOrDefault(l => l.StartsWith("vsync = ", StringComparison.Ordinal)) is not "vsync = false",
+            _ => true,
+        };
 
         // Whether two values of a setting are the same to the game: numbers by their value ("1" and "1.0")
         private static bool SameValue(PortSetting setting, string a, string b) => setting.Kind switch
