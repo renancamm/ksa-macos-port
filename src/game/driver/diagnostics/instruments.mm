@@ -295,6 +295,26 @@ static void writeHdrPNG(id<MTLTexture> tex, const std::string& path) {
     else KLOG(0, "screenshot FAILED: %s (%s)", path.c_str(), err.localizedDescription.UTF8String);
 }
 
+// Screenshots are encoded and written on a queue of their own, not in the completion handler: a queue's handlers run one
+// at a time, and a PNG of a 6 MP frame (~170 ms) held the presents behind it from being shown, and the game's wait for
+// them timed out. Past a few shots waiting (a film asks faster than they're written, each holding its frame's copy), the
+// handler waits for its own: the game slows to the writer's pace, as before, and the order stays
+static std::atomic<int> g_shotsWaiting{0};
+constexpr int kShotsWaiting = 3;
+
+static void writeShot(void (^write)(void), void (^done)(void)) {
+    static dispatch_queue_t q = dispatch_queue_create("ksa-metal.screenshots", DISPATCH_QUEUE_SERIAL);
+    void (^run)(void) = ^{
+        @autoreleasepool {
+            write();
+        }
+        if (done) done();
+        g_shotsWaiting--;
+    };
+    if (g_shotsWaiting++ >= kShotsWaiting) dispatch_sync(q, run);
+    else dispatch_async(q, run);
+}
+
 // The path is taken by value: the completion block keeps its own copy (a captured reference would outlive requests)
 void kmtlSavePNG(id<MTLCommandBuffer> cb, id<MTLTexture> tex, id<MTLFence> after, std::string path, void (^done)(void)) {
     NSUInteger w = tex.width, h = tex.height;
@@ -308,8 +328,7 @@ void kmtlSavePNG(id<MTLCommandBuffer> cb, id<MTLTexture> tex, id<MTLFence> after
         [b copyFromTexture:tex toTexture:copy];
         [b endEncoding];
         [cb addCompletedHandler:^(id<MTLCommandBuffer>) {
-            writeHdrPNG(copy, path);
-            if (done) done();
+            writeShot(^{ writeHdrPNG(copy, path); }, done);
         }];
         return;
     }
@@ -321,8 +340,7 @@ void kmtlSavePNG(id<MTLCommandBuffer> cb, id<MTLTexture> tex, id<MTLFence> after
               toBuffer:buf destinationOffset:0 destinationBytesPerRow:w * 4 destinationBytesPerImage:w * h * 4];
     [b endEncoding];
     [cb addCompletedHandler:^(id<MTLCommandBuffer>) {
-        kmtlWritePNG(buf, w, h, bgra, path);
-        if (done) done();
+        writeShot(^{ kmtlWritePNG(buf, w, h, bgra, path); }, done);
     }];
 }
 
