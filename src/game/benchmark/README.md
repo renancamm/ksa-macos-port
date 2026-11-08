@@ -21,7 +21,13 @@ In the game, open the settings (Esc), then **Mac Port**, and press a test's **RU
 settings. It plays in the game you have open. Your game is saved first, the test plays in a new game's world, and your
 game comes back when it ends; Esc stops it. With **Restart for a Clean Run** on, your game is saved as "Before the
 benchmark" and the game starts again for it instead, the way `./benchmark.sh` plays it, and quits at the end with the
-report open. **Show report** under the buttons opens the last report.
+report open. **Show report** under the buttons opens the last report, and **Timeline**'s **OPEN** opens the last run
+frame by frame in your browser (it stays on this Mac).
+
+**Report Detail** says what a test's report holds besides its frame rate: **Standard**, its numbers and screenshots;
+**Profile**, also the GPU's work named in each part ("Clouds Raymarching", "Ocean"), from the test played twice more in a
+game started again, which quits at the end as with Restart for a Clean Run (`./benchmark.sh profile`; not with Full);
+**Memory**, also what holds the game's memory at each view.
 
 **Your Game**'s **RECORD** button records your own game instead: 20 seconds of your play from when the settings close,
 with the frame rate, the stutters and what caused them, as a report to share when the game stutters somewhere. Nothing
@@ -285,6 +291,10 @@ against it and the game); one that throws is left out of the rest of the run, wh
 | `Host.Zone(name)` | `using (Host.Zone("solve")) { ... }` on any thread: its time a frame, a counter |
 | `Host.Event`, `Host.Artefact`, `Host.Census` | an event in the store, a file in the run's `probes/<probe>/`, an owner of memory at the checkpoint (in `BeforeShot` or `AfterShot`) |
 | `Host.Knob(key)`, `Host.Method(type, name, ...)`, `Host.Patch(target, prefix, postfix, transpiler)` | its knobs; the hooks' lookup of the game's methods, which says in the log when a KSA update moved one, and their Harmony |
+
+From the tab, Report Detail Memory is the `memory` probe, and the settings file's Diagnostics row `benchmark_captures`
+adds an Xcode frame capture at each view of the Mixed Test at Standard, in a game started again with frame captures
+allowed.
 
 `--channels` turns off what every run records (`-zones`: the game's profilers, `-runtime`: .NET's counters) or adds the
 benchmark's probes (`+memory`).
