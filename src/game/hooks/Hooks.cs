@@ -17,8 +17,9 @@ public static class Hooks
     // The hooks in the order they were applied
     private static readonly List<string> Applied = new();
 
-    // What every hook did, as the log said it ("TerrainCache: on; ...")
-    public static string Summary => string.Join("; ", Applied.Select(h => $"{h}: {Status[h].Text}"));
+    // What every hook did, as the log said it ("TerrainCache: on; ..."), and whether they were off but for the benchmark
+    public static string Summary => string.Join("; ", (Settings.Hooks ? Array.Empty<string>() : ["off, except for the benchmark"])
+        .Concat(Applied.Select(h => $"{h}: {Status[h].Text}")));
 
     // The app's Contents/Resources: the hooks are in its Hooks folder
     public static string Resources => System.IO.Path.GetFullPath(System.IO.Path.Combine(

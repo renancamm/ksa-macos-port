@@ -72,6 +72,9 @@ public static partial class Program
             else if (record.Status == Status.Failed)
                 warnings.Add($"Run {run} failed (see its report.md): the parts its problems concern may not compare.");
         }
+        // Sessions a side played run after run: the Mac's heat over that series moves GPU time on its own, a study's turns don't
+        if (c.Basis == Basis.Sessions)
+            warnings.Add("Each run played its sessions in a row, one run after the other: a Mac's heat moves GPU time on its own over a series like that (several % in half an hour). A study plays the sides in turns (./benchmark.sh study, a variant a side, --app for another build).");
         if (Scenarios(ra) != Scenarios(rb))
             warnings.Add($"The runs played different scenarios ({Scenarios(ra)}; {Scenarios(rb)}): clouds and the sea follow what played before, so screenshots may differ for that alone.");
         var differences = Macs(ra, rb);
@@ -138,7 +141,7 @@ public static partial class Program
         var printed = new StringBuilder(head.ToString()).Append(body).Append(shotsNote).Append(ShotsForTerminal(shots, differ));
         head.Append(body).Append(shotsTable);
         File.WriteAllText(Path.Combine(dirB, "compare.md"), head.ToString());
-        Pages.WriteCompare(dirA, dirB, ra, rb, c, shots, verdict, good, differences, shotsNote.Trim());
+        Pages.WriteCompare(dirA, dirB, ra, rb, c, shots, verdict, good, differences, warnings, shotsNote.Trim());
         Console.Write(Terminal.Layout(printed.ToString()));
         Console.WriteLine();
         Console.WriteLine($"Side by side: {Path.Combine(dirB, "compare.html")}");
@@ -175,12 +178,22 @@ public static partial class Program
     {
         var rows = ra.Facts.Select(f => f.Key).Union(rb.Facts.Select(f => f.Key))
             .Where(k => k is not ("Displays" or "Scenarios" or "Settings changed") && ra.Fact(k) != rb.Fact(k))
-            .Select(k => (k, ra.Fact(k) ?? "", rb.Fact(k) ?? "")).ToList();
+            .Select(k => k == "Hooks" ? HooksThatDiffer(ra.Fact(k) ?? "", rb.Fact(k) ?? "") : (k, ra.Fact(k) ?? "", rb.Fact(k) ?? ""))
+            // The same hooks in another order, or a line said more often, differ in nothing
+            .Where(r => r is not ("Hooks", "-", "-")).ToList();
         if (ra.Mode != rb.Mode)
             rows.Add(("Mode", ra.Mode, rb.Mode));
         if (ra.Drawable != rb.Drawable)
             rows.Add(("Drawn", ra.Drawable ?? "", rb.Drawable ?? ""));
         return rows;
+    }
+
+    // The hooks whose words differ, each side's: the rest are the same
+    private static (string Key, string A, string B) HooksThatDiffer(string a, string b)
+    {
+        var (ha, hb) = (a.Split("; "), b.Split("; "));
+        string Only(string[] these, string[] others) => string.Join("; ", these.Except(others)) is { Length: > 0 } only ? only : "-";
+        return ("Hooks", Only(ha, hb), Only(hb, ha));
     }
 
     // The settings that differ between the two runs (settings.toml in their folders)

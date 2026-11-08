@@ -509,6 +509,8 @@ public partial class Director
         {
             double load = Math.Round((DateTime.Now - Process.GetCurrentProcess().StartTime).TotalSeconds - _waiting.Elapsed.TotalSeconds, 1);
             _events.Add("loaded", value: load);
+            // What the hooks applied, all of it at the game's start: the record's Hooks fact, without the log's later lines
+            _events.Add("hooks", text: Runs.HooksSummary);
             Log(FormattableString.Invariant($"first in-game frame after {load:F1} s"));
         }
         // The scene alone, without the game's interface (F2)

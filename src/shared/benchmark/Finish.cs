@@ -74,7 +74,8 @@ public static class Finish
         record.Moments = RunStore.ReadMoments(dir);
         record.ProbeMetrics = probeMetrics;
         record.Census = RunStore.ReadCensus(dir);
-        record.Facts = kept ?? Facts.Gather(dir, plan.Host.App, plan.Host.Facts, logs.FirstOrDefault().Lines ?? [], asksMac);
+        record.Facts = kept ?? Facts.Gather(dir, plan.Host.App, plan.Host.Facts, logs.FirstOrDefault().Lines ?? [], asksMac,
+            events.FirstOrDefault(e => e.Type == "hooks")?.Text);
         if (record.WarmUp is { } warmUp)
             record.Facts.Add(new Fact("Warm-up", warmUp.GpuMs is { } gpu
                 ? $"a pass first, left out (GPU {gpu:F1} ms a frame)" : "a pass first, left out"));

@@ -361,6 +361,21 @@ internal static class Tests
         var names = zip.Entries.Select(e => e.FullName).ToArray();
         foreach (var file in new[] { "run.json", "report.md", "report.html", "run.db", "plan.json", "game.log" })
             Contains(names, $"2026-10-26_0100/{file}", "the zip");
+
+        // The game's hooks event: what the hooks applied, without the lines they log while the run plays
+        var said = Path.Combine(_scratch, "2026-10-26_0101");
+        Directory.CreateDirectory(said);
+        new RunPlan { Play = new() { Test = "mixed", Mode = "views" } }.Write(said);
+        var events = new EventLog(said);
+        Session(said, events, 1, 10, null, Kind.Views);
+        events.Add("hooks", text: "TerrainCache: on; FarTerrain: on, by altitude");
+        File.WriteAllLines(Path.Combine(said, "game.log"),
+            ["[hooks] TerrainCache: on", "[hooks] FarTerrain: on, by altitude", "[hooks] FarTerrain: EarthScale level 17 built (jump, waited 161 ms)",
+             "[hooks] TerrainCache: failed while the game ran (NullReferenceException: x)"]);
+        var hooked = Finished(said);
+        Equal("TerrainCache: on; FarTerrain: on, by altitude; TerrainCache: failed while the game ran (NullReferenceException: x)", hooked.Fact("Hooks"),
+            "the hooks, from the game's event, with one that failed after it");
+        Contains(Problems(hooked), "the hooks' TerrainCache: failed while the game ran", "a hook failed while the run played");
     }
 
     private static void Compare()
@@ -398,6 +413,26 @@ internal static class Tests
         Finished(c);
         Said(() => KsaMetal.Benchmark.Cli.Program.Compare(a, c));
         Contains([File.ReadAllText(Path.Combine(c, "compare.md"))], "| 10.0 | 10.2 | +2 % |", "a change within noise, unmarked");
+        Check(!File.ReadAllText(Path.Combine(c, "compare.md")).Contains("in a row", StringComparison.Ordinal), "one session a side: no word on heat");
+
+        // Sessions a side, played run after run: the heat's warning, on the page too
+        var (d, e) = (Run("d", sessions: 5), Run("e", sessions: 5));
+        Finished(d);
+        Finished(e);
+        (_, output) = Said(() => KsaMetal.Benchmark.Cli.Program.Compare(d, e));
+        Contains([output], "Each run played its sessions in a row", "the heat's warning");
+        Contains([File.ReadAllText(Path.Combine(e, "compare.html"))], "Each run played its sessions in a row", "the warning on the page");
+
+        // Hooks that differ: only those, each side's
+        var (f, g) = (Run("f", facts: [new("Hooks", "TerrainCache: on; CloudSteps: off")]), Run("g", facts: [new("Hooks", "TerrainCache: on; CloudSteps: on")]));
+        Finished(f);
+        Finished(g);
+        Said(() => KsaMetal.Benchmark.Cli.Program.Compare(f, g));
+        Contains([File.ReadAllText(Path.Combine(g, "compare.md"))], "| Hooks | CloudSteps: off | CloudSteps: on |", "the hooks that differ");
+        var h = Run("h", facts: [new("Hooks", "CloudSteps: off; TerrainCache: on")]);
+        Finished(h);
+        Said(() => KsaMetal.Benchmark.Cli.Program.Compare(f, h));
+        Contains([File.ReadAllText(Path.Combine(h, "compare.md"))], "Same Mac, same version, same settings.", "the same hooks in another order");
     }
 
     private static void CompareModes()

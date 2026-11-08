@@ -20,17 +20,27 @@ public static class Facts
         ("port settings", null), ("Hooks", null),
     ];
 
-    public static List<Fact> Gather(string dir, string app, IReadOnlyList<Fact> given, IReadOnlyList<string> log, bool asksMac = true)
+    // hooks: what the hooks applied, as the game said it when the world loaded (its hooks event), with the log's hooks that
+    // failed after it; else the log's hooks lines (a run of before)
+    public static List<Fact> Gather(string dir, string app, IReadOnlyList<Fact> given, IReadOnlyList<string> log, bool asksMac = true,
+        string? hooks = null)
     {
         var facts = asksMac ? Mac(app) : [];
         var settings = File.Exists(Path.Combine(dir, "settings.toml")) ? File.ReadAllLines(Path.Combine(dir, "settings.toml")) : [];
         string Setting(string key) => settings.Select(l => l.Trim()).Where(l => l.StartsWith(key + " = ", StringComparison.Ordinal))
             .Select(l => l[(key.Length + 3)..].Trim('"')).FirstOrDefault() ?? "?";
         // What the port ran with, from the game's log when the host didn't say
+        var hookLines = log.Where(l => l.StartsWith("[hooks] ", StringComparison.Ordinal)).Select(l => l[8..]).ToList();
+        if (hooks is { Length: > 0 })
+        {
+            var said = hooks.Split("; ");
+            var failed = hookLines.Where(l => l.Split(": ", 2) is [_, var status] && status.StartsWith("failed", StringComparison.Ordinal) && !said.Contains(l));
+            hooks = string.Join("; ", said.Concat(failed));
+        }
         var fromLog = new List<Fact>
         {
             new("port settings", log.Where(l => l.StartsWith("==> port settings: ", StringComparison.Ordinal)).Select(l => l[19..]).FirstOrDefault() ?? "?"),
-            new("Hooks", log.Where(l => l.StartsWith("[hooks] ", StringComparison.Ordinal)).Select(l => l[8..]).ToList() is { Count: > 0 } hooks ? string.Join("; ", hooks) : "none"),
+            new("Hooks", hooks is { Length: > 0 } ? hooks : hookLines.Count > 0 ? string.Join("; ", hookLines) : "none"),
         };
         foreach (var (key, fallback) in RunFacts)
         {
