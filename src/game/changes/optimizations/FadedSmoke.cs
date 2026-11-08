@@ -14,11 +14,15 @@ namespace KsaMetal.Hooks.Optimizations;
 // and MoveVertices splits them, up to the 65,536 a body can hold, and the smoke's shadow cascades draw them: 1-3 fps
 // with nothing in the sky. ApplySegmentsAge now removes a segment at the shorter of the two ages. What it removes has no
 // density left; near live smoke it can still shift the raymarch's samples a little, as small as the plume's own flicker.
+// KSA 2026.11.10 does it itself: its HasVertexExpired removes a segment past its lifetime whatever the handoff age
+// (5798). With that method there, the hook leaves the game as it is.
 [Hook(Phase.Default, Switch = nameof(Settings.ClearFadedSmoke))]
 internal static class FadedSmoke
 {
     public static string Apply(Harmony harmony)
     {
+        if (AccessTools.Method(typeof(PlumeSegmentMaintenance), "HasVertexExpired") != null)
+            return "game's";
         harmony.Patch(Find.Method(typeof(PlumeSegmentMaintenance), "ApplySegmentsAge"),
             transpiler: new HarmonyMethod(typeof(FadedSmoke), nameof(Transpiler)));
         return "on";
