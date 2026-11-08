@@ -17,7 +17,8 @@
 // so that comparisons and studies judge them as the others.
 //
 // Measure makes a measuring's numbers (one part in one pass of one session) from its frames, KSA Metal's shown records
-// of its presents and the game's zone sums; Merge puts a part's measurings together.
+// of its presents, each frame's own GPU time (frame_gpu; the frames' GPU column in a run of before) and the game's zone
+// sums; Merge puts a part's measurings together.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -193,7 +194,8 @@ public static class Measure
     // order they began), the zone sums of the measuring, and with a timed scenario's part the game's clock and substeps
     // when it opened
     public static Dictionary<string, double> Of(IReadOnlyList<FrameRow> frames, IReadOnlyDictionary<ulong, ShownRow>? shown,
-        IEnumerable<ZoneRow>? zones, double? openGame, long? openSubsteps, IReadOnlyList<WaitRow>? waits = null, FrameRow? before = null)
+        IEnumerable<ZoneRow>? zones, double? openGame, long? openSubsteps, IReadOnlyList<WaitRow>? waits = null, FrameRow? before = null,
+        IReadOnlyDictionary<ulong, double>? frameGpu = null)
     {
         var v = new Dictionary<string, double>(StringComparer.Ordinal);
         var frameMs = frames.Select(r => r.FrameMs).ToArray();
@@ -223,7 +225,10 @@ public static class Measure
         }
         if (presented.Count > 0)
         {
-            var gpu = presented.Select(r => r.GpuMs!.Value).OrderBy(x => x).ToArray();
+            // Each frame's own GPU time where KSA Metal gave it for nearly all (a record dropped leaves the frame out), else
+            // what completed between each present and the one before: never the two in one part
+            var own = frameGpu == null ? [] : presented.Where(r => frameGpu.ContainsKey(r.Present)).Select(r => frameGpu[r.Present]).ToArray();
+            var gpu = (own.Length >= 0.9 * presented.Count ? own : presented.Select(r => r.GpuMs!.Value)).OrderBy(x => x).ToArray();
             Set(v, Metrics.GpuBusy, Percentile(gpu, 50));
             Set(v, Metrics.GpuP95, Percentile(gpu, 95));
             Set(v, Metrics.Draws, Percentile(presented.Select(r => (double)r.Draws).OrderBy(x => x).ToArray(), 50));

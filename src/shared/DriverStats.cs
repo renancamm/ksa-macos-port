@@ -42,6 +42,10 @@ public sealed record WaitRecord(double T, double Ms, ulong Present, string What)
 // An allocation (bytes positive) or a free (negative) of 16 MB or more, of a Vulkan memory type
 public sealed record MemoryRecord(double T, long Bytes, uint Type, ulong Present) : DriverRecord;
 
+// A frame's own GPU time, when its present's command buffer completed: the present (as PresentRecord numbers it), when,
+// the GPU's busy ms since the frame before's present completed
+public sealed record FrameGpuRecord(ulong Present, double T, double GpuMs) : DriverRecord;
+
 public enum ZoneMode : uint { AsTheyCome, Labels, Split }
 
 public static unsafe class DriverStats
@@ -224,6 +228,9 @@ public static unsafe class DriverStats
                     break;
                 case 4 when r.Length >= 32:
                     into.Add(new MemoryRecord(D(r, 0), MemoryMarshal.Read<long>(r[8..]), MemoryMarshal.Read<uint>(r[16..]), U(r, 24)));
+                    break;
+                case 5 when r.Length >= 24:
+                    into.Add(new FrameGpuRecord(U(r, 0), D(r, 8), D(r, 16)));
                     break;
             }
             bytes = bytes[size..];

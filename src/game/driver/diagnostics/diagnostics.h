@@ -25,6 +25,7 @@ extern "C" uint32_t ksaMtlFrameStats(KsaMtlFrameStats* out, uint32_t size);
 void kmtlDrainPresent(double t, const KsaMtlFrameStats& stats);
 void kmtlDrainShown(uint64_t present, double began, double presented, double gpuEnd, double shown, double waitedMs, bool paced);
 void kmtlDrainMemory(int64_t bytes, uint32_t type);
+void kmtlDrainFrameGpu(uint64_t present, double t, double ms);
 
 // Frame instruments (instruments.mm)
 void kmtlOnPresent(KDevice* dev, KSwapchain* swapchain, KImage* image, id<MTLCommandBuffer> cb);

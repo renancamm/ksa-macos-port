@@ -8,6 +8,10 @@
 //              waited for an earlier frame, and whether pacing ended that wait
 //   3 wait     a scope that blocked its caller at least the reader's threshold (KStallTimer, residency commits)
 //   4 memory   an allocation (bytes positive) or a free (negative) of 16 MB or more (resources/memory.mm)
+//   5 gpu      a frame's own GPU time, when its present's command buffer completed (presentation/swapchain.mm): the
+//              present (as the present record numbers it), when, and the GPU's busy time since the frame before's
+//              present completed. The present record's GPU time is what completed between two presents on the CPU's
+//              clock, which lags by the frames in flight and puts two frames' work in one after a stall
 //
 // Each record is a header (type, size of the whole record, 4 bytes unused) and its fields; a record that finds the ring
 // full is dropped and counted, so nothing ever waits for the reader. kDrainVersion names this layout: the reader opens
@@ -45,6 +49,11 @@ struct MemoryRec {
     int64_t bytes;
     uint32_t type, reserved;
     uint64_t present;
+};
+struct GpuRec {
+    Header h;
+    uint64_t present;
+    double t, ms;
 };
 
 std::mutex g_drainMutex;
@@ -149,6 +158,14 @@ void kmtlDrainWait(const char* what, double start, double ms) {
     r.present = kmtlPresentCount();
     strlcpy(r.what, what, sizeof r.what);
     push(3, r);
+}
+
+void kmtlDrainFrameGpu(uint64_t present, double t, double ms) {
+    GpuRec r{};
+    r.present = present;
+    r.t = t;
+    r.ms = ms;
+    push(5, r);
 }
 
 void kmtlDrainMemory(int64_t bytes, uint32_t type) {

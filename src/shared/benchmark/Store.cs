@@ -12,6 +12,11 @@
 //             GPU and was shown, how long the frame waited, whether pacing ended the wait
 //   waits     a call that blocked the game longer than the threshold the director opened the drain with: what, how long
 //   memory    an allocation (positive) or a free (negative) of 16 MB or more
+//   frame_gpu a present's frame's own GPU time, when its command buffer completed (a part's GPU busy; presents' gpu_ms is
+//             what completed between two presents)
+//
+// shown and frame_gpu carry the game session (every session's game writes the run's file, and each counts its presents
+// from 1); a store of before has none, its presents read as the first session's.
 //   zone_stats, moments, slices  the game's profiler zones summed per part, the slow frames and what took their time
 //             (Zones.cs)
 //   counters  a probe's counter, sampled once a frame: its metric's name, its value, and the part it counts in
@@ -64,7 +69,7 @@ public static class RunClock
 public sealed class RunStore : IDisposable
 {
     public const string GameFile = "run.db", HostFile = "host.db";
-    private const int Schema = 3;
+    private const int Schema = 4;
 
     // The file this process writes: the game's, unless the process says it is the host (benchmark.sh's program)
     public static string ProcessFile { get; set; } = GameFile;
@@ -152,7 +157,7 @@ public sealed class RunStore : IDisposable
             store.Dispose();
     }
 
-    private enum Table { Event, Frame, Present, Shown, Wait, Memory, ZoneStats, Moment, Slice, Counter, Metric, Census }
+    private enum Table { Event, Frame, Present, Shown, Wait, Memory, FrameGpu, ZoneStats, Moment, Slice, Counter, Metric, Census }
 
     private static readonly Dictionary<Table, string> Inserts = new()
     {
@@ -163,9 +168,10 @@ public sealed class RunStore : IDisposable
                         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         [Table.Present] = "INSERT INTO presents (t, present, cpu_ms, gpu_ms, draws, dispatches, passes, submits, metal_mb, footprint_mb, " +
                           "thermal, shaders, pipelines, width, height, display_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        [Table.Shown] = "INSERT INTO shown (present, began, presented, gpu_end, shown, waited_ms, paced) VALUES (?,?,?,?,?,?,?)",
+        [Table.Shown] = "INSERT INTO shown (present, began, presented, gpu_end, shown, waited_ms, paced, session) VALUES (?,?,?,?,?,?,?,?)",
         [Table.Wait] = "INSERT INTO waits (t, ms, what, present) VALUES (?,?,?,?)",
         [Table.Memory] = "INSERT INTO memory (t, bytes, type, present) VALUES (?,?,?,?)",
+        [Table.FrameGpu] = "INSERT INTO frame_gpu (session, present, t, gpu_ms) VALUES (?,?,?,?)",
         [Table.ZoneStats] = "INSERT INTO zone_stats (session, pass, scenario, part, grp, zone, frames, calls, total_ms, self_ms, median_ms, " +
                             "p95_ms, max_ms, alloc_mb) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         [Table.Moment] = "INSERT INTO moments (id, t, frame_ms, session, pass, scenario, part, cause) VALUES (?,?,?,?,?,?,?,?)",
@@ -188,9 +194,10 @@ public sealed class RunStore : IDisposable
             passes INTEGER, submits INTEGER, metal_mb INTEGER, footprint_mb INTEGER, thermal INTEGER, shaders INTEGER,
             pipelines INTEGER, width INTEGER, height INTEGER, display_ms REAL);
         CREATE TABLE IF NOT EXISTS shown (present INTEGER, began REAL, presented REAL, gpu_end REAL, shown REAL, waited_ms REAL,
-            paced INTEGER);
+            paced INTEGER, session INTEGER);
         CREATE TABLE IF NOT EXISTS waits (t REAL, ms REAL, what TEXT, present INTEGER);
         CREATE TABLE IF NOT EXISTS memory (t REAL, bytes INTEGER, type INTEGER, present INTEGER);
+        CREATE TABLE IF NOT EXISTS frame_gpu (session INTEGER, present INTEGER, t REAL, gpu_ms REAL);
         CREATE TABLE IF NOT EXISTS zone_stats (session INTEGER, pass INTEGER, scenario TEXT, part TEXT, grp TEXT, zone TEXT, frames INTEGER,
             calls INTEGER, total_ms REAL, self_ms REAL, median_ms REAL, p95_ms REAL, max_ms REAL, alloc_mb REAL);
         CREATE TABLE IF NOT EXISTS moments (id INTEGER, t REAL, frame_ms REAL, session INTEGER, pass INTEGER, scenario TEXT, part TEXT,
@@ -280,7 +287,8 @@ public sealed class RunStore : IDisposable
     public void AddCensus(double t, int session, int pass, string? scenario, string shot, string owner, string kind, long bytes) =>
         Enqueue(Table.Census, t, session, pass, scenario, shot, owner, kind, bytes);
 
-    public void Add(DriverRecord record)
+    // A record of KSA Metal's drain, in the game session that drained it
+    public void Add(DriverRecord record, int session)
     {
         switch (record)
         {
@@ -290,13 +298,16 @@ public sealed class RunStore : IDisposable
                     s.FootprintMb, s.ThermalState, s.ShadersCompiled, s.PipelinesCreated, s.DrawableWidth, s.DrawableHeight, s.DisplayMs);
                 break;
             case ShownRecord w:
-                Enqueue(Table.Shown, w.Present, w.Began, w.Presented, w.GpuEnd, w.Shown, w.WaitedMs, w.Paced);
+                Enqueue(Table.Shown, w.Present, w.Began, w.Presented, w.GpuEnd, w.Shown, w.WaitedMs, w.Paced, session);
                 break;
             case WaitRecord w:
                 Enqueue(Table.Wait, w.T, w.Ms, w.What, w.Present);
                 break;
             case MemoryRecord m:
                 Enqueue(Table.Memory, m.T, m.Bytes, m.Type, m.Present);
+                break;
+            case FrameGpuRecord g:
+                Enqueue(Table.FrameGpu, session, g.Present, g.T, g.GpuMs);
                 break;
         }
     }
@@ -450,12 +461,33 @@ public sealed class RunStore : IDisposable
     }
 
     // KSA Metal's shown records in a run's folder, by present
-    public static Dictionary<ulong, ShownRow> ReadShown(string dir)
+    public static Dictionary<int, Dictionary<ulong, ShownRow>> ReadShown(string dir)
     {
-        var shown = new Dictionary<ulong, ShownRow>();
-        Query(Path.Combine(dir, GameFile), "SELECT present, began, presented, gpu_end, shown, waited_ms FROM shown", q =>
-            shown[(ulong)q.Long(0)] = new ShownRow((ulong)q.Long(0), q.Double(1), q.Double(2), q.Double(3), q.Double(4), q.Double(5)));
+        var shown = new Dictionary<int, Dictionary<ulong, ShownRow>>();
+        void Row(int session, Sqlite.Statement q)
+        {
+            if (!shown.TryGetValue(session, out var of))
+                shown[session] = of = new();
+            of[(ulong)q.Long(0)] = new ShownRow((ulong)q.Long(0), q.Double(1), q.Double(2), q.Double(3), q.Double(4), q.Double(5));
+        }
+        Query(Path.Combine(dir, GameFile), "SELECT present, began, presented, gpu_end, shown, waited_ms, session FROM shown", q => Row((int)q.Long(6), q));
+        // A store of before: no session
+        if (shown.Count == 0)
+            Query(Path.Combine(dir, GameFile), "SELECT present, began, presented, gpu_end, shown, waited_ms FROM shown", q => Row(1, q));
         return shown;
+    }
+
+    // Each present's frame's own GPU time in a run's folder, by game session (none in a run of before frame_gpu)
+    public static Dictionary<int, Dictionary<ulong, double>> ReadFrameGpu(string dir)
+    {
+        var gpu = new Dictionary<int, Dictionary<ulong, double>>();
+        Query(Path.Combine(dir, GameFile), "SELECT session, present, gpu_ms FROM frame_gpu", q =>
+        {
+            if (!gpu.TryGetValue((int)q.Long(0), out var of))
+                gpu[(int)q.Long(0)] = of = new();
+            of[(ulong)q.Long(1)] = q.Double(2);
+        });
+        return gpu;
     }
 
     // KSA Metal's waits in a run's folder, in the order they began
