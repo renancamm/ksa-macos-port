@@ -32,7 +32,6 @@ copy, `tar` extracts the game, `plutil` reads and checks `Info.plist`, `xattr` r
 | `port [options] [archive \| folder]` | `port.sh` |
 | `starmap [--app <path>] [--remove]` | `starmap.sh` |
 | `convert-dotnet <game> <runtime>` | the build, for KSA's assemblies the hooks and the benchmark are built against |
-| `mark-arm64 <file.dll...>` | the build, for StarMap's `StarMap.dll` |
 | `edit-shaders <game>` | by hand: the shader edits alone, on a game folder |
 
 It exits with 0 when done, 1 on a problem (the message says which), 2 on a wrong option, and 75 after
