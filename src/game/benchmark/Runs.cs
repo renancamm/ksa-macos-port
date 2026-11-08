@@ -31,7 +31,7 @@ namespace KsaMetal.Benchmark;
 // The hooks lend it their log, the summary of what they applied and the game's restart (Install).
 public static class Runs
 {
-    public record Result(string Folder, bool Passed, bool Stopped, string Summary, string Outcome, string Date);
+    public record Result(string Folder, string Name, bool Passed, bool Stopped, string Summary, string Outcome, string Date);
 
     // InGame: a test in the running game; Here: the player's own game recorded as it plays (Director's here mode)
     private enum Mode { None, Script, InGame, Restarted, Here }
@@ -66,8 +66,9 @@ public static class Runs
 
     // A run the watch found stuck, and the words for its end
     private sealed record StuckRun(Director Run, string Why);
+    // This session's last run, and the newest reports of the benchmarks folder with it (null: not looked yet)
     private static Result? _last;
-    private static bool _lastLooked;
+    private static List<Result>? _recent;
 
     // What the hooks lend the runs: their log, the summary of what they applied, and the game's restart with an
     // environment (null when the game didn't start from the app's launcher)
@@ -117,7 +118,7 @@ public static class Runs
     {
         if (!_installed)
             return "The benchmark is not in this app, or this KSA version moved the game's code it needs (logs/console.log says which).";
-        if (_run != null || _startRequested || _hereRequested || _finishing is { IsCompleted: false } || WritingTimeline)
+        if (_run != null || _startRequested || _hereRequested || _finishing is { IsCompleted: false } || _showing is { IsCompleted: false })
             return "A benchmark is running.";
         if (_mode == Mode.Script)
             return "This game is a benchmark.sh run.";
@@ -151,7 +152,7 @@ public static class Runs
     {
         if (!_installed)
             return "The benchmark is not in this app, or this KSA version moved the game's code it needs (logs/console.log says which).";
-        if (_run != null || _startRequested || _hereRequested || _finishing is { IsCompleted: false })
+        if (_run != null || _startRequested || _hereRequested || _finishing is { IsCompleted: false } || _showing is { IsCompleted: false })
             return "A benchmark is running.";
         if (_mode == Mode.Script)
             return "This game is a benchmark.sh run.";
@@ -189,57 +190,57 @@ public static class Runs
         }
     }
 
-    // What the last run left: this session's, or the newest report in the benchmarks folder
-    public static Result? Last
+    // How many reports the Mac Port tab lists
+    public const int RecentCount = 3;
+
+    // The newest reports, newest first: this session's last run (also one that didn't finish), then the benchmarks
+    // folder's newest with a record
+    public static IReadOnlyList<Result> Recent
     {
         get
         {
-            if (_last == null && !_lastLooked)
+            if (_recent == null)
             {
-                _lastLooked = true;
                 var runs = Path.Combine(Constants.DocumentsFolderPath, "benchmarks");
                 var newest = Directory.Exists(runs)
                     ? Directory.GetDirectories(runs).Where(d => Regex.IsMatch(Path.GetFileName(d), @"^\d{4}-\d{2}-\d{2}_\d{4}"))
-                        .OrderByDescending(d => d, StringComparer.Ordinal).FirstOrDefault(d => RunRecord.Read(d) != null)
-                    : null;
-                if (newest != null)
-                    _last = ReadResult(newest);
+                        .OrderByDescending(d => d, StringComparer.Ordinal).Where(d => d != _last?.Folder && RunRecord.Read(d) != null)
+                        .Take(RecentCount).Select(ReadResult)
+                    : [];
+                _recent = (_last != null ? newest.Prepend(_last) : newest).Take(RecentCount).ToList();
             }
-            return _last;
+            return _recent;
         }
     }
 
-    // Its page in the browser, or the folder of a run that has none
+    // Its page in the browser, or the folder of a run that has none. A run finished in the running game has no timeline
+    // yet (Finish.Run): written first, in the background (a long run takes a second and a few hundred MB)
     public static void Show(string folder)
     {
-        var page = Path.Combine(folder, "report.html");
-        Process.Start("/usr/bin/open", new[] { File.Exists(page) ? page : folder });
-    }
-
-    // Its timeline in Perfetto's viewer, in the browser: written from its store in the background (a long run takes
-    // seconds), then opened
-    public static void ShowTimeline(string folder)
-    {
-        if (WritingTimeline)
+        if (_showing is { IsCompleted: false })
             return;
-        _timeline = Task.Run(() =>
+        var page = Path.Combine(folder, "report.html");
+        if (!File.Exists(page) || File.Exists(Path.Combine(folder, Timeline.ScriptFile)) || !File.Exists(Path.Combine(folder, RunStore.GameFile)))
+        {
+            Process.Start("/usr/bin/open", new[] { File.Exists(page) ? page : folder });
+            return;
+        }
+        _showing = Task.Run(() =>
         {
             try
             {
-                if (Timeline.Write(folder))
-                    Process.Start("/usr/bin/open", new[] { Path.Combine(folder, Timeline.PageFile) });
+                Timeline.Write(folder);
             }
-            // Whatever went wrong (its store, the browser): said, never a crash of the game
+            // Whatever went wrong: the report still opens, its button saying the timeline isn't there
             catch (Exception e)
             {
                 Log($"BenchmarkRun: the timeline could not be written: {e.Message}");
             }
+            Process.Start("/usr/bin/open", new[] { page });
         });
     }
 
-    public static bool WritingTimeline => _timeline is { IsCompleted: false };
-
-    private static Task? _timeline;
+    private static Task? _showing;
 
     // After every frame of the game
     public static void AfterFrame()
@@ -419,7 +420,7 @@ public static class Runs
             {
                 new EventLog(_out, 1).Add("ended", text: $"hung{Watchdog.Where(stale)} (no frame for {limit} s): stopped");
                 CopyLog(_mode);
-                Finish.Run(_out);
+                Finish.Run(_out, timeline: false);
             }
             catch (Exception e)
             {
@@ -724,7 +725,8 @@ public static class Runs
         events.Add("memory", text: Memory.Text());
         CopyLog(mode);
         var output = _out;
-        _finishing = Task.Run(() => Finish.Run(output));
+        // The timeline when its report is opened, but in a game that quits at the end
+        _finishing = Task.Run(() => Finish.Run(output, timeline: mode == Mode.Restarted));
         Log("BenchmarkRun: writing the report");
     }
 
@@ -745,6 +747,7 @@ public static class Runs
             Log($"BenchmarkRun: the report could not be written: {e.InnerException ?? e}");
         _finishing = null;
         _last = ReadResult(_out);
+        _recent = null;
         Log($"BenchmarkRun: {(_last.Passed ? "passed" : _last.Stopped ? "stopped" : "done, with problems")}, report in {_out.Replace(Home, "~")}");
         if (_mode == Mode.Restarted)
         {
@@ -760,7 +763,8 @@ public static class Runs
     private static Result ReadResult(string folder)
     {
         if (RunRecord.Read(folder) is not { } record)
-            return new Result(folder, false, false, $"{Path.GetFileName(folder)}: no report (the run did not finish).", "Did not finish", RunDate(folder));
+            return new Result(folder, Pages.TestName(RunPlan.Read(folder)?.Play.Test), false, false, $"{Path.GetFileName(folder)}: no report (the run did not finish).",
+                "Did not finish", RunDate(folder));
         bool passed = record.Status == Status.Passed, stopped = record.Status == Status.Stopped;
         var problems = record.Problems.Select(p => p.Text).ToList();
         var summary = $"{Path.GetFileName(folder)}: " + (passed ? "passed." : problems.Count == 0 ? "stopped." : "problems: " + string.Join("; ", problems.Take(3)) +
@@ -769,7 +773,8 @@ public static class Runs
         // Its main number: "Passed, 30 FPS"
         if (record.Headline().Short() is { Length: > 0 } headline)
             outcome += $", {headline}";
-        return new Result(folder, passed, stopped, summary + " Opens its page, with its numbers and screenshots.", outcome, RunDate(folder));
+        return new Result(folder, Pages.TestName(record.Test), passed, stopped, summary + " Opens its page, with its numbers, screenshots and timeline.", outcome,
+            RunDate(folder));
     }
 
     // When a run was, from its folder's name: 2026-10-31_0545 is "Oct 31, 05:45"

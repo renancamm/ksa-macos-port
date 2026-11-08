@@ -291,6 +291,10 @@ public static class Pages
         html.Append($"<h1>{E(TestName(r.Test))}{(r.Mode.Split(' ').Contains("jump") ? " <span>places</span>" : "")}</h1>");
         html.Append($"<p>{E(When(r))} · {E(MacLine(r))}</p>");
         html.Append(Status(r.Status == Benchmark.Status.Passed, r.Status.ToString()));
+        // Every frame of the run in Perfetto's viewer, from the timeline written beside the report from its store (Timeline.cs)
+        bool timeline = File.Exists(Path.Combine(dir, RunStore.GameFile));
+        if (timeline)
+            html.Append("<button id=\"timeline\" class=\"open-timeline\" title=\"Every frame of this run, in Perfetto's viewer in your browser. The run stays on this Mac.\">Open Timeline</button><p id=\"timeline-said\" class=\"said\"></p>");
         html.Append("</div></header><main>");
 
         if (problems.Count > 0)
@@ -335,8 +339,10 @@ public static class Pages
         FrameCharts(html, r, timelines);
         Gallery(html, r, order, ext);
         FactsTable(html, r);
-        html.Append("<footer>Every frame's numbers are in <code>run.db</code> (SQLite: <code>./benchmark.sh query</code>), the run's record in <code>run.json</code>, the same numbers as text in <code>report.md</code>, the game's log in <code>game.log</code>.</footer>");
+        html.Append("<footer>Every frame's numbers are in <code>run.db</code> (SQLite: <code>./benchmark.sh query</code>), the run's record in <code>run.json</code>, the same numbers as text in <code>report.md</code>, the game's log in <code>game.log</code>, the timeline in <code>timeline.pftrace</code> (for ui.perfetto.dev).</footer>");
         html.Append("</main>");
+        if (timeline)
+            html.Append($"<script src=\"{Timeline.ScriptFile}\" defer></script>");
         Close(html);
         File.WriteAllText(Path.Combine(dir, "report.html"), html.ToString());
     }
@@ -960,6 +966,8 @@ public static class Pages
         .status { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px 4px 8px; border-radius: 999px; font-weight: 600; font-size: 14px; background: #fff; }
         .status svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
         .status { color: #33332f; } .status.good { color: #0a7d0a; } .status.bad { color: #c62a2a; }
+        .open-timeline { margin-left: 8px; padding: 4px 14px; border-radius: 999px; font: inherit; font-weight: 600; font-size: 14px; color: #fff; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.55); cursor: pointer; vertical-align: middle; }
+        .open-timeline:hover { background: rgba(255,255,255,.26); } .hero p.said { margin: 8px 0 0; font-size: 13px; } .hero p.said:empty { display: none; }
         main { max-width: 1120px; margin: 0 auto; padding: 8px 24px 48px; }
         section { margin-top: 36px; } h2 { margin: 0 0 6px; font-size: 20px; font-weight: 620; letter-spacing: -.005em; }
         .lead { margin: 0 0 12px; color: var(--ink-2); } .small { margin: 6px 0 0; color: var(--ink-2); font-size: 13px; }
@@ -1035,5 +1043,25 @@ public static class Pages
         shots.forEach((a, i) => a.addEventListener('click', e => { e.preventDefault(); show(i); }));
         viewer.addEventListener('click', () => viewer.close());
         document.addEventListener('keydown', e => { if (viewer.open && e.key === 'ArrowRight') show(at + 1); if (viewer.open && e.key === 'ArrowLeft') show(at - 1); });
+        // Open Timeline: Perfetto's viewer in a new window, handed the trace once it answers (the browser opens a window
+        // only from a click, so the trace is loaded with the page: timeline.js, after the page so as not to hold it up)
+        document.getElementById('timeline')?.addEventListener('click', () => {
+          const said = document.getElementById('timeline-said'), run = window.ksaTimeline;
+          if (!run) { said.textContent = document.readyState === 'complete' ? 'The timeline is not beside this report: ./benchmark.sh timeline writes it.' : 'The timeline is still loading: try again in a moment.'; return; }
+          const origin = 'https://ui.perfetto.dev', perfetto = window.open(origin);
+          if (!perfetto) { said.textContent = 'The browser kept the viewer from opening: allow this page to open windows.'; return; }
+          said.textContent = 'Opening the viewer...';
+          const bytes = Uint8Array.from(atob(run.trace), c => c.charCodeAt(0));
+          // Pinged until it answers, for a minute at most
+          let pings = 0;
+          const ping = setInterval(() => { if (++pings > 1200) clearInterval(ping); else perfetto.postMessage('PING', origin); }, 50);
+          window.addEventListener('message', function answered(e) {
+            if (e.source !== perfetto || e.origin !== origin || e.data !== 'PONG') return;
+            clearInterval(ping);
+            window.removeEventListener('message', answered);
+            perfetto.postMessage({ perfetto: { buffer: bytes.buffer, title: run.name, fileName: run.name + '.pftrace' } }, origin);
+            said.textContent = '';
+          });
+        });
         """;
 }

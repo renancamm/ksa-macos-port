@@ -1,6 +1,7 @@
-// A run's store as a timeline for Perfetto's viewer (ui.perfetto.dev): a TrackEvent trace (timeline.pftrace) and a page
-// that hands it to the viewer (timeline.html). The viewer runs in the browser: the trace goes from the page to it, on
-// this Mac, and nowhere else. The writer is ours, the few messages of Perfetto's protos it needs (pinned to v50.1:
+// A run's store as a timeline for Perfetto's viewer (ui.perfetto.dev): a TrackEvent trace (timeline.pftrace) and the
+// same as a script (timeline.js) that the report's Open Timeline button hands to the viewer (Pages.cs; a page opened from
+// disk can load a script beside it, not read a file). The viewer runs in the browser: the trace goes from the page to
+// it, on this Mac, and nowhere else. The writer is ours, the few messages of Perfetto's protos it needs (pinned to v50.1:
 // protos/perfetto/trace/), since no .NET writer exists.
 //
 // Its tracks, under one for the run: the parts as they were measured, the run's events, frame time and GPU busy, each
@@ -18,9 +19,9 @@ namespace KsaPort.Common.Benchmark;
 
 public static class Timeline
 {
-    public const string TraceFile = "timeline.pftrace", PageFile = "timeline.html";
+    public const string TraceFile = "timeline.pftrace", ScriptFile = "timeline.js";
 
-    // The run's timeline next to its store: the trace and its page; false when the run has no store
+    // The run's timeline next to its store: the trace and its script; false when the run has no store
     public static bool Write(string dir)
     {
         var db = Path.Combine(dir, RunStore.GameFile);
@@ -28,7 +29,8 @@ public static class Timeline
             return false;
         var trace = Make(dir);
         File.WriteAllBytes(Path.Combine(dir, TraceFile), trace);
-        File.WriteAllText(Path.Combine(dir, PageFile), Page(Path.GetFileName(Path.GetFullPath(dir).TrimEnd('/')), trace));
+        var run = Path.GetFileName(Path.GetFullPath(dir).TrimEnd('/'));
+        File.WriteAllText(Path.Combine(dir, ScriptFile), $"window.ksaTimeline = {{ name: {System.Text.Json.JsonSerializer.Serialize(run)}, trace: '{Convert.ToBase64String(trace)}' }};\n");
         return true;
     }
 
@@ -273,47 +275,6 @@ public static class Timeline
             all.Add((Ns(t), 500, Packet().Varint(8, Ns(t)).Message(11, new Proto().Varint(9, 4).Varint(11, track).Double(44, value))));
         // Stable: events of one time keep the order they were made in
         return all.Select((e, i) => (e, i)).OrderBy(x => x.e.Ns).ThenBy(x => x.e.Order).ThenBy(x => x.i).Select(x => x.e.Packet);
-    }
-
-    // The page: a button that opens Perfetto's viewer and hands it the trace (the browser asks the page to open a
-    // window, so it takes a click)
-    private static string Page(string run, byte[] trace)
-    {
-        var html = new StringBuilder();
-        html.Append($"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Timeline: {System.Net.WebUtility.HtmlEncode(run)}</title><style>");
-        html.Append("""
-            :root { color-scheme: light dark; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --accent: #2a78d6; }
-            @media (prefers-color-scheme: dark) { :root { --surface: #161615; --ink: #f0efec; --ink-2: #c3c2b7; --accent: #3987e5; } }
-            body { margin: 0; background: var(--surface); color: var(--ink); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
-            main { max-width: 640px; margin: 0 auto; padding: 48px 16px; } h1 { font-size: 28px; margin: 0 0 8px; } p { color: var(--ink-2); }
-            button { font: inherit; font-weight: 600; color: #fff; background: var(--accent); border: 0; border-radius: 8px; padding: 10px 18px; cursor: pointer; }
-            code { font: 13px ui-monospace, Menlo, monospace; }
-            """);
-        html.Append("</style></head><body><main>");
-        html.Append($"<h1>Timeline of {System.Net.WebUtility.HtmlEncode(run)}</h1>");
-        html.Append("<p>The run's store as a trace for Perfetto's viewer: the parts, frame and GPU times, each frame's way to the screen, KSA Metal's waits, the game's zones around slow frames, the counters (the GPU's power and clock, the probes'). The viewer runs in your browser: the trace goes from this page to it, and nowhere else.</p>");
-        html.Append($"<p><button id=\"open\">Open in Perfetto</button></p><p id=\"said\"></p><p>Or open <code>{TraceFile}</code> in ui.perfetto.dev yourself.</p>");
-        html.Append("<script>");
-        html.Append($"const trace = '{Convert.ToBase64String(trace)}', name = '{run}';");
-        html.Append("""
-            const origin = 'https://ui.perfetto.dev';
-            document.getElementById('open').addEventListener('click', () => {
-              const bytes = Uint8Array.from(atob(trace), c => c.charCodeAt(0));
-              const viewer = window.open(origin);
-              const said = document.getElementById('said');
-              if (!viewer) { said.textContent = 'The browser kept the viewer from opening: allow this page to open windows.'; return; }
-              said.textContent = 'Waiting for the viewer...';
-              const ping = setInterval(() => viewer.postMessage('PING', origin), 50);
-              window.addEventListener('message', e => {
-                if (e.origin !== origin || e.data !== 'PONG') return;
-                clearInterval(ping);
-                viewer.postMessage({ perfetto: { buffer: bytes.buffer, title: name, fileName: name + '.pftrace' } }, origin);
-                said.textContent = 'Opened in the viewer.';
-              });
-            });
-            """);
-        html.Append("</script></main></body></html>");
-        return html.ToString();
     }
 
     // A protobuf message, written field by field
