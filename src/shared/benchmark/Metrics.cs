@@ -26,9 +26,10 @@ namespace KsaPort.Common.Benchmark;
 
 public enum Better { Lower, Higher, Neither }
 
-// How a part's measurings make its number: their median, the most of them (counts of events), or their median only when
-// every measuring has the number (a speed reached in each)
-public enum Across { Median, Most, All }
+// How a part's measurings make its number: their median, the most of them (the worst state), their mean (counts of
+// events: a part measured more often doesn't collect more), or their median only when every measuring has the number (a
+// speed reached in each)
+public enum Across { Median, Most, Mean, All }
 
 public sealed record Metric(string Name, string Label, string Unit, Better Better, Across Across, int Decimals, string Help)
 {
@@ -38,8 +39,13 @@ public sealed record Metric(string Name, string Label, string Unit, Better Bette
     // Whether a test's noise profile calibrates its limit per part (Noise.cs)
     public bool Calibrated { get; init; }
     // The least change, in its unit, that counts besides the limit: a few percent of a small number is nothing (CPU busy
-    // of 2 ms moving 0.1 ms)
+    // of 2 ms moving 0.1 ms), and a count that was 0 moves by this much at least
     public double Floor { get; init; }
+    // Whether it moves with the Mac's heat and what else shares the GPU (times, energy), so that one run against another
+    // can't tell a small change from that (Statistics.ScreenDrift)
+    public bool Drifts { get; init; }
+    // The fewest frames a part needs on both sides to judge it (a P99 of 20 frames is its worst frame)
+    public int MinFrames { get; init; }
 
     public string Format(double value) => value.ToString(Decimals == 0 ? "0" : "0." + new string('0', Decimals), System.Globalization.CultureInfo.InvariantCulture);
 
@@ -49,44 +55,49 @@ public sealed record Metric(string Name, string Label, string Unit, Better Bette
 public static class Metrics
 {
     private const double Default = 5;
+    // The frames a part needs for its tail (P99, 1% low) to be more than its worst frame or two
+    private const int TailFrames = 200;
 
     public static readonly Metric Fps = new("frame/fps", "FPS", "fps", Better.Higher, Across.Median, 1, "frames a second over the part");
     public static readonly Metric FrameTime = new("frame/time", "Frame time", "ms", Better.Lower, Across.Median, 1,
-        "the time between two frames, the median") { Limit = Default, Calibrated = true };
+        "the time between two frames, the median") { Limit = Default, Calibrated = true, Drifts = true };
     public static readonly Metric FrameP95 = new("frame/p95", "P95 frame time", "ms", Better.Lower, Across.Median, 1, "95 % of frames took less");
-    public static readonly Metric FrameP99 = new("frame/p99", "P99 frame time", "ms", Better.Lower, Across.Median, 1, "99 % of frames took less");
-    public static readonly Metric Low1 = new("frame/low1", "1% low", "ms", Better.Lower, Across.Median, 1, "the mean of the worst 1 % of frames");
+    public static readonly Metric FrameP99 = new("frame/p99", "P99 frame time", "ms", Better.Lower, Across.Median, 1, "99 % of frames took less")
+        { Limit = 10, Drifts = true, MinFrames = TailFrames };
+    public static readonly Metric Low1 = new("frame/low1", "1% low", "ms", Better.Lower, Across.Median, 1, "the mean of the worst 1 % of frames")
+        { Limit = 10, Drifts = true, MinFrames = TailFrames };
     public static readonly Metric Worst = new("frame/worst", "Worst frame", "ms", Better.Lower, Across.Median, 0, "the slowest frame");
-    public static readonly Metric Hitches = new("frame/hitches", "Hitches", "frames", Better.Lower, Across.Most, 0,
-        "frames over 50 ms and twice the median of the 60 before: the stutters you see");
-    public static readonly Metric Over100 = new("frame/over100", "Over 100 ms", "frames", Better.Lower, Across.Most, 0, "frames over 100 ms");
+    public static readonly Metric Hitches = new("frame/hitches", "Hitches", "frames", Better.Lower, Across.Mean, 1,
+        "frames over 50 ms and twice the median of the 60 before: the stutters you see") { Limit = 50, Floor = 2 };
+    public static readonly Metric Over100 = new("frame/over100", "Over 100 ms", "frames", Better.Lower, Across.Mean, 1, "frames over 100 ms")
+        { Limit = 50, Floor = 2 };
     public static readonly Metric CpuBusy = new("frame/cpu_busy", "CPU busy", "ms", Better.Lower, Across.Median, 1,
-        "the frame's work from its start to its present, less KSA Metal's waits in it, the median") { Limit = Default, Floor = 0.25 };
+        "the frame's work from its start to its present, less KSA Metal's waits in it, the median") { Limit = Default, Floor = 0.25, Drifts = true };
     public static readonly Metric CpuWait = new("frame/cpu_wait", "CPU wait", "ms", Better.Neither, Across.Median, 1,
         "how long a frame waited: for an earlier frame before it began, for a drawable or the GPU in it, the median");
     public static readonly Metric GpuBusy = new("gpu/busy", "GPU busy", "ms", Better.Lower, Across.Median, 1,
-        "the GPU's time on a frame, the median") { Limit = Default, Calibrated = true };
+        "the GPU's time on a frame, the median") { Limit = Default, Calibrated = true, Drifts = true };
     public static readonly Metric GpuP95 = new("gpu/p95", "P95 GPU busy", "ms", Better.Lower, Across.Median, 1, "95 % of frames took the GPU less");
     // The GPU's power (benchmark.sh's power channel, host/gpu_power) times the frame time: what a frame costs in energy, the
     // same work done cheaper whatever the frame rate (power alone rises when frames come faster)
     public static readonly Metric GpuEnergy = new("gpu/energy", "GPU energy", "mJ", Better.Lower, Across.Median, 1,
-        "the GPU's energy a frame: its power while the part played times the frame time") { Limit = 10 };
+        "the GPU's energy a frame: its power while the part played times the frame time") { Limit = 10, Drifts = true };
     public static readonly Metric Latency = new("frame/latency", "Display latency", "ms", Better.Lower, Across.Median, 1,
-        "from a frame's start to its showing, the median");
+        "from a frame's start to its showing, the median") { Limit = 10, Floor = 1, Drifts = true };
     public static readonly Metric Displayed = new("frame/displayed", "Displayed time", "ms", Better.Neither, Across.Median, 1,
         "how long a frame stayed on screen, the median");
     public static readonly Metric AnimationError = new("frame/animation_error", "Animation error", "ms", Better.Lower, Across.Median, 2,
         "how far the steps between frames' starts and between their showing differ, on average");
     public static readonly Metric Draws = new("gpu/draws", "Draws", "", Better.Neither, Across.Median, 0, "draw calls a frame, the median");
     public static readonly Metric Footprint = new("mem/footprint", "Memory", "MB", Better.Lower, Across.Median, 0,
-        "the game's memory footprint at its peak (Activity Monitor's)");
+        "the game's memory footprint at its peak (Activity Monitor's)") { Limit = 5, Floor = 150 };
     public static readonly Metric GpuMemory = new("mem/gpu", "GPU memory", "MB", Better.Lower, Across.Median, 0,
-        "what KSA Metal allocated for the GPU, at its peak");
+        "what KSA Metal allocated for the GPU, at its peak") { Limit = 3, Floor = 64 };
     public static readonly Metric Thermal = new("mac/thermal", "Thermal state", "", Better.Lower, Across.Most, 0,
         "the Mac's thermal state at its worst: 0 nominal, 1 fair, 2 serious (macOS slows the chip), 3 critical");
-    public static readonly Metric Shaders = new("gpu/shaders", "Shaders", "", Better.Lower, Across.Most, 0,
+    public static readonly Metric Shaders = new("gpu/shaders", "Shaders", "", Better.Lower, Across.Mean, 1,
         "shaders compiled while measuring, each one a stutter");
-    public static readonly Metric Pipelines = new("gpu/pipelines", "Pipelines", "", Better.Lower, Across.Most, 0, "pipelines made while measuring");
+    public static readonly Metric Pipelines = new("gpu/pipelines", "Pipelines", "", Better.Lower, Across.Mean, 1, "pipelines made while measuring");
     public static readonly Metric GcPause = new("runtime/gc_pause", "GC pause", "ms", Better.Lower, Across.Median, 3,
         ".NET's garbage collection pauses, ms a frame");
     public static readonly Metric Jit = new("runtime/jit", "JIT", "ms", Better.Lower, Across.Median, 1, ".NET's compiling of code while measuring");
@@ -125,8 +136,9 @@ public static class Metrics
     {
         if (ByName.ContainsKey(m.Name))
             return;
+        // The first definition read in this process stands: two runs compared judge a probe's number by one rule
         lock (ByProbes)
-            ByProbes[m.Name] = m;
+            ByProbes.TryAdd(m.Name, m);
     }
 
     // The metrics a comparison judges: the built-in ones, then the probes'
@@ -181,7 +193,7 @@ public static class Measure
     // order they began), the zone sums of the measuring, and with a timed scenario's part the game's clock and substeps
     // when it opened
     public static Dictionary<string, double> Of(IReadOnlyList<FrameRow> frames, IReadOnlyDictionary<ulong, ShownRow>? shown,
-        IEnumerable<ZoneRow>? zones, double? openGame, long? openSubsteps, IReadOnlyList<WaitRow>? waits = null)
+        IEnumerable<ZoneRow>? zones, double? openGame, long? openSubsteps, IReadOnlyList<WaitRow>? waits = null, FrameRow? before = null)
     {
         var v = new Dictionary<string, double>(StringComparer.Ordinal);
         var frameMs = frames.Select(r => r.FrameMs).ToArray();
@@ -218,8 +230,10 @@ public static class Measure
             Set(v, Metrics.GpuMemory, presented.Max(r => r.MetalMb));
             Set(v, Metrics.Footprint, presented.Max(r => r.FootprintMb));
             Set(v, Metrics.Thermal, presented.Max(r => r.Thermal));
-            Set(v, Metrics.Shaders, presented[^1].Shaders - presented[0].Shaders);
-            Set(v, Metrics.Pipelines, presented[^1].Pipelines - presented[0].Pipelines);
+            // Counted from the frame before the part, where there is one: the first frame's own compiles count too
+            var from = before is { } b && b.Session == presented[0].Session ? b : presented[0];
+            Set(v, Metrics.Shaders, Math.Max(0, (long)presented[^1].Shaders - from.Shaders));
+            Set(v, Metrics.Pipelines, Math.Max(0, (long)presented[^1].Pipelines - from.Pipelines));
         }
         if (shown != null)
             Presented(v, presented.Select(r => shown.TryGetValue(r.Present, out var s) ? s : (ShownRow?)null).OfType<ShownRow>().ToList(), waits ?? []);
@@ -377,6 +391,9 @@ public static class Measure
             {
                 case Across.Most:
                     merged[name] = values.Max();
+                    break;
+                case Across.Mean:
+                    merged[name] = Math.Round(values.Average(), 3);
                     break;
                 case Across.All when values.Count < measurings.Count:
                     break;

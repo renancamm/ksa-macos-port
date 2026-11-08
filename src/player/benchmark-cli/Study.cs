@@ -272,7 +272,7 @@ public static partial class Program
                 variants.Add(new StudyPage.Variant(v.Name, v.Options, null, runs[v].Count == 0 ? "no session of it passed yet" : "no session of the baseline passed yet", null, [], 0, null));
                 continue;
             }
-            var c = Comparison.Of(baseParts, Study.Merged(runs[v].Select(r => r.Record)));
+            var c = Comparison.Of(baseParts, Study.Merged(runs[v].Select(r => r.Record)), runs[v].Concat(baseRuns).Any(r => Ground.Steps(r.Record)));
             // The screenshots of each one's first session that took them
             static (string Dir, RunRecord Record)? WithShots(List<(string Dir, RunRecord Record)> of) =>
                 of.Cast<(string Dir, RunRecord Record)?>().FirstOrDefault(r => Directory.GetFiles(r!.Value.Dir, "*_*.png").Length > 0);
@@ -296,7 +296,8 @@ public static partial class Program
             s.Run != null ? Path.GetRelativePath(folder, s.Run) : null,
             s.State switch { SlotState.Done => "passed", SlotState.LeftOut => "left out: it failed", _ => "to play" })).ToList();
         var page = new StudyPage(Path.GetFileName(folder), $"./benchmark.sh {study.Verb} {string.Join(' ', study.Command.Select(Study.Quote))}",
-            study.Baseline.Name, study.Baseline.Options, study.Sessions, variants, sessions, baseRuns.FirstOrDefault().Record);
+            study.Baseline.Name, study.Baseline.Options, study.Sessions, variants, sessions, baseRuns.FirstOrDefault().Record,
+            StudyPage.Ground(runs.Where(r => r.Value.Count > 0).ToDictionary(r => r.Key.Name, r => r.Value.Select(x => x.Record).ToList())));
         File.WriteAllText(Path.Combine(folder, "report.md"), page.Markdown());
         Pages.WriteStudy(folder, page);
         Console.Write(Terminal.Layout(page.Markdown(terminal: true)));

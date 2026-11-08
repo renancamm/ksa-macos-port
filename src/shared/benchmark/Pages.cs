@@ -230,7 +230,7 @@ public static class Pages
         if (r.LoadSeconds is > 0 and var load)
             md.AppendLine($"| Loading | {F(load, "0.0")} s |");
         if (r.AllParts().Select(x => x.Part.Runs).DefaultIfEmpty(1).Max() is > 1 and var runs)
-            md.AppendLine($"| Runs | {runs}: each number is the median of the runs, Frame time shows their range |");
+            md.AppendLine($"| Runs | {runs}: each number is the median of the runs (counts their mean, a worst state the worst), Frame time shows their range |");
         return md.ToString();
     }
 
@@ -257,13 +257,19 @@ public static class Pages
     public static string BasisNote(Basis basis) => basis switch
     {
         Basis.Sessions => $"Each side's sample is a game session's median. A change is marked when Mann-Whitney's p is under {F(Statistics.Alpha, "0.00")}, " +
-                          $"Cliff's delta is past {F(Statistics.NegligibleDelta, "0.000")} and it is past the part's limit (CPU busy also by 0.25 ms); with fewer than {Statistics.SessionsNeeded} " +
-                          "sessions a side it is inconclusive (?).",
-        Basis.QuickRead => "A quick read of one game session a side: a change is marked when the ranges of its passes don't overlap and it is over 2 %. " +
-                           "Sessions of their own decide (./benchmark.sh measure --sessions 5).",
-        _ => "A screen of one run a side: a change past a part's limit (its test's noise profile, else 5 %) is marked; smaller ones are within run-to-run noise. " +
-             "A Mac's heat moves GPU time too: measure both sides to be sure (./benchmark.sh measure --sessions 5).",
+                          $"Cliff's delta is past {F(Statistics.NegligibleDelta, "0.000")} and it moved {F(Statistics.SessionsMove * 100, "0")} % or more (GPU and frame time; the others past their limit, CPU busy also by 0.25 ms); " +
+                          $"with fewer than {Statistics.SessionsNeeded} sessions a side it is inconclusive (?). The interval is the ratio's that goes with the test: " +
+                          "5 sessions a side tell apart about 5 % on a quiet Mac, more sessions less.",
+        Basis.QuickRead => $"A quick read of one game session a side: a change is marked when the ranges of its passes don't overlap and it is past the part's limit, {F(Statistics.QuickReadMove * 100, "0")} % at least. " +
+                           "The two sessions played at other times, so the Mac's heat between them reads as a change too: sessions in turns decide (./benchmark.sh measure --ab ... --sessions 5, or a study).",
+        _ => $"A screen of one run a side: a time or an energy is marked past {F(Statistics.ScreenDrift, "0")} % (or the part's limit, if larger), other numbers past their limit: " +
+             "runs of the same build played at other times move that much with the Mac's heat and the apps sharing its GPU. " +
+             "Sessions in turns tell smaller changes (./benchmark.sh measure --ab ... --sessions 5, or a study).",
     };
+
+    // What no comparison judges: shown in each run's report
+    public const string NotJudged = "Not judged, shown in each run's report: FPS, P95, the worst frame, CPU wait, displayed time, animation error, GC pause, JIT, " +
+                                    "shaders, pipelines, draws, the thermal state, the physics' numbers and the GPU's power; P99 and 1% low only in parts of 200 frames or more.";
 
     // --- report.html
 
@@ -753,8 +759,8 @@ public static class Pages
         if (warnings.Count > 0)
             html.Append("<section>").Append(string.Concat(warnings.Select(w => $"<p class=\"lead\">{E(w)}</p>"))).Append("</section>");
 
-        // What moved first: each part that changed, with its zones
-        var moved = c.Parts.Concat(c.Warps).Where(p => p.Decides is { Changed: true }).ToList();
+        // What moved first: each part that changed, with its zones, and its other numbers that moved
+        var moved = c.Parts.Concat(c.Warps).Where(p => p.Decides is { Changed: true } || p.Others.Any()).ToList();
         html.Append("<section><h2>What moved</h2>");
         if (moved.Count == 0)
             html.Append($"<p class=\"lead\">No part moved past the noise. {E(BasisNote(c.Basis))}</p>");
@@ -762,9 +768,14 @@ public static class Pages
         {
             html.Append("<ul class=\"moved\">");
             foreach (var p in moved)
-                html.Append($"<li>{Chip(p.Decides!)} {E(p.Line())}</li>");
+            {
+                if (p.Decides is { Changed: true } d)
+                    html.Append($"<li>{Chip(d)} {E(p.Line())}</li>");
+                foreach (var v in p.Others)
+                    html.Append($"<li>{Chip(v)} {E($"{p.Scenario} {p.Name} {v.Metric.Label} {v.Metric.Format(v.A)} to {v.Metric.Format(v.B)} {v.Metric.Unit}".TrimEnd())}</li>");
+            }
             html.Append("</ul>");
-            if (moved.Any(p => p.Decides!.Metric == Metrics.GpuBusy && !p.GpuZones))
+            if (moved.Any(p => p.ZonesWanted))
                 html.Append("<p class=\"small\">Profile both runs to name the GPU's zones that moved: <code>./benchmark.sh profile</code>.</p>");
             html.Append($"<p class=\"small\">{E(BasisNote(c.Basis))}</p>");
         }
@@ -784,7 +795,7 @@ public static class Pages
         {
             html.Append("<section><h2>Part by part</h2><p class=\"lead\">GPU busy a frame where both runs have it (frame times sit on the display's beat). Small changes are within run-to-run noise and go unmarked.</p>");
             ComparisonTable(html, c, "A", "B");
-            html.Append("</section>");
+            html.Append($"<p class=\"small\">{E(NotJudged)}</p></section>");
         }
 
         if (c.Warps.Count > 0)
@@ -839,7 +850,7 @@ public static class Pages
         foreach (var v in s.Variants)
             html.Append($"<li><b>{E(v.Name)}</b> {(v.Good is { } g ? Status(g, v.Sentence) : $"<span class=\"quiet\">{E(v.Sentence)}</span>")}" +
                         $"{(v.Options.Count > 0 ? $" <span class=\"small\"><code>{E(string.Join(' ', v.Options))}</code></span>" : "")}</li>");
-        html.Append("</ul></section>");
+        html.Append("</ul>").Append(string.Concat(s.Warnings.Select(w => $"<p class=\"lead\">{E(w)}</p>"))).Append("</section>");
 
         var rows = s.Rows();
         var shown = s.Variants.Where(v => v.Comparison != null).ToList();
@@ -857,19 +868,24 @@ public static class Pages
                 html.Append($"<tr><td class=\"part\">{E(part)}</td><td class=\"quiet\">{E(first.Metric.Label)}</td><td>{first.Metric.Format(first.A)} {E(first.Metric.Unit)}</td>");
                 foreach (var v in shown)
                     html.Append(s.Cell(v, scenario, part)?.Decides is { } d
-                        ? $"<td>{Chip(d)}{(d.Interval is [var lo, var hi] ? $"<div class=\"small\">{F(lo, "0.000")}-{F(hi, "0.000")}</div>" : "")}</td>"
+                        ? $"<td>{(d.Metric != first.Metric ? $"<span class=\"quiet\">{E(d.Metric.Label)}</span> " : "")}{Chip(d)}{(d.Interval is [var lo, var hi] ? $"<div class=\"small\">{F(lo, "0.000")}-{F(hi, "0.000")}</div>" : "")}</td>"
                         : "<td></td>");
                 html.Append("</tr>");
             }
             html.Append($"</tbody></table></div><p class=\"small\">{E(BasisNote(shown.Select(v => v.Comparison!.Basis).Min()))}</p></section>");
         }
 
-        var moved = shown.SelectMany(v => v.Comparison!.Parts.Concat(v.Comparison.Warps).Where(p => p.Decides is { Changed: true }).Select(p => (v, p))).ToList();
+        var moved = shown.SelectMany(v => v.Comparison!.Parts.Concat(v.Comparison.Warps).Where(p => p.Decides is { Changed: true } || p.Others.Any()).Select(p => (v, p))).ToList();
         if (moved.Count > 0)
         {
             html.Append("<section><h2>What moved</h2><ul class=\"moved\">");
             foreach (var (v, p) in moved)
-                html.Append($"<li>{Chip(p.Decides!)} <b>{E(v.Name)}</b> {E(p.Line())}</li>");
+            {
+                if (p.Decides is { Changed: true } d)
+                    html.Append($"<li>{Chip(d)} <b>{E(v.Name)}</b> {E(p.Line())}</li>");
+                foreach (var o in p.Others)
+                    html.Append($"<li>{Chip(o)} <b>{E(v.Name)}</b> {E($"{p.Scenario} {p.Name} {o.Metric.Label} {o.Metric.Format(o.A)} to {o.Metric.Format(o.B)} {o.Metric.Unit}".TrimEnd())}</li>");
+            }
             html.Append("</ul></section>");
         }
 

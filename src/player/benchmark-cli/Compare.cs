@@ -46,7 +46,8 @@ public static partial class Program
             Console.Error.WriteLine($"{Path.GetFileName(ab.TrimEnd('/'))} is an A/B run of before studies: its two sides are in one record, which doesn't compare.");
             return 2;
         }
-        var c = Comparison.Of(ra.AllParts().Select(x => (x.Scenario.Name, x.Part)), rb.AllParts().Select(x => (x.Scenario.Name, x.Part)));
+        var c = Comparison.Of(ra.AllParts().Select(x => (x.Scenario.Name, x.Part)), rb.AllParts().Select(x => (x.Scenario.Name, x.Part)),
+            Ground.Steps(ra) || Ground.Steps(rb));
         if (ra.Mode != rb.Mode)
         {
             // Timed scenarios play the same whatever the rest played
@@ -65,12 +66,17 @@ public static partial class Program
         // The screenshots first: the verdict leads with them
         var body = new StringBuilder();
         var warnings = new List<string>();
+        // Numbers that don't stand on the same ground: said first
+        if (Ground.Unlike([ra, rb]) is { Count: > 0 } unlike)
+            warnings.Add($"Not like for like: {string.Join("; ", unlike.Select(u => $"{u.Key} {u.Values[0]} (a), {u.Values[1]} (b)"))}. Every number moves with these.");
         foreach (var (run, record) in new[] { ("a", ra), ("b", rb) })
         {
             if (record.Status == Status.Stopped)
                 warnings.Add($"Run {run} was stopped before its end.");
             else if (record.Status == Status.Failed)
                 warnings.Add($"Run {run} failed (see its report.md): the parts its problems concern may not compare.");
+            foreach (var note in Ground.Notes(record))
+                warnings.Add($"Run {run}: {note.Text}.");
         }
         // Sessions a side played run after run: the Mac's heat over that series moves GPU time on its own, a study's turns don't
         if (c.Basis == Basis.Sessions)
@@ -123,16 +129,21 @@ public static partial class Program
         head.AppendLine($"a: {a}");
         head.AppendLine($"b: {b}");
         head.AppendLine();
-        // What moved, first: each part that changed, with the zones that moved with it
-        var moved = c.Parts.Concat(c.Warps).Where(p => p.Decides is { Changed: true }).ToList();
+        // What moved, first: each part that changed, with the zones that moved with it, and its other numbers that moved
+        var moved = c.Parts.Concat(c.Warps).Where(p => p.Decides is { Changed: true } || p.Others.Any()).ToList();
         if (moved.Count > 0)
         {
             head.AppendLine("What moved:");
             head.AppendLine();
             foreach (var p in moved)
-                head.AppendLine($"- {p.Line()} ({Comparison.Text(p.Decides!)})");
+            {
+                if (p.Decides is { Changed: true } d)
+                    head.AppendLine($"- {p.Line()} ({Comparison.Text(d)})");
+                foreach (var v in p.Others)
+                    head.AppendLine($"- {p.Line(v)}");
+            }
             head.AppendLine();
-            if (moved.Any(p => p.Decides!.Metric == Metrics.GpuBusy && !p.GpuZones))
+            if (moved.Any(p => p.ZonesWanted))
             {
                 head.AppendLine("Profile both runs to name the GPU's zones that moved: ./benchmark.sh profile.");
                 head.AppendLine();
@@ -242,6 +253,7 @@ public static partial class Program
         if (c.OnlyB.Count > 0)
             md.AppendLine($"Only in b: {string.Join(", ", c.OnlyB)}.");
         md.AppendLine(Pages.BasisNote(c.Basis) + (c.Basis == Basis.Screen ? " Frame times sit on the display's beat: read GPU busy first." : ""));
+        md.AppendLine(Pages.NotJudged);
         md.AppendLine();
     }
 

@@ -140,6 +140,11 @@ public static class Finish
             });
         }
         var rows = frames.Where(r => r.Part.Length > 0).GroupBy(r => (r.Scenario, r.Part, r.Session, r.Pass)).ToDictionary(g => g.Key, g => (IReadOnlyList<FrameRow>)g.ToList());
+        // The frame before each part's first: what its counts (shaders compiled) start from
+        var before = new Dictionary<(string, string, int, int), FrameRow>();
+        for (int i = 1; i < frames.Count; i++)
+            if (frames[i].Part.Length > 0 && (frames[i].Scenario, frames[i].Part, frames[i].Session, frames[i].Pass) is var key && !before.ContainsKey(key))
+                before[key] = frames[i - 1];
         var zoneRows = zones.GroupBy(z => (z.Scenario, z.Part, z.Session, z.Pass)).ToDictionary(g => g.Key, g => g.ToList());
         // A part a trigger's heavy work disturbed (Triggers.cs) leaves the numbers in that pass
         var disturbed = events.Where(e => e.Type == "disturbed").Select(e => (e.Scenario, e.Part, e.Session, e.Pass)).ToHashSet();
@@ -156,10 +161,11 @@ public static class Finish
                     var key = (scenario.Name, part, open.Session, open.Pass);
                     if (!rows.TryGetValue(key, out var r))
                         continue;
-                    var values = Measure.Of(r, shown, zoneRows.GetValueOrDefault(key), scenario.Kind == Kind.Timed ? open.Game : null, (long?)open.Value, waits);
+                    var values = Measure.Of(r, shown, zoneRows.GetValueOrDefault(key), scenario.Kind == Kind.Timed ? open.Game : null, (long?)open.Value, waits,
+                        before.GetValueOrDefault(key));
                     // The probes' counters over the part's frames: their median, or the most (Across)
                     foreach (var (metric, samples) in counters.GetValueOrDefault(key) ?? [])
-                        values[metric] = Math.Round(Metrics.Find(metric)?.Across == Across.Most ? samples.Max() : Measure.Median(samples), 3);
+                        values[metric] = Math.Round(Metrics.Find(metric)?.Across switch { Across.Most => samples.Max(), Across.Mean => samples.Average(), _ => Measure.Median(samples) }, 3);
                     // The GPU's energy a frame, where the host measured its power: its mean over the part times the mean frame
                     // (W times ms is mJ; medians would jump between the beats of a capped frame rate); not for time warp,
                     // whose frames do ever more work
@@ -236,8 +242,11 @@ public static class Finish
                 ? plan.Host.NoiseFolder : Path.GetDirectoryName(plan.Play.Script)!;
             var noise = NoiseProfile.Read(folder, test.Name);
             foreach (var part in scenario.Parts)
-                if (noise.Parts.ContainsKey(part.Name))
-                    part.Limit = noise.PartLimit(part.Name);
+                if (noise.Parts.TryGetValue(part.Name, out var n))
+                {
+                    part.Limit = n.Limit;
+                    part.FrameLimit = n.FrameLimit;
+                }
         }
     }
 

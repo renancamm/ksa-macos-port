@@ -175,9 +175,10 @@ public sealed class PartRecord
     public string Name { get; set; } = "";
     // How many times it was measured (passes and sessions together)
     public int Runs { get; set; } = 1;
-    // How far its GPU or frame time may move between two runs of the same build before a comparison marks it (percent; the
-    // test's noise profile: null, the metric's own)
+    // How far its GPU time (frame time where it has none) may move between two runs of the same build before a comparison
+    // marks it, and its frame time (percent; the test's noise profile: null, the metric's own)
     public double? Limit { get; set; }
+    public double? FrameLimit { get; set; }
     // The first measuring's frames and seconds
     public int Frames { get; set; }
     public double Seconds { get; set; }

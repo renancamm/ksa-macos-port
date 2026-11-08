@@ -217,7 +217,7 @@ public sealed class Study
             merged.Add((scenario, new PartRecord
             {
                 Name = name, Runs = of.Sum(x => x.Part.Runs), Frames = of[0].Part.Frames, Seconds = of[0].Part.Seconds,
-                Limit = of.Select(x => x.Part.Limit).Max(),
+                Limit = of.Select(x => x.Part.Limit).Max(), FrameLimit = of.Select(x => x.Part.FrameLimit).Max(),
                 Values = new SortedDictionary<string, double>(Measure.Merge(of.Select(x => (IReadOnlyDictionary<string, double>)x.Part.Values).ToList()), StringComparer.Ordinal),
                 Measurings = of.SelectMany(x => x.Part.Measurings.Select(m => m with { Session = m.Session + x.Offset })).ToList(),
                 Profiled = profiled.Count > 0 ? new SortedDictionary<string, double>(Measure.Merge(profiled), StringComparer.Ordinal) : null,
@@ -230,8 +230,26 @@ public sealed class Study
 // A study's report as its page and report.md show it: the command, the baseline, each variant against it (the verdict, the
 // parts, the screenshots of its first session against the baseline's), and the queue's sessions with their runs
 public sealed record StudyPage(string Name, string Command, string Baseline, IReadOnlyList<string> BaselineOptions, int SessionsEach,
-    IReadOnlyList<StudyPage.Variant> Variants, IReadOnlyList<StudyPage.Session> Sessions, RunRecord? First)
+    IReadOnlyList<StudyPage.Variant> Variants, IReadOnlyList<StudyPage.Session> Sessions, RunRecord? First, IReadOnlyList<string> Warnings)
 {
+    // What its sessions don't share (the Mac's facts across all; within a variant also its window, Vsync and build, which
+    // a variant may set on purpose against the others), and the notes that moved their numbers, with how many sessions
+    // had each
+    public static List<string> Ground(IReadOnlyDictionary<string, List<RunRecord>> byVariant)
+    {
+        var warnings = new List<string>();
+        static string Counted(string[] values) => string.Join(", ", values.GroupBy(v => v).Select(g => $"{g.Key} ({g.Count()})"));
+        var all = byVariant.Values.SelectMany(r => r).ToList();
+        if (Benchmark.Ground.Unlike(all, play: false) is { Count: > 0 } unlike)
+            warnings.Add($"Not like for like across the sessions: {string.Join("; ", unlike.Select(u => $"{u.Key} {Counted(u.Values)}"))}.");
+        foreach (var (variant, runs) in byVariant)
+            if (Benchmark.Ground.Unlike(runs, build: true).Where(u => !Benchmark.Ground.Unlike(all, play: false).Any(x => x.Key == u.Key)).ToList() is { Count: > 0 } own)
+                warnings.Add($"{variant}'s own sessions differ: {string.Join("; ", own.Select(u => $"{u.Key} {Counted(u.Values)}"))}.");
+        foreach (var code in all.SelectMany(r => Benchmark.Ground.Notes(r)).GroupBy(n => n.Code))
+            warnings.Add($"{char.ToUpperInvariant(code.First().Text[0])}{code.First().Text[1..]} (in {all.Count(r => r.Notes.Any(n => n.Code == code.Key))} of {all.Count} sessions).");
+        return warnings;
+    }
+
     // A variant against the baseline: no comparison while either side has no session that passed (Sentence says why)
     public sealed record Variant(string Name, IReadOnlyList<string> Options, Comparison? Comparison, string Sentence, bool? Good,
         IReadOnlyList<ShotResult> Shots, int ShotsDiffer, string? ShotsOf);
@@ -262,6 +280,11 @@ public sealed record StudyPage(string Name, string Command, string Baseline, IRe
         foreach (var v in Variants)
             md.AppendLine($"| {v.Name} | {(v.Good == false ? $"**{v.Sentence}**" : v.Sentence)} |");
         md.AppendLine();
+        foreach (var w in Warnings)
+        {
+            md.AppendLine(w);
+            md.AppendLine();
+        }
         var rows = Rows();
         if (rows.Count > 0)
         {
@@ -272,24 +295,32 @@ public sealed record StudyPage(string Name, string Command, string Baseline, IRe
             foreach (var (scenario, part) in rows)
             {
                 var first = shown.Select(v => Cell(v, scenario, part)).First(c => c != null)!.Decides!;
+                // A variant decided by another number than the row's says which
                 var cells = shown.Select(v => Cell(v, scenario, part)?.Decides is { } d
-                    ? Pages.Marked(d) + (d.Interval is [var lo, var hi] && !terminal ? FormattableString.Invariant($" ({lo:0.000}-{hi:0.000})") : "") : "");
+                    ? (d.Metric != first.Metric ? $"{d.Metric.Label} " : "") + Pages.Marked(d) +
+                      (d.Interval is [var lo, var hi] && !terminal ? FormattableString.Invariant($" ({lo:0.000}-{hi:0.000})") : "") : "");
                 md.AppendLine($"| {(scenario == last ? "" : scenario)} | {part} | {first.Metric.Label} | {first.Metric.Format(first.A)} {first.Metric.Unit} | {string.Join(" | ", cells)} |");
                 last = scenario;
             }
             md.AppendLine();
             var basis = shown.Select(v => v.Comparison!.Basis).Min();
-            md.AppendLine(Pages.BasisNote(basis) + (terminal ? "" : " In brackets: the 95 % interval of the ratio of the medians."));
+            bool intervals = shown.Any(v => v.Comparison!.Parts.Concat(v.Comparison.Warps).Any(p => p.Decides?.Interval != null));
+            md.AppendLine(Pages.BasisNote(basis) + (terminal || !intervals ? "" : " In brackets: the 95 % interval of the ratio."));
             md.AppendLine();
         }
         var moved = Variants.Where(v => v.Comparison != null)
-            .SelectMany(v => v.Comparison!.Parts.Concat(v.Comparison.Warps).Where(p => p.Decides is { Changed: true }).Select(p => (v, p))).ToList();
+            .SelectMany(v => v.Comparison!.Parts.Concat(v.Comparison.Warps).Where(p => p.Decides is { Changed: true } || p.Others.Any()).Select(p => (v, p))).ToList();
         if (moved.Count > 0)
         {
             md.AppendLine("What moved:");
             md.AppendLine();
             foreach (var (v, p) in moved)
-                md.AppendLine($"- {v.Name}: {p.Line()} ({Comparison.Text(p.Decides!)})");
+            {
+                if (p.Decides is { Changed: true } d)
+                    md.AppendLine($"- {v.Name}: {p.Line()} ({Comparison.Text(d)})");
+                foreach (var o in p.Others)
+                    md.AppendLine($"- {v.Name}: {p.Line(o)}");
+            }
             md.AppendLine();
         }
         if (!terminal)
