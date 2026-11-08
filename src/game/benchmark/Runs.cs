@@ -216,7 +216,7 @@ public static class Runs
     // Its page in the browser, or the folder of a run that has none
     public static void Show(string folder)
     {
-        var page = Path.Combine(folder, "report.html");
+        var page = RunFiles.PagePath(folder);
         Process.Start("/usr/bin/open", new[] { File.Exists(page) ? page : folder });
     }
 
@@ -450,7 +450,7 @@ public static class Runs
         {
             Passes = Detail == "profile" ? [PassKind.WarmUp, PassKind.Measured, PassKind.Profiled] : [PassKind.Measured],
             Record = new() { Probes = Detail == "memory" ? ["memory"] : [], Capture = capture, ZoneLabels = capture },
-            Out = output,
+            Out = RunFiles.Data(output),
             Play = new()
             {
                 Script = script, Only = string.Join(' ', tests.SelectMany(t => t.Scenarios)), Test = _test, Stay = true,
@@ -468,7 +468,7 @@ public static class Runs
         var folder = Path.Combine(runs, name);
         if (Directory.Exists(folder))
             folder += DateTime.Now.ToString("_ss", Inv);
-        Directory.CreateDirectory(folder);
+        RunFiles.Create(folder);
         return folder;
     }
 
@@ -524,7 +524,7 @@ public static class Runs
         var plan = _plan = Plan(_out);
         plan.Host.InGame = true;
         GameSettings.Current.Save();
-        File.Copy(Path.Combine(Constants.DocumentsFolderPath, "settings.toml"), Path.Combine(_out, "settings.toml"), true);
+        File.Copy(Path.Combine(Constants.DocumentsFolderPath, "settings.toml"), Path.Combine(RunFiles.Data(_out), "settings.toml"), true);
         _system = Universe.CurrentSystem?.Id ?? "?";
         Hosted(plan, "in the running game, from its settings");
         Console.Out.Flush();
@@ -557,14 +557,14 @@ public static class Runs
         _out = NewRunFolder();
         var plan = _plan = new RunPlan
         {
-            Out = _out,
+            Out = RunFiles.Data(_out),
             Play = new() { Here = HereSeconds, Test = _test, Mode = Lineup.Name(Kind.Flight), Only = "here", Stay = true },
             Host = new() { InGame = true, NoiseFolder = Path.GetDirectoryName(_out) ?? "" },
         };
         // The settings the game runs with, as they are on disk (the player's own file, not written again)
         var settings = Path.Combine(Constants.DocumentsFolderPath, "settings.toml");
         if (File.Exists(settings))
-            File.Copy(settings, Path.Combine(_out, "settings.toml"), true);
+            File.Copy(settings, Path.Combine(RunFiles.Data(_out), "settings.toml"), true);
         _system = Universe.CurrentSystem?.Id ?? "?";
         Hosted(plan, "in the running game, as it was played, from its settings");
         Console.Out.Flush();
@@ -655,7 +655,7 @@ public static class Runs
         }
         File.WriteAllLines(Path.Combine(instance, "settings.toml"), settings);
         var output = NewRunFolder();
-        File.Copy(Path.Combine(instance, "settings.toml"), Path.Combine(output, "settings.toml"));
+        File.Copy(Path.Combine(instance, "settings.toml"), Path.Combine(RunFiles.Data(output), "settings.toml"));
         var plan = Plan(output);
         plan.Host.Restarted = true;
         plan.Write(output);
@@ -715,7 +715,7 @@ public static class Runs
             return;
         using var log = new FileStream(ConsoleLog, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
         log.Seek(mode is Mode.InGame or Mode.Here ? Math.Min(_logStart, log.Length) : 0, SeekOrigin.Begin);
-        File.WriteAllText(Path.Combine(_out, "game.log"), new StreamReader(log).ReadToEnd().Replace(Home, "~"));
+        File.WriteAllText(Path.Combine(RunFiles.Data(_out), "game.log"), new StreamReader(log).ReadToEnd().Replace(Home, "~"));
     }
 
     private static void Finished()

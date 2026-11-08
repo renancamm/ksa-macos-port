@@ -217,8 +217,8 @@ public static partial class Program
                 if (Directory.Exists(_out) || File.Exists(_out))
                     _out += "_" + DateTime.Now.ToString("ss", CultureInfo.InvariantCulture);
             }
-            Directory.CreateDirectory(_out);
-            File.Copy(_settings, Path.Combine(_out, "settings.toml"));
+            _data = RunFiles.Create(_out);
+            File.Copy(_settings, Path.Combine(_data, "settings.toml"));
             var events = new EventLog(_out);
             events.Add("start", text: Start);
             // Keeps the display awake while this program lasts (the game needs it; a study's runs are one program), and wakes
@@ -238,11 +238,11 @@ public static partial class Program
             }
             if (_hud)
             {
-                Directory.CreateDirectory(Path.Combine(_out, "hud"));
+                Directory.CreateDirectory(Path.Combine(_data, "hud"));
                 foreach (var v in new[] { "MTL_HUD_ENABLED", "MTL_HUD_LOG_ENABLED", "MTL_HUD_LOG_SHADER_ENABLED", "MTL_HUD_ENCODER_TIMING_ENABLED",
                              "MTL_HUD_INSIGHTS_ENABLED", "KSA_MTL_LABELS" })
                     env[v] = "1";
-                env["MTL_HUD_REPORT_URL"] = Path.Combine(_out, "hud");
+                env["MTL_HUD_REPORT_URL"] = Path.Combine(_data, "hud");
             }
             if (_trace)
             {
@@ -260,7 +260,7 @@ public static partial class Program
             plan.On = _rules.Select(r => r.ToString()).ToList();
             plan.Against = _catch;
             if (_catch.Length > 0)
-                env["KSA_MTL_WATCH"] = Path.Combine(_out, "caught");
+                env["KSA_MTL_WATCH"] = Path.Combine(_data, "caught");
             if (_rules.Any(r => r.Has(TriggerAction.Capture)))
                 env["MTL_CAPTURE_ENABLED"] = env["KSA_MTL_LABELS"] = "1";
             plan.Record.Film = _film;
@@ -369,7 +369,7 @@ public static partial class Program
             hangup.Dispose();
             // --defaults and presets: the settings as the game saved them, with its defaults filled in
             if (_defaults || _preset.Length > 0)
-                File.Copy(_settings, Path.Combine(_out, "settings.toml"), true);
+                File.Copy(_settings, Path.Combine(_data, "settings.toml"), true);
             var swapAfter = Swap();
             events.Session = 0;
             events.Add("memory", text: $"pressure {Pressure(pressure)}, " +
@@ -390,7 +390,7 @@ public static partial class Program
             var record = Soft(() => Finish.Run(_out));
             if (record?.Status != Status.Passed)
                 failed = 1;
-            if (!File.Exists(Path.Combine(_out, "report.md")))
+            if (!File.Exists(Path.Combine(_data, "report.md")))
                 Die($"the run's report could not be written. What the run left is in {_out}");
             // A study's session: a line of its own, the study's report says the rest
             if (Into.Length > 0)
@@ -410,7 +410,7 @@ public static partial class Program
                 Console.WriteLine();
             }
 
-            var zip = Path.Combine(_out, Path.GetFileName(_out) + ".zip");
+            var zip = RunFiles.Zip(_out);
             Output.Step(_stopped ? $"Stopped: {_out}" : failed == 0 ? $"Done: {_out}" : $"Done, with problems: {_out}");
             Output.Info($"See it, with its pictures: ./benchmark.sh report {Path.GetFileName(_out)}");
             Output.Info($"Compare with another run: ./benchmark.sh compare <other run> {Path.GetFileName(_out)}");
@@ -564,7 +564,7 @@ public static partial class Program
             // The game's log, without your home folder's name
             var log = Path.Combine(_instance, "logs", "console.log");
             if (File.Exists(log))
-                File.WriteAllText(Path.Combine(_out, n > 1 ? $"game-{n}.log" : "game.log"), File.ReadAllText(log).Replace(PortFolder.Home, "~"));
+                File.WriteAllText(Path.Combine(_data, n > 1 ? $"game-{n}.log" : "game.log"), File.ReadAllText(log).Replace(PortFolder.Home, "~"));
         }
 
         // Whether a process is the game's own (a stand-in game's subshells look like it)
@@ -612,11 +612,11 @@ public static partial class Program
 
         private Process StartTrace(int pid)
         {
-            var log = Path.Combine(_out, "xctrace.log");
+            var log = Path.Combine(_data, "xctrace.log");
             // Points of Interest holds the parts (KSA Metal's signposts)
             var start = new ProcessStartInfo("/bin/sh");
             foreach (var a in new[] { "-c", "exec xcrun xctrace record \"$@\" > \"$0\" 2>&1", log, "--template", _template, "--instrument",
-                         "Points of Interest", "--attach", pid.ToString(CultureInfo.InvariantCulture), "--output", Path.Combine(_out, "trace.trace"),
+                         "Points of Interest", "--attach", pid.ToString(CultureInfo.InvariantCulture), "--output", Path.Combine(_data, "trace.trace"),
                          "--no-prompt" })
                 start.ArgumentList.Add(a);
             return Process.Start(start)!;
@@ -629,30 +629,30 @@ public static partial class Program
             {
                 // The HUD's log, from the game's: once a second "metal-HUD: <first frame>,<graphics MB>,<process MB>" and
                 // each frame's present interval and GPU time (ms), and the shaders it saw compiled
-                var log = Path.Combine(_out, "game.log");
+                var log = Path.Combine(_data, "game.log");
                 var lines = File.Exists(log) ? File.ReadLines(log).Where(l => l.Contains("metal-HUD:") || l.Contains("CompileShader")).ToList() : [];
-                File.WriteAllLines(Path.Combine(_out, "hud.log"), lines);
+                File.WriteAllLines(Path.Combine(_data, "hud.log"), lines);
                 Output.Info($"Metal HUD: {lines.Count(l => l.Contains("metal-HUD"))} log lines in hud.log, reports in hud/");
             }
             // A trace Instruments was stopped writing is left out: exporting it could hang the same way
-            if (_trace && !_traceCut && Directory.Exists(Path.Combine(_out, "trace.trace")))
+            if (_trace && !_traceCut && Directory.Exists(Path.Combine(_data, "trace.trace")))
             {
                 // Its tables of the parts and of the GPU's work, for the report program's summary (trace.md)
-                var trace = Path.Combine(_out, "trace.trace");
-                Tool.Exec("xcrun", ["xctrace", "export", "--input", trace, "--toc", "--output", Path.Combine(_out, "trace-toc.xml")], out _);
-                Tool.Exec("xcrun", ["xctrace", "export", "--input", trace, "--output", Path.Combine(_out, "trace-parts.xml"), "--xpath",
+                var trace = Path.Combine(_data, "trace.trace");
+                Tool.Exec("xcrun", ["xctrace", "export", "--input", trace, "--toc", "--output", Path.Combine(_data, "trace-toc.xml")], out _);
+                Tool.Exec("xcrun", ["xctrace", "export", "--input", trace, "--output", Path.Combine(_data, "trace-parts.xml"), "--xpath",
                     "/trace-toc/run[@number=\"1\"]/data/table[@schema=\"OSSignpostIntervals\"]"], out _);
-                Tool.Exec("xcrun", ["xctrace", "export", "--input", trace, "--output", Path.Combine(_out, "trace-gpu.xml"), "--xpath",
+                Tool.Exec("xcrun", ["xctrace", "export", "--input", trace, "--output", Path.Combine(_data, "trace-gpu.xml"), "--xpath",
                     "/trace-toc/run[@number=\"1\"]/data/table[@schema=\"metal-gpu-intervals\"]"], out _);
                 if (Soft(() => Quiet(() => Trace(_out)).Status, 1) != 0)
                     Output.Warn("the trace's summary failed (the trace itself is fine).");
                 Output.Info($"Trace: {trace} (open it in Instruments; the parts are under Points of Interest), summary in trace.md");
             }
             if (_capture)
-                foreach (var c in Directory.GetFileSystemEntries(_out, "*.gputrace").Order(StringComparer.Ordinal))
+                foreach (var c in Directory.GetFileSystemEntries(_data, "*.gputrace").Order(StringComparer.Ordinal))
                     Output.Info($"Frame capture: {c} (open it in Xcode)");
-            if (Directory.Exists(Path.Combine(_out, "caught")))
-                Output.Info($"Caught: {_out}/caught (what the triggers kept: passes and passes.txt, images, frame captures; watch.txt: when the image looked broken)");
+            if (Directory.Exists(Path.Combine(_data, "caught")))
+                Output.Info($"Caught: {_data}/caught (what the triggers kept: passes and passes.txt, images, frame captures; watch.txt: when the image looked broken)");
             // What the triggers did, but keep a moment (the run's store has those)
             foreach (var e in EventLog.Read(_out).Where(e => e.Type == "trigger" &&
                          (e.Text ?? "").Split(": ").ElementAtOrDefault(1)?.Split(", ").All(a => a == "moment" || a.StartsWith("max ", StringComparison.Ordinal)) != true).Take(10))

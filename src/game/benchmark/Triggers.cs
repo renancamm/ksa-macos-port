@@ -254,7 +254,7 @@ internal sealed class TriggerRunner : Probe
             return "pure white";
         if (_against == null)
             return null;
-        var clean = new FileInfo(Path.Combine(_against, Path.GetFileName(path)));
+        var clean = new FileInfo(Path.Combine(RunFiles.Data(_against), Path.GetFileName(path)));
         var reference = clean.Exists ? Images.Read(clean.FullName) : null;
         if (reference == null || shot.Width != reference.Width || shot.Height != reference.Height)
             return null;

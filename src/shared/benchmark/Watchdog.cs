@@ -54,7 +54,7 @@ public static class Watchdog
     public static bool Sample(int pid, string dir, int session, out string why)
     {
         why = "";
-        var path = Path.Combine(dir, session > 1 ? $"stuck-{session}.txt" : "stuck.txt");
+        var path = Path.Combine(RunFiles.Data(dir), session > 1 ? $"stuck-{session}.txt" : "stuck.txt");
         try
         {
             using var sample = Process.Start(new ProcessStartInfo("/usr/bin/sample",

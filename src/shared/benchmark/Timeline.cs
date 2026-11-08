@@ -24,13 +24,13 @@ public static class Timeline
     // The run's timeline next to its store: the trace and its script; false when the run has no store
     public static bool Write(string dir)
     {
-        var db = Path.Combine(dir, RunStore.GameFile);
-        if (!File.Exists(db))
+        var data = RunFiles.Data(dir);
+        if (!File.Exists(Path.Combine(data, RunStore.GameFile)))
             return false;
         var trace = Make(dir);
-        File.WriteAllBytes(Path.Combine(dir, TraceFile), trace);
-        var run = Path.GetFileName(Path.GetFullPath(dir).TrimEnd('/'));
-        File.WriteAllText(Path.Combine(dir, ScriptFile), $"window.ksaTimeline = {{ name: {System.Text.Json.JsonSerializer.Serialize(run)}, trace: '{Convert.ToBase64String(trace)}' }};\n");
+        File.WriteAllBytes(Path.Combine(data, TraceFile), trace);
+        var run = RunFiles.Name(dir);
+        File.WriteAllText(Path.Combine(data, ScriptFile), $"window.ksaTimeline = {{ name: {System.Text.Json.JsonSerializer.Serialize(run)}, trace: '{Convert.ToBase64String(trace)}' }};\n");
         return true;
     }
 
@@ -75,7 +75,8 @@ public static class Timeline
 
     public static byte[] Make(string dir)
     {
-        var name = Path.GetFileName(Path.GetFullPath(dir).TrimEnd('/'));
+        var name = RunFiles.Name(dir);
+        dir = RunFiles.Data(dir);
         var game = Path.Combine(dir, RunStore.GameFile);
         var tracks = new Tracks();
         var slices = new List<Slice>();

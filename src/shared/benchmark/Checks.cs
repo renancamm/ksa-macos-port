@@ -77,7 +77,7 @@ public static class Checks
     // run that had a picture: one colour from edge to edge, or mostly pure white
     private static IEnumerable<Finding> Pictures(RunEvidence run)
     {
-        var shots = run.Record.Scenarios.SelectMany(s => s.Shots).Select(s => Path.Combine(run.Dir, s.File)).Where(File.Exists).ToList();
+        var shots = run.Record.Scenarios.SelectMany(s => s.Shots).Select(s => Path.Combine(RunFiles.Data(run.Dir), s.File)).Where(File.Exists).ToList();
         return shots.AsParallel().AsOrdered().Select(f => (Name: Path.GetFileName(f), Image: Images.Read(f)))
             .Select(s => s.Image == null ? null : Images.Blank(s.Image) ? Fail("blank", $"{s.Name}: the screenshot is one colour from edge to edge")
                 : Images.WhitePercent(s.Image) is >= BlownOutPercent and var white ? Fail("white", $"{s.Name}: {white:F0} % of the screenshot is pure white: the picture went wrong") : null)
@@ -267,11 +267,11 @@ public static class Checks
             yield break;
         }
         if (run.Record.InGame || run.Record.Start.StartsWith("a new game, restarted", StringComparison.Ordinal) ||
-            run.Events.FirstOrDefault() is not { } first || Path.GetDirectoryName(Path.GetFullPath(run.Dir).TrimEnd('/')) is not { } folder)
+            run.Events.FirstOrDefault() is not { } first || Path.GetDirectoryName(RunFiles.Folder(run.Dir)) is not { } folder)
             yield break;
-        var name = Path.GetFileName(Path.GetFullPath(run.Dir).TrimEnd('/'));
+        var name = RunFiles.Name(run.Dir);
         var before = Directory.GetDirectories(folder).Select(d => Path.GetFileName(d)!)
-            .Where(d => string.CompareOrdinal(d, name) < 0 && File.Exists(Path.Combine(folder, d, RunStore.GameFile)))
+            .Where(d => string.CompareOrdinal(d, name) < 0 && File.Exists(Path.Combine(RunFiles.Data(Path.Combine(folder, d)), RunStore.GameFile)))
             .OrderByDescending(d => d, StringComparer.Ordinal).FirstOrDefault();
         if (before == null || EventLog.Read(Path.Combine(folder, before)).LastOrDefault() is not { } ended)
             yield break;

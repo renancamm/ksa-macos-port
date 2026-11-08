@@ -26,7 +26,7 @@ public static class Facts
         string? hooks = null)
     {
         var facts = asksMac ? Mac(app) : [];
-        var settings = File.Exists(Path.Combine(dir, "settings.toml")) ? File.ReadAllLines(Path.Combine(dir, "settings.toml")) : [];
+        var settings = File.Exists(Path.Combine(RunFiles.Data(dir), "settings.toml")) ? File.ReadAllLines(Path.Combine(RunFiles.Data(dir), "settings.toml")) : [];
         string Setting(string key) => settings.Select(l => l.Trim()).Where(l => l.StartsWith(key + " = ", StringComparison.Ordinal))
             .Select(l => l[(key.Length + 3)..].Trim('"')).FirstOrDefault() ?? "?";
         // What the port ran with, from the game's log when the host didn't say

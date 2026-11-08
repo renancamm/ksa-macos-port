@@ -22,6 +22,7 @@ public static partial class Program
     // most own time a frame (their time less their zones'), against the GPU time the measured passes took
     private static int Profile(string dir)
     {
+        dir = RunFiles.Data(dir);
         var db = Path.Combine(dir, RunStore.GameFile);
         if (!File.Exists(db))
         {
@@ -136,6 +137,7 @@ public static partial class Program
     // game's encoders by their names (KSA_MTL_LABELS) and by the GPU's channels, as Instruments measured it
     private static int Trace(string dir)
     {
+        dir = RunFiles.Data(dir);
         string partsFile = Path.Combine(dir, "trace-parts.xml"), gpuFile = Path.Combine(dir, "trace-gpu.xml");
         if (!File.Exists(partsFile) || !File.Exists(gpuFile))
         {

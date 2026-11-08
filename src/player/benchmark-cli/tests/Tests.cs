@@ -343,14 +343,15 @@ internal static class Tests
         Contains(Notes(record), "swapped memory", "swap read with a decimal point");
     }
 
-    // A run from benchmark.sh: its plan without the port settings and the hooks, which come from the game's log
+    // A run from benchmark.sh, in a folder with data/ as a new run's: its plan without the port settings and the hooks,
+    // which come from the game's log
     private static void FinishZip()
     {
         var dir = Path.Combine(_scratch, "2026-10-26_0100");
-        Directory.CreateDirectory(dir);
+        var data = RunFiles.Create(dir);
         new RunPlan { Play = new() { Test = "mixed", Mode = "views" } }.Write(dir);
         Session(dir, new EventLog(dir), 1, 10, null, Kind.Views);
-        File.WriteAllLines(Path.Combine(dir, "game.log"),
+        File.WriteAllLines(Path.Combine(data, "game.log"),
             ["==> port settings: render_scale=0.75", "[hooks] TerrainCache: skipped (KSA's code moved)", "[hooks] OutlineSkip: on"]);
         var record = Finished(dir);
         Equal(Status.Failed, record.Status, "a skipped hook fails the run");
@@ -358,10 +359,15 @@ internal static class Tests
         Equal("TerrainCache: skipped (KSA's code moved); OutlineSkip: on", record.Fact("Hooks"), "the hooks, from the log");
         Contains(Problems(record), "the hooks' TerrainCache: skipped", "the skipped hook");
         Contains(Notes(record), "port settings were changed (render_scale=0.75)", "the port settings");
-        using var zip = ZipFile.OpenRead(Path.Combine(dir, "2026-10-26_0100.zip"));
+        // On top the page and the zip, everything else in data/
+        Check(File.Exists(Path.Combine(dir, "report.html")) && File.Exists(Path.Combine(data, "report.md")) && File.Exists(Path.Combine(data, RunPlan.FileName)) &&
+              File.Exists(Path.Combine(data, RunRecord.FileName)) && !File.Exists(Path.Combine(dir, RunRecord.FileName)), "report.html on top, the rest in data/");
+        Contains([File.ReadAllText(Path.Combine(dir, "report.html"))], "In the <code>data</code> folder", "the page's footer");
+        using var zip = ZipFile.OpenRead(Path.Combine(dir, "to-share_2026-10-26_0100.zip"));
         var names = zip.Entries.Select(e => e.FullName).ToArray();
-        foreach (var file in new[] { "run.json", "report.md", "report.html", "run.db", "plan.json", "game.log" })
-            Contains(names, $"2026-10-26_0100/{file}", "the zip");
+        Contains(names, "2026-10-26_0100/report.html", "the zip");
+        foreach (var file in new[] { "run.json", "report.md", "run.db", "plan.json", "game.log" })
+            Contains(names, $"2026-10-26_0100/data/{file}", "the zip");
 
         // The game's hooks event: what the hooks applied, without the lines they log while the run plays
         var said = Path.Combine(_scratch, "2026-10-26_0101");
@@ -1059,7 +1065,7 @@ internal static class Tests
         Equal(0, Notes(record).Length, "notes");
         Check(File.Exists(Path.Combine(dir, RunStore.GameFile)) && File.Exists(Path.Combine(dir, RunStore.HostFile)), "both files");
         var unpacked = Path.Combine(_scratch, "unpacked");
-        ZipFile.ExtractToDirectory(Path.Combine(dir, "stored.zip"), unpacked);
+        ZipFile.ExtractToDirectory(Path.Combine(dir, "to-share_stored.zip"), unpacked);
         var events = RunStore.ReadEvents(Path.Combine(unpacked, "stored"));
         Contains(events.Select(e => e.Text ?? ""), "swap 0 -> 0 MB, ~/swap", "the zip's store: the home folder as ~");
         Equal(100, RunStore.ReadFrames(Path.Combine(unpacked, "stored")).Count, "the zip's store: the frames");

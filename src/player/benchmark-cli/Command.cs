@@ -251,7 +251,7 @@ public static partial class Program
             Die($"there is no {name} run in {Benchmarks}.");
         }
         // A run with a record, a zip, or a run with only its store (an older record: report --again makes a new one)
-        static bool Known(string dir) => HasRecord(dir) || File.Exists(Path.Combine(dir, RunStore.GameFile));
+        static bool Known(string dir) => HasRecord(dir) || File.Exists(Path.Combine(RunFiles.Data(dir), RunStore.GameFile));
         if (Known(name) || File.Exists(name))
             return name;
         if (Known(Path.Combine(Benchmarks, name)))
@@ -294,17 +294,17 @@ public static partial class Program
             Die("report takes a run's folder, not its zip.");
         if (again)
         {
-            if (!File.Exists(Path.Combine(run, RunStore.GameFile)))
+            if (!File.Exists(Path.Combine(RunFiles.Data(run), RunStore.GameFile)))
                 Die($"{Path.GetFileName(run.TrimEnd('/'))} has no store (run.db) to make it again from: a run older than the store has none.");
             Finish.Again(run);
         }
-        else if (!File.Exists(Path.Combine(run, "report.html")) && RunRecord.Read(run) is { } record)
+        else if (!File.Exists(RunFiles.PagePath(run)) && RunRecord.Read(run) is { } record)
             Pages.WriteReport(run, record);
         Show(run);
         Console.WriteLine();
-        Output.Info($"The page: {run}/report.html");
+        Output.Info($"The page: {RunFiles.PagePath(run)}");
         if (!Console.IsOutputRedirected)
-            Tool.Exec("open", [Path.Combine(run, "report.html")], out _);
+            Tool.Exec("open", [RunFiles.PagePath(run)], out _);
         return 0;
     }
 
