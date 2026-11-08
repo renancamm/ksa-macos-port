@@ -118,12 +118,12 @@ The same tests are the project's tool for looking into the driver, the shaders a
 
 | Command | What it does |
 |---|---|
-| `check [test]` | the standard test of a change: the test (default `mixed`) at a fresh install's settings, compared with the baseline `main` of that test, or else the last run of it that passed played the same way; exits with 1 when screenshots differ |
+| `check [test]` | the standard test of a change: the test (default `mixed`) at a fresh install's settings without Vsync, compared with the baseline `main` of that test, or else the last run of it that passed played the same way; exits with 1 when screenshots differ |
 | `measure [test] [--repeat n] [--sessions n] [--ab key=value]` | numbers to judge a change by: a warm-up pass first, left out of the numbers, then `n` passes (3) in one game session; the report shows each part's median and range; `--sessions` plays more games of it; `--ab` is a [study](#studies) of two variants, the port setting `key=value` (B) and as the run has it (A, `--port` can give its value), `--sessions` games each |
 | `study <file>`, `study resume [study]`, `study report [study]` | variants of one `measure` or `profile` command, each in game sessions of its own, played in turn and set against a baseline variant by their sessions ([below](#studies)) |
 | `profile [test \| places...]` | where the time goes: a warm-up, a measured pass and a profiled pass in one game session. The profiled pass turns the game's GPU zones on ("Clouds Raymarching", "Ocean", "Stars") and `profile.md` lists, per part, the zones with the most own time a frame; the measured pass gives the run's numbers |
 | `investigate <tool> <places...>` | a tool on places jumped to, or a whole test (below) |
-| `calibrate [test] [n]` | how much a test moves between runs of the same build on this Mac: `n` runs (3) at a fresh install's settings, written as the test's noise profile |
+| `calibrate [test] [n]` | how much a test moves between runs of the same build on this Mac: `n` runs (3) at a fresh install's settings without Vsync, written as the test's noise profile |
 | `baseline [set <name> [run...] \| remove <name>]` | names runs, one of each test, to compare with; a baseline's name stands for its run wherever a run is named, and `clean` keeps it |
 | `query [run] '<sql>'` | SQL on a run's [store](#a-runs-record) (default: the last run) |
 | `timeline [run]` | the run in Perfetto's viewer, in your browser: its parts, frame and GPU times, each frame's way to the screen, KSA Metal's waits, the game's zones around slow frames, and the counters (the GPU's power and clock, the probes') |
@@ -195,7 +195,7 @@ axis --preset low high
 |---|---|
 | `measure <options>` or `profile <options>` | what every session plays: the command's options, as on the command line |
 | `sessions <n>` | the game sessions each variant plays (5 unless said, the fewest a verdict stands on) |
-| `variant <name> [options]` | a variant, and the options it adds to the command (`--port`, `--set`, `--preset`, `--app`, `--env`) |
+| `variant <name> [options]` | a variant, and the options it adds to the command (`--port`, `--set`, `--preset`, `--app`, `--env`, `--capped`) |
 | `axis <option> <value>...` | every variant once for each value: `main low`, `main high`, `steps low`, `steps high` |
 | `baseline <name>` | the variant the others are set against (default: the first) |
 
@@ -350,8 +350,8 @@ of the game. For a run of `./benchmark.sh`, the game starts from a documents fol
 `~/Library/Caches/ksa-macos-port/benchmark/instance/`, with a copy of your settings (a fresh install's with a preset or
 `--defaults`) and of your port settings (the defaults with a preset or `--defaults`), and no mods, so your saves,
 settings and mods are never touched. The command changes only the settings that start the game straight into the test
-(no system menu, the chosen system, the game's test vessel in orbit); every quality setting stays yours or the
-preset's. The game's environment is the command's: variables that change how it runs (Metal's, .NET's, the port's,
+(no system menu, the chosen system, the game's test vessel in orbit), and for `check`, `measure`, `profile` and
+`calibrate` Vsync (off, unless `--capped`); every quality setting stays yours or the preset's. The game's environment is the command's: variables that change how it runs (Metal's, .NET's, the port's,
 StarMap's) are listed in the run's Environment fact, KSA Metal's switches in their own. A run in the game you
 have open keeps its system: the benchmark saves your game, sets the world to a new game's, and loads your game again
 at the end.
@@ -543,6 +543,7 @@ flight's. Fly the free camera to a place, open the console (`\`) and type `bench
 |---|---|
 | `--preset low`, `--preset medium`, `--preset high` | fixed settings over a fresh install's defaults, in a 1280x800 window without Vsync, the same on every Mac (default: your settings) |
 | `--defaults` | the settings of a fresh install instead of yours: the game's own defaults and the port settings' (a preset, `--set` and `--port` go on top) |
+| `--capped` | with `check`, `measure`, `profile` or `calibrate`: play the settings' own Vsync. These play without it, so that a saving shows as GPU time (with Vsync, a view that finishes inside the display's refresh lowers the GPU's clock instead) and frame times aren't on the display's steps; `run` plays your Vsync, `--set vsync=...` sets it for any; a preset plays without Vsync either way |
 | `--system earth` | Earth and the Moon only (the game's smaller system): skips Mars, Saturn and Jupiter, and needs less memory (default: `earth` when what plays is all on Earth or the Moon, otherwise `sol`) |
 | `mixed`, `tour`, `warp`, `full` | the test to play (default: `mixed`) |
 | `<place> ...` | play only these places (a screenshot's name): each one's scenario up to there |

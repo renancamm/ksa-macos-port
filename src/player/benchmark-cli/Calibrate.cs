@@ -1,5 +1,5 @@
 // calibrate [test] [n]: how much a test moves between runs of the same build on this Mac, as its noise profile. It plays
-// the test n times (3 unless said) at a fresh install's settings, each run a game of its own as a comparison sets two runs
+// the test n times (3 unless said) at a fresh install's settings without Vsync (--capped: with the game's own), each run a game of its own as a comparison sets two runs
 // against each other, then takes for each screenshot the most of its blocks that changed between any two of the runs and
 // for each part how far its GPU and frame times spread, and writes the limits (NoiseProfile.Margin times the spread) to
 // noise/<test>.json in the benchmarks folder. Runs and comparisons on this Mac use it from then on; copied into
@@ -30,12 +30,12 @@ public static partial class Program
                 Die("the Warp Test has no noise profile: its screenshots are not compared, and its parts are the speed reached in time warp.");
             else if (int.TryParse(a, NumberStyles.Integer, CultureInfo.InvariantCulture, out var count) && count is >= 2 and <= 20)
                 n = count;
-            else if (a is "--app" or "--system" || passOn.LastOrDefault() is "--app" or "--system")
+            else if (a is "--app" or "--system" or "--capped" || passOn.LastOrDefault() is "--app" or "--system")
                 passOn.Add(a);
             else
-                Die($"calibrate [mixed | tour] [runs, 2 to 20] [--app <path>] [--system <name>], not '{a}'.");
+                Die($"calibrate [mixed | tour] [runs, 2 to 20] [--app <path>] [--system <name>] [--capped], not '{a}'.");
         }
-        Output.Step($"Calibrating the {Pages.TestName(test)}: {n} runs at a fresh install's settings, each a game of its own");
+        Output.Step($"Calibrating the {Pages.TestName(test)}: {n} runs at a fresh install's settings{(passOn.Contains("--capped") ? "" : " without Vsync")}, each a game of its own");
         var runs = new List<(string Dir, RunRecord Record)>();
         for (int i = 1; i <= n; i++)
         {
@@ -71,7 +71,7 @@ public static partial class Program
         {
             Test = test,
             Made = string.Create(CultureInfo.InvariantCulture,
-                $"benchmark.sh calibrate, {DateTime.Now:yyyy-MM-dd}, {runs.Count} runs on {first.Fact("Chip") ?? "?"} {first.Fact("Memory") ?? ""}, port {first.Fact("Port") ?? "?"}, KSA {first.Fact("KSA") ?? "?"}"),
+                $"benchmark.sh calibrate, {DateTime.Now:yyyy-MM-dd}, {runs.Count} runs on {first.Fact("Chip") ?? "?"} {first.Fact("Memory") ?? ""}, port {first.Fact("Port") ?? "?"}, KSA {first.Fact("KSA") ?? "?"}, Vsync {first.Fact("Vsync") ?? "?"}"),
             Runs = runs.Select(r => Path.GetFileName(r.Dir)).ToList(),
         };
         // Each screenshot: the most of its blocks that changed between any two runs

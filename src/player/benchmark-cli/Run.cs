@@ -25,7 +25,12 @@ public static partial class Program
         private readonly List<string> _probes = [], _knobs = [], _off = [];
         private string _preset = "", _system = "", _hold = "", _settingsFile = "", _reference = "", _catch = "";
         private string _template = "Metal System Trace", _test = "";
-        private bool _defaults, _explore, _fast, _noShots, _hud, _trace, _capture, _catchCapture, _passes, _cameraLog, _holding;
+        private bool _defaults, _explore, _fast, _noShots, _hud, _trace, _capture, _catchCapture, _passes, _cameraLog, _holding, _capped;
+
+        // A run that judges a change plays without Vsync (check, measure, profile, calibrate and studies of them): a view
+        // that finishes inside the display's refresh would show a saving as a lower GPU clock, not as GPU time, and frame
+        // times would sit on the display's steps. --capped plays the settings' own Vsync; --set vsync=... wins over both
+        private bool Uncapped => !_capped && _purpose is Purpose.Check or Purpose.Measure or Purpose.Profile or Purpose.Calibrate;
         private string _repeatText = "", _sessionsText = "1", _ab = "", _filmText = "0", _savePlan = "";
         private double _film;
         private bool _traceCut;  // Instruments was stopped writing the trace (RunGame)
@@ -249,6 +254,7 @@ public static partial class Program
                     case "--app": _app = args[++i].TrimEnd('/'); break;
                     case "--preset": _preset = args[++i]; break;
                     case "--defaults": _defaults = true; break;
+                    case "--capped" when _purpose is Purpose.Check or Purpose.Measure or Purpose.Profile or Purpose.Calibrate: _capped = true; break;
                     case "--system": _system = args[++i]; break;
                     case "--env": _env.Add(args[++i]); break;
                     case "--probe" when _purpose is not Purpose.Explore: _probes.Add(args[++i]); break;
@@ -326,6 +332,8 @@ public static partial class Program
             (Directory.Exists(Benchmarks) ? Directory.GetDirectories(Benchmarks) : []).Where(IsRun).OrderByDescending(d => Path.GetFileName(d), StringComparer.Ordinal)
                 .FirstOrDefault(d => RunRecord.Read(d) is { Status: Status.Passed } r && r.Test == test && r.Mode == mode &&
                                      r.Fact("Mode") == mode && r.Fact("Preset") == PresetFact && r.Fact("Settings changed") == ChangedFact &&
+                                     // Played with Vsync as this one plays (without, unless --capped)
+                                     Ground.Steps(r) != Uncapped &&
                                      r.Fact("Tools") == "none" && r.Fact("KSA Metal switches") == "none" && r.Fact("Environment") == null &&
                                      r.WarmUp == null && r.Fact("Warm-up") == null && r.Passes == 1);
 

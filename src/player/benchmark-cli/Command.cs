@@ -54,6 +54,8 @@ public static partial class Program
         With what settings:
           --preset <name>    low, medium or high: fixed settings in a 1280x800 window, the same on every Mac (default: yours)
           --defaults         the settings of a fresh install instead of yours: the game's own and the port's defaults
+          --capped           with check, measure, profile or calibrate: the settings' own Vsync (these play without it,
+                             so that a saving shows as GPU time; run plays your Vsync)
           --set <key=value>  change one setting of settings.toml for the run (again for more), on top of the preset;
                              <section>.<key>=<value> adds it to that section when the file has no such key
           --settings <file>  change the settings in that file ("key = value" lines, as in settings.toml; a bare word
@@ -66,8 +68,8 @@ public static partial class Program
 
         For work on the port (see the benchmark's README):
           ./benchmark.sh check [test] [options]
-                             the standard test of a change: the test (default mixed) at a fresh install's settings, compared
-                             with the baseline main of that test (or the last run of it that passed); exits with 1 when
+                             the standard test of a change: the test (default mixed) at a fresh install's settings without Vsync, compared
+                             with the baseline main of that test (or the last run of it that passed played so); exits with 1 when
                              screenshots differ
           ./benchmark.sh measure [test] [--repeat n] [--sessions n] [--ab key=value] [options]
                              numbers to judge a change by: a warm-up pass first (left out), then n passes (3) in one game
@@ -84,7 +86,7 @@ public static partial class Program
                              profiled pass names the game's GPU zones in each part (profile.md), its own cost kept apart
           ./benchmark.sh calibrate [test] [n]
                              how much the test moves between runs of the same build on this Mac: n runs (3) at a fresh
-                             install's settings, the spread of each screenshot and part, written as the test's noise profile
+                             install's settings without Vsync, the spread of each screenshot and part, written as the test's noise profile
                              (the benchmarks folder's noise/), which comparisons hold each screenshot and part to
           ./benchmark.sh investigate <tool> <places...> [options]
                              a tool on places jumped to (or a whole test): trace (an Instruments trace;

@@ -1,6 +1,6 @@
 // Two sides compared part by part (two runs, or a study's variant against its baseline): each part's verdicts
 // (Statistics.cs) and the zones that moved, and one sentence for them all. A part is decided by its GPU busy where both
-// sides have it (frame times sit on the display's beat), else its frame time; a time warp part by the speed it reached.
+// sides have it (with Vsync, frame times sit on the display's beat), else its frame time; a time warp part by the speed it reached.
 // The sentence names each part that moved, the others' other numbers that moved another way (a frame time up with the
 // GPU's the same, a P99, memory), and is good when nothing judged got worse. The zones name where a change went: the
 // GPU's zones when both sides have them (benchmark.sh profile), else the main thread's for a frame time.
