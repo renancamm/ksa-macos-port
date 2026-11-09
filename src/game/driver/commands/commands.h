@@ -42,9 +42,9 @@ struct KCommandBuffer : KDispatchable {
     KUploadRing ring;
     bool submittedOnce = false;
 
-    // Deferred store actions: with tessellation on, render passes start with MTLStoreActionUnknown so a pass can be
-    // suspended for the compute stages (store everything) and resumed (load everything); the real store actions are
-    // applied when the pass really ends
+    // Deferred store actions: with tessellation on, or GPU zones split, render passes start with MTLStoreActionUnknown
+    // so a pass can be suspended for the compute stages or a timestamp (store everything, resolve what has a resolve
+    // image) and resumed (load everything); the real store actions are applied when the pass really ends
     MTLRenderPassDescriptor* passDesc = nil;
     MTLStoreAction colorStores[8] = {}, depthStore = MTLStoreActionStore, stencilStore = MTLStoreActionStore;
     bool deferredStores = false, suspending = false;
@@ -144,13 +144,13 @@ struct KCommandBuffer : KDispatchable {
     uint64_t encLastPipeline = 0;
     void notePipelineLabel(KPipeline* p);
     // Pass dump (passdump.mm), while a frame is dumped: the open pass's descriptor and its first load actions, its name (the
-    // first encoder's, as it may suspend and resume), its draws so far, whether a suspension resolves its images, whether the
-    // recording is being dropped
+    // first encoder's, as it may suspend and resume), its draws so far, whether its draws were skipped, whether the recording is
+    // being dropped
     MTLRenderPassDescriptor* dumpDesc = nil;
     MTLLoadAction dumpLoads[8] = {}, dumpDepthLoad = MTLLoadActionDontCare;
     std::string dumpName;
     uint32_t dumpDraws = 0;
-    bool dumpResolves = false, dumpDrawsSkipped = false, dropping = false;
+    bool dumpDrawsSkipped = false, dropping = false;
     template <typename E> void nameEncoder(E enc);
 
     void endEncoder();
