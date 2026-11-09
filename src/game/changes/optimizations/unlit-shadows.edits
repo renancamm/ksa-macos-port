@@ -173,9 +173,10 @@ layout(constant_id = 900) const bool PORT_SKIP_UNLIT_SHADOWS = true;  // macOS p
 @@ contains
     float combinedShadowFactor = sunShadowFactor * cloudShadows * cascadeShadowFactor * trailShadows;
 @@ contains
-        vec3 prefilteredAmbient = selfShadowFactor * GetAmbient(
+        vec3 ambientLut = selfShadowFactor * GetAmbient(
 @@ contains
-        vec3 prefilteredReflection = prefilteredAmbient * 0.5;
+        GetPresampledSkyLighting(inWorldPosition.xyz, worldNormal, roughness, ambientLut,
+            selfShadowFactor * global.camera.pbrExposure, prefilteredAmbient, prefilteredReflection);
 @@ contains
                 combinedShadowFactor *= ringTransmittance;
                 environmentLighting *= ringTransmittance;
@@ -183,7 +184,31 @@ layout(constant_id = 900) const bool PORT_SKIP_UNLIT_SHADOWS = true;  // macOS p
     vec3 punctualLighting = SampleForwardLights(inWorldPosition.xyz, worldNormal, surfaceColor * averageLuminosity, metallic);
 @@ contains
     outColor = finalColor;
-@@ counts finalColor=11 combinedShadowFactor=3 environmentLighting=4 punctualLighting=2 outColor=3 prefilteredAmbient=3 selfShadowFactor=3,4,5 cascadeShadowFactor=2,3 sunShadowFactor=2,3 cloudShadows=2,3 trailShadows=2,3
+@@ counts finalColor=11 combinedShadowFactor=3 environmentLighting=4 punctualLighting=2 outColor=3 prefilteredAmbient=3 prefilteredReflection=3 ambientLut=2 selfShadowFactor=4,5,6 cascadeShadowFactor=2,3 sunShadowFactor=2,3 cloudShadows=2,3 trailShadows=2,3
+@@ contains Common/Lighting.glsl
+    diffuse = 2.0 * ambientLut * SkyVisibility(N, zenith);
+    specular = 2.0 * ambientLut * SkyVisibility(R, zenith);
+@@ contains Common/Lighting.glsl
+void GetPresampledSkyLighting(vec3 worldPos, vec3 normal, float roughness, vec3 ambientLut, float scale,
+    out vec3 filteredDiffuse, out vec3 filteredSpecular)
+{
+    // The camera is at the origin, so the view direction is -normalize(worldPos)
+    vec3 N = normalize(normal);
+    vec3 R = reflect(normalize(worldPos), N);
+
+    GetAmbientLutSurfaceLighting(worldPos, N, R, ambientLut, filteredDiffuse, filteredSpecular);
+
+    float weight = PrefilteredSkyWeight(worldPos);
+
+    if (weight <= 0.0)
+        return;
+
+    vec3 diffuse, specular;
+    GetPrefilteredSkyLighting(worldPos, N, R, roughness, diffuse, specular);
+
+    filteredDiffuse = mix(filteredDiffuse, diffuse * scale, weight);
+    filteredSpecular = mix(filteredSpecular, specular * scale, weight);
+}
 @@ contains Common/Lighting.glsl
     vec3 diffuse = filteredDiffuseMap * albedo;
     
