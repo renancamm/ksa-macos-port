@@ -84,6 +84,8 @@ internal static class Upscale
                 transpiler: new HarmonyMethod(typeof(Upscale), nameof(BloomTranspiler)));
             harmony.Patch(Find.Method(typeof(RaytracingRenderer), nameof(RaytracingRenderer.RunRaytracePass)),
                 transpiler: new HarmonyMethod(typeof(Upscale), nameof(RayTracingTranspiler)));
+            harmony.Patch(Find.Method(typeof(RaytracePipeline), nameof(RaytracePipeline.Dispatch)),
+                prefix: new HarmonyMethod(typeof(Upscale), nameof(RayTracingSeedPrefix)));
         }
         if (Interpolate)
         {
@@ -148,6 +150,7 @@ internal static class Upscale
     private static bool _reading;  // the composites, as last built, read _output: MetalFX runs (and the jitter with it)
     private static bool _reset = true, _havePrevious;
     private static int _frame;
+    private static uint _jitterIndex;  // this frame's place in the jitter's sequence, 1 to 16; 0: no jitter
     private static float2 _jitter, _jitterClip;
     private static float4x4 _egoFromClip, _scene, _object, _sky, _nearby, _previousViewProjection;
     private static float4 _sphere, _bodySphere;
@@ -231,11 +234,13 @@ internal static class Upscale
         // A high-resolution screenshot is drawn without jitter, and the history starts again after it
         if (!_reading)
             _reset = true;
+        _jitterIndex = 0;
         if (!Spatial && _reading)
         {
             int i = _frame++ % 16 + 1;
             jx = Halton(i, 2) - 0.5f;
             jy = Halton(i, 3) - 0.5f;
+            _jitterIndex = (uint)i;
         }
         _jitter = new float2(jx, jy);
         _jitterClip = new float2(2f * jx / size.X, 2f * jy / size.Y);
@@ -449,6 +454,17 @@ internal static class Upscale
             new CodeInstruction(OpCodes.Call, Find.Method(typeof(Upscale), nameof(Jittered)))
         });
         return code;
+    }
+
+    // RaytracePipeline.Dispatch (the cockpit's ray tracing, each of its passes): this frame's place in the jitter's
+    // sequence in the uniforms' spare Margin, which upscale.edits makes the ray generation's random seed (the game's is 1
+    // every frame). The game's rays are fixed to each pixel and its denoise is spatial: with the jitter, each frame moved
+    // the same rays across the window's glass and the sunlight on the cockpit's walls flickered in blobs; with a seed for
+    // each of the 16 jittered frames, MetalFX gathers 16 sets of rays into the soft shadow
+    private static void RayTracingSeedPrefix(ref RaytracePipeline.UniformData uniformData, int inShaderSlot)
+    {
+        if (inShaderSlot == Program.MainViewport.ShaderSlot)
+            uniformData.Margin = _jitterIndex;
     }
 
     // The main view's projection with this frame's jitter, as UpdateCamera gives the camera data

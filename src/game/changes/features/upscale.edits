@@ -1,0 +1,20 @@
+# For MetalFX Temporal (the hooks' Upscale.cs): the cockpit's ray tracing seeds its random numbers with each pixel's
+# place and the frame number 1, every frame, so its rays are fixed to the pixel and only a spatial denoise smooths
+# them. Under MetalFX Temporal the view moves by a sub-pixel jitter in a sequence of 16, and with that seed each frame
+# takes the same rays from slightly moved points: where the sun comes through the window's glass, the light on the
+# walls flickers in blobs. Where the hooks set the uniforms' spare margin to the frame's place in that sequence (0
+# without them: the game's seed), the seed changes with it and MetalFX gathers 16 sets of rays.
+
+@@ check upscale-margin Raytracing/uniform.glsl
+@@ what the ray tracing's seed by the jitter
+@@ contains
+    int vertexSize;
+    int margin;
+
+@@ edit upscale-seed Raytracing/raygen.rgen
+@@ what seeded the cockpit's rays by the jitter where the hooks ask
+@@ needs upscale-margin
+@@ find
+    RandomEngine random = rEInit(gl_LaunchIDEXT.xy, 1);
+@@ replace
+    RandomEngine random = rEInit(gl_LaunchIDEXT.xy, ubo.margin > 0 ? uint(ubo.margin) : 1u);  // macOS port: MetalFX Temporal's jitter
