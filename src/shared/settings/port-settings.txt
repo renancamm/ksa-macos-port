@@ -50,29 +50,30 @@ render_scale | scale:0.5:2 | 1.0 | upscaling!=off | restart | hooks:RenderScale 
 skip_game_anti_aliasing | bool | true | upscaling=metalfx | restart | hooks:RenderScale | true,true,true | | | Skip Game Anti-Aliasing | Turns off the game's Anti-Aliasing (Display) with MetalFX Temporal, which smooths edges itself.
 
 [performance] Extra Performance | Faster, with small trade-offs.
+steady_frame_rate | bool | false | game:vsync | restart | driver | true,false,false | | | Steady Frame Rate | With Vsync (Display), shows frames at an even half of the display's refresh rate. Steadier motion, less GPU work.
 fewer_cloud_steps | bool | false | | restart | hooks:CloudSteps | true,true,false | | | Fewer Cloud Steps | Draws nearby clouds in fewer, longer steps. Faster with clouds in view.
-fewer_smoke_steps | bool | false | | restart | hooks:SmokeSteps | true,true,false | | | Fewer Smoke Steps | Draws rocket smoke in fewer, longer steps. Faster in big plumes and explosions; a launch's plume looks a little different up close.
-simpler_dense_smoke | bool | false | | restart | hooks:DenseSmoke | true,false,false | | | Simpler Dense Smoke | Draws dense rocket smoke in less detail. Faster there, a little softer from afar.
 fewer_cloud_shadow_updates | bool | false | | restart | hooks:CloudShadows | true,true,false | | | Fewer Cloud Shadow Updates | Updates the shadows of clouds on the ground less often. A little faster; the shadows lag behind moving clouds.
-lighter_warp_cloud_shadows | bool | false | | restart | hooks:WarpCloudShadows | true,true,false | | | Lighter Warp Cloud Shadows | At very high time warp, cloud shadows aren't rebuilt every frame, so warp keeps its speed. They fall out of place, then catch up.
+fewer_sky_lighting_updates | bool | false | | restart | hooks:SkyLighting | true,true,false | | | Fewer Sky Lighting Updates | Updates the sky's light on nearby surfaces less often. A little faster; it trails quick changes of light by a moment.
+baked_milky_way | bool | false | | restart | hooks:BakedMilkyWay | true,true,true | | | Baked Milky Way | Draws the Milky Way's dust from a picture made at start. Faster with much sky in view, and slightly softer.
+fewer_smoke_steps | bool | false | | restart | hooks:SmokeSteps | true,true,false | | | Fewer Smoke Steps | Draws rocket smoke in fewer, longer steps. Faster in big plumes and explosions; a launch's plume looks a little different up close.
 lighter_plume_shadows | bool | false | game:plume_trail_shadows | restart | hooks:PlumeShadows | true,true,false | | | Lighter Plume Shadows | With Plume trail shadows (Graphics), rocket smoke casts coarser shadows, only within 3 km. A big rocket's smoke draws about 10-20 % faster.
 simpler_pcss_shadows | bool | false | game:pcss | restart | hooks:ShadowSearch | true,true,true | | | Simpler PCSS Shadows | With Cascaded Shadow Filter on Pcss (Graphics), nearby soft shadows are simpler. Faster in grass; shadows cast from high above can look sharper.
-baked_milky_way | bool | false | | restart | hooks:BakedMilkyWay | true,true,true | | | Baked Milky Way | Draws the Milky Way's dust from a picture made at start. Faster with much sky in view, and slightly softer.
 crew_portraits_at_15_fps | bool | false | | live | hooks:CrewPortraits | true,false,false | | | Crew Portraits at 15 FPS | Draws the crew panel's portraits at 15 FPS. The faces move less smoothly.
+lighter_warp_cloud_shadows | bool | false | | restart | hooks:WarpCloudShadows | true,true,false | | | Lighter Warp Cloud Shadows | At very high time warp, cloud shadows aren't rebuilt every frame, so warp keeps its speed. They fall out of place, then catch up.
 lighter_tumbling_physics | bool | false | | restart | hooks:TumblingPhysics | true,true,false | | | Lighter Tumbling Physics | Tumbling pieces, such as falling boosters, take longer physics steps. Time warp slows down less while they fall.
 debris_settles_in_warp | bool | false | | restart | hooks:DebrisSettle | true,true,false | | | Debris Settles in Warp | At time warp x8 and above, pieces nobody flies settle where they lie and pass through each other. Any inside the planet are removed.
-steady_frame_rate | bool | false | game:vsync | restart | driver | true,false,false | | | Steady Frame Rate | With Vsync (Display), shows frames at an even half of the display's refresh rate. Steadier motion, less GPU work.
 
 [optimizations] Optimizations | Faster, with no visible change.
 terrain_cache | bool | true | | restart | hooks:TerrainCache | | | | Terrain Cache | Recalculates the terrain only when it changes, not every frame.
+skip_shadows_on_unlit_sides | bool | true | | restart | driver | | | | Skip Shadows on Unlit Sides | Skips shadow work where no light reaches. Much faster in the cockpit.
+skip_gpu_texture_compression | bool | true | | restart | driver | | | | Skip GPU Texture Compression | Skips the GPU's compression for textures such as terrain, clouds and sea, which slows drawing. Faster, with the same memory.
+skip_hidden_vessel_parts | bool | true | | restart | hooks:HiddenPartsSkip | | | | Skip Hidden Vessel Parts | Skips shading the parts of a vessel hidden behind something else. Faster, most in the cockpit.
 skip_unused_outlines | bool | true | | restart | hooks:OutlineSkip | | | | Skip Unused Outlines | Draws the outline around parts only while a part is selected.
 skip_unused_overlays | bool | true | | restart | hooks:OverlaySkip | | | | Skip Unused Overlays | Draws gizmos and orbit lines only on frames that have some.
-skip_hidden_vessel_parts | bool | true | | restart | hooks:HiddenPartsSkip | | | | Skip Hidden Vessel Parts | Skips shading the parts of a vessel hidden behind something else. Faster, most in the cockpit.
 skip_unused_ocean_blending | bool | true | | restart | hooks:OceanBlending | | | | Skip Unused Ocean Blending | Below 9 km, skips a step of drawing the ocean that only views from higher up need.
 skip_hidden_crew_portraits | bool | true | | live | hooks:CrewPortraits | | | | Skip Hidden Crew Portraits | Draws the crew panel's portraits only while the panel is open.
-skip_shadows_on_unlit_sides | bool | true | | restart | driver | | | | Skip Shadows on Unlit Sides | Skips shadow work where no light reaches. Much faster in the cockpit.
+skip_unused_aero_meshes | bool | true | | restart | hooks:AeroMeshSkip | | | | Skip Unused Aero Meshes | Builds a vessel's aerodynamic mesh only in the Vehicle Editor and while Draw Aero Mesh is on. Less work at staging and breakups.
 shared_shadow_samples | bool | true | | restart | driver | | | | Shared Shadow Samples | Neighbouring pixels share the work of terrain shadows. A little faster near the ground.
-skip_gpu_texture_compression | bool | true | | restart | driver | | | | Skip GPU Texture Compression | Skips the GPU's compression for textures such as terrain, clouds and sea, which slows drawing. Faster, with the same memory.
 iva_ray_search | bool | true | ray_tracing | restart | driver | | | | IVA Ray Search | With IVA Ray Tracing (Graphics), the cockpit's rays use a faster search. The cockpit draws about 6 % faster.
 vsync_pacing | bool | true | game:vsync | restart | driver | | | | Vsync Pacing | With Vsync, starts each frame as soon as the GPU is ready for it. A higher frame rate in a window.
 background_shader_compiling | bool | true | | restart | driver | | | | Background Shader Compiling | Compiles shaders in the background, so the game doesn't stop for each one.
@@ -93,15 +94,15 @@ load_terrain_by_altitude | bool | false | unload_far_terrain | restart | hooks:F
 unload_far_textures | bool | false | | restart | hooks:FarTextures | | true,true,false | trade-off | Unload Far Textures | Unloads far worlds' ground, rock and cloud textures and reloads them on approach. About 0.25 GB less; a jump can pause a moment.
 fewer_effects_at_once | bool | false | | restart | hooks:ParticlePool | | true,false,false | trade-off | Fewer Effects at Once | Keeps less room for smoke and explosion effects. About 0.2 GB less; rarely, an effect isn't shown.
 
+[interface] Interface | Additional interface features.
+fit_hud_to_display | bool | true | | live | hooks:HudLayout | | | | Fit HUD to Display | Keeps the flight HUD's fullscreen size in a window, scaled to fit narrower displays. If panels overlap, lower HUD Scale (Interface).
+metal_performance_hud | bool | false | | restart | metal:MTL_HUD_ENABLED | | | | Metal Performance HUD | Apple's overlay with the frame rate, GPU time and memory.
+
 [game_features] GPU Features | What the game can use on this Mac.
 tessellation | bool | true | | restart | driver | | | | Tessellation | Lets the game tessellate terrain and ocean. Its Tessellation setting (Graphics, Terrain) still decides.
 ray_queries | bool | true | | restart | driver | | | | Ray Queries | Lets the game place ground clutter with ray queries, and use ray tracing.
 ray_tracing | bool | true | ray_queries | restart | driver | | | | Ray Tracing | Lets the game use ray tracing in the cockpit. Its IVA Ray Tracing setting (Graphics) still decides.
 hdr_output | bool | true | | restart | driver | | | | HDR Output | Lets the game show HDR on a display that has it. Its HDR (Experimental) setting (Display) still decides.
-
-[interface] Interface | Additional interface features.
-fit_hud_to_display | bool | true | | live | hooks:HudLayout | | | | Fit HUD to Display | Keeps the flight HUD's fullscreen size in a window, scaled to fit narrower displays. If panels overlap, lower HUD Scale (Interface).
-metal_performance_hud | bool | false | | restart | metal:MTL_HUD_ENABLED | | | | Metal Performance HUD | Apple's overlay with the frame rate, GPU time and memory.
 
 [benchmark] Benchmark | Test your settings and get a report. Esc to stop.
 report_detail | choice:standard=Standard/profile=Profile/memory=Memory | standard | | live | tab | | | | Report Detail | What a test's report holds besides its frame rate.
@@ -152,7 +153,7 @@ frame_cadence | number:0:100 | 0 | | restart | driver | | | | | Show each frame 
 drawable_count | int:0:3 | 0 | frame_interpolation=false | restart | driver | | | | | How many images the window keeps to show, 2 or 3: 2 lets fewer frames wait to be shown (lower latency, with a cadence). 0: 2 at a cadence of 25 ms or more (steady_frame_rate on a 60 Hz display, frame_cadence), else 3.
 late_frame_start | number:0:5 | 0 | frame_interpolation=false | restart | driver | | | | | With a cadence (steady_frame_rate, frame_cadence in whole refresh intervals), each frame starts as late as still keeps its slot on the display: the game's wait for an earlier frame grows by this many milliseconds after each frame shown on time and is cut in half after one shown late (0: off). Lower latency at the same cadence; the smaller, the fewer misses.
 throttle | text | | | restart | driver | | | | | <hash>:<N>,...: a pipeline whose name holds one of these module hashes runs every N-th present (an experiment, to measure what skipping a pass would save).
-trail_caches | numbers:3:4 | | | restart | hooks:DenseSmoke | | | | | <large>,<small>,<tiny>[,<segments>]: the atlas budgets in MiB of the smoke's 16, 8 and 4 texel volume caches (the game's: 8,8,8), and the fewest segments a cell needs to get one (33). At least one budget of 1 or more; for no caches, 8,8,8,1000000.
+trail_caches | numbers:3:4 | | | restart | hooks:TrailCaches | | | | | <large>,<small>,<tiny>[,<segments>]: the atlas budgets in MiB of the smoke's 16, 8 and 4 texel volume caches (the game's: 8,8,8), and the fewest segments a cell needs to get one (33). At least one budget of 1 or more; for no caches, 8,8,8,1000000.
 trail_shadows | numbers:3:3 | | | restart | hooks:PlumeShadows | | | | | <cascades>,<resolution>,<metres>: the smoke's sun shadow cascades, which the game draws with its Plume trail shadows setting (the game's: 8,512,20000; lighter_plume_shadows: 4,128,3000). Wins over lighter_plume_shadows.
 texture_budget_mb | int:0:1048576 | 0 | | restart | driver | | | | | The GPU memory budget reported to the game, which sizes its texture streaming from it (0: what Metal recommends for this Mac).
 worker_park_ms | number:0:100 | 0.25 | idle_thread_sleep | restart | hooks:WorkerPark | | | | | How long an idle job worker spins before it sleeps, with idle_thread_sleep.

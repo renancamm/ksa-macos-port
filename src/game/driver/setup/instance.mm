@@ -726,8 +726,8 @@ VKFN(VkResult) vkGetPhysicalDeviceSurfaceCapabilities2KHR(VkPhysicalDevice pd, c
     return vkGetPhysicalDeviceSurfaceCapabilitiesKHR(pd, info->surface, &c->surfaceCapabilities);
 }
 
-// HDR10 (PQ in Rec.2020) last, and only on a display with EDR: swapchain.mm shows it with EDR, mapping the game's paper
-// white to the display's SDR white. Not scRGB: its 1.0 is 80 nits to the game and SDR white to macOS
+// HDR10 (PQ in Rec.2020) last, and only on a display with EDR: swapchain.mm shows it with EDR, mapping the game's HDR UI
+// Brightness to the display's SDR white. Not scRGB: its 1.0 is 80 nits to the game and SDR white to macOS
 static const VkSurfaceFormatKHR kSurfaceFormats[] = {
     {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
     {VK_FORMAT_B8G8R8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},

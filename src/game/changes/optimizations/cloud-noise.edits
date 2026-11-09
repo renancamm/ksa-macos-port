@@ -6,9 +6,12 @@
 # lookup whose weight is zero is skipped.
 #
 # CloudFunctions.glsl erodes a cloud's shape with that noise and clamps the result to 1. Deep inside a cloud the result
-# is 1 whatever the noise (0..1), and the noise is still looked up, often at the samples of the raymarch's light rays:
-# it is looked up only where it can change the result. The erosion's other output, the noise profile, only reaches an
-# unused variable in ScatteringFunctions.glsl; the edit is made only while that file reads as it does here.
+# is 1 whatever the noise (0..1), and the noise is still looked up, most often at the samples of the raymarch's light
+# rays: it is looked up only where it can change the result. The erosion's other output, the noise profile, sets how
+# dark a cloud's edges are (ScatteringFunctions.glsl), and only the raymarch's own samples read it: the light rays and
+# the shadow volume tell the density function so, and skip the noise wherever the density can't change; the
+# raymarch's samples skip it only where the edges' darkening is none for any noise as well. The edits are made only
+# while the erosion and the edges' darkening read as they do here.
 
 @@ edit cloud-noise-weights Clouds/CloudAntiTiling.glsl
 @@ what skipped the clouds' noise lookups with no weight
@@ -36,14 +39,57 @@
 @@ what the noise where it can't change their density
 @@ contains Clouds/ScatteringFunctions.glsl
     highDetail = highDetail * erosionMaxDepth + (1.0 - erosionMaxDepth);
-@@ contains Clouds/ScatteringFunctions.glsl
+
+    float threshold = 1.0 - lowDetail;
+    erodedValue = highDetail - threshold;
+
     return clamp(erodedValue / (1.0 - edgeSharpness), 0.0, 1.0);
 @@ contains Clouds/ScatteringFunctions.glsl
-    return Remap(dimensionalProfile, 0.0, 1.0, MULTIPLE_SCATTERING_EDGE_EFFECT_MIN_VALUE, 1.0);
+    float depth = saturate(noiseProfile + dimensionalProfile);
+    return smoothstep(0.0, 1.0, depth);
+@@ contains Clouds/RaymarchCloud.comp
+            float multipleScatteringEdgeEffect = GetMultipleScatteringEdgeEffect(dimensionalProfile, noiseProfile);
+@@ contains
+    float cloudShape = ApplyErosion(noiseSample, dimensionalProfile, CLOUD_EROSION_MAX_DEPTH, interpolatedCloudProperties.y, noiseProfile);
+@@ contains
+#define CLOUD_EROSION_MAX_DEPTH 0.65
+@@ counts Clouds/ScatteringFunctions.glsl noiseProfile=3
+@@ counts Clouds/RaymarchCloud.comp noiseProfile=3
+@@ counts unusedNoiseProfile=4
+@@ counts Clouds/ShadowVolume/ShadowVolume.comp unusedNoiseProfile=2
+
+@@ edit cloud-density-callers Clouds/CloudFunctions.glsl
+@@ what let the clouds' density skip the noise for callers that don't read its edges
+@@ needs cloud-density-uses
+@@ find
+float GetCloudDensity(vec3 position, vec3 planetPosition, float innerCloudRadius, float outerCloudRadius,
+    sampler3D noiseSampler, vec2 interpolatedMipLevels, vec2 minMaxInvNoiseScales, out float dimensionalProfile,
+    out float multipleScatteringBrightness, out vec3 localColor, out float noiseProfile)
+{
+@@ replace
+// macOS port: the density with a last argument saying whether the caller reads the noise profile (the edges'
+// darkening); a call with the game's arguments reads it
+float GetCloudDensity(vec3 position, vec3 planetPosition, float innerCloudRadius, float outerCloudRadius,
+    sampler3D noiseSampler, vec2 interpolatedMipLevels, vec2 minMaxInvNoiseScales, out float dimensionalProfile,
+    out float multipleScatteringBrightness, out vec3 localColor, out float noiseProfile, bool portNoiseProfileRead);
+
+float GetCloudDensity(vec3 position, vec3 planetPosition, float innerCloudRadius, float outerCloudRadius,
+    sampler3D noiseSampler, vec2 interpolatedMipLevels, vec2 minMaxInvNoiseScales, out float dimensionalProfile,
+    out float multipleScatteringBrightness, out vec3 localColor, out float noiseProfile)
+{
+    return GetCloudDensity(position, planetPosition, innerCloudRadius, outerCloudRadius, noiseSampler,
+        interpolatedMipLevels, minMaxInvNoiseScales, dimensionalProfile, multipleScatteringBrightness, localColor,
+        noiseProfile, true);
+}
+
+float GetCloudDensity(vec3 position, vec3 planetPosition, float innerCloudRadius, float outerCloudRadius,
+    sampler3D noiseSampler, vec2 interpolatedMipLevels, vec2 minMaxInvNoiseScales, out float dimensionalProfile,
+    out float multipleScatteringBrightness, out vec3 localColor, out float noiseProfile, bool portNoiseProfileRead)
+{
 
 @@ edit cloud-density Clouds/CloudFunctions.glsl
 @@ what skipped the clouds' noise where it can't change their density
-@@ needs cloud-density-uses
+@@ needs cloud-density-callers
 @@ find
     float noiseSample = SampleInterpolatedCloudTypeNoise(noiseSampler, cloudSpacePosition, innerCloudRadius,
         currentCloudTypeIndex, nextCloudTypeIndex, cloudTypeInterpolationFraction, interpolatedMipLevels,
@@ -60,10 +106,14 @@
         uboCloudLayer.cloudTypesData[nextCloudTypeIndex].xzw, cloudTypeInterpolationFraction);
 
     // macOS port: deep inside a cloud the erosion below is 1 for any noise (0..1, the noise only adds; 1.001: a
-    // margin for rounding): no lookup there. Its noise profile only reaches GetMultipleScatteringEdgeEffect's unused depth
+    // margin for rounding): no lookup there. Its noise profile, profile - 0.65 + 0.65 * noise, darkens the edges
+    // where it and the profile add up to less than 1: a caller that reads it skips the lookup only where they add up
+    // to 1 or more for any noise
     float noiseSample = 0.0;
     float sharpness = interpolatedCloudProperties.y;
-    if (!(sharpness < 1.0 && dimensionalProfile - CLOUD_EROSION_MAX_DEPTH >= 1.001 * (1.0 - sharpness)))
+    bool portDense = sharpness < 1.0 && dimensionalProfile - CLOUD_EROSION_MAX_DEPTH >= 1.001 * (1.0 - sharpness);
+    bool portNoEdge = !portNoiseProfileRead || 2.0 * dimensionalProfile - CLOUD_EROSION_MAX_DEPTH >= 1.001;
+    if (!(portDense && portNoEdge))
     {
         noiseSample = SampleInterpolatedCloudTypeNoise(noiseSampler, cloudSpacePosition, innerCloudRadius,
             currentCloudTypeIndex, nextCloudTypeIndex, cloudTypeInterpolationFraction, interpolatedMipLevels,
@@ -71,3 +121,19 @@
     }
     
     float cloudShape = ApplyErosion(noiseSample, dimensionalProfile, CLOUD_EROSION_MAX_DEPTH, interpolatedCloudProperties.y, noiseProfile);
+
+@@ edit cloud-density-light Clouds/CloudFunctions.glsl
+@@ what had the clouds' light rays skip the noise where it can't change their density
+@@ needs cloud-density-callers
+@@ find
+            unusedMultipleScatteringBrightness, unusedLocalColor, unusedNoiseProfile);
+@@ replace
+            unusedMultipleScatteringBrightness, unusedLocalColor, unusedNoiseProfile, false);  // macOS port: no edges read
+
+@@ edit cloud-density-shadow-volume Clouds/ShadowVolume/ShadowVolume.comp
+@@ what had the clouds' shadow volume skip the noise where it can't change their density
+@@ needs cloud-density-callers
+@@ find
+            unusedDimensionalProfile, unusedBrightness, unusedColor, unusedNoiseProfile);
+@@ replace
+            unusedDimensionalProfile, unusedBrightness, unusedColor, unusedNoiseProfile, false);  // macOS port: no edges read

@@ -507,9 +507,7 @@ void kmtlPassDumpAfterDraw(KCommandBuffer* cb, KPipeline* pipeline) {
         }
         return;
     }
-    cb->dumpResolves = true;
     cb->suspendRender();
-    cb->dumpResolves = false;
     std::string dir;
     {
         std::lock_guard<std::mutex> lock(g_mutex);

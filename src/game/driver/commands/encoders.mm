@@ -202,6 +202,13 @@ template <typename E> void KCommandBuffer::nameEncoder(E enc) {
     encLastPipeline = 0;
 }
 
+// A suspended pass keeps everything for its resumed half. An attachment with a resolve texture must end in a resolve
+// (Metal's validation: "Store action ... must be one of MTLStoreActionMultisampleResolve or
+// MTLStoreActionStoreAndMultisampleResolve"), so it stores and resolves: the resumed half's end resolves it again
+static MTLStoreAction suspendedStore(MTLRenderPassAttachmentDescriptor* a) {
+    return a.resolveTexture ? MTLStoreActionStoreAndMultisampleResolve : MTLStoreActionStore;
+}
+
 void KCommandBuffer::endEncoder() {
     bool dump = !dropping && kmtlPassDumpRecording();
     if (render && deferredStores) {
@@ -212,11 +219,10 @@ void KCommandBuffer::endEncoder() {
             if (suspending && tileOnly)
                 KERR_ONCE("render pass suspended with a memoryless attachment (a tessellated draw): "
                           "its contents are lost");
-            MTLStoreAction suspended = dumpResolves && passDesc.colorAttachments[i].resolveTexture ? MTLStoreActionStoreAndMultisampleResolve : MTLStoreActionStore;
-            [render setColorStoreAction:suspending && !tileOnly ? suspended : colorStores[i] atIndex:i];
+            [render setColorStoreAction:suspending && !tileOnly ? suspendedStore(passDesc.colorAttachments[i]) : colorStores[i] atIndex:i];
         }
-        if (passDesc.depthAttachment.texture) [render setDepthStoreAction:suspending ? MTLStoreActionStore : depthStore];
-        if (passDesc.stencilAttachment.texture) [render setStencilStoreAction:suspending ? MTLStoreActionStore : stencilStore];
+        if (passDesc.depthAttachment.texture) [render setDepthStoreAction:suspending ? suspendedStore(passDesc.depthAttachment) : depthStore];
+        if (passDesc.stencilAttachment.texture) [render setStencilStoreAction:suspending ? suspendedStore(passDesc.stencilAttachment) : stencilStore];
         if (!suspending) passDesc = nil;
     }
     if (render) {

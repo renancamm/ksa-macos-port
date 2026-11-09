@@ -273,8 +273,8 @@ void kmtlWritePNG(id<MTLBuffer> buf, NSUInteger w, NSUInteger h, bool bgra, cons
     KLOG(0, "screenshot %s: %s", ok ? "written" : "FAILED", path.c_str());
 }
 
-// An HDR10 image (PQ in Rec.2020, swapchain.mm) as an SDR PNG: CoreImage converts it to sRGB with the game's paper
-// white at white, as macOS shows it; highlights above it clip
+// An HDR10 image (PQ in Rec.2020, swapchain.mm) as an SDR PNG: CoreImage converts it to sRGB with the game's HDR UI
+// Brightness at white, as macOS shows it; highlights above it clip
 static void writeHdrPNG(id<MTLTexture> tex, const std::string& path) {
     constexpr double kPqReferenceNits = 203;  // 1.0 of CoreImage's PQ colour space (BT.2408's reference white)
     static CIContext* context = [CIContext contextWithMTLDevice:tex.device];

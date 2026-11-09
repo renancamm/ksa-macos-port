@@ -404,7 +404,9 @@ internal static partial class MacPortTab
             }
             case "scale":
             {
-                int percent = (int)Math.Round(double.Parse(value, Inv) * 100);
+                // Waiting for another setting, it shows the value in use (Render Scale: 100 % with MetalFX off, as the
+                // picture above it), not the one it takes once that is met; a pending change shows what Apply keeps
+                int percent = (int)Math.Round(double.Parse(pending ? value : Effective(s, value), Inv) * 100);
                 if (ConsoleWidgets.SliderInt(id, ref percent, (int)Math.Round(s.Min * 100), (int)Math.Round(s.Max * 100), $"{percent}%", "100%", pending))
                     Pending[s.Key] = (Math.Round(percent / 5.0) * 5 / 100).ToString("0.0#", Inv);
                 break;

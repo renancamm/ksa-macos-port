@@ -638,15 +638,15 @@ public static class Runs
         if (File.Exists(PortSettings.FilePath))
             File.Copy(PortSettings.FilePath, Path.Combine(instance, "port-settings.toml"));
         // Their settings, starting straight into a new testing game (the one that keeps the system's vehicles), without
-        // the system menu, the update popup or names: Earth and the Moon alone for what plays only there, as benchmark.sh
-        // plays it
+        // the system menu, the update popup or names, with the game's rules of a new game (radiation and life support
+        // on): Earth and the Moon alone for what plays only there, as benchmark.sh plays it
         GameSettings.Current.Save();
         var system = _test is "mixed" or "warp" ? "SolLite" : "Sol";
         var settings = File.ReadAllLines(Path.Combine(Constants.DocumentsFolderPath, "settings.toml"));
         foreach (var (key, value) in new[] { ("selectSystemOnStart", "false"), ("lastSystemId", $"\"{system}\""),
                      ("startGameType", "\"Testing\""), ("startVehicle", "\"Rocket\""), ("startParent", "\"Earth\""),
                      ("startSituation", "\"RocketStartingSituation\""), ("checkForUpdates", "false"), ("celestialNames", "false"),
-                     ("locationNames", "false") })
+                     ("locationNames", "false"), ("startRadiation", "true"), ("startLifeSupport", "true") })
         {
             int at = Array.FindIndex(settings, l => l.StartsWith(key + " = ", StringComparison.Ordinal));
             if (at < 0)
