@@ -36,6 +36,8 @@ startParent = "x"
 startSituation = "x"
 checkForUpdates = true
 displayChangelogOnChange = true
+startRadiation = true
+startLifeSupport = true
 celestialNames = true
 locationNames = true
 SETTINGS

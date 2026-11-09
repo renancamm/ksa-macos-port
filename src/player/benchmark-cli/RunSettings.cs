@@ -32,10 +32,11 @@ public static partial class Program
             File.Copy(Path.Combine(Yours, "settings.toml"), _settings);
             // The game starts straight into a new game of the chosen system, without its system menu, update popup,
             // changelog or name labels, with the camera on the game's test vessel in orbit (a testing start, the one that
-            // keeps the system's vehicles)
+            // keeps the system's vehicles), with the game's rules of a new game: radiation and life support on
             var start = new List<string> { "selectSystemOnStart=false", $"lastSystemId=\"{SystemId}\"", "startGameType=\"Testing\"",
                 "startVehicle=\"Rocket\"", "startParent=\"Earth\"", "startSituation=\"RocketStartingSituation\"", "checkForUpdates=false",
-                "displayChangelogOnChange=false", "celestialNames=false", "locationNames=false" };
+                "displayChangelogOnChange=false", "celestialNames=false", "locationNames=false", "startRadiation=true",
+                "startLifeSupport=true" };
             if (Uncapped)
                 start.Add("vsync=false");
             if (_preset.Length > 0)
