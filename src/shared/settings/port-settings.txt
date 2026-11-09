@@ -70,6 +70,7 @@ skip_unused_overlays | bool | true | | restart | hooks:OverlaySkip | | | | Skip 
 skip_hidden_vessel_parts | bool | true | | restart | hooks:HiddenPartsSkip | | | | Skip Hidden Vessel Parts | Skips shading the parts of a vessel hidden behind something else. Faster, most in the cockpit.
 skip_unused_ocean_blending | bool | true | | restart | hooks:OceanBlending | | | | Skip Unused Ocean Blending | Below 9 km, skips a step of drawing the ocean that only views from higher up need.
 skip_hidden_crew_portraits | bool | true | | live | hooks:CrewPortraits | | | | Skip Hidden Crew Portraits | Draws the crew panel's portraits only while the panel is open.
+skip_unused_aero_meshes | bool | true | | restart | hooks:AeroMeshSkip | | | | Skip Unused Aero Meshes | Builds a vessel's aerodynamic mesh only in the Vehicle Editor and while Draw Aero Mesh is on. Less work at staging and breakups.
 skip_shadows_on_unlit_sides | bool | true | | restart | driver | | | | Skip Shadows on Unlit Sides | Skips shadow work where no light reaches. Much faster in the cockpit.
 shared_shadow_samples | bool | true | | restart | driver | | | | Shared Shadow Samples | Neighbouring pixels share the work of terrain shadows. A little faster near the ground.
 skip_gpu_texture_compression | bool | true | | restart | driver | | | | Skip GPU Texture Compression | Skips the GPU's compression for textures such as terrain, clouds and sea, which slows drawing. Faster, with the same memory.

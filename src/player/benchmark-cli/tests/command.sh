@@ -36,10 +36,10 @@ startParent = "x"
 startSituation = "x"
 checkForUpdates = true
 displayChangelogOnChange = true
-startRadiation = true
-startLifeSupport = true
 celestialNames = true
 locationNames = true
+[system]
+startRadiation = false
 SETTINGS
 
 # The stand-in: an app by this port's bundle id whose game writes what the director writes, then does what FAKE_GAME says

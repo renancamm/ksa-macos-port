@@ -35,8 +35,8 @@ public static partial class Program
             // keeps the system's vehicles), with the game's rules of a new game: radiation and life support on
             var start = new List<string> { "selectSystemOnStart=false", $"lastSystemId=\"{SystemId}\"", "startGameType=\"Testing\"",
                 "startVehicle=\"Rocket\"", "startParent=\"Earth\"", "startSituation=\"RocketStartingSituation\"", "checkForUpdates=false",
-                "displayChangelogOnChange=false", "celestialNames=false", "locationNames=false", "startRadiation=true",
-                "startLifeSupport=true" };
+                "displayChangelogOnChange=false", "celestialNames=false", "locationNames=false", "system.startRadiation=true",
+                "system.startLifeSupport=true" };
             if (Uncapped)
                 start.Add("vsync=false");
             if (_preset.Length > 0)
