@@ -423,11 +423,12 @@ internal static partial class MacPortTab
         ConsoleStyle.PopFont();
     }
 
-    // A row's tag after its label (trade-off), in the captions' small muted font, where the control and the note in
-    // front of it (none: "") leave room
+    // A row's tag after its label (trade-off), a small chip: the captions' muted font in capitals on the sliders' inset
+    // fill with a frame's hairline, where the control and the note in front of it (none: "") leave room
     private static void Tag(string label, string tag, string note)
     {
         var at = ImGui.GetCursorScreenPos();
+        float s = ConsoleStyle.EffectiveInterfaceScale;
         float labelEnd = ConsoleWidgets.RowMin.X + ConsoleWidgets.RowLabelInsetPx + LabelWidth(label);
         float right = at.X - ConsoleWidgets.GhostControlGapPx;
         if (note.Length > 0)
@@ -437,10 +438,18 @@ internal static partial class MacPortTab
             ConsoleStyle.PopFont();
         }
         ConsoleStyle.PushSignatureFont();
-        var size = ImGui.CalcTextSize(tag);
-        var pos = new float2(labelEnd + ConsoleWidgets.GhostControlGapPx, at.Y + (ConsoleStyle.FrameHeightPx - size.Y) * 0.5f);
-        if (pos.X + size.X < right)
-            ImGui.GetWindowDrawList().AddText(in pos, ConsoleStyle.ApplyAlpha(ConsoleStyle.TextMutedU32), tag);
+        var text = tag.ToUpperInvariant();
+        var size = ImGui.CalcTextSize(text);
+        var pad = new float2(MathF.Round(5f * s), MathF.Round(1f * s));
+        var min = new float2(labelEnd + ConsoleWidgets.GhostControlGapPx, MathF.Round(at.Y + (ConsoleStyle.FrameHeightPx - size.Y) * 0.5f - pad.Y));
+        var max = min + size + pad * 2f;
+        if (max.X < right)
+        {
+            var draw = ImGui.GetWindowDrawList();
+            draw.AddRectFilled(in min, in max, ConsoleStyle.ApplyAlpha(ConsoleStyle.InsetU32), ConsoleStyle.FrameRoundingPx);
+            draw.AddRect(in min, in max, ConsoleStyle.ApplyAlpha(ConsoleStyle.FrameU32), ConsoleStyle.FrameRoundingPx, ImDrawFlags.None, ConsoleStyle.WindowBorderThicknessPx);
+            draw.AddText(min + pad, ConsoleStyle.ApplyAlpha(ConsoleStyle.TextMutedU32), text);
+        }
         ConsoleStyle.PopFont();
     }
 
@@ -587,7 +596,7 @@ internal static partial class MacPortTab
         ("mixed", "Mixed Test", "1 min", "Rockets, smoke, an explosion, a kitten and a cockpit.", "Each view standing still, with the game paused."),
         ("tour", "Planetary Tour", "5 min", "From Earth to Jupiter: ground, sea, clouds and rings.", "The flight between the worlds, without a cut."),
         ("warp", "Warp Test", "3 min", "How far time warp gets, with debris around Earth.", "A ship in orbit at top warp: alone, among exploded rockets, and as debris falls and lands. A slower Mac gets less far. Without the Extra Performance warp rows, the game may stall or stop here; finished parts are kept."),
-        ("full", "Full", "9 min", "All three, one after the other.", "The Mixed Test, the Planetary Tour and the Warp Test, in one game."),
+        ("full", "Full Run", "9 min", "All three, one after the other.", "The Mixed Test, the Planetary Tour and the Warp Test, in one game."),
     ];
 
     // A table's header: its columns' names, small and muted, over a hairline across the content's width. Returns where

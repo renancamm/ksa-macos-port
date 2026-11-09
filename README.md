@@ -329,8 +329,8 @@ tabs; each row's tooltip says what it changes and what it costs.
 | Extra Performance | faster, with small trade-offs; off by default, on in Performance |
 | Optimizations | faster, with no visible change; on by default |
 | Memory | less memory, for Macs short of it; Auto Memory Saving sets them, and a trade-off tag marks a row with a cost |
-| GPU Features | what the Mac's GPU and display offer the game, with the game's own settings still deciding |
 | Interface | the flight HUD fitted to the display, and Apple's Metal Performance HUD over the game |
+| GPU Features | what the Mac's GPU and display offer the game, with the game's own settings still deciding |
 | Benchmark | the [benchmark](#the-benchmark)'s tests and the last run's report |
 
 The settings are kept in `port-settings.toml`, next to the game's `settings.toml` in

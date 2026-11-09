@@ -27,7 +27,7 @@ REPORT** opens one.
 **Report Detail**, also under Advanced Settings, says what a test's report holds besides its frame rate: **Standard**,
 its numbers and screenshots; **Profile**, also the GPU's work named in each part ("Clouds Raymarching", "Ocean"), from
 the test played twice more in a game started again, which quits at the end as with Restart for a Clean Run
-(`./benchmark.sh profile`; not with Full), and the report's **Open Timeline** button, which shows the run frame by frame
+(`./benchmark.sh profile`; not with the Full Run), and the report's **Open Timeline** button, which shows the run frame by frame
 in your browser (it stays on this Mac); **Memory**, also what holds the game's memory at each view.
 
 **Your Game**'s **RECORD** button records your own game instead: 20 seconds of your play from when the settings close,
