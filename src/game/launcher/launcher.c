@@ -12,12 +12,16 @@
  *                          (port-settings.toml in the game's documents folder) and puts the game's output in
  *                          console.log, before the game starts
  *   KSA_PORT_LAUNCHER      this program, for the hooks to find the app and start the game again
+ *   KSA_PORT_PROGRAM       the program it starts, for the hooks' loader to know the game's process
  *   MallocLargeCache=0     with Release Freed Memory on (release_freed_memory, read from port-settings.toml here,
  *                          as macOS's allocator reads its variables when the process starts, before the hooks)
- * and then becomes dotnet KSA.dll, so the game runs in this process.
+ * and then becomes dotnet KSA.dll in the game folder, so the game runs in this process.
  *
- * With the StarMap mod loader in the app (starmap.sh), the game starts through it; KSA_STARMAP_DIR names another
- * StarMap folder to use instead.
+ * KSA <program.dll> [arguments] runs that program instead, in its own folder, with the same environment and runtime: a
+ * mod loader that loads the game itself (StarMap, as Borea starts it). It stands in for dotnet <program.dll>
+ * [arguments]. Contents/Resources/KSA, a link to this program, is the game folder's executable, as KSA is in the Linux
+ * release's. Without a program, the game starts through the StarMap mod loader when the app has it (starmap.sh);
+ * KSA_STARMAP_DIR names another StarMap folder to use instead.
  */
 #include <CoreFoundation/CoreFoundation.h>
 #include <limits.h>
@@ -27,6 +31,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <stdint.h>
 #include <sys/stat.h>
 #include <sys/sysctl.h>
@@ -114,6 +119,12 @@ static bool releaseFreedMemory(void) {
     return on;
 }
 
+// Whether the argument names a program for the runtime: a .dll
+static bool isProgram(const char* argument) {
+    size_t length = strlen(argument);
+    return length > 4 && strcasecmp(argument + length - 4, ".dll") == 0;
+}
+
 // StarMap reads its config from the current folder and needs the game's full path, which changes when the app
 // moves: the config is written at every start
 static void writeStarMapConfig(const char* game) {
@@ -170,29 +181,49 @@ int main(int argc, char** argv) {
     if (releaseFreedMemory()) setenv("MallocLargeCache", "0", 1);
     else unsetenv("MallocLargeCache");
 
-    // dotnet and the program, then the arguments, without the process serial number older macOS versions pass to
-    // apps
+    // The program: one given as the first argument (a mod loader that loads the game, as Borea starts StarMap), else the
+    // app's StarMap, else the game. The arguments follow, without the process serial number older macOS versions pass
+    // to apps.
+    char program[PATH_MAX];
+    int first = 1;
+    while (first < argc && strncmp(argv[first], "-psn_", 5) == 0)
+        first++;
+    // The app's StarMap, which reads its config from its folder: written at every start, also when it is the program
+    // given (the game's Restart starts the program it ran)
+    char appStarMap[PATH_MAX], found[PATH_MAX];
+    const char* starMapDir = getenv("KSA_STARMAP_DIR");
+    if (starMapDir && *starMapDir)
+        snprintf(found, sizeof found, "%s/StarMap.dll", starMapDir);
+    else
+        snprintf(found, sizeof found, "%s/StarMap/StarMap.dll", res);
+    bool hasStarMap = isFile(found) && realpath(found, appStarMap);
+    bool given = first < argc && isProgram(argv[first]), starMap;
+    if (given) {
+        if (!isFile(argv[first]) || !realpath(argv[first], program)) fail("The program to start is not there.");
+        first++;
+        starMap = hasStarMap && strcmp(program, appStarMap) == 0;
+    } else {
+        starMap = hasStarMap;
+        strlcpy(program, starMap ? appStarMap : game, sizeof program);
+    }
+    // Started by its file name in its folder, as dotnet KSA.dll: .NET still gives the program its full path
+    char folder[PATH_MAX];
+    strlcpy(folder, program, sizeof folder);
+    char* name = strrchr(folder, '/');
+    *name++ = 0;
+    if (chdir(folder) != 0)
+        fail(given     ? "The folder of the program to start can't be opened."
+             : starMap ? "The StarMap folder can't be opened. Add StarMap again with ./starmap.sh."
+                       : "The game folder can't be opened. Convert the game again with ./port.sh.");
+    if (starMap) writeStarMapConfig(game);
+    setenv("KSA_PORT_PROGRAM", program, 1);
+
     const char** arguments = calloc((size_t)argc + 2, sizeof *arguments);
     int count = 0;
     arguments[count++] = dotnet;
-    arguments[count++] = "KSA.dll";
-    for (int i = 1; i < argc; i++)
+    arguments[count++] = name;
+    for (int i = first; i < argc; i++)
         if (strncmp(argv[i], "-psn_", 5) != 0) arguments[count++] = argv[i];
-
-    char starMap[PATH_MAX];
-    const char* starMapDir = getenv("KSA_STARMAP_DIR");
-    if (starMapDir && *starMapDir)
-        snprintf(starMap, sizeof starMap, "%s/StarMap.dll", starMapDir);
-    else
-        snprintf(starMap, sizeof starMap, "%s/StarMap/StarMap.dll", res);
-    if (isFile(starMap)) {
-        *strrchr(starMap, '/') = 0;
-        if (chdir(starMap) != 0) fail("The StarMap folder can't be opened. Add StarMap again with ./starmap.sh.");
-        writeStarMapConfig(game);
-        arguments[1] = "StarMap.dll";
-    } else if (chdir(res) != 0) {
-        fail("The game folder can't be opened. Convert the game again with ./port.sh.");
-    }
 
     execv(dotnet, (char* const*)arguments);
     fail("The app's .NET runtime could not be started. Run ./port.sh in the port folder (ksa-macos-port).");

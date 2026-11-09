@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using KsaPort.Common;
 
@@ -61,9 +62,10 @@ internal static class PortEnvironment
         Set("KSA_PORT_SET", string.Join(',', plan.Set.Select(v => v.Name)));
         Set("KSA_PORT_OUTSIDE", string.Join(',', plan.Outside));
 
-        bool starMap = File.Exists(Path.Combine(AppContext.BaseDirectory, "StarMap.dll"));
+        // A mod loader the launcher started instead of KSA, which loads KSA itself
+        string? loader = Assembly.GetEntryAssembly()?.GetName().Name is { } entry && entry != "KSA" ? entry : null;
         Console.WriteLine($"==> {DateTime.Now.ToString("ddd MMM d HH:mm:ss yyyy", CultureInfo.InvariantCulture)}: starting " +
-                          $"{Path.Combine(resources, "KSA.dll")}{(starMap ? $" through StarMap in {AppContext.BaseDirectory.TrimEnd('/')}" : "")}");
+                          $"{Path.Combine(resources, "KSA.dll")}{(loader != null ? $" through {loader} in {AppContext.BaseDirectory.TrimEnd('/')}" : "")}");
         return PortSettings.Get("hooks") is not { } hooks ||
                hooks.FromEnvironment(Environment.GetEnvironmentVariable(hooks.Variable), out _) == "true";
     }

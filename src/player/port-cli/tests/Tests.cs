@@ -7,8 +7,8 @@ using KsaPort.Common;
 using KsaPort.Cli;
 
 // The tests of the port's program that need no game: the shader edits' format and rules on synthetic shaders, the
-// port's own .edits files, the ARM64 mark, the cleanup's ELF check and the versions. The build runs them (ctest)
-// after the build; a failure stops it.
+// port's own .edits files, the ARM64 mark, the cleanup's ELF check, the versions and the game folder's executable. The
+// build runs them (ctest) after the build; a failure stops it.
 //
 // Usage: dotnet KsaPort.Cli.Tests.dll <repository>
 internal static class Tests
@@ -36,6 +36,7 @@ internal static class Tests
             ("the cleanup", Cleanup),
             ("the BRUTAL check", BrutalCheck),
             ("versions", Versions),
+            ("the game folder's executable", GameExecutableLink),
         };
         // The port program's messages stay out of the build's output
         var console = Console.Out;
@@ -318,6 +319,24 @@ internal static class Tests
         finally
         {
             PortFolder.Folder = folder;
+        }
+    }
+
+    // Contents/Resources/KSA: a relative link to the launcher, made again over itself (an update) and over a file
+    private static void GameExecutableLink()
+    {
+        var contents = Path.Combine(_scratch, "Game.app", "Contents");
+        string res = Path.Combine(contents, "Resources"), launcher = Path.Combine(contents, "MacOS", "KSA");
+        Directory.CreateDirectory(res);
+        Directory.CreateDirectory(Path.GetDirectoryName(launcher)!);
+        File.WriteAllText(launcher, "launcher");
+        File.WriteAllText(Path.Combine(res, "KSA"), "a file in its place");
+        for (int i = 0; i < 2; i++)
+        {
+            App.LinkGameExecutable(res);
+            var link = new FileInfo(Path.Combine(res, "KSA"));
+            Equal("../MacOS/KSA", link.LinkTarget, $"the link's target, time {i + 1}");
+            Equal("launcher", File.ReadAllText(link.FullName), $"what the link opens, time {i + 1}");
         }
     }
 
