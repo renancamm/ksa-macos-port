@@ -580,6 +580,7 @@ public partial class Director
         if (_section >= 0)
             _sectionStart += _sections[_section].Length;
         _section++;
+        _camera.Section = _section;
         _next = 0;
         if (_section >= _sections.Count && NextPass())
             return;

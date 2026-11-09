@@ -57,6 +57,13 @@ internal sealed partial class CameraOperator
     private const double Eye = 100, MinHeight = 2;
 
     private readonly List<List<Key>> _paths = new();
+    // The section each flight starts in: the script's clock runs on from one section to the next, so a flight's first
+    // key has the time of the section before it's last steps, whose camera steps would otherwise take that flight's
+    // camera and release it (the Mixed Test's views, all at its end, showed the Tour's first view and played the Tour
+    // from the cockpit)
+    private readonly Dictionary<List<Key>, int> _pathSection = new();
+    // The section playing (Director.cs)
+    internal int Section { private get; set; } = -1;
     // The flight the camera is on (or stays at the end of), and the last one a camera command released it from
     private List<Key>? _flight, _released;
     // @place's place, where the camera stays until a camera command moves it, and the game's limit on how small an
@@ -71,8 +78,9 @@ internal sealed partial class CameraOperator
     {
         double start = 0;
         List<Key>? path = null;
-        foreach (var section in sections)
+        for (int index = 0; index < sections.Count; index++)
         {
+            var section = sections[index];
             var shots = section.Steps.Where(s => s.Words[0] == "@shot").Select(s => s.At).ToHashSet();
             var keys = section.Steps.Where(s => s.Words[0] == "@key").ToList();
             if (keys.Count == 0)
@@ -89,6 +97,7 @@ internal sealed partial class CameraOperator
                 {
                     path = new List<Key>();
                     _paths.Add(path);
+                    _pathSection[path] = index;
                 }
                 path.Add(key);
             }
@@ -169,7 +178,7 @@ internal sealed partial class CameraOperator
     // Puts the free camera on its flight, if it is on one; false when it is not
     private bool UpdatePath()
     {
-        var path = _paths.LastOrDefault(p => p[0].T <= Now);
+        var path = _paths.LastOrDefault(p => p[0].T <= Now && _pathSection[p] <= Section);
         if (path == null || path == _released)
             return false;
         if (path != _flight)
