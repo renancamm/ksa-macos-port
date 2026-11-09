@@ -5,19 +5,23 @@ using System.Runtime.Loader;
 using System.Threading;
 
 // KSA Metal Hooks' entry point: the launcher names this assembly in DOTNET_STARTUP_HOOKS, so .NET runs Initialize
-// before the program it starts (KSA, or StarMap, which loads KSA itself). First it applies the port settings
-// (PortEnvironment.cs, with the shared library, KsaPort.Common.dll next to it). It references nothing of the game:
-// it waits until KSA.dll is loaded, then loads KsaMetal.Hooks.dll from its own folder into the same load context and
-// applies it, unless the settings turn the hooks off (then only for a benchmark run, KSA_BENCH_OUT, which the hooks
-// start). Harmony is not loaded before that: StarMap loads its own copy at start, and the hooks then use that one.
+// before the program it starts (KSA, or a mod loader such as StarMap, which loads KSA itself). First it applies the
+// port settings (PortEnvironment.cs, with the shared library, KsaPort.Common.dll next to it). It references nothing of
+// the game: it waits until KSA.dll is loaded, then loads KsaMetal.Hooks.dll from its own folder into the same load
+// context and applies it, unless the settings turn the hooks off (then only for a benchmark run, KSA_BENCH_OUT, which
+// the hooks start). Harmony is not loaded before that: StarMap loads its own copy at start, and the hooks then use
+// that one.
 internal class StartupHook
 {
     private static int _applied;
 
     public static void Initialize()
     {
-        // Only in the game's process: .NET programs it starts (the benchmark's report) inherit DOTNET_STARTUP_HOOKS
-        if (Assembly.GetEntryAssembly()?.GetName().Name is not ("KSA" or "StarMap"))
+        // Only in the game's process: KSA, or the program the launcher started (KSA_PORT_PROGRAM, its full path, as .NET
+        // gives it). .NET programs the game starts (the benchmark's report) inherit DOTNET_STARTUP_HOOKS
+        Assembly? entry = Assembly.GetEntryAssembly();
+        if (entry?.GetName().Name != "KSA" && (entry?.Location is not { Length: > 0 } location
+                                               || location != Environment.GetEnvironmentVariable("KSA_PORT_PROGRAM")))
             return;
         string folder = Path.GetDirectoryName(typeof(StartupHook).Assembly.Location)!;
         // .NET looks for a startup hook's references only where it looks for the program's: the shared library is in

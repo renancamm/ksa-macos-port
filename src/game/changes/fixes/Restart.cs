@@ -14,7 +14,8 @@ namespace KsaMetal.Hooks.Fixes;
 // game only quits. The button starts the app again instead, through macOS (open -n), while this game is still running:
 // a process this game started itself would be its leftover, which macOS ends right after the game quits when the app
 // was started from the Finder. The new game's launcher waits until this one has quit (KSA_PORT_WAIT), and the new game
-// reads the port settings as any start does. The benchmark restarts the game the same way.
+// reads the port settings as any start does, through the same mod loader when one started it. The benchmark restarts the
+// game the same way.
 [Hook(Phase.PortParts)]
 internal static class Restart
 {
@@ -57,8 +58,9 @@ internal static class Restart
     public static string? Launcher => Environment.GetEnvironmentVariable("KSA_PORT_LAUNCHER") is { Length: > 0 } l ? l : null;
 
     // Starts the app again, to begin once this game has quit, with the game's arguments and environment and these
-    // variables; the caller makes the game quit
-    public static void Run(IReadOnlyDictionary<string, string>? environment = null)
+    // variables; with gameOnly, as the app starts on its own, without the mod loader and arguments this game was started
+    // with; the caller makes the game quit
+    public static void Run(IReadOnlyDictionary<string, string>? environment = null, bool gameOnly = false)
     {
         var app = Path.GetFullPath(Path.Combine(Launcher ?? throw new InvalidOperationException("no launcher"), "..", "..", ".."));
         var start = new ProcessStartInfo("/usr/bin/open") { UseShellExecute = false };
@@ -79,7 +81,10 @@ internal static class Restart
             start.ArgumentList.Add("--env");
             start.ArgumentList.Add($"{name}={value}");
         }
-        var args = Environment.GetCommandLineArgs().Skip(1).ToList();
+        // The game's arguments. When a mod loader (StarMap) started it, the loader and its arguments, which the launcher
+        // starts again, or none with gameOnly
+        bool loader = Assembly.GetEntryAssembly()?.GetName().Name != "KSA";
+        var args = !loader ? Environment.GetCommandLineArgs().Skip(1).ToList() : gameOnly ? [] : Environment.GetCommandLineArgs().ToList();
         if (args.Count > 0)
         {
             start.ArgumentList.Add("--args");

@@ -29,7 +29,8 @@ here are `KsaMetal.Hooks`, the root, where the loader finds `KsaMetal.Hooks.Hook
 ## How they load
 
 The launcher names `KsaMetal.Hooks.Loader.dll` in `DOTNET_STARTUP_HOOKS`, so .NET runs it before the program it
-starts: KSA itself, or StarMap, which loads KSA into a load context of its own. The loader
+starts: KSA itself, or a mod loader such as StarMap, which loads KSA into a load context of its own. It runs only in
+KSA or the program the launcher started (`KSA_PORT_PROGRAM`), not in .NET programs the game starts. The loader
 ([`loader/Loader.cs`](loader/Loader.cs)) references nothing of the game. First it applies the port settings
 ([Settings](#settings)). Then it waits until `KSA.dll` is loaded, loads `KsaMetal.Hooks.dll` into the same load
 context and applies it; with the `hooks` setting off it stops after the settings, except for a benchmark run. It loads

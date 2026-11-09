@@ -8,6 +8,7 @@ namespace KsaPort.Cli;
 // "Kitten Space Agency.app": built around a converted game folder, or the port's files put into one again. The port's
 // part of the app is the port folder's payload/app/Contents/, the app without the game:
 //   Contents/MacOS/KSA            the launcher
+//   Contents/Resources/KSA        a link to it: the game folder's executable, as in the Linux release, which Borea starts
 //   Contents/MacOS/dotnet, ...    Microsoft's .NET runtime
 //   Contents/Resources/*.dylib    the native libraries, which the game finds next to it
 //   Contents/Resources/Brutal.Monitor.Subprocess   BRUTAL's crash-dump helper, which the game starts
@@ -87,9 +88,10 @@ public static class App
             .Append(Path.Combine(from, "Brutal.Monitor.Subprocess")).ToList();
         Tool.Run("cp", ["-P", .. natives, res + "/"]);
 
-        // .NET runtime and launcher (ditto keeps Microsoft's signatures)
+        // .NET runtime and launcher (ditto keeps Microsoft's signatures), and the link to the launcher in the game folder
         Remove(macos);
         Tool.Run("ditto", Path.Combine(skeleton, "MacOS"), macos);
+        LinkGameExecutable(res);
 
         foreach (var folder in new[] { "Licenses", "Hooks", "Benchmark" })
         {
@@ -100,6 +102,15 @@ public static class App
             .Select(f => Path.Combine(from, f)), res + "/"]);
         WriteInfoPlist(contents);
         Tool.Exec("xattr", ["-cr", contents], out _);
+    }
+
+    // Contents/Resources/KSA -> ../MacOS/KSA, relative, so it holds wherever the app is: the game folder's executable,
+    // which Borea starts (the launcher's README)
+    public static void LinkGameExecutable(string res)
+    {
+        var link = Path.Combine(res, "KSA");
+        Remove(link);
+        File.CreateSymbolicLink(link, Path.Combine("..", "MacOS", "KSA"));
     }
 
     private static void WriteInfoPlist(string contents)

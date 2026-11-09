@@ -245,6 +245,7 @@ The port's program moves the converted game folder into the app as `Contents/Res
 | In the app | What |
 |---|---|
 | `Contents/MacOS/KSA` | the launcher, [`launcher.c`](src/game/launcher/launcher.c) |
+| `Contents/Resources/KSA` | a link to the launcher, the game folder's executable |
 | `Contents/MacOS/dotnet`, `host/`, `shared/` | the .NET runtime |
 | `Contents/Resources/*.dylib` | the native libraries, next to the game that loads them |
 | `Contents/Resources/Hooks/` | [KSA Metal Hooks](#the-hooks), with Harmony |
