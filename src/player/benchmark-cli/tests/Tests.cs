@@ -293,7 +293,7 @@ internal static class Tests
         // A crash report of the game's, made during the run
         var reports = Path.Combine(_scratch, "Library", "Logs", "DiagnosticReports");
         Directory.CreateDirectory(reports);
-        File.WriteAllText(Path.Combine(reports, "dotnet-2026-10-26.ips"), "\"procName\" : \"dotnet\"");
+        File.WriteAllText(Path.Combine(reports, "KSA-2026-11-10.ips"), "\"procName\" : \"KSA\"");
         var record = Finished(dir);
         Equal(Status.Passed, record.Status, "notes don't fail a run");
         var notes = Notes(record);
@@ -302,7 +302,7 @@ internal static class Tests
         Contains(notes, "KSA Metal switches were set (KSA_MTL_GPU_ZONES=1)", "KSA Metal switches");
         Contains(notes, "measured with Instruments", "tools");
         Contains(notes, "the GPU was busy before the run (90 %)", "a busy GPU");
-        Contains(notes, "crash report, dotnet-2026-10-26.ips", "a crash report");
+        Contains(notes, "crash report, KSA-2026-11-10.ips", "a crash report");
         Contains(notes, "swapped memory to disk during the run (100.00 -> 600.00 MB)", "swap");
         Contains(notes, "shaders compiled while measuring earth earth1 (3)", "shaders compiled");
         Equal(8, notes.Length, "notes");

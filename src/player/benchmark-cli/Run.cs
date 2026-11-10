@@ -520,9 +520,9 @@ public static partial class Program
             }
         }
 
-        // A game: KSA's own (dotnet KSA.dll), StarMap's, or an app's launcher (Contents/MacOS/KSA, or its link
-        // Contents/Resources/KSA, which Borea starts), which waits for a game to quit before it starts its own (a restart
-        // from the Mac Port tab)
+        // A game: an app's (Contents/MacOS/KSA, or its link Contents/Resources/KSA, which Borea starts: the game runs
+        // in the launcher's process, which also waits there for a game to quit before it starts its own, a restart from
+        // the Mac Port tab), or KSA's or StarMap's started with dotnet
         private const string GamePattern = @"dotnet (KSA|StarMap)\.dll|\.app/Contents/(MacOS|Resources)/KSA( |$)";
 
         private static string PgrepError = "";

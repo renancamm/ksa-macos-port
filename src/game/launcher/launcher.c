@@ -2,8 +2,9 @@
  * KSA - the app's executable (Kitten Space Agency.app/Contents/MacOS/KSA), installed by the port's program
  * (src/player/port-cli/App.cs) from the port folder.
  *
- * Starts KSA (Contents/Resources/KSA.dll) with the .NET runtime in Contents/MacOS. As a program of the app, it makes
- * macOS treat the game as the app from its start, which Game Mode needs. It sets:
+ * Starts KSA (Contents/Resources/KSA.dll) with the .NET runtime in Contents/MacOS, in its own process, as .NET's app
+ * host does (KSA in the Linux release, KSA.exe on Windows): the game's process is the app's executable, named KSA, from
+ * its start, which Game Mode needs, and tools that look for the game by name find it. It sets:
  *   DYLD_LIBRARY_PATH      the game folder first, so every library, including KSA Metal as
  *                          libvulkan.1.dylib, comes from the app and never from elsewhere on the Mac
  *   DYLD_INSERT_LIBRARIES  the GLFW shim (src/game/shims/glfw/glfw_shim.c) and the KTX shim
@@ -15,15 +16,20 @@
  *   KSA_PORT_PROGRAM       the program it starts, for the hooks' loader to know the game's process
  *   MallocLargeCache=0     with Release Freed Memory on (release_freed_memory, read from port-settings.toml here,
  *                          as macOS's allocator reads its variables when the process starts, before the hooks)
- * and then becomes dotnet KSA.dll in the game folder, so the game runs in this process.
+ * and then starts itself again (KSA_PORT_HOSTED, as macOS's loader and allocator read their variables only when a
+ * process starts; KSA <program.dll> [arguments], what ps shows) and runs the program with .NET's host library
+ * (Contents/MacOS/host/fxr/<version>/libhostfxr.dylib, hostfxr_main_startupinfo, what the app host calls), in its
+ * folder.
  *
  * KSA <program.dll> [arguments] runs that program instead, in its own folder, with the same environment and runtime: a
- * mod loader that loads the game itself (StarMap, as Borea starts it). It stands in for dotnet <program.dll>
- * [arguments]. Contents/Resources/KSA, a link to this program, is the game folder's executable, as KSA is in the Linux
- * release's. Without a program, the game starts through the StarMap mod loader when the app has it (starmap.sh);
- * KSA_STARMAP_DIR names another StarMap folder to use instead.
+ * mod loader that loads the game itself (StarMap, as Borea starts it), in a process named KSA too. It stands in for
+ * dotnet <program.dll> [arguments]. Contents/Resources/KSA, a link to this program, is the game folder's executable, as
+ * KSA is in the Linux release's. Without a program, the game starts through the StarMap mod loader when the app has it
+ * (starmap.sh); KSA_STARMAP_DIR names another StarMap folder to use instead.
  */
 #include <CoreFoundation/CoreFoundation.h>
+#include <dirent.h>
+#include <dlfcn.h>
 #include <limits.h>
 #include <mach-o/dyld.h>
 #include <signal.h>
@@ -139,6 +145,62 @@ static void writeStarMapConfig(const char* game) {
     fclose(config);
 }
 
+// The newer of two versions (10.0.13), by their numbers; of the same numbers, a release over a preview (10.0.0-rc.1)
+static bool newer(const char* a, const char* b) {
+    int x[3] = {0}, y[3] = {0};
+    sscanf(a, "%d.%d.%d", &x[0], &x[1], &x[2]);
+    sscanf(b, "%d.%d.%d", &y[0], &y[1], &y[2]);
+    for (int i = 0; i < 3; i++)
+        if (x[i] != y[i]) return x[i] > y[i];
+    return !strchr(a, '-') && strchr(b, '-');
+}
+
+// .NET's host library in the app, of its newest version: host/fxr/<version>/libhostfxr.dylib
+static bool findHostfxr(const char* macos, char* fxr, size_t size) {
+    char folder[PATH_MAX], version[NAME_MAX + 1] = "";
+    snprintf(folder, sizeof folder, "%s/host/fxr", macos);
+    DIR* versions = opendir(folder);
+    if (!versions) return false;
+    for (struct dirent* entry; (entry = readdir(versions));)
+        if (entry->d_name[0] != '.' && (!*version || newer(entry->d_name, version)))
+            strlcpy(version, entry->d_name, sizeof version);
+    closedir(versions);
+    snprintf(fxr, size, "%s/%s/libhostfxr.dylib", folder, version);
+    return *version && isFile(fxr);
+}
+
+// What .NET's host library reports when it can't start the program (a missing framework, a broken
+// runtimeconfig.json): to the terminal, as it does itself, and kept for the alert
+static char hostErrors[2048];
+static void hostError(const char* message) {
+    fprintf(stderr, "%s\n", message);
+    strlcat(hostErrors, message, sizeof hostErrors);
+    strlcat(hostErrors, "\n", sizeof hostErrors);
+}
+
+// The second start, argv = this program, the program to run, its arguments: the environment is in place. Runs the
+// program in this process with .NET's host library, as the app host does (argv[0] the host, then the program's
+// arguments; the program as app_path), and quits with its exit code
+typedef int (*HostfxrMain)(int argc, const char** argv, const char* hostPath, const char* dotnetRoot,
+                           const char* appPath);
+typedef void (*HostfxrErrorWriter)(const char* message);
+typedef HostfxrErrorWriter (*HostfxrSetErrorWriter)(HostfxrErrorWriter writer);
+static void run(const char* self, const char* macos, int argc, char** argv) {
+    char fxr[PATH_MAX];
+    if (argc < 2 || !findHostfxr(macos, fxr, sizeof fxr))
+        fail("The .NET runtime is missing from the app. Run ./port.sh in the port folder (ksa-macos-port).");
+    void* library = dlopen(fxr, RTLD_NOW | RTLD_LOCAL);
+    HostfxrMain start = library ? (HostfxrMain)dlsym(library, "hostfxr_main_startupinfo") : NULL;
+    if (!start) fail("The app's .NET runtime could not be started. Run ./port.sh in the port folder (ksa-macos-port).");
+    HostfxrSetErrorWriter setErrorWriter = (HostfxrSetErrorWriter)dlsym(library, "hostfxr_set_error_writer");
+    if (setErrorWriter) setErrorWriter(hostError);
+    const char* program = argv[1];
+    argv[1] = (char*)self;
+    int status = start(argc - 1, (const char**)argv + 1, self, macos, program);
+    if (status != 0 && hostErrors[0]) fail(hostErrors);
+    exit(status);
+}
+
 int main(int argc, char** argv) {
     char executable[PATH_MAX], self[PATH_MAX];
     uint32_t size = sizeof executable;
@@ -151,6 +213,14 @@ int main(int argc, char** argv) {
     *strrchr(contents, '/') = 0;
     snprintf(res, sizeof res, "%s/Resources", contents);
 
+    // The second start, by this program (the marker is this process's id, which the start again keeps): the marker
+    // goes, so that nothing the game starts inherits it
+    const char* hosted = getenv("KSA_PORT_HOSTED");
+    if (hosted && atoi(hosted) == (int)getpid()) {
+        unsetenv("KSA_PORT_HOSTED");
+        run(self, macos, argc, argv);
+    }
+
     // Started again by the hooks (Restart) while the game was still running: begin once it has quit
     const char* wait = getenv("KSA_PORT_WAIT");
     if (wait && *wait) {
@@ -160,10 +230,9 @@ int main(int argc, char** argv) {
         unsetenv("KSA_PORT_WAIT");
     }
 
-    char dotnet[PATH_MAX], game[PATH_MAX];
-    snprintf(dotnet, sizeof dotnet, "%s/dotnet", macos);
+    char fxr[PATH_MAX], game[PATH_MAX];
     snprintf(game, sizeof game, "%s/KSA.dll", res);
-    if (access(dotnet, X_OK) != 0)
+    if (!findHostfxr(macos, fxr, sizeof fxr))
         fail("The .NET runtime is missing from the app. Run ./port.sh in the port folder (ksa-macos-port).");
     if (!isFile(game)) fail("The game files are missing from the app. Convert the game again with ./port.sh.");
 
@@ -206,11 +275,10 @@ int main(int argc, char** argv) {
         starMap = hasStarMap;
         strlcpy(program, starMap ? appStarMap : game, sizeof program);
     }
-    // Started by its file name in its folder, as dotnet KSA.dll: .NET still gives the program its full path
+    // In its folder
     char folder[PATH_MAX];
     strlcpy(folder, program, sizeof folder);
-    char* name = strrchr(folder, '/');
-    *name++ = 0;
+    *strrchr(folder, '/') = 0;
     if (chdir(folder) != 0)
         fail(given     ? "The folder of the program to start can't be opened."
              : starMap ? "The StarMap folder can't be opened. Add StarMap again with ./starmap.sh."
@@ -218,13 +286,16 @@ int main(int argc, char** argv) {
     if (starMap) writeStarMapConfig(game);
     setenv("KSA_PORT_PROGRAM", program, 1);
 
+    // This program again, with the program and its arguments, which ps shows
     const char** arguments = calloc((size_t)argc + 2, sizeof *arguments);
     int count = 0;
-    arguments[count++] = dotnet;
-    arguments[count++] = name;
+    arguments[count++] = self;
+    arguments[count++] = program;
     for (int i = first; i < argc; i++)
         if (strncmp(argv[i], "-psn_", 5) != 0) arguments[count++] = argv[i];
-
-    execv(dotnet, (char* const*)arguments);
-    fail("The app's .NET runtime could not be started. Run ./port.sh in the port folder (ksa-macos-port).");
+    char marker[16];
+    snprintf(marker, sizeof marker, "%d", (int)getpid());
+    setenv("KSA_PORT_HOSTED", marker, 1);
+    execv(self, (char* const*)arguments);
+    fail("The game could not be started. Run ./port.sh in the port folder (ksa-macos-port).");
 }

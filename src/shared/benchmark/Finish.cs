@@ -283,7 +283,7 @@ public static class Finish
         {
             try
             {
-                return Regex.IsMatch(File.ReadAllText(crash), "\"procName\" *: *\"dotnet\"|KSA\\.dll|StarMap");
+                return Regex.IsMatch(File.ReadAllText(crash), "\"procName\" *: *\"(KSA|dotnet)\"|KSA\\.dll|StarMap");
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {

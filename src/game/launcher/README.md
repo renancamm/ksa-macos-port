@@ -1,7 +1,8 @@
 # The launcher
 
 `Contents/MacOS/KSA`, the app's executable ([`launcher.c`](launcher.c)). It sets up the game's environment, the shims,
-the hooks' loader and the library path, and hands its process over to .NET's `dotnet` running `KSA.dll`, so macOS
+the hooks' loader and the library path, starts itself again so that they take effect, and runs `KSA.dll` in its own
+process with .NET's host library, as .NET's app host does: the game's process is `KSA`, the app's executable, and macOS
 treats the game as the app. The comment at the top of `launcher.c` lists what it sets.
 
 ## Starting a mod loader
