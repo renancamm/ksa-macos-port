@@ -9,13 +9,12 @@ using KSA;
 
 namespace KsaMetal.Hooks.Fixes;
 
-// Restart. After a change that needs one, the game's settings offer to restart it (RequiresRestartPopup), and the
-// game starts its own executable again, which in the app is .NET's dotnet with no program: it prints its help, and the
-// game only quits. The button starts the app again instead, through macOS (open -n), while this game is still running:
-// a process this game started itself would be its leftover, which macOS ends right after the game quits when the app
-// was started from the Finder. The new game's launcher waits until this one has quit (KSA_PORT_WAIT), and the new game
-// reads the port settings as any start does, through the same mod loader when one started it. The benchmark restarts the
-// game the same way.
+// Restart. After a change that needs one, the game's settings offer to restart it (RequiresRestartPopup), and the game
+// starts its own executable again, in the app the launcher, without the game's arguments (and a mod loader only when
+// the app has one), as a process of this game's: macOS ends it right after the game quits when the app was started from
+// the Finder. The button starts the app again instead, through macOS (open -n), while this game is still running. The
+// new game's launcher waits until this one has quit (KSA_PORT_WAIT), and the new game reads the port settings as any
+// start does, through the same mod loader when one started it. The benchmark restarts the game the same way.
 [Hook(Phase.PortParts)]
 internal static class Restart
 {

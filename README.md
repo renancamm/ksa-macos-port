@@ -255,11 +255,11 @@ The port's program moves the converted game folder into the app as `Contents/Res
 | `Contents/Resources/Licenses/` | every component's licence and notices ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)) |
 | `Contents/Resources/AppIcon.icns`, `Contents/Info.plist` | the icon; the game's and the port's versions |
 
-The launcher starts `dotnet KSA.dll`, through StarMap when [StarMap](#mods) is in the app, with the GLFW shim loaded and
+The launcher starts `KSA.dll`, through StarMap when [StarMap](#mods) is in the app, with the GLFW shim loaded and
 `DYLD_LIBRARY_PATH` set to the game folder, so every library comes from the app and never from elsewhere on the Mac. The
-launcher is the app's own executable and hands its process over to `dotnet`, so macOS treats the game as the app, Game
-Mode included. `Info.plist` turns `NSHighResolutionCapable` on, so the game draws its interface at the display's full
-resolution.
+launcher is the app's own executable and runs .NET in its own process, as .NET's app host does, so the game's process is
+`KSA` and macOS treats it as the app, Game Mode included. `Info.plist` turns `NSHighResolutionCapable` on, so the game
+draws its interface at the display's full resolution.
 
 The bundle isn't signed as a whole, because that would replace Microsoft's signature on `dotnet`. The port's program
 removes the quarantine attribute that a browser download puts on the files, so macOS opens the app as one made on
