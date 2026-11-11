@@ -1,8 +1,8 @@
 #!/bin/bash
 # Audits the port folder after a build: the commands and VERSION are there; every library in the app, the launcher and
 # BRUTAL's crash-dump helper are arm64, run on MACOS_MIN, have a valid signature and depend only on macOS and the
-# app's libraries, and the launcher's signature requires the app's identifier; StarMap isn't marked AMD64; every
-# component has its licence; and nothing of the game is in it. Needs otool (Command Line Tools).
+# app's libraries, and the launcher's signature requires the app's identifier; every component has its licence; and
+# nothing of the game is in it. Needs otool (Command Line Tools).
 #
 # Usage: scripts/check-port-folder.sh [port folder]   (default: dist/ksa-macos-port)
 set -eo pipefail
@@ -17,11 +17,10 @@ problem() {
     problems=$((problems + 1))
 }
 
-for f in port.sh starmap.sh benchmark.sh README.md LICENSE THIRD_PARTY_NOTICES.md VERSION lib/common.sh lib/port.env \
+for f in port.sh benchmark.sh README.md LICENSE THIRD_PARTY_NOTICES.md VERSION lib/common.sh lib/port.env \
     lib/brutal.txt lib/port-cli/KsaPort.Cli.dll lib/port-cli/KsaPort.Common.dll \
     lib/port-cli/KsaPort.Cli.runtimeconfig.json lib/port-cli/shader-edits/fixes/ground-clutter.edits \
     payload/app/Contents/MacOS/KSA payload/app/Contents/MacOS/dotnet \
-    payload/starmap/StarMap.dll \
     payload/app/Contents/Resources/Benchmark/KsaMetal.Benchmark.dll \
     payload/app/Contents/Resources/Benchmark/KsaMetal.Benchmark.Cli.dll \
     payload/app/Contents/Resources/Benchmark/KsaPort.Common.dll \
@@ -33,7 +32,7 @@ for f in port.sh starmap.sh benchmark.sh README.md LICENSE THIRD_PARTY_NOTICES.m
     payload/app/Contents/Resources/Hooks/0Harmony.dll; do
     [ -e "${FOLDER}/${f}" ] || problem "${f} is missing"
 done
-for f in port.sh starmap.sh benchmark.sh payload/app/Contents/MacOS/KSA \
+for f in port.sh benchmark.sh payload/app/Contents/MacOS/KSA \
     payload/app/Contents/Resources/Brutal.Monitor.Subprocess; do
     [ -x "${FOLDER}/${f}" ] || problem "${f} is not executable"
 done
@@ -68,18 +67,8 @@ done
 codesign -d -r- "${LAUNCHER}" 2> /dev/null | grep -qx "designated => identifier \"${BUNDLE_ID}\"" ||
     problem "the launcher's signature doesn't require only the app's identifier"
 
-# StarMap's assemblies must not carry the AMD64 mark (0x8664 after the PE header signature), which .NET on Apple
-# Silicon refuses
-for dll in "${FOLDER}"/payload/starmap/*.dll; do
-    [ -f "${dll}" ] || continue
-    pe=$(od -An -tu4 -j 60 -N 4 "${dll}" | tr -d ' ')
-    [ "$(od -An -tx1 -j $((pe + 4)) -N 2 "${dll}" | tr -d ' \n')" != "6486" ] ||
-        problem "$(basename "${dll}") is marked AMD64"
-done
-[ ! -e "${FOLDER}/payload/starmap/StarMap.exe" ] || problem "StarMap.exe is in the folder"
-
-for component in ksa-macos-port brutal spirv-cross spirv-tools spirv-headers vulkan-headers dotnet fmod starmap \
-    harmony ksa-icon; do
+for component in ksa-macos-port brutal spirv-cross spirv-tools spirv-headers vulkan-headers dotnet fmod harmony \
+    ksa-icon; do
     [ -n "$(ls "${RES}/Licenses/${component}" 2> /dev/null)" ] || problem "no licence for ${component}"
 done
 

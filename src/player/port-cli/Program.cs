@@ -11,7 +11,6 @@ namespace KsaPort.Cli;
 // folder's .NET runtime from lib/common.sh:
 //
 //   KsaPort.Cli port [options] [archive | folder]   port.sh
-//   KsaPort.Cli starmap [--app <path>] [--remove]   starmap.sh
 //   KsaPort.Cli convert-dotnet <game> <runtime>     the build: KSA's assemblies, for the hooks and the benchmark
 //   KsaPort.Cli edit-shaders <game>                 the shader edits alone, on a game folder
 //
@@ -29,8 +28,6 @@ internal static class Program
             {
                 case ["port", .. var rest]:
                     return Port.Run(rest);
-                case ["starmap", .. var rest]:
-                    return StarMap(rest);
                 case ["convert-dotnet", var game, var runtime]:
                     Conversion.Dotnet(game, runtime);
                     return 0;
@@ -38,7 +35,7 @@ internal static class Program
                     ShaderEdits.Apply(game, ShaderEdits.Read(PortFolder.ShaderEditsFolder), Console.WriteLine);
                     return 0;
                 default:
-                    Console.Error.WriteLine("usage: KsaPort.Cli port | starmap | convert-dotnet <game> <runtime> | " +
+                    Console.Error.WriteLine("usage: KsaPort.Cli port | convert-dotnet <game> <runtime> | " +
                         "edit-shaders <game>");
                     return 2;
             }
@@ -49,66 +46,6 @@ internal static class Program
             return 1;
         }
     }
-
-    private const string StarMapUsage = """
-        Adds StarMap, the KSA mod loader (https://github.com/StarMapLoader/StarMap), to Kitten Space Agency.app. The app
-        then starts the game through StarMap, which loads the StarMap mods in the game's mods folder.
-
-        Usage: ./starmap.sh [options]
-          ./port.sh keeps StarMap in the app once it is there.
-
-        Options:
-          --app <path>      the app to change (default: ~/Applications/Kitten Space Agency.app)
-          --remove          take StarMap out of the app again
-        """;
-
-    // StarMap's release is its Windows build. Only StarMap.exe is Windows-specific, a launcher the app does not need (it
-    // runs StarMap.dll with its own .NET runtime), and the build leaves it out. The rest is platform-neutral .NET.
-    private static int StarMap(string[] args)
-    {
-        string app = PortFolder.DefaultApp;
-        bool remove = false;
-        for (int i = 0; i < args.Length; i++)
-        {
-            switch (args[i])
-            {
-                case "--app" when i + 1 < args.Length:
-                    app = args[++i].TrimEnd('/');
-                    break;
-                case "--app":
-                    throw new PortException("--app needs the app's path.");
-                case "--remove":
-                    remove = true;
-                    break;
-                case "-h" or "--help":
-                    Console.WriteLine(StarMapUsage);
-                    return 0;
-                default:
-                    Console.WriteLine($"Unknown option: {args[i]}");
-                    Console.WriteLine(StarMapUsage);
-                    return 1;
-            }
-        }
-        var installed = PortFolder.AppVersion(app);
-        if (installed.Length == 0)
-            throw new PortException($"no app made by this port at {app}. Use ./port.sh to make one (or pass --app).");
-        var target = Path.Combine(app, "Contents", "Resources", "StarMap");
-        if (remove)
-        {
-            App.Remove(target);
-            App.Touch(app);
-            Output.Step($"Done: StarMap removed from {app}. The game starts without mods.");
-            return 0;
-        }
-        var version = File.ReadAllText(Path.Combine(PortFolder.Payload, "starmap", "version.txt")).Trim();
-        Output.Step($"Adding StarMap {version} to {app} (KSA {installed})");
-        PortFolder.CheckKsaMatch(installed);
-        App.InstallStarMap(target);
-        App.Touch(app);
-        Output.Step("Done: the game now starts through StarMap.");
-        Output.Info("Mods go in ~/Documents/My Games/Kitten Space Agency/mods/<mod>/. To start without mods: --remove.");
-        return 0;
-    }
 }
 
 // port.sh: makes the app from KSA's Linux release, or updates the one there is
@@ -116,7 +53,7 @@ public static class Port
 {
     private const string Usage = """
         Turns the Linux release of Kitten Space Agency into a Mac app, ~/Applications/Kitten Space Agency.app, or updates
-        the one you have. Saves, settings and StarMap stay.
+        the one you have. Saves and settings stay.
 
         Usage: ./port.sh [options] [ksa_linux_vX.tar.gz | extracted folder]
           With an archive, makes the app from it, replacing the one you have. Without one, takes the newest

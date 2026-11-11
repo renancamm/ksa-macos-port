@@ -24,8 +24,7 @@
  * KSA <program.dll> [arguments] runs that program instead, in its own folder, with the same environment and runtime: a
  * mod loader that loads the game itself (StarMap, as Borea starts it), in a process named KSA too. It stands in for
  * dotnet <program.dll> [arguments]. Contents/Resources/KSA, a link to this program, is the game folder's executable, as
- * KSA is in the Linux release's. Without a program, the game starts through the StarMap mod loader when the app has it
- * (starmap.sh); KSA_STARMAP_DIR names another StarMap folder to use instead.
+ * KSA is in the Linux release's: Borea starts the game and its loaders through it.
  */
 #include <CoreFoundation/CoreFoundation.h>
 #include <dirent.h>
@@ -129,20 +128,6 @@ static bool releaseFreedMemory(void) {
 static bool isProgram(const char* argument) {
     size_t length = strlen(argument);
     return length > 4 && strcasecmp(argument + length - 4, ".dll") == 0;
-}
-
-// StarMap reads its config from the current folder and needs the game's full path, which changes when the app
-// moves: the config is written at every start
-static void writeStarMapConfig(const char* game) {
-    FILE* config = fopen("StarMapConfig.json", "w");
-    if (!config) return;
-    fputs("{ \"GameLocation\": \"", config);
-    for (const char* c = game; *c; c++) {
-        if (*c == '"' || *c == '\\') fputc('\\', config);
-        fputc(*c, config);
-    }
-    fputs("\", \"RepositoryLocation\": \"\", \"GameArguments\": [] }\n", config);
-    fclose(config);
 }
 
 // The newer of two versions (10.0.13), by their numbers; of the same numbers, a release over a preview (10.0.0-rc.1)
@@ -251,39 +236,25 @@ int main(int argc, char** argv) {
     else unsetenv("MallocLargeCache");
 
     // The program: one given as the first argument (a mod loader that loads the game, as Borea starts StarMap), else the
-    // app's StarMap, else the game. The arguments follow, without the process serial number older macOS versions pass
-    // to apps.
+    // game. The arguments follow, without the process serial number older macOS versions pass to apps.
     char program[PATH_MAX];
     int first = 1;
     while (first < argc && strncmp(argv[first], "-psn_", 5) == 0)
         first++;
-    // The app's StarMap, which reads its config from its folder: written at every start, also when it is the program
-    // given (the game's Restart starts the program it ran)
-    char appStarMap[PATH_MAX], found[PATH_MAX];
-    const char* starMapDir = getenv("KSA_STARMAP_DIR");
-    if (starMapDir && *starMapDir)
-        snprintf(found, sizeof found, "%s/StarMap.dll", starMapDir);
-    else
-        snprintf(found, sizeof found, "%s/StarMap/StarMap.dll", res);
-    bool hasStarMap = isFile(found) && realpath(found, appStarMap);
-    bool given = first < argc && isProgram(argv[first]), starMap;
+    bool given = first < argc && isProgram(argv[first]);
     if (given) {
         if (!isFile(argv[first]) || !realpath(argv[first], program)) fail("The program to start is not there.");
         first++;
-        starMap = hasStarMap && strcmp(program, appStarMap) == 0;
     } else {
-        starMap = hasStarMap;
-        strlcpy(program, starMap ? appStarMap : game, sizeof program);
+        strlcpy(program, game, sizeof program);
     }
     // In its folder
     char folder[PATH_MAX];
     strlcpy(folder, program, sizeof folder);
     *strrchr(folder, '/') = 0;
     if (chdir(folder) != 0)
-        fail(given     ? "The folder of the program to start can't be opened."
-             : starMap ? "The StarMap folder can't be opened. Add StarMap again with ./starmap.sh."
-                       : "The game folder can't be opened. Convert the game again with ./port.sh.");
-    if (starMap) writeStarMapConfig(game);
+        fail(given ? "The folder of the program to start can't be opened."
+                   : "The game folder can't be opened. Convert the game again with ./port.sh.");
     setenv("KSA_PORT_PROGRAM", program, 1);
 
     // This program again, with the program and its arguments, which ps shows

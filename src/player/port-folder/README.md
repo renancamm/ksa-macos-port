@@ -9,12 +9,14 @@ In Terminal, from this folder:
 | Command | What it does |
 |---|---|
 | `./port.sh` | makes `~/Applications/Kitten Space Agency.app` from the newest KSA archive in Downloads, or updates the app you have; `--update` first updates this folder to the newest release of the port |
-| `./starmap.sh` | adds the StarMap mod loader to the app (`--remove` takes it out) |
 | `./benchmark.sh` | measures how the game runs on this Mac and writes a report |
 
 Each command explains its options with `--help`. In the game, the port's own settings are in the **Mac Port** tab of
 the settings (Esc). Saves and settings stay in `~/Documents/My Games/Kitten Space Agency`; bug reports are welcome
 on GitHub with the files in its `logs` folder.
+
+Mods start through [Borea](https://github.com/KSAModding/Borea) 0.6.16 or newer, the community's mod manager, which
+finds the app in `/Applications` and `~/Applications`.
 
 `VERSION` names this version of the port and the KSA version it was made for. The licences of everything in the
 app are in `THIRD_PARTY_NOTICES.md` and in the app at `Contents/Resources/Licenses/`.

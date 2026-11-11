@@ -16,7 +16,7 @@ Benchmark reports from your Mac are welcome too ([The benchmark](#the-benchmark)
 1. [Quick start](#quick-start): install and update.
 2. [How it works](#how-it-works): what the port changes, step by step.
 3. [KSA Metal](#ksa-metal): the Vulkan driver that draws the game, the Mac Port tab, the hooks and the benchmark.
-4. [Extras](#extras): the StarMap mod loader.
+4. [Extras](#extras): mods, through Borea.
 5. [Credits and license](#credits-and-license).
 
 ## Quick start
@@ -41,7 +41,7 @@ Making the app takes one command and about a minute. You need:
 ### Update
 
 To update the game, download its new Linux version into your Downloads folder and run `./port.sh` again. It makes
-the app anew from the newer KSA and moves the old one to the Trash. Saves, settings and StarMap stay.
+the app anew from the newer KSA and moves the old one to the Trash. Saves and settings stay.
 
 To update the port, run `./port.sh --update`. It replaces this folder with the latest release, then runs as
 `./port.sh` does.
@@ -255,7 +255,7 @@ The port's program moves the converted game folder into the app as `Contents/Res
 | `Contents/Resources/Licenses/` | every component's licence and notices ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)) |
 | `Contents/Resources/AppIcon.icns`, `Contents/Info.plist` | the icon; the game's and the port's versions |
 
-The launcher starts `KSA.dll`, through StarMap when [StarMap](#mods) is in the app, with the GLFW shim loaded and
+The launcher starts `KSA.dll`, or a [mod loader](#mods) that loads the game, with the GLFW shim loaded and
 `DYLD_LIBRARY_PATH` set to the game folder, so every library comes from the app and never from elsewhere on the Mac. The
 launcher is the app's own executable and runs .NET in its own process, as .NET's app host does, so the game's process is
 `KSA` and macOS treats it as the app, Game Mode included. `Info.plist` turns `NSHighResolutionCapable` on, so the game
@@ -263,8 +263,8 @@ draws its interface at the display's full resolution.
 
 The bundle isn't signed as a whole, because that would replace Microsoft's signature on `dotnet`. The port's program
 removes the quarantine attribute that a browser download puts on the files, so macOS opens the app as one made on
-this Mac. When `port.sh` replaces an app, it builds the new one next to it, keeps its window layout (`imgui.ini`) and
-StarMap, and moves the old one to the Trash only at the end; if anything fails, the old app is left as it was.
+this Mac. When `port.sh` replaces an app, it builds the new one next to it, keeps its window layout (`imgui.ini`), and
+moves the old one to the Trash only at the end; if anything fails, the old app is left as it was.
 
 ### Repository layout
 
@@ -285,7 +285,7 @@ src/game/                   what runs in the game's process:
   benchmark/                the benchmark's director, its tests and vehicles (lineup/), with the benchmark's README
 src/player/                 what the player runs from the port folder:
   port-folder/              the port folder's commands and lib/, what they share, with the port's names (port.env)
-  port-cli/                 the port's program, what port.sh and starmap.sh run, with its own README
+  port-cli/                 the port's program, what port.sh runs, with its own README
   benchmark-cli/            the program benchmark.sh runs: runs, reports, comparisons, with its tests
 src/shared/                 the library the programs share: the port settings (settings/, with their own README),
                             the port folder's names, a run's options and results, the screenshots' comparison
@@ -373,19 +373,16 @@ compare runs, and the tools it brings for work on the port.
 
 ### Mods
 
-[StarMap](https://github.com/StarMapLoader/StarMap) is a community mod loader that lets KSA load mods with code. To
-add it to the app:
+[Borea](https://github.com/KSAModding/Borea), the community's mod manager, installs the
+[StarMap](https://github.com/StarMapLoader/StarMap) mod loader and mods, keeps them in instances, and starts the game
+with them. Version 0.6.16 or newer finds the app in `/Applications` and `~/Applications`; for an app elsewhere, set
+Borea's game folder to the app's `Contents/Resources`.
 
-```bash
-./starmap.sh
-```
+Borea starts the game through the app, so the Mac Port tab works with mods too. Each instance has its own saves,
+settings, port settings and `logs` folder.
 
-The game then starts through StarMap. Put each mod in its own folder in
-`~/Documents/My Games/Kitten Space Agency/mods/`; at the next start the game asks whether to enable it. StarMap's
-output goes to `console.log` with the game's. `./starmap.sh --remove` takes it out again; `port.sh` keeps it.
-
-StarMap is a separate project: mods made for it may not work on a Mac, and a new KSA version can break it until it
-is updated.
+Borea and StarMap are separate projects: mods made for them may not work on a Mac, and a new KSA version can break
+them until they are updated.
 
 ## Credits and license
 

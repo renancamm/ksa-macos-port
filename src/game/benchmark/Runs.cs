@@ -480,7 +480,7 @@ public static class Runs
         var port = PortSettings.All.Where(s => s.Variable.Length > 0 && s.Running != s.Default).Select(s => $"{s.Key} = {s.Running}").ToList();
         return
         [
-            new("StarMap", AppDomain.CurrentDomain.GetAssemblies().Any(a => a.GetName().Name == "StarMap.Core") ? "in the app" : "none"),
+            new("StarMap", AppDomain.CurrentDomain.GetAssemblies().Any(a => a.GetName().Name == "StarMap.Core") ? "loaded" : "none"),
             new("System", Universe.CurrentSystem?.Id ?? _system), new("Test", _test), new("Scenarios", plan.Play.Only), new("Mode", plan.Play.Mode),
             new("Start", start), new("KSA Metal switches", outside.Count > 0 ? string.Join(' ', outside) : "none"),
             // What this game ran with: the port settings that aren't at their defaults, and what the hooks did

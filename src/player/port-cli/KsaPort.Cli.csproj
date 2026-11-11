@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-	<!-- The port's program (README.md in this folder): what port.sh and starmap.sh do, on the port folder's .NET runtime.
+	<!-- The port's program (README.md in this folder): what port.sh does, on the port folder's .NET runtime.
 	     It needs nothing from the game. -->
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
