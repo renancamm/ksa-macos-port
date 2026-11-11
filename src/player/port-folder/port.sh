@@ -1,6 +1,6 @@
 #!/bin/bash
 # Turns the Linux release of Kitten Space Agency into a Mac app, ~/Applications/Kitten Space Agency.app, or updates
-# the one you have. Saves, settings and StarMap stay. ./port.sh --help lists the options.
+# the one you have. Saves and settings stay. ./port.sh --help lists the options.
 #
 # The port's program does the work (lib/port-cli/, src/player/port-cli/ in the repository). After --update it has put
 # a newer release of this folder in .update/: this script then replaces the folder's contents with it and runs the new

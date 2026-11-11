@@ -84,27 +84,18 @@ FetchContent_Declare(dotnet_runtime
     URL https://builds.dotnet.microsoft.com/dotnet/Runtime/${DOTNET_VERSION}/dotnet-runtime-${DOTNET_VERSION}-osx-arm64.tar.gz
     URL_HASH SHA512=339c5b031b5fd7d64edd27314a1d0f8a1320b8c61f9ac305c1d4cdb61c94bc438482867ceea09d38fc7194da2a05e6a86b164992a5ec793ea3d65ccce0ea6bac)
 
-# The version of Harmony that StarMap includes and KSA Metal Hooks use (lib_harmony below)
+# The version of Harmony that KSA Metal Hooks use (lib_harmony below), their own copy. Under StarMap (from Borea) they
+# use the copy StarMap loads: keep this the version StarMap's current release includes (its 0Harmony.dll)
 set(HARMONY_VERSION 2.4.3)
 
-# StarMap, the mod loader in payload/starmap/: its release (the Windows build, platform-neutral .NET) and the
-# licences of StarMap and of Harmony, which it includes, at the matching tags. It also includes Microsoft's
-# Microsoft.Extensions.DependencyInjection, under the .NET runtime's licence.
-set(STARMAP_VERSION 0.5.4)
-FetchContent_Declare(starmap
-    URL https://github.com/StarMapLoader/StarMap/releases/download/${STARMAP_VERSION}/StarMap-${STARMAP_VERSION}.zip
-    URL_HASH SHA256=bcf14ac68dfb6558152586fd98776fc5013006a0406c37792f5f6afcf0561366)
-FetchContent_Declare(starmap_license
-    URL https://raw.githubusercontent.com/StarMapLoader/StarMap/${STARMAP_VERSION}/LICENSE.txt
-    URL_HASH SHA256=cd27b291fba83ca3016cd50b6ce9032413f3a3cc4fa87a035bbb826feb50e313
-    DOWNLOAD_NO_EXTRACT TRUE)
+# Harmony's licence at the matching tag
 FetchContent_Declare(harmony_license
     URL https://raw.githubusercontent.com/pardeike/Harmony/v${HARMONY_VERSION}/LICENSE
     URL_HASH SHA256=a5883d0c45eb7e176d3d1631220e7f96e958e37064773d40245ae6db560bbd6d
     DOWNLOAD_NO_EXTRACT TRUE)
 
 # Harmony, which KSA Metal Hooks (src/game/hooks/) use to change KSA's code at runtime: the official package on
-# nuget.org, the version StarMap includes (its licence: harmony_license above). Its net10.0 build goes into the app.
+# nuget.org (its licence: harmony_license above). Its net10.0 build goes into the app.
 FetchContent_Declare(lib_harmony
     URL https://api.nuget.org/v3-flatcontainer/lib.harmony/${HARMONY_VERSION}/lib.harmony.${HARMONY_VERSION}.nupkg
     URL_HASH SHA512=2f6b4ecdbaf67e2084908d6f6510e2d74cce4fb0160a4a0e206a8e0bf48bb135703d26138e0ae83607bdd1a89949a4017eaadcfe7bea357d1ef5566933569d6b

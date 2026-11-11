@@ -27,9 +27,6 @@ endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${KSA_DIR}/KSA.dll" "${PROJECT_SOURCE_DIR}/global.json")
 file(STRINGS "${KSA_DIR}/KSA.dll" ksa_version REGEX "20[0-9][0-9]\\.[0-9]+\\.[0-9]+\\.[0-9]+" LIMIT_COUNT 1)
 string(REGEX MATCH "20[0-9][0-9]\\.[0-9]+\\.[0-9]+\\.[0-9]+" KSA_VERSION "${ksa_version}")
-if(NOT EXISTS "${starmap_SOURCE_DIR}/StarMap.dll" OR NOT EXISTS "${starmap_SOURCE_DIR}/StarMap.Core.dll")
-    message(FATAL_ERROR "the StarMap archive has an unexpected layout (${starmap_SOURCE_DIR})")
-endif()
 
 # The port folder's files made here: VERSION, the BRUTAL packages the port's program checks the game's assemblies
 # against, and the port's names next to them (for the conversion below, which reads the folder's lib/)
@@ -131,7 +128,7 @@ set(res "${PORT_APP}/Resources")
 set(licenses "${res}/Licenses")
 
 # The commands, what they share, and the port's program they run, with its shader edits
-port_folder_copy("." "${folder}/port.sh" "${folder}/starmap.sh" "${folder}/benchmark.sh" "${folder}/README.md"
+port_folder_copy("." "${folder}/port.sh" "${folder}/benchmark.sh" "${folder}/README.md"
     "${PROJECT_SOURCE_DIR}/LICENSE" "${PROJECT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md" "${stage}/VERSION")
 port_folder_copy("lib" "${folder}/lib/common.sh" "${folder}/lib/port.env" "${stage}/lib/brutal.txt")
 port_folder_copy("lib/port-cli" "${bin}/KsaPort.Cli/")
@@ -162,17 +159,7 @@ port_folder_copy("${licenses}/fmod" "${PROJECT_SOURCE_DIR}/third_party/fmod/LICE
 port_folder_copy("${licenses}/dotnet" "${dotnet_runtime_SOURCE_DIR}/LICENSE.txt"
     "${dotnet_runtime_SOURCE_DIR}/ThirdPartyNotices.txt")
 port_folder_copy("${licenses}/ksa-icon" "${icon}/NOTICE.txt")
-port_folder_copy_as("${licenses}/starmap/LICENSE.txt" "${starmap_license_SOURCE_DIR}/LICENSE.txt")
 port_folder_copy_as("${licenses}/harmony/LICENSE.txt" "${harmony_license_SOURCE_DIR}/LICENSE")
-
-# StarMap, which starmap.sh adds to an app: its release is its Windows build, of which only StarMap.exe is
-# Windows-specific: a launcher the app doesn't need (the launcher runs StarMap.dll with the app's .NET runtime), left
-# out. The rest is platform-neutral .NET.
-install(CODE "
-    set(starmap \"\${CMAKE_INSTALL_PREFIX}/payload/starmap\")
-    file(COPY \"${starmap_SOURCE_DIR}/\" DESTINATION \"\${starmap}\" PATTERN StarMap.exe EXCLUDE)
-    file(WRITE \"\${starmap}/version.txt\" \"${STARMAP_VERSION}\\n\")
-")
 
 # The .NET projects' tests, which need no game
 add_test(NAME port-cli-tests

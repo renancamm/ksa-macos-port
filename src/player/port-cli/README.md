@@ -1,16 +1,16 @@
 # The port's program
 
-`KsaPort.Cli.dll` is the port's program: it does what `port.sh` and `starmap.sh` do. The commands are short bash
+`KsaPort.Cli.dll` is the port's program: it does what `port.sh` does. The commands are short bash
 scripts ([`../port-folder/`](../port-folder/)) that check the Mac and the folder, then start it on the port folder's
 own .NET runtime (`payload/app/Contents/MacOS/dotnet`, Microsoft's), so a player needs nothing installed. In the port
 folder it is `lib/port-cli/`, with its shader edits.
 
 | File | What it holds |
 |---|---|
-| [`Program.cs`](Program.cs) | the commands, `port.sh`'s steps and its options, `starmap.sh` |
+| [`Program.cs`](Program.cs) | the commands, `port.sh`'s steps and its options |
 | [`Conversion.cs`](Conversion.cs) | a game folder converted for macOS: the Linux binaries out, the .NET files for the app's runtime, the BRUTAL check (the game's Linux libraries against the packages'), the ARM64 mark |
 | [`ShaderEdits.cs`](ShaderEdits.cs) | the shader edits: the `.edits` files read and applied |
-| [`App.cs`](App.cs) | the app made around the converted game, or the port's files put into it again; StarMap in the app |
+| [`App.cs`](App.cs) | the app made around the converted game, or the port's files put into it again |
 | [`Update.cs`](Update.cs) | `port.sh --update`: the newest release downloaded and checked |
 | [`tests/`](tests/) | the tests that need no game |
 
@@ -30,7 +30,6 @@ copy, `tar` extracts the game, `plutil` reads and checks `Info.plist`, `xattr` r
 | Command | Run by |
 |---|---|
 | `port [options] [archive \| folder]` | `port.sh` |
-| `starmap [--app <path>] [--remove]` | `starmap.sh` |
 | `convert-dotnet <game> <runtime>` | the build, for KSA's assemblies the hooks and the benchmark are built against |
 | `edit-shaders <game>` | by hand: the shader edits alone, on a game folder |
 

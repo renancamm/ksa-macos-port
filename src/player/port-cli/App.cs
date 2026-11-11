@@ -24,7 +24,7 @@ namespace KsaPort.Cli;
 public static class App
 {
     // Moves the converted game folder into a new app as Contents/Resources. An app this port made earlier at that path
-    // is replaced, keeping the game's window layout (imgui.ini) and StarMap, and goes to the Trash.
+    // is replaced, keeping the game's window layout (imgui.ini), and goes to the Trash.
     public static void Create(string game, string app)
     {
         Conversion.RequireGame(game);
@@ -50,10 +50,7 @@ public static class App
             if (File.Exists(ini))
                 Tool.Run("cp", ini, Path.Combine(target, "Contents", "Resources") + "/");
             if (Directory.Exists(Path.Combine(old, "Contents", "Resources", "StarMap")))
-            {
-                InstallStarMap(Path.Combine(target, "Contents", "Resources", "StarMap"));
-                Output.Info("StarMap is in the new app too.");
-            }
+                Output.Info(StarMapGone);
             var trash = Path.Combine(PortFolder.Home, ".Trash");
             Directory.CreateDirectory(trash);
             Tool.Run("mv", old, Path.Combine(trash, $"{PortFolder.AppName} {oldVersion} {DateTime.Now:yyyyMMdd-HHmmss}.app"));
@@ -71,7 +68,10 @@ public static class App
         InstallPortFiles(Path.Combine(app, "Contents"));
         var starMap = Path.Combine(app, "Contents", "Resources", "StarMap");
         if (Directory.Exists(starMap))
-            InstallStarMap(starMap);
+        {
+            Remove(starMap);
+            Output.Info(StarMapGone);
+        }
         Touch(app);
     }
 
@@ -148,14 +148,8 @@ public static class App
         Tool.Run("/usr/bin/plutil", "-lint", plist);
     }
 
-    // A copy of the port folder's StarMap there (the launcher starts the game through the app's
-    // Contents/Resources/StarMap, or through the folder KSA_STARMAP_DIR names)
-    public static void InstallStarMap(string target)
-    {
-        Remove(target);
-        Tool.Run("ditto", Path.Combine(PortFolder.Payload, "starmap"), target);
-        Tool.Exec("xattr", ["-cr", target], out _);
-    }
+    // An app with Contents/Resources/StarMap loses it: mods start through Borea
+    private const string StarMapGone = "The app's StarMap is removed: mods start through Borea 0.6.16 or newer (the README's Mods section).";
 
     public static void Remove(string path)
     {

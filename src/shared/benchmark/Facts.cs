@@ -15,7 +15,7 @@ public static class Facts
     // The host's facts in this order, and what one it leaves out means (null: left out)
     private static readonly (string Key, string? Default)[] RunFacts =
     [
-        ("StarMap", null), ("System", null), ("Test", null), ("Scenarios", null), ("Mode", null), ("Preset", "none, own settings"),
+        ("StarMap", "none"), ("System", null), ("Test", null), ("Scenarios", null), ("Mode", null), ("Preset", "none, own settings"),
         ("Settings changed", "none"), ("Start", null), ("KSA Metal switches", "none"), ("Tools", "none"),
         ("port settings", null), ("Hooks", null),
     ];

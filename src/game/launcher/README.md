@@ -16,8 +16,7 @@ starts the game with `<game folder>/KSA`, and a loader that runs through `dotnet
 
 `KSA_PORT_PROGRAM` names the program the launcher runs (its full path), so the hooks' loader runs only in it, and when
 it is a mod loader, the game's Restart starts it again with its arguments. `STARMAP_INSTANCE_PATH` moves the game's documents
-folder, port settings included. Without a program, the game starts through the app's StarMap when it has one
-(`starmap.sh`; `KSA_STARMAP_DIR` names another StarMap folder).
+folder, port settings included.
 
 macOS's allocator reads its variables when the process starts, before the hooks' loader applies the port settings, so
 the launcher reads its one setting from `port-settings.toml` itself (the game's documents folder, or

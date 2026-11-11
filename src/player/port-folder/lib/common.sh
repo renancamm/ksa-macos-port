@@ -1,17 +1,16 @@
 # shellcheck shell=bash disable=SC2034  # the variables are the commands'
-# Shared by the port's commands (port.sh, starmap.sh, benchmark.sh) and the build. Source it; it defines no behaviour of
+# Shared by the port's commands (port.sh, benchmark.sh) and the build. Source it; it defines no behaviour of
 # its own.
 #
 # Everything here runs on macOS's own bash 3.2 and base tools: the port folder needs nothing else installed. The
 # commands' work is done by the port's program, lib/port-cli/KsaPort.Cli.dll (src/player/port-cli/ in the repository),
 # which run_port_cli starts on the folder's .NET runtime. The folder is what ./build.sh makes (dist/ksa-macos-port/)
 # and what a release contains:
-#   port.sh, starmap.sh, benchmark.sh              the commands
+#   port.sh, benchmark.sh                          the commands
 #   lib/                                           this file, port.env, the port's program (port-cli/) with its
 #                                                  shader edits, brutal.txt
 #   payload/app/Contents/                          the app without the game: launcher, .NET runtime, libraries,
 #                                                  hooks, benchmark, icon, licences
-#   payload/starmap/                               StarMap, which starmap.sh adds to the app
 #   VERSION                                        version=, ksa= (the KSA it was made for), commit=,
 #                                                  dotnet_sdk= (the .NET SDK that built the benchmark)
 

@@ -99,11 +99,6 @@ public static partial class Program
         // macOS's memory pressure level by its name: 1 normal, 2 warning, 4 critical
         private static string Pressure(int level) => level switch { 1 => "normal", 2 => "warning", _ => "critical" };
 
-        private string Starmap() =>
-            !File.Exists(Path.Combine(_res, "StarMap", "StarMap.dll")) ? "none"
-            : File.Exists(Path.Combine(_res, "StarMap", "version.txt")) ? File.ReadAllText(Path.Combine(_res, "StarMap", "version.txt")).Trim()
-            : "in the app";
-
         // What the run says about itself for its record, which adds the Mac's, the app's and the window
         private List<Fact> HostFacts()
         {
@@ -115,7 +110,7 @@ public static partial class Program
                 own[k] = v;
             var switches = string.Join(' ', own.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key}={kv.Value}".Replace(home, "~")));
             // The rest of the game's environment that changes how it runs: what this program had (a shell's MTL_HUD_ENABLED,
-            // DOTNET_ settings, KSA_STARMAP_DIR...) and --env's
+            // DOTNET_ settings...) and --env's
             var inherited = Environment.GetEnvironmentVariables().Keys.Cast<string>().Where(Changes)
                 .ToDictionary(k => k, k => Environment.GetEnvironmentVariable(k) ?? "");
             foreach (var (k, v) in Env().Where(kv => !kv.Key.StartsWith("KSA_MTL_", StringComparison.Ordinal)))
@@ -126,7 +121,7 @@ public static partial class Program
             var changed = ChangedFact;
             return
             [
-                new("StarMap", Starmap()), new("System", SystemId), new("Test", _test.Length > 0 ? _test : "places"), new("Scenarios", Sections),
+                new("System", SystemId), new("Test", _test.Length > 0 ? _test : "places"), new("Scenarios", Sections),
                 new("Mode", $"{Mode}{(_noShots ? ", no screenshots" : "")}"), new("Preset", preset), new("Settings changed", changed),
                 new("Start", Start), new("KSA Metal switches", switches.Length > 0 ? switches : "none"), new("Tools", tools),
                 .. environment.Length > 0 ? [new Fact("Environment", environment)] : Array.Empty<Fact>(),

@@ -37,8 +37,8 @@ include(cmake/dependencies.cmake)
 
 FetchContent_MakeAvailable(spirv_headers)
 set(SPIRV-Headers_SOURCE_DIR "${spirv_headers_SOURCE_DIR}")
-FetchContent_MakeAvailable(vulkan_headers spirv_cross spirv_tools glfw_headers dotnet_runtime starmap starmap_license
-    harmony_license lib_harmony title_card)
+FetchContent_MakeAvailable(vulkan_headers spirv_cross spirv_tools glfw_headers dotnet_runtime harmony_license
+    lib_harmony title_card)
 
 # Harmony for KSA Metal Hooks: the package's .NET 10 assembly. Extracted again only for another version, and then dated
 # now: the hooks' build tells a changed reference by its date, and the package's own is older than the last build.
