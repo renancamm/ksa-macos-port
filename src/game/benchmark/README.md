@@ -235,6 +235,7 @@ tool on. A place is a screenshot's name; a whole test works for the tools that d
 | `hud` | Apple's Metal Performance HUD over the game, its per-frame log in `hud.log`; the HUD's menu, in the menu bar while the game runs, writes its reports to `hud/` |
 | `catch <clean run>` | for a picture that goes wrong now and then: the trigger `broken: passes, screenshot` with each screenshot held against that clean run's (30 % pure white, under half the size, or far more pure black), and KSA Metal looking at the image a few times a second, which dumps on its own; `watch.txt` says when each fault began and ended (at most 3 of each; about 40 MB each; 1 GB free). `--catch-capture` adds `capture` to the rule (40 GB free) |
 | `passes` | the trigger `checkpoint: passes, screenshot`: a pass dump at every place, the clean run a caught dump is compared with |
+| `window` | a picture of the game's window at each place, after its screenshot, with what macOS draws over the game (Apple's HUD, with `--port metal_performance_hud=true`), in `window/`; the place holds while `benchmark.sh` takes it, and the run's check for a game whose clock stands still is off. Needs the Screen Recording permission for the terminal |
 | `film <seconds>` | a screenshot every that many seconds of the script's clock, in `film/`, to see the camera's moves |
 | `camera-log` | the camera's place every frame in `camera-log.csv`, to check its moves are smooth |
 | `hold` | jump to one place and stay there, paused, until you quit the game: for a close look with Apple's overlay or Xcode |

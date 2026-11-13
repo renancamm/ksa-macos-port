@@ -7,6 +7,11 @@
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/github/license/renancamm/ksa-macos-port"></a>
 </p>
 
+<p align="center">
+  <img alt="Kitten Space Agency on a Mac: the game's rocket in orbit over Earth, with Apple's Metal Performance HUD" src=".github/images/game.jpg" width="880">
+</p>
+<p align="center"><sub>Mac</sub></p> <!-- the caption: scripts/readme-screenshots.sh writes it with the pictures -->
+
 An experimental community project that turns the Linux version of **Kitten Space Agency** (KSA) into a native Mac
 app for Apple Silicon. It draws the game with **KSA Metal**: a Vulkan driver written for KSA on top of Apple's Metal,
 and a few things around it.
@@ -162,6 +167,10 @@ the game's other tabs, and each row's tooltip says what it changes and what it c
 `port-settings.toml`, next to the game's `settings.toml`, with a comment on each; the file can be edited instead of
 the tab, and holds three sections for testing and debugging that the tab doesn't show
 ([`src/shared/settings/`](src/shared/settings/)).
+
+<p align="center">
+  <img alt="The Mac Port tab in the game's settings" src=".github/images/mac-port-tab.jpg" width="880">
+</p>
 
 ### The hooks
 

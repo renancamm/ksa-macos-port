@@ -20,7 +20,7 @@ public static partial class Program
     private sealed partial class BenchmarkRun
     {
         // The script stands at one moment on purpose with --hold, and for as long as a tool takes at a checkpoint
-        private bool StandsStill => _hold.Length > 0 || _capture || Triggers.HoldCheckpoints(_rules);
+        private bool StandsStill => _hold.Length > 0 || _capture || _window || Triggers.HoldCheckpoints(_rules);
 
         // The passes of each game session, by what the run is for: measure's a warm-up and its measured passes, profile's a
         // warm-up, a measured and a profiled one; one measured pass otherwise
@@ -260,6 +260,7 @@ public static partial class Program
                 env["MTL_CAPTURE_ENABLED"] = env["KSA_MTL_LABELS"] = "1";
             plan.Record.Film = _film;
             plan.Record.CameraLog = _cameraLog;
+            plan.Record.Window = _window;
             plan.Record.Probes = [.. _probes];
             foreach (var kv in _knobs)
                 plan.Record.Knobs[kv[..kv.IndexOf('=')]] = kv[(kv.IndexOf('=') + 1)..];
@@ -462,6 +463,8 @@ public static partial class Program
                 var played = EventLog.Read(_out);
                 var beat = EventLog.LastHeartbeat(played, n);
                 progress.Show(beat, elapsed);
+                if (_window)
+                    TakeWindows(played, n, events);
                 // --trace: once the game is up (its first heartbeat), Instruments attaches, and the run starts when it records
                 // (the game waits for it): looked at every second, the watch going on meanwhile
                 if (_trace && tracer == null && beat != null)
@@ -646,12 +649,42 @@ public static partial class Program
             if (_capture)
                 foreach (var c in Directory.GetFileSystemEntries(_data, "*.gputrace").Order(StringComparer.Ordinal))
                     Output.Info($"Frame capture: {c} (open it in Xcode)");
+            if (_window && Directory.Exists(Path.Combine(_data, "window")))
+                Output.Info($"Window: {Path.Combine(_data, "window")} (a picture of the game's window at each place)");
             if (Directory.Exists(Path.Combine(_data, "caught")))
                 Output.Info($"Caught: {_data}/caught (what the triggers kept: passes and passes.txt, images, frame captures; watch.txt: when the image looked broken)");
             // What the triggers did, but keep a moment (the run's store has those)
             foreach (var e in EventLog.Read(_out).Where(e => e.Type == "trigger" &&
                          (e.Text ?? "").Split(": ").ElementAtOrDefault(1)?.Split(", ").All(a => a == "moment" || a.StartsWith("max ", StringComparison.Ordinal)) != true).Take(10))
                 Output.Info($"Trigger: {(e.Scenario != null ? $"{e.Scenario} {e.Part}: " : "")}{e.Text}");
+        }
+
+        // window: a picture of the game's window for each window event of the session not answered yet (screencapture, the
+        // window alone without its shadow), then the answer the checkpoint holds for, with or without a picture
+        private readonly HashSet<string> _windowed = [];
+
+        private void TakeWindows(List<RunEvent> played, int session, EventLog events)
+        {
+            foreach (var e in played.Where(e => e.Type == "window" && e.Session == session && e.Value is > 0))
+            {
+                var name = $"{e.Scenario}_{e.Part}";
+                if (!_windowed.Add($"{session} {name}"))
+                    continue;
+                var folder = Path.Combine(_data, "window");
+                Directory.CreateDirectory(folder);
+                var path = Path.Combine(folder, name + ".png");
+                var number = ((long)e.Value!.Value).ToString(CultureInfo.InvariantCulture);
+                // At most 30 s, so that the watch over the game goes on
+                using var capture = Process.Start(new ProcessStartInfo("screencapture", ["-x", "-o", "-l", number, path]) { RedirectStandardError = true })!;
+                bool exited = capture.WaitForExit(30_000);
+                if (!exited)
+                    capture.Kill();
+                var error = exited ? capture.StandardError.ReadToEnd().Trim() : "screencapture took over 30 s";
+                if (!exited || capture.ExitCode != 0 || !File.Exists(path))
+                    Output.Warn($"window: no picture of {e.Part}{(error.Length > 0 ? $" ({error})" : "")}. The terminal that runs " +
+                                "benchmark.sh needs the Screen Recording permission: System Settings > Privacy & Security > Screen & System Audio Recording.");
+                events.Add("windowed", e.Scenario, e.Part, text: File.Exists(path) ? Path.GetFileName(path) : null);
+            }
         }
     }
 

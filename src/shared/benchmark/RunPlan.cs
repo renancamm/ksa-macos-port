@@ -150,6 +150,9 @@ public sealed class RecordPlan
     public double Film { get; set; }
     // The camera's place every frame into camera-log.csv, to check its moves are smooth
     public bool CameraLog { get; set; }
+    // A picture of the game's window at every checkpoint after its screenshot, with what macOS draws over the game
+    // (Apple's Metal Performance HUD): the checkpoint holds until benchmark.sh has taken it (the window probe)
+    public bool Window { get; set; }
     // Probes (Probes.cs): the benchmark's own by their names (memory), assemblies by their paths
     public List<string> Probes { get; set; } = [];
     // The probes' knobs, <probe>.<key> to its value as written (cloud.light: the knob light of the probe cloud)

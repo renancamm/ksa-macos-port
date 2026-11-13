@@ -95,7 +95,10 @@ public static partial class Program
                              each place), hud (Apple's Metal Performance HUD), catch <clean run> (a pass dump of a picture
                              that goes wrong now and then; --catch-capture adds a frame capture), passes (a pass dump at every
                              place: a clean run for catch), film <seconds> (screenshots along the way), camera-log (the
-                             camera's place every frame), hold (stay at one place, paused, until you quit the game)
+                             camera's place every frame), window (a picture of the game's window at each place, with
+                             what macOS draws over it: Apple's HUD with --port metal_performance_hud=true; needs the
+                             Screen Recording permission), hold (stay at one place, paused, until you
+                             quit the game)
           --env <NAME=value> the game's environment for the run (again for more): KSA Metal's switches (KSA_MTL_...)
           --save-plan <file> with measure or profile: the command line as a study's file, to add variants to; plays nothing
           --probe <name | path>

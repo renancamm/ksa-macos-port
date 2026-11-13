@@ -45,11 +45,18 @@ install's settings (`--no-game-test` skips the run). The version is the build nu
 the port's release for it: `v5707.2` is the second for KSA 2026.10.25.5707. `release.sh --publish` then tags the
 commit and uploads the zip as a draft GitHub release.
 
+## The README's pictures
+
+`scripts/readme-screenshots.sh` makes the pictures in [`.github/images/`](.github/images/) and the caption under the
+first: the benchmark plays its `readme` scenario in the installed app at a fresh install's settings, with Apple's Metal
+Performance HUD, and takes a picture of the game's window at each view. Run it from Terminal after `./build.sh
+--install`; the terminal needs the Screen Recording permission (System Settings > Privacy & Security).
+
 ## The repository's top level
 
 ```text
 build.sh, release.sh        make the port folder; make a release of it
-scripts/                    the icon, the port folder's check, and lib.sh, which build.sh and release.sh share
+scripts/                    the icon, the port folder's check, the README's pictures, and lib.sh, which they share
 CMakeLists.txt, cmake/      the build, the port folder's layout, and every external source the build uses
 CMakePresets.json           how CMake is run: Ninja, Release, deps/build/cmake/
 ksa-macos-port.slnx         the .NET projects

@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using KSA;
 using KsaPort.Common;
 using KsaPort.Common.Benchmark;
@@ -45,6 +46,8 @@ public partial class Director
             ["@fov"] = Fov,
             ["@look"] = _camera.LookIva,
             ["@sun"] = CameraOperator.Sun,
+            ["@interface"] = a => a[1] is "show" or "hide" && SetInterface(a[1] == "show"),
+            ["@settings"] = a => a[1] is "open" or "close" && OpenSettings(a[1] == "open"),
         };
         foreach (var (name, handler) in _vehicles.Handlers())
             handlers[name] = handler;
@@ -137,5 +140,29 @@ public partial class Director
         _clock.NewWorld(Live ? 0 : 1);
         _phase = Phase.NewWorld;
         _phaseFrames = 0;
+    }
+
+    // @interface show|hide: the game's interface, as F2 shows and hides it (Start hides it for the run)
+    private static bool SetInterface(bool show)
+    {
+        Program.DrawUI = show;
+        return true;
+    }
+
+    // @settings open|close: the game's settings window, open on the rail's first tab, which the hooks make the Mac Port
+    // tab (the window keeps the tab it was last on: GameSettings._openTabIndex)
+    private bool OpenSettings(bool open)
+    {
+        if (open)
+        {
+            var index = typeof(GameSettings).GetField("_openTabIndex", BindingFlags.NonPublic | BindingFlags.Static);
+            if (index == null)
+                Log("@settings: GameSettings._openTabIndex not found: the window opens on the tab it was last on");
+            index?.SetValue(null, 0);
+            GameSettings.Show = true;
+        }
+        else
+            GameSettings.Close();
+        return true;
     }
 }

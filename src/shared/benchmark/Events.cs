@@ -1,7 +1,7 @@
 // What happened during a run, in order (the events table of the run's store, Store.cs): what benchmark.sh or the Mac Port
 // tab did around the game and what the director did in it. Each process writes its own file (the game run.db, benchmark.sh
-// host.db); reading a run's events reads both, in time order. benchmark.sh watches the game's heartbeats there, and the
-// game benchmark.sh's recording event.
+// host.db); reading a run's events reads both, in time order. benchmark.sh watches the game's heartbeats and window
+// events there, and the game benchmark.sh's recording and windowed events.
 //
 //   start      the run began: Text how (a new game from benchmark.sh, the tab's restart, the running game)
 //   session    a game session began (Session counts from 1; Pass, on every event, which time the scenarios play in it)
@@ -26,6 +26,9 @@
 //   trigger    a trigger's rule ran (Triggers.cs): Scenario, Part (a part, or a checkpoint's screenshot), Text the rule
 //              and why
 //   disturbed  a trigger's heavy work went on while a part measured, which leaves the numbers: Scenario, Part, Text
+//   window     the window probe asks for a picture of the game's window: Scenario, Part the screenshot's name, Value the
+//              window's number
+//   windowed   benchmark.sh's answer, the picture taken or not: Scenario, Part, Text its file
 using System;
 using System.Collections.Generic;
 using System.Linq;

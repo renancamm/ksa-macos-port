@@ -25,7 +25,7 @@ public static partial class Program
         private readonly List<string> _probes = [], _knobs = [], _off = [];
         private string _preset = "", _system = "", _hold = "", _settingsFile = "", _reference = "", _catch = "";
         private string _template = "Metal System Trace", _test = "";
-        private bool _defaults, _explore, _fast, _noShots, _hud, _trace, _capture, _catchCapture, _passes, _cameraLog, _holding, _capped;
+        private bool _defaults, _explore, _fast, _noShots, _hud, _trace, _capture, _catchCapture, _passes, _cameraLog, _window, _holding, _capped;
 
         // A run that judges a change plays without Vsync (check, measure, profile, calibrate and studies of them): a view
         // that finishes inside the display's refresh would show a saving as a lower GPU clock, not as GPU time, and frame
@@ -213,7 +213,7 @@ public static partial class Program
             if (_purpose == Purpose.Investigate)
             {
                 if (args.Length == 0)
-                    Die("investigate <tool> <places...>: trace, capture, hud, catch <clean run>, passes, film <seconds>, camera-log or hold.");
+                    Die("investigate <tool> <places...>: trace, capture, hud, catch <clean run>, passes, film <seconds>, camera-log, window or hold.");
                 switch (args[i++])
                 {
                     case "profile":
@@ -224,6 +224,7 @@ public static partial class Program
                     case "hud": _hud = true; break;
                     case "passes": _passes = true; break;
                     case "camera-log": _cameraLog = true; break;
+                    case "window": _window = true; break;
                     case "hold": _holding = true; break;
                     case "catch" when i < args.Length: _catch = args[i++]; break;
                     case "film" when i < args.Length: _filmText = args[i++]; break;
@@ -235,7 +236,7 @@ public static partial class Program
                         status = 0;
                         return false;
                     case var tool:
-                        Die($"no tool '{tool}' (trace, capture, hud, catch <clean run>, passes, film <seconds>, camera-log or hold).");
+                        Die($"no tool '{tool}' (trace, capture, hud, catch <clean run>, passes, film <seconds>, camera-log, window or hold).");
                         break;
                 }
             }
@@ -562,7 +563,7 @@ public static partial class Program
         private void CheckTools()
         {
             // Each game session of full would write over the one before
-            if (_test == "full" && (_purpose == Purpose.Profile || _hud || _trace || _capture || _catch.Length > 0 || _passes || _film > 0 || _cameraLog))
+            if (_test == "full" && (_purpose == Purpose.Profile || _hud || _trace || _capture || _catch.Length > 0 || _passes || _film > 0 || _cameraLog || _window))
                 Die("the tools look at one test: choose mixed, tour or warp (or places).");
             if (_purpose == Purpose.Profile || _hud || _trace || _capture || _catch.Length > 0 || _passes)
             {
@@ -581,6 +582,12 @@ public static partial class Program
                 _tools.Add($"film every {_film.ToString(CultureInfo.InvariantCulture)} s");
             if (_cameraLog)
                 _tools.Add("camera log");
+            if (_window)
+            {
+                if (_noShots)
+                    Die("window takes its pictures at the screenshots: it can't go with --no-shots.");
+                _tools.Add("pictures of the game's window");
+            }
             if (_trace)
             {
                 if (Tool.Exec("xcrun", ["-f", "xctrace"], out _) != 0)
