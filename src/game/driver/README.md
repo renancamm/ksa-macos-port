@@ -2,7 +2,8 @@
 
 The driver is the part of KSA Metal that draws the game: it implements the part of Vulkan that Kitten Space Agency
 uses, on top of Metal. The app ships it as `libvulkan.1.dylib`, in the place of the Vulkan loader and a Vulkan
-driver, so nothing in the game changes. In this file, KSA Metal means the driver.
+driver, so nothing in the game changes. It needs macOS 26 for the Metal features it uses. In this file, KSA Metal
+means the driver.
 
 The main README says what it is, in short ([The driver](../../../README.md#the-driver)). This file has the detail: its
 switches, how to build and test a change, how each Vulkan concept maps onto Metal, and what each source file holds.
@@ -49,7 +50,7 @@ These switches turn a feature off or change a default, to work around a problem 
 
 ## Build
 
-Building needs the tools in the main README's [Building the port](../../../README.md#building-the-port). From the
+Building needs the tools in the main README's [Building](../../../README.md#building). From the
 repository's folder:
 
 ```bash
