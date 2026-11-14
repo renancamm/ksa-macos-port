@@ -178,17 +178,14 @@ Terminal.
 
 ## Mods
 
-Mods work with the port. They are .NET code, like the game, so most of them run on a Mac as they are.
+Mods are supported too. They are .NET code, like the game, so most of them run on a Mac as they are.
 
-The easiest way to use them is [Borea](https://github.com/KSAModding/Borea), the community's mod manager. It
-installs the [StarMap](https://github.com/StarMapLoader/StarMap) mod loader, keeps mods in instances and starts the
-game with them. From version 0.6.16 on, it finds the app on its own in `/Applications` and `~/Applications`; for an app
-elsewhere, set Borea's game folder to the app's `Contents/Resources`.
+The easiest way to use them is [Borea](https://github.com/KSAModding/Borea), the community's mod manager. It finds
+the app in `/Applications` or `~/Applications`, installs the [StarMap](https://github.com/StarMapLoader/StarMap) mod
+loader, and keeps your mods in instances, each with its own saves and settings. If the app is somewhere else, set
+Borea's game folder to the app's `Contents/Resources`.
 
-Borea starts the game through the app's launcher, so KSA Metal and the Mac Port tab work with mods too. Each
-instance has its own saves, settings, port settings and `logs` folder.
-
-Borea and StarMap are separate projects, and a new KSA version can break mods until they are updated.
+Borea starts the game through the app, so KSA Metal and the Mac Port tab work with mods too.
 
 ## Building
 
@@ -228,19 +225,21 @@ source layout, each folder with its own README:
 
 - [Luc8020](https://github.com/Luc8020/ksa-macos-port), for discovering the two-byte mark in `KSA.dll` and the
   library swap this project is built on.
-- Denis, for spearheading the effort to bring KSA to the Mac, and for the insights and early testing.
-- RocketWerkz, for developing such an amazing game, and for publishing [BRUTAL](https://github.com/ahwootech/BRUTAL)
-  with macOS builds of its libraries.
+- [Denis](https://github.com/denisk-dev), for leading the work to bring KSA to the Mac, and for all the insights and
+  early testing.
+- [RocketWerkz](https://www.rocketwerkz.com), for developing such an amazing game, and for publishing
+  [BRUTAL](https://github.com/ahwootech/BRUTAL) with macOS builds of its libraries.
 
 ### Third-party software
 
 - [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) and [SPIRV-Tools](https://github.com/KhronosGroup/SPIRV-Tools),
   built into KSA Metal.
 - [Harmony](https://github.com/pardeike/Harmony), which KSA Metal Hooks use to patch the game.
-- The .NET runtime, by Microsoft.
-- BRUTAL's native libraries, by RocketWerkz, and the projects inside them, among them [GLFW](https://www.glfw.org) and
+- The [.NET runtime](https://dotnet.microsoft.com), by Microsoft.
+- [BRUTAL](https://github.com/ahwootech/BRUTAL)'s native libraries, by RocketWerkz, and the projects inside them,
+  among them [GLFW](https://www.glfw.org) and
   [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator).
-- Audio: FMOD Engine by Firelight Technologies Pty Ltd.
+- Audio: [FMOD Engine](https://www.fmod.com) by Firelight Technologies Pty Ltd.
 
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) lists every component in the app with its licence.
 
