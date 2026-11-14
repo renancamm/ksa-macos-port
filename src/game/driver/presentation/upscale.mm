@@ -31,16 +31,38 @@ struct VkUpscaleInfoKSA {
     float fovY, nearPlane, farPlane, deltaTime;  // for frame interpolation
     uint32_t flags;          // kUpscaleReset, kUpscaleSpatial
     uint32_t pad;
+    // The game's clouds and smoke trails, as its cloud upscaler drew them this frame at the render size (none: 0): their
+    // colour with the light that passes them in alpha, and their own motion (uv now minus uv before, the lowest half
+    // where it has none)
+    VkImage cloudColor, cloudMotion;
 };
 }
 enum : uint32_t { kUpscaleReset = 1, kUpscaleSpatial = 2 };
 // How strongly a colour change between two snapshots marks a pixel reactive
 static const float kReactiveGain = 2.f;
+// Where the game's clouds and smoke hide at least this share of what is behind them, the pixel may move with them
+static const float kCloudSeen = 0.05f;
 
 static const char* kMotionSource = R"(
 #include <metal_stdlib>
 using namespace metal;
-struct Params { float4x4 egoFromClip, scene, object, sky, nearby; float4 sphere, body; float2 size; float2 jitter; float reactiveGain; uint snapshots; };
+struct Params { float4x4 egoFromClip, scene, object, sky, nearby; float4 sphere, body; float2 size; float2 jitter; float reactiveGain; uint snapshots;
+                uint clouds; float cloudSeen; float2 lastJitter; uint history; float pad; };
+static float luma(float3 c) { return max(dot(c, float3(0.2126, 0.7152, 0.0722)), 0.0); }
+// How far the 8 pixels around one are from where a motion takes them in the last frame's image: the lower, the better
+// that motion explains what changed. The pixel itself is left out, so its own noise doesn't pick
+static float misfit(texture2d<half, access::read> color, texture2d<half, access::sample> last, int2 at, float2 lastAt, float2 size) {
+    constexpr sampler s(filter::linear, address::clamp_to_edge, coord::pixel);
+    float sum = 0;
+    for (int y = -1; y <= 1; y++)
+        for (int x = -1; x <= 1; x++) {
+            if (x == 0 && y == 0) continue;
+            float3 now = float3(color.read(uint2(clamp(at + int2(x, y), int2(0), int2(size) - 1))).rgb);
+            float3 was = float3(last.sample(s, lastAt + float2(x, y)).rgb);
+            sum += min(length(now - was) / (luma(now) + luma(was) + 0.05), 1.0);
+        }
+    return sum;
+}
 // How much of a pixel changed from before to now, as the reactive mask's weight
 static float changed(half4 now, half4 before, float gain) {
     float3 c = float3(now.rgb), s = float3(before.rgb);
@@ -51,6 +73,8 @@ kernel void motion(depth2d<float, access::read> depth [[texture(0)]], texture2d<
                    texture2d<half, access::read> color [[texture(2)]], texture2d<half, access::read> beforeEffects [[texture(3)]],
                    texture2d<half, access::write> reactive [[texture(4)]], texture2d<half, access::read> beforeBloom [[texture(5)]],
                    texture2d<half, access::read> afterBloom [[texture(6)]],
+                   texture2d<half, access::read> cloudColor [[texture(7)]], texture2d<half, access::read> cloudMotion [[texture(8)]],
+                   texture2d<half, access::sample> last [[texture(9)]],
                    constant Params& p [[buffer(0)]], uint2 gid [[thread_position_in_grid]]) {
     if (gid.x >= uint(p.size.x) || gid.y >= uint(p.size.y)) return;
     float d = depth.read(gid);
@@ -63,6 +87,24 @@ kernel void motion(depth2d<float, access::read> depth [[texture(0)]], texture2d<
     float2 prevPix = (prev.xy / prev.w * 0.5 + 0.5) * p.size;
     float2 v = prevPix - (pix - p.jitter);
     if (!all(isfinite(v))) v = 0;
+    // Clouds and smoke write no depth, so the motion from the depth is that of what is behind them. Where they hide some
+    // of it, their own motion (from this frame's jittered projection to the last frame's plain one) is the other
+    // candidate, and the one that better takes the pixels around to their colour in the last frame wins: the clouds'
+    // own wins in a descent through them, the depth's on the fire-lit smoke under a climbing rocket. Without the last
+    // frame, the clouds' own where they hide most of what is behind them
+    if (p.clouds != 0) {
+        float seen = 1.0 - float(cloudColor.read(gid).a);
+        float2 m = float2(cloudMotion.read(gid).xy);
+        if (seen >= p.cloudSeen && all(m > -60000.0)) {
+            float2 own = -m * p.size + p.jitter;
+            float2 lastAt = pix - p.jitter + p.lastJitter;
+            // Where the two agree (far clouds against the sky), no need to look
+            bool take = distance(own, v) < 0.25 ? true
+                        : p.history != 0 ? misfit(color, last, int2(gid), lastAt + own, p.size) < misfit(color, last, int2(gid), lastAt + v, p.size)
+                                         : seen > 0.5;
+            if (take && all(isfinite(own))) v = own;
+        }
+    }
     mv.write(half4(half2(clamp(v, -16384.0, 16384.0)), 0, 0), gid);
     float r = 0;
     if (p.snapshots == 7)
@@ -111,6 +153,10 @@ struct UpscaleState {
     id<MTLFXSpatialScaler> rest = nil;
     id<MTLTexture> restTex = nil;
     id<MTLTexture> motionTex = nil;
+    // The last frame's image as MetalFX got it, and its jitter: which motion explains the clouds and smoke better
+    id<MTLTexture> lastColor = nil;
+    float lastJitter[2] = {0, 0};
+    bool haveLast = false;
     id<MTLTexture> reactiveTex = nil;
     id<MTLTexture> snapshots[3] = {nil, nil, nil};  // vkCmdUpscaleSnapshotKSA's stages: before the effects, before the bloom, after it
     // KSA_MTL_FRAME_INTERPOLATION=1: the last upscale's inputs, for a frame interpolated at present
@@ -246,6 +292,10 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
     bool spatial = (info->flags & kUpscaleSpatial) || !depth;
     uint32_t outW = (uint32_t)out->mtl.width, outH = (uint32_t)out->mtl.height;
     std::lock_guard<std::mutex> lock(g_up.m);
+    // The last image counts only from the frame just before, through MetalFX Temporal: a stretched or spatial frame
+    // in between leaves it older
+    bool haveLast = g_up.haveLast;
+    g_up.haveLast = false;
     bool ready = prepare(cb->device, info->inputWidth, info->inputHeight, outW, outH, spatial, color->mtl.pixelFormat,
                          out->mtl.pixelFormat);
     if (!ready && !g_up.stretch) return;
@@ -269,7 +319,8 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
         g_up.spatial.inputContentHeight = info->inputHeight;
         [g_up.spatial encodeToCommandBuffer:cb->mtl];
     } else {
-        struct { float egoFromClip[16], scene[16], object[16], sky[16], nearby[16], sphere[4], body[4]; float size[2]; float jitter[2]; float reactiveGain; uint32_t snapshots; float pad[2]; } p;
+        struct { float egoFromClip[16], scene[16], object[16], sky[16], nearby[16], sphere[4], body[4]; float size[2]; float jitter[2]; float reactiveGain; uint32_t snapshots;
+                 uint32_t clouds; float cloudSeen; float lastJitter[2]; uint32_t history; float pad; } p;
         memcpy(p.egoFromClip, info->egoFromClip, sizeof(p.egoFromClip));
         memcpy(p.scene, info->prevClipFromEgo, sizeof(p.scene));
         memcpy(p.object, info->prevClipFromEgoObject, sizeof(p.object));
@@ -293,12 +344,45 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
             [e setTexture:taken ? s : color->mtl atIndex:i == 0 ? 3 : 4 + i];
         }
         [e setTexture:g_up.reactiveTex atIndex:4];
+        auto* cloudColor = (KImage*)info->cloudColor;
+        auto* cloudMotion = (KImage*)info->cloudMotion;
+        bool clouds = cloudColor && cloudMotion && cloudColor->mtl.width == color->mtl.width &&
+                      cloudColor->mtl.height == color->mtl.height && cloudMotion->mtl.width == color->mtl.width &&
+                      cloudMotion->mtl.height == color->mtl.height;
+        [e setTexture:clouds ? cloudColor->mtl : color->mtl atIndex:7];
+        [e setTexture:clouds ? cloudMotion->mtl : color->mtl atIndex:8];
+        if (clouds && (!g_up.lastColor || g_up.lastColor.width != color->mtl.width || g_up.lastColor.height != color->mtl.height ||
+                       g_up.lastColor.pixelFormat != color->mtl.pixelFormat)) {
+            MTLTextureDescriptor* ld = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:color->mtl.pixelFormat
+                                                                                          width:color->mtl.width height:color->mtl.height mipmapped:NO];
+            ld.usage = MTLTextureUsageShaderRead;
+            ld.storageMode = MTLStorageModePrivate;
+            g_up.lastColor = [cb->device->mtl newTextureWithDescriptor:ld];
+            g_up.haveLast = false;
+        }
+        bool history = clouds && haveLast && !(info->flags & kUpscaleReset);
+        [e setTexture:history ? g_up.lastColor : color->mtl atIndex:9];
         p.reactiveGain = kReactiveGain;
         p.snapshots = snaps;
+        p.clouds = clouds ? 1 : 0;
+        p.cloudSeen = kCloudSeen;
+        p.lastJitter[0] = g_up.lastJitter[0]; p.lastJitter[1] = g_up.lastJitter[1];
+        p.history = history ? 1 : 0;
+        p.pad = 0;
         [e setBytes:&p length:sizeof(p) atIndex:0];
         [e dispatchThreads:MTLSizeMake(info->inputWidth, info->inputHeight, 1) threadsPerThreadgroup:MTLSizeMake(16, 16, 1)];
         [e endEncoding];
         fullBarrier(cb);
+        // This frame's image for the next frame's choice, while clouds or smoke are drawn
+        g_up.haveLast = clouds && g_up.lastColor;
+        if (g_up.haveLast) {
+            id<MTLBlitCommandEncoder> b = [cb->mtl blitCommandEncoder];
+            b.label = @"upscale last image";
+            [b copyFromTexture:color->mtl toTexture:g_up.lastColor];
+            [b endEncoding];
+            fullBarrier(cb);
+            g_up.lastJitter[0] = info->jitterX; g_up.lastJitter[1] = info->jitterY;
+        }
         if (kmtlConfig().fxDebug && g_up.debugView) {
             id<MTLComputeCommandEncoder> e2 = [cb->mtl computeCommandEncoder];
             [e2 setComputePipelineState:g_up.debugView];
