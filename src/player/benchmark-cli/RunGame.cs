@@ -414,7 +414,7 @@ public static partial class Program
             if (File.Exists(zip))
             {
                 Output.Info($"To share it (up to you): {zip} ({Ask("du", "-h", zip).Split('\t')[0].Trim()}) holds the report, the numbers,");
-                Output.Info($"the logs and the screenshots. Attach it to a new issue: {Issues}");
+                Output.Info("the logs and the screenshots.");
             }
             return failed;
         }

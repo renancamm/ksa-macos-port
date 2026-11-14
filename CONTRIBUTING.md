@@ -64,6 +64,6 @@ ksa-macos-port.slnx         the .NET projects
 global.json                 the .NET SDK version that builds them
 src/                        the sources (the README's Building has their map)
 third_party/fmod/           FMOD's macOS library, with its licence and notice (not MIT)
-.github/                    the issue templates
+.github/images/             the README's pictures
 deps/, dist/                made by the build: downloads and build trees; the port folder and release zips
 ```

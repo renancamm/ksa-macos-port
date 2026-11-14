@@ -85,10 +85,9 @@ study's folder.
 Each run writes its results to `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/`: the report to open,
 `report.html`, the zip to share, `to-share_<date>.zip`, and everything else in `data/`. The zip holds the report, the
 run's record, every frame's numbers, the game's log and any crash report of the run, the settings and the screenshots as
-JPEG; your home folder's name is replaced by `~` throughout. To share one, open an issue with the **Benchmark report**
-template and attach the zip. For numbers that compare across Macs, run with a preset (`--preset low`, `medium` or
-`high`): fixed settings over a fresh install's defaults, the same on every Mac. `compare` takes a zip in place of a run
-folder.
+JPEG; your home folder's name is replaced by `~` throughout. For numbers that compare across Macs, run with a preset
+(`--preset low`, `medium` or `high`): fixed settings over a fresh install's defaults, the same on every Mac. `compare`
+takes a zip in place of a run folder.
 
 ### The three tests
 
