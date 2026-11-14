@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -12,6 +13,7 @@ using HarmonyLib;
 using KSA;
 using KSA.Rendering;
 using KSA.Rendering.PostProcessing;
+using KSA.Atmosphere.Rendering;
 using KSA.Rendering.Raytracing;
 
 namespace KsaMetal.Hooks.Features;
@@ -55,6 +57,7 @@ internal static class Upscale
         public fixed float BodySphere[4];
         public float FovY, NearPlane, FarPlane, DeltaTime;
         public uint Flags, Pad;
+        public ulong CloudColor, CloudMotion;
     }
 
     private const uint Reset = 1, SpatialOnly = 2;
@@ -86,6 +89,7 @@ internal static class Upscale
                 transpiler: new HarmonyMethod(typeof(Upscale), nameof(RayTracingTranspiler)));
             harmony.Patch(Find.Method(typeof(RaytracePipeline), nameof(RaytracePipeline.Dispatch)),
                 prefix: new HarmonyMethod(typeof(Upscale), nameof(RayTracingSeedPrefix)));
+            ApplyCloudMotion(harmony);
         }
         if (Interpolate)
         {
@@ -104,6 +108,51 @@ internal static class Upscale
             // Last: a Skip undoes the patches, not this
             GameSettings.SampleCountOverride = VkSampleCountFlags._1Bit;
         }
+    }
+
+    // The game's cloud upscaler (CloudRenderer.PerformUpscaling) draws the clouds and the smoke trails at the view's size,
+    // each frame into the other of two sets of images: their colour with the light that passes them, and their own motion
+    // (the clouds' drift with the wind and the planet, the smoke's with its trail). They write no depth, so the driver's
+    // motion from the depth gave them the motion of what is behind them: in a descent through the clouds, the sea's, and
+    // MetalFX smeared their edges. Where they hide most of what is behind them, the driver takes their own motion
+    private static FieldInfo? _isMain, _writeFlip, _colorFlip, _colorFlop, _motionFlip, _motionFlop;
+    private static VkImage _cloudColor, _cloudMotion;
+    private static bool _cloudsDrawn;
+
+    private static void ApplyCloudMotion(Harmony harmony)
+    {
+        try
+        {
+            var resources = AccessTools.Inner(typeof(CloudRenderer), "ViewportResources") ?? throw new Skip("CloudRenderer.ViewportResources not found");
+            _isMain = Find.Field(resources, "IsMain");
+            _writeFlip = Find.Field(resources, "WriteHistoryToFlip");
+            _colorFlip = Find.Field(resources, "UpscaledCloudColorFlipTarget");
+            _colorFlop = Find.Field(resources, "UpscaledCloudColorFlopTarget");
+            _motionFlip = Find.Field(resources, "UpscaledMotionVectorsFlipTarget");
+            _motionFlop = Find.Field(resources, "UpscaledMotionVectorsFlopTarget");
+            harmony.Patch(Find.Method(typeof(CloudRenderer), "PerformUpscaling"),
+                postfix: new HarmonyMethod(typeof(Upscale), nameof(CloudsUpscaled)));
+        }
+        catch (Exception e)
+        {
+            // MetalFX runs on without it, the clouds moving with what is behind them
+            Hooks.Log($"MetalFX's cloud motion: off ({Skip.In(e)?.Message ?? e.Message})");
+        }
+    }
+
+    // CloudRenderer.PerformUpscaling, after it: which set the main view's clouds went into this frame (it has turned the
+    // switch for the next frame already)
+    private static void CloudsUpscaled(object inResources)
+    {
+        if (_isMain!.GetValue(inResources) is not true)
+            return;
+        bool flip = _writeFlip!.GetValue(inResources) is false;
+        if ((flip ? _colorFlip : _colorFlop)!.GetValue(inResources) is not RenderImage color ||
+            (flip ? _motionFlip : _motionFlop)!.GetValue(inResources) is not RenderImage motion)
+            return;
+        _cloudColor = color.Image;
+        _cloudMotion = motion.Image;
+        _cloudsDrawn = true;
     }
 
     // The game's anti-aliasing. The temporal upscaler smooths edges itself: the game's MSAA under it would cost 1-3 ms
@@ -159,6 +208,8 @@ internal static class Upscale
     private static double4x4 _previousEgoToFrame, _previousEgoToObject;
     private static Vehicle? _previousObject;
     private static Celestial? _previousBody;
+    private static CameraMode _previousMode;
+    private static object? _previousFollowing;
     private static double _previousTime;
     private static double3 _velocity;  // the camera's, in the nearby body's frame, from the frames before
 
@@ -234,6 +285,12 @@ internal static class Upscale
         // A high-resolution screenshot is drawn without jitter, and the history starts again after it
         if (!_reading)
             _reset = true;
+        // A cut: into the cockpit or out, to the map or the free camera, to another vessel (one close by moves the camera
+        // too little to count as a jump). The last frame's image would show for a few frames over the new view
+        if (_havePrevious && (viewport.Mode != _previousMode || !ReferenceEquals(camera.Following, _previousFollowing)))
+            _reset = true;
+        _previousMode = viewport.Mode;
+        _previousFollowing = camera.Following;
         _jitterIndex = 0;
         if (!Spatial && _reading)
         {
@@ -366,9 +423,14 @@ internal static class Upscale
 
     private static unsafe void UpscaleMainView(CommandBuffer commandBuffer)
     {
+        // Only this frame's clouds: in space, or with the clouds off, the upscaler doesn't run, and a frame without
+        // MetalFX (a high-resolution screenshot) mustn't leave its clouds to the next
+        bool cloudsDrawn = _cloudsDrawn;
+        _cloudsDrawn = false;
         if (_output == null || !_reading || Program.OffscreenTarget is not { ColorImage: { } colorImage, DepthImage: { } depthImage } target)
             return;
         VkImage color = colorImage.Image, depth = depthImage.Image, output = _output.Image;
+        VkImage cloudColor = cloudsDrawn ? _cloudColor : default, cloudMotion = cloudsDrawn ? _cloudMotion : default;
         VkExtent2D input = target.Extent;
         var info = new VkUpscaleInfoKSA
         {
@@ -383,7 +445,9 @@ internal static class Upscale
             NearPlane = 0.1f,
             FarPlane = 1.4959786E+11f,
             DeltaTime = _deltaTime,
-            Flags = (_reset ? Reset : 0) | (Spatial ? SpatialOnly : 0)
+            Flags = (_reset ? Reset : 0) | (Spatial ? SpatialOnly : 0),
+            CloudColor = Unsafe.As<VkImage, ulong>(ref cloudColor),
+            CloudMotion = Unsafe.As<VkImage, ulong>(ref cloudMotion)
         };
         Put(info.EgoFromClip, in _egoFromClip);
         Put(info.PrevClipFromEgo, in _scene);

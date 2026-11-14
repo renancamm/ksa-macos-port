@@ -293,9 +293,13 @@ size (the display's pixels) before the final composite (past the temporal upscal
 upscales as far as it can and the spatial upscaler does the rest), `vkCmdUpscaleSnapshotKSA` copies the scene before its translucent effects, and `vkCmdMarkUiKSA`
 copies it again after the composite, before the UI. For MetalFX's temporal upscaler, the driver makes the motion
 vectors in a kernel of its own, from the depth buffer and the reprojections the game passes, and marks what the
-translucent effects changed as reactive. Between the encoders MetalFX adds and the game's work it puts full event
-barriers. Frame interpolation presents a frame MetalFX makes from the last two scenes, their motion and depth, with this
-frame's UI on top, before each real one.
+translucent effects changed as reactive. Clouds, smoke trails and the flames the trails draw under a rocket write no
+depth: where they hide 5 % or more of what is behind them, the motion the game's cloud upscaler gave them is a
+candidate, near the vessel the camera follows that vessel's motion is another, and per pixel the one that best takes
+the 8 pixels around to their colour in the last frame's image wins (the colour error of that prediction: on cloud
+pixels in a descent through Earth's clouds 40-80 % lower in its cloudiest seconds, on a launch seen from the ground
+26-39 % lower near the rocket; GPU time the same in the Mixed Test, 2 % more on that launch). Between the encoders MetalFX adds and the game's work it puts full event barriers. Frame interpolation presents a
+frame MetalFX makes from the last two scenes, their motion and depth, with this frame's UI on top, before each real one.
 
 The complete mapping:
 
