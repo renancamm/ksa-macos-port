@@ -6,7 +6,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
-// KSA Metal's entry table (entries.inc, included by setup/entry.mm): the names vkGetInstanceProcAddr and
+// The driver's entry table (entries.inc, included by setup/entry.mm): the names vkGetInstanceProcAddr and
 // vkGetDeviceProcAddr answer, made from Vulkan's registry (vk.xml, from Vulkan-Headers) and the driver's own sources:
 //
 //   - every Vulkan function the driver defines (VKFN), at the level the registry gives it: global (vkCreateInstance,
@@ -110,7 +110,7 @@ internal static class Generate
         var unknown = defined.Where(f => !first.ContainsKey(f) && !f.EndsWith("KSA")).Order().ToList();
         if (unknown.Count > 0)
             throw new FormatException($"the registry doesn't know {string.Join(", ", unknown)} " +
-                "(a function of KSA Metal's own ends in KSA)");
+                "(a function of the driver's own ends in KSA)");
 
         var t = new StringBuilder("""
             // The names vkGetInstanceProcAddr and vkGetDeviceProcAddr answer (entry.mm): made by

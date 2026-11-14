@@ -1,5 +1,5 @@
 // The game's profiler zones in a run (the director's GameProfilers reads them from the game): every zone's time summed per
-// part into the run's store, and the last seconds of zones, KSA Metal's waits and its presents' GPU times kept, so that a
+// part into the run's store, and the last seconds of zones, the driver's waits and its presents' GPU times kept, so that a
 // slow frame can be told by what took its time.
 //
 // A source is one thread of the game's profilers (the main thread, a job runner); a group is what its numbers add up under
@@ -10,7 +10,7 @@
 //               median, 95th percentile and worst of its time in a game frame (frames without it count as 0), MB allocated
 //   moments     a frame a trigger kept (Triggers.cs; by default a measured part's of 100 ms or more, 20 a pass): when,
 //               how long, the part (none: ""), and its cause: the three zones of the main thread's slowest frame there with
-//               the most self time, KSA Metal's waits of 2 ms or more in it, and the most GPU time a present around it took
+//               the most self time, the driver's waits of 2 ms or more in it, and the most GPU time a present around it took
 //   slices      every zone around a kept moment (the first MaxSliced of the measured passes): from half a second before the
 //               slow frame to a quarter of a second after it, each with its start on the store's clock, length, own time
 //               and depth
@@ -101,7 +101,7 @@ public sealed class ZoneLog
         }
     }
 
-    // A wait KSA Metal timed, and a present's GPU time: what a moment's cause names besides the zones
+    // A wait the driver timed, and a present's GPU time: what a moment's cause names besides the zones
     public void AddWait(double start, double ms, string what) => _waits.Enqueue((start, ms, what));
 
     public void AddPresent(double t, double gpuMs) => _presents.Enqueue((t, gpuMs));

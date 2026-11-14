@@ -7,7 +7,7 @@ using System.Text.Json.Serialization;
 namespace KsaPort.Common.Benchmark;
 
 // What one play of the scenarios is for: a warm-up (its numbers kept apart: the Mac's heat, the caches), measured (the
-// run's numbers, the only ones compared), or profiled (the game's GPU zones on, KSA Metal splitting render passes at
+// run's numbers, the only ones compared), or profiled (the game's GPU zones on, the driver splitting render passes at
 // them: named zones, at a cost of their own; its numbers kept apart)
 public enum PassKind { WarmUp, Measured, Profiled }
 
@@ -136,11 +136,11 @@ public sealed class PlayPlan
     public bool Stay { get; set; }
 }
 
-// What the run records besides what every run does (its frames and events, KSA Metal's drain, the game's profilers, the
+// What the run records besides what every run does (its frames and events, the driver's drain, the game's profilers, the
 // runtime's counters): the tools'
 public sealed class RecordPlan
 {
-    // Encoders named after the game's GPU zones, for a trace or a frame capture: its GPU profiler on, KSA Metal answering
+    // Encoders named after the game's GPU zones, for a trace or a frame capture: its GPU profiler on, the driver answering
     // its timestamps at once (the game needs KSA_MTL_LABELS=1)
     public bool ZoneLabels { get; set; }
     // An Xcode GPU frame capture of the view at every checkpoint, <section>_<shot>.gputrace (the game needs

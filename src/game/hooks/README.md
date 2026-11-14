@@ -89,12 +89,12 @@ simulates: a piece that settled stays settled in a save, and one sunk inside a p
 
 ## Settings
 
-The hooks, KSA Metal and its shims read environment variables, which the loader sets from `port-settings.toml` when
+The hooks, the driver and the shims read environment variables, which the loader sets from `port-settings.toml` when
 the game starts ([`loader/PortEnvironment.cs`](loader/PortEnvironment.cs), with the port settings in the shared
 library, [`../../shared/settings/`](../../shared/settings/)): a setting's variable is `KSA_MTL_` and its key in
 capitals, with 0 for off and 1 for on. One set before the game starts wins over the file, and the Mac Port tab shows
 its row as set outside. The loader sets each variable twice, for .NET, which keeps its own copy of the environment,
-and with `setenv` for KSA Metal and the shims, which read theirs when the game first uses them. It also sends the
+and with `setenv` for the driver and the shims, which read theirs when the game first uses them. It also sends the
 game's output to `console.log` and copies the file's template for a new player. The hooks read their settings through
 the library, each as a typed property of [`Settings`](Settings.cs) named after its key (`terrain_cache`:
 `Settings.TerrainCache`): a variable that is unset, holds none of the setting's values (`console.log` says which), or
@@ -106,7 +106,7 @@ setting; those of the hooks:
 |---|---|
 | `upscaling` | `off`, `metalfx` or `spatial` |
 | `render_scale` | 0.5 to 2: a fraction of the window's size in points (it needs `upscaling`) |
-| `frame_interpolation` | on: frame interpolation (KSA Metal reads it too) |
+| `frame_interpolation` | on: frame interpolation (the driver reads it too) |
 | `skip_game_anti_aliasing` | off: with MetalFX, the game's anti-aliasing setting applies (but CMAA2) |
 | `fewer_cloud_steps`, `fewer_smoke_steps`, `fewer_cloud_shadow_updates`, `fewer_sky_lighting_updates`, `lighter_warp_cloud_shadows`, `lighter_plume_shadows`, `simpler_pcss_shadows`, `baked_milky_way`, `crew_portraits_at_15_fps`, `lighter_tumbling_physics`, `debris_settles_in_warp` | on: the Extra Performance rows |
 | `skip_hidden_crew_portraits`, `fit_hud_to_display` | off: the game's own crew portraits and flight HUD; both change while the game runs |

@@ -8,8 +8,8 @@ using System.Runtime.InteropServices;
 using KsaPort.Common;
 
 // The player's port settings, port-settings.toml in the game's documents folder, become the environment variables that
-// KSA Metal, its shims and the hooks read (PortSettings.Plan, in the shared library, says which). It runs in the
-// game's process, before the game; KSA Metal and the shims read their variables when the game first uses them, later.
+// the driver, the shims and the hooks read (PortSettings.Plan, in the shared library, says which). It runs in the
+// game's process, before the game; the driver and the shims read their variables when the game first uses them, later.
 // A variable already set when the game starts wins over the file.
 //
 // It also puts the game's output in console.log in the documents folder's logs (unless it goes to a terminal), copies
@@ -83,7 +83,7 @@ internal static class PortEnvironment
                           (rows.Count(kv => kv.Value != PortSettings.Get(kv.Key)!.Default) is var on && on == 0 ? "its rows off" : $"{on} of its {rows.Count} rows on"));
     }
 
-    // Sets a variable for both: .NET code reads its own copy of the environment, KSA Metal and the shims read the
+    // Sets a variable for both: .NET code reads its own copy of the environment, the driver and the shims read the
     // process's
     private static void Set(string name, string value)
     {

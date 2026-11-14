@@ -96,7 +96,7 @@ public static class Pages
     private static string MarkdownOf(RunRecord r)
     {
         var md = new StringBuilder();
-        md.AppendLine($"## KSA Metal benchmark: {Title(r)}");
+        md.AppendLine($"## KSA Mac Port benchmark: {Title(r)}");
         md.AppendLine();
         var problems = r.Problems.ToList();
         if (r.Status == Benchmark.Status.Stopped && r.Notes.Any(f => f.Code == "trigger-stop"))
@@ -200,13 +200,13 @@ public static class Pages
         if (r.Census.Count > 0)
         {
             md.AppendLine();
-            md.AppendLine("Who held the memory at each checkpoint (MB): the game's, all tags, and its largest; KSA Metal's; the .NET heap:");
+            md.AppendLine("Who held the memory at each checkpoint (MB): the game's, all tags, and its largest; the driver's; the .NET heap:");
             md.AppendLine();
             foreach (var at in r.Census.GroupBy(c => (c.Scenario, c.Shot)))
             {
                 var game = at.Where(c => c.Kind == "game").OrderByDescending(c => c.Mb).ToList();
                 md.AppendLine($"- {at.Key.Scenario} {at.Key.Shot}: game {F(GameTotal(at), "0")} ({string.Join(", ", game.Take(3).Select(c => $"{c.Owner} {F(c.Mb, "0")}"))}), " +
-                              $"KSA Metal {F(at.Where(c => c.Kind == "driver").Sum(c => c.Mb), "0")}, .NET heap {F(at.Where(c => c.Kind == "runtime").Sum(c => c.Mb), "0")}");
+                              $"driver {F(at.Where(c => c.Kind == "driver").Sum(c => c.Mb), "0")}, .NET heap {F(at.Where(c => c.Kind == "runtime").Sum(c => c.Mb), "0")}");
             }
         }
         var warp = r.AllParts().Where(x => x.Part.Warped).ToList();
@@ -299,7 +299,7 @@ public static class Pages
         html.Append("<header class=\"hero\">");
         if (Banner(dir, order, ext) is { } banner)
             html.Append(Image(at + banner, "", "hero-image"));
-        html.Append("<div class=\"hero-text\"><div class=\"eyebrow\">KSA Metal benchmark</div>");
+        html.Append("<div class=\"hero-text\"><div class=\"eyebrow\">KSA Mac Port benchmark</div>");
         html.Append($"<h1>{E(TestName(r.Test))}{(r.Mode.Split(' ').Contains("jump") ? " <span>places</span>" : "")}</h1>");
         html.Append($"<p>{E(When(r))} · {E(MacLine(r))}</p>");
         html.Append(Status(r.Status == Benchmark.Status.Passed, r.Status.ToString()));
@@ -419,7 +419,7 @@ public static class Pages
         var slow = r.Moments.Where(m => m.Part.Length > 0).ToList();
         if (slow.Count == 0)
             return;
-        html.Append($"<section><h2>Slow frames</h2><p class=\"lead\">{slow.Count} frame{(slow.Count > 1 ? "s" : "")} of 100 ms or more while measuring, with what took the time: the main thread's zones with the most time of their own, KSA Metal's waits, the GPU's time around it.</p>");
+        html.Append($"<section><h2>Slow frames</h2><p class=\"lead\">{slow.Count} frame{(slow.Count > 1 ? "s" : "")} of 100 ms or more while measuring, with what took the time: the main thread's zones with the most time of their own, the driver's waits, the GPU's time around it.</p>");
         html.Append("<div class=\"table-scroll\"><table class=\"parts\"><thead><tr><th>Part</th><th>ms</th><th class=\"cause\">What took the time</th></tr></thead><tbody>");
         foreach (var m in slow.Take(20))
             html.Append($"<tr><td class=\"part\">{E(m.Scenario)} {E(m.Part)}</td><td>{F(m.FrameMs, "0")}</td><td class=\"cause\">{E(m.Cause)}</td></tr>");
@@ -464,7 +464,7 @@ public static class Pages
     {
         if (r.Census.Count == 0)
             return;
-        html.Append("<section><h2>Who holds the memory</h2><p class=\"lead\">At each checkpoint of the first pass: the game's memory by its tags, KSA Metal's by type, the .NET heap, the process's footprint.</p><div class=\"zones\">");
+        html.Append("<section><h2>Who holds the memory</h2><p class=\"lead\">At each checkpoint of the first pass: the game's memory by its tags, the driver's by type, the .NET heap, the process's footprint.</p><div class=\"zones\">");
         foreach (var at in r.Census.GroupBy(c => (c.Scenario, c.Shot)))
         {
             var game = at.Where(c => c.Kind == "game").ToList();
@@ -473,7 +473,7 @@ public static class Pages
             foreach (var c in game.OrderByDescending(c => c.Mb).Take(8))
                 html.Append($"<tr><td>{E(c.Owner)}</td><td>{F(c.Mb, "0")}</td></tr>");
             foreach (var c in at.Where(c => c.Kind is "host" or "driver" or "runtime" or "process").OrderByDescending(c => c.Mb))
-                html.Append($"<tr><th>{E(c.Kind switch { "host" => "Game, host-visible", "driver" => $"KSA Metal, {c.Owner}", "runtime" => ".NET heap", _ => "Footprint" })}</th><td>{F(c.Mb, "0")}</td></tr>");
+                html.Append($"<tr><th>{E(c.Kind switch { "host" => "Game, host-visible", "driver" => $"Driver, {c.Owner}", "runtime" => ".NET heap", _ => "Footprint" })}</th><td>{F(c.Mb, "0")}</td></tr>");
             html.Append("</tbody></table>");
         }
         html.Append("</div>");
@@ -773,7 +773,7 @@ public static class Pages
         var html = new StringBuilder();
         var test = TestName(rb.Test);
         Open(html, $"{test}: {When(ra)} and {When(rb)}", rb.Drawable);
-        html.Append("<header class=\"hero slim\"><div class=\"hero-text\"><div class=\"eyebrow\">KSA Metal benchmark · comparison</div>");
+        html.Append("<header class=\"hero slim\"><div class=\"hero-text\"><div class=\"eyebrow\">KSA Mac Port benchmark · comparison</div>");
         html.Append($"<h1>{E(test)}</h1><p><b>A</b> {E(When(ra))} &nbsp; <b>B</b> {E(When(rb))}</p>");
         html.Append(good is { } better ? Status(better, verdict) : $"<span class=\"status\">{E(verdict)}</span>");
         html.Append("</div></header><main>");
@@ -863,7 +863,7 @@ public static class Pages
     {
         var html = new StringBuilder();
         Open(html, $"Study {s.Name}", s.First?.Drawable);
-        html.Append("<header class=\"hero slim\"><div class=\"hero-text\"><div class=\"eyebrow\">KSA Metal benchmark · study</div>");
+        html.Append("<header class=\"hero slim\"><div class=\"hero-text\"><div class=\"eyebrow\">KSA Mac Port benchmark · study</div>");
         html.Append($"<h1>{E(s.Name)}</h1><p>{E(s.First is { } r ? $"{When(r)} · {MacLine(r)} · " : "")}{s.Played} of {s.Sessions.Count} game sessions</p>");
         html.Append("</div></header><main>");
 

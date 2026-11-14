@@ -53,7 +53,7 @@ public static partial class Program
         }
         if (parts.Count == 0)
         {
-            Console.Error.WriteLine("no GPU zones of a profiled pass in the run's store (does the app's KSA Metal have gpu_zones?)");
+            Console.Error.WriteLine("no GPU zones of a profiled pass in the run's store (does the app's driver have gpu_zones?)");
             return 1;
         }
         // What the GPU measured for the same parts, the median of their frames
@@ -83,7 +83,7 @@ public static partial class Program
         var md = new StringBuilder();
         md.AppendLine("## GPU zones");
         md.AppendLine();
-        md.AppendLine("Per part, the game's GPU zones in the profiled pass, as its GPU profiler names them, with KSA Metal splitting render passes " +
+        md.AppendLine("Per part, the game's GPU zones in the profiled pass, as its GPU profiler names them, with the driver splitting render passes " +
                       "at each zone so that a zone inside a pass has its own time. Own time is a zone's time less its zones'. Every zone boundary waits " +
                       "for all the work before it, so zones run one after the other, and the profiled frame takes longer than the measured pass's " +
                       "frame of the same session (about 13 % in the Mixed Test). A zone called many times a frame reads high by about 20 µs for each " +
@@ -133,7 +133,7 @@ public static partial class Program
         }
     }
 
-    // An Instruments trace of the run: per measured part (the signposts KSA Metal set for the mod), the GPU time of the
+    // An Instruments trace of the run: per measured part (the signposts the driver set for the mod), the GPU time of the
     // game's encoders by their names (KSA_MTL_LABELS) and by the GPU's channels, as Instruments measured it
     private static int Trace(string dir)
     {
@@ -164,7 +164,7 @@ public static partial class Program
             var cells = row.Elements().ToList();
             if (cells.Count < 11)
                 continue;
-            // The game's process: the one that labels its encoders like KSA Metal does
+            // The game's process: the one that labels its encoders like the driver does
             var label = cells[6].Elements("string").FirstOrDefault()?.Value ?? "";
             int rowPid = int.TryParse(cells[10].Element("pid")?.Value, out var p) ? p : -2;
             if (pid < 0 && game.IsMatch(label) && label.Contains(':'))

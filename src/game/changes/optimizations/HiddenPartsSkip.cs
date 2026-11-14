@@ -7,7 +7,7 @@ namespace KsaMetal.Hooks.Optimizations;
 
 // Hidden parts skip. The vessels' shaders mark selected parts in the selection outline's mask, a store from the
 // fragment shader, and a shader that stores runs before the depth test: every fragment of a vessel is shaded, also
-// where other parts or the cockpit hide it, and the GPU can't skip hidden ones. KSA Metal keeps a second state of
+// where other parts or the cockpit hide it, and the GPU can't skip hidden ones. The driver keeps a second state of
 // such pipelines that tests depth first, without the stores of hidden fragments; at the start of each frame, in flight
 // and in the editor, this tells it whether to draw with them: while no part is selected, when the stores never run.
 // The image is the same.

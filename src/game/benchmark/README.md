@@ -128,7 +128,7 @@ The same tests are the project's tool for looking into the driver, the shaders a
 | `calibrate [test] [n]` | how much a test moves between runs of the same build on this Mac: `n` runs (3) at a fresh install's settings without Vsync, after one that warms the Mac up and is left out, written as the test's noise profile |
 | `baseline [set <name> [run...] \| remove <name>]` | names runs, one of each test, to compare with; a baseline's name stands for its run wherever a run is named, and `clean` keeps it |
 | `query [run] '<sql>'` | SQL on a run's [store](#a-runs-record) (default: the last run) |
-| `timeline [run]` | the run's timeline, for its report's Open Timeline button and Perfetto's viewer, in your browser: its parts, frame and GPU times, each frame's way to the screen, KSA Metal's waits, the game's zones around slow frames, and the counters (the GPU's power and clock, the probes') |
+| `timeline [run]` | the run's timeline, for its report's Open Timeline button and Perfetto's viewer, in your browser: its parts, frame and GPU times, each frame's way to the screen, the driver's waits, the game's zones around slow frames, and the counters (the GPU's power and clock, the probes') |
 | `report <run> --again` | the run's record, report and page made again from its store by this version of the benchmark, the facts about the Mac as the run had them |
 
 ```bash
@@ -233,14 +233,14 @@ tool on. A place is a screenshot's name; a whole test works for the tools that d
 | `trace` | an Instruments trace of the places (the Metal System Trace template, or another with `--trace-template <name>`), each measured part marked under Points of Interest; `trace.md` sums up the GPU time per part by channel (compute, vertex, fragment). Needs Xcode, 10 GB free, and places |
 | `capture` | an Xcode GPU frame capture at each place: every draw and dispatch, the resources, the shader profiler and debugger. Needs places, 20 GB free |
 | `hud` | Apple's Metal Performance HUD over the game, its per-frame log in `hud.log`; the HUD's menu, in the menu bar while the game runs, writes its reports to `hud/` |
-| `catch <clean run>` | for a picture that goes wrong now and then: the trigger `broken: passes, screenshot` with each screenshot held against that clean run's (30 % pure white, under half the size, or far more pure black), and KSA Metal looking at the image a few times a second, which dumps on its own; `watch.txt` says when each fault began and ended (at most 3 of each; about 40 MB each; 1 GB free). `--catch-capture` adds `capture` to the rule (40 GB free) |
+| `catch <clean run>` | for a picture that goes wrong now and then: the trigger `broken: passes, screenshot` with each screenshot held against that clean run's (30 % pure white, under half the size, or far more pure black), and the driver looking at the image a few times a second, which dumps on its own; `watch.txt` says when each fault began and ended (at most 3 of each; about 40 MB each; 1 GB free). `--catch-capture` adds `capture` to the rule (40 GB free) |
 | `passes` | the trigger `checkpoint: passes, screenshot`: a pass dump at every place, the clean run a caught dump is compared with |
 | `window` | a picture of the game's window at each place, after its screenshot, with what macOS draws over the game (Apple's HUD, with `--port metal_performance_hud=true`), in `window/`, taken 5 s after the screenshot so that the HUD's frame rate has settled (`--knob window.settle=<seconds>`); the place holds while `benchmark.sh` takes it, and the run's check for a game whose clock stands still is off. Needs the Screen Recording permission for the terminal |
 | `film <seconds>` | a screenshot every that many seconds of the script's clock, in `film/`, to see the camera's moves |
 | `camera-log` | the camera's place every frame in `camera-log.csv`, to check its moves are smooth |
 | `hold` | jump to one place and stay there, paused, until you quit the game: for a close look with Apple's overlay or Xcode |
 
-With `trace`, `capture` and `hud`, KSA Metal names every encoder after the game's GPU zone it began in and its
+With `trace`, `capture` and `hud`, the driver names every encoder after the game's GPU zone it began in and its
 pipelines (the `labels` setting), so the tools show `1280x800 Clouds Upscaling: v1658c4ba926081e2+f7e01e1b174a96688 +1`
 (the render pass's size, the zone, the vertex and fragment shaders' hashes, how many other pipelines it ran) instead of
 an anonymous encoder. An encoder that runs several zones carries the first one's name; with `KSA_MTL_GPU_ZONES=1` in
@@ -278,7 +278,7 @@ game). `--on '<rule>'` adds one to `run`, `check`, `measure`, `profile` or `inve
 |---|---|
 | `moment` | the frame's cause and zones in the run's store (`moments`, `slices`) |
 | `screenshot` | an image of a frame after it, in `caught/` |
-| `passes` | KSA Metal's pass dump of the next frame, in `caught/<name>/` with `passes.txt` (about 40 MB) |
+| `passes` | the driver's pass dump of the next frame, in `caught/<name>/` with `passes.txt` (about 40 MB) |
 | `capture` | an Xcode GPU frame capture of the next frame, `caught/<name>.gputrace` (20 GB free) |
 | `sample` | macOS's `sample` of the game's threads for 5 s, in `stuck.txt` |
 | `stop` | the run ends there: stopped, or failed after a GPU error |
@@ -301,7 +301,7 @@ varies a setting (`axis --knob example.level=1 example.level=2`).
 
 | Probe | What it records |
 |---|---|
-| `memory` | once a second the game's VRAM, its host-visible memory, KSA Metal's memory and the .NET heap (metrics `mem/game_vram`, `mem/game_host_visible`, `mem/driver`, `mem/gc_heap`); at every screenshot a census: each of the game's memory tags with its bytes ("CascadedShadowMap.ShadowTarget.Depth"), KSA Metal's memory by type, the .NET heap and the footprint (the report shows the first pass's). It reads what the game and the driver count anyway |
+| `memory` | once a second the game's VRAM, its host-visible memory, the driver's memory and the .NET heap (metrics `mem/game_vram`, `mem/game_host_visible`, `mem/driver`, `mem/gc_heap`); at every screenshot a census: each of the game's memory tags with its bytes ("CascadedShadowMap.ShadowTarget.Depth"), the driver's memory by type, the .NET heap and the footprint (the report shows the first pass's). It reads what the game and the driver count anyway |
 
 A probe of your own is a class of `Probe` with a public constructor without parameters (in `KsaMetal.Benchmark.dll`, built
 against it and the game); one that throws is left out of the rest of the run, which fails:
@@ -393,7 +393,7 @@ table when it starts. Around it:
 | `Here.cs` | the tab's recording of the player's own game (the plan's `play.here`): no script, one part named `here`, everything a run records, a screenshot at its start |
 | `Triggers.cs` | the run's [triggers](#triggers): every frame and after every checkpoint's screenshot, their conditions looked at and their actions run |
 | `GameProfilers.cs` | the game's own profilers, on while a run plays and read every frame into the run's store |
-| `GpuZones.cs` | the game's GPU zones for `profile`'s profiled pass (KSA Metal splitting render passes at them) and encoders named after them for `trace`, `capture` and `hud` |
+| `GpuZones.cs` | the game's GPU zones for `profile`'s profiled pass (the driver splitting render passes at them) and encoders named after them for `trace`, `capture` and `hud` |
 | `World.cs` | a new game's world, and the sea's waves settled at once for a view standing still |
 | `Explore.cs` | `explore`'s console command |
 | `Runs.cs` | the runs in the game: those `benchmark.sh` starts, those of the Mac Port tab, and its watchdog |
@@ -450,14 +450,14 @@ Every frame of a run is a row of the store's `frames`: the script's time, the sc
 draws and passes, memory, thermal state, shaders compiled so far, the time between the last two images the display
 showed, in time warp the game's clock and the physics' work, and the .NET runtime's work in it (GC pause, collections,
 JIT time and methods, lock contentions, MB allocated). The record's numbers are summaries of it, and the store goes into
-the zip, so a shared run can answer questions nobody asked when it was made. While a part is measured, KSA Metal also
+the zip, so a shared run can answer questions nobody asked when it was made. While a part is measured, the driver also
 marks it as a signpost interval, which is how an Instruments trace knows where each part is.
 
 The run's store is SQLite files in the run's `data/`
 ([`../../shared/benchmark/Store.cs`](../../shared/benchmark/Store.cs)): the game writes `run.db`, `benchmark.sh` writes
 `host.db`, so two processes never write one file; `benchmark.sh` watches the game's heartbeats there, and the game its
-recording event. Every row carries the time on one clock, the Mac's monotonic clock in seconds, which KSA Metal's own
-times use. Besides the events and frames, `run.db` has what KSA Metal hands the director through its drain while a run
+recording event. Every row carries the time on one clock, the Mac's monotonic clock in seconds, which the driver's own
+times use. Besides the events and frames, `run.db` has what the driver hands the director through its drain while a run
 plays: every present with its numbers (`presents`), when each frame began, was presented, finished on the GPU and was
 shown (`shown`), each frame's own GPU time, taken when its present's command buffer completed (`frame_gpu`), every wait
 of a millisecond or more that blocked the game, such as a fence or the next drawable (`waits`; the wait for an earlier
@@ -471,7 +471,7 @@ During a run the director switches on the game's own profilers, the main thread'
 solvers and the others), in `profile`'s profiled pass its GPU profiler too (group `gpu`, [`GpuZones.cs`](GpuZones.cs)), and reads them every frame ([`GameProfilers.cs`](GameProfilers.cs),
 [`../../shared/benchmark/Zones.cs`](../../shared/benchmark/Zones.cs)): `zone_stats` has every zone of each part, its total
 and own time, its median, 95th percentile and worst in a frame, and what it allocated. A frame a trigger keeps is a moment
-(`moments`; by default a measured part's frame of 100 ms or more, 20 a pass): its cause names the main thread's zones with the most own time in it, KSA Metal's
+(`moments`; by default a measured part's frame of 100 ms or more, 20 a pass): its cause names the main thread's zones with the most own time in it, the driver's
 waits of 2 ms or more and the most GPU time a frame around it took, and the first ten of the measured passes keep every
 zone from half a second before to a quarter of a second after it (`slices`). Reading them costs the game about 20 µs a
 frame; `--channels -zones` leaves the profilers off.
@@ -509,7 +509,7 @@ PresentMon's:
 | Metric | |
 |---|---|
 | `frame/time` | the time between two frames, the median |
-| `frame/cpu_busy` | a frame's work from its start (its wait for an earlier frame over) to its present, less KSA Metal's waits in it (a drawable, a fence) |
+| `frame/cpu_busy` | a frame's work from its start (its wait for an earlier frame over) to its present, less the driver's waits in it (a drawable, a fence) |
 | `frame/cpu_wait` | those waits and the wait for the earlier frame: with CPU busy, the frame |
 | `gpu/busy` | the GPU's time on a frame |
 | `gpu/energy` | the GPU's energy a frame, mJ: its mean power while the part played (`host/gpu_power`, `benchmark.sh` runs) times the mean frame time; not for time warp. Power alone rises when frames come faster; a frame's energy says whether the same work got cheaper |
@@ -525,8 +525,8 @@ A zone of the game's profilers is a metric too, its own time a frame: `gpu/zone/
 The build runs the benchmark's tests, which need no game, and stops when one fails. Those in
 [`../../player/benchmark-cli/tests/`](../../player/benchmark-cli/tests/) check the record (what passes and fails a run,
 the conditions it notes, passes and sessions merged into medians, numbers the same on a Mac in any region, an older
-record refused), PresentMon's numbers from KSA Metal's times, the statistics against values worked out by hand, the
-verdicts on each basis and the zones that moved, the run's store, KSA Metal's drain records, its report and zip, the
+record refused), PresentMon's numbers from the driver's times, the statistics against values worked out by hand, the
+verdicts on each basis and the zones that moved, the run's store, the driver's drain records, its report and zip, the
 comparison of two runs, the PNG reader, and the lineup itself.
 [`command.sh`](../../player/benchmark-cli/tests/command.sh) plays [`benchmark.sh`](../../player/port-folder/benchmark.sh)
 against a stand-in for the game that writes the run's store as the director does: its commands, what it refuses, and

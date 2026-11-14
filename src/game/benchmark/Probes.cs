@@ -527,7 +527,7 @@ internal sealed class CaptureProbe(ProbeContext context) : Probe
         var path = Path.ChangeExtension(view.Path, ".gputrace");
         if (!DriverStats.Capture(path, 1))
         {
-            context.Error($"{view.Shot}: KSA Metal could not capture a frame (does the game have MTL_CAPTURE_ENABLED=1?)");
+            context.Error($"{view.Shot}: the driver could not capture a frame (does the game have MTL_CAPTURE_ENABLED=1?)");
             return null;
         }
         return Probes.Then(Probes.Until(() => !DriverStats.Capturing(), 120), () =>
@@ -597,7 +597,7 @@ internal sealed class CameraLogProbe : Probe
 }
 
 // A picture of the game's window at every checkpoint, after its screenshot, with what macOS draws over the game (Apple's
-// Metal Performance HUD), which KSA Metal's screenshots can't have: the window event names the checkpoint and the
+// Metal Performance HUD), which the driver's screenshots can't have: the window event names the checkpoint and the
 // window's number, benchmark.sh's program takes the picture (screencapture) and answers with the windowed event. The
 // checkpoint holds a few seconds before it asks, and until the answer, at most a minute.
 internal sealed class WindowProbe(int session, ProbeContext context) : Probe

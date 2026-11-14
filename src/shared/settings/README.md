@@ -3,7 +3,8 @@
 One table, [`port-settings.txt`](port-settings.txt), holds every port setting: its key, type and default, what it
 needs, when it applies, what does it (the driver, the KTX shim, a hook), its values in the Mac Port tab's presets and
 with Auto Memory Saving on, and its row in the tab with its tag and help. The table's header explains its columns. Everything
-else that knows about a setting reads the table or is made from it.
+else that knows about a setting reads the table or is made from it. Three of its sections are only in
+`port-settings.toml`, not in the tab: Troubleshooting, Diagnostics and Experiments.
 
 A setting has one name, its key, and its environment variable is `KSA_MTL_` and the key in capitals:
 `shader_constant_memory` is `KSA_MTL_SHADER_CONSTANT_MEMORY`. Only two settings set Apple's own variable instead, which
@@ -75,7 +76,7 @@ that reads it is compiled again only then.
 
 | File | Holds |
 |---|---|
-| `port-settings.h` | `PortSettings`, a field per setting the driver or the KTX shim does (`shaderConstantMemory`, a `bool`), and `portSettingsRead()`, which reads them from their variables with the values the library takes (it doesn't apply needs to a variable set outside the game); KSA Metal keeps them in `kmtlConfig()` ([`../../game/driver/setup/config.mm`](../../game/driver/setup/config.mm)) |
+| `port-settings.h` | `PortSettings`, a field per setting the driver or the KTX shim does (`shaderConstantMemory`, a `bool`), and `portSettingsRead()`, which reads them from their variables with the values the library takes (it doesn't apply needs to a variable set outside the game); the driver keeps them in `kmtlConfig()` ([`../../game/driver/setup/config.mm`](../../game/driver/setup/config.mm)) |
 | `Settings.Generated.cs` | a property of the hooks' `Settings` per setting the hooks do (`Settings.TerrainCache`, a `bool`; `Settings.RenderScale`, a `double`): read once when the hooks load, or each time for a live setting |
 
 ## The generator

@@ -3,13 +3,13 @@
 # deps/build/cmake/_deps/ and are reused while their URL and checksum stay the same.
 
 # Sources we build from: GitHub's archive of one commit (the tag it belongs to is in the comment).
-# Vulkan-Headers: the Vulkan API KSA Metal implements.
+# Vulkan-Headers: the Vulkan API the driver implements.
 FetchContent_Declare(vulkan_headers
     URL https://github.com/KhronosGroup/Vulkan-Headers/archive/6802bb4733b63ed5efd3adb308a6c885ef180ea1.tar.gz # vulkan-sdk-1.4.363.0
     URL_HASH SHA512=212aa777b4802336db7e5f47c26f0653456d02b3dd90e678aa6ed5890d89f32aee78bedc45df3bf0a0f5b029709e492f578d186c33e0dc6d84f2b6a655bfeb82
     EXCLUDE_FROM_ALL)
 
-# SPIRV-Cross: translates KSA's SPIR-V shaders to Metal Shading Language (static, only the parts KSA Metal uses).
+# SPIRV-Cross: translates KSA's SPIR-V shaders to Metal Shading Language (static, only the parts the driver uses).
 FetchContent_Declare(spirv_cross
     URL https://github.com/KhronosGroup/SPIRV-Cross/archive/300681bbcb8365a8d1eacdacdbdd0249bbf1d6b1.tar.gz # vulkan-sdk-1.4.363.0 + 25
     URL_HASH SHA512=14d05c69a103eb9440c7110043df9f457fc1d78c420e1109b9f4cd989faf88c075678afef6442286f629f283ec97ca0de665519257235d71cb7ecb7fa2839f64

@@ -229,7 +229,7 @@ public static partial class Program
             var plan = new RunPlan { Passes = Passes() };
             if (_purpose == Purpose.Profile)
             {
-                // KSA Metal can split render passes at the game's GPU zones in the profiled pass: memory for every attachment
+                // The driver can split render passes at the game's GPU zones in the profiled pass: memory for every attachment
                 env["KSA_MTL_GPU_ZONES"] = "1";
             }
             if (_hud)
@@ -252,7 +252,7 @@ public static partial class Program
             }
             // Encoders named after the game's GPU zones, where the tool shows their names
             plan.Record.ZoneLabels = env.ContainsKey("KSA_MTL_LABELS");
-            // The triggers, the defaults among them; catch's own look at every 31st image besides, KSA Metal's watch
+            // The triggers, the defaults among them; catch's own look at every 31st image besides, the driver's watch
             plan.On = _rules.Select(r => r.ToString()).ToList();
             plan.Against = _catch;
             if (_catch.Length > 0)
@@ -612,7 +612,7 @@ public static partial class Program
         private Process StartTrace(int pid)
         {
             var log = Path.Combine(_data, "xctrace.log");
-            // Points of Interest holds the parts (KSA Metal's signposts)
+            // Points of Interest holds the parts (the driver's signposts)
             var start = new ProcessStartInfo("/bin/sh");
             foreach (var a in new[] { "-c", "exec xcrun xctrace record \"$@\" > \"$0\" 2>&1", log, "--template", _template, "--instrument",
                          "Points of Interest", "--attach", pid.ToString(CultureInfo.InvariantCulture), "--output", Path.Combine(_data, "trace.trace"),

@@ -49,7 +49,7 @@ commit and uploads the zip as a draft GitHub release.
 
 `scripts/readme-screenshots.sh` makes the pictures in [`.github/images/`](.github/images/): the benchmark plays its
 `readme` scenario in the installed app at the settings the script names. The game's view is a picture of its window with
-Apple's Metal Performance HUD, taken once the frame rate has settled; the Mac Port tab is KSA Metal's own screenshot,
+Apple's Metal Performance HUD, taken once the frame rate has settled; the Mac Port tab is the driver's own screenshot,
 without the HUD. Run it from Terminal after `./build.sh --install`; Terminal needs the Screen Recording permission
 (System Settings > Privacy & Security).
 

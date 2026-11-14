@@ -106,7 +106,7 @@ public static partial class Program
           --env <NAME=value> the game's environment for the run (again for more): KSA Metal's switches (KSA_MTL_...)
           --save-plan <file> with measure or profile: the command line as a study's file, to add variants to; plays nothing
           --probe <name | path>
-                             a probe in the run (again for more): memory (the game's VRAM, KSA Metal's memory and the .NET
+                             a probe in the run (again for more): memory (the game's VRAM, the driver's memory and the .NET
                              heap, and who holds them at each checkpoint), or a probe's assembly (.dll)
           --knob <probe>.<key>=<value>
                              a value for a probe (again for more)
@@ -120,7 +120,7 @@ public static partial class Program
                              memory, zone_stats, moments, slices, events (default: the last run)
           ./benchmark.sh timeline [run]
                              the run's timeline, for its report's Open Timeline button (Perfetto's viewer, in your browser):
-                             its parts, frame and GPU times, each frame's way to the screen, KSA Metal's waits, the game's
+                             its parts, frame and GPU times, each frame's way to the screen, the driver's waits, the game's
                              zones around slow frames, the counters
           ./benchmark.sh baseline [set <name> [run...] | remove <name>]
                              name runs to compare with, one of each test (check compares with main)

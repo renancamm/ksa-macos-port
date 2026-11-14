@@ -139,7 +139,7 @@ public static class Finish
     }
 
     // The scenarios as they played, in order: each part's measurings (the measured passes of every session) from their
-    // frames, KSA Metal's shown records and the zones, merged; a profiled pass's apart; the screenshots of the first pass
+    // frames, the driver's shown records and the zones, merged; a profiled pass's apart; the screenshots of the first pass
     // (a warm-up's too) with their limits
     private static List<ScenarioRecord> Scenarios(List<RunEvent> events, List<FrameRow> frames, Dictionary<int, Dictionary<ulong, ShownRow>> shown, List<WaitRow> waits,
         List<ZoneRow> zones, Dictionary<(string Scenario, string Part, int Session, int Pass), Dictionary<string, List<double>>> counters,

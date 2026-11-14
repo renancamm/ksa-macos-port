@@ -1,9 +1,9 @@
-// What KSA Metal measures for each presented frame, read through its benchmark interface
+// What the driver measures for each presented frame, read through its benchmark interface
 // (src/game/driver/diagnostics/instruments.mm: ksaMtlFrameStats, ksaMtlScreenshot, ksaMtlMarker, ksaMtlCapture,
 // ksaMtlCapturing; passdump.mm: ksaMtlPassDump, ksaMtlPassDumping, ksaMtlGpuErrors; zones.mm: ksaMtlZoneMode, ksaMtlZoneBegin, ksaMtlZoneEnd;
 // drain.mm: ksaMtlDrainOpen, ksaMtlDrain, ksaMtlDrainDropped, ksaMtlDrainClose, the records below; instruments.mm:
 // ksaMtlMemory).
-// The app ships the director with the KSA Metal it was built with, so the driver has all of it. With another Vulkan
+// The app ships the director with the driver it was built with, so the driver has all of it. With another Vulkan
 // driver the mod still measures CPU frame times.
 using System;
 using System.Collections.Generic;
@@ -25,7 +25,7 @@ public struct FrameStats
     public double DisplayMs;
 }
 
-// What KSA Metal's drain hands over (drain.mm), each with the time on the store's clock (RunClock, seconds)
+// What the driver's drain hands over (drain.mm), each with the time on the store's clock (RunClock, seconds)
 public abstract record DriverRecord;
 
 // A present: the driver's numbers for it, as ksaMtlFrameStats has them
@@ -112,7 +112,7 @@ public static unsafe class DriverStats
     private const int Header = 8;
     private static readonly byte[] DrainBuffer = new byte[64 << 10];
 
-    // Whether the game's driver is KSA Metal, filling every field of FrameStats
+    // Whether the game's driver is KSA Metal's, filling every field of FrameStats
     public static readonly bool Available = Probe();
 
     // Begins or ends a signpost interval named after a measured part, for Instruments traces
@@ -135,7 +135,7 @@ public static unsafe class DriverStats
     // Until they are written
     public static bool PassDumping() => Available && PassDumpingNative();
 
-    // The bytes KSA Metal holds now: device memory by type (private, shared write-combined, shared cached), then its own
+    // The bytes the driver holds now: device memory by type (private, shared write-combined, shared cached), then its own
     // (descriptor pools, upload rings); null with a driver of before it
     public static long[]? Memory()
     {
@@ -155,7 +155,7 @@ public static unsafe class DriverStats
     // Command buffers that failed: after a hang the GPU refuses this process's work, and a dump or capture holds nothing
     public static uint GpuErrors() => Available ? GpuErrorsNative() : 0;
 
-    // How KSA Metal answers the game's GPU profiler's timestamps (zones.mm): as they come, labels only, or splitting render
+    // How the driver answers the game's GPU profiler's timestamps (zones.mm): as they come, labels only, or splitting render
     // passes (needs KSA_MTL_GPU_ZONES=1); false when it can't
     public static bool ZoneMode(ZoneMode mode) => Available && ZoneModeNative((uint)mode);
 
@@ -165,7 +165,7 @@ public static unsafe class DriverStats
 
     public static void ZoneEnd(nint commandBuffer) => ZoneEndNative(commandBuffer);
 
-    // Starts KSA Metal recording into its drain: from then on every present, every frame shown, every wait of at least
+    // Starts the driver recording into its drain: from then on every present, every frame shown, every wait of at least
     // waitMs and every allocation of 16 MB or more; false when the driver has no drain of this layout
     public static bool OpenDrain(double waitMs)
     {

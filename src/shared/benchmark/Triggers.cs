@@ -12,12 +12,12 @@
 //   checkpoint      a checkpoint's screenshot is there                                 screenshot, passes, capture
 //   stuck           the game draws its frames but its clock stands still               sample, stop
 //                   (Watchdog.Stuck); the run stops whatever the rule says
-//   gpu-error       a command buffer failed (KSA Metal counts them): the GPU refuses   moment, screenshot, stop
+//   gpu-error       a command buffer failed (the driver counts them): the GPU refuses   moment, screenshot, stop
 //                   the game's work from then on
 //
-//   moment       the zones, KSA Metal's waits and the GPU times around the frame, in the run's store (Zones.cs)
+//   moment       the zones, the driver's waits and the GPU times around the frame, in the run's store (Zones.cs)
 //   screenshot   an image of a frame after it, in caught/
-//   passes       KSA Metal's pass dump of the next frame, in caught/<name>/
+//   passes       the driver's pass dump of the next frame, in caught/<name>/
 //   capture      an Xcode GPU frame capture of the next frame, caught/<name>.gputrace (the game needs MTL_CAPTURE_ENABLED=1)
 //   sample       what the game's threads are doing, 5 s of /usr/bin/sample, in stuck.txt
 //   stop         the run ends there

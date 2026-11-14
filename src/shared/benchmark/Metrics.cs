@@ -5,7 +5,7 @@
 // Solve), its own time a frame.
 //
 // The frame metrics are PresentMon's (version 2): frame time between two frames as the player feels it; CPU busy, the
-// frame's work from when it began (the game's wait for an earlier frame over) to its present, less KSA Metal's waits in
+// frame's work from when it began (the game's wait for an earlier frame over) to its present, less the driver's waits in
 // it (a drawable, a fence); CPU wait, those waits and the wait for the earlier frame, so that the two make the frame; GPU
 // busy, the GPU's time on the frame; display latency, from when the frame began to when it was on screen; displayed
 // time, how long it stayed there; animation error, how far the step between two frames' starts differs from the step
@@ -16,7 +16,7 @@
 // the run, its store keeps them and its record carries them, and Register makes them known wherever the record is read,
 // so that comparisons and studies judge them as the others.
 //
-// Measure makes a measuring's numbers (one part in one pass of one session) from its frames, KSA Metal's shown records
+// Measure makes a measuring's numbers (one part in one pass of one session) from its frames, the driver's shown records
 // of its presents, each frame's own GPU time (frame_gpu; the frames' GPU column in a run of before) and the game's zone
 // sums; Merge puts a part's measurings together.
 using System;
@@ -73,7 +73,7 @@ public static class Metrics
     public static readonly Metric Over100 = new("frame/over100", "Over 100 ms", "frames", Better.Lower, Across.Mean, 1, "frames over 100 ms")
         { Limit = 50, Floor = 2 };
     public static readonly Metric CpuBusy = new("frame/cpu_busy", "CPU busy", "ms", Better.Lower, Across.Median, 1,
-        "the frame's work from its start to its present, less KSA Metal's waits in it, the median") { Limit = Default, Floor = 0.25, Drifts = true };
+        "the frame's work from its start to its present, less the driver's waits in it, the median") { Limit = Default, Floor = 0.25, Drifts = true };
     public static readonly Metric CpuWait = new("frame/cpu_wait", "CPU wait", "ms", Better.Neither, Across.Median, 1,
         "how long a frame waited: for an earlier frame before it began, for a drawable or the GPU in it, the median");
     public static readonly Metric GpuBusy = new("gpu/busy", "GPU busy", "ms", Better.Lower, Across.Median, 1,
@@ -93,7 +93,7 @@ public static class Metrics
     public static readonly Metric Footprint = new("mem/footprint", "Memory", "MB", Better.Lower, Across.Median, 0,
         "the game's memory footprint at its peak (Activity Monitor's)") { Limit = 5, Floor = 150 };
     public static readonly Metric GpuMemory = new("mem/gpu", "GPU memory", "MB", Better.Lower, Across.Median, 0,
-        "what KSA Metal allocated for the GPU, at its peak") { Limit = 3, Floor = 64 };
+        "what the driver allocated for the GPU, at its peak") { Limit = 3, Floor = 64 };
     public static readonly Metric Thermal = new("mac/thermal", "Thermal state", "", Better.Lower, Across.Most, 0,
         "the Mac's thermal state at its worst: 0 nominal, 1 fair, 2 serious (macOS slows the chip), 3 critical");
     public static readonly Metric Shaders = new("gpu/shaders", "Shaders", "", Better.Lower, Across.Mean, 1,
@@ -172,11 +172,11 @@ public static class Metrics
         : null;
 }
 
-// What KSA Metal said of a present: when its frame began (its wait for an earlier frame over), was presented, finished on
+// What the driver said of a present: when its frame began (its wait for an earlier frame over), was presented, finished on
 // the GPU and was shown (0: never), on the store's clock in seconds, and how long it waited
 public readonly record struct ShownRow(ulong Present, double Began, double Presented, double GpuEnd, double Shown, double WaitedMs);
 
-// A wait of KSA Metal's (the store's waits): when it began on the store's clock, how long, what
+// A wait of the driver's (the store's waits): when it began on the store's clock, how long, what
 public readonly record struct WaitRow(double Start, double Ms, string What);
 
 // A zone's sum over one measuring (the store's zone_stats)
@@ -190,7 +190,7 @@ public static class Measure
     // Zones under this own time a frame are left out of a part's numbers
     private const double ZoneFloorMs = 0.01;
 
-    // One measuring's numbers from its frames: the shown records of its presents (by present), KSA Metal's waits (in the
+    // One measuring's numbers from its frames: the shown records of its presents (by present), the driver's waits (in the
     // order they began), the zone sums of the measuring, and with a timed scenario's part the game's clock and substeps
     // when it opened
     public static Dictionary<string, double> Of(IReadOnlyList<FrameRow> frames, IReadOnlyDictionary<ulong, ShownRow>? shown,
@@ -225,7 +225,7 @@ public static class Measure
         }
         if (presented.Count > 0)
         {
-            // Each frame's own GPU time where KSA Metal gave it for nearly all (a record dropped leaves the frame out), else
+            // Each frame's own GPU time where the driver gave it for nearly all (a record dropped leaves the frame out), else
             // what completed between each present and the one before: never the two in one part
             var own = frameGpu == null ? [] : presented.Where(r => frameGpu.ContainsKey(r.Present)).Select(r => frameGpu[r.Present]).ToArray();
             var gpu = (own.Length >= 0.9 * presented.Count ? own : presented.Select(r => r.GpuMs!.Value)).OrderBy(x => x).ToArray();
@@ -254,7 +254,7 @@ public static class Measure
         return v;
     }
 
-    // PresentMon's breakdown of the frames that were presented, from KSA Metal's times of each and its waits
+    // PresentMon's breakdown of the frames that were presented, from the driver's times of each and its waits
     private static void Presented(Dictionary<string, double> v, List<ShownRow> rows, IReadOnlyList<WaitRow> waits)
     {
         static double[] Ms(IEnumerable<double> seconds) => seconds.Select(s => s * 1000).OrderBy(x => x).ToArray();
@@ -276,7 +276,7 @@ public static class Measure
         }
     }
 
-    // The ms of KSA Metal's waits within a span of the store's clock (waits in the order they began; each clipped to it):
+    // The ms of the driver's waits within a span of the store's clock (waits in the order they began; each clipped to it):
     // their union, since one may hold another (vkQueuePresentKHR the drawable's, vkQueueSubmit a residency commit)
     private static double WaitedIn(IReadOnlyList<WaitRow> waits, double from, double to)
     {

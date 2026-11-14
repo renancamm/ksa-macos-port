@@ -553,7 +553,7 @@ public static partial class Program
             return File.Exists(director) && !Encoding.Latin1.GetString(File.ReadAllBytes(director)).Contains("RunPlan", StringComparison.Ordinal);
         }
 
-        // Whether the app's KSA Metal has that benchmark function
+        // Whether the app's driver has that benchmark function
         private bool DriverHas(string function)
         {
             var lib = Path.Combine(_res, "libvulkan.1.dylib");
@@ -578,7 +578,7 @@ public static partial class Program
             if (_purpose == Purpose.Profile)
             {
                 if (!DriverHas("ksaMtlZoneMode"))
-                    Die("this app's KSA Metal can't time the game's GPU zones: update it with ./port.sh.");
+                    Die("this app's driver can't time the game's GPU zones: update it with ./port.sh.");
                 _tools.Add(RunPlan.ProfiledTool);
             }
             if (_hud)
@@ -610,7 +610,7 @@ public static partial class Program
                 if (_capture)
                     Die("--catch plays the game with no capture mode, --capture needs it: choose one.");
                 if (!DriverHas("ksaMtlPassDump"))
-                    Die("this app's KSA Metal can't dump passes: update it with ./port.sh.");
+                    Die("this app's driver can't dump passes: update it with ./port.sh.");
                 _catch = RunFolder(_catch, TestPlayed);
                 if (_noShots)
                     Die("--catch compares screenshots: it can't go with --no-shots.");
@@ -627,7 +627,7 @@ public static partial class Program
                 if (_catchCapture)
                 {
                     if (!DriverHas("ksaMtlCapture"))
-                        Die("this app's KSA Metal can't capture frames: update it with ./port.sh.");
+                        Die("this app's driver can't capture frames: update it with ./port.sh.");
                     if (FreeGb() < 40)
                         Die($"--catch-capture needs 40 GB free on this disk ({FreeGb()} GB free).");
                     _tools.Add("frame captures of broken pictures");
@@ -641,7 +641,7 @@ public static partial class Program
                 if (_catch.Length > 0 || _capture)
                     Die("--passes is a clean run's dump at every place: it can't go with --catch or --capture.");
                 if (!DriverHas("ksaMtlPassDump"))
-                    Die("this app's KSA Metal can't dump passes: update it with ./port.sh.");
+                    Die("this app's driver can't dump passes: update it with ./port.sh.");
                 if (_noShots)
                     Die("--passes dumps at the screenshots: it can't go with --no-shots.");
                 if (Named == 0 && !_fast && _test != "mixed")
@@ -651,7 +651,7 @@ public static partial class Program
             if (_capture)
             {
                 if (!DriverHas("ksaMtlCapture"))
-                    Die("this app's KSA Metal can't capture frames: update it with ./port.sh.");
+                    Die("this app's driver can't capture frames: update it with ./port.sh.");
                 if (Named == 0)
                     Die("a capture takes several GB at every screenshot: choose places (./benchmark.sh investigate capture jupiter2).");
                 if (FreeGb() < 20)
@@ -694,7 +694,7 @@ public static partial class Program
                     !DriverHas("ksaMtlFrameStats"))
                     Die("triggers need the app's KSA Metal driver, which this app doesn't have.");
                 if (rule.Has(TriggerAction.Passes) && !DriverHas("ksaMtlPassDump"))
-                    Die("this app's KSA Metal can't dump passes: update it with ./port.sh.");
+                    Die("this app's driver can't dump passes: update it with ./port.sh.");
                 if (rule.Has(TriggerAction.Passes) && FreeGb() < 1)
                     Die($"a trigger that dumps passes needs 1 GB free on this disk ({FreeGb()} GB free).");
                 if (rule.Has(TriggerAction.Capture) && _capture)
@@ -702,7 +702,7 @@ public static partial class Program
                 if (rule.Has(TriggerAction.Capture))
                 {
                     if (!DriverHas("ksaMtlCapture"))
-                        Die("this app's KSA Metal can't capture frames: update it with ./port.sh.");
+                        Die("this app's driver can't capture frames: update it with ./port.sh.");
                     if (FreeGb() < 20)
                         Die($"a trigger that captures frames needs 20 GB free on this disk ({FreeGb()} GB free).");
                 }

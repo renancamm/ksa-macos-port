@@ -95,7 +95,7 @@ public static class Checks
         }
     }
 
-    // The game's log of each session: KSA Metal's errors, the game's own (but in a timed scenario, whose settings may hold
+    // The game's log of each session: the driver's errors, the game's own (but in a timed scenario, whose settings may hold
     // warp back), exceptions nobody caught, settings it couldn't read, the GPU reset by macOS
     private static IEnumerable<Finding> LogErrors(RunEvidence run)
     {
@@ -173,7 +173,7 @@ public static class Checks
         // A profiled pass costs the measured ones nothing but the game's start with GPU zones; other tools' cost is in them
         var tools = Fact("Tools").Replace(RunPlan.ProfiledTool + ", ", "").Replace(RunPlan.ProfiledTool, "").Trim(' ', ',');
         if (Fact("Tools").Contains(RunPlan.ProfiledTool, StringComparison.Ordinal))
-            yield return Note("profiled", "the game started with GPU zones for its profiled pass, so KSA Metal gave every image memory of its own: " +
+            yield return Note("profiled", "the game started with GPU zones for its profiled pass, so the driver gave every image memory of its own: " +
                                           "the measured pass's memory, and a little its GPU time, may differ from a plain run's; the profiled pass's numbers are kept apart");
         if (tools.Length > 0 && tools != "none")
             yield return Note("tools", $"measured with {tools}: their own cost is in the numbers");

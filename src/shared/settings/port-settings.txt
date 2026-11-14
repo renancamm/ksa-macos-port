@@ -1,6 +1,6 @@
 # The port settings: every setting of port-settings.toml, in the file's order. The hooks' loader
 # (src/game/hooks/loader/) reads this table when the game starts and sets each setting the file changes as the
-# environment variable that KSA Metal, its shims and its hooks read; the Mac Port tab in the game's settings
+# environment variable that the driver, the shims and the hooks read; the Mac Port tab in the game's settings
 # (src/game/hooks/tab/) draws its rows from it; KsaPort.Tools.SettingsGenerator (README.md in this folder) makes the
 # file's commented template from it, and port-settings.h, the variables and defaults the native code reads. A
 # setting's variable is KSA_MTL_ and its key in capitals (shader_constant_memory: KSA_MTL_SHADER_CONSTANT_MEMORY);
@@ -23,8 +23,8 @@
 #             While one isn't met, it keeps its default
 #   applies   live: on Apply, in the running game (the hooks read it while the game runs); restart: when the game
 #             starts
-#   by        what does it (comma separated): driver (KSA Metal), ktx-shim, launcher (the app's executable, which
-#             reads it from the file itself), hooks (the hooks and their loader),
+#   by        what does it (comma separated): driver, ktx-shim, launcher (the app's executable, which reads it
+#             from the file itself), hooks (the hooks and their loader),
 #             hooks:<hook>, a class marked [Hook] (src/game/hooks/Hooks.cs) by its name, which the tab shows the
 #             setting as unavailable without (skipped or failed), metal:<variable>, Apple's variable that Metal reads,
 #             which the setting sets instead of its own, or tab: the tab's own, which sets no variable
@@ -121,8 +121,8 @@ strict_sync | bool | false | | restart | driver | | | | | Run all GPU work stric
 precise_math | bool | false | | restart | driver | | | | | Compile shaders without fast math: rules out precision problems.
 
 [diagnostics] Diagnostics | Logs, measurements, dumps and screenshots, for work on the port. | file
-log | int:0:2 | 0 | | restart | driver | | | | | KSA Metal's log: 0 errors only, 1 also warnings and the first call of each function, 2 also object creation.
-log_file | text | | | restart | driver | | | | | Write KSA Metal's log to this file instead of console.log.
+log | int:0:2 | 0 | | restart | driver | | | | | The driver's log: 0 errors only, 1 also warnings and the first call of each function, 2 also object creation.
+log_file | text | | | restart | driver | | | | | Write the driver's log to this file instead of console.log.
 stalls | number:0:10000 | 0 | | restart | driver | | | | | Log what blocks the game longer than this many milliseconds: waits for fences, drawables and submits, residency set commits, late command buffers, allocations of 16 MB or more.
 frames | text | | | restart | driver | | | | | A CSV file of every frame: CPU frame time, GPU busy time, draws, dispatches and allocated memory.
 latency | text | | | restart | driver | | | | | A CSV file of every frame's timing: when it began, was presented, was done on the GPU and was shown.
@@ -135,7 +135,7 @@ watch | text | | | restart | driver | | | | | A folder: every 31 presents, a loo
 watch_white | number:0:100 | 30 | watch | restart | driver | | | | | The share of pure white, in percent, at which watch counts an image as broken (0: every image, to test it).
 dump_msl | text | | | restart | driver | | | | | A folder: write every translated shader, and the errors of those that fail to compile.
 dump_spv | text | | | restart | driver | | | | | A folder: write every shader module the game creates as <hash>.spv.
-shader_corpus | text | | | restart | driver | | | | | A folder: record every shader translation's inputs and result there, for KSA Metal's shader corpus test.
+shader_corpus | text | | | restart | driver | | | | | A folder: record every shader translation's inputs and result there, for the driver's shader corpus test.
 shots | text | | | restart | driver | | | | | <n>,...: save the presented image as shot_<n>.png at these points.
 shot_unit | choice:presents=presents/frames=frames/seconds=seconds | presents | shots | restart | driver | | | | | What shots counts: presents, or frames or seconds from the first in-game frame.
 shot_dir | text | | shots | restart | driver | | | | | Where shots go (default: the current folder).

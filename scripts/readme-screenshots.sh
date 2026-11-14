@@ -39,7 +39,7 @@ pictures="$(sed -n 's/^.*Window: \(.*\) (a picture of.*$/\1/p' "${LOG}" | tail -
 [ -d "${pictures}" ] || die "the run left no pictures of the window (${LOG})."
 
 # PNGs at most 1600 pixels wide: sharp on a Retina display at the README's width. The game's picture is the window's,
-# with the HUD and the window's transparent rounded corners; the tab's is KSA Metal's screenshot of the view, without
+# with the HUD and the window's transparent rounded corners; the tab's is the driver's screenshot of the view, without
 # the HUD.
 picture() {
     [ -f "$1" ] || die "no picture $1."

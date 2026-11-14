@@ -17,7 +17,7 @@ using KSA.Rendering.Raytracing;
 namespace KsaMetal.Hooks.Features;
 
 // MetalFX for the render scale (upscaling "metalfx" or "spatial"), and the motion that frame interpolation needs.
-// Before the final composite, KSA Metal's vkCmdUpscaleKSA (src/game/driver/presentation/upscale.mm) scales the main
+// Before the final composite, the driver's vkCmdUpscaleKSA (src/game/driver/presentation/upscale.mm) scales the main
 // view's image into an image of the swapchain's size (the display's pixels), which the composite then reads instead.
 // For MetalFX's temporal upscaler, the projection moves by a different sub-pixel offset every frame (a Halton
 // sequence of 16), the cockpit's ray tracing's too, and the driver makes the motion vectors from the depth buffer and
