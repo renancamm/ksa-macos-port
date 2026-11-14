@@ -20,7 +20,7 @@ public static partial class Program
     private sealed partial class BenchmarkRun
     {
         // The script stands at one moment on purpose with --hold, and for as long as a tool takes at a checkpoint
-        private bool StandsStill => _hold.Length > 0 || _capture || Triggers.HoldCheckpoints(_rules);
+        private bool StandsStill => _hold.Length > 0 || _capture || _window || Triggers.HoldCheckpoints(_rules);
 
         // The passes of each game session, by what the run is for: measure's a warm-up and its measured passes, profile's a
         // warm-up, a measured and a profiled one; one measured pass otherwise
@@ -145,6 +145,7 @@ public static partial class Program
 
         // The settings facts of the run: the preset and what changed on top of it
         private string PresetFact => _preset.Length > 0 ? $"{_preset}, on a fresh install's settings"
+            : _tabPreset.Length > 0 ? $"the Mac Port tab's {TabPresets.Find(_tabPreset)!.Name}, on {(_defaults ? "a fresh install's" : "own")} settings"
             : _defaults ? "none, a fresh install's settings" : "none, own settings";
 
         private string ChangedFact
@@ -228,7 +229,7 @@ public static partial class Program
             var plan = new RunPlan { Passes = Passes() };
             if (_purpose == Purpose.Profile)
             {
-                // KSA Metal can split render passes at the game's GPU zones in the profiled pass: memory for every attachment
+                // The driver can split render passes at the game's GPU zones in the profiled pass: memory for every attachment
                 env["KSA_MTL_GPU_ZONES"] = "1";
             }
             if (_hud)
@@ -251,7 +252,7 @@ public static partial class Program
             }
             // Encoders named after the game's GPU zones, where the tool shows their names
             plan.Record.ZoneLabels = env.ContainsKey("KSA_MTL_LABELS");
-            // The triggers, the defaults among them; catch's own look at every 31st image besides, KSA Metal's watch
+            // The triggers, the defaults among them; catch's own look at every 31st image besides, the driver's watch
             plan.On = _rules.Select(r => r.ToString()).ToList();
             plan.Against = _catch;
             if (_catch.Length > 0)
@@ -260,6 +261,7 @@ public static partial class Program
                 env["MTL_CAPTURE_ENABLED"] = env["KSA_MTL_LABELS"] = "1";
             plan.Record.Film = _film;
             plan.Record.CameraLog = _cameraLog;
+            plan.Record.Window = _window;
             plan.Record.Probes = [.. _probes];
             foreach (var kv in _knobs)
                 plan.Record.Knobs[kv[..kv.IndexOf('=')]] = kv[(kv.IndexOf('=') + 1)..];
@@ -362,8 +364,8 @@ public static partial class Program
             Console.CancelKeyPress -= stop;
             term.Dispose();
             hangup.Dispose();
-            // --defaults and presets: the settings as the game saved them, with its defaults filled in
-            if (_defaults || _preset.Length > 0)
+            // --defaults, presets and tab presets: the settings as the game saved them, with its defaults filled in
+            if (_defaults || _preset.Length > 0 || _tabPreset.Length > 0)
                 File.Copy(_settings, Path.Combine(_data, "settings.toml"), true);
             var swapAfter = Swap();
             events.Session = 0;
@@ -412,7 +414,7 @@ public static partial class Program
             if (File.Exists(zip))
             {
                 Output.Info($"To share it (up to you): {zip} ({Ask("du", "-h", zip).Split('\t')[0].Trim()}) holds the report, the numbers,");
-                Output.Info($"the logs and the screenshots. Attach it to a new issue: {Issues}");
+                Output.Info("the logs and the screenshots.");
             }
             return failed;
         }
@@ -462,6 +464,8 @@ public static partial class Program
                 var played = EventLog.Read(_out);
                 var beat = EventLog.LastHeartbeat(played, n);
                 progress.Show(beat, elapsed);
+                if (_window)
+                    TakeWindows(played, n, events);
                 // --trace: once the game is up (its first heartbeat), Instruments attaches, and the run starts when it records
                 // (the game waits for it): looked at every second, the watch going on meanwhile
                 if (_trace && tracer == null && beat != null)
@@ -608,7 +612,7 @@ public static partial class Program
         private Process StartTrace(int pid)
         {
             var log = Path.Combine(_data, "xctrace.log");
-            // Points of Interest holds the parts (KSA Metal's signposts)
+            // Points of Interest holds the parts (the driver's signposts)
             var start = new ProcessStartInfo("/bin/sh");
             foreach (var a in new[] { "-c", "exec xcrun xctrace record \"$@\" > \"$0\" 2>&1", log, "--template", _template, "--instrument",
                          "Points of Interest", "--attach", pid.ToString(CultureInfo.InvariantCulture), "--output", Path.Combine(_data, "trace.trace"),
@@ -646,12 +650,42 @@ public static partial class Program
             if (_capture)
                 foreach (var c in Directory.GetFileSystemEntries(_data, "*.gputrace").Order(StringComparer.Ordinal))
                     Output.Info($"Frame capture: {c} (open it in Xcode)");
+            if (_window && Directory.Exists(Path.Combine(_data, "window")))
+                Output.Info($"Window: {Path.Combine(_data, "window")} (a picture of the game's window at each place)");
             if (Directory.Exists(Path.Combine(_data, "caught")))
                 Output.Info($"Caught: {_data}/caught (what the triggers kept: passes and passes.txt, images, frame captures; watch.txt: when the image looked broken)");
             // What the triggers did, but keep a moment (the run's store has those)
             foreach (var e in EventLog.Read(_out).Where(e => e.Type == "trigger" &&
                          (e.Text ?? "").Split(": ").ElementAtOrDefault(1)?.Split(", ").All(a => a == "moment" || a.StartsWith("max ", StringComparison.Ordinal)) != true).Take(10))
                 Output.Info($"Trigger: {(e.Scenario != null ? $"{e.Scenario} {e.Part}: " : "")}{e.Text}");
+        }
+
+        // window: a picture of the game's window for each window event of the session not answered yet (screencapture, the
+        // window alone without its shadow), then the answer the checkpoint holds for, with or without a picture
+        private readonly HashSet<string> _windowed = [];
+
+        private void TakeWindows(List<RunEvent> played, int session, EventLog events)
+        {
+            foreach (var e in played.Where(e => e.Type == "window" && e.Session == session && e.Value is > 0))
+            {
+                var name = $"{e.Scenario}_{e.Part}";
+                if (!_windowed.Add($"{session} {name}"))
+                    continue;
+                var folder = Path.Combine(_data, "window");
+                Directory.CreateDirectory(folder);
+                var path = Path.Combine(folder, name + ".png");
+                var number = ((long)e.Value!.Value).ToString(CultureInfo.InvariantCulture);
+                // At most 30 s, so that the watch over the game goes on
+                using var capture = Process.Start(new ProcessStartInfo("screencapture", ["-x", "-o", "-l", number, path]) { RedirectStandardError = true })!;
+                bool exited = capture.WaitForExit(30_000);
+                if (!exited)
+                    capture.Kill();
+                var error = exited ? capture.StandardError.ReadToEnd().Trim() : "screencapture took over 30 s";
+                if (!exited || capture.ExitCode != 0 || !File.Exists(path))
+                    Output.Warn($"window: no picture of {e.Part}{(error.Length > 0 ? $" ({error})" : "")}. The terminal that runs " +
+                                "benchmark.sh needs the Screen Recording permission: System Settings > Privacy & Security > Screen & System Audio Recording.");
+                events.Add("windowed", e.Scenario, e.Part, text: File.Exists(path) ? Path.GetFileName(path) : null);
+            }
         }
     }
 

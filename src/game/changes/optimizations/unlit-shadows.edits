@@ -1,4 +1,4 @@
-# The same image, faster: Skip Shadows on Unlit Sides (the tab's Optimizations), which KSA Metal turns off with
+# The same image, faster: Skip Shadows on Unlit Sides (the tab's Optimizations), which the driver turns off with
 # KSA_MTL_SKIP_SHADOWS_ON_UNLIT_SIDES=0.
 #
 # The terrain's, the vessels', the kitten's and the buildings' shaders multiply the sun's light by the cascaded shadows
@@ -8,7 +8,7 @@
 # multiply light that can be zero: the sun's on the terrain and on the buildings, the planet's own shadow on the ground
 # clutter (for its light and the grass's glow from behind), and the planets' shadow on the ocean's colour (cloud
 # shadows). The terrain's and the clouds' shadows take derivatives, so they are skipped only where a whole 2x2 quad of
-# pixels has no light (quad operations, which KSA Metal supports): on the night side, on slopes turned from the sun and
+# pixels has no light (quad operations, which the driver supports): on the night side, on slopes turned from the sun and
 # in an eclipse. Where the terrain is in the planet's own shadow with no forward lights (vessels' lamps), every term of
 # its colour is zero: such quads are drawn black without their textures. The godrays' march, which the clouds' raymarch
 # runs too, multiplies the light reaching each step by the terrain's, the trails' and the clouds' shadows: they are
@@ -16,7 +16,7 @@
 # tracing traces a shadow ray towards each light that casts shadows, also from surfaces turned away from it: only where
 # the light isn't zero.
 #
-# The edits read PORT_SKIP_UNLIT_SHADOWS, a specialization constant (id 900) that KSA Metal sets to false when
+# The edits read PORT_SKIP_UNLIT_SHADOWS, a specialization constant (id 900) that the driver sets to false when
 # KSA_MTL_SKIP_SHADOWS_ON_UNLIT_SIDES is 0. Each shader that uses it declares it first (switch-*), behind a guard, as
 # a shader may include two of the files that declare it. A check (*-uses) makes sure the code that uses what an edit
 # skips still reads as it does here: a KSA version that changed it keeps the game's code, never a different image.
@@ -590,7 +590,7 @@ mix(cloudShadow, 1.0, 0.5));
 @@ replace
         if(lightData.color.w > 0.5 && (!PORT_SKIP_UNLIT_SHADOWS || any(notEqual(light, vec3(0.0))))){  // macOS port: no shadow ray where there is no light
 
-@@ # Shared Shadow Samples (the tab's Optimizations), which KSA Metal turns off with KSA_MTL_SHARED_SHADOW_SAMPLES=0: the
+@@ # Shared Shadow Samples (the tab's Optimizations), which the driver turns off with KSA_MTL_SHARED_SHADOW_SAMPLES=0: the
 @@ # terrain's sun shadow map is filtered with 16 to 32 taps (PCSS) or the PCF kernel for every pixel of the terrain and
 @@ # the ground clutter, though its texels are metres wide. The pixels of a 2x2 quad share them: each takes every fourth
 @@ # tap and the quad sums (copies of the game's filters in SunShadows.glsl, which a check holds to the game's). They

@@ -7,7 +7,7 @@ using System.Text.Json.Serialization;
 namespace KsaPort.Common.Benchmark;
 
 // What one play of the scenarios is for: a warm-up (its numbers kept apart: the Mac's heat, the caches), measured (the
-// run's numbers, the only ones compared), or profiled (the game's GPU zones on, KSA Metal splitting render passes at
+// run's numbers, the only ones compared), or profiled (the game's GPU zones on, the driver splitting render passes at
 // them: named zones, at a cost of their own; its numbers kept apart)
 public enum PassKind { WarmUp, Measured, Profiled }
 
@@ -136,11 +136,11 @@ public sealed class PlayPlan
     public bool Stay { get; set; }
 }
 
-// What the run records besides what every run does (its frames and events, KSA Metal's drain, the game's profilers, the
+// What the run records besides what every run does (its frames and events, the driver's drain, the game's profilers, the
 // runtime's counters): the tools'
 public sealed class RecordPlan
 {
-    // Encoders named after the game's GPU zones, for a trace or a frame capture: its GPU profiler on, KSA Metal answering
+    // Encoders named after the game's GPU zones, for a trace or a frame capture: its GPU profiler on, the driver answering
     // its timestamps at once (the game needs KSA_MTL_LABELS=1)
     public bool ZoneLabels { get; set; }
     // An Xcode GPU frame capture of the view at every checkpoint, <section>_<shot>.gputrace (the game needs
@@ -150,6 +150,9 @@ public sealed class RecordPlan
     public double Film { get; set; }
     // The camera's place every frame into camera-log.csv, to check its moves are smooth
     public bool CameraLog { get; set; }
+    // A picture of the game's window at every checkpoint after its screenshot, with what macOS draws over the game
+    // (Apple's Metal Performance HUD): the checkpoint holds until benchmark.sh has taken it (the window probe)
+    public bool Window { get; set; }
     // Probes (Probes.cs): the benchmark's own by their names (memory), assemblies by their paths
     public List<string> Probes { get; set; } = [];
     // The probes' knobs, <probe>.<key> to its value as written (cloud.light: the knob light of the probe cloud)

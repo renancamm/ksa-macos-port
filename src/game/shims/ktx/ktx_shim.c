@@ -10,7 +10,7 @@
  * file:
  *
  * - the game's own file, when its bytes are the texture's (compared): an uncompressed KTX2, a DDS;
- * - otherwise a copy written once to textures/ in KSA Metal's cache folder (~/Library/Caches/ksa-metal, or
+ * - otherwise a copy written once to textures/ in KSA Metal's cache folder (~/Library/Caches/Kitten Space Agency, or
  *   KSA_MTL_CACHE_DIR), named after the file's path, size and date (a zstd-compressed KTX2 is decompressed there
  *   once, a PNG decoded there once: later starts map the copy without decoding the file). A copy is dated when used;
  *   copies unused for 60 days (from an older version of the game) are deleted when the game starts.
@@ -170,7 +170,7 @@ static void findCache(void) {
     const char* custom = portSettingsRead().cacheDir;
     const char* home = getenv("HOME");
     if (custom && *custom) snprintf(g_parent, sizeof g_parent, "%s", custom);
-    else if (home) snprintf(g_parent, sizeof g_parent, "%s/Library/Caches/ksa-metal", home);
+    else if (home) snprintf(g_parent, sizeof g_parent, "%s/Library/Caches/Kitten Space Agency", home);
     else return;
     snprintf(g_cacheDir, sizeof g_cacheDir, "%s/textures", g_parent);
     cleanCache(g_cacheDir);

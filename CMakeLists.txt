@@ -1,4 +1,4 @@
-# The whole build of the port, with every download declared in cmake/dependencies.cmake: KSA Metal, the GLFW and KTX
+# The whole build of the port, with every download declared in cmake/dependencies.cmake: the driver, the GLFW and KTX
 # shims and the launcher; the files made from the settings table and Vulkan's registry; the .NET projects; the app's
 # icon. `cmake --install` assembles the port folder (cmake/port-folder.cmake), and ctest runs the tests. build.sh runs
 # the four steps, with the KSA the hooks and the benchmark are built against:

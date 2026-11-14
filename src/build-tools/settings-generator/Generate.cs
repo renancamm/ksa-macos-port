@@ -159,7 +159,7 @@ internal static class Generate
     private static string Header()
     {
         var t = new StringBuilder("""
-            // The port settings of the native code, KSA Metal and the KTX shim: made from
+            // The port settings of the native code, the driver and the KTX shim: made from
             // src/shared/settings/port-settings.txt by KsaPort.Tools.SettingsGenerator
             // (src/shared/settings/README.md), which the native build runs. Edit the table, not this.
             //

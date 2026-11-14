@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -44,6 +45,7 @@ internal static class Tests
             ("the hooks' view of the settings", HooksLoad),
             ("what the loader sets", LoaderPlan),
             ("Auto Memory Saving", Memory),
+            ("the tab's presets", TabPresetValues),
         };
         foreach (var (name, run) in tests)
         {
@@ -349,6 +351,37 @@ internal static class Tests
         Equal(2048, AutoMemorySaving.Limit(0, 2048), "automatic takes the limit");
         Equal(2048, AutoMemorySaving.Limit(4096, 2048), "above the limit");
         Equal(1024, AutoMemorySaving.Limit(1024, 2048), "below the limit");
+    }
+
+    // The tab's presets: every one gives every game setting (Game Defaults the game's), each with its key, their ids the
+    // preset setting's values, their port values the table's, and Auto Memory Saving's limits on top with 8 GB or less
+    private static void TabPresetValues()
+    {
+        Check(TabPresets.All.Select(p => p.Id).ToHashSet().SetEquals(Setting(TabPresets.Key).Choices.Select(c => c.Value)),
+            $"the presets' ids aren't the values of {TabPresets.Key}");
+        Equal("game_defaults", TabPresets.All[^1].Id, "Game Defaults last");
+        foreach (var preset in TabPresets.All)
+        {
+            var game = TabPresets.GameValues(preset, false);
+            Check(preset.Game == null == (preset.Index < 0), $"{preset.Id}: game values only with a column of the table");
+            if (game != null)
+                Check(game.Keys.ToHashSet().SetEquals(TabPresets.Keys.Keys), $"{preset.Id} doesn't give every game setting with a key");
+            foreach (var (key, value) in TabPresets.Port(preset))
+                Check(Setting(key).Valid(value), $"{preset.Id}: {key} has no value {value}");
+            Check(TabPresets.Port(preset).Count > 10, $"{preset.Id}: only {TabPresets.Port(preset).Count} port settings");
+        }
+        var quality = TabPresets.Find("quality")!;
+        Equal("off", TabPresets.Port(quality)["upscaling"], "Quality's upscaling");
+        Check(!TabPresets.Port(quality).ContainsKey("render_scale"), "no render scale without upscaling");
+        Equal("0.75", TabPresets.Port(TabPresets.Find("balanced")!)["render_scale"], "Balanced's render scale");
+        var small = TabPresets.GameValues(quality, true)!;
+        foreach (var (field, key, atMost) in AutoMemorySaving.SmallGame)
+        {
+            Check(int.Parse(small[field], CultureInfo.InvariantCulture) is var v && v > 0 && v <= atMost, $"Quality with 8 GB: {field} = {small[field]}");
+            Equal(key, TabPresets.KeyOf(field), $"{field}'s key");
+        }
+        Equal("4096", quality.Game!["TerrainShadowMapSize"], "Quality's own terrain shadows, without the limits");
+        Check(TabPresets.Find("high") == null, "a benchmark preset isn't a tab preset");
     }
 
     private static void LoaderPlan()

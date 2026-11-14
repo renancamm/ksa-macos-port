@@ -25,17 +25,17 @@ public static class AutoMemorySaving
     public static IEnumerable<PortSetting> Rows => PortSettings.All.Where(s => s.Memory.Length > 0);
 
     // The game's settings with 8 GB or less: the field of GameSettings or GameSettings.Graphics, its key in
-    // settings.toml, and the largest value it keeps (0, none or automatic, becomes it). The texture streamer's budget,
+    // settings.toml (<section>.<key>), and the largest value it keeps (0, none or automatic, becomes it). The texture streamer's budget,
     // on automatic, is worked out once from the GPU memory free at its first frame (90 % of it, in powers of two,
     // 512 MB at least): an 8 GB Mac gets 512, and memory the rows free at load would only grow it (to 1024 MB in the
     // solar system with Fewer Effects at Once, more than it saves)
     public static readonly (string Field, string Key, int AtMost)[] SmallGame =
     [
-        ("TerrainTextureCap", "celestialTextureCap", 2048),
-        ("VesselTextureCap", "vesselTextureCap", 2048),
-        ("TerrainShadowMapSize", "terrainShadowMapSize", 2048),
-        ("CascadedShadowMapSize", "cascadedShadowMapSize", 2048),
-        ("TextureStreamingBudget", "textureStreamingBudgetMb", 512),
+        ("TerrainTextureCap", "graphics.celestialTextureCap", 2048),
+        ("VesselTextureCap", "graphics.vesselTextureCap", 2048),
+        ("TerrainShadowMapSize", "graphics.terrainShadowMapSize", 2048),
+        ("CascadedShadowMapSize", "graphics.cascadedShadowMapSize", 2048),
+        ("TextureStreamingBudget", "graphics.textureStreamingBudgetMb", 512),
     ];
 
     // Of those, the ones the game's tabs can't change (its Graphics tab shows the streaming budget, without a control):

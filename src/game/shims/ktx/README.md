@@ -23,4 +23,4 @@ key in capitals):
 | Setting | Effect |
 |---|---|
 | `textures_kept_on_disk` | on: the shim maps textures' pixels from their files; off, the default: it leaves every texture as its library made it |
-| `cache_dir` | a folder: where the copies go, as KSA Metal's cache (default: `~/Library/Caches/ksa-metal`) |
+| `cache_dir` | a folder: where the copies go, as KSA Metal's cache (default: `~/Library/Caches/Kitten Space Agency`) |

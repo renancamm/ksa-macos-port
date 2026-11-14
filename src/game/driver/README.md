@@ -1,15 +1,15 @@
-# KSA Metal: the driver
+# The KSA Metal driver
 
-The driver is the part of KSA Metal that draws the game: it implements the part of Vulkan that Kitten Space Agency
+The KSA Metal driver draws the game: it implements the part of Vulkan that Kitten Space Agency
 uses, on top of Metal. The app ships it as `libvulkan.1.dylib`, in the place of the Vulkan loader and a Vulkan
-driver, so nothing in the game changes. In this file, KSA Metal means the driver.
+driver, so nothing in the game changes. It needs macOS 26 for the Metal features it uses.
 
 The main README says what it is, in short ([The driver](../../../README.md#the-driver)). This file has the detail: its
 switches, how to build and test a change, how each Vulkan concept maps onto Metal, and what each source file holds.
 
 ## Configuration
 
-KSA Metal takes its settings from environment variables, which the hooks' loader sets from the port settings ([The Mac
+The driver takes its settings from environment variables, which the hooks' loader sets from the port settings ([The Mac
 Port tab](../../../README.md#the-mac-port-tab)): each setting below is a line of `port-settings.toml`
 ([`../../shared/settings/port-settings.txt`](../../shared/settings/port-settings.txt)), the switches in the tab's
 Optimizations, Memory and GPU Features sections, the debugging settings in the file's Troubleshooting, Diagnostics and
@@ -49,14 +49,14 @@ These switches turn a feature off or change a default, to work around a problem 
 
 ## Build
 
-Building needs the tools in the main README's [Building the port](../../../README.md#building-the-port). From the
+Building needs the tools in the main README's [Building](../../../README.md#building). From the
 repository's folder:
 
 ```bash
 ./build.sh --install
 ```
 
-That builds the port folder (`dist/ksa-macos-port/`) and puts its files into the installed app. KSA Metal is a target
+That builds the port folder (`dist/ksa-macos-port/`) and puts its files into the installed app. The driver is a target
 of the CMake project: [`CMakeLists.txt`](CMakeLists.txt) in this folder lists its sources and flags, and
 `cmake/dependencies.cmake` pins Vulkan-Headers, SPIRV-Cross and SPIRV-Tools; the last two are built once as static
 libraries and linked in. The library goes to `deps/build/natives/libvulkan.1.dylib`, and a change recompiles only the
@@ -91,7 +91,7 @@ Either way, `MTL_SHADER_VALIDATION=1` and `dump_msl` show which shader misbehave
 became. The ground clutter's shader fixes ([`../changes/fixes/`](../changes/fixes/)) were found this
 way.
 
-Vulkan validation layers can't be used, because KSA Metal takes the loader's place. `log` at 1 logs its warnings and
+Vulkan validation layers can't be used, because the driver takes the loader's place. `log` at 1 logs its warnings and
 the first call of each Vulkan function, which shows what the game asks for, and `strict_pipelines` returns pipeline
 errors to the game instead of skipping the pipeline.
 
@@ -103,11 +103,11 @@ The debugging settings, used the same way:
 | `log_file` | a file: write the log there instead of the terminal |
 | `strict_pipelines` | on: return pipeline errors to the game, instead of skipping the pipeline and continuing (pipelines then compile on the game's thread, so every error can go back) |
 | `dump_msl` | a folder: write every translated shader there, and the errors of those that fail to compile |
-| `dump_spv` | a folder: write every shader module the game creates there as `<hash>.spv`, and the modules KSA Metal rewrites for tessellation and ray tracing |
+| `dump_spv` | a folder: write every shader module the game creates there as `<hash>.spv`, and the modules the driver rewrites for tessellation and ray tracing |
 | `shader_corpus` | a folder: record every shader translation's inputs and result there, once each, for the shader corpus test ([`tests/`](tests/)) |
 | `shader_overrides` | a folder: use hand-written Metal source in place of a translated shader, `<folder>/<name>.metal`, named as `dump_msl` names them; each use keeps its own specialization values |
 | `spec` | `<hash>:<id>=<value>,...`: replace a specialization constant of a shader module, whatever the game passes (e.g. fewer iterations of an expensive loop) |
-| `cache_dir` | a folder: where the shader cache goes, and the KTX shim's textures (default: `~/Library/Caches/ksa-metal`) |
+| `cache_dir` | a folder: where the shader cache goes, and the KTX shim's textures (default: `~/Library/Caches/Kitten Space Agency`) |
 | `shots` | `<n>,...`: save the presented image as `shot_<n>.png` at these points |
 | `shot_unit` | what `shots` counts: `presents` (default), or `frames` or `seconds` from the first in-game frame |
 | `shot_dir` | a folder: where shots go (default: the current folder) |
@@ -133,7 +133,7 @@ The debugging settings, used the same way:
 Metal's own tools work too: `MTL_HUD_ENABLED=1` shows Apple's performance overlay, and `MTL_DEBUG_LAYER=1` and
 `MTL_SHADER_VALIDATION=1` check API use and catch out-of-bounds memory access in shaders (slow).
 
-The benchmark's mod and the hooks talk to KSA Metal through the only functions it exports besides Vulkan's, in
+The benchmark's mod and the hooks talk to the driver through the only functions it exports besides Vulkan's, in
 `diagnostics/instruments.mm`, `diagnostics/drain.mm`, `diagnostics/zones.mm`, `diagnostics/passdump.mm`,
 `pipelines/stages.mm` and `presentation/swapchain.mm`:
 
@@ -159,31 +159,31 @@ Vulkan and Metal are both explicit, low-level GPU APIs with similar ideas, which
 possible. These are the main pieces:
 
 **Memory.** In Vulkan, a program allocates large blocks of GPU memory (`VkDeviceMemory`) and places buffers and
-images inside them. KSA does this through Vulkan Memory Allocator. KSA Metal backs each block with a Metal heap
+images inside them. KSA does this through Vulkan Memory Allocator. The driver backs each block with a Metal heap
 (`MTLHeap`) and one Metal buffer that spans the whole heap. A Vulkan buffer is then just an offset into that heap
 buffer, with no Metal object of its own, and a Vulkan image is a Metal texture placed in the heap at its offset.
 Images of 64 MB or more and buffers of 4 MB or more ask for a block of their own, so memory the game frees goes back
 to macOS. All heaps are in one residency set, so Metal keeps them resident for every command buffer.
 
 **Shaders.** KSA compiles its GLSL shaders to SPIR-V, Vulkan's shader format. Metal only accepts its own shading
-language (MSL). KSA Metal translates each shader with [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross)
+language (MSL). The driver translates each shader with [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross)
 when the game creates a pipeline, and Metal compiles the result. Translation and compilation take time, so:
 
 - Pipelines compile on worker threads, and the game only waits for one when it first uses it.
-- Translations are cached on disk (`~/Library/Caches/ksa-metal`).
+- Translations are cached on disk (`~/Library/Caches/Kitten Space Agency`).
 - At startup, the shaders of the previous run are compiled in the background. Metal keeps compiled shaders in a
   system cache, which macOS clears when it updates; the background compile refills it.
 
 GLSL passes structs to functions by value, and SPIRV-Cross keeps that: a helper that takes one of the game's
 parameter blocks gets a copy of it, field by field, at every call. The smoke and explosion raymarch does this for its
 1.2 KB of parameters several times per step, and a copy whose arrays a helper indexes has to live in memory. Before
-compiling, KSA Metal turns those copies into references to the block itself and lets the helpers take the block's
+compiling, the driver turns those copies into references to the block itself and lets the helpers take the block's
 own type. A shader where that doesn't compile (a copy the shader writes to, a helper also called with a local
 struct) is compiled as translated.
 
 A fragment shader that stores to an image runs before the depth test, as Vulkan and Metal require for its stores, so
 every hidden fragment of its draws is shaded and the GPU's hidden surface removal can't skip it. The vessels' shaders
-store only for selected parts, into the mask the selection outline is drawn from. KSA Metal gives each pipeline whose
+store only for selected parts, into the mask the selection outline is drawn from. The driver gives each pipeline whose
 fragment shader stores only to that mask (and doesn't discard or write depth) a second state that tests depth first, and draws with it
 while `ksaMtlEarlyFragmentTests` says so: the hooks do while no part is selected, when the stores never run, so the
 image is the same. On an M5 at the game's own settings it takes the cockpit's GPU time from 23.9 ms to 21.2.
@@ -225,7 +225,7 @@ the step that carves the cloud's edges with it gives its largest value whatever 
 lighting takes towards the sun often lie there. It takes another 4-7 % off the same views.
 
 **Descriptors.** Vulkan shaders find their resources (buffers, textures, samplers) through *descriptor sets*. Metal's
-equivalent is an *argument buffer*: a block of memory holding GPU addresses and resource IDs. KSA Metal writes each
+equivalent is an *argument buffer*: a block of memory holding GPU addresses and resource IDs. The driver writes each
 descriptor set directly as an argument buffer, where every binding owns consecutive 8-byte slots, and tells
 SPIRV-Cross the same layout, so the translated shader reads the right slot. Shaders read argument buffers as
 `constant` memory, which lets the compiler load the resource handles like uniforms; only the ray tracing kernels
@@ -236,40 +236,40 @@ A descriptor can outlive its buffer. Destroying a buffer moves the descriptors l
 reads it by mistake reads zeros, not what the allocator has put in that memory since.
 
 **Commands.** Vulkan programs record commands into command buffers and submit them; Metal works the same way with
-`MTLCommandBuffer`. KSA Metal encodes Metal commands immediately while the game records, so submitting is cheap.
+`MTLCommandBuffer`. The driver encodes Metal commands immediately while the game records, so submitting is cheap.
 Render passes become Metal render pass descriptors.
 
 **Synchronization.** Vulkan programs say explicitly which work has to finish before other work starts (*barriers*).
-Metal can express this with fences between *encoders*, the groups of commands inside a command buffer. KSA Metal
+Metal can express this with fences between *encoders*, the groups of commands inside a command buffer. The driver
 sorts work into a few stage classes (compute, transfer, vertex, fragment, acceleration structure builds) and turns
 each barrier into fence waits between them. Work that doesn't depend on each other can overlap on the GPU, for
 example the vertex work of one render pass with the fragment work of the previous one.
 
 **Tessellation.** KSA tessellates its terrain in a compute pass of its own; its ocean uses Vulkan's tessellation
 pipeline. That pipeline has a vertex shader, a control shader, a fixed-function tessellator and an evaluation shader.
-Metal's tessellator has no vertex or control stages, so KSA Metal runs those two as compute kernels that write their
+Metal's tessellator has no vertex or control stages, so the driver runs those two as compute kernels that write their
 output into scratch buffers, then draws the patches with the evaluation shader as Metal's post-tessellation vertex
 function.
 
-When the control shader passes its control points through unchanged, as KSA's ocean shaders do, KSA Metal strips
+When the control shader passes its control points through unchanged, as KSA's ocean shaders do, the driver strips
 the copies from it at the SPIR-V level, and the evaluation stage reads the vertex kernel's output in their place.
 
 **Ray tracing.** KSA uses ray queries for ground clutter placement, and ray tracing pipelines for lighting inside
 the cockpit (IVA). Ray queries and acceleration structures map onto Metal's; each structure is placed in the heap of
 the buffer the game made for it, as Vulkan places it, so it takes no memory of its own. Metal has no ray tracing
-pipelines, so KSA Metal rewrites each one into a single compute kernel: every "trace ray" in the ray generation shader
+pipelines, so the driver rewrites each one into a single compute kernel: every "trace ray" in the ray generation shader
 becomes a ray query, and the hit and miss shaders become functions called from it. The rewrite works on SPIR-V, using
 [SPIRV-Tools](https://github.com/KhronosGroup/SPIRV-Tools) to link the shaders together
 ([`rtspirv.cpp`](shaders/rtspirv.cpp)).
 
 KSA's instances are opaque, so each of those ray queries stops only at the closest hit (or, for a shadow ray, at
-any hit). Before compiling, KSA Metal turns each of them into one call of Metal's *intersector*, which searches the
+any hit). Before compiling, the driver turns each of them into one call of Metal's *intersector*, which searches the
 acceleration structure faster, with the same image. A kernel where that doesn't compile is compiled as translated.
 
-**Presentation.** The swapchain's images are KSA Metal's own textures. When the game presents one, it is copied into
+**Presentation.** The swapchain's images are the driver's own textures. When the game presents one, it is copied into
 the window's `CAMetalLayer` drawable. With Vsync, KSA waits for the frame before last to be presented before it
 reads input. In a window, macOS shows a frame about 21 ms after the GPU finishes it, so waiting for the display
-would leave the GPU idle whenever a frame takes less than that. KSA Metal also ends the wait once that frame is done
+would leave the GPU idle whenever a frame takes less than that. The driver also ends the wait once that frame is done
 on the GPU, the one before it is on screen, and the GPU is about to need the next frame (predicted from the last
 frames' GPU and CPU times). Frames then start when the GPU can take them, without queueing up. With
 `steady_frame_rate`, each drawable is presented with a minimum duration (two refreshes, one with frame
@@ -287,11 +287,11 @@ the scene reaches above it. The hooks pass both in at every Apply ([`Hdr.cs`](..
 light clipped. In the benchmark's places, HDR output
 takes about 1-5 % more GPU time (M5, one run each).
 
-**MetalFX.** For the port settings, the patched game ([KSA Metal Hooks](../hooks/)) calls entry points that are KSA
-Metal's own, exported next to Vulkan's: `vkCmdUpscaleKSA` scales the main view's image into one of the swapchain's
+**MetalFX.** For the port settings, the patched game ([KSA Metal Hooks](../hooks/)) calls entry points that are the
+driver's own, exported next to Vulkan's: `vkCmdUpscaleKSA` scales the main view's image into one of the swapchain's
 size (the display's pixels) before the final composite (past the temporal upscaler's largest scale, 3x on an M5, it
 upscales as far as it can and the spatial upscaler does the rest), `vkCmdUpscaleSnapshotKSA` copies the scene before its translucent effects, and `vkCmdMarkUiKSA`
-copies it again after the composite, before the UI. For MetalFX's temporal upscaler, KSA Metal makes the motion
+copies it again after the composite, before the UI. For MetalFX's temporal upscaler, the driver makes the motion
 vectors in a kernel of its own, from the depth buffer and the reprojections the game passes, and marks what the
 translucent effects changed as reactive. Between the encoders MetalFX adds and the game's work it puts full event
 barriers. Frame interpolation presents a frame MetalFX makes from the last two scenes, their motion and depth, with this
@@ -326,7 +326,7 @@ The complete mapping:
 | Transient attachments | memoryless textures (tile memory only) |
 | Swapchain | own textures at the display's pixels, copied into the `CAMetalLayer` drawable at present |
 | HDR10 colour space, `vkSetHdrMetadataEXT` | the layer in PQ with EDR and `CAEDRMetadata`, the game's UI brightness at SDR white |
-| `vkCmdUpscaleKSA`, `vkCmdUpscaleSnapshotKSA`, `vkCmdMarkUiKSA`, `vkGetUpscaleMaxScaleKSA` | KSA Metal's own: MetalFX for the hooks |
+| `vkCmdUpscaleKSA`, `vkCmdUpscaleSnapshotKSA`, `vkCmdMarkUiKSA`, `vkGetUpscaleMaxScaleKSA` | the driver's own: MetalFX for the hooks |
 
 Buffer indices per shader stage: 0-9 descriptor sets, 10 push constants, 11 draw index, 12 buffer sizes, 13 view
 mask, 14 dynamic offsets, 15 texture swizzles, 16-21 tessellation stage buffers, 22 ray tracing launch size, 30 - n
@@ -364,7 +364,7 @@ share is in that folder's header too, under a heading that says so (`stages.h` f
 | `commands/draws.mm` | draws and dispatches, tessellated draws |
 | `commands/passes.mm` | barriers, render passes and dynamic rendering |
 | `commands/transfers.mm` | copies, blits, fills, clears, updates, queries, debug labels |
-| `commands/internal.mm` | KSA Metal's own shaders: buffer fills, scaled blits, tessellation helpers |
+| `commands/internal.mm` | the driver's own shaders: buffer fills, scaled blits, tessellation helpers |
 | `presentation/swapchain.mm` | swapchain and presentation: pacing, HDR, frame interpolation at present, latency |
 | `presentation/upscale.mm` | MetalFX: upscaling, motion vectors, frame interpolation |
 | `diagnostics/instruments.mm` | what is measured at each present: frame log, screenshots, exits, the benchmark's interface, frame captures, signposts |
@@ -376,6 +376,6 @@ share is in that folder's header too, under a heading that says so (`stages.h` f
 
 ## Not implemented
 
-KSA doesn't use these, so KSA Metal doesn't implement them: indexed triangle fans, non-indexed indirect tessellated
+KSA doesn't use these, so the driver doesn't implement them: indexed triangle fans, non-indexed indirect tessellated
 draws, secondary command buffers, and writable multisample storage images (not reported as supported, so the game
 uses its fallback).

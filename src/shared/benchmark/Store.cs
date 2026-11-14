@@ -2,12 +2,12 @@
 // processes never write one file. The game writes run.db (the director's frames and events, the tab's runs' events, and what KSA
 // Metal measured: every present, when each was shown, the waits that blocked the game, large allocations); benchmark.sh's
 // program writes host.db (its events around the game). Every row carries the time on one clock (RunClock: the Mac's
-// monotonic clock in seconds, which KSA Metal's own times use), so the tables of both files line up.
+// monotonic clock in seconds, which the driver's own times use), so the tables of both files line up.
 //
 //   meta      key, value: the schema's version
 //   events    a run event (Events.cs) and its time
 //   frames    a frame (Frames.cs) and its time
-//   presents  every present: KSA Metal's numbers for it (DriverStats.FrameStats)
+//   presents  every present: the driver's numbers for it (DriverStats.FrameStats)
 //   shown     a present: when its frame began (the game's wait for an earlier frame ended), was presented, finished on the
 //             GPU and was shown, how long the frame waited, whether pacing ended the wait
 //   waits     a call that blocked the game longer than the threshold the director opened the drain with: what, how long
@@ -22,7 +22,7 @@
 //   counters  a probe's counter, sampled once a frame: its metric's name, its value, and the part it counts in
 //   metrics   a metric a probe registered (Metrics.cs): its name, label, unit, which way is better, how a part's
 //             measurings combine, its limit
-//   census    who held the game's memory at a checkpoint: an owner (one of the game's memory tags, a kind of KSA Metal's
+//   census    who held the game's memory at a checkpoint: an owner (one of the game's memory tags, a kind of the driver's
 //             memory, the .NET heap), its kind, its bytes
 //
 // frames has, after the director's columns, the .NET runtime's work in each frame (RuntimeCounters): GC pause, collections
@@ -287,7 +287,7 @@ public sealed class RunStore : IDisposable
     public void AddCensus(double t, int session, int pass, string? scenario, string shot, string owner, string kind, long bytes) =>
         Enqueue(Table.Census, t, session, pass, scenario, shot, owner, kind, bytes);
 
-    // A record of KSA Metal's drain, in the game session that drained it
+    // A record of the driver's drain, in the game session that drained it
     public void Add(DriverRecord record, int session)
     {
         switch (record)
@@ -460,7 +460,7 @@ public sealed class RunStore : IDisposable
         return frames;
     }
 
-    // KSA Metal's shown records in a run's folder, by present
+    // The driver's shown records in a run's folder, by present
     public static Dictionary<int, Dictionary<ulong, ShownRow>> ReadShown(string dir)
     {
         var shown = new Dictionary<int, Dictionary<ulong, ShownRow>>();
@@ -490,7 +490,7 @@ public sealed class RunStore : IDisposable
         return gpu;
     }
 
-    // KSA Metal's waits in a run's folder, in the order they began
+    // The driver's waits in a run's folder, in the order they began
     public static List<WaitRow> ReadWaits(string dir)
     {
         var waits = new List<WaitRow>();

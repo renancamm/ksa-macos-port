@@ -59,6 +59,10 @@ public static class Directives
         new("@look", [2, 3], "<yaw> <pitch> [s]", "turn the cockpit camera from its seat's forward view, in degrees"),
         new("@fov", [1], "<degrees>", "the camera's field of view, until the camera moves on"),
         new("@sun", [3], "<celestial> <lat> <lon>", "log where the sun stands over that point (to plan the light of a key)"),
+        // The game's interface
+        new("@settings", [1, 2], "open|close|pick <preset>", "the game's settings window (Esc) open on the Mac Port tab, alone over " +
+            "the scene (a run hides the game's interface), or closed; pick clicks a preset's card (performance, balanced, quality, " +
+            "game_defaults) as a player does: its values pending, until the window closes"),
     ];
 
     public static Directive? Find(string name) => All.FirstOrDefault(d => d.Name == name);
@@ -72,6 +76,9 @@ public static class Directives
         bool ok = d.Counts.Length == 2 && d.Counts[1] == Many ? count >= d.Counts[0] : d.Counts.Contains(count);
         // The second yaw and pitch go with the sun alone
         if (d.Name == "@face" && count == 5 && words[3] != "sun")
+            ok = false;
+        // A preset to pick, and nothing after open or close
+        if (d.Name == "@settings" && (count == 2) != (words[1] == "pick"))
             ok = false;
         return ok ? null : $"{d.Name} {d.Usage}";
     }

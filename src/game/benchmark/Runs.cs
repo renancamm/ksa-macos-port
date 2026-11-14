@@ -76,6 +76,9 @@ public static class Runs
     private static Func<string> _hooksSummary = () => "";
     private static Action<IReadOnlyDictionary<string, string>>? _restart;
 
+    // The Mac Port tab's click on a preset's card (@settings pick): false when the tab can't
+    internal static Func<string, bool> PickPreset { get; private set; } = _ => false;
+
     private static void Log(string message) => _log(message);
     // What the hooks applied ("TerrainCache: on; ..."), home as ~
     internal static string HooksSummary => _hooksSummary().Replace(Home, "~");
@@ -86,13 +89,14 @@ public static class Runs
 
     // Called by the hooks once they call AfterFrame after every frame: what the hooks lend (their log, their summary, the
     // game's restart, their patches of the game's methods (prefix, postfix, transpiler), which a run puts in only when it
-    // asks for them, and their lookup of a method by name), and the run that starts with the game (KSA_BENCH_OUT). Returns
-    // what the log says.
+    // asks for them, their lookup of a method by name, and the Mac Port tab's click on a preset's card), and the run that
+    // starts with the game (KSA_BENCH_OUT). Returns what the log says.
     public static string Install(Action<string> log, Func<string> hooksSummary, Action<IReadOnlyDictionary<string, string>>? restart,
         Action<System.Reflection.MethodBase, System.Reflection.MethodInfo?, System.Reflection.MethodInfo?, System.Reflection.MethodInfo?> patch,
-        Func<Type, string, Type[], System.Reflection.MethodInfo> method)
+        Func<Type, string, Type[], System.Reflection.MethodInfo> method, Func<string, bool> pickPreset)
     {
         _log = log;
+        PickPreset = pickPreset;
         GpuZones.Patch = (target, postfix) => patch(target, null, postfix, null);
         Probes.Patcher = patch;
         Probes.Find = method;
@@ -629,7 +633,7 @@ public static class Runs
     {
         if (UncompressedSave.Make(SafetySave) == null)
             throw new InvalidOperationException($"the game could not be saved as \"{SafetySave}\"");
-        var instance = Path.Combine(Home, "Library", "Caches", "ksa-macos-port", "benchmark", "instance");
+        var instance = Path.Combine(Home, "Library", "Caches", "Kitten Space Agency", "benchmark", "instance");
         if (Directory.Exists(instance))
             Directory.Delete(instance, true);
         Directory.CreateDirectory(instance);

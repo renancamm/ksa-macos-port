@@ -48,7 +48,7 @@ internal static class Tests
             ("the terminal's layout", Layout),
             ("the tests' script", Script),
             ("the run's store", Store),
-            ("KSA Metal's drain", Drain),
+            ("the driver's drain", Drain),
             ("the game's zones", ZoneSums),
             ("the triggers' rules", Rules),
             ("a part a trigger disturbed", Disturbed),
@@ -262,7 +262,7 @@ internal static class Tests
         Contains(problems, "the hooks' TerrainCache: skipped (KSA's code moved)", "a skipped hook");
         Contains(problems, "the hooks' HudLayout: failed (NullReferenceException)", "a failed hook");
         Check(!problems.Any(p => p.Contains("OutlineSkip", StringComparison.Ordinal)), "a hook that is on is no problem");
-        Contains(problems, "game.log: [ksa-metal ERROR] pipeline: no function (3 times)", "KSA Metal's errors, counted");
+        Contains(problems, "game.log: [ksa-metal ERROR] pipeline: no function (3 times)", "the driver's errors, counted");
         Contains(problems, "game.log: ERROR Something broke", "the game's own error, without its colours");
         Contains(problems, "the GPU hung or faulted", "a GPU reset");
         Check(!problems.Any(p => p.Contains("master server", StringComparison.Ordinal)), "the game's servers out of reach: no problem");
@@ -701,6 +701,8 @@ internal static class Tests
                  {
                      ("scenario a flight\n0 @shot one 5\n", ":2: @shot <name>"),
                      ("scenario a flight\n0 @nothing\n", ":2: no directive @nothing"),
+                     ("scenario a views\n0 @settings pick\n", ":2: @settings open|close|pick <preset>"),
+                     ("scenario a views\n0 @settings open now\n", ":2: @settings open|close|pick <preset>"),
                      ("scenario a sideways\n", ":1: scenario <name> flight|views|timed"),
                      ("scenario a flight\nscenario a views\n", ":2: scenario a twice"),
                      ("test t a b\nscenario a flight\n0 @shot x\nscenario b views\n0 @shot y\n", "test t mixes kinds"),
@@ -926,7 +928,7 @@ internal static class Tests
         Equal(2.0, Measure.Of(rows, null, null, null, null)[Metrics.Shaders.Name], "without one, from the first frame");
     }
 
-    // CPU busy, CPU wait, display latency, displayed time and animation error from KSA Metal's times of each present
+    // CPU busy, CPU wait, display latency, displayed time and animation error from the driver's times of each present
     private static void PresentMon()
     {
         var frames = new List<FrameRow>();
@@ -1070,7 +1072,7 @@ internal static class Tests
         Equal(100, RunStore.ReadFrames(Path.Combine(unpacked, "stored")).Count, "the zip's store: the frames");
     }
 
-    // The records KSA Metal's drain hands over, read back field by field
+    // The records the driver's drain hands over, read back field by field
     private static void Drain()
     {
         var bytes = new MemoryStream();
@@ -1444,7 +1446,7 @@ internal static class Tests
         Equal(400.0, a.Census.Single(c => c.Kind == "game-total").Mb, "the game's tags all together");
         var md = File.ReadAllText(Path.Combine(_scratch, "probed-a", RunFiles.DataFolder, "report.md"));
         Contains([md], "| earth | earth1 | 5001 | 4.00 |", "report.md's probe numbers");
-        Contains([md], "- earth earth1: game 400 (Planet Textures 300, Shadow Cascades 100), KSA Metal 420, .NET heap 0", "report.md's census");
+        Contains([md], "- earth earth1: game 400 (Planet Textures 300, Shadow Cascades 100), driver 420, .NET heap 0", "report.md's census");
         var page = File.ReadAllText(Path.Combine(_scratch, "probed-a", "report.html"));
         Contains([page], "Who holds the memory", "the page's census");
         Contains([page], "Planet Textures &lt;- Streamer.Load", "another probe's census kind, folded");

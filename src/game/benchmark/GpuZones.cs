@@ -1,7 +1,7 @@
-// The game's GPU zones in a run (a profiled pass, and RunPlan.Record.ZoneLabels): KSA Metal's zone mode (src/game/driver/
-// diagnostics/zones.mm) and the game's GPU profiler on. Zones: KSA Metal splits render passes at the profiler's timestamps,
+// The game's GPU zones in a run (a profiled pass, and RunPlan.Record.ZoneLabels): the driver's zone mode (src/game/driver/
+// diagnostics/zones.mm) and the game's GPU profiler on. Zones: the driver splits render passes at the profiler's timestamps,
 // so a zone inside a pass reads its own time, and GameProfilers reads the profiler's frames with the CPU ones (group gpu).
-// Zone labels: KSA Metal answers the timestamps at once, and a postfix on the profiler's zone begin and end (the inlined
+// Zone labels: the driver answers the timestamps at once, and a postfix on the profiler's zone begin and end (the inlined
 // Begin and End call them only while it is active) tells it the zone each encoder runs in, which names the encoder in a
 // trace or a frame capture. In a game started with gpu_zones labels split and read the zones too, so that a trace times
 // the same encoders as the zones, one for each; not when the run has a profiled pass, which splits them for itself. The
@@ -26,12 +26,12 @@ internal sealed class GpuZones
     public static Action<MethodBase, MethodInfo>? Patch;
     private static bool _patched;
     private static volatile bool _labels;
-    // Each zone's name as KSA Metal takes it, null-terminated UTF-8, made once (about 150 of them, for the game's life)
+    // Each zone's name as the driver takes it, null-terminated UTF-8, made once (about 150 of them, for the game's life)
     private static readonly Dictionary<ProfilerTag, nint> Names = new(ReferenceEqualityComparer.Instance);
 
     private readonly bool _wasActive, _wasPaused;
 
-    // Whether KSA Metal splits render passes at the zones, so that GameProfilers reads them
+    // Whether the driver splits render passes at the zones, so that GameProfilers reads them
     public bool Split { get; }
 
     private GpuZones(bool labels, bool split)
@@ -44,7 +44,7 @@ internal sealed class GpuZones
     }
 
     // On, the zones split and read (a profiled pass) or the encoders named after them (labels), or both; null when
-    // neither is asked for, or when KSA Metal or the game can't. Labels alone split too in a game started with
+    // neither is asked for, or when the driver or the game can't. Labels alone split too in a game started with
     // gpu_zones, unless splitting is the profiled pass's alone (mayAlwaysSplit false)
     public static GpuZones? Start(bool zones, bool labels, Action<string> log, bool mayAlwaysSplit = true)
     {
@@ -55,12 +55,12 @@ internal sealed class GpuZones
             log("the game's GPU zones: its GPU profiler isn't supported here");
             return null;
         }
-        // Split when asked, or when the game has gpu_zones (KSA Metal refuses it otherwise)
+        // Split when asked, or when the game has gpu_zones (the driver refuses it otherwise)
         bool split = (zones || mayAlwaysSplit) && DriverStats.ZoneMode(ZoneMode.Split);
         if (!split && (zones || !DriverStats.ZoneMode(ZoneMode.Labels)))
         {
-            log(zones ? "the game's GPU zones: KSA Metal can't split its render passes (does the game have KSA_MTL_GPU_ZONES=1?)"
-                : "zone labels: KSA Metal has no zone mode");
+            log(zones ? "the game's GPU zones: the driver can't split its render passes (does the game have KSA_MTL_GPU_ZONES=1?)"
+                : "zone labels: the driver has no zone mode");
             return null;
         }
         if (labels && !PatchLabels(log))

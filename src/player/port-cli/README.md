@@ -25,6 +25,83 @@ The port's names (the app's name and bundle id, the oldest macOS, where releases
 read. File operations that macOS's tools do best stay theirs: `ditto` keeps Microsoft's signatures and the links in a
 copy, `tar` extracts the game, `plutil` reads and checks `Info.plist`, `xattr` removes the quarantine.
 
+## The steps
+
+The port folder holds the app without the game, `payload/app/Contents/`: the launcher, the .NET runtime, the native
+libraries, the icon and the licences. `port.sh` extracts the game's archive, then runs two steps:
+
+| Step | What it does |
+|---|---|
+| Convert | removes the Linux binaries and the Windows installer files, makes the .NET files run on the macOS runtime, and fixes and edits the game's shaders, as the `.edits` files of `src/game/changes/` say |
+| App | builds the app around the converted game, or puts the port's files into one |
+
+To update an app, it runs the same steps on it again, without the extraction.
+
+## .NET
+
+The Linux release is a self-contained `linux-x64` .NET program. The conversion turns it into one that runs on the
+shared macOS runtime the app bundles:
+
+1. It removes the Linux .NET runtime libraries (`System.*.dll`, `mscorlib.dll`, ...): exactly the DLLs whose names
+   are also in Microsoft's macOS runtime. The game's own DLLs and NuGet packages stay.
+2. It removes `KSA.deps.json`, which points the .NET host at the `linux-x64` runtime.
+3. It replaces `KSA.runtimeconfig.json` with one for the shared .NET 10 runtime.
+4. It changes `KSA.dll`'s machine type from AMD64 (`0x8664`) to ARM64 (`0xAA64`). .NET on Apple Silicon refuses
+   64-bit assemblies marked for another CPU. `KSA.dll` contains only IL code, so this mark is the only thing in the
+   way. The other game DLLs are platform-neutral and load as they are.
+
+The runtime itself (about 85 MB) is Microsoft's. Its `dotnet` host is signed by Microsoft with the entitlements the
+launcher needs: DYLD environment variables, unsigned libraries and JIT.
+
+## BRUTAL's native libraries
+
+RocketWerkz publishes BRUTAL as NuGet packages (`Ahwoo.BRUTAL.*`). The native libraries are in packages of their
+own (`Ahwoo.BRUTAL.<name>.Native`; Monitor.Host carries its program itself), with RocketWerkz's builds for Windows,
+Linux and macOS on Apple Silicon. The port takes the macOS builds of the eleven it needs, unmodified:
+
+| Package | Library | Used for |
+|---|---|---|
+| Ahwoo.BRUTAL.Stb.Native | `libstb.dylib` | loading and writing images |
+| Ahwoo.BRUTAL.Vulkan.Native | `libVulkanEx.dylib` | batched Vulkan helpers |
+| Ahwoo.BRUTAL.Vulkan.Vma.Native | `libvma.dylib` | GPU memory (Vulkan Memory Allocator) |
+| Ahwoo.BRUTAL.Glfw.Native | `libglfw.3.dylib` | the window and input (GLFW 3.5.1 fork) |
+| Ahwoo.BRUTAL.Gli.Native | `libgli.dylib` | texture formats |
+| Ahwoo.BRUTAL.ImGui.Native | `libimgui.dylib` | the user interface |
+| Ahwoo.BRUTAL.ImPlot.Native | `libimplot.dylib` | the profiler's plots |
+| Ahwoo.BRUTAL.Ktx.Native | `libKtx.dylib` | KTX2 textures |
+| Ahwoo.BRUTAL.ShaderC.Native | `libshaderc_shared.dylib`, `libSPIRV-Tools-shared.dylib` | compiling GLSL shaders at startup |
+| Ahwoo.BRUTAL.RakNet.Native | `libRakNetDLL.dylib` | networking (RakNet) |
+| Ahwoo.BRUTAL.Monitor.Host | `Brutal.Monitor.Subprocess`, a program | crash dumps |
+
+These are the same versions KSA ships for Linux: the Linux libraries in the game's archive are identical to the
+Linux builds in these packages. The conversion compares each package version with the matching game assembly
+(`Ahwoo.BRUTAL.Glfw.Native` with `Brutal.Glfw.dll`). It stops when the game is older than the packages, because older
+bindings don't match the newer libraries, and warns when the game is newer.
+
+## The app
+
+The app step moves the converted game folder into the app as `Contents/Resources` and adds the port's part from
+`payload/app/Contents/`:
+
+| In the app | What |
+|---|---|
+| `Contents/MacOS/KSA` | the launcher ([`../../game/launcher/`](../../game/launcher/)) |
+| `Contents/Resources/KSA` | a link to the launcher, the game folder's executable |
+| `Contents/MacOS/dotnet`, `host/`, `shared/` | the .NET runtime |
+| `Contents/Resources/*.dylib` | the native libraries, next to the game that loads them |
+| `Contents/Resources/Hooks/` | KSA Metal Hooks, with Harmony |
+| `Contents/Resources/Benchmark/` | the benchmark, with its tests and vehicles |
+| `Contents/Resources/port-settings.txt`, `port-settings.toml` | the port settings' table and the file's template |
+| `Contents/Resources/VERSION` | the port's version, for the tab's title |
+| `Contents/Resources/Licenses/` | every component's licence and notices |
+| `Contents/Resources/AppIcon.icns`, `Contents/Info.plist` | the icon; the game's and the port's versions |
+
+`Info.plist` turns `NSHighResolutionCapable` on, so the game draws its interface at the display's full resolution.
+The bundle isn't signed as a whole, because that would replace Microsoft's signature on `dotnet`. The app step
+removes the quarantine attribute that a browser download puts on the files, so macOS opens the app as one made on
+this Mac. When `port.sh` replaces an app, it builds the new one next to it, keeps its window layout (`imgui.ini`), and
+moves the old one to the Trash only at the end; if anything fails, the old app is left as it was.
+
 ## Commands
 
 | Command | Run by |

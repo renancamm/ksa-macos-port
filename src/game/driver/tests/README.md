@@ -22,12 +22,12 @@ cache is left out). A benchmark run records the shaders of the places it plays, 
 to it:
 
 ```bash
-dist/ksa-macos-port/benchmark.sh mixed --defaults --port shader_corpus=$HOME/Library/Caches/ksa-metal/corpus
-dist/ksa-macos-port/benchmark.sh tour --defaults --port shader_corpus=$HOME/Library/Caches/ksa-metal/corpus
+dist/ksa-macos-port/benchmark.sh mixed --defaults --port "shader_corpus=$HOME/Library/Caches/Kitten Space Agency/corpus"
+dist/ksa-macos-port/benchmark.sh tour --defaults --port "shader_corpus=$HOME/Library/Caches/Kitten Space Agency/corpus"
 ```
 
-`~/Library/Caches/ksa-metal/corpus` is where the test looks (`-DKSA_MTL_CORPUS_DIR=<dir>` changes it). The corpus
-holds the game's shaders, so it stays on the Mac that recorded it and never goes into the repository.
+`~/Library/Caches/Kitten Space Agency/corpus` is where the test looks (`-DKSA_MTL_CORPUS_DIR=<dir>` changes it). The
+corpus holds the game's shaders, so it stays on the Mac that recorded it and never goes into the repository.
 
 | File | Holds |
 |---|---|

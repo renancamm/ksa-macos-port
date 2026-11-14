@@ -26,6 +26,6 @@ internal static class BenchmarkRun
         static HarmonyMethod? Of(System.Reflection.MethodInfo? m) => m != null ? new HarmonyMethod(m) : null;
         return Runs.Install(Hooks.Log, () => Hooks.Summary, Restart.Launcher != null ? env => Restart.Run(env, gameOnly: true) : null,
             (target, prefix, postfix, transpiler) => harmony.Patch(target, Of(prefix), Of(postfix), Of(transpiler)),
-            (type, name, parameters) => Find.Method(type, name, parameters));
+            (type, name, parameters) => Find.Method(type, name, parameters), Tab.MacPortTab.Pick);
     }
 }

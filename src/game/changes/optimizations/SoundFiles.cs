@@ -38,8 +38,9 @@ internal static class SoundFiles
     {
         var create = Find.Method(typeof(GameAudio), nameof(GameAudio.CreateFmodSound));
         harmony.Patch(create, prefix: new HarmonyMethod(typeof(SoundFiles), nameof(Creating)));
+        var home = Environment.GetEnvironmentVariable("HOME") ?? "";
         var root = Settings.CacheDir is { Length: > 0 } dir ? dir
-            : Path.Combine(Environment.GetEnvironmentVariable("HOME") ?? "", "Library", "Caches", "ksa-metal");
+            : Path.Combine(home, "Library", "Caches", "Kitten Space Agency");
         _folder = Path.Combine(root, "sounds");
         Task.Run(Clean);
         return "on";

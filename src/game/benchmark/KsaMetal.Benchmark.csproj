@@ -9,7 +9,7 @@
 	</PropertyGroup>
 	<ItemGroup>
 		<Reference Include="$(KsaDir)/*.dll" Private="false" />
-		<!-- A run's options, the screenshots' reader, the results and KSA Metal's measurements -->
+		<!-- A run's options, the screenshots' reader, the results and the driver's measurements -->
 		<ProjectReference Include="../../shared/KsaPort.Common.csproj" Private="false" />
 	</ItemGroup>
 </Project>

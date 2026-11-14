@@ -221,7 +221,7 @@ public sealed class PartRecord
 // One measuring of a part: the game session and pass it played in, and its numbers (no zones)
 public sealed record MeasuringRecord(int Session, int Pass, SortedDictionary<string, double> Values);
 
-// An owner of memory at a checkpoint: one of the game's memory tags (kind "game"), a kind of KSA Metal's memory
+// An owner of memory at a checkpoint: one of the game's memory tags (kind "game"), a kind of the driver's memory
 // ("driver"), the .NET heap ("runtime"), in MB
 public sealed record CensusRecord(string Scenario, string Shot, string Owner, string Kind, double Mb);
 

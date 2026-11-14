@@ -250,7 +250,7 @@ public partial class Director
         if (!TakesShots && !Holding || !DriverStats.Screenshot(ShotPath()))
         {
             if (TakesShots)
-                Log($"no screenshot {_shotName}: needs KSA Metal");
+                Log($"no screenshot {_shotName}: needs the KSA Metal driver");
             EndCheckpoint();
             return;
         }
@@ -259,7 +259,7 @@ public partial class Director
     }
 
     // Fast mode: whether the view has stopped changing, from probe screenshots a quarter of a second apart (the game is
-    // paused, so what still changes is terrain and textures streaming in). Without KSA Metal's screenshots it waits a
+    // paused, so what still changes is terrain and textures streaming in). Without the driver's screenshots it waits a
     // few seconds.
     private bool Settled(double wall)
     {

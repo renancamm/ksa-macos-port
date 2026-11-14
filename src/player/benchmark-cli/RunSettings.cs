@@ -1,5 +1,5 @@
 // A run's documents folder and settings (BenchmarkRun, Run.cs): your settings.toml with the start and the preset on
-// top, --settings, --set, --defaults, and the port settings with --port.
+// top, --tab-preset, --settings, --set, --defaults, and the port settings with --tab-preset and --port.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -48,6 +48,23 @@ public static partial class Program
                 start.AddRange(AutoMemorySaving.SmallGame.Select(g => $"{g.Key}={g.AtMost}"));
             foreach (var kv in start)
                 SetSetting(kv[..kv.IndexOf('=')], kv[(kv.IndexOf('=') + 1)..]);
+            // --tab-preset: the Mac Port tab's card, its game settings with Auto Memory Saving's limits where the tab gives
+            // them; Game Defaults' are the game's own, which the file then leaves out
+            if (TabPresets.Find(_tabPreset) is { } tab)
+            {
+                bool small = AutoMemorySaving.ThisMac() == AutoMemorySaving.Tier.Small && MemorySavingOn();
+                if (TabPresets.GameValues(tab, small) is { } game)
+                    foreach (var (field, value) in game)
+                        SetSetting(TabPresets.KeyOf(field), TomlValue(value));
+                else
+                {
+                    foreach (var key in TabPresets.Keys.Values.Where(k => !small || AutoMemorySaving.SmallGame.All(g => g.Key != k)))
+                        RemoveSetting(key);
+                    if (small)
+                        foreach (var (_, key, atMost) in AutoMemorySaving.SmallGame)
+                            SetSetting(key, atMost.ToString(CultureInfo.InvariantCulture));
+                }
+            }
             // --settings: its "key = value" lines
             if (_settingsFile.Length > 0)
             {
@@ -111,7 +128,7 @@ public static partial class Program
                 File.WriteAllText(portSettings, "");
             if (Uncapped && !GameHas("vsync"))
                 SaidWithoutVsync(portSettings);
-            if (_ports.Count == 0 && _ab.Length == 0 && !_defaults && _preset.Length == 0)
+            if (_ports.Count == 0 && _ab.Length == 0 && !_defaults && _preset.Length == 0 && _tabPreset.Length == 0)
                 return;
             // --port: checked against the app's table (a key or value the game doesn't take would run an unchanged
             // game that looks like an A/B test), and written as the Mac Port tab writes them
@@ -129,6 +146,9 @@ public static partial class Program
             // limits, which change the image
             if (_defaults || _preset.Length > 0)
                 PortSettings.Save(AutoMemorySaving.Port(AutoMemorySaving.ThisMac()));
+            // --tab-preset: the card's port settings, and the card picked last, as the tab keeps it
+            if (TabPresets.Find(_tabPreset) is { } tabPort)
+                PortSettings.Save(new Dictionary<string, string>(TabPresets.Port(tabPort)) { [TabPresets.Key] = tabPort.Id });
             if (_ports.Count == 0 && _ab.Length == 0)
                 return;
             var values = new Dictionary<string, string>();
@@ -210,6 +230,13 @@ public static partial class Program
             var line = $"{key} = {value}";
             if (section.Length == 0)
             {
+                // One of the keys --tab-preset's Game Defaults leaves out: back in its section
+                if (!lines.Any(l => l.StartsWith(key + " = ")) &&
+                    TabPresets.Keys.Values.Concat(AutoMemorySaving.SmallGame.Select(g => g.Key)).FirstOrDefault(k => k.EndsWith("." + key, StringComparison.Ordinal)) is { } known)
+                {
+                    SetSetting(known, value);
+                    return;
+                }
                 if (!lines.Any(l => l.StartsWith(key + " = ")))
                     Die($"settings.toml has no '{key}' (does this KSA version still match?).");
                 lines = lines.Select(l => l.StartsWith(key + " = ") ? line : l).ToList();
@@ -236,6 +263,42 @@ public static partial class Program
             }
             File.WriteAllText(_settings, string.Join('\n', lines) + "\n");
             _setKeys += key + " ";
+        }
+
+        // Whether the run plays with Auto Memory Saving on: a fresh install's (--defaults, or no file of yours) is, yours
+        // unless it says off
+        private bool MemorySavingOn()
+        {
+            var yours = Path.Combine(Yours, "port-settings.toml");
+            if (_defaults || !File.Exists(yours))
+                return true;
+            try
+            {
+                PortSettings.LoadTable(_res);
+                PortSettings.FilePath = yours;
+                return PortSettings.ReadFile().GetValueOrDefault(AutoMemorySaving.Key) != "false";
+            }
+            catch (Exception e) when (e is IOException or FormatException)
+            {
+                return true;
+            }
+        }
+
+        // A line of settings.toml gone, <section>.<key> in that section, so that the game gives it its default
+        private void RemoveSetting(string name)
+        {
+            int dot = name.LastIndexOf('.');
+            string key = name[(dot + 1)..], section = dot < 0 ? "" : $"[{name[..dot]}]";
+            var kept = new List<string>();
+            string at = "";
+            foreach (var line in File.ReadAllLines(_settings))
+            {
+                if (line.StartsWith('['))
+                    at = line;
+                if (!(line.StartsWith(key + " = ", StringComparison.Ordinal) && (section.Length == 0 || at == section)))
+                    kept.Add(line);
+            }
+            File.WriteAllText(_settings, string.Join('\n', kept) + "\n");
         }
 
         // A bare word is a string, quoted as TOML wants it (Pcf -> "Pcf"); anything else as written

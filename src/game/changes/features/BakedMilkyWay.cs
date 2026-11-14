@@ -100,7 +100,7 @@ internal static class BakedMilkyWay
 
     // BakedMilkyWay.comp over the strip, as GenerateNoise fills the noise: one submit, waited for. Filled again, it
     // waits for the GPU first, which may still draw the sky from it. The wrapper describes the noise in the General
-    // layout while it is in ShaderReadOnlyOptimal: KSA Metal has no image layouts.
+    // layout while it is in ShaderReadOnlyOptimal: the driver has no image layouts.
     private static unsafe void Bake(int quality)
     {
         var renderer = Program.GetRenderer();

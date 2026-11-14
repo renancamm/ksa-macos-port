@@ -17,8 +17,10 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Runtime.Loader;
 using System.Threading;
+using Brutal.GlfwApi.Cocoa;
 using KsaPort.Common;
 using KsaPort.Common.Benchmark;
 
@@ -359,6 +361,8 @@ internal static class Probes
             probes.Add(new FilmProbe(plan.Record.Film, context));
         if (plan.Record.CameraLog)
             probes.Add(new CameraLogProbe(context));
+        if (plan.Record.Window)
+            probes.Add(new WindowProbe(plan.Host.Session, context));
         foreach (var probe in probes)
             probe.Host = new ProbeHost(probe, context, plan.Record.Knobs);
         // The plan's, made as the game started if it did with the run (its problems now the run's), else now
@@ -523,7 +527,7 @@ internal sealed class CaptureProbe(ProbeContext context) : Probe
         var path = Path.ChangeExtension(view.Path, ".gputrace");
         if (!DriverStats.Capture(path, 1))
         {
-            context.Error($"{view.Shot}: KSA Metal could not capture a frame (does the game have MTL_CAPTURE_ENABLED=1?)");
+            context.Error($"{view.Shot}: the driver could not capture a frame (does the game have MTL_CAPTURE_ENABLED=1?)");
             return null;
         }
         return Probes.Then(Probes.Until(() => !DriverStats.Capturing(), 120), () =>
@@ -590,4 +594,62 @@ internal sealed class CameraLogProbe : Probe
     }
 
     public override void End() => _out.Dispose();
+}
+
+// A picture of the game's window at every checkpoint, after its screenshot, with what macOS draws over the game (Apple's
+// Metal Performance HUD), which the driver's screenshots can't have: the window event names the checkpoint and the
+// window's number, benchmark.sh's program takes the picture (screencapture) and answers with the windowed event. The
+// checkpoint holds a few seconds before it asks, and until the answer, at most a minute.
+internal sealed class WindowProbe(int session, ProbeContext context) : Probe
+{
+    [DllImport("/usr/lib/libobjc.A.dylib")]
+    private static extern nint sel_registerName(string name);
+
+    [DllImport("/usr/lib/libobjc.A.dylib")]
+    private static extern nint objc_msgSend(nint receiver, nint selector);
+
+    private static readonly nint WindowNumber = sel_registerName("windowNumber");
+
+    public override string Name => "window";
+
+    public override string Says => "a picture of the game's window at each checkpoint";
+
+    // It holds the game at each checkpoint while the picture is taken
+    public override Cost Cost => Cost.Heavy;
+
+    public override Wait? AfterShot(View view)
+    {
+        if (context.Events is not { } events)
+            return null;
+        // A few seconds first (the knob settle), so that the frame rate the HUD averages has settled on the view
+        return Probes.Then(Probes.Until(() => false, Host.Knob("settle", 5)), () => Ask(view, events));
+    }
+
+    private Wait? Ask(View view, EventLog events)
+    {
+        nint number = KSA.Program.GetWindow() is { } w && w.GetCocoaWindow() is var ns && ns != 0 ? objc_msgSend(ns, WindowNumber) : 0;
+        if (number == 0)
+        {
+            context.Error($"{view.Shot}: the game's window has no number to take a picture of");
+            return null;
+        }
+        events.Add("window", view.Scenario, view.Shot, value: number);
+        // The answer, looked for twice a second
+        long looked = 0;
+        bool answered = false;
+        bool Answered()
+        {
+            long now = System.Diagnostics.Stopwatch.GetTimestamp();
+            if (answered || looked != 0 && System.Diagnostics.Stopwatch.GetElapsedTime(looked, now).TotalSeconds < 0.5)
+                return answered;
+            looked = now;
+            return answered = EventLog.Read(context.Dir).Any(e => e.Type == "windowed" && e.Session == session && e.Scenario == view.Scenario && e.Part == view.Shot);
+        }
+        return Probes.Then(Probes.Until(Answered, 60), () =>
+        {
+            if (!answered)
+                context.Log($"{view.Shot}: no picture of the window after a minute: going on");
+            return null;
+        });
+    }
 }

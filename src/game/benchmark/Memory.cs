@@ -27,7 +27,7 @@ internal sealed class MemoryProbe : Probe
         _vram = Host.Metric("mem/game_vram", "Game VRAM", "MB", Better.Lower, Across.Median, 0, "the device memory the game allocated", 5);
         _hostVisible = Host.Metric("mem/game_host_visible", "Host-visible", "MB", Better.Lower, Across.Median, 0,
             "the memory the game allocated for the CPU to write", 5);
-        _driver = Host.Metric("mem/driver", "KSA Metal", "MB", Better.Lower, Across.Median, 0, "KSA Metal's device memory, pools and rings", 5);
+        _driver = Host.Metric("mem/driver", "Driver", "MB", Better.Lower, Across.Median, 0, "the driver's device memory, pools and rings", 5);
         _gc = Host.Metric("mem/gc_heap", "GC heap", "MB", Better.Lower, Across.Median, 0, ".NET's managed heap", 10);
         Count();
     }

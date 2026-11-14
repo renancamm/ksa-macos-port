@@ -23,9 +23,9 @@ public static partial class Program
         // --probe, --knob, --channels: the probes (the benchmark's by name, assemblies by absolute path), their knobs, the
         // channels turned off
         private readonly List<string> _probes = [], _knobs = [], _off = [];
-        private string _preset = "", _system = "", _hold = "", _settingsFile = "", _reference = "", _catch = "";
+        private string _preset = "", _tabPreset = "", _system = "", _hold = "", _settingsFile = "", _reference = "", _catch = "";
         private string _template = "Metal System Trace", _test = "";
-        private bool _defaults, _explore, _fast, _noShots, _hud, _trace, _capture, _catchCapture, _passes, _cameraLog, _holding, _capped;
+        private bool _defaults, _explore, _fast, _noShots, _hud, _trace, _capture, _catchCapture, _passes, _cameraLog, _window, _holding, _capped;
 
         // A run that judges a change plays without Vsync (check, measure, profile, calibrate and studies of them): a view
         // that finishes inside the display's refresh would show a saving as a lower GPU clock, not as GPU time, and frame
@@ -213,7 +213,7 @@ public static partial class Program
             if (_purpose == Purpose.Investigate)
             {
                 if (args.Length == 0)
-                    Die("investigate <tool> <places...>: trace, capture, hud, catch <clean run>, passes, film <seconds>, camera-log or hold.");
+                    Die("investigate <tool> <places...>: trace, capture, hud, catch <clean run>, passes, film <seconds>, camera-log, window or hold.");
                 switch (args[i++])
                 {
                     case "profile":
@@ -224,6 +224,7 @@ public static partial class Program
                     case "hud": _hud = true; break;
                     case "passes": _passes = true; break;
                     case "camera-log": _cameraLog = true; break;
+                    case "window": _window = true; break;
                     case "hold": _holding = true; break;
                     case "catch" when i < args.Length: _catch = args[i++]; break;
                     case "film" when i < args.Length: _filmText = args[i++]; break;
@@ -235,7 +236,7 @@ public static partial class Program
                         status = 0;
                         return false;
                     case var tool:
-                        Die($"no tool '{tool}' (trace, capture, hud, catch <clean run>, passes, film <seconds>, camera-log or hold).");
+                        Die($"no tool '{tool}' (trace, capture, hud, catch <clean run>, passes, film <seconds>, camera-log, window or hold).");
                         break;
                 }
             }
@@ -254,6 +255,7 @@ public static partial class Program
                     case "--settings": _settingsFile = args[++i]; break;
                     case "--app": _app = args[++i].TrimEnd('/'); break;
                     case "--preset": _preset = args[++i]; break;
+                    case "--tab-preset": _tabPreset = args[++i]; break;
                     case "--defaults": _defaults = true; break;
                     case "--capped" when _purpose is Purpose.Check or Purpose.Measure or Purpose.Profile or Purpose.Calibrate: _capped = true; break;
                     case "--system": _system = args[++i]; break;
@@ -354,6 +356,10 @@ public static partial class Program
                 _app = Path.Combine(Environment.CurrentDirectory, _app);
             if (_preset.Length > 0 && !Presets.ContainsKey(_preset))
                 Die($"unknown preset '{_preset}' (low, medium or high).");
+            if (_tabPreset.Length > 0 && TabPresets.Find(_tabPreset) == null)
+                Die($"unknown tab preset '{_tabPreset}' ({string.Join(", ", TabPresets.All.Select(p => p.Id))}).");
+            if (_tabPreset.Length > 0 && _preset.Length > 0)
+                Die("--preset and --tab-preset both set the game's graphics: choose one.");
             // measure: three passes unless said
             if (_repeatText.Length == 0)
                 _repeatText = _purpose == Purpose.Measure ? "3" : "1";
@@ -547,7 +553,7 @@ public static partial class Program
             return File.Exists(director) && !Encoding.Latin1.GetString(File.ReadAllBytes(director)).Contains("RunPlan", StringComparison.Ordinal);
         }
 
-        // Whether the app's KSA Metal has that benchmark function
+        // Whether the app's driver has that benchmark function
         private bool DriverHas(string function)
         {
             var lib = Path.Combine(_res, "libvulkan.1.dylib");
@@ -562,7 +568,7 @@ public static partial class Program
         private void CheckTools()
         {
             // Each game session of full would write over the one before
-            if (_test == "full" && (_purpose == Purpose.Profile || _hud || _trace || _capture || _catch.Length > 0 || _passes || _film > 0 || _cameraLog))
+            if (_test == "full" && (_purpose == Purpose.Profile || _hud || _trace || _capture || _catch.Length > 0 || _passes || _film > 0 || _cameraLog || _window))
                 Die("the tools look at one test: choose mixed, tour or warp (or places).");
             if (_purpose == Purpose.Profile || _hud || _trace || _capture || _catch.Length > 0 || _passes)
             {
@@ -572,7 +578,7 @@ public static partial class Program
             if (_purpose == Purpose.Profile)
             {
                 if (!DriverHas("ksaMtlZoneMode"))
-                    Die("this app's KSA Metal can't time the game's GPU zones: update it with ./port.sh.");
+                    Die("this app's driver can't time the game's GPU zones: update it with ./port.sh.");
                 _tools.Add(RunPlan.ProfiledTool);
             }
             if (_hud)
@@ -581,6 +587,12 @@ public static partial class Program
                 _tools.Add($"film every {_film.ToString(CultureInfo.InvariantCulture)} s");
             if (_cameraLog)
                 _tools.Add("camera log");
+            if (_window)
+            {
+                if (_noShots)
+                    Die("window takes its pictures at the screenshots: it can't go with --no-shots.");
+                _tools.Add("pictures of the game's window");
+            }
             if (_trace)
             {
                 if (Tool.Exec("xcrun", ["-f", "xctrace"], out _) != 0)
@@ -598,7 +610,7 @@ public static partial class Program
                 if (_capture)
                     Die("--catch plays the game with no capture mode, --capture needs it: choose one.");
                 if (!DriverHas("ksaMtlPassDump"))
-                    Die("this app's KSA Metal can't dump passes: update it with ./port.sh.");
+                    Die("this app's driver can't dump passes: update it with ./port.sh.");
                 _catch = RunFolder(_catch, TestPlayed);
                 if (_noShots)
                     Die("--catch compares screenshots: it can't go with --no-shots.");
@@ -615,7 +627,7 @@ public static partial class Program
                 if (_catchCapture)
                 {
                     if (!DriverHas("ksaMtlCapture"))
-                        Die("this app's KSA Metal can't capture frames: update it with ./port.sh.");
+                        Die("this app's driver can't capture frames: update it with ./port.sh.");
                     if (FreeGb() < 40)
                         Die($"--catch-capture needs 40 GB free on this disk ({FreeGb()} GB free).");
                     _tools.Add("frame captures of broken pictures");
@@ -629,7 +641,7 @@ public static partial class Program
                 if (_catch.Length > 0 || _capture)
                     Die("--passes is a clean run's dump at every place: it can't go with --catch or --capture.");
                 if (!DriverHas("ksaMtlPassDump"))
-                    Die("this app's KSA Metal can't dump passes: update it with ./port.sh.");
+                    Die("this app's driver can't dump passes: update it with ./port.sh.");
                 if (_noShots)
                     Die("--passes dumps at the screenshots: it can't go with --no-shots.");
                 if (Named == 0 && !_fast && _test != "mixed")
@@ -639,7 +651,7 @@ public static partial class Program
             if (_capture)
             {
                 if (!DriverHas("ksaMtlCapture"))
-                    Die("this app's KSA Metal can't capture frames: update it with ./port.sh.");
+                    Die("this app's driver can't capture frames: update it with ./port.sh.");
                 if (Named == 0)
                     Die("a capture takes several GB at every screenshot: choose places (./benchmark.sh investigate capture jupiter2).");
                 if (FreeGb() < 20)
@@ -682,7 +694,7 @@ public static partial class Program
                     !DriverHas("ksaMtlFrameStats"))
                     Die("triggers need the app's KSA Metal driver, which this app doesn't have.");
                 if (rule.Has(TriggerAction.Passes) && !DriverHas("ksaMtlPassDump"))
-                    Die("this app's KSA Metal can't dump passes: update it with ./port.sh.");
+                    Die("this app's driver can't dump passes: update it with ./port.sh.");
                 if (rule.Has(TriggerAction.Passes) && FreeGb() < 1)
                     Die($"a trigger that dumps passes needs 1 GB free on this disk ({FreeGb()} GB free).");
                 if (rule.Has(TriggerAction.Capture) && _capture)
@@ -690,7 +702,7 @@ public static partial class Program
                 if (rule.Has(TriggerAction.Capture))
                 {
                     if (!DriverHas("ksaMtlCapture"))
-                        Die("this app's KSA Metal can't capture frames: update it with ./port.sh.");
+                        Die("this app's driver can't capture frames: update it with ./port.sh.");
                     if (FreeGb() < 20)
                         Die($"a trigger that captures frames needs 20 GB free on this disk ({FreeGb()} GB free).");
                 }

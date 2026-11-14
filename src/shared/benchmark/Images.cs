@@ -1,4 +1,4 @@
-// Screenshots as pixels: a small PNG reader and writer (8-bit RGB and RGBA without interlacing, as KSA Metal writes
+// Screenshots as pixels: a small PNG reader and writer (8-bit RGB and RGBA without interlacing, as the driver writes
 // them) and the comparison of two images block by block. Shared by the benchmark's director, which waits for the view
 // to stop changing before a screenshot in fast mode, and the report program, which compares the screenshots of two
 // runs.
@@ -31,7 +31,7 @@ public static class Images
 
     private static readonly byte[] Signature = { 137, 80, 78, 71, 13, 10, 26, 10 };
 
-    // Whether KSA Metal has written all of a PNG: its last chunk, IEND, is there (cheaper than reading the image)
+    // Whether the driver has written all of a PNG: its last chunk, IEND, is there (cheaper than reading the image)
     public static bool Written(string path)
     {
         try

@@ -53,6 +53,10 @@ public static partial class Program
           --app <path>       the app to measure (default: ~/Applications/Kitten Space Agency.app)
         With what settings:
           --preset <name>    low, medium or high: fixed settings in a 1280x800 window, the same on every Mac (default: yours)
+          --tab-preset <name>
+                             performance, balanced, quality or game_defaults: the Mac Port tab's preset, its game and port
+                             settings on top of yours (or of --defaults), as its card gives them, with Auto Memory Saving's
+                             limits when it is on with 8 GB or less; not with --preset
           --defaults         the settings of a fresh install instead of yours: the game's own and the port's defaults
           --capped           with check, measure, profile or calibrate: the settings' own Vsync (these play without it,
                              so that a saving shows as GPU time; run plays your Vsync)
@@ -95,11 +99,14 @@ public static partial class Program
                              each place), hud (Apple's Metal Performance HUD), catch <clean run> (a pass dump of a picture
                              that goes wrong now and then; --catch-capture adds a frame capture), passes (a pass dump at every
                              place: a clean run for catch), film <seconds> (screenshots along the way), camera-log (the
-                             camera's place every frame), hold (stay at one place, paused, until you quit the game)
+                             camera's place every frame), window (a picture of the game's window at each place, with
+                             what macOS draws over it: Apple's HUD with --port metal_performance_hud=true; needs the
+                             Screen Recording permission), hold (stay at one place, paused, until you
+                             quit the game)
           --env <NAME=value> the game's environment for the run (again for more): KSA Metal's switches (KSA_MTL_...)
           --save-plan <file> with measure or profile: the command line as a study's file, to add variants to; plays nothing
           --probe <name | path>
-                             a probe in the run (again for more): memory (the game's VRAM, KSA Metal's memory and the .NET
+                             a probe in the run (again for more): memory (the game's VRAM, the driver's memory and the .NET
                              heap, and who holds them at each checkpoint), or a probe's assembly (.dll)
           --knob <probe>.<key>=<value>
                              a value for a probe (again for more)
@@ -113,7 +120,7 @@ public static partial class Program
                              memory, zone_stats, moments, slices, events (default: the last run)
           ./benchmark.sh timeline [run]
                              the run's timeline, for its report's Open Timeline button (Perfetto's viewer, in your browser):
-                             its parts, frame and GPU times, each frame's way to the screen, KSA Metal's waits, the game's
+                             its parts, frame and GPU times, each frame's way to the screen, the driver's waits, the game's
                              zones around slow frames, the counters
           ./benchmark.sh baseline [set <name> [run...] | remove <name>]
                              name runs to compare with, one of each test (check compares with main)
@@ -152,8 +159,7 @@ public static partial class Program
     private static string Docs => Path.Combine(PortFolder.Home, "Documents", "My Games", "Kitten Space Agency");
     private static string Benchmarks => Path.Combine(Docs, "benchmarks");
     // The game's documents folder during the run (STARMAP_INSTANCE_PATH, which the hooks and StarMap both follow)
-    private static string Instance => Path.Combine(PortFolder.Home, "Library", "Caches", "ksa-macos-port", "benchmark", "instance");
-    private static string Issues => $"https://github.com/{PortFolder.ReleasesRepo}/issues/new?template=benchmark-report.md";
+    private static string Instance => Path.Combine(PortFolder.Home, "Library", "Caches", "Kitten Space Agency", "benchmark", "instance");
     // The port folder's benchmark: an app not updated yet still gets the current reports and the current tests
     private static string FolderScript => Path.Combine(PortFolder.Skeleton, "Resources", "Benchmark", "benchmark.txt");
 

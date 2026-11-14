@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using KSA;
 using KsaPort.Common;
 using KsaPort.Common.Benchmark;
@@ -45,6 +46,12 @@ public partial class Director
             ["@fov"] = Fov,
             ["@look"] = _camera.LookIva,
             ["@sun"] = CameraOperator.Sun,
+            ["@settings"] = a => a[1] switch
+            {
+                "open" or "close" when a.Length == 2 => OpenSettings(a[1] == "open"),
+                "pick" when a.Length == 3 => PickPreset(a[2]),
+                _ => false,
+            },
         };
         foreach (var (name, handler) in _vehicles.Handlers())
             handlers[name] = handler;
@@ -137,5 +144,71 @@ public partial class Director
         _clock.NewWorld(Live ? 0 : 1);
         _phase = Phase.NewWorld;
         _phaseFrames = 0;
+    }
+
+    // @settings open|close: the game's settings window, open on the rail's first tab, which the hooks make the Mac Port
+    // tab (the window keeps the tab it was last on: GameSettings._openTabIndex). The game draws it with its interface,
+    // which a run hides: a postfix on Program.DrawFps, which the game runs every frame either way, draws it alone over
+    // the scene while the interface is hidden
+    private bool OpenSettings(bool open)
+    {
+        if (!open)
+        {
+            GameSettings.Close();
+            return true;
+        }
+        var index = typeof(GameSettings).GetField("_openTabIndex", BindingFlags.NonPublic | BindingFlags.Static);
+        if (index == null)
+            Log("@settings: GameSettings._openTabIndex not found: the window opens on the tab it was last on");
+        index?.SetValue(null, 0);
+        if (!_settingsAlone)
+        {
+            try
+            {
+                Probes.Patcher!(Probes.Find!(typeof(Program), "DrawFps", Type.EmptyTypes), null,
+                    typeof(Director).GetMethod(nameof(DrawSettingsAlone), BindingFlags.NonPublic | BindingFlags.Static), null);
+                _settingsAlone = true;
+            }
+            catch (Exception e)
+            {
+                Log($"@settings: the window can't be drawn without the game's interface ({e.Message}): the interface shows");
+                Program.DrawUI = true;
+            }
+        }
+        GameSettings.Show = true;
+        return true;
+    }
+
+    private static bool _settingsAlone;
+
+    // @settings pick <preset>: the Mac Port tab clicks that card the next time it draws its cards in the window open now,
+    // as a player does (Runs.Install has the hooks' click). The card turns gold unless the settings are based on it
+    // already, its values pending until the window closes
+    private bool PickPreset(string id)
+    {
+        if (TabPresets.Find(id) == null)
+        {
+            Log($"@settings pick: no preset '{id}' ({string.Join(", ", TabPresets.All.Select(p => p.Id))})");
+            return false;
+        }
+        if (Runs.PickPreset(id))
+            return true;
+        Log("@settings pick: the Mac Port tab can't pick a preset (logs/console.log says why)");
+        return false;
+    }
+
+    // After Program.DrawFps: the settings window, open with the interface hidden
+    private static void DrawSettingsAlone()
+    {
+        try
+        {
+            if (GameSettings.Show && !Program.DrawUI)
+                GameSettings.OnDrawUi(Program.GetCamera());
+        }
+        catch (Exception e)
+        {
+            Log($"@settings: the window alone failed, closed: {e.Message}");
+            GameSettings.Close();
+        }
     }
 }

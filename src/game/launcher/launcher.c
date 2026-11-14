@@ -5,7 +5,7 @@
  * Starts KSA (Contents/Resources/KSA.dll) with the .NET runtime in Contents/MacOS, in its own process, as .NET's app
  * host does (KSA in the Linux release, KSA.exe on Windows): the game's process is the app's executable, named KSA, from
  * its start, which Game Mode needs, and tools that look for the game by name find it. It sets:
- *   DYLD_LIBRARY_PATH      the game folder first, so every library, including KSA Metal as
+ *   DYLD_LIBRARY_PATH      the game folder first, so every library, including the driver as
  *                          libvulkan.1.dylib, comes from the app and never from elsewhere on the Mac
  *   DYLD_INSERT_LIBRARIES  the GLFW shim (src/game/shims/glfw/glfw_shim.c) and the KTX shim
  *                          (src/game/shims/ktx/ktx_shim.c)

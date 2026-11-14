@@ -6,7 +6,7 @@
 // folder and a script (or explore mode) there is nothing to play. It measures nothing itself: what happens goes into the
 // run's store (Store.cs) as events (Events.cs; a heartbeat every second, so a game that hangs shows) and every frame
 // (Frames.cs), marked with the part it counts in, and the run's record is made from them when it ends (Finish.cs). Every
-// measured part is a signpost interval (KSA Metal's ksaMtlMarker), so an Instruments trace shows the parts.
+// measured part is a signpost interval (the driver's ksaMtlMarker), so an Instruments trace shows the parts.
 //
 // The lineup (src/shared/benchmark/Lineup.cs) is a series of scenarios, each a list of "<seconds> <command>" steps timed
 // from its start; a scenario whose celestials the loaded system lacks is skipped. A command is a console command or a
@@ -85,7 +85,7 @@ public partial class Director
     private Dictionary<string, HashSet<string>?>? _only;
     private FrameLog? _frames;
     private EventLog _events = null!;
-    // KSA Metal's drain (DriverStats.Drain): open while a run plays, its latest present the frame's driver numbers
+    // The driver's drain (DriverStats.Drain): open while a run plays, its latest present the frame's driver numbers
     private bool _drain;
     private RunStore? _store;
     // The game's profilers (GameProfilers) and the .NET runtime's counters, while a run plays
@@ -270,7 +270,7 @@ public partial class Director
             $"GPU times {(DriverStats.Available ? "available" : "not available")}{string.Concat(_probes.Select(p => ", " + p.Says))}");
     }
 
-    // What a run records, on from here: its frames, its store, KSA Metal's drain, the game's profilers and the runtime's
+    // What a run records, on from here: its frames, its store, the driver's drain, the game's profilers and the runtime's
     // counters, the tools and the triggers
     private void Record()
     {
@@ -640,7 +640,7 @@ public partial class Director
         return true;
     }
 
-    // A pass begins: what it is for, said; a profiled pass's GPU zones on, KSA Metal splitting render passes at them
+    // A pass begins: what it is for, said; a profiled pass's GPU zones on, the driver splitting render passes at them
     private void BeginPass()
     {
         _events.Add("pass", text: RunPlan.Name(PassKind));
@@ -674,7 +674,7 @@ public partial class Director
     // pass is there to split them, so that the other passes measure without
     private bool SplitsAlways => !_plan.Passes.Contains(PassKind.Profiled);
 
-    // KSA Metal's drain into the run's store (every present, frame shown, wait and large allocation), and its latest
+    // The driver's drain into the run's store (every present, frame shown, wait and large allocation), and its latest
     // present kept as the frame's driver numbers
     private void DrainDriver()
     {
@@ -706,12 +706,12 @@ public partial class Director
             return;
         DrainDriver();
         if (DriverStats.DrainDropped() is > 0 and var dropped)
-            _events.Add("note", text: $"KSA Metal's drain was full: {dropped} of its records lost");
+            _events.Add("note", text: $"the driver's drain was full: {dropped} of its records lost");
         DriverStats.CloseDrain();
         _drain = false;
     }
 
-    // The game's profilers' last frames and moments written, and their switches and KSA Metal's zone mode as they were
+    // The game's profilers' last frames and moments written, and their switches and the driver's zone mode as they were
     private void StopProfilers()
     {
         var (profilers, zones) = (_profilers, _gpuZones);

@@ -1,5 +1,5 @@
 // The run's triggers in the game (the rules: src/shared/benchmark/Triggers.cs). Every frame: a measured part's slow
-// frame and KSA Metal's GPU errors; at every checkpoint, after its screenshot: a broken picture and the checkpoint itself.
+// frame and the driver's GPU errors; at every checkpoint, after its screenshot: a broken picture and the checkpoint itself.
 // A moment is the director's to keep (Frame's answer) and a stop its to take once the work before it is done;
 // screenshots, pass dumps and frame captures go into caught/, one after the other. At a checkpoint they hold it until they
 // are done; after a frame the run plays on while they work, and a part measured meanwhile is disturbed. A rule's limit
@@ -152,7 +152,7 @@ internal sealed class TriggerRunner : Probe
             .Where(i => _rules[i].When is Condition.Broken or Condition.Checkpoint && _ran[i] < _rules[i].Max).ToList();
         if (rules.Count == 0 || _stop != null)
             return null;
-        // A slow frame's work and a dump the driver's watch started go first (KSA Metal does one at a time); this view's
+        // A slow frame's work and a dump the driver's watch started go first (the driver does one at a time); this view's
         // own comes after them. The size counts once the driver has written all of the file
         _holding = true;
         var work = Probes.Then(Probes.Until(() => _queue.Count == 0 && _working == null && !DriverStats.PassDumping() && !DriverStats.Capturing() &&
@@ -215,7 +215,7 @@ internal sealed class TriggerRunner : Probe
             case TriggerAction.Passes:
                 if (!DriverStats.PassDump(path))
                 {
-                    _context.Log($"{label}: no pass dump: KSA Metal could not start one");
+                    _context.Log($"{label}: no pass dump: the driver could not start one");
                     return null;
                 }
                 _context.Log($"{label}: its passes in caught/{name}/ (present {DriverStats.Read()?.Present})");
@@ -229,7 +229,7 @@ internal sealed class TriggerRunner : Probe
                 var gputrace = path + ".gputrace";
                 if (!DriverStats.Capture(gputrace, 1))
                 {
-                    _context.Log($"{label}: no frame capture: KSA Metal could not start one (does the game have MTL_CAPTURE_ENABLED=1?)");
+                    _context.Log($"{label}: no frame capture: the driver could not start one (does the game have MTL_CAPTURE_ENABLED=1?)");
                     return null;
                 }
                 return Probes.Then(Probes.Until(() => !DriverStats.Capturing(), 120), () =>

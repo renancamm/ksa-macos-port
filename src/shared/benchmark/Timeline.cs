@@ -5,7 +5,7 @@
 // protos/perfetto/trace/), since no .NET writer exists.
 //
 // Its tracks, under one for the run: the parts as they were measured, the run's events, frame time and GPU busy, each
-// frame from its start to its present (CPU) and to the GPU's end (GPU) and its time on screen, KSA Metal's waits by
+// frame from its start to its present (CPU) and to the GPU's end (GPU) and its time on screen, the driver's waits by
 // kind, the game's zones around the slow frames the triggers kept (a track per thread), memory, and the counters (the
 // GPU's power and clock from benchmark.sh, the probes'), a track each. Every time is the
 // store's clock (the Mac's monotonic clock) in nanoseconds, so an Instruments trace of the same run lines up.
@@ -167,7 +167,7 @@ public static class Timeline
             }
         });
 
-        // KSA Metal's waits, a track for each kind
+        // The driver's waits, a track for each kind
         var waits = new Dictionary<string, ulong>();
         ulong waitGroup = tracks.Add("Waits", Root);
         RunStore.Query(game, "SELECT t, ms, what FROM waits ORDER BY t", q =>

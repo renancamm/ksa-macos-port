@@ -1,7 +1,7 @@
 // Every frame of a run (the frames table of the run's store, Store.cs), a row each: the raw data the parts' numbers come
 // from (Metrics.cs), kept so that a shared run can answer later questions, and a better summary applies to old runs too. Frame time is the
 // time between two game frames, as the player feels it (it includes waiting for Vsync); GPU time is the time the GPU
-// spent on a presented frame, which KSA Metal reports a few frames late (nothing over a part of seconds). The driver's
+// spent on a presented frame, which the driver reports a few frames late (nothing over a part of seconds). The driver's
 // columns are those of its latest present: a frame that presented nothing repeats them, the present column tells.
 using System;
 using System.Collections.Generic;
