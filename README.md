@@ -14,9 +14,9 @@ presets, MetalFX upscaling and memory savings.
 <img alt="Kitten Space Agency on a Mac: the game's rocket in orbit over Earth, with Apple's Metal Performance HUD" src=".github/images/game.png" width="880">
 
 > [!NOTE]
-> This project is unofficial and not affiliated with RocketWerkz. It contains no game files: KSA is free to download
-> from [ksa.ahwoo.com](https://ksa.ahwoo.com), and you need your own copy of its Linux version. If you enjoy the game,
-> please consider supporting its development with a donation there.
+> This project is unofficial and not affiliated with RocketWerkz, and it doesn't include the game. KSA is free to
+> download from [ksa.ahwoo.com](https://ksa.ahwoo.com); if you enjoy it, please consider supporting its development
+> with a donation.
 
 ## Quick start
 
