@@ -472,6 +472,10 @@ internal static partial class MacPortTab
         ConsoleStyle.PushDisabled(pending == null);
         var (hovered, clicked) = DrawCards(cards, Array.IndexOf(Presets.All, inUse), Array.IndexOf(Presets.All, based), 4);
         ConsoleStyle.PopDisabled();
+        if (_pick != null && ReferenceEquals(pending, _pickIn))
+            clicked = Array.IndexOf(Presets.All, _pick);
+        _pick = null;
+        _pickIn = null;
         if (clicked >= 0 && pending != null)
         {
             Presets.Use(Presets.All[clicked], pending, Pending);
@@ -496,6 +500,20 @@ internal static partial class MacPortTab
         Hooks.Status.GetValueOrDefault(nameof(Presets)) is not { Unavailable: true } && Presets.All.All(p => p.Port.Count > 0);
 
     private static bool? _presetsSaving;
+
+    // A card a benchmark run clicks (@settings pick), taken as the player's click the next time the cards are drawn, and
+    // only with the pending copy of the window open then (_pickIn): a pick the window closed on is dropped
+    private static Presets.Preset? _pick;
+    private static object? _pickIn;
+
+    public static bool Pick(string id)
+    {
+        if (_failed || !PresetsAvailable || !GameSettings.Show || _temporary.GetValue(null) is not { } pending ||
+            Presets.All.FirstOrDefault(p => p.Id == id) is not { } preset)
+            return false;
+        (_pick, _pickIn) = (preset, pending);
+        return true;
+    }
 
     // Auto Memory Saving: a banner under the presets' cards, on the MetalFX boxes' panel, its name and what it is on
     // the left, the same either way, and its switch on the right. On, its name gets a * while settings differ from

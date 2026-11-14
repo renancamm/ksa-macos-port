@@ -1,9 +1,10 @@
 #!/bin/bash
 # Makes the README's pictures: the scene a new game starts on (the game's test vessel in orbit), with Apple's Metal
-# Performance HUD, and the game's settings open on the Mac Port tab, in the installed app at the settings below, on a
-# fresh install's, in a 1280x800 window, muted, without the Welcome popup. The benchmark plays its readme scenario
-# (src/game/benchmark/lineup/benchmark.txt) with the window tool, which takes a picture of the game's window at each
-# view once the HUD's frame rate has settled; this script makes PNGs of them in .github/images/.
+# Performance HUD, and the game's settings open on the Mac Port tab with the Quality card just clicked, in the
+# installed app at the settings below, on a fresh install's, in a 1280x800 window, muted, without the Welcome popup.
+# The benchmark plays its readme scenario (src/game/benchmark/lineup/benchmark.txt) with the window tool, which takes a
+# picture of the game's window at each view once the HUD's frame rate has settled; this script makes PNGs of them in
+# .github/images/.
 #
 # Usage: scripts/readme-screenshots.sh [--app <path>]
 #   Needs the port folder (./build.sh --install first, so that the app's benchmark has the readme scenario), the display
@@ -24,8 +25,10 @@ done
 [ -x "${OUT}/benchmark.sh" ] || die "no port folder: run ./build.sh --install first."
 [ -d "${APP}" ] || die "no app at ${APP}."
 
-# The settings the pictures show, on a fresh install's
-SETTINGS=(--defaults --tab-preset quality --port upscaling=metalfx --port steady_frame_rate=true)
+# The game's settings, on a fresh install's. The card picked last is Game Defaults, so that the scenario's click turns
+# Quality's card gold: a click on the card the settings are based on leaves it as it is. The tab's picture then shows
+# Quality's values as pending changes.
+SETTINGS=(--defaults --tab-preset quality --port upscaling=metalfx --port steady_frame_rate=true --port preset=game_defaults)
 
 IMAGES="${REPO}/.github/images"
 LOG="${BUILD}/readme-screenshots.log"

@@ -701,6 +701,8 @@ internal static class Tests
                  {
                      ("scenario a flight\n0 @shot one 5\n", ":2: @shot <name>"),
                      ("scenario a flight\n0 @nothing\n", ":2: no directive @nothing"),
+                     ("scenario a views\n0 @settings pick\n", ":2: @settings open|close|pick <preset>"),
+                     ("scenario a views\n0 @settings open now\n", ":2: @settings open|close|pick <preset>"),
                      ("scenario a sideways\n", ":1: scenario <name> flight|views|timed"),
                      ("scenario a flight\nscenario a views\n", ":2: scenario a twice"),
                      ("test t a b\nscenario a flight\n0 @shot x\nscenario b views\n0 @shot y\n", "test t mixes kinds"),

@@ -46,7 +46,12 @@ public partial class Director
             ["@fov"] = Fov,
             ["@look"] = _camera.LookIva,
             ["@sun"] = CameraOperator.Sun,
-            ["@settings"] = a => a[1] is "open" or "close" && OpenSettings(a[1] == "open"),
+            ["@settings"] = a => a[1] switch
+            {
+                "open" or "close" when a.Length == 2 => OpenSettings(a[1] == "open"),
+                "pick" when a.Length == 3 => PickPreset(a[2]),
+                _ => false,
+            },
         };
         foreach (var (name, handler) in _vehicles.Handlers())
             handlers[name] = handler;
@@ -175,6 +180,22 @@ public partial class Director
     }
 
     private static bool _settingsAlone;
+
+    // @settings pick <preset>: the Mac Port tab clicks that card the next time it draws its cards in the window open now,
+    // as a player does (Runs.Install has the hooks' click). The card turns gold unless the settings are based on it
+    // already, its values pending until the window closes
+    private bool PickPreset(string id)
+    {
+        if (TabPresets.Find(id) == null)
+        {
+            Log($"@settings pick: no preset '{id}' ({string.Join(", ", TabPresets.All.Select(p => p.Id))})");
+            return false;
+        }
+        if (Runs.PickPreset(id))
+            return true;
+        Log("@settings pick: the Mac Port tab can't pick a preset (logs/console.log says why)");
+        return false;
+    }
 
     // After Program.DrawFps: the settings window, open with the interface hidden
     private static void DrawSettingsAlone()

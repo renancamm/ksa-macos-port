@@ -393,9 +393,10 @@ scenario warpfalling timed
 40 @shot falling
 
 # The README's pictures (scripts/readme-screenshots.sh), in no test: the game's test vessel in orbit where a run starts,
-# the scene alone; then the game's settings open on the Mac Port tab over it.
+# the scene alone; then the game's settings open on the Mac Port tab over it, the Quality card just clicked (gold).
 scenario readme views
 0.5 @shot boot
 0.5 @settings open
+0.5 @settings pick quality
 1 @shot macport
 1 @settings close
