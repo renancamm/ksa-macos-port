@@ -180,9 +180,9 @@ Terminal.
 
 Mods are supported too. They are .NET code, like the game, so most of them run on a Mac as they are.
 
-The easiest way to use them is [Borea](https://github.com/KSAModding/Borea), the community's mod manager. It finds
-the app in `/Applications` or `~/Applications`, installs the [StarMap](https://github.com/StarMapLoader/StarMap) mod
-loader, and keeps your mods in instances, each with its own saves and settings. If the app is somewhere else, set
+The easiest way to use them is via [Borea](https://github.com/KSAModding/Borea), the community's mod manager. It
+finds the app in `/Applications` or `~/Applications`, installs the [StarMap](https://github.com/StarMapLoader/StarMap)
+mod loader, and keeps your mods in instances, each with its own saves and settings. If the app is somewhere else, set
 Borea's game folder to the app's `Contents/Resources`.
 
 Borea starts the game through the app, so KSA Metal and the Mac Port tab work with mods too.
@@ -223,10 +223,10 @@ source layout, each folder with its own README:
 
 ### Thanks
 
-- [Luc8020](https://github.com/Luc8020/ksa-macos-port), for discovering the two-byte mark in `KSA.dll` and the
-  library swap this project is built on.
-- [Denis](https://github.com/denisk-dev), for leading the work to bring KSA to the Mac, and for all the insights and
-  early testing.
+- Agent P ([Luc8020](https://github.com/Luc8020)), for discovering the two-byte mark in `KSA.dll` and the library
+  swap this project is built on.
+- Denis ([denisk-dev](https://github.com/denisk-dev)), for leading the work to bring KSA to the Mac, and for all the
+  insights and early testing.
 - [RocketWerkz](https://www.rocketwerkz.com), for developing such an amazing game, and for publishing
   [BRUTAL](https://github.com/ahwootech/BRUTAL) with macOS builds of its libraries.
 
