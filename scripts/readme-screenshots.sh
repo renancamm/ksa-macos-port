@@ -27,7 +27,7 @@ done
 
 # The settings the pictures show, on a fresh install's, and how the caption says them
 SETTINGS=(--defaults --tab-preset quality --port upscaling=metalfx --port steady_frame_rate=true)
-SAID="the Quality preset with MetalFX Temporal and Steady Frame Rate"
+SAID="Quality preset with MetalFX"
 
 IMAGES="${REPO}/.github/images"
 LOG="${BUILD}/readme-screenshots.log"
@@ -51,12 +51,9 @@ picture() {
 picture "${pictures}/readme_boot.png" game.png
 picture "${pictures}/../readme_macport.png" mac-port-tab.png
 
-# The caption under the game's picture: the Mac, the KSA version and the settings
-hardware="$(system_profiler SPHardwareDataType)"
-model="$(sed -n 's/^ *Model Name: //p' <<< "${hardware}")"
-chip="$(sed -n 's/^ *Chip: //p' <<< "${hardware}")"
-ksa="$(app_version "${APP}")"
-caption="${model:-A Mac}${chip:+ with ${chip}}${ksa:+, KSA ${ksa}}, ${SAID} in a 1280x800 window"
+# The caption under the game's picture: the chip and the settings
+chip="$(system_profiler SPHardwareDataType | sed -n 's/^ *Chip: //p')"
+caption="${chip:-A Mac}, ${SAID}"
 # The caption as sed's replacement: its \, & and | escaped
 escaped="${caption//\\/\\\\}"
 escaped="${escaped//&/\\&}"

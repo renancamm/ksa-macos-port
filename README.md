@@ -10,7 +10,7 @@
 <p align="center">
   <img alt="Kitten Space Agency on a Mac: the game's rocket in orbit over Earth, with Apple's Metal Performance HUD" src=".github/images/game.png" width="880">
 </p>
-<p align="center"><sub>MacBook Pro with Apple M5, KSA 2026.11.10.5801, the Quality preset with MetalFX Temporal and Steady Frame Rate in a 1280x800 window</sub></p> <!-- the caption: scripts/readme-screenshots.sh writes it with the pictures -->
+<p align="center"><sub>Apple M5, Quality preset with MetalFX</sub></p> <!-- the caption: scripts/readme-screenshots.sh writes it with the pictures -->
 
 An experimental community project that turns the Linux version of **Kitten Space Agency** (KSA) into a native Mac
 app for Apple Silicon. It draws the game with **KSA Metal**: a Vulkan driver written for KSA on top of Apple's Metal,
