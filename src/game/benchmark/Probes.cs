@@ -599,7 +599,7 @@ internal sealed class CameraLogProbe : Probe
 // A picture of the game's window at every checkpoint, after its screenshot, with what macOS draws over the game (Apple's
 // Metal Performance HUD), which KSA Metal's screenshots can't have: the window event names the checkpoint and the
 // window's number, benchmark.sh's program takes the picture (screencapture) and answers with the windowed event. The
-// checkpoint holds until then, at most a minute.
+// checkpoint holds a few seconds before it asks, and until the answer, at most a minute.
 internal sealed class WindowProbe(int session, ProbeContext context) : Probe
 {
     [DllImport("/usr/lib/libobjc.A.dylib")]
@@ -621,6 +621,12 @@ internal sealed class WindowProbe(int session, ProbeContext context) : Probe
     {
         if (context.Events is not { } events)
             return null;
+        // A few seconds first (the knob settle), so that the frame rate the HUD averages has settled on the view
+        return Probes.Then(Probes.Until(() => false, Host.Knob("settle", 5)), () => Ask(view, events));
+    }
+
+    private Wait? Ask(View view, EventLog events)
+    {
         nint number = KSA.Program.GetWindow() is { } w && w.GetCocoaWindow() is var ns && ns != 0 ? objc_msgSend(ns, WindowNumber) : 0;
         if (number == 0)
         {

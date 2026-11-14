@@ -8,9 +8,9 @@
 </p>
 
 <p align="center">
-  <img alt="Kitten Space Agency on a Mac: the game's rocket in orbit over Earth, with Apple's Metal Performance HUD" src=".github/images/game.jpg" width="880">
+  <img alt="Kitten Space Agency on a Mac: the game's rocket in orbit over Earth, with Apple's Metal Performance HUD" src=".github/images/game.png" width="880">
 </p>
-<p align="center"><sub>Mac</sub></p> <!-- the caption: scripts/readme-screenshots.sh writes it with the pictures -->
+<p align="center"><sub>MacBook Pro with Apple M5, KSA 2026.11.10.5801, the game's default settings in a 1280x800 window</sub></p> <!-- the caption: scripts/readme-screenshots.sh writes it with the pictures -->
 
 An experimental community project that turns the Linux version of **Kitten Space Agency** (KSA) into a native Mac
 app for Apple Silicon. It draws the game with **KSA Metal**: a Vulkan driver written for KSA on top of Apple's Metal,
@@ -169,7 +169,7 @@ the tab, and holds three sections for testing and debugging that the tab doesn't
 ([`src/shared/settings/`](src/shared/settings/)).
 
 <p align="center">
-  <img alt="The Mac Port tab in the game's settings" src=".github/images/mac-port-tab.jpg" width="880">
+  <img alt="The Mac Port tab in the game's settings" src=".github/images/mac-port-tab.png" width="880">
 </p>
 
 ### The hooks

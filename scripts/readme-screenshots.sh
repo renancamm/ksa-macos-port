@@ -1,9 +1,10 @@
 #!/bin/bash
-# Makes the README's pictures: the scene a new game starts on (the game's test vessel in orbit) and the game's settings
-# open on the Mac Port tab, each with Apple's Metal Performance HUD, in the installed app at a fresh install's settings
+# Makes the README's pictures: the scene a new game starts on (the game's test vessel in orbit), with Apple's Metal
+# Performance HUD, and the game's settings open on the Mac Port tab, in the installed app at a fresh install's settings
 # in a 1280x800 window, muted, without the Welcome popup. The benchmark plays its readme scenario
 # (src/game/benchmark/lineup/benchmark.txt) with the window tool, which takes a picture of the game's window at each
-# view; this script makes them JPEGs in .github/images/ and writes the caption under the first into README.md.
+# view once the HUD's frame rate has settled; this script makes PNGs in .github/images/ and writes the caption under the
+# first into README.md.
 #
 # Usage: scripts/readme-screenshots.sh [--app <path>]
 #   Needs the port folder (./build.sh --install first, so that the app's benchmark has the readme scenario), the display
@@ -35,14 +36,16 @@ step "Playing the README's views in ${APP}"
 pictures="$(sed -n 's/^.*Window: \(.*\) (a picture of.*$/\1/p' "${LOG}" | tail -1)"
 [ -d "${pictures}" ] || die "the run left no pictures of the window (${LOG})."
 
-# JPEGs at most 1920 pixels wide: sharp on a Retina display at the README's width, a few hundred KB each
+# PNGs at most 1600 pixels wide: sharp on a Retina display at the README's width. The game's picture is the window's,
+# with the HUD and the window's transparent rounded corners; the tab's is KSA Metal's screenshot of the view, without
+# the HUD.
 picture() {
-    [ -f "${pictures}/readme_$1.png" ] || die "no picture of $1 in ${pictures}."
-    sips -s format jpeg -s formatOptions 85 -Z 1920 "${pictures}/readme_$1.png" --out "${IMAGES}/$2" > /dev/null
+    [ -f "$1" ] || die "no picture $1."
+    sips -Z 1600 "$1" --out "${IMAGES}/$2" > /dev/null
     info "${IMAGES#"${REPO}/"}/$2"
 }
-picture boot game.jpg
-picture macport mac-port-tab.jpg
+picture "${pictures}/readme_boot.png" game.png
+picture "${pictures}/../readme_macport.png" mac-port-tab.png
 
 # The caption under the game's picture: the Mac, the KSA version and the settings
 hardware="$(system_profiler SPHardwareDataType)"
