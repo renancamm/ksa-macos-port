@@ -15,8 +15,8 @@ presets, MetalFX upscaling and memory savings.
 
 > [!NOTE]
 > This project is unofficial and not affiliated with RocketWerkz, and it doesn't include the game. KSA is free to
-> download from [ksa.ahwoo.com](https://ksa.ahwoo.com); if you enjoy it, please consider supporting its development
-> with a donation.
+> download from [ksa.ahwoo.com](https://ksa.ahwoo.com); if you enjoy it, **please consider supporting its development
+> with a donation**.
 
 ## Quick start
 
