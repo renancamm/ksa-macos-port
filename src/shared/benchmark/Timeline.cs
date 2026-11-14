@@ -206,7 +206,7 @@ public static class Timeline
         // The events first: they add the lanes the tracks need
         var packets = Events(slices, instants, counters, tracks).ToList();
         var trace = new Proto();
-        trace.Message(1, Packet().Message(60, new Proto().Varint(1, Root).String(2, $"KSA Mac Port benchmark {name}").Varint(11, 3)));
+        trace.Message(1, Packet().Message(60, new Proto().Varint(1, Root).String(2, $"KSA Metal benchmark {name}").Varint(11, 3)));
         foreach (var d in tracks.Descriptors)
             trace.Message(1, Packet().Message(60, d));
         foreach (var e in packets)

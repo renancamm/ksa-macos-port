@@ -1,7 +1,8 @@
-# Benchmark
+# The KSA Metal benchmark
 
-The port's benchmark measures how KSA runs on your Mac. It has three tests, each starting in a new game's world. It
-measures each part and writes a report you can compare with another run or share.
+The benchmark is KSA Metal's tool: the game doesn't need it, but it measures how KSA runs on your Mac, and every
+change to KSA Metal is checked with it. It has three tests, each starting in a new game's world. It measures each
+part and writes a report you can compare with another run or share.
 
 | Test | What it plays | What it is for |
 |---|---|---|

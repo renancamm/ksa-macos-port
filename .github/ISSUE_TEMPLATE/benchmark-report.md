@@ -1,6 +1,6 @@
 ---
 name: Benchmark report
-about: Share how KSA runs on your Mac, measured with the port's benchmark
+about: Share how KSA runs on your Mac, measured with the KSA Metal benchmark
 title: "Benchmark: <your Mac, e.g. MacBook Air M2 16 GB>"
 labels: benchmark
 ---

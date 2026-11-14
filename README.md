@@ -106,11 +106,13 @@ process, so macOS treats it like any native game, Game Mode included. The launch
 
 ## KSA Metal
 
-KSA Metal is the port's own code between the game and the Mac. The **driver** translates the game's Vulkan calls
-to Metal. The **hooks** patch the game's code at startup, and most of them make it faster. A set of **fixes**
-corrects the few places where the game misbehaves on a Mac, and two small **shims** fix window calls and save
-memory. Everything is controlled from the **Mac Port** tab in the game's settings. The optimizations that are on
-by default don't change how the game looks, and settings that trade visual quality for speed are off by default.
+KSA Metal is the port's own code between the game and the Mac. The **driver** translates the game's Vulkan calls to
+Metal. The **hooks** patch the game's code at startup, and most of them make it faster. A set of **fixes** corrects
+the few places where the game misbehaves on a Mac, and two small **shims** fix window calls and save memory.
+Everything is controlled from the **Mac Port** tab in the game's settings. The optimizations that are on by default
+don't change how the game looks, and settings that trade visual quality for speed are off by default. The
+**benchmark** is KSA Metal's tool: the game doesn't need it, but it measures how the game runs, and every change to
+KSA Metal is checked with it.
 
 ### The driver
 
@@ -163,8 +165,6 @@ and can be edited by hand, and it has three more sections for testing and debugg
 
 <img alt="The Mac Port tab in the game's settings" src=".github/images/mac-port-tab.png" width="880">
 
-## Benchmark and mods
-
 ### The benchmark
 
 The benchmark measures how the game runs on your Mac with three tests, each starting in a new game's world: the Mixed
@@ -178,7 +178,7 @@ share. Run it from the Mac Port tab (**RUN** next to a test), or from the port f
 
 [`src/game/benchmark/`](src/game/benchmark/) explains the tests, the reports and how to compare runs.
 
-### Mods
+## Mods
 
 [Borea](https://github.com/KSAModding/Borea), the community's mod manager, installs the
 [StarMap](https://github.com/StarMapLoader/StarMap) mod loader and mods, keeps them in instances, and starts the game

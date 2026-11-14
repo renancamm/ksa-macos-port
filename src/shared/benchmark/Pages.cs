@@ -96,7 +96,7 @@ public static class Pages
     private static string MarkdownOf(RunRecord r)
     {
         var md = new StringBuilder();
-        md.AppendLine($"## KSA Mac Port benchmark: {Title(r)}");
+        md.AppendLine($"## KSA Metal benchmark: {Title(r)}");
         md.AppendLine();
         var problems = r.Problems.ToList();
         if (r.Status == Benchmark.Status.Stopped && r.Notes.Any(f => f.Code == "trigger-stop"))
@@ -299,7 +299,7 @@ public static class Pages
         html.Append("<header class=\"hero\">");
         if (Banner(dir, order, ext) is { } banner)
             html.Append(Image(at + banner, "", "hero-image"));
-        html.Append("<div class=\"hero-text\"><div class=\"eyebrow\">KSA Mac Port benchmark</div>");
+        html.Append("<div class=\"hero-text\"><div class=\"eyebrow\">KSA Metal benchmark</div>");
         html.Append($"<h1>{E(TestName(r.Test))}{(r.Mode.Split(' ').Contains("jump") ? " <span>places</span>" : "")}</h1>");
         html.Append($"<p>{E(When(r))} · {E(MacLine(r))}</p>");
         html.Append(Status(r.Status == Benchmark.Status.Passed, r.Status.ToString()));
@@ -773,7 +773,7 @@ public static class Pages
         var html = new StringBuilder();
         var test = TestName(rb.Test);
         Open(html, $"{test}: {When(ra)} and {When(rb)}", rb.Drawable);
-        html.Append("<header class=\"hero slim\"><div class=\"hero-text\"><div class=\"eyebrow\">KSA Mac Port benchmark · comparison</div>");
+        html.Append("<header class=\"hero slim\"><div class=\"hero-text\"><div class=\"eyebrow\">KSA Metal benchmark · comparison</div>");
         html.Append($"<h1>{E(test)}</h1><p><b>A</b> {E(When(ra))} &nbsp; <b>B</b> {E(When(rb))}</p>");
         html.Append(good is { } better ? Status(better, verdict) : $"<span class=\"status\">{E(verdict)}</span>");
         html.Append("</div></header><main>");
@@ -863,7 +863,7 @@ public static class Pages
     {
         var html = new StringBuilder();
         Open(html, $"Study {s.Name}", s.First?.Drawable);
-        html.Append("<header class=\"hero slim\"><div class=\"hero-text\"><div class=\"eyebrow\">KSA Mac Port benchmark · study</div>");
+        html.Append("<header class=\"hero slim\"><div class=\"hero-text\"><div class=\"eyebrow\">KSA Metal benchmark · study</div>");
         html.Append($"<h1>{E(s.Name)}</h1><p>{E(s.First is { } r ? $"{When(r)} · {MacLine(r)} · " : "")}{s.Played} of {s.Sessions.Count} game sessions</p>");
         html.Append("</div></header><main>");
 
