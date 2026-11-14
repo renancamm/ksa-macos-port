@@ -6,10 +6,10 @@
 [![Downloads](https://img.shields.io/github/downloads/renancamm/ksa-macos-port/total)](https://github.com/renancamm/ksa-macos-port/releases)
 
 An experimental community project that makes a native Mac app from the Linux version of **Kitten Space Agency**
-(KSA), RocketWerkz's space flight game. It renders the game with **KSA Metal**, built around a Vulkan driver
-written for KSA on top of Apple's Metal, with the game's tessellation, ray tracing and HDR, and optimizations for
-Apple Silicon that make it faster with no visual changes. A **Mac Port** tab in the game's settings adds graphics
-presets, MetalFX upscaling and memory savings.
+(KSA), RocketWerkz's space flight game. The game renders with **KSA Metal**, built around a Vulkan driver for
+Apple's Metal, with its tessellation, ray tracing and HDR. Optimizations for Apple Silicon make it faster with no
+visual changes, and a **Mac Port** tab in the game's settings adds graphics presets, MetalFX upscaling and memory
+savings.
 
 <img alt="Kitten Space Agency on a Mac: the game's rocket in orbit over Earth, with Apple's Metal Performance HUD" src=".github/images/game.png" width="880">
 
