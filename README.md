@@ -2,8 +2,8 @@
 
 [![Latest release](https://img.shields.io/github/v/release/renancamm/ksa-macos-port?label=release)](https://github.com/renancamm/ksa-macos-port/releases/latest)
 [![macOS 26+ on Apple Silicon](https://img.shields.io/badge/macOS_26+-Apple_Silicon-000000?logo=apple)](#quick-start)
-[![Downloads](https://img.shields.io/github/downloads/renancamm/ksa-macos-port/total)](https://github.com/renancamm/ksa-macos-port/releases)
 [![License: MIT](https://img.shields.io/github/license/renancamm/ksa-macos-port)](LICENSE)
+[![Downloads](https://img.shields.io/github/downloads/renancamm/ksa-macos-port/total)](https://github.com/renancamm/ksa-macos-port/releases)
 
 An experimental community project that makes a native Mac app from the Linux version of **Kitten Space Agency**
 (KSA), RocketWerkz's space flight game. It renders the game with **KSA Metal**, built around a Vulkan driver
@@ -22,8 +22,8 @@ presets, MetalFX upscaling and memory savings.
 You need:
 
 - A Mac with Apple Silicon (M1 or later) and **macOS 26** or later.
-- The **Linux version of KSA** from [ksa.ahwoo.com](https://ksa.ahwoo.com), version 2026.10.25 or later. It is a
-  file like `ksa_linux_v2026.10.25.5707.tar.gz`; leave it in your Downloads folder.
+- The **Linux version of KSA** from [ksa.ahwoo.com](https://ksa.ahwoo.com). It is a file like
+  `ksa_linux_v2026.11.10.5801.tar.gz`; leave it in your Downloads folder.
 
 Then:
 
@@ -34,10 +34,8 @@ Then:
    cd ~/Downloads/ksa-macos-port
    ./port.sh
    ```
+   It finds the KSA archive in Downloads and installs the app in about a minute.
 3. Open **Kitten Space Agency** from `~/Applications`.
-
-`port.sh` finds the KSA archive in Downloads, converts it and installs the app. It takes about a minute, and needs
-nothing else installed.
 
 ### Other commands
 
@@ -98,19 +96,17 @@ your KSA archive, converts it and bundles it into a regular Mac app
 ([`src/player/port-cli/`](src/player/port-cli/)).
 
 The app's executable is a small launcher. It starts the game on the bundled .NET runtime with KSA Metal loaded,
-using only the libraries inside the app, never ones installed elsewhere on the Mac. The game runs as the app's own
-process, so macOS treats it like any native game, Game Mode included. The launcher can also start a
-[mod loader](#mods) in place of the game ([`src/game/launcher/`](src/game/launcher/)).
+using only the libraries inside the app. The game runs as the app's own process, so macOS treats it like any native
+game. The launcher can also start a [mod loader](#mods) in place of the game
+([`src/game/launcher/`](src/game/launcher/)).
 
 ## KSA Metal
 
 KSA Metal is the port's own code between the game and the Mac. The **driver** translates the game's Vulkan calls to
-Metal. The **hooks** patch the game's code at startup, and most of them make it faster. A set of **fixes** corrects
-the few places where the game misbehaves on a Mac, and two small **shims** fix window calls and save memory.
-Everything is controlled from the **Mac Port** tab in the game's settings. The optimizations that are on by default
-don't change how the game looks, and settings that trade visual quality for speed are off by default. The
-**benchmark** is KSA Metal's tool: the game doesn't need it, but it measures how the game runs, and every change to
-KSA Metal is checked with it.
+Metal. The **hooks** patch the game's code at startup to make it faster. A set of **fixes** corrects the few places
+where the game misbehaves on a Mac, and two small **shims** fix window calls and save memory. Everything is
+controlled from the **Mac Port** tab in the game's settings. The optimizations that are on by default don't change
+how the game looks, and settings that trade visual quality for speed are off by default.
 
 ### The driver
 
@@ -119,10 +115,10 @@ The driver sits between the two: it implements the Vulkan functions KSA calls, a
 ships it as `libvulkan.1.dylib`, where a Vulkan loader and driver would normally be, so the game uses it without
 knowing the difference.
 
-It implements only the part of Vulkan that KSA uses, about 180 functions for one GPU. That keeps it small (about
-11,000 lines of Objective-C++) and specific: other Vulkan programs won't run on it. Vulkan and Metal are both
-explicit, low-level GPU APIs built on similar ideas, so most Vulkan concepts map directly onto Metal;
-[`src/game/driver/`](src/game/driver/) documents that mapping, the driver's switches, and how to build and test it.
+It implements only the part of Vulkan that KSA uses, about 180 functions for one GPU. That keeps it small and
+specific: other Vulkan programs won't run on it. Vulkan and Metal are both explicit, low-level GPU APIs built on
+similar ideas, so most Vulkan concepts map directly onto Metal; [`src/game/driver/`](src/game/driver/) documents that
+mapping, the driver's switches, and how to build and test it.
 
 ### The hooks
 
@@ -148,46 +144,51 @@ The **GLFW shim** fixes a few GLFW calls on macOS that the game's window and dis
 modifying GLFW ([`src/game/shims/glfw/`](src/game/shims/glfw/)).
 
 The **KTX shim** reduces memory use. The game keeps every texture's pixels in memory for the whole session; the shim
-maps them from files instead, so macOS can page them out under memory pressure and read them back when needed. It is
-the tab's **Textures Kept on Disk** setting, which Auto Memory Saving turns on for Macs with 16 GB of memory or less
-([`src/game/shims/ktx/`](src/game/shims/ktx/)).
+maps them from files instead, so macOS can page them out under memory pressure and read them back when needed. Macs
+with 16 GB of memory or less use it automatically ([`src/game/shims/ktx/`](src/game/shims/ktx/)).
 
 ### The Mac Port tab
 
-KSA Metal's settings live in the game's settings menu (Esc), in the **Mac Port** tab: graphics presets, Apple's
-MetalFX upscaling, optional performance settings with small visual trade-offs, and memory savings matched to your
-Mac. It works like the game's other tabs, and each setting's tooltip explains what it does and what it
-costs. The settings are stored in `port-settings.toml`, next to the game's `settings.toml`. The file is commented
-and can be edited by hand, and it has three more sections for testing and debugging that the tab doesn't show
-([`src/shared/settings/`](src/shared/settings/)).
+KSA Metal's settings live in the game's settings menu (Esc), in the **Mac Port** tab. It works like the game's
+other tabs, and each setting's tooltip explains what it does and what it costs. The tab has:
+
+- Graphics presets: Performance, Balanced and Quality
+- Upscaling with Apple's MetalFX
+- Extra performance settings, with small visual trade-offs
+- The optimizations, which can be turned off one by one
+- Memory savings, set for your Mac
+- The benchmark
 
 <img alt="The Mac Port tab in the game's settings" src=".github/images/mac-port-tab.png" width="880">
 
 ### The benchmark
 
-The benchmark measures how the game runs on your Mac with three tests, each starting in a new game's world: the Mixed
+The benchmark measures how the game runs on your Mac. It plays three tests, each in a new game's world: the Mixed
 Test (rockets, smoke, an explosion, a kitten and a cockpit), the Planetary Tour (a flight from Earth to Jupiter) and
-the Warp Test (how far time warp gets in a fixed time). It writes a report you can compare with another run or
-share. Run it from the Mac Port tab (**RUN** next to a test), or from the port folder:
+the Warp Test (how far time warp gets in a fixed time).
 
-```bash
-./benchmark.sh
-```
+Each run writes a report with the frame rate of each part of the test, the slow frames and what caused them, and
+screenshots. A profile run also shows what the GPU spends its time on, frame by frame. Two runs can be compared side
+by side, screenshots included, to see what a setting or a new version changes in speed and in the image. The
+benchmark can also record 20 seconds of your own game, to share when it stutters somewhere.
 
-[`src/game/benchmark/`](src/game/benchmark/) explains the tests, the reports and how to compare runs.
+To run it, press **RUN** next to a test in the Mac Port tab's Benchmark section.
+[`src/game/benchmark/`](src/game/benchmark/) explains the tests and the reports, and how to run and compare them from
+Terminal.
 
 ## Mods
 
-[Borea](https://github.com/KSAModding/Borea), the community's mod manager, installs the
-[StarMap](https://github.com/StarMapLoader/StarMap) mod loader and mods, keeps them in instances, and starts the game
-with them. Version 0.6.16 or newer finds the app in `/Applications` and `~/Applications`; for an app elsewhere, set
-Borea's game folder to the app's `Contents/Resources`.
+Mods work with the port. They are .NET code, like the game, so most of them run on a Mac as they are.
+
+The easiest way to use them is [Borea](https://github.com/KSAModding/Borea), the community's mod manager. It
+installs the [StarMap](https://github.com/StarMapLoader/StarMap) mod loader, keeps mods in instances and starts the
+game with them. From version 0.6.16 on, it finds the app on its own in `/Applications` and `~/Applications`; for an app
+elsewhere, set Borea's game folder to the app's `Contents/Resources`.
 
 Borea starts the game through the app's launcher, so KSA Metal and the Mac Port tab work with mods too. Each
 instance has its own saves, settings, port settings and `logs` folder.
 
-Borea and StarMap are separate projects: mods made for them may not work on a Mac, and a new KSA version can break
-them until they are updated.
+Borea and StarMap are separate projects, and a new KSA version can break mods until they are updated.
 
 ## Building
 
@@ -223,13 +224,21 @@ source layout, each folder with its own README:
 
 ## Credits and license
 
-### Credits
+### Thanks
 
-- [Luc8020/ksa-macos-port](https://github.com/Luc8020/ksa-macos-port), the project this one started from.
-- RocketWerkz, for Kitten Space Agency and for publishing [BRUTAL](https://github.com/ahwootech/BRUTAL) with macOS
-  builds of its libraries.
+- [Luc8020](https://github.com/Luc8020/ksa-macos-port), for discovering the two-byte mark in `KSA.dll` and the
+  library swap this project is built on.
+- Denis, for spearheading the effort to bring KSA to the Mac, and for the insights and early testing.
+- RocketWerkz, for developing such an amazing game, and for publishing [BRUTAL](https://github.com/ahwootech/BRUTAL)
+  with macOS builds of its libraries.
+
+### Third-party software
+
 - [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) and [SPIRV-Tools](https://github.com/KhronosGroup/SPIRV-Tools),
-  built into KSA Metal, and the projects inside BRUTAL's libraries, among them [GLFW](https://www.glfw.org) and
+  built into KSA Metal.
+- [Harmony](https://github.com/pardeike/Harmony), which KSA Metal Hooks use to patch the game.
+- The .NET runtime, by Microsoft.
+- BRUTAL's native libraries, by RocketWerkz, and the projects inside them, among them [GLFW](https://www.glfw.org) and
   [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator).
 - Audio: FMOD Engine by Firelight Technologies Pty Ltd.
 
