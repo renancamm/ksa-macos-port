@@ -84,12 +84,9 @@ macOS builds, and plugs in a Vulkan driver made for KSA.
  └─────────────────────────────────┘              └─────────────────────────────────────┘
  ┌─────────────────────────────────┐              ┌─────────────────────────────────────┐
  │ Vulkan driver                   │ written here │ KSA Metal                           │
- │ comes with the system           ├─────────────►│ a Vulkan driver made for KSA,       │
- │                                 │              │ built on Apple's Metal, with the    │
- │                                 │              │ hooks, fixes and shims              │
+ │ comes with the system           ├─────────────►│ a Vulkan-to-Metal driver for KSA    │
+ │                                 │              │ + fixes and optimizations           │
  └─────────────────────────────────┘              └─────────────────────────────────────┘
-
- + a fix made by the port
 ```
 
 Nothing third-party is modified: the .NET runtime, BRUTAL's libraries and FMOD are the macOS builds their makers
