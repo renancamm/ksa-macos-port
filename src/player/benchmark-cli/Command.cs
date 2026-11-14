@@ -53,6 +53,10 @@ public static partial class Program
           --app <path>       the app to measure (default: ~/Applications/Kitten Space Agency.app)
         With what settings:
           --preset <name>    low, medium or high: fixed settings in a 1280x800 window, the same on every Mac (default: yours)
+          --tab-preset <name>
+                             performance, balanced, quality or game_defaults: the Mac Port tab's preset, its game and port
+                             settings on top of yours (or of --defaults), as its card gives them, with Auto Memory Saving's
+                             limits when it is on with 8 GB or less; not with --preset
           --defaults         the settings of a fresh install instead of yours: the game's own and the port's defaults
           --capped           with check, measure, profile or calibrate: the settings' own Vsync (these play without it,
                              so that a saving shows as GPU time; run plays your Vsync)

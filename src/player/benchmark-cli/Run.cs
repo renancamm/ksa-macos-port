@@ -23,7 +23,7 @@ public static partial class Program
         // --probe, --knob, --channels: the probes (the benchmark's by name, assemblies by absolute path), their knobs, the
         // channels turned off
         private readonly List<string> _probes = [], _knobs = [], _off = [];
-        private string _preset = "", _system = "", _hold = "", _settingsFile = "", _reference = "", _catch = "";
+        private string _preset = "", _tabPreset = "", _system = "", _hold = "", _settingsFile = "", _reference = "", _catch = "";
         private string _template = "Metal System Trace", _test = "";
         private bool _defaults, _explore, _fast, _noShots, _hud, _trace, _capture, _catchCapture, _passes, _cameraLog, _window, _holding, _capped;
 
@@ -255,6 +255,7 @@ public static partial class Program
                     case "--settings": _settingsFile = args[++i]; break;
                     case "--app": _app = args[++i].TrimEnd('/'); break;
                     case "--preset": _preset = args[++i]; break;
+                    case "--tab-preset": _tabPreset = args[++i]; break;
                     case "--defaults": _defaults = true; break;
                     case "--capped" when _purpose is Purpose.Check or Purpose.Measure or Purpose.Profile or Purpose.Calibrate: _capped = true; break;
                     case "--system": _system = args[++i]; break;
@@ -355,6 +356,10 @@ public static partial class Program
                 _app = Path.Combine(Environment.CurrentDirectory, _app);
             if (_preset.Length > 0 && !Presets.ContainsKey(_preset))
                 Die($"unknown preset '{_preset}' (low, medium or high).");
+            if (_tabPreset.Length > 0 && TabPresets.Find(_tabPreset) == null)
+                Die($"unknown tab preset '{_tabPreset}' ({string.Join(", ", TabPresets.All.Select(p => p.Id))}).");
+            if (_tabPreset.Length > 0 && _preset.Length > 0)
+                Die("--preset and --tab-preset both set the game's graphics: choose one.");
             // measure: three passes unless said
             if (_repeatText.Length == 0)
                 _repeatText = _purpose == Purpose.Measure ? "3" : "1";

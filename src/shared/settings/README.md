@@ -28,10 +28,18 @@ report program, and in the port folder's `lib/port-cli/`. Who reads the settings
 | the hooks' loader ([`../../game/hooks/loader/`](../../game/hooks/loader/)) | reads the table and `port-settings.toml` when the game starts, and sets each setting the file changes as its variable (`PortSettings.Plan`) |
 | the hooks ([`../../game/hooks/Settings.cs`](../../game/hooks/Settings.cs)) | read each setting back from its variable (`PortSettings.Load`) |
 | the Mac Port tab ([`../../game/hooks/tab/`](../../game/hooks/tab/)) | draws its rows from the table, and writes the values it changes into the file (`PortSettings.Save`) |
-| the benchmark's report program ([`../../player/benchmark-cli/`](../../player/benchmark-cli/)) | checks `--port` against the table and writes it into the run's file |
+| the benchmark's report program ([`../../player/benchmark-cli/`](../../player/benchmark-cli/)) | checks `--port` against the table and writes it into the run's file, and `--tab-preset`'s values (`TabPresets`) into the run's files |
 
 A variable already set when the game starts wins over the file. A variable that is unset, holds none of its setting's
 values, or belongs to a setting whose needs aren't met means the default.
+
+## The tab's presets
+
+[`TabPresets.cs`](TabPresets.cs) holds the Presets section's cards as data: each one's game settings, by the field
+the hooks set and by its key in `settings.toml`, and its column of the table's `presets` (Game Defaults: the game's
+own values and the table's defaults). The tab reads it
+([`../../game/hooks/tab/Presets.cs`](../../game/hooks/tab/Presets.cs), which checks each key against the game's own
+when the game starts), and so does `benchmark.sh --tab-preset`, which writes the same values into a run's files.
 
 ## Auto Memory Saving
 

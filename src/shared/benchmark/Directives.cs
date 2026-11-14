@@ -60,8 +60,8 @@ public static class Directives
         new("@fov", [1], "<degrees>", "the camera's field of view, until the camera moves on"),
         new("@sun", [3], "<celestial> <lat> <lon>", "log where the sun stands over that point (to plan the light of a key)"),
         // The game's interface
-        new("@interface", [1], "show|hide", "the game's interface (F2) shown or hidden; a run starts with it hidden"),
-        new("@settings", [1], "open|close", "the game's settings window (Esc) open on the Mac Port tab, or closed"),
+        new("@settings", [1], "open|close", "the game's settings window (Esc) open on the Mac Port tab, alone over the scene " +
+            "(a run hides the game's interface), or closed"),
     ];
 
     public static Directive? Find(string name) => All.FirstOrDefault(d => d.Name == name);

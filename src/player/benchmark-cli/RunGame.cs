@@ -145,6 +145,7 @@ public static partial class Program
 
         // The settings facts of the run: the preset and what changed on top of it
         private string PresetFact => _preset.Length > 0 ? $"{_preset}, on a fresh install's settings"
+            : _tabPreset.Length > 0 ? $"the Mac Port tab's {TabPresets.Find(_tabPreset)!.Name}, on {(_defaults ? "a fresh install's" : "own")} settings"
             : _defaults ? "none, a fresh install's settings" : "none, own settings";
 
         private string ChangedFact
@@ -363,8 +364,8 @@ public static partial class Program
             Console.CancelKeyPress -= stop;
             term.Dispose();
             hangup.Dispose();
-            // --defaults and presets: the settings as the game saved them, with its defaults filled in
-            if (_defaults || _preset.Length > 0)
+            // --defaults, presets and tab presets: the settings as the game saved them, with its defaults filled in
+            if (_defaults || _preset.Length > 0 || _tabPreset.Length > 0)
                 File.Copy(_settings, Path.Combine(_data, "settings.toml"), true);
             var swapAfter = Swap();
             events.Session = 0;

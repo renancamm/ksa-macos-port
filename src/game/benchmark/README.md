@@ -548,6 +548,7 @@ flight's. Fly the free camera to a place, open the console (`\`) and type `bench
 | Option | |
 |---|---|
 | `--preset low`, `--preset medium`, `--preset high` | fixed settings over a fresh install's defaults, in a 1280x800 window without Vsync, the same on every Mac (default: your settings) |
+| `--tab-preset <name>` | `performance`, `balanced`, `quality` or `game_defaults`: the Mac Port tab's preset, its game and port settings as its card gives them (with Auto Memory Saving's limits when it is on with 8 GB or less), on top of your settings or `--defaults`; `--settings`, `--set` and `--port` go on top. Not with `--preset` |
 | `--defaults` | the settings of a fresh install instead of yours: the game's own defaults and the port settings' (a preset, `--set` and `--port` go on top) |
 | `--capped` | with `check`, `measure`, `profile` or `calibrate`: play the settings' own Vsync. These play without it, so that a saving shows as GPU time (with Vsync, a view that finishes inside the display's refresh lowers the GPU's clock instead) and frame times aren't on the display's steps; `run` plays your Vsync, `--set vsync=...` sets it for any; a preset plays without Vsync either way |
 | `--system earth` | Earth and the Moon only (the game's smaller system): skips Mars, Saturn and Jupiter, and needs less memory (default: `earth` when what plays is all on Earth or the Moon, otherwise `sol`) |

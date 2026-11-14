@@ -46,7 +46,6 @@ public partial class Director
             ["@fov"] = Fov,
             ["@look"] = _camera.LookIva,
             ["@sun"] = CameraOperator.Sun,
-            ["@interface"] = a => a[1] is "show" or "hide" && SetInterface(a[1] == "show"),
             ["@settings"] = a => a[1] is "open" or "close" && OpenSettings(a[1] == "open"),
         };
         foreach (var (name, handler) in _vehicles.Handlers())
@@ -142,27 +141,53 @@ public partial class Director
         _phaseFrames = 0;
     }
 
-    // @interface show|hide: the game's interface, as F2 shows and hides it (Start hides it for the run)
-    private static bool SetInterface(bool show)
+    // @settings open|close: the game's settings window, open on the rail's first tab, which the hooks make the Mac Port
+    // tab (the window keeps the tab it was last on: GameSettings._openTabIndex). The game draws it with its interface,
+    // which a run hides: a postfix on Program.DrawFps, which the game runs every frame either way, draws it alone over
+    // the scene while the interface is hidden
+    private bool OpenSettings(bool open)
     {
-        Program.DrawUI = show;
+        if (!open)
+        {
+            GameSettings.Close();
+            return true;
+        }
+        var index = typeof(GameSettings).GetField("_openTabIndex", BindingFlags.NonPublic | BindingFlags.Static);
+        if (index == null)
+            Log("@settings: GameSettings._openTabIndex not found: the window opens on the tab it was last on");
+        index?.SetValue(null, 0);
+        if (!_settingsAlone)
+        {
+            try
+            {
+                Probes.Patcher!(Probes.Find!(typeof(Program), "DrawFps", Type.EmptyTypes), null,
+                    typeof(Director).GetMethod(nameof(DrawSettingsAlone), BindingFlags.NonPublic | BindingFlags.Static), null);
+                _settingsAlone = true;
+            }
+            catch (Exception e)
+            {
+                Log($"@settings: the window can't be drawn without the game's interface ({e.Message}): the interface shows");
+                Program.DrawUI = true;
+            }
+        }
+        GameSettings.Show = true;
         return true;
     }
 
-    // @settings open|close: the game's settings window, open on the rail's first tab, which the hooks make the Mac Port
-    // tab (the window keeps the tab it was last on: GameSettings._openTabIndex)
-    private bool OpenSettings(bool open)
+    private static bool _settingsAlone;
+
+    // After Program.DrawFps: the settings window, open with the interface hidden
+    private static void DrawSettingsAlone()
     {
-        if (open)
+        try
         {
-            var index = typeof(GameSettings).GetField("_openTabIndex", BindingFlags.NonPublic | BindingFlags.Static);
-            if (index == null)
-                Log("@settings: GameSettings._openTabIndex not found: the window opens on the tab it was last on");
-            index?.SetValue(null, 0);
-            GameSettings.Show = true;
+            if (GameSettings.Show && !Program.DrawUI)
+                GameSettings.OnDrawUi(Program.GetCamera());
         }
-        else
+        catch (Exception e)
+        {
+            Log($"@settings: the window alone failed, closed: {e.Message}");
             GameSettings.Close();
-        return true;
+        }
     }
 }

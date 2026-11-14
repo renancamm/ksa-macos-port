@@ -11,21 +11,22 @@ using KsaPort.Common;
 
 namespace KsaMetal.Hooks.Tab;
 
-// The Mac Port tab's presets: Performance, Balanced and Quality, each a set of the game's own graphics settings and
-// of port settings (the settings table's presets column), and Game Defaults, the defaults of the same settings. Auto
-// Memory Saving (AutoMemorySaving, in the shared library) is the second preset beside them: the Memory rows are its
-// own, which these leave alone, but on a Mac with 8 GB of memory or less and Auto Memory Saving on, every preset's
-// textures and shadow maps are at most 2048 pixels wide and its texture streaming budget at most 512 MB. A preset's card in the tab makes its values pending changes, in the game's
-// tabs and in this one, as if the player had set each row; the game's Apply keeps them, Discard drops them. Nothing
-// else changes a setting, but a fresh install's first start, where Auto Memory Saving, on by default, sets its
-// values (the loader the port settings, FirstStart here the game's). The card picked last is kept in the file
-// (preset): the tab counts the settings that differ from it, unless they are another preset's. With Auto Memory
-// Saving on, its limits sit on top of every card's.
+// The Mac Port tab's presets: Performance, Balanced and Quality, and Game Defaults, whose values are the shared
+// library's (TabPresets, which benchmark.sh's --tab-preset reads too): here they become the game's fields, found by
+// name, and the cards. Auto Memory Saving (AutoMemorySaving, in the shared library) is the second preset beside them:
+// the Memory rows are its own, which these leave alone, but on a Mac with 8 GB of memory or less and Auto Memory Saving
+// on, every preset's textures and shadow maps are at most 2048 pixels wide and its texture streaming budget at most
+// 512 MB. A preset's card in the tab makes its values pending changes, in the game's tabs and in this one, as if the
+// player had set each row; the game's Apply keeps them, Discard drops them. Nothing else changes a setting, but a fresh
+// install's first start, where Auto Memory Saving, on by default, sets its values (the loader the port settings,
+// FirstStart here the game's). The card picked last is kept in the file (preset): the tab counts the settings that
+// differ from it, unless they are another preset's. With Auto Memory Saving on, its limits sit on top of every card's.
 //
 // Every preset gives every setting any preset sets, so a preset after another leaves nothing of the first, except
 // the port rows the tab can't change (set outside, their hook unavailable) and the render scale without upscaling,
-// which does nothing then: those keep their values. The game's fields are found
-// by name when the game starts: a field that moved leaves the presets out (skipped).
+// which does nothing then: those keep their values. The game's fields are found by name when the game starts: a field
+// that moved leaves the presets out (skipped). Each one's key in settings.toml is checked against the shared library's
+// too, for benchmark.sh, and a key that differs is said in the log.
 //
 // In Fullscreen, every preset also sets the Resolution to the size the screen's desktop has (Displays), so the render
 // scale alone decides the 3D view's size and the display keeps its mode. Windowed, the Resolution is the window's size,
@@ -36,29 +37,24 @@ namespace KsaMetal.Hooks.Tab;
 [Hook(Phase.PortParts)]
 internal static class Presets
 {
-    // A preset: its game settings for a Mac, and its port settings, the table's presets column at this index (-1: the
-    // table's defaults, Game Defaults)
-    public sealed class Preset(string name, string shortHelp, string help, Func<Mac, Dictionary<string, string>> game,
-        int index)
+    // A preset of the shared library's, with its values for this Mac: game fields by name, port settings by key
+    public sealed class Preset(TabPresets.Preset data)
     {
-        public string Name => name;
+        public string Name => data.Name;
         // Its value of the port setting that keeps the card picked last (Game Defaults: game_defaults)
-        public string Id => name.ToLowerInvariant().Replace(' ', '_');
+        public string Id => data.Id;
         // What its card says, and its tooltip
-        public string Short => shortHelp;
-        public string Help => help;
-        // The values for this Mac, from when the game starts: game fields by name, port settings by key
+        public string Short => data.Short;
+        public string Help => data.Help;
+        // The values for this Mac, from when the game starts
         public Dictionary<string, string> Game { get; private set; } = new();
         public Dictionary<string, string> Port { get; private set; } = new();
 
         public void For(Mac mac, bool memorySaving)
         {
-            Game = game(mac);
-            if (memorySaving && mac.Tier == AutoMemorySaving.Tier.Small)
-                Limit(Game);
-            Port = Port(index);
-            if (Port["upscaling"] == "off")
-                Port.Remove("render_scale");
+            bool small = memorySaving && mac.Tier == AutoMemorySaving.Tier.Small;
+            Game = TabPresets.GameValues(data, small) ?? GameDefaultValues(small);
+            Port = TabPresets.Port(data);
         }
     }
 
@@ -68,126 +64,24 @@ internal static class Presets
         public AutoMemorySaving.Tier Tier => AutoMemorySaving.TierOf(MemoryGb);
     }
 
-    public static readonly Preset[] All =
-    [
-        // MetalFX spatial at half size, without anti-aliasing: temporal there is past its largest scale on a Retina or
-        // HiDPI display (4x a side, 3x on an M5) and left 4-pixel blocks on moving things (the rocket, the sea), and the
-        // spatial upscaler without the game's MSAA costs 1.3-1.9 ms less a frame (M5, fast run). Thin edges, such as
-        // branches against the sky, are rougher
-        new("Performance", "Fastest. Softer, with rougher edges.",
-            "The highest frame rate: MetalFX Spatial at half the window's size, without the game's Anti-Aliasing, " +
-            "with simpler shadows, clouds and effects and no cockpit ray tracing. With Vsync, it holds half the " +
-            "display's refresh rate. Time warp slows down less.",
-            mac => Game(mac, antiAliasing: "Disabled", filter: "Pcf", cascades: 2048, terrain: 2048,
-                milkyWay: "High", clouds: "Low", cloudShadows: "Medium", effects: "Low", godrays: false,
-                clutterShadows: false, plumeShadows: false, rayTracing: false, planetTextures: 2048),
-            0),
-        new("Balanced", "Faster, with little visible change.",
-            "MetalFX Temporal at three quarters of the window's size, with simpler shadow filtering and lighter " +
-            "cockpit ray tracing. Time warp slows down less.",
-            mac => Game(mac, antiAliasing: "MultisampleX2", filter: "Pcf", cascades: 2048, terrain: 4096,
-                milkyWay: "High", clouds: "High", cloudShadows: "Medium", effects: "Medium", godrays: true, clutterShadows: true,
-                plumeShadows: true, rayTracing: true, exhausts: "High"),
-            1),
-        new("Quality", "Best looking, a little faster.",
-            "The game's image at the window's size, with its anti-aliasing and soft shadows. Only what costs much " +
-            "and barely shows is lighter: shadow sizes, nearby soft shadows, cockpit ray tracing, the Milky Way.",
-            mac => Game(mac, antiAliasing: "MultisampleX2", filter: "Pcss", cascades: 2048, terrain: 4096,
-                milkyWay: "High", clouds: "High", cloudShadows: "High", effects: "High", godrays: true, clutterShadows: true,
-                plumeShadows: true, rayTracing: true),
-            2),
-        new("Game Defaults", "The game's own graphics settings.",
-            "The game's own graphics, with MetalFX and the Extra Performance rows off. Other settings, such as the " +
-            "Field of View, stay as they are.",
-            mac =>
-            {
-                var defaults = new GameSettings();
-                return Defaults(Game(mac, "Disabled", "Pcf", 2048, 2048, "Low", "Low", "Low", "Low", false, false, false, false, 0),
-                    name => Text(Field(name).GetValue(Owner(Field(name), defaults))));
-            },
-            -1),
-    ];
+    public static readonly Preset[] All = TabPresets.All.Select(p => new Preset(p)).ToArray();
 
     // The game's defaults are the same on every Mac, but for Auto Memory Saving's
     public static Preset GameDefaults => All[^1];
 
     // The port setting that keeps the card picked last, and the preset a value of it names
-    public const string Key = "preset";
+    public const string Key = TabPresets.Key;
     public static Preset Picked(string value) => All.FirstOrDefault(p => p.Id == value) ?? GameDefaults;
 
-    // The game's settings another preset sets, at their defaults: a new GameSettings' (the game's Reset)
-    private static Dictionary<string, string> Defaults(Dictionary<string, string> settings, Func<string, string> value) =>
-        settings.Keys.ToDictionary(key => key, value);
-
-    // The game's settings, by field name: GameSettings' own (anti-aliasing: the game's, which MetalFX Temporal turns
-    // off), the rest in GameSettings.Graphics
-    private static Dictionary<string, string> Game(Mac mac, string antiAliasing, string filter, int cascades, int terrain,
-        string milkyWay, string clouds, string cloudShadows, string effects, bool godrays, bool clutterShadows,
-        bool plumeShadows, bool rayTracing, int planetTextures = 0, string? exhausts = null)
+    // Game Defaults' game settings: those the other presets give, at the values of a new GameSettings (the game's
+    // Reset), with Auto Memory Saving's limits when small
+    private static Dictionary<string, string> GameDefaultValues(bool small)
     {
-        // Exhausts and particles at High cost about nothing under MetalFX Temporal 0.75 (High vs Low: exhausts ~0 ms,
-        // particles under 1, M5, Mixed Test in a 1440x900 window), and the exhaust's blocks are visibly smaller in motion;
-        // explosions at High cost up to ~4 ms (vs Low) while one is on screen, the heaviest moments: Balanced keeps those
-        // at Medium. Its clouds are at High: Medium's grain at cloud edges shows in motion, and High costs 0.1-0.6 ms
-        // more near the ground (the Tour's descent to earth4)
-        exhausts ??= effects;
-        // With Baked Milky Way (Performance, Balanced and Quality), Milky Way High costs what Low and Medium do (M5,
-        // fast run: every view within 0.1 ms). Cloud Shadows Low costs what Medium does, so no preset goes below Medium.
-        //
-        // Ambient occlusion, the ocean and fur cost little (0-3 %): lower in Performance only
-        string small = effects == "Low" ? "Low" : "High";
-        var game = new Dictionary<string, string>
-        {
-            ["AntiAliasingMethod"] = antiAliasing,
-            ["CascadedShadowMapFilter"] = filter,
-            ["CascadedShadowMapSize"] = Text(cascades),
-            ["TerrainShadowMapSize"] = Text(terrain),
-            ["MilkyWayQuality"] = milkyWay,
-            ["CloudUpscaling"] = clouds,
-            ["CloudShadows"] = cloudShadows,
-            ["Godrays"] = Text(godrays),
-            ["GroundClutterShadowCasting"] = Text(clutterShadows),
-            ["PlumeTrailShadows"] = Text(plumeShadows),
-            ["ExplosionQuality"] = effects,
-            ["ExhaustUpscaling"] = exhausts,
-            ["ParticleQuality"] = exhausts,
-            ["AuroraQuality"] = effects,
-            ["AmbientOcclusionQuality"] = small,
-            ["OceanSimQuality"] = small,
-            ["KittenFurQuality"] = small,
-            ["IVARayTracing"] = Text(rayTracing),
-            // IVA ray tracing at 50 % reflection and shadow resolution, 1 reflection bounce (the game's: 100/100/4): the
-            // cockpit's GPU time -20 % (Balanced) / -23 % (Quality), 3.6-5.6 % of pixels change by more than 2 of 255,
-            // sparkles on chrome a little blockier. Performance traces no rays: set there too, for the rule above
-            ["RaytracedOpaqueReflectionResolutionScale"] = "50",
-            ["RaytracedShadowResolutionScale"] = "50",
-            ["RaytracedReflectionBounces"] = "1",
-        };
-        // The game's terrain textures at most this many pixels wide (0: the game's, none), in every preset, so that
-        // each one sets it: the planets' textures loaded whole (Earth's clouds, tiling and biome maps, the moons'
-        // rock), the finest level the streamer gives the planets' colour maps (Earth, the Moon, Mars; not their
-        // heights and normals), ground clutter and rock particles. Performance's 2048 saves about 0.3 GB of graphics
-        // memory in the solar system (M5, Mixed Test views, at an 8 GB Mac's texture budget). With 8 GB or less, Auto
-        // Memory Saving limits it in every preset, and the vessels' textures and the shadow maps too (Limit)
-        game["TerrainTextureCap"] = Text(planetTextures);
+        var game = TabPresets.Keys.Keys.ToDictionary(name => name, name => Text(Field(name).GetValue(Owner(Field(name), GameDefaultSettings))));
+        if (small)
+            TabPresets.Limit(game);
         return game;
     }
-
-    // Auto Memory Saving's limits with 8 GB or less on a preset's game settings: those it gives, and vessel textures
-    private static void Limit(Dictionary<string, string> game)
-    {
-        foreach (var (field, _, atMost) in AutoMemorySaving.SmallGame)
-            game[field] = Text(AutoMemorySaving.Limit(game.TryGetValue(field, out var v) ? int.Parse(v, CultureInfo.InvariantCulture) : 0, atMost));
-    }
-
-    // The port settings a preset gives, from the table's presets column (Performance, Balanced, Quality; -1: the
-    // defaults). Every Extra Performance row is on in Performance, and in Balanced where its change is small; Quality
-    // keeps the game's own image but for what costs much and barely shows: Baked Milky Way (sky pixels at most 1 of
-    // 255 apart, the game's Milky Way High at no cost) and the simpler PCSS search. The tumbling physics, the debris
-    // settling and the warp cloud shadows change warp, not the image, and are on in Balanced too: warp is too much of
-    // the game to leave to Performance. The slower crew portraits are on in Performance only
-    private static Dictionary<string, string> Port(int index) =>
-        PortSettings.All.Where(s => s.Presets.Length > 0).ToDictionary(s => s.Key, s => index < 0 ? s.Default : s.Presets[index]);
 
     private static string Text(int value) => value.ToString(CultureInfo.InvariantCulture);
     private static string Text(bool value) => value ? "true" : "false";
@@ -294,11 +188,22 @@ internal static class Presets
             var field = Field(name);
             if (Parse(field, value) == null)
                 throw new Skip($"{field.DeclaringType!.Name}.{name} has no value {value}");
+            // The key matters to benchmark.sh's --tab-preset alone: the presets here set the field, so they stay on
+            if (TomlKey(field) is { } key && key != TabPresets.KeyOf(name))
+                Hooks.Log($"{nameof(Presets)}: {field.DeclaringType!.Name}.{name} is {key} in settings.toml, not {TabPresets.KeyOf(name)} (TabPresets)");
         }
         foreach (var (key, value) in preset.Port)
             if (!Settings.Get(key).Valid(value))
                 throw new InvalidOperationException($"{key} has no value {value}");
     }
+
+    // A field's key in settings.toml, from the game's TomlField attribute (in [graphics] for GameSettings.Graphics'
+    // fields); null when it has none
+    private static string? TomlKey(FieldInfo field) =>
+        field.CustomAttributes.FirstOrDefault(a => a.AttributeType.Name.StartsWith("TomlField", StringComparison.Ordinal))?
+            .ConstructorArguments.FirstOrDefault().Value is string key
+            ? (field.DeclaringType == typeof(GameSettings.GraphicsSettings) ? "graphics." : "") + key
+            : null;
 
     private static FieldInfo Field(string name)
     {
