@@ -39,25 +39,23 @@ Then:
 `port.sh` finds the KSA archive in Downloads, converts it and installs the app. It takes about a minute, and needs
 nothing else installed.
 
-### Updating and options
+### Other commands
 
-| To | Do this |
+| Command | What it does |
 |---|---|
-| Update the game | Download the new Linux version to Downloads and run `./port.sh` again. The old app goes to the Trash; saves and settings stay. |
-| Update the port | `./port.sh --update` downloads the latest release of the port, then updates the app. |
-| Use a specific KSA archive | `./port.sh <ksa_linux_v….tar.gz>`, even when it isn't newer than the installed one. An extracted folder works too: it is converted and moved into the app. |
-| Install somewhere else | `./port.sh --app <path>` (default: `~/Applications/Kitten Space Agency.app`) |
-| Uninstall | Delete the app, the port folder and the two cache folders below. Your saves are in the Documents folder; delete it too if you don't want them. |
+| `./port.sh` | after a new KSA version is in Downloads: updates the game; saves and settings stay |
+| `./port.sh --update` | updates the port to its latest release, then the app |
+| `./port.sh <archive>` | makes the app from that KSA archive or extracted folder, even an older one |
+| `./port.sh --app <path>` | makes or updates the app in another place |
+| `./port.sh --help` | lists all the options |
 
 ### Where things are
 
-| What | Where |
-|---|---|
-| The app | `~/Applications/Kitten Space Agency.app` |
-| Saves, settings, crash dumps and logs | `~/Documents/My Games/Kitten Space Agency` |
-| The last run's full output, including startup errors | `.../Kitten Space Agency/logs/console.log` |
-| The shader cache, and the texture and sound copies the Memory settings make (several GB) | `~/Library/Caches/ksa-metal` |
-| The benchmark's game data | `~/Library/Caches/ksa-macos-port` |
+- The app: `~/Applications/Kitten Space Agency.app`
+- Saves, settings and logs: `~/Documents/My Games/Kitten Space Agency`
+- Caches, several GB: `~/Library/Caches/ksa-metal` and `~/Library/Caches/ksa-macos-port`
+
+To uninstall, delete these and the port folder. Keep the Documents folder if you want your saves.
 
 ## How it works
 
