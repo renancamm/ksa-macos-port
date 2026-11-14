@@ -3,8 +3,7 @@
 # Performance HUD, and the game's settings open on the Mac Port tab, in the installed app at the settings below, on a
 # fresh install's, in a 1280x800 window, muted, without the Welcome popup. The benchmark plays its readme scenario
 # (src/game/benchmark/lineup/benchmark.txt) with the window tool, which takes a picture of the game's window at each
-# view once the HUD's frame rate has settled; this script makes PNGs in .github/images/ and writes the caption under the
-# first into README.md.
+# view once the HUD's frame rate has settled; this script makes PNGs of them in .github/images/.
 #
 # Usage: scripts/readme-screenshots.sh [--app <path>]
 #   Needs the port folder (./build.sh --install first, so that the app's benchmark has the readme scenario), the display
@@ -25,9 +24,8 @@ done
 [ -x "${OUT}/benchmark.sh" ] || die "no port folder: run ./build.sh --install first."
 [ -d "${APP}" ] || die "no app at ${APP}."
 
-# The settings the pictures show, on a fresh install's, and how the caption says them
+# The settings the pictures show, on a fresh install's
 SETTINGS=(--defaults --tab-preset quality --port upscaling=metalfx --port steady_frame_rate=true)
-SAID="with the port's optimizations"
 
 IMAGES="${REPO}/.github/images"
 LOG="${BUILD}/readme-screenshots.log"
@@ -51,18 +49,4 @@ picture() {
 picture "${pictures}/readme_boot.png" game.png
 picture "${pictures}/../readme_macport.png" mac-port-tab.png
 
-# The caption under the game's picture: the Mac, its memory, the size the game draws at (KSA Metal's screenshot's: the
-# window's pixels) and the settings
-hardware="$(system_profiler SPHardwareDataType)"
-model="$(sed -n 's/^ *Model Name: //p' <<< "${hardware}")"
-chip="$(sed -n 's/^ *Chip: Apple //p' <<< "${hardware}")"
-memory="$(sed -n 's/^ *Memory: \([0-9]*\) GB$/\1GB/p' <<< "${hardware}")"
-size="$(sips -g pixelWidth -g pixelHeight "${pictures}/../readme_macport.png" | awk '/pixel/ { printf "%s%s", s, $2; s = "x" }')"
-caption="${model:-A Mac}${chip:+ ${chip}}${memory:+ ${memory}}${size:+, ${size}}, ${SAID}"
-# The caption as sed's replacement: its \, & and | escaped
-escaped="${caption//\\/\\\\}"
-escaped="${escaped//&/\\&}"
-escaped="${escaped//|/\\|}"
-sed -i '' "s|<sub>[^<]*</sub>\(.*readme-screenshots.sh.*\)$|<sub>${escaped}</sub>\1|" "${REPO}/README.md"
-grep -qF "<sub>${caption}</sub>" "${REPO}/README.md" || warn "README.md has no caption line to write: ${caption}"
-step "Done: ${caption}"
+step "Done"

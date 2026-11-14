@@ -1,29 +1,19 @@
-<h1 align="center">Kitten Space Agency on Apple Silicon Macs</h1>
+# Kitten Space Agency on Apple Silicon Macs
 
-<p align="center">
-  <a href="https://github.com/renancamm/ksa-macos-port/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/renancamm/ksa-macos-port?label=release"></a>
-  <a href="#quick-start"><img alt="macOS 26+ on Apple Silicon" src="https://img.shields.io/badge/macOS_26+-Apple_Silicon-000000?logo=apple"></a>
-  <a href="https://github.com/renancamm/ksa-macos-port/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/renancamm/ksa-macos-port/total"></a>
-  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/github/license/renancamm/ksa-macos-port"></a>
-</p>
-
-<p align="center">
-  <img alt="Kitten Space Agency on a Mac: the game's rocket in orbit over Earth, with Apple's Metal Performance HUD" src=".github/images/game.png" width="880">
-</p>
-<p align="center"><sub>MacBook Pro M5 16GB, 2560x1600, with the port's optimizations</sub></p> <!-- the caption: scripts/readme-screenshots.sh writes it with the pictures -->
+[![Latest release](https://img.shields.io/github/v/release/renancamm/ksa-macos-port?label=release)](https://github.com/renancamm/ksa-macos-port/releases/latest)
+[![macOS 26+ on Apple Silicon](https://img.shields.io/badge/macOS_26+-Apple_Silicon-000000?logo=apple)](#quick-start)
+[![Downloads](https://img.shields.io/github/downloads/renancamm/ksa-macos-port/total)](https://github.com/renancamm/ksa-macos-port/releases)
+[![License: MIT](https://img.shields.io/github/license/renancamm/ksa-macos-port)](LICENSE)
 
 An experimental community project that turns the Linux version of **Kitten Space Agency** (KSA) into a native Mac
 app for Apple Silicon. It draws the game with **KSA Metal**: a Vulkan driver written for KSA on top of Apple's Metal,
 and a few things around it.
 
-This project is unofficial and not affiliated with RocketWerkz. It contains no game files: you need your own copy of
-KSA's Linux version.
+<img alt="Kitten Space Agency on a Mac: the game's rocket in orbit over Earth, with Apple's Metal Performance HUD" src=".github/images/game.png" width="880">
 
-**Status:** the game runs with its graphics settings, including terrain tessellation, ground clutter and ray
-tracing. Expect rough edges.
-
-Bug reports are welcome as GitHub issues; attach the files in `~/Documents/My Games/Kitten Space Agency/logs`.
-Benchmark reports from your Mac are welcome too ([The benchmark](#the-benchmark)).
+> [!NOTE]
+> This project is unofficial and not affiliated with RocketWerkz. It contains no game files: you need your own copy
+> of KSA's Linux version.
 
 ## Quick start
 
@@ -168,9 +158,7 @@ the game's other tabs, and each row's tooltip says what it changes and what it c
 the tab, and holds three sections for testing and debugging that the tab doesn't show
 ([`src/shared/settings/`](src/shared/settings/)).
 
-<p align="center">
-  <img alt="The Mac Port tab in the game's settings" src=".github/images/mac-port-tab.png" width="880">
-</p>
+<img alt="The Mac Port tab in the game's settings" src=".github/images/mac-port-tab.png" width="880">
 
 ### The hooks
 
