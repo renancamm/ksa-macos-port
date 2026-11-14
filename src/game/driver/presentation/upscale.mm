@@ -4,7 +4,9 @@
 // KSA Metal makes the motion vectors itself from the depth buffer and the matrices the game passes: the scene's
 // motion through the nearby body's frame up to its highest ground and with the followed vessel's centre above it, the
 // sky's by the camera's turn alone, and inside a bounding sphere the motion of the vessel the camera follows, through
-// its own frame. What the translucent effects changed before the bloom, and what is drawn over the scene after it
+// its own frame. Clouds, smoke and flames write no depth: where they are, the game's cloud upscaler's own motion for them
+// and the followed vessel's are candidates too, and per pixel the one that best explains the last frame wins. What the
+// translucent effects changed before the bloom, and what is drawn over the scene after it
 // (orbit lines, the selected part), becomes MetalFX's reactive mask, so that plumes moving with the camera don't smear;
 // the bloom itself is left out, or the glow beside a bright edge would keep MetalFX from smoothing the edge. Past the
 // temporal upscaler's largest scale (3x on an M5), it upscales as far as it can and MetalFX's spatial upscaler does the
@@ -48,6 +50,8 @@ static const char* kMotionSource = R"(
 using namespace metal;
 struct Params { float4x4 egoFromClip, scene, object, sky, nearby; float4 sphere, body; float2 size; float2 jitter; float reactiveGain; uint snapshots;
                 uint clouds; float cloudSeen; float2 lastJitter; uint history; float pad; };
+// How far from the followed vessel, in its bounding spheres, its own motion is a candidate for flames and smoke
+constant float kNearVessel = 6.0;
 static float luma(float3 c) { return max(dot(c, float3(0.2126, 0.7152, 0.0722)), 0.0); }
 // How far the 8 pixels around one are from where a motion takes them in the last frame's image: the lower, the better
 // that motion explains what changed. The pixel itself is left out, so its own noise doesn't pick
@@ -87,31 +91,54 @@ kernel void motion(depth2d<float, access::read> depth [[texture(0)]], texture2d<
     float2 prevPix = (prev.xy / prev.w * 0.5 + 0.5) * p.size;
     float2 v = prevPix - (pix - p.jitter);
     if (!all(isfinite(v))) v = 0;
-    // Clouds and smoke write no depth, so the motion from the depth is that of what is behind them. Where they hide some
-    // of it, their own motion (from this frame's jittered projection to the last frame's plain one) is the other
-    // candidate, and the one that better takes the pixels around to their colour in the last frame wins: the clouds'
-    // own wins in a descent through them, the depth's on the fire-lit smoke under a climbing rocket. Without the last
-    // frame, the clouds' own where they hide most of what is behind them
+    float effects = 0, r = 0;
+    if (p.snapshots == 7) {
+        effects = changed(beforeBloom.read(gid), beforeEffects.read(gid), p.reactiveGain);
+        r = max(effects, changed(color.read(gid), afterBloom.read(gid), p.reactiveGain));
+    } else if ((p.snapshots & 1) != 0) {
+        effects = r = changed(color.read(gid), beforeEffects.read(gid), p.reactiveGain);
+    }
+    // Clouds, smoke and flames write no depth, so the motion from the depth is that of what is behind them. Where they
+    // are, other motions are candidates, and the one that best takes the pixels around to their colour in the last
+    // frame's image wins: the clouds' and smoke's own (from this frame's jittered projection to the last frame's plain
+    // one), which wins in a descent through the clouds, and near the vessel the camera follows, that vessel's at its own
+    // distance along the pixel's ray, for the flames under it (the smoke march draws a rocket's flames, the exhausts
+    // other engines'). Without the last frame, the clouds' own where they hide most of what is behind them
+    float2 lastAt = pix - p.jitter + p.lastJitter;
+    float fit = -1;  // the misfit of v, once needed
+    auto consider = [&](float2 c) {
+        // Out of range (NaN fails the test too), or the same motion (far clouds against the sky): no need to look
+        if (!all(abs(c) < 4096.0) || distance(c, v) < 0.25)
+            return;
+        if (fit < 0)
+            fit = misfit(color, last, int2(gid), lastAt + v, p.size);
+        float f = misfit(color, last, int2(gid), lastAt + c, p.size);
+        if (f < fit) { fit = f; v = c; }
+    };
+    bool volume = false;
     if (p.clouds != 0) {
         float seen = 1.0 - float(cloudColor.read(gid).a);
         float2 m = float2(cloudMotion.read(gid).xy);
-        if (seen >= p.cloudSeen && all(m > -60000.0)) {
+        volume = seen >= p.cloudSeen;
+        if (volume && all(m > -60000.0)) {
             float2 own = -m * p.size + p.jitter;
-            float2 lastAt = pix - p.jitter + p.lastJitter;
-            // Where the two agree (far clouds against the sky), no need to look
-            bool take = distance(own, v) < 0.25 ? true
-                        : p.history != 0 ? misfit(color, last, int2(gid), lastAt + own, p.size) < misfit(color, last, int2(gid), lastAt + v, p.size)
-                                         : seen > 0.5;
-            if (take && all(isfinite(own))) v = own;
+            if (p.history != 0)
+                consider(own);
+            else if (seen > 0.5 && all(abs(own) < 4096.0))
+                v = own;
+        }
+    }
+    // Not from inside the vessel's sphere (the cockpit): the point on the ray would be the camera itself
+    if (p.history != 0 && p.sphere.w > 0 && length(p.sphere.xyz) > p.sphere.w && (volume || effects > 0.05)) {
+        float4 nearPoint = p.egoFromClip * float4(pix / p.size * 2.0 - 1.0, 1.0, 1.0);
+        float3 onRay = normalize(nearPoint.xyz / nearPoint.w) * length(p.sphere.xyz);
+        if (distance(onRay, p.sphere.xyz) < p.sphere.w * kNearVessel) {
+            float4 was = p.object * float4(onRay, 1.0);
+            if (was.w > 1e-3)
+                consider((was.xy / was.w * 0.5 + 0.5) * p.size - (pix - p.jitter));
         }
     }
     mv.write(half4(half2(clamp(v, -16384.0, 16384.0)), 0, 0), gid);
-    float r = 0;
-    if (p.snapshots == 7)
-        r = max(changed(beforeBloom.read(gid), beforeEffects.read(gid), p.reactiveGain),
-                changed(color.read(gid), afterBloom.read(gid), p.reactiveGain));
-    else if ((p.snapshots & 1) != 0)
-        r = changed(color.read(gid), beforeEffects.read(gid), p.reactiveGain);
     reactive.write(half4(r), gid);
 }
 // KSA_MTL_FX_DEBUG=1: the output shows the motion vectors (red |x|, green |y|, 32 px = full) and the object mask (blue)
@@ -153,10 +180,11 @@ struct UpscaleState {
     id<MTLFXSpatialScaler> rest = nil;
     id<MTLTexture> restTex = nil;
     id<MTLTexture> motionTex = nil;
-    // The last frame's image as MetalFX got it, and its jitter: which motion explains the clouds and smoke better
+    // The last frame's image as MetalFX got it, and its jitter: which motion explains the clouds, smoke and flames best
     id<MTLTexture> lastColor = nil;
     float lastJitter[2] = {0, 0};
     bool haveLast = false;
+    uint32_t lastW = 0, lastH = 0;  // the render size it was taken at
     id<MTLTexture> reactiveTex = nil;
     id<MTLTexture> snapshots[3] = {nil, nil, nil};  // vkCmdUpscaleSnapshotKSA's stages: before the effects, before the bloom, after it
     // KSA_MTL_FRAME_INTERPOLATION=1: the last upscale's inputs, for a frame interpolated at present
@@ -351,16 +379,17 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
                       cloudMotion->mtl.height == color->mtl.height;
         [e setTexture:clouds ? cloudColor->mtl : color->mtl atIndex:7];
         [e setTexture:clouds ? cloudMotion->mtl : color->mtl atIndex:8];
-        if (clouds && (!g_up.lastColor || g_up.lastColor.width != color->mtl.width || g_up.lastColor.height != color->mtl.height ||
+        if ((!g_up.lastColor || g_up.lastColor.width != color->mtl.width || g_up.lastColor.height != color->mtl.height ||
                        g_up.lastColor.pixelFormat != color->mtl.pixelFormat)) {
             MTLTextureDescriptor* ld = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:color->mtl.pixelFormat
                                                                                           width:color->mtl.width height:color->mtl.height mipmapped:NO];
             ld.usage = MTLTextureUsageShaderRead;
             ld.storageMode = MTLStorageModePrivate;
             g_up.lastColor = [cb->device->mtl newTextureWithDescriptor:ld];
-            g_up.haveLast = false;
+            haveLast = false;
         }
-        bool history = clouds && haveLast && !(info->flags & kUpscaleReset);
+        bool history = haveLast && g_up.lastW == info->inputWidth && g_up.lastH == info->inputHeight &&
+                       !(info->flags & kUpscaleReset);
         [e setTexture:history ? g_up.lastColor : color->mtl atIndex:9];
         p.reactiveGain = kReactiveGain;
         p.snapshots = snaps;
@@ -373,8 +402,9 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
         [e dispatchThreads:MTLSizeMake(info->inputWidth, info->inputHeight, 1) threadsPerThreadgroup:MTLSizeMake(16, 16, 1)];
         [e endEncoding];
         fullBarrier(cb);
-        // This frame's image for the next frame's choice, while clouds or smoke are drawn
-        g_up.haveLast = clouds && g_up.lastColor;
+        // This frame's image for the next frame's choices
+        // Only when a candidate can use it: clouds or smoke drawn, or a vessel followed
+        g_up.haveLast = g_up.lastColor && (clouds || info->objectSphere[3] > 0);
         if (g_up.haveLast) {
             id<MTLBlitCommandEncoder> b = [cb->mtl blitCommandEncoder];
             b.label = @"upscale last image";
@@ -382,6 +412,7 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
             [b endEncoding];
             fullBarrier(cb);
             g_up.lastJitter[0] = info->jitterX; g_up.lastJitter[1] = info->jitterY;
+            g_up.lastW = info->inputWidth; g_up.lastH = info->inputHeight;
         }
         if (kmtlConfig().fxDebug && g_up.debugView) {
             id<MTLComputeCommandEncoder> e2 = [cb->mtl computeCommandEncoder];
