@@ -1,9 +1,9 @@
-# Kitten Space Agency on Apple Silicon Macs
+# Kitten Space Agency Mac Port
 
-[![Latest release](https://img.shields.io/github/v/release/renancamm/ksa-macos-port?label=release)](https://github.com/renancamm/ksa-macos-port/releases/latest)
 [![macOS 26+ on Apple Silicon](https://img.shields.io/badge/macOS_26+-Apple_Silicon-000000?logo=apple)](#quick-start)
-[![License: MIT](https://img.shields.io/github/license/renancamm/ksa-macos-port)](LICENSE)
-[![Downloads](https://img.shields.io/github/downloads/renancamm/ksa-macos-port/total)](https://github.com/renancamm/ksa-macos-port/releases)
+[![Latest release](https://img.shields.io/github/v/release/renancamm/ksa-macos-port?label=release&color=rebeccapurple)](https://github.com/renancamm/ksa-macos-port/releases/latest)
+[![License: MIT](https://img.shields.io/github/license/renancamm/ksa-macos-port?color=orange)](LICENSE)
+[![Downloads](https://img.shields.io/github/downloads/renancamm/ksa-macos-port/total?color=blue)](https://github.com/renancamm/ksa-macos-port/releases)
 
 An experimental community project that makes a native Mac app from the Linux version of **Kitten Space Agency**
 (KSA), RocketWerkz's space flight game. It renders with **KSA Metal**, built around a Vulkan driver for Apple's
