@@ -157,4 +157,4 @@ trail_caches | numbers:3:4 | | | restart | hooks:TrailCaches | | | | | <large>,<
 trail_shadows | numbers:3:3 | | | restart | hooks:PlumeShadows | | | | | <cascades>,<resolution>,<metres>: the smoke's sun shadow cascades, which the game draws with its Plume trail shadows setting (the game's: 8,512,20000; lighter_plume_shadows: 4,128,3000). Wins over lighter_plume_shadows.
 texture_budget_mb | int:0:1048576 | 0 | | restart | driver | | | | | The GPU memory budget reported to the game, which sizes its texture streaming from it (0: what Metal recommends for this Mac).
 worker_park_ms | number:0:100 | 0.25 | idle_thread_sleep | restart | hooks:WorkerPark | | | | | How long an idle job worker spins before it sleeps, with idle_thread_sleep.
-cache_dir | text | | | restart | driver, ktx-shim, hooks | | | | | Where the shader cache and the texture and sound copies go (default: ~/Library/Caches/ksa-metal).
+cache_dir | text | | | restart | driver, ktx-shim, hooks | | | | | Where the shader cache and the texture and sound copies go (default: ~/Library/Caches/Kitten Space Agency).

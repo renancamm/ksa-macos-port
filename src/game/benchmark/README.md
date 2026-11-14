@@ -350,11 +350,11 @@ A test is a list of scenarios, and a scenario has a kind: how it keeps time.
 
 The benchmark is in the app, in `Contents/Resources/Benchmark/`, and [KSA Metal Hooks](../hooks/) give it every frame
 of the game. For a run of `./benchmark.sh`, the game starts from a documents folder of its own,
-`~/Library/Caches/ksa-macos-port/benchmark/instance/`, with a copy of your settings (a fresh install's with a preset or
-`--defaults`) and of your port settings (the defaults with a preset or `--defaults`), and no mods, so your saves,
-settings and mods are never touched. The command changes only the settings that start the game straight into the test
-(no system menu, the chosen system, the game's test vessel in orbit), and for `check`, `measure`, `profile` and
-`calibrate` Vsync (off, unless `--capped`); every quality setting stays yours or the preset's. The game's environment is the command's: variables that change how it runs (Metal's, .NET's, the port's,
+`~/Library/Caches/Kitten Space Agency/benchmark/instance/`, with a copy of your settings (a fresh install's with a
+preset or `--defaults`) and of your port settings (the defaults with a preset or `--defaults`), and no mods, so your
+saves, settings and mods are never touched. The command changes only the settings that start the game straight
+into the test (no system menu, the chosen system, the game's test vessel in orbit), and for `check`, `measure`,
+`profile` and `calibrate` Vsync (off, unless `--capped`); every quality setting stays yours or the preset's. The game's environment is the command's: variables that change how it runs (Metal's, .NET's, the port's,
 StarMap's) are listed in the run's Environment fact, KSA Metal's switches in their own. A run in the game you
 have open keeps its system: the benchmark saves your game, sets the world to a new game's, and loads your game again
 at the end.
@@ -581,5 +581,5 @@ flight's. Fly the free camera to a place, open the console (`\`) and type `bench
 | `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/` | the run: `report.html` to open, `compare.html` after a comparison, `to-share_<date>.zip` to share, and `data/` |
 | `~/Documents/My Games/Kitten Space Agency/benchmarks/<date>/data/` | the results: `report.md`, `run.json` (the record), `run.db` and `host.db` (the run's store), `plan.json`, the screenshots, `game.log`, `stuck.txt` from a stuck game, `compare.md` and `diff/` after a comparison, `timeline.pftrace` and `timeline.js` (the report's Open Timeline) after `profile` or `timeline`, `profile.md` after `profile`, `caught/` with what the triggers kept, and what the tools wrote |
 | `~/Documents/My Games/Kitten Space Agency/benchmarks/baselines.json`, `noise/` | the baselines' names, and the noise profiles `calibrate` measured on this Mac |
-| `~/Library/Caches/ksa-macos-port/benchmark/instance/` | the game's documents folder for a run that starts the game |
+| `~/Library/Caches/Kitten Space Agency/benchmark/instance/` | the game's documents folder for a run that starts the game |
 | `Contents/Resources/Benchmark/` in the app | the director, `benchmark.sh`'s program, the tests, their vehicles and noise profiles |

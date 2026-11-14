@@ -53,7 +53,7 @@ nothing else installed.
 
 - The app: `~/Applications/Kitten Space Agency.app`
 - Saves, settings and logs: `~/Documents/My Games/Kitten Space Agency`
-- Caches, several GB: `~/Library/Caches/ksa-metal` and `~/Library/Caches/ksa-macos-port`
+- Cache, several GB: `~/Library/Caches/Kitten Space Agency`
 
 To uninstall, delete these and the port folder. Keep the Documents folder if you want your saves.
 

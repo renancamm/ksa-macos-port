@@ -629,7 +629,7 @@ public static class Runs
     {
         if (UncompressedSave.Make(SafetySave) == null)
             throw new InvalidOperationException($"the game could not be saved as \"{SafetySave}\"");
-        var instance = Path.Combine(Home, "Library", "Caches", "ksa-macos-port", "benchmark", "instance");
+        var instance = Path.Combine(Home, "Library", "Caches", "Kitten Space Agency", "benchmark", "instance");
         if (Directory.Exists(instance))
             Directory.Delete(instance, true);
         Directory.CreateDirectory(instance);

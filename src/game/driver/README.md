@@ -107,7 +107,7 @@ The debugging settings, used the same way:
 | `shader_corpus` | a folder: record every shader translation's inputs and result there, once each, for the shader corpus test ([`tests/`](tests/)) |
 | `shader_overrides` | a folder: use hand-written Metal source in place of a translated shader, `<folder>/<name>.metal`, named as `dump_msl` names them; each use keeps its own specialization values |
 | `spec` | `<hash>:<id>=<value>,...`: replace a specialization constant of a shader module, whatever the game passes (e.g. fewer iterations of an expensive loop) |
-| `cache_dir` | a folder: where the shader cache goes, and the KTX shim's textures (default: `~/Library/Caches/ksa-metal`) |
+| `cache_dir` | a folder: where the shader cache goes, and the KTX shim's textures (default: `~/Library/Caches/Kitten Space Agency`) |
 | `shots` | `<n>,...`: save the presented image as `shot_<n>.png` at these points |
 | `shot_unit` | what `shots` counts: `presents` (default), or `frames` or `seconds` from the first in-game frame |
 | `shot_dir` | a folder: where shots go (default: the current folder) |
@@ -170,7 +170,7 @@ language (MSL). The driver translates each shader with [SPIRV-Cross](https://git
 when the game creates a pipeline, and Metal compiles the result. Translation and compilation take time, so:
 
 - Pipelines compile on worker threads, and the game only waits for one when it first uses it.
-- Translations are cached on disk (`~/Library/Caches/ksa-metal`).
+- Translations are cached on disk (`~/Library/Caches/Kitten Space Agency`).
 - At startup, the shaders of the previous run are compiled in the background. Metal keeps compiled shaders in a
   system cache, which macOS clears when it updates; the background compile refills it.
 

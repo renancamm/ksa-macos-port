@@ -159,7 +159,7 @@ public static partial class Program
     private static string Docs => Path.Combine(PortFolder.Home, "Documents", "My Games", "Kitten Space Agency");
     private static string Benchmarks => Path.Combine(Docs, "benchmarks");
     // The game's documents folder during the run (STARMAP_INSTANCE_PATH, which the hooks and StarMap both follow)
-    private static string Instance => Path.Combine(PortFolder.Home, "Library", "Caches", "ksa-macos-port", "benchmark", "instance");
+    private static string Instance => Path.Combine(PortFolder.Home, "Library", "Caches", "Kitten Space Agency", "benchmark", "instance");
     // The port folder's benchmark: an app not updated yet still gets the current reports and the current tests
     private static string FolderScript => Path.Combine(PortFolder.Skeleton, "Resources", "Benchmark", "benchmark.txt");
 

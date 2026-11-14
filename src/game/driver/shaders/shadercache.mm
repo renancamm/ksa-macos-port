@@ -6,7 +6,7 @@
 // creation finds them compiled instead of compiling them one by one.
 //
 //   KSA_MTL_SHADER_CACHE=0    no disk cache, no prewarm
-//   KSA_MTL_CACHE_DIR=<dir>   cache location (default ~/Library/Caches/ksa-metal)
+//   KSA_MTL_CACHE_DIR=<dir>   cache location (default ~/Library/Caches/Kitten Space Agency)
 #include "kmtl.h"
 #include <dirent.h>
 #include <sys/stat.h>
@@ -20,7 +20,7 @@ static const std::string& cacheDir() {
         if (!kmtlConfig().shaderCache) return std::string();
         std::string d;
         if (const char* e = kmtlConfig().cacheDir) d = e;
-        else if (const char* home = getenv("HOME")) d = std::string(home) + "/Library/Caches/ksa-metal";
+        else if (const char* home = getenv("HOME")) d = std::string(home) + "/Library/Caches/Kitten Space Agency";
         else return std::string();
         mkdir(d.c_str(), 0755);
         mkdir((d + "/tr").c_str(), 0755);

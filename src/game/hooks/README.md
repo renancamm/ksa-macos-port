@@ -113,7 +113,7 @@ setting; those of the hooks:
 | `terrain_cache`, `skip_unused_outlines`, `skip_unused_overlays`, `skip_hidden_vessel_parts`, `skip_unused_ocean_blending`, `skip_unused_aero_meshes`, `idle_thread_sleep`, `loading_screen_fps_cap` | off: leave out that patch |
 | `unload_far_terrain`, `load_textures_once`, `unload_far_textures`, `release_freed_memory`, `sounds_kept_on_disk`, `fewer_effects_at_once` | on: that patch; off, the default: the game's own ([Auto Memory Saving](../../shared/settings/README.md#auto-memory-saving) sets them) |
 | `load_terrain_by_altitude` | on: near a world, Unload Far Terrain keeps only the levels around each camera's altitude (it needs `unload_far_terrain`) |
-| `cache_dir` | a folder: KSA Metal's cache, where Sounds Kept on Disk keeps its copies in `sounds/` (default: `~/Library/Caches/ksa-metal`) |
+| `cache_dir` | a folder: KSA Metal's cache, where Sounds Kept on Disk keeps its copies in `sounds/` (default: `~/Library/Caches/Kitten Space Agency`) |
 | `worker_park_ms` | milliseconds: how long an idle job worker spins before it sleeps (0.25) |
 | `trail_caches` | `<large>,<small>,<tiny>[,<segments>]`: the smoke's volume cache budgets in MiB (Experiments; unset: the game's) |
 | `trail_shadows` | `<cascades>,<resolution>,<metres>`: the smoke's sun shadow cascades (Experiments; wins over `lighter_plume_shadows`; unset: the game's) |
