@@ -72,7 +72,6 @@ macOS builds, and plugs in a Vulkan driver made for KSA.
  │ The game                        │     kept     │ The game                            │
  │ KSA.dll, the .NET assemblies,   ├─────────────►│ the same files                      │
  │ Content/ with the shaders       │              │ + ARM64 mark: two bytes in KSA.dll  │
- │                                 │              │ + shader fixes: a few bugs          │
  └─────────────────────────────────┘              └─────────────────────────────────────┘
  ┌─────────────────────────────────┐              ┌─────────────────────────────────────┐
  │ .NET runtime                    │   swapped    │ .NET runtime                        │
@@ -82,12 +81,12 @@ macOS builds, and plugs in a Vulkan driver made for KSA.
  │ Native libraries                │   swapped    │ Native libraries                    │
  │ BRUTAL's and FMOD, for Linux    ├─────────────►│ the same versions, built for macOS  │
  │                                 │              │ by RocketWerkz and FMOD             │
- │                                 │              │ + GLFW shim: fixes a few calls      │
  └─────────────────────────────────┘              └─────────────────────────────────────┘
  ┌─────────────────────────────────┐              ┌─────────────────────────────────────┐
  │ Vulkan driver                   │ written here │ KSA Metal                           │
  │ comes with the system           ├─────────────►│ a Vulkan driver made for KSA,       │
- │                                 │              │ built on Apple's Metal              │
+ │                                 │              │ built on Apple's Metal, with the    │
+ │                                 │              │ hooks, fixes and shims              │
  └─────────────────────────────────┘              └─────────────────────────────────────┘
 
  + a fix made by the port
