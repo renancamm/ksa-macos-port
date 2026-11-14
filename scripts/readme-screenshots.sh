@@ -27,7 +27,7 @@ done
 
 # The settings the pictures show, on a fresh install's, and how the caption says them
 SETTINGS=(--defaults --tab-preset quality --port upscaling=metalfx --port steady_frame_rate=true)
-SAID="optimizations on"
+SAID="with the port's optimizations"
 
 IMAGES="${REPO}/.github/images"
 LOG="${BUILD}/readme-screenshots.log"
