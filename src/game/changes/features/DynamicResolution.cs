@@ -23,13 +23,13 @@ namespace KsaMetal.Hooks.Features;
 // What the game works out from the main view's size itself takes the level's size from here: the cameras' screen size
 // and MetalFX's input and jitter (RenderScale, Upscale), the bloom's last step (RenderScale), and the sizes that the
 // clouds, the ambient occlusion, the exhausts, the atmosphere and the screen-space particles keep from their last
-// rebuild and pass to their shaders, and the cockpit's ray tracing's image sizes (below). The driver picks each frame's level when the frame starts (Program.Render,
-// before the camera data and any of its commands): for now its experiments' (KSA_MTL_DYNAMIC_LEVEL,
-// KSA_MTL_DYNAMIC_CYCLE, KSA_MTL_DYNAMIC_TARGET_MS).
+// rebuild and pass to their shaders, and the cockpit's ray tracing's image sizes (below). The driver picks each
+// frame's level when the frame starts (Program.Render, before the camera data and any of its commands), by the
+// experiment's settings (dynamic_level, dynamic_target_ms); without them nothing registers and nothing changes.
 internal static class DynamicResolution
 {
     [DllImport("libvulkan.1.dylib")]
-    private static extern void ksaMtlDynamicResolution(uint width, uint height, uint minLevel);
+    private static extern void ksaMtlDynamicResolution(uint width, uint height);
 
     [DllImport("libvulkan.1.dylib")]
     private static extern void ksaMtlDynamicResolutionSize(out uint width, out uint height, out uint level);
@@ -53,7 +53,7 @@ internal static class DynamicResolution
     {
         try
         {
-            ksaMtlDynamicResolution((uint)Math.Max(render.X, 0), (uint)Math.Max(render.Y, 0), 0);
+            ksaMtlDynamicResolution((uint)Math.Max(render.X, 0), (uint)Math.Max(render.Y, 0));
             ksaMtlDynamicResolutionSize(out uint w, out uint h, out uint level);
             // The driver registers only with an experiment's level: otherwise nothing changes here either
             _render = w > 0 && h > 0 ? render : int2.Zero;

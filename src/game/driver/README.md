@@ -125,8 +125,7 @@ The debugging settings, used the same way:
 | `gpu_errors` | on: a failed command buffer logs each encoder's state (completed, faulted, affected, pending); with `labels` the log names them |
 | `watch` | a folder: every 31 presents, a look at a sample of the presented image: at 30 % pure white, 99.9 % pure black for a second, or 0.1 % of pure primary colours or green with no red or blue, it saves the image and a pass dump of the next frame there (at most 3, 10 s apart), `watch.txt` says when each fault began and ended, and `watch.csv` has every look's numbers. Only an image after a clean one counts |
 | `watch_white` | percent: the white limit of `watch` (30); 0 fires on any image, to test it |
-| `dynamic_level` | `<n>`: an experiment, dynamic resolution's level from the start: the main view drawn at n 64ths of its render size (16 to 63) in textures placed in its targets' memory, without rebuilding them |
-| `dynamic_cycle` | `<frames>`: an experiment, `dynamic_level` and the full render size in turn, that many frames each: a test of the level changes |
+| `dynamic_level` | `<n>`: an experiment, dynamic resolution: the main view drawn at n 64ths of its render size (16 to 63, not below what MetalFX's temporal scaler reaches) in textures placed in its targets' memory, without rebuilding them |
 | `dynamic_target_ms` | `<ms>`: an experiment, dynamic resolution by GPU time: each frame at the highest level expected to stay under that many milliseconds on the GPU, down to `dynamic_level` |
 | `throttle` | `<hash>:<n>,...`: an experiment, a pipeline whose name holds that shader hash runs only every n-th present (0: never), to see what a shader costs and what it draws |
 | `frame_cadence` | `<ms>`: an experiment, each frame shown at least that long after the one before (25: 40 fps at 120 Hz), so the frame rate holds one step; wins over `steady_frame_rate` |

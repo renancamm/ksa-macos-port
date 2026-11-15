@@ -1,38 +1,34 @@
-// Dynamic resolution: the main view drawn at a level of its size, frame by frame, without the game rebuilding its
-// targets.
+// Dynamic resolution (an experiment: dynamic_level, dynamic_target_ms): the main view drawn at a level of its size,
+// frame by frame, without the game rebuilding its targets.
 //
 // The hooks pass the main view's size after each rebuild (ksaMtlDynamicResolution). An image bound after it that is
-// that size or a fraction of it in both directions (the same shape within a pixel's rounding: the scene, its depth, the
-// reduced images of the bloom, the ambient occlusion, the clouds) is dynamic: besides its texture at its own size it
-// gets one per level, placed in the same memory, and draws, copies and views use the level's. Levels are steps of
-// 1/kLevelSteps of the size, down to kMinLevel. What the game draws with the image then sees the smaller size, as it
-// would after a rebuild: the shaders' image sizes and normalised coordinates, the viewports and scissors (scaled by
-// the pass's attachments, passes.mm and state.mm), the copies (transfers.mm). What the game itself works out from
-// its sizes (the cameras' screen size, dispatches, push constants) the hooks give the level's size.
+// drawn into and is that size or a fraction of it (fits) is dynamic: besides its texture at its own size it gets one
+// per level (n/kLevelSteps of its size), placed in the same memory, and draws, copies and views use the level's. What
+// the game draws with the image then sees the smaller size, as after a rebuild: the shaders' image sizes and normalised
+// coordinates, the viewports and scissors (scaled by the pass's attachments, passes.mm and state.mm), the copies
+// (transfers.mm). What the game works out from its sizes itself (the cameras' screen size, push constants) the hooks
+// give the level's size (ksaMtlDynamicResolutionFrame).
 //
-// A change of level (ksaMtlDynamicResolutionFrame, at the start of the game's frame) carries what each image holds over
-// to its texture at the new level (scaled: the game's histories), in the queue's order after the frames before, and
-// moves the images and their views to them. The descriptor sets keep the textures they were written with: a set that
-// holds a dynamic image's texture is bound through a copy whose textures are the frame's level's (kmtlDynamicTranslate,
-// from any level's texture to the image's or view's now), so that frames still on the GPU read theirs unchanged and
-// nothing waits for them.
+// A change of level, at the start of the game's frame, carries what each image holds over to its texture at the new
+// level (scaled: the game's histories), in the queue's order after the frames before, and moves the images and their
+// views to them. The descriptor sets keep the textures they were written with: a set that holds a dynamic image's
+// texture is bound through a copy whose textures are the frame's level's (kmtlDynamicTranslate, from any level's
+// texture to the image's or view's now), so frames still on the GPU read theirs unchanged and nothing waits for them.
 //
-// Each frame's level: with KSA_MTL_DYNAMIC_TARGET_MS, the highest whose GPU time is expected to stay under that target,
-// from the last frames' GPU times (kmtlDynamicNoteFrame, as each present completes): a frame's time is taken as a part
-// that doesn't follow the pixel count (kFixedShare) and a part that does. It goes down as soon as the frames run over
-// the target, up only well under it, and changes at most every kChangeFrames frames, as a change costs a frame.
-// KSA_MTL_DYNAMIC_LEVEL=<n> (16-63 of 64) is the lowest it goes; without a target, the level from the start (an
-// experiment); KSA_MTL_DYNAMIC_CYCLE=<frames>: that level and the full size in turn, that many frames each (a test of
-// the changes).
+// The level: dynamic_level (of kLevelSteps) from the start; with dynamic_target_ms, each frame the highest level whose
+// GPU time is expected to stay under that target, down to dynamic_level (chooseLevel), from the last frames' GPU times
+// (kmtlDynamicNoteFrame, as each present completes). Never below what MetalFX's temporal scaler reaches from its input.
 #include "kmtl.h"
 #include <cmath>
+#include <map>
+#include <tuple>
 
 namespace {
 struct DynamicState {
     std::mutex m;
     uint32_t width = 0, height = 0;  // the main view's size (0: none)
-    uint32_t level = 0;              // the level now (0: full size)
-    uint32_t minLevel = 0;           // the lowest level the hooks will ask for (0: none below full size)
+    std::atomic<uint32_t> level{0};  // the level now (0: full size); read at present without the lock
+    uint32_t lowest = 0;             // the lowest level the frames take (0: none, dynamic resolution off)
     std::vector<KImage*> images;     // the dynamic images
     // Every level's texture of a dynamic image or view, by resource ID: what a descriptor's texture is now
     struct Owner { KImage* image; KImageView* view; };
@@ -42,8 +38,7 @@ struct DynamicState {
     uint64_t changes = 0;
     uint64_t changedAt = 0;          // the frame of the last change
     bool prepared = false;           // the levels' textures made (prepareLevels) since the last image
-    // The last frames' GPU times and levels, as their presents completed: a lock of their own, as completion handlers
-    // add them while a change of level holds m and waits for the GPU
+    // The last frames' GPU times and levels, as their presents completed: a lock of their own, for completion handlers
     std::mutex samplesMutex;
     struct Sample { uint32_t level; double ms; };
     Sample samples[16];
@@ -56,14 +51,16 @@ DynamicState& g_dyn = *new DynamicState;
 }
 
 static constexpr uint32_t kLevelSteps = 64, kMinLevel = 16;
+// The target's model: a share of a frame's GPU time that doesn't follow the pixel count; how often the level may
+// change (a change costs ~1 ms of the CPU); the target's grid of levels
+static constexpr double kFixedShare = 0.5;
+static constexpr uint32_t kChangeFrames = 30, kLevelStep = 4;
 
-static uint32_t startLevel() {
+// The setting's level (16 to 63; anything else: off)
+static uint32_t settingLevel() {
     uint32_t n = (uint32_t)kmtlConfig().dynamicLevel;
     return n >= kMinLevel && n < kLevelSteps ? n : 0u;
 }
-
-static constexpr double kFixedShare = 0.5;
-static constexpr uint32_t kChangeFrames = 30, kLevelStep = 4;
 
 static double target() { return kmtlConfig().dynamicTargetMs; }
 
@@ -79,12 +76,15 @@ static bool divides(uint32_t size, uint32_t full) {
     return false;
 }
 
-// Whether an image is the main view's size or a fraction of it: a 2D image or array of up to 16 (the ambient
-// occlusion's four deinterleaved quarters), no larger, at least 16 pixels each way,
-// the same shape within a pixel's rounding each way, or each side the main view's divided by a whole number (the
-// exhausts' half by a quarter)
-static uint32_t mipsFor(uint32_t w, uint32_t h);
+static uint32_t mipsFor(uint32_t w, uint32_t h) {
+    uint32_t n = 1;
+    for (uint32_t m = std::max(w, h); m > 1; m >>= 1) n++;
+    return n;
+}
 
+// Whether an image is the main view's size or a fraction of it: a 2D image or array of up to 16 (the ambient
+// occlusion's four deinterleaved quarters), no larger, at least 16 pixels each way, the same shape within a pixel's
+// rounding each way, or each side the main view's divided by a whole number (the exhausts' half by a quarter)
 static bool fits(const VkImageCreateInfo& ci, uint32_t W, uint32_t H) {
     if (!W || !H || ci.imageType != VK_IMAGE_TYPE_2D || ci.arrayLayers > 16 || ci.tiling != VK_IMAGE_TILING_OPTIMAL) return false;
     if (ci.flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) return false;
@@ -98,12 +98,6 @@ static bool fits(const VkImageCreateInfo& ci, uint32_t W, uint32_t H) {
         return false;
     int64_t skew = (int64_t)(w * H) - (int64_t)(h * W);
     return (uint64_t)std::llabs(skew) <= W + H || (divides((uint32_t)w, W) && divides((uint32_t)h, H));
-}
-
-static uint32_t mipsFor(uint32_t w, uint32_t h) {
-    uint32_t n = 1;
-    for (uint32_t m = std::max(w, h); m > 1; m >>= 1) n++;
-    return n;
 }
 
 // The image's texture at a level, placed where its full-size one is; the full-size one where it doesn't fit
@@ -286,6 +280,16 @@ static bool carried(const KImage* img) {
            (img->mtl.usage & MTLTextureUsageRenderTarget);
 }
 
+// Whether another dynamic image is placed in any of this one's memory (the game reuses memory between images it uses at
+// different times): what either holds is the frame's own, and carrying both would write one over the other
+static bool sharesMemory(const KImage* img) {
+    for (const KImage* other : g_dyn.images)
+        if (other != img && other->heap == img->heap && other->heapOffset < img->heapOffset + img->sizeAlign.size &&
+            img->heapOffset < other->heapOffset + other->sizeAlign.size)
+            return true;
+    return false;
+}
+
 static id<MTLRenderPipelineState> resamplePipeline(KDevice* dev, const KImage* img) {
     MTLPixelFormat pf = img->mtl.pixelFormat;
     auto it = g_dyn.resample.find(pf);
@@ -324,7 +328,7 @@ static void prepareLevels(const std::vector<uint32_t>& levels) {
 // The levels a target picks from: every kLevelStep down to the lowest, and the lowest (0: the full size)
 static std::vector<uint32_t> levelGrid() {
     std::vector<uint32_t> grid = {0};
-    uint32_t lowest = g_dyn.minLevel ? g_dyn.minLevel : kLevelSteps;
+    uint32_t lowest = g_dyn.lowest ? g_dyn.lowest : kLevelSteps;
     for (uint32_t l = kLevelSteps - kLevelStep; l >= lowest + kLevelStep; l -= kLevelStep) grid.push_back(l);
     if (lowest < kLevelSteps) grid.push_back(lowest);
     return grid;
@@ -335,34 +339,14 @@ static void changeLevel(uint32_t level) {
     KDevice* dev = g_dyn.device;
     if (!dev) { g_dyn.level = level; return; }
     auto t0 = std::chrono::steady_clock::now();
-    struct Carry { id<MTLTexture> copy, to; id<MTLRenderPipelineState> ps; };
+    struct Carry { id<MTLTexture> from, to; id<MTLRenderPipelineState> ps; };
     std::vector<Carry> carries;
-    id<MTLCommandBuffer> cb = [dev->queue->mtl commandBuffer];
-    cb.label = @"dynamic resolution: level change";
-    id<MTLBlitCommandEncoder> blit = nil;
     KQueue* q = dev->queue;
     for (KImage* img : g_dyn.images) {
         if (img->level == level) continue;
         id<MTLTexture> from = img->mtl, to = levelTexture(img, level);
-        if (from != to && carried(img)) {
-            // Through a copy: the two levels' textures share the image's memory
-            id<MTLRenderPipelineState> ps = resamplePipeline(dev, img);
-            MTLTextureDescriptor* d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:from.pixelFormat width:from.width
-                                                                                       height:from.height mipmapped:NO];
-            d.usage = MTLTextureUsageShaderRead;
-            d.storageMode = MTLStorageModePrivate;
-            id<MTLTexture> copy = ps ? [dev->mtl newTextureWithDescriptor:d] : nil;
-            if (copy) {
-                if (!blit) {
-                    blit = [cb blitCommandEncoder];
-                    [blit waitForFence:q->chain];
-                }
-                [blit copyFromTexture:from sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0)
-                           sourceSize:MTLSizeMake(from.width, from.height, 1) toTexture:copy destinationSlice:0
-                     destinationLevel:0 destinationOrigin:MTLOriginMake(0, 0, 0)];
-                carries.push_back({copy, to, ps});
-            }
-        }
+        if (from != to && carried(img) && !sharesMemory(img))
+            if (id<MTLRenderPipelineState> ps = resamplePipeline(dev, img)) carries.push_back({from, to, ps});
         img->mtl = to;
         img->level = level;
         for (KImageView* v : img->views) {
@@ -372,39 +356,65 @@ static void changeLevel(uint32_t level) {
             v->level = level;
         }
     }
-    // In the queue's order (its chain fence, which the game's next encoders wait for), one after another
-    if (blit) {
-        id<MTLFence> step = [dev->mtl newFence];
-        [blit updateFence:step];
-        [blit endEncoding];
+    // Each image through a copy (its two levels' textures share its memory): one copy for each format and size,
+    // used by one image after another, so every step waits for the one before. In the queue's order: after its chain
+    // fence, which the game's next encoders wait for in turn
+    if (!carries.empty()) {
+        id<MTLCommandBuffer> cb = [q->mtl commandBuffer];
+        cb.label = @"dynamic resolution: level change";
+        std::map<std::tuple<NSUInteger, NSUInteger, NSUInteger>, id<MTLTexture>> copies;
+        id<MTLFence> step = q->chain;
         for (size_t i = 0; i < carries.size(); i++) {
             const Carry& c = carries[i];
+            __strong id<MTLTexture>& copy = copies[{c.from.pixelFormat, c.from.width, c.from.height}];
+            if (!copy) {
+                MTLTextureDescriptor* d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:c.from.pixelFormat
+                    width:c.from.width height:c.from.height mipmapped:NO];
+                d.usage = MTLTextureUsageShaderRead;
+                d.storageMode = MTLStorageModePrivate;
+                d.hazardTrackingMode = MTLHazardTrackingModeUntracked;  // the fences order it
+                copy = [dev->mtl newTextureWithDescriptor:d];
+            }
+            if (!copy) continue;
+            id<MTLFence> next = [dev->mtl newFence];
+            id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
+            [b waitForFence:step];
+            [b copyFromTexture:c.from sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0)
+                    sourceSize:MTLSizeMake(c.from.width, c.from.height, 1) toTexture:copy destinationSlice:0
+              destinationLevel:0 destinationOrigin:MTLOriginMake(0, 0, 0)];
+            [b updateFence:next];
+            [b endEncoding];
             MTLRenderPassDescriptor* rp = [MTLRenderPassDescriptor renderPassDescriptor];
             rp.colorAttachments[0].texture = c.to;
             rp.colorAttachments[0].loadAction = MTLLoadActionDontCare;
             rp.colorAttachments[0].storeAction = MTLStoreActionStore;
             id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:rp];
-            [e waitForFence:step beforeStages:MTLRenderStageVertex];
+            [e waitForFence:next beforeStages:MTLRenderStageVertex];
             [e setRenderPipelineState:c.ps];
-            [e setFragmentTexture:c.copy atIndex:0];
+            [e setFragmentTexture:copy atIndex:0];
             [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+            step = [dev->mtl newFence];
             [e updateFence:step afterStages:MTLRenderStageFragment];
-            if (i + 1 == carries.size()) [e updateFence:q->chain afterStages:MTLRenderStageFragment];
             [e endEncoding];
         }
+        // The chain fence after the last step
+        id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
+        [b waitForFence:step];
+        [b updateFence:q->chain];
+        [b endEncoding];
         std::lock_guard<std::mutex> submit(q->submitMutex);
         [cb commit];
     }
     g_dyn.level = level;
     g_dyn.changes++;
-    KLOG(g_dyn.changes <= 20 ? 0 : 1, "dynamic resolution: level %u (%ux%u): %zu images carried, %.2f ms", level,
+    KLOG(g_dyn.changes <= 20 ? 0 : 1, "dynamic resolution: level %u (%ux%u): %zu images to carry, %.2f ms", level,
          scaled(g_dyn.width, level), scaled(g_dyn.height, level), carries.size(),
          std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
 }
 
+// Without the lock: the present calls it holding the queue's submit lock, which a change of level takes inside it
 uint32_t kmtlDynamicLevelNow() {
-    std::lock_guard<std::mutex> lock(g_dyn.m);
-    return g_dyn.level;
+    return g_dyn.level.load(std::memory_order_relaxed);
 }
 
 void kmtlDynamicNoteFrame(uint32_t level, double gpuMs) {
@@ -415,7 +425,7 @@ void kmtlDynamicNoteFrame(uint32_t level, double gpuMs) {
 
 // The level for the next frame, by the target (under g_dyn.m)
 static uint32_t chooseLevel() {
-    uint32_t now = g_dyn.level ? g_dyn.level : kLevelSteps;
+    uint32_t now = g_dyn.level ? g_dyn.level.load() : kLevelSteps;
     if (g_dyn.frames < g_dyn.changedAt + kChangeFrames) return g_dyn.level;
     // The median of the last frames drawn at this level
     double ms[16];
@@ -452,37 +462,33 @@ static uint32_t chooseLevel() {
 
 float kmtlDynamicMinContent() {
     std::lock_guard<std::mutex> lock(g_dyn.m);
-    return g_dyn.width && g_dyn.minLevel ? (float)g_dyn.minLevel / kLevelSteps : 1.f;
+    return g_dyn.width && g_dyn.lowest ? (float)g_dyn.lowest / kLevelSteps : 1.f;
 }
 
 extern "C" {
-// The hooks, after each rebuild of the main view's targets (and before they are made): its size, and the lowest level
-// they will ask for (of 64; MetalFX is made for it); 0 x 0 turns dynamic resolution off for images bound after it
-__attribute__((visibility("default"))) void ksaMtlDynamicResolution(uint32_t width, uint32_t height, uint32_t minLevel) {
+// The hooks, after each rebuild of the main view's targets (and before they are made): its size (0 x 0: none). Only
+// with the setting's level: without, nothing is registered and nothing changes
+__attribute__((visibility("default"))) void ksaMtlDynamicResolution(uint32_t width, uint32_t height) {
     std::lock_guard<std::mutex> lock(g_dyn.m);
-    // Only with an experiment's level (dynamic_level): without, nothing is registered and nothing changes
-    if (!startLevel()) width = height = 0;
+    if (!settingLevel()) width = height = 0;
     g_dyn.width = width;
     g_dyn.height = height;
-    // With a target, from the full size down to the lowest level; without, the experiment's level from the start
-    uint32_t level = width && height && target() <= 0 ? startLevel() : 0;
-    uint32_t lowest = target() > 0 ? startLevel() : level;
-    // Not below what MetalFX's temporal scaler reaches from its input (3x on an M5): its output is made for the lowest
+    // Not below what MetalFX's temporal scaler reaches from its input (3x on an M5): its output is made for the lowest,
+    // one step over it, as a level's size is rounded
     float most = kmtlUpscaleMaxScale();
-    uint32_t reach = most > 1 ? (uint32_t)std::ceil(kLevelSteps / most) : kMinLevel;
-    lowest = lowest ? std::max(lowest, reach) : 0;
-    if (level) level = std::max(level, reach);
-    g_dyn.minLevel = !width || !height ? 0 : std::clamp(std::min(minLevel ? minLevel : kLevelSteps, lowest ? lowest : kLevelSteps), kMinLevel, kLevelSteps);
-    if (g_dyn.minLevel == kLevelSteps) g_dyn.minLevel = 0;
-    // Images still there from before (a rebuild that kept them, or this one's own before it makes its targets) take
-    // the level now, or the hooks' sizes and the textures part
+    uint32_t reach = most > 0 ? (uint32_t)std::ceil(kLevelSteps / most) + 1 : kMinLevel;
+    g_dyn.lowest = width && height ? std::max(settingLevel(), reach) : 0;
+    if (g_dyn.lowest >= kLevelSteps) g_dyn.lowest = g_dyn.width = g_dyn.height = 0;
+    // With a target from the full size, without one at the lowest level. Images still there from before (a rebuild
+    // that kept them) take it now, or the hooks' sizes and the textures would part
+    uint32_t level = target() > 0 ? 0 : g_dyn.lowest;
     if (level != g_dyn.level) changeLevel(level);
     {
         std::lock_guard<std::mutex> samples(g_dyn.samplesMutex);
         g_dyn.sampleCount = 0;
     }
     g_dyn.changedAt = g_dyn.frames;
-    KLOG(0, "dynamic resolution: main view %ux%u, level %u of %u, lowest %u", width, height, g_dyn.level, kLevelSteps, g_dyn.minLevel);
+    KLOG(0, "dynamic resolution: main view %ux%u, level %u of %u, lowest %u", width, height, g_dyn.level.load(), kLevelSteps, g_dyn.lowest);
 }
 
 // The main view's size at the level now: what the game's own sizes for it become
@@ -505,15 +511,10 @@ __attribute__((visibility("default"))) void ksaMtlImageSize(VkImage image, uint3
 __attribute__((visibility("default"))) void ksaMtlDynamicResolutionFrame(uint32_t* width, uint32_t* height, uint32_t* level) {
     std::lock_guard<std::mutex> lock(g_dyn.m);
     g_dyn.frames++;
-    uint32_t want = g_dyn.level;
-    uint32_t cycle = (uint32_t)kmtlConfig().dynamicCycle;
-    if (g_dyn.width && cycle && startLevel())
-        want = (g_dyn.frames / cycle) % 2 ? 0 : startLevel();
-    else if (g_dyn.width && target() > 0)
-        want = chooseLevel();
+    uint32_t want = g_dyn.width && target() > 0 ? chooseLevel() : g_dyn.level.load();
     if (g_dyn.width && !g_dyn.prepared && !g_dyn.images.empty()) {
         auto t0 = std::chrono::steady_clock::now();
-        std::vector<uint32_t> levels = target() > 0 ? levelGrid() : std::vector<uint32_t>{0, startLevel()};
+        std::vector<uint32_t> levels = target() > 0 ? levelGrid() : std::vector<uint32_t>{0, g_dyn.lowest};
         prepareLevels(levels);
         g_dyn.prepared = true;
         KLOG(0, "dynamic resolution: %zu images at %zu levels made in %.1f ms", g_dyn.images.size(), levels.size(),
