@@ -33,7 +33,7 @@ using namespace metal;
 struct Params { float4x4 egoFromClip, scene, object, nearby; float4 sphere, body; float2 renderSize, imageSize;
                 float2 lastJitter; float maxFrames; uint history; float clip; float pad[3]; };
 kernel void accumulate(texture2d<half, access::read> image [[texture(0)]],
-                       depth2d<float, access::read> depth [[texture(1)]],
+                       depth2d<float, access::sample> depth [[texture(1)]],
                        texture2d<half, access::read> normals [[texture(2)]],
                        texture2d<half, access::read> lastColor [[texture(3)]],
                        texture2d<half, access::read> lastGeometry [[texture(4)]],
@@ -45,7 +45,8 @@ kernel void accumulate(texture2d<half, access::read> image [[texture(0)]],
     // The ray generation's point: the prepass's depth at this pixel's centre (createRayFromPrePass); its normal from the
     // prepass pixel the game's own mapping picks (as it reads it)
     float2 uv = (float2(gid) + 0.5) / p.imageSize;
-    float d = depth.read(uint2(clamp(int2(uv * p.renderSize), int2(0), int2(p.renderSize) - 1)));
+    constexpr sampler bilinear(filter::linear, address::repeat, coord::normalized);  // the game's prepass sampler
+    float d = depth.sample(bilinear, uv);
     int2 at = clamp(int2((float2(gid) + 0.5) * scale - 0.5), int2(0), int2(p.renderSize) - 1);
     float3 n = float3(normals.read(uint2(at)).xyz);
     half4 now = image.read(gid);
@@ -145,8 +146,6 @@ VKFN(void) vkCmdRayHistoryKSA(VkCommandBuffer commandBuffer, const VkRayHistoryI
     auto* depth = (KImage*)info->depth;
     auto* normals = (KImage*)info->normals;
     if (!depth || !normals || cb->inRenderPass) return;
-    // Multisampled prepasses (the game's MSAA, without MetalFX Temporal) aren't read here
-    if (depth->mtl.textureType != MTLTextureType2D || normals->mtl.textureType != MTLTextureType2D) return;
     std::lock_guard<std::mutex> lock(g_rh.m);
     id<MTLDevice> d = cb->device->mtl;
     if (g_rh.failed) return;
