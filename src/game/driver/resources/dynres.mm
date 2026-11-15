@@ -37,6 +37,8 @@ struct DynamicState {
     uint64_t frames = 0;             // frames begun (ksaMtlDynamicResolutionFrame)
     uint64_t changes = 0;
     uint64_t changedAt = 0;          // the frame of the last change
+    bool steppedUp = false;          // the last change was a step up
+    uint32_t upWait = 30;            // frames before a step up: doubled after one that had to come back down
     bool prepared = false;           // the levels' textures made (prepareLevels) since the last image
     // The last frames' GPU times and levels, as their presents completed: a lock of their own, for completion handlers
     std::mutex samplesMutex;
@@ -51,10 +53,11 @@ DynamicState& g_dyn = *new DynamicState;
 }
 
 static constexpr uint32_t kLevelSteps = 64, kMinLevel = 16;
-// The target's model: a share of a frame's GPU time that doesn't follow the pixel count; how often the level may
-// change (a change costs ~1 ms of the CPU); the target's grid of levels
+// The target's model: a share of a frame's GPU time that doesn't follow the pixel count; how many frames at a level
+// decide a step down (the median of the last ones) and how long it holds before a step up (a change costs ~1 ms of the
+// CPU and no frame: down at once, up only when it has stayed well under the target); the target's grid of levels
 static constexpr double kFixedShare = 0.5;
-static constexpr uint32_t kChangeFrames = 30, kLevelStep = 4;
+static constexpr uint32_t kDownFrames = 3, kUpFrames = 30, kLevelStep = 4;
 
 // The setting's level (16 to 63; anything else: off)
 static uint32_t settingLevel() {
@@ -423,41 +426,65 @@ void kmtlDynamicNoteFrame(uint32_t level, double gpuMs) {
     g_dyn.samples[g_dyn.sampleCount++ % 16] = {level, gpuMs};
 }
 
-// The level for the next frame, by the target (under g_dyn.m)
+// The level for the next frame, by the target (under g_dyn.m): down as soon as the last kDownFrames frames drawn at
+// this level ran over it, to the highest level expected under it, or one step when the last one alone ran far over
+// (a load arriving at once); up one step when the frames at this level have stayed well under it for kUpFrames frames,
+// longer after a step up that had to come back down (the model's fixed share is a guess)
 static uint32_t chooseLevel() {
     uint32_t now = g_dyn.level ? g_dyn.level.load() : kLevelSteps;
-    if (g_dyn.frames < g_dyn.changedAt + kChangeFrames) return g_dyn.level;
-    // The median of the last frames drawn at this level
+    // The last frames drawn at this level, the newest first (completed presents lag the frames begun by about two)
     double ms[16];
     uint32_t n = 0;
-    std::lock_guard<std::mutex> lock(g_dyn.samplesMutex);
-    for (uint32_t i = 0; i < std::min(g_dyn.sampleCount, 16u); i++)
-        if ((g_dyn.samples[i].level ? g_dyn.samples[i].level : kLevelSteps) == now) ms[n++] = g_dyn.samples[i].ms;
-    if (n < 5) return g_dyn.level;
-    std::nth_element(ms, ms + n / 2, ms + n);
-    double gpu = ms[n / 2], t = target();
-    auto expected = [&](uint32_t level) {
-        double r = (double)level / now;
-        return gpu * (kFixedShare + (1 - kFixedShare) * r * r);
+    {
+        std::lock_guard<std::mutex> lock(g_dyn.samplesMutex);
+        uint32_t count = std::min(g_dyn.sampleCount, 16u);
+        for (uint32_t i = 0; i < count; i++) {
+            const auto& sample = g_dyn.samples[(g_dyn.sampleCount - 1 - i) % 16];
+            if ((sample.level ? sample.level : kLevelSteps) == now) ms[n++] = sample.ms;
+        }
+    }
+    if (n == 0) return g_dyn.level;
+    double t = target(), newest = ms[0];
+    auto median = [&](uint32_t k) {
+        double m[16];
+        std::copy(ms, ms + k, m);
+        std::nth_element(m, m + k / 2, m + k);
+        return m[k / 2];
     };
-    // The grid from the full size down, as fractions of 64
     std::vector<uint32_t> grid = levelGrid();
     for (uint32_t& l : grid) if (!l) l = kLevelSteps;
-    uint32_t want = now;
-    if (gpu > t) {
-        // Down: the highest level below this one expected under the target, or the lowest
-        want = grid.back();
-        for (uint32_t l : grid)
-            if (l < now && expected(l) <= t * 0.95) { want = l; break; }
-    } else if (gpu < t * 0.85) {
-        // Up one step at a time (the model's fixed share is a guess), when it is expected to stay under the target
-        for (auto it = grid.rbegin(); it != grid.rend(); ++it)
-            if (*it > now) {
-                if (expected(*it) <= t * 0.9) want = *it;
-                break;
+    if (now > grid.back()) {
+        if (n >= kDownFrames && median(kDownFrames) > t) {
+            // Down: the highest level below this one expected under the target, or the lowest. Right after a step
+            // up, that step was a mistake of the model's: the next waits longer
+            if (g_dyn.steppedUp && g_dyn.frames < g_dyn.changedAt + 10) g_dyn.upWait = std::min(g_dyn.upWait * 2, kUpFrames * 8);
+            double gpu = median(kDownFrames);
+            uint32_t want = grid.back();
+            for (uint32_t l : grid) {
+                double r = (double)l / now;
+                if (l < now && gpu * (kFixedShare + (1 - kFixedShare) * r * r) <= t * 0.95) { want = l; break; }
             }
+            return want >= kLevelSteps ? 0 : want;
+        }
+        // One frame far over (a load arriving at once, or a spike that passes): one step down, before the frames
+        // after it tell which. Not the first frame at a level, which may cost more than the ones after it
+        if (n >= 2 && newest > t * 1.25)
+            for (uint32_t l : grid)
+                if (l < now) return l >= kLevelSteps ? 0 : l;
     }
-    return want >= kLevelSteps ? 0 : want;
+    // A step up that held: the wait back to the shortest
+    if (g_dyn.steppedUp && g_dyn.frames > g_dyn.changedAt + 2 * kUpFrames) g_dyn.upWait = kUpFrames;
+    if (g_dyn.frames < g_dyn.changedAt + g_dyn.upWait || n < 8) return g_dyn.level;
+    double gpu = median(n);
+    if (gpu >= t * 0.85) return g_dyn.level;
+    // Up one step (the model's fixed share is a guess), when it is expected to stay under the target
+    for (auto it = grid.rbegin(); it != grid.rend(); ++it)
+        if (*it > now) {
+            double r = (double)*it / now;
+            if (gpu * (kFixedShare + (1 - kFixedShare) * r * r) <= t * 0.9) return *it >= kLevelSteps ? 0 : *it;
+            break;
+        }
+    return g_dyn.level;
 }
 
 float kmtlDynamicMinContent() {
@@ -521,6 +548,8 @@ __attribute__((visibility("default"))) void ksaMtlDynamicResolutionFrame(uint32_
              std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
     }
     if (want != g_dyn.level) {
+        uint32_t before = g_dyn.level ? g_dyn.level.load() : kLevelSteps;
+        g_dyn.steppedUp = (want ? want : kLevelSteps) > before;
         changeLevel(want);
         g_dyn.changedAt = g_dyn.frames;
     }
