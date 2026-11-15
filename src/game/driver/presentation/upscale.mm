@@ -10,9 +10,12 @@
 // (orbit lines, the selected part), becomes MetalFX's reactive mask, so that plumes moving with the camera don't smear;
 // the bloom itself is left out, or the glow beside a bright edge would keep MetalFX from smoothing the edge. Past the
 // temporal upscaler's largest scale (3x on an M5), it upscales as far as it can and MetalFX's spatial upscaler does the
-// rest. The same file has the present's MetalFX pass: frame interpolation (KSA_MTL_FRAME_INTERPOLATION), for which the
-// game marks where its UI starts (vkCmdMarkUiKSA).
+// rest. MetalFX gets the game's exposure, which its tonemapping multiplies the image by, instead of estimating one: in
+// dark views its estimate drew faint stars as short streaks and lost a third of them. The same file has the present's
+// MetalFX pass: frame interpolation (KSA_MTL_FRAME_INTERPOLATION), for which the game marks where its UI starts
+// (vkCmdMarkUiKSA).
 #import <MetalFX/MetalFX.h>
+#include <cmath>
 #include "kmtl.h"
 
 extern "C" {
@@ -32,7 +35,7 @@ struct VkUpscaleInfoKSA {
     float bodySphere[4];        // the nearby body's highest ground or sea and 1 km, in ego (radius 0: no body)
     float fovY, nearPlane, farPlane, deltaTime;  // for frame interpolation
     uint32_t flags;          // kUpscaleReset, kUpscaleSpatial
-    uint32_t pad;
+    float exposure;          // what the game's tonemapping multiplies the image by (Tonemap Exposure; 0: 1)
     // The game's clouds and smoke trails, as its cloud upscaler drew them this frame at the render size (none: 0): their
     // colour with the light that passes them in alpha, and their own motion (uv now minus uv before, the lowest half
     // where it has none)
@@ -186,6 +189,10 @@ struct UpscaleState {
     bool haveLast = false;
     uint32_t lastW = 0, lastH = 0;  // the render size it was taken at
     id<MTLTexture> reactiveTex = nil;
+    // The game's exposure as MetalFX reads it, 1x1; a new one when the value changes (never written while in use), the
+    // one before kept a while for frames still in flight
+    id<MTLTexture> exposureTex = nil, previousExposureTex = nil;
+    float exposure = 0;
     id<MTLTexture> snapshots[3] = {nil, nil, nil};  // vkCmdUpscaleSnapshotKSA's stages: before the effects, before the bloom, after it
     // KSA_MTL_FRAME_INTERPOLATION=1: the last upscale's inputs, for a frame interpolated at present
     id<MTLFXFrameInterpolator> interpolator = nil;
@@ -256,7 +263,9 @@ static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uin
         // Past its largest scale, into an RGBA16Float image the spatial scaler takes the rest of the way
         td.outputTextureFormat = rest ? MTLPixelFormatRGBA16Float : outFormat;
         td.inputWidth = inW; td.inputHeight = inH; td.outputWidth = midW; td.outputHeight = midH;
-        td.autoExposureEnabled = YES;
+        // The game's own exposure, passed each frame (exposureTexture): with MetalFX's estimate, in dark views such as
+        // stars against space, faint stars came out as short streaks and a third of them dropped out
+        td.autoExposureEnabled = NO;
         td.requiresSynchronousInitialization = YES;
         td.reactiveMaskTextureEnabled = YES;
         td.reactiveMaskTextureFormat = MTLPixelFormatR8Unorm;
@@ -439,6 +448,20 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
         g_up.temporal.depthReversed = YES;
         g_up.temporal.reset = (info->flags & kUpscaleReset) != 0;
         g_up.temporal.reactiveMaskTexture = g_up.reactiveTex;
+        float exposure = info->exposure > 0 && std::isfinite(info->exposure) ? info->exposure : 1.f;
+        if (!g_up.exposureTex || exposure != g_up.exposure) {
+            MTLTextureDescriptor* ed = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR16Float
+                                                                                          width:1 height:1 mipmapped:NO];
+            ed.usage = MTLTextureUsageShaderRead;
+            ed.storageMode = MTLStorageModeShared;
+            id<MTLTexture> t = [cb->device->mtl newTextureWithDescriptor:ed];
+            __fp16 v = (__fp16)exposure;
+            [t replaceRegion:MTLRegionMake2D(0, 0, 1, 1) mipmapLevel:0 withBytes:&v bytesPerRow:sizeof(v)];
+            g_up.previousExposureTex = g_up.exposureTex;
+            g_up.exposureTex = t;
+            g_up.exposure = exposure;
+        }
+        g_up.temporal.exposureTexture = g_up.exposureTex;
         [g_up.temporal encodeToCommandBuffer:cb->mtl];
         if (g_up.rest) {
             fullBarrier(cb);
