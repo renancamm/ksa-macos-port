@@ -1,0 +1,26 @@
+# For Smoother SRB Flames (the hooks' SrbFlames.cs): the trail march and the volume caches fade a moving trail
+# segment's motion out within 60 m of the eye. The game's trail segments never move (only explosions do, on paths of
+# their own), so the fade only ever meets the motion SrbFlames gives the hot exhaust riding with the followed vessel:
+# kept whole, the flames close to the camera keep their history too.
+
+@@ edit srb-flames-march VolumetricTrail/RaymarchVolumetricTrail.comp
+@@ what the trail segments' motion kept near the eye, in the march
+@@ find
+    vec3 previousAxisPoint = mix(motion.previousStart.xyz, motion.previousEnd.xyz, segmentFraction);
+    previousAxisOffset = (previousAxisPoint - axisPoint) *
+        smoothstep(0.0, SEGMENT_MOTION_NEAR_FADE_DISTANCE, length(position));
+@@ replace
+    vec3 previousAxisPoint = mix(motion.previousStart.xyz, motion.previousEnd.xyz, segmentFraction);
+    // macOS port: Smoother SRB Flames. Not faded near the eye, whatever the game's comment above says: its trails stand
+    // still, so the only motion here is the hot exhaust's that the hooks give, riding with the followed vessel
+    previousAxisOffset = previousAxisPoint - axisPoint;
+
+@@ edit srb-flames-caches VolumetricTrail/TrailProfileSampling.glsl
+@@ what the trail segments' motion kept near the eye, in the volume caches
+@@ find
+    vec3 previousAxisOffset = (previousAxisPoint - axisPoint) *
+        smoothstep(0.0, SEGMENT_MOTION_NEAR_FADE_DISTANCE, length(position));
+@@ replace
+    // macOS port: Smoother SRB Flames. Not faded near the eye, whatever the game's comment above says: its trails stand
+    // still, so the only motion here is the hot exhaust's that the hooks give, riding with the followed vessel
+    vec3 previousAxisOffset = previousAxisPoint - axisPoint;

@@ -76,6 +76,7 @@ skip_unused_aero_meshes | bool | true | | restart | hooks:AeroMeshSkip | | | | S
 shared_shadow_samples | bool | true | | restart | driver | | | | Shared Shadow Samples | Neighbouring pixels share the work of terrain shadows. A little faster near the ground.
 iva_ray_search | bool | true | ray_tracing | restart | driver | | | | IVA Ray Search | With IVA Ray Tracing (Graphics), the cockpit's rays use a faster search. The cockpit draws about 6 % faster.
 vsync_pacing | bool | true | game:vsync | restart | driver | | | | Vsync Pacing | With Vsync, starts each frame as soon as the GPU is ready for it. A higher frame rate in a window.
+smoother_srb_flames | bool | true | | restart | hooks:SrbFlames | | | | Smoother SRB Flames | Draws SRB flames with less grain while the rocket moves, mostly near the nozzles.
 background_shader_compiling | bool | true | | restart | driver | | | | Background Shader Compiling | Compiles shaders in the background, so the game doesn't stop for each one.
 shader_cache | bool | true | | restart | driver | | | | Shader Cache | Keeps translated shaders on disk, so later starts don't translate them again.
 shader_constant_memory | bool | true | | restart | driver | | | | Shader Constant Memory | Shaders read their data through a faster kind of memory.
