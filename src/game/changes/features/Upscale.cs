@@ -28,7 +28,8 @@ namespace KsaMetal.Hooks.Features;
 // the camera's turn alone, and inside its bounding sphere that vessel, through its own frame. Copies of the image before
 // the exhausts, particles and glass and on both sides of the bloom let the driver mark what those effects and what is
 // drawn over the scene change as reactive (no smearing), but not the bloom. With frame interpolation, the final
-// composite then marks where the UI starts, so that MetalFX can draw this frame's UI over the frame it makes.
+// composite then marks where the UI starts, so that MetalFX can draw this frame's UI over the frame it makes. The
+// cockpit's ray-traced lighting keeps a history of its own (RayHistoryPostfix), so that MetalFX gets it steady.
 internal static class Upscale
 {
     private static bool Interpolate;
@@ -71,6 +72,32 @@ internal static class Upscale
     [DllImport("libvulkan.1.dylib")]
     private static extern void vkCmdMarkUiKSA(nint commandBuffer);
 
+    [StructLayout(LayoutKind.Sequential)]
+    private unsafe struct VkRayHistoryInfoKSA
+    {
+        public fixed ulong Images[4];
+        public fixed float MaxFrames[4];
+        public fixed float Clip[4];
+        public ulong Depth, Normals;
+        public fixed float EgoFromClip[16];
+        public fixed float Scene[16];
+        public fixed float Object[16];
+        public fixed float Nearby[16];
+        public fixed float ObjectSphere[4];
+        public fixed float BodySphere[4];
+        public float JitterX, JitterY;
+        public uint Flags, Frame;
+    }
+
+    [DllImport("libvulkan.1.dylib")]
+    private static extern void vkCmdRayHistoryKSA(nint commandBuffer, ref VkRayHistoryInfoKSA info);
+
+    // The cockpit's ray-traced lighting images, in the order the game makes them, and how many frames each one's history
+    // holds and how far the history may stray from the pixels around (in their spread; ray history in the driver): the
+    // direct light (the sun's patches, the kittens' shadows), the indirect light (smoothed by the game's a-trous passes
+    // before this), the reflections. The glass's reflections come from the translucent prepass, which isn't reprojected.
+    private static readonly (float Frames, float Clip)[] RayHistory = [(8f, 1.5f), (16f, 2f), (8f, 1f), (0f, 0f)];
+
     public static void Apply(Harmony harmony)
     {
         harmony.Patch(Find.Method(typeof(ScreenspaceRenderer), nameof(ScreenspaceRenderer.AddImage)),
@@ -89,6 +116,8 @@ internal static class Upscale
                 transpiler: new HarmonyMethod(typeof(Upscale), nameof(RayTracingTranspiler)));
             harmony.Patch(Find.Method(typeof(RaytracePipeline), nameof(RaytracePipeline.Dispatch)),
                 prefix: new HarmonyMethod(typeof(Upscale), nameof(RayTracingSeedPrefix)));
+            harmony.Patch(Find.Method(typeof(RaytracingRenderer), "ApplyDenoise"),
+                postfix: new HarmonyMethod(typeof(Upscale), nameof(RayHistoryPostfix)));
             ApplyCloudMotion(harmony);
         }
         if (Interpolate)
@@ -199,6 +228,7 @@ internal static class Upscale
     private static bool _reading;  // the composites, as last built, read _output: MetalFX runs (and the jitter with it)
     private static bool _reset = true, _havePrevious;
     private static int _frame;
+    private static int _cameraFrame;  // the main view's frames: the ray history counts only from the frame just before
     private static uint _jitterIndex;  // this frame's place in the jitter's sequence, 1 to 16; 0: no jitter
     private static float2 _jitter, _jitterClip;
     private static float4x4 _egoFromClip, _scene, _object, _sky, _nearby, _previousViewProjection;
@@ -281,6 +311,7 @@ internal static class Upscale
     {
         Camera camera = viewport.GetCamera();
         int2 size = viewport.Size;
+        _cameraFrame++;
         float jx = 0f, jy = 0f;
         // A high-resolution screenshot is drawn without jitter, and the history starts again after it
         if (!_reading)
@@ -529,6 +560,53 @@ internal static class Upscale
     {
         if (inShaderSlot == Program.MainViewport.ShaderSlot)
             uniformData.Margin = _jitterIndex;
+    }
+
+    // RaytracingRenderer.ApplyDenoise, after it (the last of the cockpit's ray tracing before its images are read): each
+    // lighting image blended with its own history in the driver (vkCmdRayHistoryKSA, src/game/driver/presentation/
+    // rayhistory.mm), reprojected as MetalFX's motion is. The game traces them anew every frame at a fraction of the
+    // render size and smooths them only in space; with the jitter's seed and the jitter moving where each ray starts,
+    // the sun's patches crawled with speckles (a kitten's fur, sampled at half size), the window's rim sparkled and the
+    // indirect light's blotches moved from frame to frame, which MetalFX can't settle on: the cockpit's walls shimmered.
+    // After the game's smoothing, not before: its a-trous passes compress what is brighter than a knee before averaging,
+    // so a history before them would keep more of the indirect light's rare bright samples and brighten the cockpit.
+    private static unsafe void RayHistoryPostfix(RaytracingRenderer __instance, CommandBuffer commandBuffer)
+    {
+        if (!_reading || Program.Instance.PrePassRenderer.OpaquePrePassData is not { } prepass)
+            return;
+        VkImage depth = prepass.DepthTextureForSampling.Image, normals = prepass.NormalTextureForSampling.Image;
+        var info = new VkRayHistoryInfoKSA
+        {
+            Depth = Unsafe.As<VkImage, ulong>(ref depth),
+            Normals = Unsafe.As<VkImage, ulong>(ref normals),
+            JitterX = _jitter.X,
+            JitterY = _jitter.Y,
+            Flags = _reset ? Reset : 0u,
+            Frame = (uint)_cameraFrame
+        };
+        for (int i = 0; i < RayHistory.Length; i++)
+        {
+            if (RayHistory[i].Frames <= 0f)
+                continue;
+            VkImage image = (i switch
+            {
+                0 => __instance.OpaqueDirectLightingImage,
+                1 => __instance.OpaqueIndirectLightingImage,
+                2 => __instance.OpaqueReflectionImage,
+                _ => __instance.TranslucentReflectionImage
+            }).Image;
+            info.Images[i] = Unsafe.As<VkImage, ulong>(ref image);
+            info.MaxFrames[i] = RayHistory[i].Frames;
+            info.Clip[i] = RayHistory[i].Clip;
+        }
+        Put(info.EgoFromClip, in _egoFromClip);
+        Put(info.Scene, in _scene);
+        Put(info.Object, in _object);
+        Put(info.Nearby, in _nearby);
+        info.ObjectSphere[0] = _sphere.X; info.ObjectSphere[1] = _sphere.Y; info.ObjectSphere[2] = _sphere.Z; info.ObjectSphere[3] = _sphere.W;
+        info.BodySphere[0] = _bodySphere.X; info.BodySphere[1] = _bodySphere.Y; info.BodySphere[2] = _bodySphere.Z; info.BodySphere[3] = _bodySphere.W;
+        VkCommandBuffer handle = commandBuffer.Handle;
+        vkCmdRayHistoryKSA(Unsafe.As<VkCommandBuffer, nint>(ref handle), ref info);
     }
 
     // The main view's projection with this frame's jitter, as UpdateCamera gives the camera data
