@@ -147,6 +147,7 @@ void kmtlInternalBlit(KCommandBuffer* cb, KImage* src, KImage* dst, const VkImag
         return;
     }
     uint32_t sl = r.srcSubresource.mipLevel, dl = r.dstSubresource.mipLevel;
+    if (sl >= src->mtl.mipmapLevelCount || dl >= dst->mtl.mipmapLevelCount) return;  // past a dynamic level's mip levels
     bool src3D = src->info.imageType == VK_IMAGE_TYPE_3D, dst3D = dst->info.imageType == VK_IMAGE_TYPE_3D;
     // Sample through a view of the source level only: mip chains blit within one image, and no draw may read the
     // level it renders into
@@ -163,9 +164,10 @@ void kmtlInternalBlit(KCommandBuffer* cb, KImage* src, KImage* dst, const VkImag
     }
     id<MTLRenderPipelineState> ps = blitPipeline(dev, dst->pixelFormat, variant);
     if (!ps) return;
-    float sw = (float)std::max(1u, src->info.extent.width >> sl), sh = (float)std::max(1u, src->info.extent.height >> sl);
+    // The textures' sizes: a dynamic image's are its level's (dynres.mm), as the offsets are
+    float sw = (float)std::max(1u, (uint32_t)src->mtl.width >> sl), sh = (float)std::max(1u, (uint32_t)src->mtl.height >> sl);
     float sd = (float)std::max(1u, src->info.extent.depth >> sl);
-    uint32_t dw = std::max(1u, dst->info.extent.width >> dl), dh = std::max(1u, dst->info.extent.height >> dl);
+    uint32_t dw = std::max(1u, (uint32_t)dst->mtl.width >> dl), dh = std::max(1u, (uint32_t)dst->mtl.height >> dl);
     int dz0 = std::min(r.dstOffsets[0].z, r.dstOffsets[1].z), dz1 = std::max(r.dstOffsets[0].z, r.dstOffsets[1].z);
     // One pass per destination layer (2D) or depth plane (3D)
     uint32_t passes = dst3D ? (uint32_t)std::max(1, dz1 - dz0) : r.dstSubresource.layerCount;

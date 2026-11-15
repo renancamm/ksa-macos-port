@@ -40,6 +40,8 @@ struct VkUpscaleInfoKSA {
     // colour with the light that passes them in alpha, and their own motion (uv now minus uv before, the lowest half
     // where it has none)
     VkImage cloudColor, cloudMotion;
+    // Dynamic resolution (dynres.mm): the size drawn this frame, within the input size the scaler is made for (0: that)
+    uint32_t contentWidth, contentHeight;
 };
 }
 enum : uint32_t { kUpscaleReset = 1, kUpscaleSpatial = 2 };
@@ -178,6 +180,7 @@ struct UpscaleState {
     // RG11B10Float; a scaler reads a texture of another format as noise)
     MTLPixelFormat colorFormat = MTLPixelFormatInvalid, outFormat = MTLPixelFormatInvalid;
     bool spatialMode = false;
+    float minContent = 1;  // dynamic resolution: the least share of the input the content may be
     bool scalerFailed = false;  // MetalFX made no scaler for these sizes and mode: not tried again until they change
     // Past the temporal upscaler's largest scale: its output, which the spatial upscaler scales the rest of the way
     id<MTLFXSpatialScaler> rest = nil;
@@ -216,7 +219,7 @@ UpscaleState& g_up = *new UpscaleState;  // never destroyed: releasing a scaler 
 }
 
 static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uint32_t outH, bool spatial,
-                    MTLPixelFormat colorFormat, MTLPixelFormat outFormat) {
+                    MTLPixelFormat colorFormat, MTLPixelFormat outFormat, float minContent) {
     if (g_up.failed) return false;
     id<MTLDevice> d = dev->mtl;
     if (!g_up.motion) {
@@ -235,9 +238,10 @@ static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uin
         }
     }
     if (g_up.inW == inW && g_up.inH == inH && g_up.outW == outW && g_up.outH == outH && g_up.spatialMode == spatial &&
-        g_up.colorFormat == colorFormat && g_up.outFormat == outFormat)
+        g_up.colorFormat == colorFormat && g_up.outFormat == outFormat && g_up.minContent == minContent)
         return !g_up.scalerFailed;
     g_up.inW = inW; g_up.inH = inH; g_up.outW = outW; g_up.outH = outH;
+    g_up.minContent = minContent;
     g_up.colorFormat = colorFormat; g_up.outFormat = outFormat;
     g_up.spatialMode = spatial;
     g_up.scalerFailed = false;
@@ -255,7 +259,10 @@ static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uin
     } else {
         MTLFXTemporalScalerDescriptor* td = [MTLFXTemporalScalerDescriptor new];
         float most = [MTLFXTemporalScalerDescriptor supportedInputContentMaxScaleForDevice:d];
-        uint32_t midW = std::min(outW, (uint32_t)(inW * most)), midH = std::min(outH, (uint32_t)(inH * most));
+        // With dynamic resolution, the content can shrink to minContent of the input: the temporal scaler's output is
+        // as far as it scales from there, and the spatial one takes it the rest of the way
+        uint32_t midW = std::min(outW, std::max(inW, (uint32_t)(inW * minContent * most)));
+        uint32_t midH = std::min(outH, std::max(inH, (uint32_t)(inH * minContent * most)));
         bool rest = midW != outW || midH != outH;
         td.colorTextureFormat = colorFormat;
         td.depthTextureFormat = MTLPixelFormatDepth32Float;
@@ -263,6 +270,11 @@ static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uin
         // Past its largest scale, into an RGBA16Float image the spatial scaler takes the rest of the way
         td.outputTextureFormat = rest ? MTLPixelFormatRGBA16Float : outFormat;
         td.inputWidth = inW; td.inputHeight = inH; td.outputWidth = midW; td.outputHeight = midH;
+        if (minContent < 1) {
+            td.inputContentPropertiesEnabled = YES;
+            td.inputContentMinScale = std::max(1.f, (float)midW / inW);
+            td.inputContentMaxScale = std::max(td.inputContentMinScale, std::min(most, (float)midW / (inW * minContent)));
+        }
         // The game's own exposure, passed each frame (exposureTexture): with MetalFX's estimate, in dark views such as
         // stars against space, faint stars came out as short streaks and a third of them dropped out
         td.autoExposureEnabled = NO;
@@ -333,14 +345,19 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
     // in between leaves it older
     bool haveLast = g_up.haveLast;
     g_up.haveLast = false;
+    // Dynamic resolution: this frame's content, in the input size the scalers are made for
+    uint32_t cw = info->contentWidth ? std::min(info->contentWidth, info->inputWidth) : info->inputWidth;
+    uint32_t ch = info->contentHeight ? std::min(info->contentHeight, info->inputHeight) : info->inputHeight;
+    cw = std::min<uint32_t>(cw, (uint32_t)color->mtl.width);
+    ch = std::min<uint32_t>(ch, (uint32_t)color->mtl.height);
     bool ready = prepare(cb->device, info->inputWidth, info->inputHeight, outW, outH, spatial, color->mtl.pixelFormat,
-                         out->mtl.pixelFormat);
+                         out->mtl.pixelFormat, kmtlDynamicMinContent());
     if (!ready && !g_up.stretch) return;
     cb->endEncoder();
     cb->waitForAllResolves();
     fullBarrier(cb);
     if (!ready) {
-        float content[2] = {(float)info->inputWidth, (float)info->inputHeight};
+        float content[2] = {(float)cw, (float)ch};
         id<MTLComputeCommandEncoder> e = [cb->mtl computeCommandEncoder];
         e.label = @"upscale stretch";
         [e setComputePipelineState:g_up.stretch];
@@ -352,8 +369,8 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
     } else if (spatial) {
         g_up.spatial.colorTexture = color->mtl;
         g_up.spatial.outputTexture = out->mtl;
-        g_up.spatial.inputContentWidth = info->inputWidth;
-        g_up.spatial.inputContentHeight = info->inputHeight;
+        g_up.spatial.inputContentWidth = cw;
+        g_up.spatial.inputContentHeight = ch;
         [g_up.spatial encodeToCommandBuffer:cb->mtl];
     } else {
         struct { float egoFromClip[16], scene[16], object[16], sky[16], nearby[16], sphere[4], body[4]; float size[2]; float jitter[2]; float reactiveGain; uint32_t snapshots;
@@ -365,7 +382,7 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
         memcpy(p.nearby, info->prevClipFromEgoNearby, sizeof(p.nearby));
         memcpy(p.body, info->bodySphere, sizeof(p.body));
         memcpy(p.sphere, info->objectSphere, sizeof(p.sphere));
-        p.size[0] = (float)info->inputWidth; p.size[1] = (float)info->inputHeight;
+        p.size[0] = (float)cw; p.size[1] = (float)ch;
         p.jitter[0] = info->jitterX; p.jitter[1] = info->jitterY;
         id<MTLComputeCommandEncoder> e = [cb->mtl computeCommandEncoder];
         e.label = @"upscale motion vectors";
@@ -397,7 +414,7 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
             g_up.lastColor = [cb->device->mtl newTextureWithDescriptor:ld];
             haveLast = false;
         }
-        bool history = haveLast && g_up.lastW == info->inputWidth && g_up.lastH == info->inputHeight &&
+        bool history = haveLast && g_up.lastW == cw && g_up.lastH == ch &&
                        !(info->flags & kUpscaleReset);
         [e setTexture:history ? g_up.lastColor : color->mtl atIndex:9];
         p.reactiveGain = kReactiveGain;
@@ -408,7 +425,7 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
         p.history = history ? 1 : 0;
         p.pad = 0;
         [e setBytes:&p length:sizeof(p) atIndex:0];
-        [e dispatchThreads:MTLSizeMake(info->inputWidth, info->inputHeight, 1) threadsPerThreadgroup:MTLSizeMake(16, 16, 1)];
+        [e dispatchThreads:MTLSizeMake(cw, ch, 1) threadsPerThreadgroup:MTLSizeMake(16, 16, 1)];
         [e endEncoding];
         fullBarrier(cb);
         // This frame's image for the next frame's choices
@@ -421,7 +438,7 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
             [b endEncoding];
             fullBarrier(cb);
             g_up.lastJitter[0] = info->jitterX; g_up.lastJitter[1] = info->jitterY;
-            g_up.lastW = info->inputWidth; g_up.lastH = info->inputHeight;
+            g_up.lastW = cw; g_up.lastH = ch;
         }
         if (kmtlConfig().fxDebug && g_up.debugView) {
             id<MTLComputeCommandEncoder> e2 = [cb->mtl computeCommandEncoder];
@@ -439,8 +456,8 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
         g_up.temporal.depthTexture = depth->mtl;
         g_up.temporal.motionTexture = g_up.motionTex;
         g_up.temporal.outputTexture = g_up.rest ? g_up.restTex : out->mtl;
-        g_up.temporal.inputContentWidth = info->inputWidth;
-        g_up.temporal.inputContentHeight = info->inputHeight;
+        g_up.temporal.inputContentWidth = cw;
+        g_up.temporal.inputContentHeight = ch;
         g_up.temporal.jitterOffsetX = info->jitterX;
         g_up.temporal.jitterOffsetY = info->jitterY;
         g_up.temporal.motionVectorScaleX = 1.f;
@@ -507,6 +524,17 @@ VKFN(void) vkCmdUpscaleSnapshotKSA(VkCommandBuffer commandBuffer, VkImage image,
     cb->fxSnapshots |= 1u << stage;
 }
 
+// How far the temporal scaler scales on this Mac (dynamic resolution's lowest level), once
+float kmtlUpscaleMaxScale() {
+    static float most = [] {
+        @autoreleasepool {
+            id<MTLDevice> d = MTLCreateSystemDefaultDevice();
+            return d ? [MTLFXTemporalScalerDescriptor supportedInputContentMaxScaleForDevice:d] : 0.0f;
+        }
+    }();
+    return most;
+}
+
 // How far the temporal scaler scales on this Mac, past which the spatial one does the rest: for the Mac Port tab
 VKFN(float) vkGetUpscaleMaxScaleKSA(void) {
     @autoreleasepool {
@@ -551,6 +579,11 @@ id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<
     std::lock_guard<std::mutex> lock(g_up.m);
     if (!g_up.temporal || !g_up.frameDepth || g_up.frameSerial == g_up.presentedSerial) return nil;
     g_up.presentedSerial = g_up.frameSerial;
+    // Not at a dynamic resolution's lower level: the interpolator takes no smaller content
+    if (g_up.frameDepth.width != g_up.inW || g_up.frameDepth.height != g_up.inH) {
+        g_up.prevSceneValid = false;
+        return nil;
+    }
     // Without this frame's scene (no UI mark: a loading screen), no frame in between, and no history for the next
     if (!g_up.scene || g_up.sceneSerial != g_up.frameSerial || g_up.scene.width != color.width ||
         g_up.scene.height != color.height || g_up.scene.pixelFormat != color.pixelFormat) {

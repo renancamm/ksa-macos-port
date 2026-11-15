@@ -431,12 +431,14 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
                     state->frames.push_back({n, presentId, now, 0, false, false});
                 }
                 bool shownAtEnd = !drawable;
+                uint32_t level = kmtlDynamicLevelNow();  // dynamic resolution's level of this frame
                 [cb addCompletedHandler:^(id<MTLCommandBuffer> c) {
                     std::lock_guard<std::mutex> lock(state->m);
                     // The frame's own GPU time: its work up to this command buffer, which completes in order after it
                     // (kmtlNoteGpuTime, the handler before, counted this buffer)
                     double ms = kmtlTakeFrameGpuTime() * 1e3;
                     state->gpuMs[state->gpuSamples++ % 8] = ms;
+                    kmtlDynamicNoteFrame(level, ms);
                     if (kmtlDrainOn()) kmtlDrainFrameGpu(counted, CACurrentMediaTime(), ms);
                     if (KPresentState::Frame* f = findFrame(*state, n)) {
                         f->gpuDone = true;
