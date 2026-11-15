@@ -300,6 +300,12 @@ the 8 pixels around to their colour in the last frame's image wins (the colour e
 pixels in a descent through Earth's clouds 40-80 % lower in its cloudiest seconds, on a launch seen from the ground
 26-39 % lower near the rocket; GPU time the same in the Mixed Test, 2 % more on that launch). Between the encoders MetalFX adds and the game's work it puts full event barriers. Frame interpolation presents a
 frame MetalFX makes from the last two scenes, their motion and depth, with this frame's UI on top, before each real one.
+`vkCmdRayHistoryKSA` gives the cockpit's ray-traced lighting images (direct light, indirect light, reflections) a
+history of their own, after the game has smoothed them: each is blended with its last frames (8, 16 and 8 at most),
+reprojected with the same motion, where the prepass's normal and distance match and within the spread of the pixels
+around it, so that MetalFX gets steady lighting instead of a new pattern every jittered frame (in a still cockpit, the
+frame-to-frame change of a crop around the sunlit wall 1.21 -> 0.65; 0.1-0.2 ms on an M5). It runs in the driver's own
+encoder ordering, as a compute pass after a barrier from everything before.
 
 The complete mapping:
 
@@ -330,7 +336,7 @@ The complete mapping:
 | Transient attachments | memoryless textures (tile memory only) |
 | Swapchain | own textures at the display's pixels, copied into the `CAMetalLayer` drawable at present |
 | HDR10 colour space, `vkSetHdrMetadataEXT` | the layer in PQ with EDR and `CAEDRMetadata`, the game's UI brightness at SDR white |
-| `vkCmdUpscaleKSA`, `vkCmdUpscaleSnapshotKSA`, `vkCmdMarkUiKSA`, `vkGetUpscaleMaxScaleKSA` | the driver's own: MetalFX for the hooks |
+| `vkCmdUpscaleKSA`, `vkCmdUpscaleSnapshotKSA`, `vkCmdMarkUiKSA`, `vkGetUpscaleMaxScaleKSA`, `vkCmdRayHistoryKSA` | the driver's own: MetalFX for the hooks |
 
 Buffer indices per shader stage: 0-9 descriptor sets, 10 push constants, 11 draw index, 12 buffer sizes, 13 view
 mask, 14 dynamic offsets, 15 texture swizzles, 16-21 tessellation stage buffers, 22 ray tracing launch size, 30 - n
@@ -371,6 +377,7 @@ share is in that folder's header too, under a heading that says so (`stages.h` f
 | `commands/internal.mm` | the driver's own shaders: buffer fills, scaled blits, tessellation helpers |
 | `presentation/swapchain.mm` | swapchain and presentation: pacing, HDR, frame interpolation at present, latency |
 | `presentation/upscale.mm` | MetalFX: upscaling, motion vectors, frame interpolation |
+| `presentation/rayhistory.mm` | MetalFX: the cockpit's ray-traced lighting with a history of its own |
 | `diagnostics/instruments.mm` | what is measured at each present: frame log, screenshots, exits, the benchmark's interface, frame captures, signposts |
 | `diagnostics/drain.mm` | the benchmark's drain: what is measured, as records for its run's store |
 | `diagnostics/passdump.mm` | one frame's images, pass by pass (`ksaMtlPassDump`) |

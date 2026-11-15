@@ -45,6 +45,7 @@ public static class TabPresets
         ["RaytracedOpaqueReflectionResolutionScale"] = "graphics.raytracedOpaqueReflectionResolutionScale",
         ["RaytracedShadowResolutionScale"] = "graphics.raytracedResolutionScale",
         ["RaytracedReflectionBounces"] = "graphics.raytracedReflectionBounces",
+        ["RaytracedIndirectResolutionScale"] = "graphics.raytracedIndirectResolutionScale",
         ["TerrainTextureCap"] = "graphics.celestialTextureCap",
     };
 
@@ -68,7 +69,7 @@ public static class TabPresets
             1,
             Game(antiAliasing: "MultisampleX2", filter: "Pcf", cascades: 2048, terrain: 4096, milkyWay: "High", clouds: "High",
                 cloudShadows: "Medium", effects: "Medium", godrays: true, clutterShadows: true, plumeShadows: true,
-                rayTracing: true, exhausts: "High")),
+                rayTracing: true, exhausts: "High", indirectLight: 25)),
         new("quality", "Quality", "Best looking, a little faster.",
             "The game's image at the window's size, with its anti-aliasing and soft shadows. Only what costs much " +
             "and barely shows is lighter: shadow sizes, nearby soft shadows, cockpit ray tracing, the Milky Way.",
@@ -128,7 +129,7 @@ public static class TabPresets
     // off), the rest in GameSettings.Graphics
     private static Dictionary<string, string> Game(string antiAliasing, string filter, int cascades, int terrain,
         string milkyWay, string clouds, string cloudShadows, string effects, bool godrays, bool clutterShadows,
-        bool plumeShadows, bool rayTracing, int planetTextures = 0, string? exhausts = null)
+        bool plumeShadows, bool rayTracing, int planetTextures = 0, string? exhausts = null, int indirectLight = 50)
     {
         // Exhausts and particles at High cost about nothing under MetalFX Temporal 0.75 (High vs Low: exhausts ~0 ms,
         // particles under 1, M5, Mixed Test in a 1440x900 window), and the exhaust's blocks are visibly smaller in motion;
@@ -168,6 +169,12 @@ public static class TabPresets
             ["RaytracedOpaqueReflectionResolutionScale"] = "50",
             ["RaytracedShadowResolutionScale"] = "50",
             ["RaytracedReflectionBounces"] = "1",
+            // The cockpit's indirect light at 25 % of the size (the game's: 50 %) where MetalFX Temporal keeps a
+            // history of it (Balanced; Upscale.cs, RayHistoryPostfix): the cockpit's GPU time -11 % (M5, a still
+            // cockpit at Balanced: 15.8 -> 14.1 ms), the same brightness, steadier than the game's at 50 %. Without
+            // the history (Quality draws at the window's size, without MetalFX) its blotches at 25 % move from frame to
+            // frame, so the others keep the game's
+            ["RaytracedIndirectResolutionScale"] = Text(indirectLight),
             // The game's terrain textures at most this many pixels wide (0: the game's, none), in every preset, so that
             // each one sets it: the planets' textures loaded whole (Earth's clouds, tiling and biome maps, the moons'
             // rock), the finest level the streamer gives the planets' colour maps (Earth, the Moon, Mars; not their
