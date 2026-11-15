@@ -33,13 +33,15 @@ VKFN(void) vkCmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBind
         if (!s || idx >= kMaxSets) continue;
         if (s->destroyedSlots.load(std::memory_order_relaxed)) kmtlReportDestroyedBuffer(s, idx);
         KSetLayout* l = s->layout;
-        if (l->dynamicCount == 0) {
+        bool levels = s->levelTextures.load(std::memory_order_relaxed);
+        if (l->dynamicCount == 0 && !levels) {
             bound[idx].buffer = s->buffer;
             bound[idx].offset = s->offset;
             bound[idx].slots = s->base;
             bound[idx].layout = l;
         } else {
-            // Copy the set and add the dynamic offsets to its buffer addresses
+            // Copy the set and add the dynamic offsets to its buffer addresses; a dynamic image's textures at this
+            // frame's level (dynres.mm), which the set itself keeps from when it was written
             KUploadRing::Place at = cb->ring.alloc(cb->device, s->size);
             memcpy(at.ptr, s->base, s->size);
             auto* slots = (uint64_t*)at.ptr;
@@ -50,6 +52,7 @@ VKFN(void) vkCmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBind
                 uint32_t slot = l->dynamicSlots[d];
                 if (slots[slot] && slots[slot] != g_zeroPageAddress.load(std::memory_order_acquire)) slots[slot] += dynOffsets[dynUsed];
             }
+            if (levels) kmtlDynamicTranslate(l, slots);
             bound[idx].buffer = at.buffer;
             bound[idx].offset = at.offset;
         }
@@ -182,7 +185,8 @@ bool kmtlFlushGraphics(KCommandBuffer* cb) {
         uint32_t n = (uint32_t)std::min<size_t>(cb->viewports.size(), 16);
         for (uint32_t i = 0; i < n; i++) {
             const auto& vp = cb->viewports[i];
-            v[i] = {vp.x, vp.y, vp.width, vp.height, vp.minDepth, vp.maxDepth};
+            double sx = cb->viewportScale[0], sy = cb->viewportScale[1];
+            v[i] = {vp.x * sx, vp.y * sy, vp.width * sx, vp.height * sy, vp.minDepth, vp.maxDepth};
         }
         if (n == 1) [enc setViewport:v[0]];
         else [enc setViewports:v count:n];
@@ -192,11 +196,13 @@ bool kmtlFlushGraphics(KCommandBuffer* cb) {
         MTLScissorRect r[16];
         uint32_t n = (uint32_t)std::min<size_t>(cb->scissors.size(), 16);
         for (uint32_t i = 0; i < n; i++) {
-            // Metal rejects scissors outside the render target: clamp
-            int64_t x0 = std::max<int64_t>(0, cb->scissors[i].offset.x);
-            int64_t y0 = std::max<int64_t>(0, cb->scissors[i].offset.y);
-            int64_t x1 = std::min<int64_t>(cb->rtWidth, (int64_t)cb->scissors[i].offset.x + cb->scissors[i].extent.width);
-            int64_t y1 = std::min<int64_t>(cb->rtHeight, (int64_t)cb->scissors[i].offset.y + cb->scissors[i].extent.height);
+            // Metal rejects scissors outside the render target: clamp. At a dynamic level, scaled outwards
+            const VkRect2D& sc = cb->scissors[i];
+            double sx = cb->viewportScale[0], sy = cb->viewportScale[1];
+            int64_t x0 = std::max<int64_t>(0, (int64_t)std::floor(sc.offset.x * sx));
+            int64_t y0 = std::max<int64_t>(0, (int64_t)std::floor(sc.offset.y * sy));
+            int64_t x1 = std::min<int64_t>(cb->rtWidth, (int64_t)std::ceil(((double)sc.offset.x + sc.extent.width) * sx));
+            int64_t y1 = std::min<int64_t>(cb->rtHeight, (int64_t)std::ceil(((double)sc.offset.y + sc.extent.height) * sy));
             if (x1 <= x0 || y1 <= y0) return false;  // empty scissor: nothing to draw (state stays dirty)
             r[i] = {(NSUInteger)x0, (NSUInteger)y0, (NSUInteger)(x1 - x0), (NSUInteger)(y1 - y0)};
         }

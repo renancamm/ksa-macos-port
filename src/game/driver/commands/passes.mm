@@ -61,6 +61,20 @@ static void setAttachmentTexture(MTLRenderPassAttachmentDescriptor* a, KImageVie
     if (v->mtl.textureType == MTLTextureType3D) a.depthPlane = v->baseLayer;
 }
 
+// Dynamic resolution (dynres.mm): a pass that draws into dynamic images draws at their level. The viewports and scissors
+// the game sets at the images' own size are scaled by it (state.mm), and the pass is as large as its textures
+static void scaleForAttachment(KCommandBuffer* cb, const KImageView* v, bool* found) {
+    if (*found || !v || !v->image || !v->image->dynamic) return;
+    *found = true;
+    kmtlDynamicScale(v->image, &cb->viewportScale[0], &cb->viewportScale[1]);
+}
+
+static void fitToAttachment(const KImageView* v, uint32_t* w, uint32_t* h) {
+    if (!v || !v->mtl) return;
+    *w = std::min<uint32_t>(*w, (uint32_t)v->mtl.width);
+    *h = std::min<uint32_t>(*h, (uint32_t)v->mtl.height);
+}
+
 VKFN(void) vkCmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPassBeginInfo* bi, VkSubpassContents) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
@@ -107,6 +121,16 @@ VKFN(void) vkCmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPas
         }
     }
     uint32_t w = fb->width, h = fb->height;
+    cb->viewportScale[0] = cb->viewportScale[1] = 1;
+    bool found = false;
+    for (int c : sp.colors)
+        if (c >= 0 && c < (int)viewCount) scaleForAttachment(cb, views[c], &found);
+    if (sp.depth >= 0 && sp.depth < (int)viewCount) scaleForAttachment(cb, views[sp.depth], &found);
+    if (found) {
+        for (int c : sp.colors)
+            if (c >= 0 && c < (int)viewCount) fitToAttachment(views[c], &w, &h);
+        if (sp.depth >= 0 && sp.depth < (int)viewCount) fitToAttachment(views[sp.depth], &w, &h);
+    }
     d.renderTargetWidth = w;
     d.renderTargetHeight = h;
     if (fb->layers > 1) d.renderTargetArrayLength = fb->layers;
@@ -180,6 +204,11 @@ VKFN(void) vkCmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingI
             d.stencilAttachment.clearStencil = ri->pStencilAttachment->clearValue.depthStencil.stencil;
         }
     }
+    cb->viewportScale[0] = cb->viewportScale[1] = 1;
+    bool found = false;
+    for (uint32_t i = 0; i < ri->colorAttachmentCount; i++)
+        scaleForAttachment(cb, (KImageView*)ri->pColorAttachments[i].imageView, &found);
+    if (ri->pDepthAttachment) scaleForAttachment(cb, (KImageView*)ri->pDepthAttachment->imageView, &found);
     d.renderTargetWidth = w;
     d.renderTargetHeight = h;
     if (ri->viewMask) d.renderTargetArrayLength = 32 - __builtin_clz(ri->viewMask);

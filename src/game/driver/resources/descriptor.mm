@@ -261,6 +261,7 @@ static void writeOne(KDescriptorSet* s, const KBinding* b, uint32_t elem, VkDesc
         break;
     case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
         slots[b->id + elem] = textureId(ii->imageView);
+        if (kmtlDynamicView(ii->imageView)) s->levelTextures = true;
         if (b->immutableSamplers.empty() && ii->sampler)
             slots[b->samplerId + elem] = ((KSampler*)ii->sampler)->mtl.gpuResourceID._impl;
         break;
@@ -268,6 +269,7 @@ static void writeOne(KDescriptorSet* s, const KBinding* b, uint32_t elem, VkDesc
     case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
     case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
         slots[b->id + elem] = textureId(ii->imageView);
+        if (kmtlDynamicView(ii->imageView)) s->levelTextures = true;
         break;
     case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
     case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
@@ -335,6 +337,7 @@ VKFN(void) vkUpdateDescriptorSets(VkDevice, uint32_t writeCount, const VkWriteDe
         const KBinding* sb = src->layout->find(cp.srcBinding);
         const KBinding* db = dst->layout->find(cp.dstBinding);
         if (!sb || !db) continue;
+        if (src->levelTextures) dst->levelTextures = true;
         for (uint32_t i = 0; i < cp.descriptorCount; i++) {
             uint64_t& to = dst->slots()[db->id + cp.dstArrayElement + i];
             uint64_t from = src->slots()[sb->id + cp.srcArrayElement + i];

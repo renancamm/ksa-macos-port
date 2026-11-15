@@ -99,6 +99,7 @@ VKFN(VkResult) vkCreateImage(VkDevice device, const VkImageCreateInfo* ci, const
 void kmtlDestroyImage(KImage* img) {
     if (!img) return;
     kmtlPassDumpForget(img);
+    kmtlDynamicForget(img);
     if (img->ownsTexture && img->mtl) img->device->removeResident(img->mtl);
     delete img;
 }
@@ -161,6 +162,7 @@ static VkResult bindImage(VkImage image, VkDeviceMemory memory, VkDeviceSize off
         img->desc.usage = MTLTextureUsageRenderTarget;
         img->mtl = [img->device->mtl newTextureWithDescriptor:img->desc];
         if (img->mtl) {
+            kmtlDynamicBind(img);
             KLOG(1, "memoryless attachment %ux%u format %d samples %u", img->info.extent.width, img->info.extent.height,
                  img->format, img->info.samples);
             return VK_SUCCESS;
@@ -178,6 +180,9 @@ static VkResult bindImage(VkImage image, VkDeviceMemory memory, VkDeviceSize off
              (unsigned long)m->heap.size);
         return VK_ERROR_OUT_OF_DEVICE_MEMORY;
     }
+    img->heap = m->heap;
+    img->heapOffset = offset;
+    kmtlDynamicBind(img);
     const KFormatInfo* fi = kmtlFormat(img->format);
     if (fi && !fi->depth && !fi->stencil && (img->mtl.usage & MTLTextureUsageRenderTarget) &&
         (img->info.usage & (VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)))
@@ -288,18 +293,20 @@ VKFN(VkResult) vkCreateImageView(VkDevice device, const VkImageViewCreateInfo* c
         swz(ci->components.b, MTLTextureSwizzleBlue), swz(ci->components.a, MTLTextureSwizzleAlpha));
     bool identitySwizzle = sw.red == MTLTextureSwizzleRed && sw.green == MTLTextureSwizzleGreen &&
         sw.blue == MTLTextureSwizzleBlue && sw.alpha == MTLTextureSwizzleAlpha;
-    bool whole = pf == img->mtl.pixelFormat && tt == img->mtl.textureType && v->baseLevel == 0 &&
-        v->levelCount == img->mtl.mipmapLevelCount && v->baseLayer == 0 && v->layerCount == img->info.arrayLayers &&
+    // Against the image's own size (a dynamic image's texture at a level may have fewer mip levels)
+    id<MTLTexture> own = img->full ? img->full : img->mtl;
+    bool whole = pf == own.pixelFormat && tt == own.textureType && v->baseLevel == 0 &&
+        v->levelCount == img->info.mipLevels && v->baseLayer == 0 && v->layerCount == img->info.arrayLayers &&
         identitySwizzle;
+    v->viewFormat = pf;
+    v->viewType = tt;
+    v->swizzle = sw;
+    v->identitySwizzle = identitySwizzle;
+    v->whole = whole;
     if (whole) {
         v->mtl = img->mtl;
     } else {
-        NSRange levels = NSMakeRange(v->baseLevel, v->levelCount);
-        NSRange slices = NSMakeRange(v->baseLayer, tt == MTLTextureType3D ? 1 : v->layerCount);
-        if (identitySwizzle)
-            v->mtl = [img->mtl newTextureViewWithPixelFormat:pf textureType:tt levels:levels slices:slices];
-        else
-            v->mtl = [img->mtl newTextureViewWithPixelFormat:pf textureType:tt levels:levels slices:slices swizzle:sw];
+        v->mtl = kmtlViewTexture(v, img->mtl);
         if (!v->mtl) {
             KERR("vkCreateImageView: view failed (fmt %d type %d levels %u+%u layers %u+%u)", ci->format, ci->viewType,
                  v->baseLevel, v->levelCount, v->baseLayer, v->layerCount);
@@ -307,13 +314,16 @@ VKFN(VkResult) vkCreateImageView(VkDevice device, const VkImageViewCreateInfo* c
             return VK_ERROR_OUT_OF_DEVICE_MEMORY;
         }
     }
+    kmtlDynamicAddView(v);
     *out = (VkImageView)v;
     return VK_SUCCESS;
 }
 
 VKFN(void) vkDestroyImageView(VkDevice, VkImageView view, const VkAllocationCallbacks*) {
     KTRACE_FIRST();
-    delete (KImageView*)view;
+    auto* v = (KImageView*)view;
+    if (v) kmtlDynamicRemoveView(v);
+    delete v;
 }
 
 // ---------------------------------------------------------------------------------------------------------------

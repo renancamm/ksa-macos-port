@@ -96,6 +96,8 @@ internal static class RenderScale
             transpiler: maskScale);
         harmony.Patch(Find.Method(typeof(UiCoverageMaskSystem), "ReplayDrawData"), transpiler: maskScale);
         ApplyBloom(harmony);
+        if (Upscale.Wanted)
+            DynamicResolution.Apply(harmony);
         // Last: it sets the game's sample count, which a Skip wouldn't undo
         if (Upscale.Wanted)
             Upscale.Apply(harmony);
@@ -121,6 +123,8 @@ internal static class RenderScale
         Scaled = render != Window;
         _ours = new VkExtent2D(render.X, render.Y);
         __instance.ExtentOverride = _ours;
+        // Through MetalFX, which takes the size drawn each frame
+        DynamicResolution.Register(Upscale.Wanted && Upscalable(_ours.Value) ? render : int2.Zero);
     }
 
     // The main view's composite stretches the render size to the swapchain
@@ -221,7 +225,7 @@ internal static class RenderScale
     public static int2 RenderSize(Camera camera)
     {
         IGameViewport? main = Program.MainViewport;
-        return main != null && main.GetCamera() == camera ? main.Size : camera.FramebufferSize;
+        return main != null && main.GetCamera() == camera ? DynamicResolution.AtLevel(main.Size) : camera.FramebufferSize;
     }
 
     // The same, where the game reads a member of it (the game renders on one thread)
@@ -335,7 +339,9 @@ internal static class RenderScale
                 postfix: new HarmonyMethod(typeof(RenderScale), nameof(BloomBuildPostfix)));
             try
             {
-                harmony.Patch(update, transpiler: new HarmonyMethod(typeof(RenderScale), nameof(BloomSpreadTranspiler)));
+                harmony.Patch(update, transpiler: new HarmonyMethod(typeof(RenderScale), nameof(BloomSpreadTranspiler)),
+                    prefix: new HarmonyMethod(typeof(RenderScale), nameof(BloomUpdatePrefix)),
+                    finalizer: new HarmonyMethod(typeof(RenderScale), nameof(BloomUpdateFinalizer)));
             }
             catch
             {
@@ -387,8 +393,31 @@ internal static class RenderScale
     public static VkExtent2D BloomSpread(Renderer renderer) =>
         IsOurs(renderer) && Window.X > 0 && Window.Y > 0 ? new VkExtent2D(Window.X, Window.Y) : renderer.Extent;
 
+    // Whether the renderer's size is this patch's (not a high-resolution screenshot's), or it has none
+    public static bool OwnsExtent(Renderer renderer) =>
+        renderer.ExtentOverride is not { } current || _ours is { } ours && current.Width == ours.Width && current.Height == ours.Height;
+
     private static bool IsOurs(Renderer renderer) =>
         Scaled && renderer.ExtentOverride is { } current && _ours is { } ours && current.Width == ours.Width && current.Height == ours.Height;
+
+    // Dynamic resolution: the shader tells its last step, which adds the glow to the main view's image, by that image's
+    // height, which the game passes as the chain's first size: the level's while the frame's data is written (otherwise
+    // the last step took the main image for another of the chain and wrote the glow alone over the scene)
+    private static void BloomUpdatePrefix(KawaseBloomRenderer __instance, out int2 __state)
+    {
+        __state = int2.Zero;
+        if (!DynamicResolution.Active || _bloomSizes(__instance) is not { Length: > 0 } sizes)
+            return;
+        __state = sizes[0];
+        sizes[0] = DynamicResolution.AtLevel(sizes[0]);
+    }
+
+    private static Exception? BloomUpdateFinalizer(Exception? __exception, KawaseBloomRenderer __instance, int2 __state)
+    {
+        if (__state != int2.Zero && _bloomSizes(__instance) is { Length: > 0 } sizes)
+            sizes[0] = __state;
+        return __exception;
+    }
 
     // The chain's first size back to the main view's: the last step's dispatch and the shader's test for it
     private static void BloomBuildPostfix(KawaseBloomRenderer __instance, Renderer ____renderer)

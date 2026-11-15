@@ -62,6 +62,7 @@ internal static class Upscale
         public uint Flags;
         public float Exposure;
         public ulong CloudColor, CloudMotion;
+        public uint ContentWidth, ContentHeight;
     }
 
     private const uint Reset = 1, SpatialOnly = 2;
@@ -313,7 +314,7 @@ internal static class Upscale
     public static void UpdateCamera(IViewport viewport, ref UboCameraData data)
     {
         Camera camera = viewport.GetCamera();
-        int2 size = viewport.Size;
+        int2 size = DynamicResolution.AtLevel(viewport.Size);
         _cameraFrame++;
         float jx = 0f, jy = 0f;
         // A high-resolution screenshot is drawn without jitter, and the history starts again after it
@@ -466,8 +467,11 @@ internal static class Upscale
         VkImage color = colorImage.Image, depth = depthImage.Image, output = _output.Image;
         VkImage cloudColor = cloudsDrawn ? _cloudColor : default, cloudMotion = cloudsDrawn ? _cloudMotion : default;
         VkExtent2D input = target.Extent;
+        int2 content = DynamicResolution.AtLevel(new int2(input.Width, input.Height));
         var info = new VkUpscaleInfoKSA
         {
+            ContentWidth = (uint)content.X,
+            ContentHeight = (uint)content.Y,
             Color = Unsafe.As<VkImage, ulong>(ref color),
             Depth = Spatial ? 0 : Unsafe.As<VkImage, ulong>(ref depth),
             Output = Unsafe.As<VkImage, ulong>(ref output),

@@ -23,6 +23,7 @@ struct KBuffer {
 };
 
 struct KFormatInfo;
+struct KImageView;
 
 struct KImage {
     KDevice* device = nullptr;
@@ -33,6 +34,16 @@ struct KImage {
     bool ownsTexture = false;  // swapchain images
     VkFormat format = VK_FORMAT_UNDEFINED;
     MTLPixelFormat pixelFormat = MTLPixelFormatInvalid;
+    // Where its memory is (a memoryless attachment: nil)
+    id<MTLHeap> heap = nil;
+    VkDeviceSize heapOffset = 0;
+    // Dynamic resolution (dynres.mm): an image the main view's size or a fraction of it, drawn at the frame's level.
+    // mtl is the texture of that level, placed in the same memory as the one at the image's own size (full)
+    bool dynamic = false;
+    uint32_t level = 0;  // the level mtl has (0: full)
+    id<MTLTexture> full = nil;
+    std::vector<id<MTLTexture>> levels;  // by level, made when first used
+    std::vector<KImageView*> views;      // its views, which follow it to another level
 };
 
 struct KImageView {
@@ -41,6 +52,13 @@ struct KImageView {
     // For depth/stencil aspect-only views of combined formats the render pass still uses the image
     VkFormat format = VK_FORMAT_UNDEFINED;
     uint32_t baseLevel = 0, levelCount = 1, baseLayer = 0, layerCount = 1;
+    // How it views the image's texture (whole: the texture itself), to view another level's the same way
+    MTLPixelFormat viewFormat = MTLPixelFormatInvalid;
+    MTLTextureType viewType = MTLTextureType2D;
+    MTLTextureSwizzleChannels swizzle{};
+    bool identitySwizzle = true, whole = true;
+    uint32_t level = 0;  // the image's level mtl is a view of
+    std::vector<id<MTLTexture>> levels;  // by level
 };
 
 struct KSampler {
@@ -132,6 +150,8 @@ struct KDescriptorSet {
     uint32_t destroyedBinding = 0;            // the last of them, for the log
     uint32_t destroyedBytes = 0;
     std::atomic<bool> destroyedReported{false};
+    // Holds a dynamic image's texture (dynres.mm): bound through a copy that takes the frame's level
+    std::atomic<bool> levelTextures{false};
     uint64_t* slots() const { return (uint64_t*)base; }
     uint32_t* sizes() const { return (uint32_t*)(base + layout->slotCount * 8); }
     ~KDescriptorSet() { if (layout) layout->release(); }
@@ -165,6 +185,19 @@ MTLVertexFormat kmtlVertexFormat(VkFormat f);
 // Helpers (memory.mm, images.mm)
 KImage* kmtlCreateSwapchainImage(KDevice* dev, VkFormat format, uint32_t w, uint32_t h);
 void kmtlDestroyImage(KImage* img);
+// dynres.mm: dynamic resolution
+void kmtlDynamicBind(KImage* img);
+void kmtlDynamicForget(KImage* img);
+void kmtlDynamicAddView(KImageView* v);
+void kmtlDynamicRemoveView(KImageView* v);
+void kmtlDynamicScale(const KImage* img, float* sx, float* sy);
+id<MTLTexture> kmtlViewTexture(KImageView* v, id<MTLTexture> tex);
+bool kmtlDynamicView(VkImageView view);                       // a view of a dynamic image
+void kmtlDynamicTranslate(const KSetLayout* l, uint64_t* slots);  // a set's copy: its textures at the frame's level
+float kmtlDynamicMinContent();  // the least share of the main view's size a level may have (1: dynamic resolution off)
+uint32_t kmtlDynamicLevelNow();  // the level the frame being presented was drawn at
+void kmtlDynamicNoteFrame(uint32_t level, double gpuMs);  // a frame's GPU time, for the level's choice
+float kmtlUpscaleMaxScale();     // upscale.mm: how far MetalFX's temporal scaler scales on this Mac
 // memory.mm: a VkMemoryDedicatedRequirements in the chain, filled (prefer: its prefersDedicatedAllocation)
 void kmtlFillDedicated(void* pNext, bool prefer);
 uint64_t kmtlBufferViewId(VkBufferView view);

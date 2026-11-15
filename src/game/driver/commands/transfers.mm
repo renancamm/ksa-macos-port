@@ -54,6 +54,31 @@ static KBufferImageLayout bufferImageLayout(KImage* img, const VkBufferImageCopy
 
 static uint32_t imageSlice(KImage* img, uint32_t layer) { return img->info.imageType == VK_IMAGE_TYPE_3D ? 0 : layer; }
 
+// Dynamic resolution (dynres.mm): a region the game gives at a dynamic image's own size, at its texture's level, and
+// within that texture's mip level (false: nothing of it there)
+struct KRegion2D {
+    int32_t x, y;
+    uint32_t w, h;
+};
+
+static bool atLevel(const KImage* img, uint32_t mip, KRegion2D& r, bool grow = true) {
+    if (!img->dynamic || img->level == 0) return true;
+    if (mip >= img->mtl.mipmapLevelCount) return false;
+    float sx, sy;
+    kmtlDynamicScale(img, &sx, &sy);
+    int64_t tw = std::max<int64_t>(1, (int64_t)img->mtl.width >> mip), th = std::max<int64_t>(1, (int64_t)img->mtl.height >> mip);
+    int64_t x0 = (int64_t)std::floor(r.x * (double)sx), y0 = (int64_t)std::floor(r.y * (double)sy);
+    int64_t x1 = std::min(tw, (int64_t)std::ceil(((double)r.x + r.w) * sx)), y1 = std::min(th, (int64_t)std::ceil(((double)r.y + r.h) * sy));
+    // A copy to or from a buffer keeps at most the game's extent: its rows are laid out for it
+    if (!grow) {
+        x1 = std::min<int64_t>(x1, x0 + r.w);
+        y1 = std::min<int64_t>(y1, y0 + r.h);
+    }
+    if (x1 <= x0 || y1 <= y0) return false;
+    r = {(int32_t)x0, (int32_t)y0, (uint32_t)(x1 - x0), (uint32_t)(y1 - y0)};
+    return true;
+}
+
 VKFN(void) vkCmdCopyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer src, VkImage dst, VkImageLayout, uint32_t n,
                                   const VkBufferImageCopy* regions) {
     KTRACE_FIRST();
@@ -67,13 +92,15 @@ VKFN(void) vkCmdCopyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer src, V
         uint32_t layers = r.imageSubresource.layerCount == VK_REMAINING_ARRAY_LAYERS ? img->info.arrayLayers - r.imageSubresource.baseArrayLayer
                                                                                      : r.imageSubresource.layerCount;
         bool is3D = img->info.imageType == VK_IMAGE_TYPE_3D;
+        KRegion2D at{r.imageOffset.x, r.imageOffset.y, r.imageExtent.width, r.imageExtent.height};
+        if (!atLevel(img, r.imageSubresource.mipLevel, at, false)) continue;
         for (uint32_t layer = 0; layer < layers; layer++) {
             [b copyFromBuffer:s->mtl sourceOffset:s->offset + r.bufferOffset + layer * l.bytesPerImage * (is3D ? r.imageExtent.depth : 1)
                sourceBytesPerRow:l.bytesPerRow sourceBytesPerImage:(is3D || layers > 1) ? l.bytesPerImage : 0
-                      sourceSize:MTLSizeMake(r.imageExtent.width, r.imageExtent.height, r.imageExtent.depth)
+                      sourceSize:MTLSizeMake(at.w, at.h, r.imageExtent.depth)
                        toTexture:img->mtl destinationSlice:imageSlice(img, r.imageSubresource.baseArrayLayer + layer)
                 destinationLevel:r.imageSubresource.mipLevel
-               destinationOrigin:MTLOriginMake(r.imageOffset.x, r.imageOffset.y, r.imageOffset.z)
+               destinationOrigin:MTLOriginMake(at.x, at.y, r.imageOffset.z)
                          options:aspectOption(img, r.imageSubresource.aspectMask)];
         }
     }
@@ -92,11 +119,13 @@ VKFN(void) vkCmdCopyImageToBuffer(VkCommandBuffer commandBuffer, VkImage src, Vk
         uint32_t layers = r.imageSubresource.layerCount == VK_REMAINING_ARRAY_LAYERS ? img->info.arrayLayers - r.imageSubresource.baseArrayLayer
                                                                                      : r.imageSubresource.layerCount;
         bool is3D = img->info.imageType == VK_IMAGE_TYPE_3D;
+        KRegion2D at{r.imageOffset.x, r.imageOffset.y, r.imageExtent.width, r.imageExtent.height};
+        if (!atLevel(img, r.imageSubresource.mipLevel, at, false)) continue;
         for (uint32_t layer = 0; layer < layers; layer++) {
             [b copyFromTexture:img->mtl sourceSlice:imageSlice(img, r.imageSubresource.baseArrayLayer + layer)
                    sourceLevel:r.imageSubresource.mipLevel
-                  sourceOrigin:MTLOriginMake(r.imageOffset.x, r.imageOffset.y, r.imageOffset.z)
-                    sourceSize:MTLSizeMake(r.imageExtent.width, r.imageExtent.height, r.imageExtent.depth)
+                  sourceOrigin:MTLOriginMake(at.x, at.y, r.imageOffset.z)
+                    sourceSize:MTLSizeMake(at.w, at.h, r.imageExtent.depth)
                       toBuffer:d->mtl
              destinationOffset:d->offset + r.bufferOffset + layer * l.bytesPerImage * (is3D ? r.imageExtent.depth : 1)
         destinationBytesPerRow:l.bytesPerRow destinationBytesPerImage:(is3D || layers > 1) ? l.bytesPerImage : 0
@@ -127,13 +156,17 @@ VKFN(void) vkCmdCopyImage(VkCommandBuffer commandBuffer, VkImage src, VkImageLay
         bool src3D = s->info.imageType == VK_IMAGE_TYPE_3D, dst3D = d->info.imageType == VK_IMAGE_TYPE_3D;
         uint32_t depth = (src3D && dst3D) ? r.extent.depth : 1;
         uint32_t iters = (src3D && dst3D) ? 1 : std::max(layers, r.extent.depth);
+        KRegion2D from{r.srcOffset.x, r.srcOffset.y, r.extent.width, r.extent.height};
+        KRegion2D to{r.dstOffset.x, r.dstOffset.y, r.extent.width, r.extent.height};
+        if (!atLevel(s, r.srcSubresource.mipLevel, from) || !atLevel(d, r.dstSubresource.mipLevel, to)) continue;
+        uint32_t cw = std::min(from.w, to.w), ch = std::min(from.h, to.h);
         for (uint32_t l = 0; l < iters; l++) {
             [b copyFromTexture:srcTex sourceSlice:src3D ? 0 : r.srcSubresource.baseArrayLayer + l sourceLevel:r.srcSubresource.mipLevel
-                  sourceOrigin:MTLOriginMake(r.srcOffset.x, r.srcOffset.y, src3D ? r.srcOffset.z + (dst3D ? 0 : l) : 0)
-                    sourceSize:MTLSizeMake(r.extent.width, r.extent.height, depth)
+                  sourceOrigin:MTLOriginMake(from.x, from.y, src3D ? r.srcOffset.z + (dst3D ? 0 : l) : 0)
+                    sourceSize:MTLSizeMake(cw, ch, depth)
                      toTexture:d->mtl destinationSlice:dst3D ? 0 : r.dstSubresource.baseArrayLayer + l
               destinationLevel:r.dstSubresource.mipLevel
-             destinationOrigin:MTLOriginMake(r.dstOffset.x, r.dstOffset.y, dst3D ? r.dstOffset.z + (src3D ? 0 : l) : 0)];
+             destinationOrigin:MTLOriginMake(to.x, to.y, dst3D ? r.dstOffset.z + (src3D ? 0 : l) : 0)];
         }
     }
 }
@@ -170,6 +203,18 @@ VKFN(void) vkCmdBlitImage(VkCommandBuffer commandBuffer, VkImage src, VkImageLay
         b2.dstSubresource = r.dstSubresource;
         memcpy(b2.srcOffsets, r.srcOffsets, sizeof(b2.srcOffsets));
         memcpy(b2.dstOffsets, r.dstOffsets, sizeof(b2.dstOffsets));
+        // At a dynamic level, both rectangles at their image's (a flipped one keeps its direction)
+        auto scaleCorners = [](const KImage* img, VkOffset3D* o) {
+            if (!img->dynamic || img->level == 0) return;
+            float sx, sy;
+            kmtlDynamicScale(img, &sx, &sy);
+            for (int k = 0; k < 2; k++) {
+                o[k].x = (int32_t)lround(o[k].x * (double)sx);
+                o[k].y = (int32_t)lround(o[k].y * (double)sy);
+            }
+        };
+        scaleCorners(s, b2.srcOffsets);
+        scaleCorners(d, b2.dstOffsets);
         kmtlInternalBlit(cb, s, d, b2, filter);
     }
 }
@@ -209,7 +254,8 @@ static void clearImage(KCommandBuffer* cb, KImage* img, const VkClearColorValue*
     uint32_t layers = r.layerCount == VK_REMAINING_ARRAY_LAYERS ? img->info.arrayLayers - r.baseArrayLayer : r.layerCount;
     bool is3D = img->info.imageType == VK_IMAGE_TYPE_3D;
     for (uint32_t lv = r.baseMipLevel; lv < r.baseMipLevel + levels; lv++) {
-        uint32_t w = std::max(1u, img->info.extent.width >> lv), h = std::max(1u, img->info.extent.height >> lv);
+        if (lv >= img->mtl.mipmapLevelCount) break;  // a dynamic image's level with fewer mip levels
+        uint32_t w = std::max(1u, (uint32_t)img->mtl.width >> lv), h = std::max(1u, (uint32_t)img->mtl.height >> lv);
         uint32_t slices = is3D ? std::max(1u, img->info.extent.depth >> lv) : layers;
         for (uint32_t sl = 0; sl < slices; sl++) {
             MTLRenderPassDescriptor* d = [MTLRenderPassDescriptor renderPassDescriptor];

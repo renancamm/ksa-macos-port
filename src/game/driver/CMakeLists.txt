@@ -35,7 +35,7 @@ add_custom_target(ksa-metal-entries DEPENDS "${KSA_GENERATED_DIR}/entries.stamp"
 
 add_library(ksa-metal-objects OBJECT
     setup/config.mm setup/entry.mm setup/instance.mm setup/device.mm
-    resources/memory.mm resources/images.mm resources/queries.mm resources/format.mm resources/descriptor.mm resources/accel.mm
+    resources/memory.mm resources/images.mm resources/queries.mm resources/format.mm resources/descriptor.mm resources/accel.mm resources/dynres.mm
     commands/encoders.mm commands/state.mm commands/draws.mm commands/passes.mm commands/transfers.mm commands/internal.mm
     pipelines/stages.mm pipelines/pipelines.mm pipelines/rtpipeline.mm
     shaders/translate.mm shaders/shadercache.mm shaders/corpus.mm shaders/tessspirv.cpp shaders/rtspirv.cpp
