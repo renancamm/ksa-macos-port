@@ -24,9 +24,9 @@ namespace KsaMetal.Hooks.Features;
 // (Upscale.cs) or, with upscaling off, with the composite's own stretch, filtered. The cameras keep the window's size
 // in points (so picking and the UI's world positions stay right), while what the shaders see as the screen size is
 // the render size. The light clustering's tiles and the UI coverage mask follow the render size too, and UI code sees the
-// window's (UiCoordinates.cs). Pixel sizes measured on the window (the sun's glow, star and planet discs,
-// ground clutter's level of detail) are converted: the sun's radius here, the rest by the shader edits of
-// src/game/changes/features/window-size.edits, from the window's height in the camera data. On a display
+// window's (UiCoordinates.cs). Pixel sizes measured on the window (the sun's glow, the bloom's blur, star and planet
+// discs, ground clutter's level of detail) are converted: the sun's radius and the bloom here, the rest by the shader
+// edits of src/game/changes/features/window-size.edits, from the window's height in the camera data. On a display
 // without Retina at a render scale of 1, the three sizes are one and nothing changes.
 [Hook(Phase.Default)]
 internal static class RenderScale
@@ -95,6 +95,7 @@ internal static class RenderScale
         harmony.Patch(Find.Method(typeof(UiCoverageMaskSystem), nameof(UiCoverageMaskSystem.RecordMaskGeneration)),
             transpiler: maskScale);
         harmony.Patch(Find.Method(typeof(UiCoverageMaskSystem), "ReplayDrawData"), transpiler: maskScale);
+        ApplyBloom(harmony);
         // Last: it sets the game's sample count, which a Skip wouldn't undo
         if (Upscale.Wanted)
             Upscale.Apply(harmony);
@@ -308,6 +309,96 @@ internal static class RenderScale
     }
 
     public static float SunRadius(float pixels) => _mainView && Scaled ? pixels * (float)Settings.RenderScale : pixels;
+
+    // The bloom (the game's Global Bloom and Threshold Bloom, KawaseBloomRenderer, main view only) blurs through a chain
+    // of images each half the size of the one before, from the render size down to about 100 pixels high, and spreads
+    // its last samples by 20 render pixels: on the screen, its glow grew as the render scale went down (a third wider at
+    // 75 %, twice as wide at 50 %, around a rocket's flames at night). The spread is measured on the window instead and,
+    // below 100 %, the chain sized from it, as the game draws it without a render scale. The first size stays the render
+    // size: it is the image the last step adds the glow to, and the game's shader tells that step from the others by its
+    // height
+    private static AccessTools.FieldRef<KawaseBloomRenderer, int2[]> _bloomSizes = null!;
+
+    private static void ApplyBloom(Harmony harmony)
+    {
+        try
+        {
+            _bloomSizes = AccessTools.FieldRefAccess<KawaseBloomRenderer, int2[]>(Find.Field(typeof(KawaseBloomRenderer), "_renderingTargetSizes"));
+            var build = Find.Method(typeof(KawaseBloomRenderer), nameof(KawaseBloomRenderer.Build));
+            var update = Find.Method(typeof(KawaseBloomRenderer), nameof(KawaseBloomRenderer.UpdateShaderPass));
+            // Both or neither: a chain from the window with the spread from the render size would be neither look
+            var extent = Find.Getter(typeof(Renderer), nameof(Renderer.Extent));
+            foreach (var method in new[] { build, update })
+                if (!PatchProcessor.GetOriginalInstructions(method).Any(c => c.Calls(extent)))
+                    throw new Skip($"KawaseBloomRenderer.{method.Name} no longer reads the renderer's size");
+            harmony.Patch(build, transpiler: new HarmonyMethod(typeof(RenderScale), nameof(BloomChainTranspiler)),
+                postfix: new HarmonyMethod(typeof(RenderScale), nameof(BloomBuildPostfix)));
+            try
+            {
+                harmony.Patch(update, transpiler: new HarmonyMethod(typeof(RenderScale), nameof(BloomSpreadTranspiler)));
+            }
+            catch
+            {
+                harmony.Unpatch(build, HarmonyPatchType.All, harmony.Id);
+                throw;
+            }
+        }
+        catch (Exception e)
+        {
+            // The render scale runs on without it, the glow wider below 100 % and narrower above
+            Hooks.Log($"Render scale's bloom: off ({Skip.In(e)?.Message ?? e.Message})");
+        }
+    }
+
+    // Build: renderer.Extent -> BloomChain(renderer); UpdateShaderPass: renderer.Extent -> BloomSpread(renderer)
+    private static IEnumerable<CodeInstruction> BloomChainTranspiler(IEnumerable<CodeInstruction> instructions) =>
+        ReplaceExtent(instructions, nameof(BloomChain));
+
+    private static IEnumerable<CodeInstruction> BloomSpreadTranspiler(IEnumerable<CodeInstruction> instructions) =>
+        ReplaceExtent(instructions, nameof(BloomSpread));
+
+    private static IEnumerable<CodeInstruction> ReplaceExtent(IEnumerable<CodeInstruction> instructions, string with)
+    {
+        var extent = Find.Getter(typeof(Renderer), nameof(Renderer.Extent));
+        var ours = Find.Method(typeof(RenderScale), with);
+        foreach (var c in instructions)
+            yield return c.Calls(extent) ? new CodeInstruction(OpCodes.Call, ours).MoveLabelsFrom(c).MoveBlocksFrom(c) : c;
+    }
+
+    // The size the chain starts from: below 100 %, the window's while the main view renders at this patch's render
+    // size, its first image (half of it) lower than the render size, which at 50 % takes a pixel off (the shader would
+    // take an image as high as the render size for the last step; in a window under about 200 points, where the chain
+    // doesn't halve at all, it takes every image so, as the game does there without a render scale). Above 100 %, the
+    // render size, as the game has it:
+    // from the window, the first step would shrink the image 3 or 4 times over in one go, its filter made for twice,
+    // and small highlights would drop in and out of the glow. The renderer's otherwise (a high-resolution screenshot's
+    // override, or before the first rebuild)
+    public static VkExtent2D BloomChain(Renderer renderer)
+    {
+        VkExtent2D render = renderer.Extent;
+        if (!IsOurs(renderer) || Window.X <= 0 || Window.Y <= 0 || render.Height >= Window.Y)
+            return render;
+        int height = Math.Max(Math.Min(Window.Y, 2 * (int)render.Height - 1), 1);
+        int width = Math.Max((int)MathF.Round(Window.X * (float)height / Window.Y), 1);
+        return new VkExtent2D(width, height);
+    }
+
+    // The size the blur's spread is measured on: the window's at any render scale of this patch
+    public static VkExtent2D BloomSpread(Renderer renderer) =>
+        IsOurs(renderer) && Window.X > 0 && Window.Y > 0 ? new VkExtent2D(Window.X, Window.Y) : renderer.Extent;
+
+    private static bool IsOurs(Renderer renderer) =>
+        Scaled && renderer.ExtentOverride is { } current && _ours is { } ours && current.Width == ours.Width && current.Height == ours.Height;
+
+    // The chain's first size back to the main view's: the last step's dispatch and the shader's test for it
+    private static void BloomBuildPostfix(KawaseBloomRenderer __instance, Renderer ____renderer)
+    {
+        if (!IsOurs(____renderer) || _bloomSizes(__instance) is not { Length: > 0 } sizes)
+            return;
+        VkExtent2D render = ____renderer.Extent;
+        Hooks.Log($"Render scale's bloom: blurred from {sizes[0].X}x{sizes[0].Y} down to {sizes[^1].X}x{sizes[^1].Y}, added to {render.Width}x{render.Height}");
+        sizes[0] = new int2(render.Width, render.Height);
+    }
 
     // After the camera data of a view is set: the main view's pixel sizes, and MetalFX's jitter and reprojection
     private static void ShaderDataPostfix(IViewport viewport)
