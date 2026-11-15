@@ -27,7 +27,8 @@ namespace KsaMetal.Hooks.Features;
 // window's (UiCoordinates.cs). Pixel sizes measured on the window (the sun's glow, the bloom's blur, star and planet
 // discs, ground clutter's level of detail) are converted: the sun's radius and the bloom here, the rest by the shader
 // edits of src/game/changes/features/window-size.edits, from the window's height in the camera data. On a display
-// without Retina at a render scale of 1, the three sizes are one and nothing changes.
+// without Retina at a render scale of 1 (and dynamic resolution at full size), the three sizes are one and nothing
+// changes.
 [Hook(Phase.Default)]
 internal static class RenderScale
 {
@@ -54,7 +55,7 @@ internal static class RenderScale
         _sceneLdr = AccessTools.FieldRefAccess<Cmaa2Renderer, RenderTarget?>(Find.Field(typeof(Cmaa2Renderer), "_sceneLdrTarget"));
         _cameraData = AccessTools.StaticFieldRefAccess<UboCameraData[]>(Find.Field(typeof(Program), "_cameraData"));
         _captureExtent = AccessTools.FieldRefAccess<ScreenshotCapture, VkExtent2D>(Find.Field(typeof(ScreenshotCapture), "_captureExtent"));
-        // The camera data's spare int: the window's height, for the shader edits (0: not scaled)
+        // The camera data's spare int: the window's height, for the shader edits (0: drawn at the window's size)
         _outputHeight = AccessTools.StructFieldRefAccess<UboCameraData, int>(Find.Field(typeof(UboCameraData), "_padding2"));
         Upscale.Configure();
         var renderSize = new HarmonyMethod(typeof(RenderScale), nameof(RenderSizeTranspiler));
@@ -312,7 +313,14 @@ internal static class RenderScale
         return code;
     }
 
-    public static float SunRadius(float pixels) => _mainView && Scaled ? pixels * (float)Settings.RenderScale : pixels;
+    public static float SunRadius(float pixels)
+    {
+        if (!_mainView)
+            return pixels;
+        // In the pixels drawn: the render scale's, and dynamic resolution's level of them
+        float render = Scaled ? pixels * (float)Settings.RenderScale : pixels;
+        return render * DynamicResolution.Share;
+    }
 
     // The bloom (the game's Global Bloom and Threshold Bloom, KawaseBloomRenderer, main view only) blurs through a chain
     // of images each half the size of the one before, from the render size down to about 100 pixels high, and spreads
@@ -435,7 +443,8 @@ internal static class RenderScale
         if (viewport.Type != ViewportType.Main)
             return;
         int slot = viewport.ShaderSlot;
-        if (Scaled && Window != int2.Zero)
+        // Also at a render scale of 1 drawn at a dynamic resolution's lower level
+        if ((Scaled || DynamicResolution.Active) && Window != int2.Zero)
             _outputHeight(ref _cameraData()[slot]) = Window.Y;
         if (Upscale.Wanted)
             Upscale.UpdateCamera(viewport, ref _cameraData()[slot]);

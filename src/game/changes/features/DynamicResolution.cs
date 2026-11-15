@@ -89,6 +89,9 @@ internal static class DynamicResolution
         Take(w, h, level);
     }
 
+    // The share of the render size drawn, by height (1 at full)
+    public static float Share => Active ? (float)_level.Y / _render.Y : 1f;
+
     // A size of the main view at its render size, at the level drawn; any other size as it is
     public static int2 AtLevel(int2 size) => Active && size == _render ? _level : size;
 

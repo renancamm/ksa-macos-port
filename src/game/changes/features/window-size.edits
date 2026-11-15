@@ -1,6 +1,6 @@
 # For upscaling's render scale (the hooks' RenderScale.cs), where the shaders' screen size is the size the 3D view is
 # drawn at: the sizes that mean pixels on the window use the window's size, which the hooks put in the camera data's
-# spare int (0 without render scale: then nothing changes). The level of detail of ground clutter and of ring rocks,
+# spare int (0 at the window's size, without render scale or dynamic resolution's lower levels: then nothing changes). The level of detail of ground clutter and of ring rocks,
 # the size of star and planet discs and the starfield's glow. The last four need the first: without its definitions
 # they would not compile.
 
