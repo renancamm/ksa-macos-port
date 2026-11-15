@@ -21,15 +21,17 @@ namespace KsaMetal.Hooks.Features;
 // MetalFX for the render scale (upscaling "metalfx" or "spatial"), and the motion that frame interpolation needs.
 // Before the final composite, the driver's vkCmdUpscaleKSA (src/game/driver/presentation/upscale.mm) scales the main
 // view's image into an image of the swapchain's size (the display's pixels), which the composite then reads instead.
-// For MetalFX's temporal upscaler, the projection moves by a different sub-pixel offset every frame (a Halton
-// sequence of 16), the cockpit's ray tracing's too, and the driver makes the motion vectors from the depth buffer and
-// the reprojections passed here, computed in double: the ground and what is on it through the nearby body's rotating
-// frame, what is higher up (or anywhere away from a body) with the centre of the vessel the camera follows, the sky by
-// the camera's turn alone, and inside its bounding sphere that vessel, through its own frame. Copies of the image before
+// For MetalFX's temporal upscaler, the projection moves by a different sub-pixel offset every frame (a Halton sequence
+// of 16), the cockpit's ray tracing's too, and the driver makes the motion vectors from the depth buffer and the
+// reprojections passed here, computed in double: the ground and what is on it through the nearby body's rotating frame,
+// what is higher up (or anywhere away from a body) with the centre of the vessel the camera follows, the sky by the
+// camera's turn alone, and inside its bounding sphere that vessel, through its own frame. Copies of the image before
 // the exhausts, particles and glass and on both sides of the bloom let the driver mark what those effects and what is
-// drawn over the scene change as reactive (no smearing), but not the bloom. With frame interpolation, the final
-// composite then marks where the UI starts, so that MetalFX can draw this frame's UI over the frame it makes. The
-// cockpit's ray-traced lighting keeps a history of its own (RayHistoryPostfix), so that MetalFX gets it steady.
+// drawn over the scene change as reactive (no smearing), but not the bloom. MetalFX gets the game's exposure (its
+// Tonemap Exposure) rather than estimating one: its estimate in dark views drew faint stars as streaks. With frame
+// interpolation, the final composite then marks where the UI starts, so that MetalFX can draw this frame's UI over the
+// frame it makes. The cockpit's ray-traced lighting keeps a history of its own (RayHistoryPostfix), so that MetalFX
+// gets it steady.
 internal static class Upscale
 {
     private static bool Interpolate;
@@ -57,7 +59,8 @@ internal static class Upscale
         public fixed float ObjectSphere[4];
         public fixed float BodySphere[4];
         public float FovY, NearPlane, FarPlane, DeltaTime;
-        public uint Flags, Pad;
+        public uint Flags;
+        public float Exposure;
         public ulong CloudColor, CloudMotion;
     }
 
@@ -477,6 +480,7 @@ internal static class Upscale
             FarPlane = 1.4959786E+11f,
             DeltaTime = _deltaTime,
             Flags = (_reset ? Reset : 0) | (Spatial ? SpatialOnly : 0),
+            Exposure = GameSettings.Current.Graphics.TonemapExposure,
             CloudColor = Unsafe.As<VkImage, ulong>(ref cloudColor),
             CloudMotion = Unsafe.As<VkImage, ulong>(ref cloudMotion)
         };
