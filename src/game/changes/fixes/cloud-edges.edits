@@ -1,0 +1,17 @@
+# UpscaleCloud.comp: the clouds are drawn at a fraction of the screen's pixels and filled in over the frames, each
+# pixel blending what was drawn this frame into its history, read from where it was on the last frame. The history
+# counts only when that place is on screen, which IsUVOnScreen takes to be between the centres of the outermost pixels.
+# The camera moving even slightly towards an edge puts an outermost pixel's last place in its own outer half: off
+# screen by that test, the pixel starts its history again and shows one noisy sample each frame, a line of a pixel
+# flickering along that edge over clouds (twice the frame-to-frame change of the clouds beside it). The history covers
+# the whole screen and is read with clamping, so the fix takes the screen's edges as its bounds.
+
+@@ edit cloud-edges Clouds/Upscaling/UpscalingFunctions.glsl
+@@ what took the screen's edges as the bounds of the clouds' history
+@@ find
+    vec2 minUV = HALF_TEXEL_OFFSET * invScreenResolution;
+    vec2 maxUV = vec2(1.0) - minUV;
+@@ replace
+    // macOS port: the screen's edges, not the outermost pixels' centres, or those pixels lose their history
+    vec2 minUV = vec2(0.0);
+    vec2 maxUV = vec2(1.0);
