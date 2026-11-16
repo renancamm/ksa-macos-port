@@ -508,7 +508,10 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
             [b updateFence:q->chain];
             [b endEncoding];
             [cb addCompletedHandler:^(id<MTLCommandBuffer> c) { kmtlNoteGpuTime(c); }];
+            uint64_t shotsBefore = kmtlShotsTaken();
             kmtlOnPresent(q->device, sc, img, cb);
+            // A screenshot's copy is in this frame's GPU time: not the game's load, left out of dynamic resolution's choice
+            bool shot = kmtlShotsTaken() != shotsBefore;
             // This present's number as the present record has it (kmtlOnPresent counted it), for its frame's GPU time
             uint64_t counted = kmtlPresentCount();
             {
@@ -534,7 +537,7 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
                     // (kmtlNoteGpuTime, the handler before, counted this buffer)
                     double ms = kmtlTakeFrameGpuTime() * 1e3;
                     state->gpuMs[state->gpuSamples++ % 8] = ms;
-                    kmtlDynamicNoteFrame(level, ms, extent.width, extent.height);
+                    if (!shot) kmtlDynamicNoteFrame(level, ms, extent.width, extent.height);
                     if (kmtlDrainOn()) kmtlDrainFrameGpu(counted, CACurrentMediaTime(), ms);
                     if (KPresentState::Frame* f = findFrame(*state, n)) {
                         f->gpuDone = true;

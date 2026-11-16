@@ -47,6 +47,10 @@ struct DynamicState {
     uint64_t changedAt = 0;          // the frame of the last change
     bool steppedUp = false;          // the last change was a step up
     uint32_t upWait = 30;            // frames before a step up: doubled after one that had to come back down
+    // A level a step up to which had to come back down: not stepped up to again before ceilingUntil (a still view near
+    // the target would otherwise climb to it and drop every second or so), ceilingWait frames, doubled each time
+    uint32_t ceiling = 0, ceilingWait = 0;
+    uint64_t ceilingUntil = 0;
     // Steady Frame Rate's steps, as the levels': the frame of the last change, whether it was to a faster rate, and
     // the frames at a slower rate before a faster one is tried
     uint64_t rateChangedAt = 0;
@@ -76,6 +80,8 @@ static constexpr uint32_t kLevelSteps = 64, kMinLevel = 16;
 // CPU and no frame: down at once, up only when it has stayed well under the target); the target's grid of levels
 static constexpr double kFixedShare = 0.5;
 static constexpr uint32_t kDownFrames = 3, kUpFrames = 30, kLevelStep = 4;
+// A failed level's ceiling: frames at first and at most (about 4 and 16 s at 60 FPS)
+static constexpr uint32_t kCeilingFrames = 240, kCeilingMostFrames = 960;
 // Steady Frame Rate's steps: frames at a slower rate before a faster one is tried (doubled after one that had to come
 // back down, to 8 times)
 static constexpr uint32_t kRateUpFrames = 120;
@@ -517,6 +523,7 @@ static void stepRate() {
         }
         double frame = kmtlSteadyStep(outW, outH, 1, true);
         g_dyn.rateChangedAt = g_dyn.frames;
+        g_dyn.ceiling = 0;  // another target: the levels as they come
         g_dyn.rateSteppedUp = false;
         KLOG(++g_dyn.rateChanges <= 20 ? 0 : 1,
              "dynamic resolution: slower, %.1f ms a frame (the lowest level at %.1f ms at the full clock, %.1f ms at %.0f MHz)",
@@ -544,6 +551,7 @@ static void stepRate() {
     g_dyn.rateExpected = expected;
     kmtlSteadyStep(outW, outH, -1, true);
     g_dyn.rateChangedAt = g_dyn.frames;
+    g_dyn.ceiling = 0;  // another target: the levels as they come
     g_dyn.rateSteppedUp = true;
     if (expected > 0)
         KLOG(++g_dyn.rateChanges <= 20 ? 0 : 1,
@@ -556,23 +564,33 @@ static void stepRate() {
 }
 
 // The level for the next frame, by the target (under g_dyn.m): down as soon as the last kDownFrames frames drawn at
-// this level ran over it, to the highest level expected under it, or one step when the last one alone ran far over
-// (a load arriving at once); up one step when the frames at this level have stayed well under it for kUpFrames frames,
-// longer after a step up that had to come back down (the model's fixed share is a guess)
+// this level ran over it (their median: one hitch alone doesn't), to the highest level expected under it; up, to the
+// highest expected well under it, when the frames at this level have stayed well under it for kUpFrames frames, longer
+// after a step up that had to come back down, whose level is then a ceiling for a while (the model's fixed share is a
+// guess)
 static uint32_t chooseLevel() {
     uint32_t now = g_dyn.level ? g_dyn.level.load() : kLevelSteps;
     double ms[16];
     uint32_t n = samplesAt(now, ms);
     if (n == 0) return g_dyn.level;
-    double t = target(), newest = ms[0];
+    double t = target();
     auto median = [&](uint32_t k) { return medianOf(ms, k); };
     std::vector<uint32_t> grid = levelGrid();
     for (uint32_t& l : grid) if (!l) l = kLevelSteps;
     if (now > grid.back()) {
         if (n >= kDownFrames && median(kDownFrames) > t) {
-            // Down: the highest level below this one expected under the target, or the lowest. Right after a step
-            // up, that step was a mistake of the model's: the next waits longer
-            if (g_dyn.steppedUp && g_dyn.frames < g_dyn.changedAt + 10) g_dyn.upWait = std::min(g_dyn.upWait * 2, kUpFrames * 8);
+            // Down: the highest level below this one expected under the target, or the lowest. A step up that didn't
+            // hold (as long as it takes to count as held, below) was a mistake of the model's: the next waits longer
+            // (else a still view near the target climbs and drops again every second or so, its sharpness pumping)
+            if (g_dyn.steppedUp && g_dyn.frames <= g_dyn.changedAt + 2 * kUpFrames) {
+                g_dyn.upWait = std::min(g_dyn.upWait * 2, kUpFrames * 8);
+                // ... and this level is a ceiling for a while, longer each time it fails again
+                // (a repeat: the same level failing again within one more wait of its last ceiling's end)
+                bool again = g_dyn.ceiling == now && g_dyn.frames < g_dyn.ceilingUntil + g_dyn.ceilingWait;
+                g_dyn.ceilingWait = again ? std::min(g_dyn.ceilingWait * 2, kCeilingMostFrames) : kCeilingFrames;
+                g_dyn.ceiling = now;
+                g_dyn.ceilingUntil = g_dyn.frames + g_dyn.ceilingWait;
+            }
             double gpu = median(kDownFrames);
             uint32_t want = grid.back();
             for (uint32_t l : grid) {
@@ -580,23 +598,27 @@ static uint32_t chooseLevel() {
             }
             return want >= kLevelSteps ? 0 : want;
         }
-        // One frame far over (a load arriving at once, or a spike that passes): one step down, before the frames
-        // after it tell which. Not the first frame at a level, which may cost more than the ones after it
-        if (n >= 2 && newest > t * 1.25)
-            for (uint32_t l : grid)
-                if (l < now) return l >= kLevelSteps ? 0 : l;
     }
-    // A step up that held: the wait back to the shortest
-    if (g_dyn.steppedUp && g_dyn.frames > g_dyn.changedAt + 2 * kUpFrames) g_dyn.upWait = kUpFrames;
+    // A step up that held: the wait back to the shortest; at the ceiling or above, the ceiling gone
+    if (g_dyn.steppedUp && g_dyn.frames > g_dyn.changedAt + 2 * kUpFrames) {
+        g_dyn.upWait = kUpFrames;
+        if (g_dyn.ceiling && now >= g_dyn.ceiling) g_dyn.ceiling = 0;
+    }
     if (g_dyn.frames < g_dyn.changedAt + g_dyn.upWait || n < 8) return g_dyn.level;
     double gpu = median(n);
     if (gpu >= t * 0.85) return g_dyn.level;
-    // Up one step (the model's fixed share is a guess), when it is expected to stay under the target
-    for (auto it = grid.rbegin(); it != grid.rend(); ++it)
-        if (*it > now) {
-            if (expectedAt(gpu, *it, now) <= t * 0.9) return *it >= kLevelSteps ? 0 : *it;
-            break;
-        }
+    // Up to the highest level expected to stay under the target, below a ceiling: in one change, which a still view
+    // shows once instead of at every step. Upwards the model errs on the safe side where more of a frame stays at any
+    // level than its fixed share (the lower atmosphere: nearly all); where less, the step comes back down and its level
+    // becomes a ceiling
+    uint32_t best = 0;
+    for (auto it = grid.rbegin(); it != grid.rend(); ++it) {
+        if (*it <= now) continue;
+        if (g_dyn.ceiling && *it >= g_dyn.ceiling && g_dyn.frames < g_dyn.ceilingUntil) break;
+        if (expectedAt(gpu, *it, now) > t * 0.9) break;
+        best = *it;
+    }
+    if (best) return best >= kLevelSteps ? 0 : best;
     return g_dyn.level;
 }
 
@@ -653,6 +675,10 @@ __attribute__((visibility("default"))) void ksaMtlDynamicResolution(uint32_t wid
         g_dyn.sampleCount = 0;
     }
     g_dyn.changedAt = g_dyn.rateChangedAt = g_dyn.frames;
+    // A new start: no step up of before to fail (the first frames after a rebuild often run over), no ceiling
+    g_dyn.steppedUp = false;
+    g_dyn.upWait = kUpFrames;
+    g_dyn.ceiling = 0;
     g_dyn.rateSteppedUp = false;
     g_dyn.rateUpWait = kRateUpFrames;
     g_dyn.rateExpected = 0;
@@ -696,6 +722,15 @@ __attribute__((visibility("default"))) void ksaMtlDynamicResolutionFrame(uint32_
     }
     if (want != g_dyn.level) {
         uint32_t before = g_dyn.level ? g_dyn.level.load() : kLevelSteps;
+        if (g_logLevel >= 1) {
+            double ms[16], measured[16];
+            uint32_t n = samplesAt(before, ms, measured);
+            KLOG(1, "dynamic resolution: frame %llu, %u -> %u after %llu frames (target %.1f ms, wait %u): newest %.1f, %.1f, %.1f ms (%.1f, %.1f, %.1f measured)",
+                 (unsigned long long)g_dyn.frames, before, want ? want : kLevelSteps,
+                 (unsigned long long)(g_dyn.frames - g_dyn.changedAt), target(), g_dyn.upWait, n > 0 ? ms[0] : 0.0,
+                 n > 1 ? ms[1] : 0.0, n > 2 ? ms[2] : 0.0, n > 0 ? measured[0] : 0.0, n > 1 ? measured[1] : 0.0,
+                 n > 2 ? measured[2] : 0.0);
+        }
         g_dyn.steppedUp = (want ? want : kLevelSteps) > before;
         changeLevel(want);
         g_dyn.changedAt = g_dyn.frames;
