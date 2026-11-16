@@ -77,9 +77,14 @@ public static class Directives
         // The second yaw and pitch go with the sun alone
         if (d.Name == "@face" && count == 5 && words[3] != "sun")
             ok = false;
-        // A preset to pick, and nothing after open or close
-        if (d.Name == "@settings" && (count == 2) != (words[1] == "pick"))
-            ok = false;
+        // Open or close alone, or a preset to pick
+        if (d.Name == "@settings")
+            ok = count >= 1 && words[1] switch
+            {
+                "open" or "close" => count == 1,
+                "pick" => count == 2 && TabPresets.Find(words[2]) != null,
+                _ => false,
+            };
         return ok ? null : $"{d.Name} {d.Usage}";
     }
 

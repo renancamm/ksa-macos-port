@@ -241,7 +241,7 @@ public static partial class Program
                 }
             }
             var withValue = new[] { "--set", "--port", "--settings", "--compare", "--app", "--preset", "--system", "--repeat", "--sessions", "--ab",
-                "--trace-template", "--on", "--env", "--save-plan", "--probe", "--knob", "--channels" };
+                "--trace-template", "--on", "--env", "--save-plan", "--probe", "--knob", "--channels", "--tab-preset" };
             for (; i < args.Length; i++)
             {
                 var a = args[i];

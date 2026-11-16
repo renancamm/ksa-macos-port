@@ -272,6 +272,8 @@ public static partial class Program
             var yours = Path.Combine(Yours, "port-settings.toml");
             if (_defaults || !File.Exists(yours))
                 return true;
+            // Read from the player's file, and the path back: a Save after it must not write there
+            var path = PortSettings.FilePath;
             try
             {
                 PortSettings.LoadTable(_res);
@@ -281,6 +283,10 @@ public static partial class Program
             catch (Exception e) when (e is IOException or FormatException)
             {
                 return true;
+            }
+            finally
+            {
+                PortSettings.FilePath = path;
             }
         }
 
