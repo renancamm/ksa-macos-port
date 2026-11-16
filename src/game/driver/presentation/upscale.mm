@@ -384,6 +384,10 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
     uint32_t ch = info->contentHeight ? std::min(info->contentHeight, info->inputHeight) : info->inputHeight;
     cw = std::min<uint32_t>(cw, (uint32_t)color->mtl.width);
     ch = std::min<uint32_t>(ch, (uint32_t)color->mtl.height);
+    if (!spatial) {  // the motion kernel reads the depth at the colour's pixels
+        cw = std::min<uint32_t>(cw, (uint32_t)depth->mtl.width);
+        ch = std::min<uint32_t>(ch, (uint32_t)depth->mtl.height);
+    }
     bool ready = prepare(cb->device, info->inputWidth, info->inputHeight, outW, outH, spatial, color->mtl.pixelFormat,
                          out->mtl.pixelFormat, kmtlDynamicMinContent());
     id<MTLFXSpatialScaler> spatialScaler = ready && spatial ? spatialFor(cb->device->mtl, cw, ch) : nil;

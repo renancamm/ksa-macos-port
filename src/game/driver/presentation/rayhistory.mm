@@ -146,6 +146,12 @@ VKFN(void) vkCmdRayHistoryKSA(VkCommandBuffer commandBuffer, const VkRayHistoryI
     auto* depth = (KImage*)info->depth;
     auto* normals = (KImage*)info->normals;
     if (!depth || !normals || cb->inRenderPass) return;
+    // The normals are read at the depth's pixels
+    if (normals->mtl.width != depth->mtl.width || normals->mtl.height != depth->mtl.height) {
+        KERR_LIMIT(10, "ray history: off this frame, normals %lux%lu against depth %lux%lu", (unsigned long)normals->mtl.width,
+                   (unsigned long)normals->mtl.height, (unsigned long)depth->mtl.width, (unsigned long)depth->mtl.height);
+        return;
+    }
     std::lock_guard<std::mutex> lock(g_rh.m);
     id<MTLDevice> d = cb->device->mtl;
     if (g_rh.failed) return;
@@ -185,6 +191,12 @@ VKFN(void) vkCmdRayHistoryKSA(VkCommandBuffer commandBuffer, const VkRayHistoryI
             }
             s.w = w; s.h = h;
             s.valid = false;
+        }
+        if (!s.color[0] || !s.color[1] || !s.geometry[0] || !s.geometry[1]) {
+            KERR_LIMIT(10, "ray history: no %ux%u history for image %d", w, h, i);
+            s.color[0] = nil;  // made again next frame
+            s.valid = false;
+            continue;
         }
         int last = s.current, next = 1 - s.current;
         struct { float egoFromClip[16], scene[16], object[16], nearby[16], sphere[4], body[4]; float renderSize[2], imageSize[2];

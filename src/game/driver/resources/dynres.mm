@@ -208,9 +208,9 @@ void kmtlDynamicBind(KImage* img) {
     img->full = img->mtl;
     std::lock_guard<std::mutex> lock(g_dyn.m);
     if (!g_dyn.device) g_dyn.device = img->device;
-    g_dyn.prepared = false;
     if (!fits(img->info, g_dyn.width, g_dyn.height)) return;
     img->dynamic = true;
+    g_dyn.prepared = false;
     g_dyn.images.push_back(img);
     g_dyn.owners[img->full.gpuResourceID._impl] = {img, nullptr};
     img->level = g_dyn.level;
@@ -240,7 +240,7 @@ void kmtlDynamicForget(KImage* img) {
 
 bool kmtlDynamicView(VkImageView view) {
     auto* v = (KImageView*)view;
-    return v && v->image && v->image->dynamic;
+    return v && v->dynamic && v->image;
 }
 
 // A bound set's copy: each texture of a dynamic image or view, written at whatever level, at the frame's
@@ -270,16 +270,18 @@ void kmtlDynamicAddView(KImageView* v) {
     KImage* img = v->image;
     if (!img->dynamic) return;
     std::lock_guard<std::mutex> lock(g_dyn.m);
-    v->level = img->level;
-    if (v->levels.size() <= v->level) v->levels.resize(kLevelSteps);
-    v->levels[v->level] = v->mtl;
+    v->dynamic = true;
+    if (v->levels.size() <= img->level) v->levels.resize(kLevelSteps);
+    v->levels[img->level] = v->mtl;
     if (!v->whole) g_dyn.owners[v->mtl.gpuResourceID._impl] = {img, v};
     img->views.push_back(v);
+    g_dyn.prepared = false;  // its levels' views
 }
 
 void kmtlDynamicRemoveView(KImageView* v) {
+    // Its image destroyed before it (kmtlDynamicForget): its textures already forgotten
+    if (!v->dynamic || !v->image) return;
     KImage* img = v->image;
-    if (!img || !img->dynamic) return;
     std::lock_guard<std::mutex> lock(g_dyn.m);
     auto it = std::find(img->views.begin(), img->views.end(), v);
     if (it != img->views.end()) img->views.erase(it);
@@ -396,10 +398,11 @@ static void changeLevel(uint32_t level) {
         img->mtl = to;
         img->level = level;
         for (KImageView* v : img->views) {
-            id<MTLTexture> nv = viewAt(v, level, to);
-            if (!nv) continue;
-            v->mtl = nv;
-            v->level = level;
+            if (id<MTLTexture> nv = viewAt(v, level, to))
+                v->mtl = nv;
+            else
+                KERR_LIMIT(10, "dynamic resolution: a view of %ux%u (format %d) has no texture at level %u: it stays at the last",
+                           img->info.extent.width, img->info.extent.height, img->format, level);
         }
     }
     // Each image through a copy (its two levels' textures share its memory): one copy for each format and size,
@@ -630,14 +633,15 @@ float kmtlDynamicMinContent() {
     return g_dyn.width && g_dyn.lowest ? (float)g_dyn.lowest / kLevelSteps : 1.f;
 }
 
-extern "C" {
 // The hooks, after each rebuild of the main view's targets (and before they are made): its size (0 x 0: none), the
 // display's, and the least size a level may have (0 x 0: the display's rule). Levels only with Dynamic Resolution (and
 // Steady Frame Rate's frame time, with Vsync) or the experiment's level; Steady Frame Rate alone registers the display's
 // size, for its rate's steps (the main view's is then none); without either, nothing changes
-__attribute__((visibility("default"))) void ksaMtlDynamicResolution(uint32_t width, uint32_t height, uint32_t outW,
-                                                                    uint32_t outH, uint32_t leastW, uint32_t leastH) {
+KMTL_EXPORT void ksaMtlDynamicResolution(uint32_t width, uint32_t height, uint32_t outW, uint32_t outH, uint32_t leastW,
+                                         uint32_t leastH) {
+    KAutoreleasePool pool;  // a level change's command buffer and encoders, from a .NET thread
     std::lock_guard<std::mutex> lock(g_dyn.m);
+    g_dyn.prepared = false;  // the levels may be others
     g_dyn.outW = outW;
     g_dyn.outH = outH;
     // Steady Frame Rate's, with a swapchain of the display's size to take its frame time from (with Vsync): its rate's
@@ -695,7 +699,7 @@ __attribute__((visibility("default"))) void ksaMtlDynamicResolution(uint32_t wid
 }
 
 // The main view's size at the level now: what the game's own sizes for it become
-__attribute__((visibility("default"))) void ksaMtlDynamicResolutionSize(uint32_t* width, uint32_t* height, uint32_t* level) {
+KMTL_EXPORT void ksaMtlDynamicResolutionSize(uint32_t* width, uint32_t* height, uint32_t* level) {
     std::lock_guard<std::mutex> lock(g_dyn.m);
     *width = scaled(g_dyn.width, g_dyn.level);
     *height = scaled(g_dyn.height, g_dyn.level);
@@ -703,7 +707,7 @@ __attribute__((visibility("default"))) void ksaMtlDynamicResolutionSize(uint32_t
 }
 
 // An image's size as its texture has it now (a dynamic image's at the frame's level)
-__attribute__((visibility("default"))) void ksaMtlImageSize(VkImage image, uint32_t* width, uint32_t* height) {
+KMTL_EXPORT void ksaMtlImageSize(VkImage image, uint32_t* width, uint32_t* height) {
     auto* img = (KImage*)image;
     *width = img && img->mtl ? (uint32_t)img->mtl.width : 0;
     *height = img && img->mtl ? (uint32_t)img->mtl.height : 0;
@@ -711,7 +715,8 @@ __attribute__((visibility("default"))) void ksaMtlImageSize(VkImage image, uint3
 
 // The hooks, at the start of the game's frame, before it records any of it: this frame's level, changed here, and the
 // main view's size at it
-__attribute__((visibility("default"))) void ksaMtlDynamicResolutionFrame(uint32_t* width, uint32_t* height, uint32_t* level) {
+KMTL_EXPORT void ksaMtlDynamicResolutionFrame(uint32_t* width, uint32_t* height, uint32_t* level) {
+    KAutoreleasePool pool;  // as above
     std::lock_guard<std::mutex> lock(g_dyn.m);
     g_dyn.frames++;
     // The rate first, whose target the level then follows (also without levels: stepRate). Without a target (no
@@ -744,5 +749,4 @@ __attribute__((visibility("default"))) void ksaMtlDynamicResolutionFrame(uint32_
     *width = scaled(g_dyn.width, g_dyn.level);
     *height = scaled(g_dyn.height, g_dyn.level);
     *level = g_dyn.level;
-}
 }

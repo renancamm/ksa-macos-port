@@ -57,7 +57,8 @@ struct KImageView {
     MTLTextureType viewType = MTLTextureType2D;
     MTLTextureSwizzleChannels swizzle{};
     bool identitySwizzle = true, whole = true;
-    uint32_t level = 0;  // the image's level mtl is a view of
+    // A view of a dynamic image (dynres.mm), which follows its level: its own flag, as the image may be destroyed first
+    bool dynamic = false;
     std::vector<id<MTLTexture>> levels;  // by level
 };
 
