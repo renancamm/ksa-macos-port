@@ -124,15 +124,10 @@ static std::vector<KSwapchain*> g_swapchains;
 
 // Steady Frame Rate's steps: the frame time at its rate, then at 40 and 30 where slower. With Vsync, as whole refreshes
 // of the display, never faster (60 fps at 60 or 120 Hz, 40 at 120 Hz and 30 at 60 Hz, 30 at either), and an even count
-// with frame interpolation, which shows two images a frame, each for half of it. Without Vsync only the rate's own
-// (nothing is paced: a slower step would only let dynamic resolution draw more and the frames come slower, unevenly)
-static std::vector<double> steadySteps(double hz, bool vsync) {
+// with frame interpolation, which shows two images a frame, each for half of it. Only with Vsync (applyCadence)
+static std::vector<double> steadySteps(double hz) {
     std::vector<double> steps;
     int fps = kmtlSteadyFps();
-    if (!vsync) {
-        if (fps) steps.push_back(1000.0 / fps);
-        return steps;
-    }
     for (int f : {60, 40, 30}) {
         if (f > fps) continue;
         double refreshes = std::max(1.0, std::ceil(hz / f - 1e-3));
@@ -144,7 +139,7 @@ static std::vector<double> steadySteps(double hz, bool vsync) {
 }
 
 // A step's frame time and cadence (g_swapchainsMutex held, or the swapchain not listed yet). One refresh is what Vsync
-// does by itself, and without Vsync nothing is paced: the frame time is then dynamic resolution's target only
+// does by itself: the frame time is then dynamic resolution's target only
 static void takeStep(KSwapchain* sc, size_t step) {
     sc->steadyStep = step;
     sc->frameMs = sc->steadySteps[step];
@@ -159,14 +154,16 @@ static void takeStep(KSwapchain* sc, size_t step) {
 // needs 3. A slower step taken later keeps the drawables of the rate's own
 static void applyCadence(KSwapchain* sc) {
     CAMetalLayer* layer = sc->surface->layer;
-    bool steady = kmtlSteadyFps() && kmtlConfig().frameCadence <= 0;
+    // Steady Frame Rate only with Vsync (without it nothing is paced: no frame time, no dynamic resolution); frame_cadence,
+    // an experiment, instead of it
+    bool steady = kmtlSteadyFps() && kmtlConfig().frameCadence <= 0 && sc->vsync;
     double hz = steady ? displayRefresh(layer) : 0;
     {
         std::lock_guard<std::mutex> lock(g_swapchainsMutex);
         if (steady) {
             // A notification that changed nothing keeps the step taken: the display reports one each time the
             // frames' pacing changes (a slower step on a ProMotion display: three, each of which put it back)
-            std::vector<double> steps = steadySteps(hz, sc->vsync);
+            std::vector<double> steps = steadySteps(hz);
             bool same = steps == sc->steadySteps && hz == sc->refreshHz;
             sc->refreshHz = hz;
             sc->steadySteps = steps;

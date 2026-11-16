@@ -36,6 +36,7 @@ struct DynamicState {
     std::atomic<uint32_t> outW{0}, outH{0};  // the display's: what MetalFX scales it up to (the main swapchain's size)
     std::atomic<uint32_t> level{0};  // the level now (0: full size); read at present without the lock
     uint32_t lowest = 0;             // the lowest level the frames take (0: none, dynamic resolution off)
+    bool steady = false;             // Steady Frame Rate held (with Vsync) at the last registration: its rate steps
     std::vector<KImage*> images;     // the dynamic images
     // Every level's texture of a dynamic image or view, by resource ID: what a descriptor's texture is now
     struct Owner { KImage* image; KImageView* view; };
@@ -607,15 +608,16 @@ float kmtlDynamicMinContent() {
 extern "C" {
 // The hooks, after each rebuild of the main view's targets (and before they are made): its size (0 x 0: none), the
 // display's, and the least size a level may have (0 x 0: the display's rule). Only with Steady Frame Rate (its frame
-// time: paced with Vsync, without it only the target's) or the experiment's level: without, nothing is registered and
-// nothing changes
+// time, with Vsync) or the experiment's level: without, nothing is registered and nothing changes
 __attribute__((visibility("default"))) void ksaMtlDynamicResolution(uint32_t width, uint32_t height, uint32_t outW,
                                                                     uint32_t outH, uint32_t leastW, uint32_t leastH) {
     std::lock_guard<std::mutex> lock(g_dyn.m);
     g_dyn.outW = outW;
     g_dyn.outH = outH;
-    // Steady Frame Rate's, with a swapchain of the display's size to take its frame time from; or the experiment's level
+    // Steady Frame Rate's, with a swapchain of the display's size to take its frame time from (with Vsync); or the
+    // experiment's level. Vsync turned on later waits for the next rebuild, levels and rate steps alike
     bool steady = kmtlSteadyFps() && kmtlFrameMs(outW, outH) > 0;
+    g_dyn.steady = steady;
     if (!settingLevel() && !steady) width = height = 0;
     g_dyn.width = width;
     g_dyn.height = height;
@@ -682,7 +684,7 @@ __attribute__((visibility("default"))) void ksaMtlDynamicResolutionFrame(uint32_
     g_dyn.frames++;
     // The rate first, whose target the level then follows (also without levels: stepRate). Without a target (no
     // swapchain of the display's size: the window's changed before the rebuild): the experiment's level, or the full size
-    if (target() > 0) stepRate();
+    if (g_dyn.steady && target() > 0) stepRate();
     uint32_t want = !g_dyn.width ? g_dyn.level.load() : target() > 0 ? chooseLevel() : settingLevel() ? g_dyn.lowest : 0;
     if (g_dyn.width && !g_dyn.prepared && !g_dyn.images.empty()) {
         auto t0 = std::chrono::steady_clock::now();
