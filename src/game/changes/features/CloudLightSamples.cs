@@ -12,10 +12,15 @@ namespace KsaMetal.Hooks.Features;
 // CloudLayerRenderData.GetStaticLayerDataToWrite sets, the port's shader edit (cloud-light-samples.edits) takes one
 // sample at the same light step: the near cloud's own shading and the step before the volume stay, so the clouds keep
 // their brightness, and the cloud the other samples covered comes from the shadow volume, which is coarser. Fewer
-// samples over the same distance left a longer gap before the volume: brighter, flatter clouds.
+// samples over the same distance left a longer gap before the volume: brighter, flatter clouds. Only on layers whose
+// light step is at most MaxStep (Earth's 300 and 700 m, Venus' and Titan's 350 m, Mars' dust 3.3 km; Mars' views kept
+// their look): Jupiter's step is 20 km, the volume took the rest of its 120 km, and the sunlit sides of its cloud
+// towers went dark. A layer left at the game's default light march (1 AU) is left alone too.
 [Hook(Phase.Default, Switch = nameof(Settings.FewerCloudLightSamples))]
 internal static class CloudLightSamples
 {
+    private const float MaxStep = 5_000f;  // metres
+
     private static AccessTools.StructFieldRef<StaticLayerData, int> _flag = null!;
 
     public static string Apply(Harmony harmony)
@@ -26,9 +31,12 @@ internal static class CloudLightSamples
         _flag = AccessTools.StructFieldRefAccess<StaticLayerData, int>(field);
         harmony.Patch(Find.Method(typeof(CloudLayerRenderData), "GetStaticLayerDataToWrite"),
             postfix: new HarmonyMethod(typeof(CloudLightSamples), nameof(Postfix)));
-        return "one light sample at the layer's light step";
+        return $"one light sample at the layer's light step, on layers whose step is {MaxStep / 1000} km or less";
     }
 
     // Each layer's data as the game writes it to the GPU, when the layer is made and when its data is updated
-    private static void Postfix(ref StaticLayerData __result) => _flag(ref __result) = 1;
+    private static void Postfix(ref StaticLayerData __result)
+    {
+        if (__result.LightRaymarchingDistance <= MaxStep * __result.LightRaymarchingSamples) _flag(ref __result) = 1;
+    }
 }
