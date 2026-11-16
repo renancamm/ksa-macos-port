@@ -19,13 +19,14 @@ namespace KsaMetal.Hooks.Features;
 
 // Dynamic resolution: the main view drawn at a level of its render size, frame by frame, without rebuilding its
 // targets. KSA Metal gives each image of that size (or a fraction of it) a texture per level in the same memory, and
-// the passes that draw into them, the copies and the shaders' image sizes follow (src/game/driver/resources/dynres.mm).
+// the passes that draw into them, the copies and the shaders' image sizes follow (src/game/driver/resources/dynres.mm;
+// the level's choice: presentation/framerate.mm).
 // What the game works out from the main view's size itself takes the level's size from here: the cameras' screen size
 // and MetalFX's input and jitter (RenderScale, Upscale), and below the sizes that the clouds, the ambient occlusion,
 // the exhausts, the atmosphere and the screen-space particles keep from their last rebuild and pass to their shaders,
 // the cockpit's ray tracing's image sizes and the bloom's last step: all of them, or no level is drawn. The driver
 // picks each frame's level when the frame starts (Program.Render, before the camera data and any of its commands),
-// with Dynamic Resolution by Steady Frame Rate's cadence (or the experiments dynamic_level, dynamic_target_ms); without
+// with Dynamic Resolution by Steady Frame Rate's cadence (or the experiment dynamic_level); without
 // them nothing registers and nothing changes. Steady Frame Rate's rate steps at the same call, with or without MetalFX.
 internal static class DynamicResolution
 {
@@ -42,11 +43,11 @@ internal static class DynamicResolution
     [DllImport("libvulkan.1.dylib")]
     private static extern void ksaMtlImageSize(ulong image, out uint width, out uint height);
 
-    private const int LevelSteps = 64;  // the driver's: a level is this many parts of the full size
+    private const int LevelParts = 64;  // the driver's kDynamicParts: a level is this many parts of the full size
 
     private static int2 _render;  // the main view's render size, as its targets are made
     private static int2 _level;   // its size at the level drawn (the render size at full)
-    private static int _steps;    // the level, of LevelSteps (0: full)
+    private static int _parts;    // the level, in LevelParts (0: full)
     private static bool _driver;  // the driver has these calls (registered once)
     private static bool _applied; // the frame's call and the rebuild's are patched (Apply)
     private static bool _levels;  // every one of the game's sizes follows a level (Apply's parts): else none is drawn
@@ -79,7 +80,7 @@ internal static class DynamicResolution
         catch (EntryPointNotFoundException e)
         {
             _render = _level = int2.Zero;
-            _steps = 0;
+            _parts = 0;
             _driver = false;
             _missing = true;
             Hooks.Log($"Dynamic resolution: off, the driver has no {e.Message}");
@@ -89,7 +90,7 @@ internal static class DynamicResolution
     private static void Take(uint w, uint h, uint level)
     {
         _level = w > 0 && h > 0 ? new int2((int)w, (int)h) : _render;
-        _steps = (int)level;
+        _parts = (int)level;
     }
 
     // Also without levels: the driver then has no display size, and the screenshot's frame no rate to step
@@ -119,7 +120,7 @@ internal static class DynamicResolution
     public static int2 Scale(int2 size) => !Active ? size : new int2(Scale(size.X), Scale(size.Y));
 
     private static int Scale(int size) =>
-        Math.Max(1, (int)Math.Round((double)size * _steps / LevelSteps, MidpointRounding.AwayFromZero));
+        Math.Max(1, (int)Math.Round((double)size * _parts / LevelParts, MidpointRounding.AwayFromZero));
 
     // By RenderScale.Apply, with MetalFX or Steady Frame Rate: the frame's level and rate step (without it, none of the
     // rest), and with levels (MetalFX with Dynamic Resolution or dynamic_level) the game's sizes, each part on its own.

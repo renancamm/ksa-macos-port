@@ -46,7 +46,7 @@ These switches turn a feature off or change a default, to work around a problem 
 | `hdr_output` | off: offer the game no HDR output ([Presentation](#from-vulkan-to-metal)): its HDR settings (Display) stay hidden |
 | `vsync_pacing` | off: with Vsync, the game's wait for an earlier frame ends only when the display shows it ([Presentation](#from-vulkan-to-metal)); in a window, frames that take less than about 23 ms on the GPU then run slower |
 | `steady_frame_rate` | `30`, `40` or `60`, with Vsync: each game frame shown at least that rate's whole refreshes of the display the window is on after the one before, never faster (40 is 30 at 60 Hz; an even count with frame interpolation; one refresh is Vsync's own, unpaced), set again when the window moves to another display; at 40 fps or less with two drawables instead of three, one frame less latency (three with frame interpolation) ([Presentation](#from-vulkan-to-metal)) |
-| `dynamic_resolution` | on, with MetalFX (`upscaling`) and `steady_frame_rate`: the main view drawn at a level of its render size each frame, the highest expected to stay under 90 % of the rate's frame time on the GPU (`resources/dynres.mm`; GPU times at the full clock: `resources/gpuclock.mm`) |
+| `dynamic_resolution` | on, with MetalFX (`upscaling`) and `steady_frame_rate`: the main view drawn at a level of its render size each frame, the highest expected to stay under 90 % of the rate's frame time on the GPU (`presentation/framerate.mm` picks it, `resources/dynres.mm` draws at it; GPU times at the full clock: `resources/gpuclock.mm`) |
 | `lower_rate_under_heavy_load` | off, with `steady_frame_rate`: the rate stays, instead of the next slower one when even the lowest level (the full size, without `dynamic_resolution` or room below it) can't hold it, and the faster one back when the lowest is expected to |
 
 ## Build
@@ -127,8 +127,7 @@ The debugging settings, used the same way:
 | `gpu_errors` | on: a failed command buffer logs each encoder's state (completed, faulted, affected, pending); with `labels` the log names them |
 | `watch` | a folder: every 31 presents, a look at a sample of the presented image: at 30 % pure white, 99.9 % pure black for a second, or 0.1 % of pure primary colours or green with no red or blue, it saves the image and a pass dump of the next frame there (at most 3, 10 s apart), `watch.txt` says when each fault began and ended, and `watch.csv` has every look's numbers. Only an image after a clean one counts |
 | `watch_white` | percent: the white limit of `watch` (30); 0 fires on any image, to test it |
-| `dynamic_level` | `<n>`: an experiment, dynamic resolution's lowest level, n 64ths of the render size (16 to 63, not below what MetalFX's temporal scaler reaches), instead of the display's (the lowest from which the temporal scaler alone reaches the display); without a target (`steady_frame_rate`'s, with Vsync, or `dynamic_target_ms`), the main view drawn at that level all the time |
-| `dynamic_target_ms` | `<ms>`: an experiment, dynamic resolution's target instead of 90 % of `steady_frame_rate`'s frame time: each frame at the highest level expected to stay under that many milliseconds on the GPU |
+| `dynamic_level` | `<n>`: an experiment, dynamic resolution's lowest level, n 64ths of the render size (16 to 63, not below what MetalFX's temporal scaler reaches), instead of the display's (the lowest from which the temporal scaler alone reaches the display); without a target (`steady_frame_rate`'s, with Vsync), the main view drawn at that level all the time |
 | `throttle` | `<hash>:<n>,...`: an experiment, a pipeline whose name holds that shader hash runs only every n-th present (0: never), to see what a shader costs and what it draws |
 | `frame_cadence` | `<ms>`: an experiment, each frame shown at least that long after the one before (25: 40 fps at 120 Hz), so the frame rate holds one step; wins over `steady_frame_rate` |
 | `drawable_count` | `2` or `3`: an experiment, how many images the window keeps to show; 2 lets fewer frames wait to be shown (latency; 3 with frame interpolation). `0`, the default: 2 at a cadence of 25 ms or more, else 3 |
@@ -324,7 +323,7 @@ The complete mapping:
 | `VkBuffer` | an offset into the whole-heap buffer |
 | `VkImage` | `MTLTexture` placed in the heap; those read at scattered positions (upload-only, 3D, square power-of-two storage up to 256) without lossless compression (`skip_gpu_texture_compression`) |
 | Descriptor set | Metal 3 argument buffer: each binding owns consecutive 8-byte slots (GPU address or resource ID); a trailing slot points at a table of buffer sizes |
-| Dynamic offsets | the set is copied into a per-command-buffer ring with the offsets added (so is a set holding a dynamic image's texture, with the frame's level's textures: `dynamic_level`) |
+| Dynamic offsets | the set is copied into a per-command-buffer ring with the offsets added (so is a set holding a dynamic image's texture, with the frame's level's textures: `dynamic_resolution`) |
 | Push constants | `set*Bytes` at buffer index 10 |
 | Shader module, pipeline | SPIR-V -> MSL with SPIRV-Cross per pipeline, `newLibraryWithSource`, compiled on worker threads |
 | Command buffer | `MTLCommandBuffer`, encoded while recording |
@@ -369,7 +368,7 @@ share is in that folder's header too, under a heading that says so (`stages.h` f
 | `resources/format.mm` | Vulkan formats to Metal pixel and vertex formats |
 | `resources/descriptor.mm` | descriptor sets as argument buffers, pipeline layouts |
 | `resources/accel.mm` | acceleration structures for ray queries |
-| `resources/dynres.mm` | dynamic resolution (`dynamic_resolution`; `dynamic_level`, an experiment): the images of the main view's size and its fractions, a texture per level in the same memory, the level's changes and choice, the rate's steps |
+| `resources/dynres.mm` | dynamic resolution (`dynamic_resolution`; `dynamic_level`, an experiment): the images of the main view's size and its fractions, a texture per level in the same memory, the level's changes |
 | `resources/gpuclock.mm` | the GPU's clock from IOReport, for dynamic resolution's GPU times under paced frames |
 | `shaders/translate.mm`, `translate.h` | a shader stage's translation from SPIR-V to MSL |
 | `shaders/shadercache.mm` | the translation cache on disk and the background compile |
@@ -387,6 +386,7 @@ share is in that folder's header too, under a heading that says so (`stages.h` f
 | `presentation/swapchain.mm` | swapchain and presentation: pacing, HDR, frame interpolation at present, latency |
 | `presentation/upscale.mm` | MetalFX: upscaling, motion vectors, frame interpolation |
 | `presentation/rayhistory.mm` | MetalFX: the cockpit's ray-traced lighting with a history of its own |
+| `presentation/framerate.mm` | the Frame Rate section's controller: Steady Frame Rate's rate steps (`lower_rate_under_heavy_load`) and dynamic resolution's level each frame |
 | `diagnostics/instruments.mm` | what is measured at each present: frame log, screenshots, exits, the benchmark's interface, frame captures, signposts |
 | `diagnostics/drain.mm` | the benchmark's drain: what is measured, as records for its run's store |
 | `diagnostics/passdump.mm` | one frame's images, pass by pass (`ksaMtlPassDump`) |

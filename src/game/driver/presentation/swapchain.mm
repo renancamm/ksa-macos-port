@@ -112,9 +112,12 @@ static double displayRefresh(CAMetalLayer* layer) {
 
 // Steady Frame Rate's rate (KSA_MTL_STEADY_FRAME_RATE: 30, 40 or 60; 0: off)
 int kmtlSteadyFps() {
-    const char* v = kmtlConfig().steadyFrameRate;
-    int fps = v ? atoi(v) : 0;
-    return fps == 30 || fps == 40 || fps == 60 ? fps : 0;
+    static const int fps = [] {  // read once, as the settings are
+        const char* v = kmtlConfig().steadyFrameRate;
+        int f = v ? atoi(v) : 0;
+        return f == 30 || f == 40 || f == 60 ? f : 0;
+    }();
+    return fps;
 }
 
 // The live swapchains, for the main view's frame time and steps (kmtlFrameMs, kmtlSteadyStep). Their cadence fields

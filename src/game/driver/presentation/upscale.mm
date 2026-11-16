@@ -269,8 +269,8 @@ static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uin
         // With dynamic resolution, the content can shrink to minContent of the input: the temporal scaler's output is
         // as far as it scales from there (the lowest level's size rounded as dynres.mm rounds it), and the spatial one
         // takes it the rest of the way
-        uint32_t midW = std::min(outW, std::max(inW, (uint32_t)(std::round(inW * minContent) * most)));
-        uint32_t midH = std::min(outH, std::max(inH, (uint32_t)(std::round(inH * minContent) * most)));
+        uint32_t midW = std::min(outW, std::max(inW, kmtlUpscaleReach((uint32_t)std::round(inW * minContent), most)));
+        uint32_t midH = std::min(outH, std::max(inH, kmtlUpscaleReach((uint32_t)std::round(inH * minContent), most)));
         bool rest = midW != outW || midH != outH;
         td.colorTextureFormat = colorFormat;
         td.depthTextureFormat = MTLPixelFormatDepth32Float;
@@ -578,12 +578,15 @@ float kmtlUpscaleMaxScale() {
     return most;
 }
 
+// The temporal scaler's output from a content size, as far as it scales (whole pixels): prepare()'s, and the lowest
+// level framerate.mm picks from the display
+uint32_t kmtlUpscaleReach(uint32_t content, float most) {
+    return (uint32_t)(content * most);
+}
+
 // How far the temporal scaler scales on this Mac, past which the spatial one does the rest: for the Mac Port tab
 VKFN(float) vkGetUpscaleMaxScaleKSA(void) {
-    @autoreleasepool {
-        id<MTLDevice> d = MTLCreateSystemDefaultDevice();
-        return d ? [MTLFXTemporalScalerDescriptor supportedInputContentMaxScaleForDevice:d] : 0.0f;
-    }
+    return kmtlUpscaleMaxScale();
 }
 
 // For frame interpolation: the game calls it inside its final pass, between the composited scene and the UI. The pass
