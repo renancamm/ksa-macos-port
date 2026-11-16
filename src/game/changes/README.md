@@ -39,6 +39,7 @@ follows](../hooks/README.md#the-rule-every-hook-follows)).
 
 | Shader edit | What it does |
 |---|---|
+| [`cloud-edges.edits`](fixes/cloud-edges.edits) | the clouds' upscaler counts a pixel's history only when its last place lies between the outermost pixels' centres: with the camera moving, those pixels start again each frame, a pixel's line flickering along the screen's edges over clouds |
 | [`ground-clutter.edits`](fixes/ground-clutter.edits) | two bugs in the ground clutter's shaders: its ecotype block misses a member (clutter pops, the GPU can hang), and its depth pre-pass and colour pass need `invariant` positions (black stripes) |
 | [`light-clusters.edits`](fixes/light-clusters.edits) | a light cluster tile whose depth range comes out inverted loops about 4 billion times: the GPU hangs |
 | [`ring-draw-args.edits`](fixes/ring-draw-args.edits) | the ring rocks' indirect draws never get their first index and vertex offset written: where their buffer's memory held something before, Saturn's rocks are drawn out of range and vanish |
