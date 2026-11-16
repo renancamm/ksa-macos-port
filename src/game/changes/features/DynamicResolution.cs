@@ -47,6 +47,7 @@ internal static class DynamicResolution
     private static int2 _render;  // the main view's render size, as its targets are made
     private static int2 _level;   // its size at the level drawn (the render size at full)
     private static int _steps;    // the level, of LevelSteps (0: full)
+    private static bool _driver;  // the driver has these calls (registered once)
 
     public static bool Active => _render != int2.Zero && _level != _render;
 
@@ -59,6 +60,7 @@ internal static class DynamicResolution
             ksaMtlDynamicResolution((uint)Math.Max(render.X, 0), (uint)Math.Max(render.Y, 0), (uint)Math.Max(output.X, 0),
                 (uint)Math.Max(output.Y, 0), (uint)Math.Max(least.X, 0), (uint)Math.Max(least.Y, 0));
             ksaMtlDynamicResolutionSize(out uint w, out uint h, out uint level);
+            _driver = true;
             // The driver registers only with Steady Frame Rate or the experiment's level: otherwise nothing changes here either
             _render = w > 0 && h > 0 ? render : int2.Zero;
             Take(w, h, level);
@@ -69,6 +71,7 @@ internal static class DynamicResolution
         {
             _render = _level = int2.Zero;
             _steps = 0;
+            _driver = false;
         }
     }
 
@@ -78,16 +81,18 @@ internal static class DynamicResolution
         _steps = (int)level;
     }
 
+    // Also without levels: the driver then has no display size, and the screenshot's frame no rate to step
     private static void RebuildPrefix()
     {
-        if (_render != int2.Zero && !RenderScale.OwnsExtent(Program.GetRenderer()))
+        if (_driver && !RenderScale.OwnsExtent(Program.GetRenderer()))
             Register(int2.Zero, int2.Zero, int2.Zero);
     }
 
-    // Program.Render's prefix: this frame's level
+    // Program.Render's prefix: this frame's level, and Steady Frame Rate's rate, which the driver also steps without
+    // levels (no room below the render size)
     public static void FramePrefix()
     {
-        if (_render == int2.Zero)
+        if (!_driver)
             return;
         ksaMtlDynamicResolutionFrame(out uint w, out uint h, out uint level);
         Take(w, h, level);

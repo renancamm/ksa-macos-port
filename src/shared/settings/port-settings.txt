@@ -48,7 +48,7 @@ upscaling | choice:off=Off/metalfx=Temporal/spatial=Spatial | off | | restart | 
     spatial | Scales each image on its own: no trails in motion, but softer below 100 %.
 render_scale | scale:0.5:2 | 1.0 | upscaling!=off | restart | hooks:RenderScale | 0.75,1.0,1.0 | | | Render Scale | The 3D view's size before MetalFX scales it up. Lower is faster and softer. Above 100 % is sharper on Retina displays, and much slower.
 skip_game_anti_aliasing | bool | true | upscaling=metalfx | restart | hooks:RenderScale | true,true,true | | | Skip Game Anti-Aliasing | Turns off the game's Anti-Aliasing (Display) with MetalFX Temporal, which smooths edges itself.
-steady_frame_rate | choice:off=Off/30=30 FPS/40=40 FPS/60=60 FPS | off | | restart | driver | 60,60,off | | | Steady Frame Rate | Holds an even frame rate, or a slower one in heavy moments. With MetalFX, the 3D view gets softer first. Even steps need Vsync (Display).
+steady_frame_rate | choice:off=Off/30=30 FPS/40=40 FPS/60=60 FPS | off | upscaling!=off | restart | driver | 60,60,off | | | Steady Frame Rate | Holds an even frame rate: in heavy moments the 3D view gets softer first, then the rate slower. Even steps need Vsync (Display).
     off | The game's own: each frame shown as soon as it is ready.
     30 | The steadiest, with the most time for each frame.
     40 | On a 120 Hz display; 30 on a 60 Hz one.

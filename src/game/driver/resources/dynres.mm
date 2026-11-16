@@ -1,6 +1,6 @@
 // Dynamic resolution: the main view drawn at a level of its size, frame by frame, without the game rebuilding its
-// targets. Steady Frame Rate turns it on (KSA_MTL_STEADY_FRAME_RATE, with MetalFX); the experiments dynamic_level and
-// dynamic_target_ms set its lowest level and its target instead.
+// targets. Steady Frame Rate turns it on (KSA_MTL_STEADY_FRAME_RATE, a MetalFX setting); the experiments dynamic_level
+// and dynamic_target_ms set its lowest level and its target instead.
 //
 // The hooks pass the main view's size after each rebuild (ksaMtlDynamicResolution). An image bound after it that is
 // drawn into and is that size or a fraction of it (fits) is dynamic: besides its texture at its own size it gets one
@@ -498,13 +498,14 @@ static double expectedAt(double gpu, uint32_t level, uint32_t now) {
 // MHz instead of 1620, every frame about three quarters of its slot, however light): the faster one is then tried after
 // rateUpWait frames whatever they say. Before the level's choice, which then follows the rate's target
 static void stepRate() {
-    if (kmtlConfig().dynamicTargetMs > 0 || !kmtlSteadyFps() || !g_dyn.lowest) return;
-    uint32_t now = g_dyn.level ? g_dyn.level.load() : kLevelSteps;
+    if (kmtlConfig().dynamicTargetMs > 0 || !kmtlSteadyFps()) return;
+    // Without levels (MetalFX with no room below the render size: Spatial at half the window), the full size is the lowest
+    uint32_t now = g_dyn.level ? g_dyn.level.load() : kLevelSteps, lowest = g_dyn.lowest ? g_dyn.lowest : kLevelSteps;
     double ms[16], measured[16];
     uint32_t n = samplesAt(now, ms, measured);
     if (n == 0) return;
     uint32_t outW = g_dyn.outW, outH = g_dyn.outH;
-    if (now == g_dyn.lowest && n >= kRateDownFrames && medianOf(ms, kRateDownFrames) > target() &&
+    if (now == lowest && n >= kRateDownFrames && medianOf(ms, kRateDownFrames) > target() &&
         g_dyn.frames >= g_dyn.changedAt + kRateSettleFrames && g_dyn.frames >= g_dyn.rateChangedAt + kRateHoldFrames) {
         if (kmtlSteadyStep(outW, outH, 1, false) <= 0) return;
         // A faster rate that didn't hold: the next waits longer, and expects as much more as this one ran over
@@ -536,7 +537,7 @@ static void stepRate() {
     double expected = 0;
     if (kmtlGpuClockKnown()) {
         if (n < 8) return;
-        expected = expectedAt(medianOf(ms, n), g_dyn.lowest, now);
+        expected = expectedAt(medianOf(ms, n), lowest, now);
         if (expected * g_dyn.rateBias > kRateUpShare * kCadenceShare * faster) return;
     }
     g_dyn.rateExpected = expected;
@@ -640,7 +641,7 @@ __attribute__((visibility("default"))) void ksaMtlDynamicResolution(uint32_t wid
     g_dyn.lowest = width && height ? std::max(lowest, reach) : 0;
     if (g_dyn.lowest >= kLevelSteps) g_dyn.lowest = g_dyn.width = g_dyn.height = 0;
     // The GPU's clock, for the times of frames paced by Steady Frame Rate (gpuclock.mm)
-    if (steady && g_dyn.lowest) kmtlGpuClockStart();
+    if (steady) kmtlGpuClockStart();
     // With a target from the full size, without one at the lowest level. Images still there from before (a rebuild
     // that kept them) take it now, or the hooks' sizes and the textures would part
     uint32_t level = target() > 0 ? 0 : g_dyn.lowest;
@@ -656,7 +657,7 @@ __attribute__((visibility("default"))) void ksaMtlDynamicResolution(uint32_t wid
     g_dyn.rateBias = 1;
     KLOG(0, "dynamic resolution: main view %ux%u to %ux%u, level %u of %u, lowest %u (%s), target %.1f ms", width, height,
          outW, outH, g_dyn.level.load(), kLevelSteps, g_dyn.lowest, settingLevel() ? "dynamic_level" : leastW ? "half the window" : "the display's",
-         g_dyn.width ? target() : 0.0);
+         target());
 }
 
 // The main view's size at the level now: what the game's own sizes for it become
@@ -679,9 +680,9 @@ __attribute__((visibility("default"))) void ksaMtlImageSize(VkImage image, uint3
 __attribute__((visibility("default"))) void ksaMtlDynamicResolutionFrame(uint32_t* width, uint32_t* height, uint32_t* level) {
     std::lock_guard<std::mutex> lock(g_dyn.m);
     g_dyn.frames++;
-    // The rate first, whose target the level then follows. Without a target (no swapchain of the display's size: the
-    // window's changed before the rebuild): the experiment's level, or the full size
-    if (g_dyn.width && target() > 0) stepRate();
+    // The rate first, whose target the level then follows (also without levels: stepRate). Without a target (no
+    // swapchain of the display's size: the window's changed before the rebuild): the experiment's level, or the full size
+    if (target() > 0) stepRate();
     uint32_t want = !g_dyn.width ? g_dyn.level.load() : target() > 0 ? chooseLevel() : settingLevel() ? g_dyn.lowest : 0;
     if (g_dyn.width && !g_dyn.prepared && !g_dyn.images.empty()) {
         auto t0 = std::chrono::steady_clock::now();
