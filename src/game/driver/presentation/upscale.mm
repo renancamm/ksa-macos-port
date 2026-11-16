@@ -10,7 +10,8 @@
 // (orbit lines, the selected part), becomes MetalFX's reactive mask, so that plumes moving with the camera don't smear;
 // the bloom itself is left out, or the glow beside a bright edge would keep MetalFX from smoothing the edge. Past the
 // temporal upscaler's largest scale (3x on an M5), it upscales as far as it can and MetalFX's spatial upscaler does the
-// rest. MetalFX gets the game's exposure, which its tonemapping multiplies the image by, instead of estimating one: in
+// rest. With dynamic resolution, the temporal upscaler takes each level's content to the whole output; the spatial one
+// can't, and a level gets a spatial upscaler of its own size. MetalFX gets the game's exposure, which its tonemapping multiplies the image by, instead of estimating one: in
 // dark views its estimate drew faint stars as short streaks and lost a third of them. The same file has the present's
 // MetalFX pass: frame interpolation (KSA_MTL_FRAME_INTERPOLATION), for which the game marks where its UI starts
 // (vkCmdMarkUiKSA).
@@ -175,6 +176,11 @@ struct UpscaleState {
     id<MTLComputePipelineState> stretch = nil;
     id<MTLFXTemporalScaler> temporal = nil;
     id<MTLFXSpatialScaler> spatial = nil;
+    // Dynamic resolution's levels through the spatial scaler, one made for each level's size (width << 32 | height), as
+    // MetalFX's spatial scaler doesn't take a smaller content to the whole output (the temporal one does): it scales by
+    // its input and output sizes, and with less content it fills only that share of the output, the rest smeared from
+    // the content's edge. Made at a level's first frame, kept until the sizes change (nil: MetalFX made none)
+    std::unordered_map<uint64_t, id<MTLFXSpatialScaler>> spatialAt;
     uint32_t inW = 0, inH = 0, outW = 0, outH = 0;
     // The game's image and the output's formats, which the scalers are made for (KSA 2026.11.10 draws its main view in
     // RG11B10Float; a scaler reads a texture of another format as noise)
@@ -247,6 +253,7 @@ static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uin
     g_up.scalerFailed = false;
     g_up.temporal = nil;
     g_up.spatial = nil;
+    g_up.spatialAt.clear();
     g_up.rest = nil;
     g_up.restTex = nil;
     if (spatial) {
@@ -320,6 +327,29 @@ static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uin
     return true;
 }
 
+// The spatial scaler for a level's content (g_up.m held): the whole input's, or one made for that size
+static id<MTLFXSpatialScaler> spatialFor(id<MTLDevice> d, uint32_t cw, uint32_t ch) {
+    if (cw == g_up.inW && ch == g_up.inH) return g_up.spatial;
+    uint64_t key = (uint64_t)cw << 32 | ch;
+    auto it = g_up.spatialAt.find(key);
+    if (it != g_up.spatialAt.end()) return it->second;
+    auto t0 = std::chrono::steady_clock::now();
+    MTLFXSpatialScalerDescriptor* sd = [MTLFXSpatialScalerDescriptor new];
+    sd.colorTextureFormat = g_up.colorFormat;
+    sd.outputTextureFormat = g_up.outFormat;
+    sd.inputWidth = cw; sd.inputHeight = ch; sd.outputWidth = g_up.outW; sd.outputHeight = g_up.outH;
+    sd.colorProcessingMode = MTLFXSpatialScalerColorProcessingModeHDR;
+    id<MTLFXSpatialScaler> scaler = [sd newSpatialScalerWithDevice:d];
+    g_up.spatialAt[key] = scaler;
+    if (scaler)
+        KLOG(1, "upscale: MetalFX spatial %ux%u -> %ux%u for a level, made in %.1f ms", cw, ch, g_up.outW, g_up.outH,
+             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+    else
+        KERR("upscale: MetalFX spatial scaler %ux%u -> %ux%u not created, that level is stretched instead", cw, ch,
+             g_up.outW, g_up.outH);
+    return scaler;
+}
+
 // Everything encoded before it finishes before anything encoded after it starts: a signal and a wait on an event
 static void eventBarrier(id<MTLCommandBuffer> cb, id<MTLEvent> event, uint64_t* value) {
     [cb encodeSignalEvent:event value:++*value];
@@ -356,6 +386,11 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
     ch = std::min<uint32_t>(ch, (uint32_t)color->mtl.height);
     bool ready = prepare(cb->device, info->inputWidth, info->inputHeight, outW, outH, spatial, color->mtl.pixelFormat,
                          out->mtl.pixelFormat, kmtlDynamicMinContent());
+    id<MTLFXSpatialScaler> spatialScaler = ready && spatial ? spatialFor(cb->device->mtl, cw, ch) : nil;
+    // A level's scaler takes a texture of its size only (a level whose texture wasn't placed keeps the full one): else
+    // the stretch, which reads the content as it is
+    if (spatial && (!spatialScaler || (spatialScaler != g_up.spatial && (color->mtl.width != cw || color->mtl.height != ch))))
+        ready = false;
     if (!ready && !g_up.stretch) return;
     cb->endEncoder();
     cb->waitForAllResolves();
@@ -371,11 +406,11 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
         [e dispatchThreads:MTLSizeMake(outW, outH, 1) threadsPerThreadgroup:MTLSizeMake(16, 16, 1)];
         [e endEncoding];
     } else if (spatial) {
-        g_up.spatial.colorTexture = color->mtl;
-        g_up.spatial.outputTexture = out->mtl;
-        g_up.spatial.inputContentWidth = cw;
-        g_up.spatial.inputContentHeight = ch;
-        [g_up.spatial encodeToCommandBuffer:cb->mtl];
+        spatialScaler.colorTexture = color->mtl;
+        spatialScaler.outputTexture = out->mtl;
+        spatialScaler.inputContentWidth = cw;
+        spatialScaler.inputContentHeight = ch;
+        [spatialScaler encodeToCommandBuffer:cb->mtl];
     } else {
         struct { float egoFromClip[16], scene[16], object[16], sky[16], nearby[16], sphere[4], body[4]; float size[2]; float jitter[2]; float reactiveGain; uint32_t snapshots;
                  uint32_t clouds; float cloudSeen; float lastJitter[2]; uint32_t history; float pad; } p;
