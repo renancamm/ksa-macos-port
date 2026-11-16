@@ -24,9 +24,9 @@ namespace KsaMetal.Hooks.Features;
 // and MetalFX's input and jitter (RenderScale, Upscale), the bloom's last step (RenderScale), and the sizes that the
 // clouds, the ambient occlusion, the exhausts, the atmosphere and the screen-space particles keep from their last
 // rebuild and pass to their shaders, and the cockpit's ray tracing's image sizes (below). The driver picks each
-// frame's level when the frame starts (Program.Render, before the camera data and any of its commands), by Steady
-// Frame Rate's cadence (or the experiments dynamic_level, dynamic_target_ms); without them nothing registers and
-// nothing changes.
+// frame's level when the frame starts (Program.Render, before the camera data and any of its commands), with Dynamic
+// Resolution by Steady Frame Rate's cadence (or the experiments dynamic_level, dynamic_target_ms); without them nothing
+// registers and nothing changes. Steady Frame Rate's rate steps at the same call, with or without MetalFX.
 internal static class DynamicResolution
 {
     [DllImport("libvulkan.1.dylib")]
@@ -61,7 +61,7 @@ internal static class DynamicResolution
                 (uint)Math.Max(output.Y, 0), (uint)Math.Max(least.X, 0), (uint)Math.Max(least.Y, 0));
             ksaMtlDynamicResolutionSize(out uint w, out uint h, out uint level);
             _driver = true;
-            // The driver registers only with Steady Frame Rate or the experiment's level: otherwise nothing changes here either
+            // The driver registers levels only with Dynamic Resolution or the experiment's level: otherwise nothing changes here either
             _render = w > 0 && h > 0 ? render : int2.Zero;
             Take(w, h, level);
             if (Active)
@@ -110,9 +110,9 @@ internal static class DynamicResolution
     private static int Scale(int size) =>
         Math.Max(1, (int)Math.Round((double)size * _steps / LevelSteps, MidpointRounding.AwayFromZero));
 
-    // By RenderScale.Apply with MetalFX: the frame's level (without it, none of the rest), and the game's sizes, each
-    // part on its own: one the game no longer has is left out
-    public static void Apply(Harmony harmony)
+    // By RenderScale.Apply, with MetalFX or Steady Frame Rate: the frame's level and rate step (without it, none of the
+    // rest), and with levels (MetalFX) the game's sizes, each part on its own: one the game no longer has is left out
+    public static void Apply(Harmony harmony, bool levels)
     {
         try
         {
@@ -128,6 +128,8 @@ internal static class DynamicResolution
             Hooks.Log($"Dynamic resolution: off ({Skip.In(e)?.Message ?? e.Message})");
             return;
         }
+        if (!levels)
+            return;
         Part(harmony, "clouds", ApplyClouds);
         Part(harmony, "ambient occlusion", ApplyAmbientOcclusion);
         Part(harmony, "exhausts", ApplyExhausts);

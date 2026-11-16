@@ -97,8 +97,10 @@ internal static class RenderScale
             transpiler: maskScale);
         harmony.Patch(Find.Method(typeof(UiCoverageMaskSystem), "ReplayDrawData"), transpiler: maskScale);
         ApplyBloom(harmony);
-        if (Upscale.Wanted)
-            DynamicResolution.Apply(harmony);
+        // The frame's level and Steady Frame Rate's rate steps, which work without MetalFX too (the full size their
+        // lowest level); the game's sizes at a level only with MetalFX, which alone draws below the render size
+        if (Upscale.Wanted || Settings.SteadyFrameRate != "off")
+            DynamicResolution.Apply(harmony, levels: Upscale.Wanted);
         // Last: it sets the game's sample count, which a Skip wouldn't undo
         if (Upscale.Wanted)
             Upscale.Apply(harmony);
@@ -124,8 +126,9 @@ internal static class RenderScale
         Scaled = render != Window;
         _ours = new VkExtent2D(render.X, render.Y);
         __instance.ExtentOverride = _ours;
-        // Through MetalFX, which takes the size drawn each frame. With Spatial, which keeps no history to fill in, the
-        // levels go no lower than half the window, the Performance card's size before dynamic resolution
+        // Through MetalFX, which takes the size drawn each frame (without it, the display's size alone, for Steady Frame
+        // Rate's steps). With Spatial, which keeps no history to fill in, the levels go no lower than half the window,
+        // the Performance card's size before dynamic resolution
         DynamicResolution.Register(Upscale.Wanted && Upscalable(_ours.Value) ? render : int2.Zero, Output,
             Upscale.Spatial ? new int2((Window.X + 1) / 2, (Window.Y + 1) / 2) : int2.Zero);
     }

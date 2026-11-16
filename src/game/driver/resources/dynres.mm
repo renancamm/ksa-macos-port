@@ -1,6 +1,7 @@
 // Dynamic resolution: the main view drawn at a level of its size, frame by frame, without the game rebuilding its
-// targets. Steady Frame Rate turns it on (KSA_MTL_STEADY_FRAME_RATE, a MetalFX setting); the experiments dynamic_level
-// and dynamic_target_ms set its lowest level and its target instead.
+// targets. Dynamic Resolution turns it on (KSA_MTL_DYNAMIC_RESOLUTION, with MetalFX and Steady Frame Rate, whose rate is
+// its target); the experiments dynamic_level and dynamic_target_ms set its lowest level and its target instead. Steady
+// Frame Rate's rate steps here too, with or without levels (Lower Rate Under Heavy Load, stepRate).
 //
 // The hooks pass the main view's size after each rebuild (ksaMtlDynamicResolution). An image bound after it that is
 // drawn into and is that size or a fraction of it (fits) is dynamic: besides its texture at its own size it gets one
@@ -20,7 +21,7 @@
 // frames' GPU times (kmtlDynamicNoteFrame, as each present completes), each at the full clock (gpuclock.mm: with the
 // frames paced, macOS slows the GPU down to each frame's deadline, and the time measured tells the deadline). The target: 90 % of the cadence Steady Frame Rate
 // shows frames at (dynamic_target_ms instead), and when even the lowest level runs over it, the next slower rate
-// (stepRate). The lowest level: with MetalFX Temporal, the lowest from which MetalFX scales the main view up to the
+// (stepRate, KSA_MTL_LOWER_RATE_UNDER_HEAVY_LOAD). The lowest level: with MetalFX Temporal, the lowest from which MetalFX scales the main view up to the
 // display no more than its temporal scaler reaches (3x on an M5), so the temporal scaler alone reaches the display at
 // every level and no spatial step softens the full level; with Spatial, half the window (the hooks' least size)
 // (dynamic_level instead; without a target, that level all the time).
@@ -497,7 +498,8 @@ static double expectedAt(double gpu, uint32_t level, uint32_t now) {
     return gpu * (kFixedShare + (1 - kFixedShare) * r * r);
 }
 
-// Steady Frame Rate's rate, stepped with the level (under g_dyn.m; not with dynamic_target_ms, whose target is fixed):
+// Steady Frame Rate's rate, stepped with the level (under g_dyn.m; with Lower Rate Under Heavy Load; not with
+// dynamic_target_ms, whose target is fixed):
 // a slower step (60 -> 40 -> 30) when the frames at the lowest level, settled there, run over the target even at the
 // GPU's full clock (they start to miss their slot), so that they keep an even rate; the faster one when the lowest
 // level is expected well under that rate's target, after rateUpWait frames at this one (after one that didn't hold:
@@ -505,8 +507,9 @@ static double expectedAt(double gpu, uint32_t level, uint32_t now) {
 // MHz instead of 1620, every frame about three quarters of its slot, however light): the faster one is then tried after
 // rateUpWait frames whatever they say. Before the level's choice, which then follows the rate's target
 static void stepRate() {
-    if (kmtlConfig().dynamicTargetMs > 0 || !kmtlSteadyFps()) return;
-    // Without levels (MetalFX with no room below the render size: Spatial at half the window), the full size is the lowest
+    if (kmtlConfig().dynamicTargetMs > 0 || !kmtlSteadyFps() || !kmtlConfig().lowerRateUnderHeavyLoad) return;
+    // Without levels (Dynamic Resolution off, MetalFX off, or no room below the render size: Spatial at half the
+    // window), the full size is the lowest
     uint32_t now = g_dyn.level ? g_dyn.level.load() : kLevelSteps, lowest = g_dyn.lowest ? g_dyn.lowest : kLevelSteps;
     double ms[16], measured[16];
     uint32_t n = samplesAt(now, ms, measured);
@@ -526,7 +529,7 @@ static void stepRate() {
         g_dyn.ceiling = 0;  // another target: the levels as they come
         g_dyn.rateSteppedUp = false;
         KLOG(++g_dyn.rateChanges <= 20 ? 0 : 1,
-             "dynamic resolution: slower, %.1f ms a frame (the lowest level at %.1f ms at the full clock, %.1f ms at %.0f MHz)",
+             "steady frame rate: slower, %.1f ms a frame (the lowest level at %.1f ms at the full clock, %.1f ms at %.0f MHz)",
              frame, medianOf(ms, kRateDownFrames), medianOf(measured, kRateDownFrames), kmtlGpuClockMhz());
         return;
     }
@@ -555,10 +558,10 @@ static void stepRate() {
     g_dyn.rateSteppedUp = true;
     if (expected > 0)
         KLOG(++g_dyn.rateChanges <= 20 ? 0 : 1,
-             "dynamic resolution: faster, %.1f ms a frame (the lowest level expected at %.1f ms at the full clock, x%.2f; now %.1f ms at %.0f MHz)",
+             "steady frame rate: faster, %.1f ms a frame (the lowest level expected at %.1f ms at the full clock, x%.2f; now %.1f ms at %.0f MHz)",
              faster, expected, g_dyn.rateBias, medianOf(measured, n), kmtlGpuClockMhz());
     else
-        KLOG(++g_dyn.rateChanges <= 20 ? 0 : 1, "dynamic resolution: faster, %.1f ms a frame (tried after %u frames, no GPU clock)",
+        KLOG(++g_dyn.rateChanges <= 20 ? 0 : 1, "steady frame rate: faster, %.1f ms a frame (tried after %u frames, no GPU clock)",
              faster, g_dyn.rateUpWait);
     return;
 }
@@ -629,18 +632,20 @@ float kmtlDynamicMinContent() {
 
 extern "C" {
 // The hooks, after each rebuild of the main view's targets (and before they are made): its size (0 x 0: none), the
-// display's, and the least size a level may have (0 x 0: the display's rule). Only with Steady Frame Rate (its frame
-// time, with Vsync) or the experiment's level: without, nothing is registered and nothing changes
+// display's, and the least size a level may have (0 x 0: the display's rule). Levels only with Dynamic Resolution (and
+// Steady Frame Rate's frame time, with Vsync) or the experiment's level; Steady Frame Rate alone registers the display's
+// size, for its rate's steps (the main view's is then none); without either, nothing changes
 __attribute__((visibility("default"))) void ksaMtlDynamicResolution(uint32_t width, uint32_t height, uint32_t outW,
                                                                     uint32_t outH, uint32_t leastW, uint32_t leastH) {
     std::lock_guard<std::mutex> lock(g_dyn.m);
     g_dyn.outW = outW;
     g_dyn.outH = outH;
-    // Steady Frame Rate's, with a swapchain of the display's size to take its frame time from (with Vsync); or the
-    // experiment's level. Vsync turned on later waits for the next rebuild, levels and rate steps alike
+    // Steady Frame Rate's, with a swapchain of the display's size to take its frame time from (with Vsync): its rate's
+    // steps, and with Dynamic Resolution the levels; or the experiment's level. Vsync turned on later waits for the next
+    // rebuild, levels and rate steps alike
     bool steady = kmtlSteadyFps() && kmtlFrameMs(outW, outH) > 0;
     g_dyn.steady = steady;
-    if (!settingLevel() && !steady) width = height = 0;
+    if (!settingLevel() && !(steady && kmtlConfig().dynamicResolution)) width = height = 0;
     g_dyn.width = width;
     g_dyn.height = height;
     // Not below what MetalFX's temporal scaler reaches from its input (3x on an M5): its output is made for the lowest,
@@ -664,8 +669,9 @@ __attribute__((visibility("default"))) void ksaMtlDynamicResolution(uint32_t wid
     }
     g_dyn.lowest = width && height ? std::max(lowest, reach) : 0;
     if (g_dyn.lowest >= kLevelSteps) g_dyn.lowest = g_dyn.width = g_dyn.height = 0;
-    // The GPU's clock, for the times of frames paced by Steady Frame Rate (gpuclock.mm)
-    if (steady) kmtlGpuClockStart();
+    // The GPU's clock, for the times of frames paced by Steady Frame Rate (gpuclock.mm), when the levels or the rate's
+    // steps use them
+    if (steady && (g_dyn.width || kmtlConfig().lowerRateUnderHeavyLoad)) kmtlGpuClockStart();
     // With a target from the full size, without one at the lowest level. Images still there from before (a rebuild
     // that kept them) take it now, or the hooks' sizes and the textures would part
     uint32_t level = target() > 0 ? 0 : g_dyn.lowest;

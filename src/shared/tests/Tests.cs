@@ -265,6 +265,15 @@ internal static class Tests
         Check(!Met("lighter_plume_shadows", game: false), "lighter_plume_shadows without the game's plume trail shadows");
         values["unload_far_terrain"] = "false";
         Check(!Met("load_terrain_by_altitude"), "load_terrain_by_altitude without unload_far_terrain");
+        // The Frame Rate rows: the rate needs only Vsync, its two helpers the rate, Dynamic Resolution MetalFX too
+        values["upscaling"] = "off";
+        Check(Met("steady_frame_rate") && !Met("steady_frame_rate", game: false), "steady_frame_rate without upscaling, with Vsync only");
+        Check(!Met("dynamic_resolution") && !Met("lower_rate_under_heavy_load"), "dynamic_resolution, lower_rate_under_heavy_load without steady_frame_rate");
+        values["steady_frame_rate"] = "60";
+        Check(!Met("dynamic_resolution"), "dynamic_resolution without upscaling");
+        Check(Met("lower_rate_under_heavy_load"), "lower_rate_under_heavy_load with steady_frame_rate");
+        values["upscaling"] = "spatial";
+        Check(Met("dynamic_resolution"), "dynamic_resolution with upscaling and steady_frame_rate");
     }
 
     private static void FromEnvironment()

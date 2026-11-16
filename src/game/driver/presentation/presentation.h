@@ -45,7 +45,8 @@ struct KSwapchain {
     std::atomic<double> cadenceMs{0};  // each image shown at least this long after the one before (0: as soon as Vsync allows)
     std::atomic<double> frameMs{0};    // the game's frame time the cadence holds (dynamic resolution's target): also at one refresh
     // Steady Frame Rate's steps on this display, the frame time of each, its own rate first (then 40 and 30 where
-    // slower), and the one taken: dynamic resolution steps to a slower one when its lowest level can't hold the rate
+    // slower), and the one taken: Lower Rate Under Heavy Load steps to a slower one when the lowest level (the full
+    // size without dynamic resolution) can't hold the rate
     std::vector<double> steadySteps;
     size_t steadyStep = 0;
     double refreshHz = 0;
