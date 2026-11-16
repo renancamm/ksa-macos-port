@@ -114,6 +114,16 @@ kernel void writeBack(texture2d<half, access::read_write> image [[texture(0)]], 
 }
 )";
 
+// The accumulate kernel's parameters, as kHistorySource's Params
+struct HistoryParams {
+    float egoFromClip[16], scene[16], object[16], nearby[16], sphere[4], body[4];
+    float renderSize[2], imageSize[2], lastJitter[2];
+    float maxFrames;
+    uint32_t history;
+    float clip, pad[3];
+};
+static_assert(sizeof(HistoryParams) == 336, "HistoryParams must match kHistorySource's Params");
+
 namespace {
 struct Slot {
     id<MTLTexture> color[2] = {nil, nil}, geometry[2] = {nil, nil};
@@ -132,10 +142,7 @@ struct HistoryState {
 HistoryState& g_rh = *new HistoryState;
 
 id<MTLTexture> newTexture(id<MTLDevice> d, MTLPixelFormat f, uint32_t w, uint32_t h) {
-    MTLTextureDescriptor* t = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:f width:w height:h mipmapped:NO];
-    t.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
-    t.storageMode = MTLStorageModePrivate;
-    return [d newTextureWithDescriptor:t];
+    return kmtlPrivateTexture(d, f, w, h, MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite);
 }
 
 }  // namespace
@@ -156,14 +163,12 @@ VKFN(void) vkCmdRayHistoryKSA(VkCommandBuffer commandBuffer, const VkRayHistoryI
     id<MTLDevice> d = cb->device->mtl;
     if (g_rh.failed) return;
     if (!g_rh.accumulate) {
-        NSError* err = nil;
-        id<MTLLibrary> lib = [d newLibraryWithSource:[NSString stringWithUTF8String:kHistorySource] options:nil error:&err];
-        id<MTLFunction> f = [lib newFunctionWithName:@"accumulate"];
-        g_rh.accumulate = f ? [d newComputePipelineStateWithFunction:f error:&err] : nil;
-        id<MTLFunction> wb = [lib newFunctionWithName:@"writeBack"];
-        g_rh.writeBack = wb ? [d newComputePipelineStateWithFunction:wb error:&err] : nil;
+        std::string err;
+        auto kernels = kmtlComputePipelines(d, kHistorySource, {"accumulate", "writeBack"}, &err);
+        g_rh.accumulate = kernels[0];
+        g_rh.writeBack = kernels[1];
         if (!g_rh.accumulate || !g_rh.writeBack) {
-            KERR("ray history: kernel: %s", err.localizedDescription.UTF8String);
+            KERR("ray history: kernel: %s", err.c_str());
             g_rh.failed = true;
             return;
         }
@@ -199,8 +204,7 @@ VKFN(void) vkCmdRayHistoryKSA(VkCommandBuffer commandBuffer, const VkRayHistoryI
             continue;
         }
         int last = s.current, next = 1 - s.current;
-        struct { float egoFromClip[16], scene[16], object[16], nearby[16], sphere[4], body[4]; float renderSize[2], imageSize[2];
-                 float lastJitter[2]; float maxFrames; uint32_t history; float clip, pad[3]; } p;
+        HistoryParams p;
         memcpy(p.egoFromClip, info->egoFromClip, sizeof(p.egoFromClip));
         memcpy(p.scene, info->scene, sizeof(p.scene));
         memcpy(p.object, info->object, sizeof(p.object));
