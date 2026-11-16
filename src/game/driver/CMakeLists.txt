@@ -35,7 +35,7 @@ add_custom_target(ksa-metal-entries DEPENDS "${KSA_GENERATED_DIR}/entries.stamp"
 
 add_library(ksa-metal-objects OBJECT
     setup/config.mm setup/entry.mm setup/instance.mm setup/device.mm
-    resources/memory.mm resources/images.mm resources/queries.mm resources/format.mm resources/descriptor.mm resources/accel.mm resources/dynres.mm
+    resources/memory.mm resources/images.mm resources/queries.mm resources/format.mm resources/descriptor.mm resources/accel.mm resources/dynres.mm resources/gpuclock.mm
     commands/encoders.mm commands/state.mm commands/draws.mm commands/passes.mm commands/transfers.mm commands/internal.mm
     pipelines/stages.mm pipelines/pipelines.mm pipelines/rtpipeline.mm
     shaders/translate.mm shaders/shadercache.mm shaders/corpus.mm shaders/tessspirv.cpp shaders/rtspirv.cpp
@@ -56,7 +56,7 @@ target_compile_features(ksa-metal-objects PUBLIC cxx_std_17)
 target_link_libraries(ksa-metal-objects PUBLIC
     port-settings Vulkan::Headers spirv-cross-msl spirv-cross-glsl spirv-cross-core SPIRV-Tools-link SPIRV-Tools-opt SPIRV-Tools-static
     "-framework Metal" "-framework MetalFX" "-framework QuartzCore" "-framework Foundation" "-framework CoreGraphics" "-framework ImageIO"
-    "-framework UniformTypeIdentifiers" "-framework AppKit" "-framework CoreImage")
+    "-framework UniformTypeIdentifiers" "-framework AppKit" "-framework CoreImage" "-framework IOKit")
 
 add_library(ksa-metal SHARED)
 set_target_properties(ksa-metal PROPERTIES

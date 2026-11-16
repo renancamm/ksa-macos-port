@@ -29,6 +29,7 @@ void kmtlDrainFrameGpu(uint64_t present, double t, double ms);
 
 // Frame instruments (instruments.mm)
 void kmtlOnPresent(KDevice* dev, KSwapchain* swapchain, KImage* image, id<MTLCommandBuffer> cb);
+uint64_t kmtlShotsTaken();  // screenshots encoded so far (kmtlOnPresent takes them)
 void kmtlOnSwapchainDestroyed(KSwapchain* swapchain);
 // Pass dump (passdump.mm)
 void kmtlPassDumpTrack(KImage* image);

@@ -51,21 +51,22 @@ public static class TabPresets
 
     public static readonly Preset[] All =
     [
-        // MetalFX spatial at half size, without anti-aliasing: temporal there is past its largest scale on a Retina or
-        // HiDPI display (4x a side, 3x on an M5) and left 4-pixel blocks on moving things (the rocket, the sea), and the
+        // MetalFX spatial, without anti-aliasing: temporal at half size is past its largest scale on a Retina or HiDPI
+        // display (4x a side, 3x on an M5) and left 4-pixel blocks on moving things (the rocket, the sea), and the
         // spatial upscaler without the game's MSAA costs 1.3-1.9 ms less a frame (M5, fast run). Thin edges, such as
-        // branches against the sky, are rougher
+        // branches against the sky, are rougher. Steady Frame Rate at 60 draws it at three quarters of the window's
+        // size, down to half (its size before dynamic resolution) in heavy moments
         new("performance", "Performance", "Fastest. Softer, with rougher edges.",
-            "The highest frame rate: MetalFX Spatial at half the window's size, without the game's Anti-Aliasing, " +
-            "with simpler shadows, clouds and effects and no cockpit ray tracing. With Vsync, it holds half the " +
-            "display's refresh rate. Time warp slows down less.",
+            "The highest frame rate: 60 FPS, with MetalFX Spatial at three quarters of the window's size, down to half " +
+            "in heavy moments, without the game's Anti-Aliasing, with simpler shadows, clouds and effects and no " +
+            "cockpit ray tracing. Time warp slows down less.",
             0,
             Game(antiAliasing: "Disabled", filter: "Pcf", cascades: 2048, terrain: 2048, milkyWay: "High", clouds: "Low",
                 cloudShadows: "Medium", effects: "Low", godrays: false, clutterShadows: false, plumeShadows: false,
                 rayTracing: false, planetTextures: 2048)),
         new("balanced", "Balanced", "Faster, with little visible change.",
-            "MetalFX Temporal at three quarters of the window's size, with simpler shadow filtering and lighter " +
-            "cockpit ray tracing. Time warp slows down less.",
+            "60 FPS, or 40 in heavy moments, with MetalFX Temporal at the window's size, down to two thirds of it on a " +
+            "Retina display, with simpler shadow filtering and lighter cockpit ray tracing. Time warp slows down less.",
             1,
             Game(antiAliasing: "MultisampleX2", filter: "Pcf", cascades: 2048, terrain: 4096, milkyWay: "High", clouds: "High",
                 cloudShadows: "Medium", effects: "Medium", godrays: true, clutterShadows: true, plumeShadows: true,

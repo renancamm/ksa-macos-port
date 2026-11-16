@@ -196,8 +196,15 @@ bool kmtlDynamicView(VkImageView view);                       // a view of a dyn
 void kmtlDynamicTranslate(const KSetLayout* l, uint64_t* slots);  // a set's copy: its textures at the frame's level
 float kmtlDynamicMinContent();  // the least share of the main view's size a level may have (1: dynamic resolution off)
 uint32_t kmtlDynamicLevelNow();  // the level the frame being presented was drawn at
-void kmtlDynamicNoteFrame(uint32_t level, double gpuMs);  // a frame's GPU time, for the level's choice
+void kmtlDynamicNoteFrame(uint32_t level, double gpuMs, uint32_t width, uint32_t height);  // a frame's GPU time and its swapchain's size, for the level's choice
 float kmtlUpscaleMaxScale();     // upscale.mm: how far MetalFX's temporal scaler scales on this Mac
+void kmtlGpuClockStart();       // gpuclock.mm: the GPU clock's sampler, once (IOReport)
+double kmtlGpuClockShare();      // gpuclock.mm: the GPU's clock lately over its highest (1: unknown)
+double kmtlGpuClockMhz();        // gpuclock.mm: the GPU's clock lately (0: unknown)
+bool kmtlGpuClockKnown();        // gpuclock.mm: a clock read at least once
+int kmtlSteadyFps();             // swapchain.mm: Steady Frame Rate's rate (0: off)
+double kmtlFrameMs(uint32_t width, uint32_t height);  // swapchain.mm: the frame time the cadence holds, of the swapchain of this size (0: none)
+double kmtlSteadyStep(uint32_t width, uint32_t height, int dir, bool take);  // swapchain.mm: Steady Frame Rate's next step (1: slower, -1: faster), its frame time (0: none)
 // memory.mm: a VkMemoryDedicatedRequirements in the chain, filled (prefer: its prefersDedicatedAllocation)
 void kmtlFillDedicated(void* pNext, bool prefer);
 uint64_t kmtlBufferViewId(VkBufferView view);

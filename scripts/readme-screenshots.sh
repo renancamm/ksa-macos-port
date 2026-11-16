@@ -28,7 +28,7 @@ done
 # The game's settings, on a fresh install's. The card picked last is Game Defaults, so that the scenario's click turns
 # Quality's card gold: a click on the card the settings are based on leaves it as it is. The tab's picture then shows
 # Quality's values as pending changes.
-SETTINGS=(--defaults --tab-preset quality --port upscaling=metalfx --port steady_frame_rate=true --port preset=game_defaults)
+SETTINGS=(--defaults --tab-preset quality --port upscaling=metalfx --port steady_frame_rate=60 --port preset=game_defaults)
 
 IMAGES="${REPO}/.github/images"
 LOG="${BUILD}/readme-screenshots.log"

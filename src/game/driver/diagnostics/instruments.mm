@@ -344,8 +344,14 @@ void kmtlSavePNG(id<MTLCommandBuffer> cb, id<MTLTexture> tex, id<MTLFence> after
     }];
 }
 
+// Screenshots encoded so far: a present that took one (its frame's GPU time holds the copy) is left out of dynamic
+// resolution's samples (swapchain.mm)
+static std::atomic<uint64_t> g_shotsTaken{0};
+uint64_t kmtlShotsTaken() { return g_shotsTaken.load(std::memory_order_relaxed); }
+
 static void takeShot(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb, const std::string& path, bool last) {
     g_shotsPending++;
+    g_shotsTaken++;
     bool exitAfter = last && kmtlConfig().exitAfterShots;
     // A second encoder after the present's blit (which updated the chain fence)
     kmtlSavePNG(cb, image->mtl, dev->queue->chain, path, ^{
