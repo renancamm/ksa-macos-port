@@ -156,6 +156,7 @@ other tabs, and each setting's tooltip explains what it does and what it costs. 
 
 - Graphics presets: Performance, Balanced and Quality
 - Upscaling with Apple's MetalFX
+- A steady frame rate, with dynamic resolution
 - Extra performance settings, with small visual trade-offs
 - The optimizations, which can be turned off one by one
 - Memory savings, set for your Mac

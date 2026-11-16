@@ -54,8 +54,8 @@ public static class TabPresets
         // MetalFX spatial, without anti-aliasing: temporal at half size is past its largest scale on a Retina or HiDPI
         // display (4x a side, 3x on an M5) and left 4-pixel blocks on moving things (the rocket, the sea), and the
         // spatial upscaler without the game's MSAA costs 1.3-1.9 ms less a frame (M5, fast run). Thin edges, such as
-        // branches against the sky, are rougher. Steady Frame Rate at 60 draws it at three quarters of the window's
-        // size, down to half (its size before dynamic resolution) in heavy moments
+        // branches against the sky, are rougher. Steady Frame Rate at 60 with Dynamic Resolution draws it at three
+        // quarters of the window's size, down to half (its size before dynamic resolution) in heavy moments
         new("performance", "Performance", "Fastest. Softer, with rougher edges.",
             "The highest frame rate: 60 FPS, with MetalFX Spatial at three quarters of the window's size, down to half " +
             "in heavy moments, without the game's Anti-Aliasing, with simpler shadows, clouds and effects and no " +
