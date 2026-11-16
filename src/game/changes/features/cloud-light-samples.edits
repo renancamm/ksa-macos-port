@@ -1,0 +1,23 @@
+# For Fewer Cloud Light Samples (the hooks' CloudLightSamples.cs): where the hooks set the cloud layer's spare padding0
+# to 1 (0 without them: the game's samples), the clouds' march toward the sun takes one sample instead of the layer's
+# samples, at the layer's own light step, and the cloud shadow volume starts one step past it, as it does after the
+# game's last sample.
+
+@@ check cloud-light-samples-padding Clouds/CloudData.glsl
+@@ what one cloud light sample
+@@ contains
+    int twoDimensionalColorSingleChannel;
+    int padding0;
+@@ contains Clouds/CloudFunctions.glsl
+    float lightStepSize = min(lightRaymarchingDistance, distanceToLayerEdge) / lightRaymarchingSamples;
+@@ contains Clouds/CloudFunctions.glsl
+    position += lightStepSize * lightDirection;
+
+@@ edit cloud-light-samples Clouds/CloudFunctions.glsl
+@@ what took one cloud light sample where the hooks ask
+@@ needs cloud-light-samples-padding
+@@ find
+    for (int i = 0; i < lightRaymarchingSamples; i++)
+@@ replace
+    // macOS port: Fewer Cloud Light Samples, one sample at the layer's light step where the hooks set padding0
+    for (int i = 0; i < (uboCloudLayer.padding0 != 0 ? min(lightRaymarchingSamples, 1) : lightRaymarchingSamples); i++)
