@@ -45,7 +45,7 @@ These switches turn a feature off or change a default, to work around a problem 
 | `frame_interpolation` | on: frame interpolation ([MetalFX](#from-vulkan-to-metal)) |
 | `hdr_output` | off: offer the game no HDR output ([Presentation](#from-vulkan-to-metal)): its HDR settings (Display) stay hidden |
 | `vsync_pacing` | off: with Vsync, the game's wait for an earlier frame ends only when the display shows it ([Presentation](#from-vulkan-to-metal)); in a window, frames that take less than about 23 ms on the GPU then run slower |
-| `steady_frame_rate` | on, with Vsync: each game frame shown at least two refreshes of the display the window is on after the one before, set again when the window moves to another display; at 40 fps or less with two drawables instead of three, one frame less latency (three with frame interpolation) ([Presentation](#from-vulkan-to-metal)) |
+| `steady_frame_rate` | `30`, `40` or `60`, with Vsync: each game frame shown at least that rate's whole refreshes of the display the window is on after the one before, never faster (40 is 30 at 60 Hz; an even count with frame interpolation; one refresh is Vsync's own, unpaced), set again when the window moves to another display; at 40 fps or less with two drawables instead of three, one frame less latency (three with frame interpolation) ([Presentation](#from-vulkan-to-metal)). With MetalFX, dynamic resolution too, aiming at 90 % of that frame time on the GPU (`resources/dynres.mm`) |
 
 ## Build
 
@@ -125,8 +125,8 @@ The debugging settings, used the same way:
 | `gpu_errors` | on: a failed command buffer logs each encoder's state (completed, faulted, affected, pending); with `labels` the log names them |
 | `watch` | a folder: every 31 presents, a look at a sample of the presented image: at 30 % pure white, 99.9 % pure black for a second, or 0.1 % of pure primary colours or green with no red or blue, it saves the image and a pass dump of the next frame there (at most 3, 10 s apart), `watch.txt` says when each fault began and ended, and `watch.csv` has every look's numbers. Only an image after a clean one counts |
 | `watch_white` | percent: the white limit of `watch` (30); 0 fires on any image, to test it |
-| `dynamic_level` | `<n>`: an experiment, dynamic resolution: the main view drawn at n 64ths of its render size (16 to 63, not below what MetalFX's temporal scaler reaches) in textures placed in its targets' memory, without rebuilding them |
-| `dynamic_target_ms` | `<ms>`: an experiment, dynamic resolution by GPU time: each frame at the highest level expected to stay under that many milliseconds on the GPU, down to `dynamic_level` |
+| `dynamic_level` | `<n>`: an experiment, dynamic resolution's lowest level, n 64ths of the render size (16 to 63, not below what MetalFX's temporal scaler reaches), instead of the display's (the lowest from which the temporal scaler alone reaches the display); without a target (`steady_frame_rate`'s, with Vsync, or `dynamic_target_ms`), the main view drawn at that level all the time |
+| `dynamic_target_ms` | `<ms>`: an experiment, dynamic resolution's target instead of 90 % of `steady_frame_rate`'s frame time: each frame at the highest level expected to stay under that many milliseconds on the GPU |
 | `throttle` | `<hash>:<n>,...`: an experiment, a pipeline whose name holds that shader hash runs only every n-th present (0: never), to see what a shader costs and what it draws |
 | `frame_cadence` | `<ms>`: an experiment, each frame shown at least that long after the one before (25: 40 fps at 120 Hz), so the frame rate holds one step; wins over `steady_frame_rate` |
 | `drawable_count` | `2` or `3`: an experiment, how many images the window keeps to show; 2 lets fewer frames wait to be shown (latency; 3 with frame interpolation). `0`, the default: 2 at a cadence of 25 ms or more, else 3 |
@@ -274,9 +274,10 @@ reads input. In a window, macOS shows a frame about 21 ms after the GPU finishes
 would leave the GPU idle whenever a frame takes less than that. The driver also ends the wait once that frame is done
 on the GPU, the one before it is on screen, and the GPU is about to need the next frame (predicted from the last
 frames' GPU and CPU times). Frames then start when the GPU can take them, without queueing up. With
-`steady_frame_rate`, each drawable is presented with a minimum duration (two refreshes, one with frame
+`steady_frame_rate`, each drawable is presented with a minimum duration (the rate's refreshes, half as long with frame
 interpolation's frame in between), so the frame rate holds one step of the display's refresh instead of moving between
-them.
+them. With MetalFX it also turns on dynamic resolution, which draws the main view smaller when a frame would miss that
+step.
 
 **HDR.** On a display with EDR (brighter than SDR white), the surface also offers HDR10: `A2B10G10R10` in PQ with Rec.
 2020 primaries, which holds the game's absolute nits, and the game then shows its HDR settings (Display). Not scRGB:
@@ -364,7 +365,7 @@ share is in that folder's header too, under a heading that says so (`stages.h` f
 | `resources/format.mm` | Vulkan formats to Metal pixel and vertex formats |
 | `resources/descriptor.mm` | descriptor sets as argument buffers, pipeline layouts |
 | `resources/accel.mm` | acceleration structures for ray queries |
-| `resources/dynres.mm` | dynamic resolution (`dynamic_level`, an experiment): the images of the main view's size and its fractions, a texture per level in the same memory, the level's changes and choice |
+| `resources/dynres.mm` | dynamic resolution (`steady_frame_rate`; `dynamic_level`, an experiment): the images of the main view's size and its fractions, a texture per level in the same memory, the level's changes and choice |
 | `shaders/translate.mm`, `translate.h` | a shader stage's translation from SPIR-V to MSL |
 | `shaders/shadercache.mm` | the translation cache on disk and the background compile |
 | `shaders/corpus.mm` | the shader corpus (`shader_corpus`): translations recorded for the tests |

@@ -125,7 +125,7 @@ internal static class RenderScale
         _ours = new VkExtent2D(render.X, render.Y);
         __instance.ExtentOverride = _ours;
         // Through MetalFX, which takes the size drawn each frame
-        DynamicResolution.Register(Upscale.Wanted && Upscalable(_ours.Value) ? render : int2.Zero);
+        DynamicResolution.Register(Upscale.Wanted && Upscalable(_ours.Value) ? render : int2.Zero, Output);
     }
 
     // The main view's composite stretches the render size to the swapchain

@@ -1,5 +1,6 @@
-// Dynamic resolution (an experiment: dynamic_level, dynamic_target_ms): the main view drawn at a level of its size,
-// frame by frame, without the game rebuilding its targets.
+// Dynamic resolution: the main view drawn at a level of its size, frame by frame, without the game rebuilding its
+// targets. Steady Frame Rate turns it on (KSA_MTL_STEADY_FRAME_RATE, with MetalFX); the experiments dynamic_level and
+// dynamic_target_ms set its lowest level and its target instead.
 //
 // The hooks pass the main view's size after each rebuild (ksaMtlDynamicResolution). An image bound after it that is
 // drawn into and is that size or a fraction of it (fits) is dynamic: besides its texture at its own size it gets one
@@ -15,9 +16,12 @@
 // texture is bound through a copy whose textures are the frame's level's (kmtlDynamicTranslate, from any level's
 // texture to the image's or view's now), so frames still on the GPU read theirs unchanged and nothing waits for them.
 //
-// The level: dynamic_level (of kLevelSteps) from the start; with dynamic_target_ms, each frame the highest level whose
-// GPU time is expected to stay under that target, down to dynamic_level (chooseLevel), from the last frames' GPU times
-// (kmtlDynamicNoteFrame, as each present completes). Never below what MetalFX's temporal scaler reaches from its input.
+// The level: each frame the highest whose GPU time is expected to stay under the target (chooseLevel), from the last
+// frames' GPU times (kmtlDynamicNoteFrame, as each present completes). The target: 90 % of the cadence Steady Frame Rate
+// shows frames at (dynamic_target_ms instead). The lowest level: the lowest from which MetalFX scales the main view up to
+// the display no more than its temporal scaler reaches (3x on an M5), so the temporal scaler alone reaches the display
+// at every level and no spatial step softens the full level (dynamic_level instead; without a target, that level all
+// the time).
 #include "kmtl.h"
 #include <cmath>
 #include <map>
@@ -27,6 +31,7 @@ namespace {
 struct DynamicState {
     std::mutex m;
     uint32_t width = 0, height = 0;  // the main view's size (0: none)
+    std::atomic<uint32_t> outW{0}, outH{0};  // the display's: what MetalFX scales it up to (the main swapchain's size)
     std::atomic<uint32_t> level{0};  // the level now (0: full size); read at present without the lock
     uint32_t lowest = 0;             // the lowest level the frames take (0: none, dynamic resolution off)
     std::vector<KImage*> images;     // the dynamic images
@@ -58,6 +63,8 @@ static constexpr uint32_t kLevelSteps = 64, kMinLevel = 16;
 // CPU and no frame: down at once, up only when it has stayed well under the target); the target's grid of levels
 static constexpr double kFixedShare = 0.5;
 static constexpr uint32_t kDownFrames = 3, kUpFrames = 30, kLevelStep = 4;
+// Steady Frame Rate's target: this share of its cadence, leaving room for the frames that cost more than the last ones
+static constexpr double kCadenceShare = 0.9;
 
 // The setting's level (16 to 63; anything else: off)
 static uint32_t settingLevel() {
@@ -65,7 +72,11 @@ static uint32_t settingLevel() {
     return n >= kMinLevel && n < kLevelSteps ? n : 0u;
 }
 
-static double target() { return kmtlConfig().dynamicTargetMs; }
+// The target, in GPU milliseconds a frame (0: none, the level stays): dynamic_target_ms, else Steady Frame Rate's
+static double target() {
+    if (kmtlConfig().dynamicTargetMs > 0) return kmtlConfig().dynamicTargetMs;
+    return kmtlSteadyFps() && g_dyn.outW ? kCadenceShare * kmtlFrameMs(g_dyn.outW, g_dyn.outH) : 0;
+}
 
 static uint32_t scaled(uint32_t size, uint32_t level) {
     if (level == 0) return size;
@@ -420,7 +431,9 @@ uint32_t kmtlDynamicLevelNow() {
     return g_dyn.level.load(std::memory_order_relaxed);
 }
 
-void kmtlDynamicNoteFrame(uint32_t level, double gpuMs) {
+void kmtlDynamicNoteFrame(uint32_t level, double gpuMs, uint32_t width, uint32_t height) {
+    // The main window's frames only: a pop-out window's present would add a small sample at the same level
+    if (width != g_dyn.outW.load(std::memory_order_relaxed) || height != g_dyn.outH.load(std::memory_order_relaxed)) return;
     std::lock_guard<std::mutex> lock(g_dyn.samplesMutex);
     if (gpuMs <= 0) return;
     g_dyn.samples[g_dyn.sampleCount++ % 16] = {level, gpuMs};
@@ -493,18 +506,34 @@ float kmtlDynamicMinContent() {
 }
 
 extern "C" {
-// The hooks, after each rebuild of the main view's targets (and before they are made): its size (0 x 0: none). Only
-// with the setting's level: without, nothing is registered and nothing changes
-__attribute__((visibility("default"))) void ksaMtlDynamicResolution(uint32_t width, uint32_t height) {
+// The hooks, after each rebuild of the main view's targets (and before they are made): its size (0 x 0: none) and the
+// display's. Only with Steady Frame Rate (its cadence held: Vsync on) or the experiment's level: without, nothing is
+// registered and nothing changes
+__attribute__((visibility("default"))) void ksaMtlDynamicResolution(uint32_t width, uint32_t height, uint32_t outW,
+                                                                    uint32_t outH) {
     std::lock_guard<std::mutex> lock(g_dyn.m);
-    if (!settingLevel()) width = height = 0;
+    g_dyn.outW = outW;
+    g_dyn.outH = outH;
+    // Steady Frame Rate's, while its cadence holds (Vsync on); or the experiment's level
+    bool steady = kmtlSteadyFps() && kmtlFrameMs(outW, outH) > 0;
+    if (!settingLevel() && !steady) width = height = 0;
     g_dyn.width = width;
     g_dyn.height = height;
     // Not below what MetalFX's temporal scaler reaches from its input (3x on an M5): its output is made for the lowest,
     // one step over it, as a level's size is rounded
     float most = kmtlUpscaleMaxScale();
     uint32_t reach = most > 0 ? (uint32_t)std::ceil(kLevelSteps / most) + 1 : kMinLevel;
-    g_dyn.lowest = width && height ? std::max(settingLevel(), reach) : 0;
+    uint32_t lowest = settingLevel();
+    if (!lowest && width && height) {
+        // The display's: the lowest level whose size the temporal scaler takes to the display by itself (none: no room
+        // below the render size, the frame rate is held by the cadence alone)
+        // As upscale.mm's prepare() works out the temporal scaler's output: from the level's size, rounded
+        auto reaches = [&](uint32_t size, uint32_t out, uint32_t l) { return (uint32_t)(scaled(size, l) * most) >= out; };
+        lowest = kLevelSteps;
+        for (uint32_t l = kMinLevel; l < kLevelSteps && most > 0; l++)
+            if (reaches(width, outW, l) && reaches(height, outH, l)) { lowest = l; break; }
+    }
+    g_dyn.lowest = width && height ? std::max(lowest, reach) : 0;
     if (g_dyn.lowest >= kLevelSteps) g_dyn.lowest = g_dyn.width = g_dyn.height = 0;
     // With a target from the full size, without one at the lowest level. Images still there from before (a rebuild
     // that kept them) take it now, or the hooks' sizes and the textures would part
@@ -515,7 +544,9 @@ __attribute__((visibility("default"))) void ksaMtlDynamicResolution(uint32_t wid
         g_dyn.sampleCount = 0;
     }
     g_dyn.changedAt = g_dyn.frames;
-    KLOG(0, "dynamic resolution: main view %ux%u, level %u of %u, lowest %u", width, height, g_dyn.level.load(), kLevelSteps, g_dyn.lowest);
+    KLOG(0, "dynamic resolution: main view %ux%u to %ux%u, level %u of %u, lowest %u (%s), target %.1f ms", width, height,
+         outW, outH, g_dyn.level.load(), kLevelSteps, g_dyn.lowest, settingLevel() ? "dynamic_level" : "the display's",
+         g_dyn.width ? target() : 0.0);
 }
 
 // The main view's size at the level now: what the game's own sizes for it become
@@ -538,7 +569,9 @@ __attribute__((visibility("default"))) void ksaMtlImageSize(VkImage image, uint3
 __attribute__((visibility("default"))) void ksaMtlDynamicResolutionFrame(uint32_t* width, uint32_t* height, uint32_t* level) {
     std::lock_guard<std::mutex> lock(g_dyn.m);
     g_dyn.frames++;
-    uint32_t want = g_dyn.width && target() > 0 ? chooseLevel() : g_dyn.level.load();
+    // Without a target (Steady Frame Rate's cadence gone: Vsync off without a rebuild): the experiment's level, or the
+    // full size
+    uint32_t want = !g_dyn.width ? g_dyn.level.load() : target() > 0 ? chooseLevel() : settingLevel() ? g_dyn.lowest : 0;
     if (g_dyn.width && !g_dyn.prepared && !g_dyn.images.empty()) {
         auto t0 = std::chrono::steady_clock::now();
         std::vector<uint32_t> levels = target() > 0 ? levelGrid() : std::vector<uint32_t>{0, g_dyn.lowest};

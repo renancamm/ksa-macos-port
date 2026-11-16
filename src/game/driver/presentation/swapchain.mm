@@ -6,6 +6,9 @@
 #include <chrono>
 #include <algorithm>
 #include <thread>
+#include <cmath>
+#include <mutex>
+#include <vector>
 
 // KSA_MTL_LATENCY=<csv>, and the benchmark's drain while it is open (shown records, diagnostics/drain.mm): per present,
 // when its frame began (the game's wait for an earlier present returned, or else the previous present), when it was
@@ -107,19 +110,50 @@ static double displayRefresh(CAMetalLayer* layer) {
     }
 }
 
-// A swapchain's cadence and drawables. KSA_MTL_STEADY_FRAME_RATE (with Vsync): half the refresh rate of the display the
-// window is on, 60 fps at 120 Hz, again whenever the window moves to another display or a display changes;
-// KSA_MTL_FRAME_CADENCE sets the interval itself. 2 drawables hold the display queue to one frame: at 25 ms a frame or
-// more (40 fps or less), one frame less latency with the same cadence; at 60 fps the game blocks on a drawable and
-// misses slots, so 3 (KSA_MTL_DRAWABLE_COUNT=2 or 3 decides instead). Frame interpolation takes two drawables in one
-// present, so it needs 3
+// Steady Frame Rate's rate (KSA_MTL_STEADY_FRAME_RATE: 30, 40 or 60; 0: off)
+int kmtlSteadyFps() {
+    const char* v = kmtlConfig().steadyFrameRate;
+    int fps = v ? atoi(v) : 0;
+    return fps == 30 || fps == 40 || fps == 60 ? fps : 0;
+}
+
+// The live swapchains, for the cadence of the main view's (kmtlCadenceMs)
+static std::mutex g_swapchainsMutex;
+static std::vector<KSwapchain*> g_swapchains;
+
+// A swapchain's cadence and drawables. KSA_MTL_STEADY_FRAME_RATE (with Vsync): its rate, as whole refresh intervals of
+// the display the window is on, never faster (60 fps at 60 or 120 Hz, 40 at 120 Hz and 30 at 60 Hz, 30 at either), again
+// whenever the window moves to another display or a display changes; KSA_MTL_FRAME_CADENCE sets the interval itself.
+// 2 drawables hold the display queue to one frame: at 25 ms a frame or more (40 fps or less), one frame less latency
+// with the same cadence; at 60 fps the game blocks on a drawable and misses slots, so 3 (KSA_MTL_DRAWABLE_COUNT=2 or 3
+// decides instead). Frame interpolation takes two drawables in one present, so it needs 3
 static void applyCadence(KSwapchain* sc) {
     CAMetalLayer* layer = sc->surface->layer;
-    sc->cadenceMs = kmtlConfig().frameCadence > 0 ? kmtlConfig().frameCadence
-                  : kmtlConfig().steadyFrameRate && sc->vsync ? 2000.0 / displayRefresh(layer) : 0;
+    double cadence = 0, frame = 0;
+    if (kmtlConfig().frameCadence > 0) {
+        cadence = frame = kmtlConfig().frameCadence;
+    } else if (int fps = kmtlSteadyFps(); fps && sc->vsync) {
+        double hz = displayRefresh(layer);
+        double refreshes = std::max(1.0, std::ceil(hz / fps - 1e-3));
+        // Frame interpolation shows two images a frame, each for half of it: whole refreshes only for an even count
+        if (kmtlConfig().frameInterpolation && std::fmod(refreshes, 2.0) != 0) refreshes += 1;
+        frame = refreshes * 1000.0 / hz;
+        // One refresh is what Vsync does by itself: no pacing then, only the frame time for dynamic resolution
+        cadence = refreshes > 1 ? frame : 0;
+    }
+    sc->cadenceMs = cadence;
+    sc->frameMs = frame;
     int forced = kmtlConfig().drawableCount;
     bool two = forced == 2 || (forced != 3 && sc->cadenceMs >= 25);
     layer.maximumDrawableCount = two && !kmtlConfig().frameInterpolation ? 2 : 3;
+}
+
+// The frame time the cadence holds, of the newest swapchain of this size: the main view's output (0: none, or no cadence)
+double kmtlFrameMs(uint32_t width, uint32_t height) {
+    std::lock_guard<std::mutex> lock(g_swapchainsMutex);
+    for (auto it = g_swapchains.rbegin(); it != g_swapchains.rend(); ++it)
+        if ((*it)->extent.width == width && (*it)->extent.height == height) return (*it)->frameMs;
+    return 0;
 }
 
 static void applyHdrMetadata() {  // g_hdrMutex held
@@ -202,12 +236,13 @@ VKFN(VkResult) vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfo
     layer.drawableSize = CGSizeMake(ci->imageExtent.width, ci->imageExtent.height);
     sc->vsync = ci->presentMode == VK_PRESENT_MODE_FIFO_KHR || ci->presentMode == VK_PRESENT_MODE_FIFO_RELAXED_KHR;
     applyCadence(sc);
-    if (kmtlConfig().steadyFrameRate && kmtlConfig().frameCadence <= 0 && sc->vsync) {
+    if (kmtlSteadyFps() && kmtlConfig().frameCadence <= 0 && sc->vsync) {
         // The game makes a new swapchain only when the window's size changes. Both on the main thread, as the presents
         NSNotificationCenter* center = NSNotificationCenter.defaultCenter;
         auto again = ^(NSNotification*) {
             applyCadence(sc);
-            KLOG(1, "swapchain: cadence %.2f ms, %lu drawables", sc->cadenceMs, (unsigned long)layer.maximumDrawableCount);
+            KLOG(1, "swapchain: cadence %.2f ms, frame %.2f ms, %lu drawables", sc->cadenceMs, sc->frameMs,
+                 (unsigned long)layer.maximumDrawableCount);
         };
         sc->observers = @[
             [center addObserverForName:NSWindowDidChangeScreenNotification object:layerWindow(layer)
@@ -224,6 +259,10 @@ VKFN(VkResult) vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfo
     KLOG(1, "swapchain %ux%u format %d colour space %d present mode %d, %u images, %lu drawables, cadence %.2f ms",
          ci->imageExtent.width, ci->imageExtent.height, ci->imageFormat, ci->imageColorSpace, ci->presentMode, count,
          (unsigned long)layer.maximumDrawableCount, sc->cadenceMs);
+    {
+        std::lock_guard<std::mutex> lock(g_swapchainsMutex);
+        g_swapchains.push_back(sc);
+    }
     *out = (VkSwapchainKHR)sc;
     return VK_SUCCESS;
 }
@@ -233,6 +272,10 @@ VKFN(void) vkDestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain, cons
     if (!sc) return;
     vkDeviceWaitIdle(device);
     for (id observer in sc->observers) [NSNotificationCenter.defaultCenter removeObserver:observer];
+    {
+        std::lock_guard<std::mutex> lock(g_swapchainsMutex);
+        g_swapchains.erase(std::remove(g_swapchains.begin(), g_swapchains.end(), sc), g_swapchains.end());
+    }
     kmtlOnSwapchainDestroyed(sc);
     for (auto* img : sc->images) kmtlDestroyImage(img);
     delete sc;
@@ -432,13 +475,14 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
                 }
                 bool shownAtEnd = !drawable;
                 uint32_t level = kmtlDynamicLevelNow();  // dynamic resolution's level of this frame
+                VkExtent2D extent = sc->extent;
                 [cb addCompletedHandler:^(id<MTLCommandBuffer> c) {
                     std::lock_guard<std::mutex> lock(state->m);
                     // The frame's own GPU time: its work up to this command buffer, which completes in order after it
                     // (kmtlNoteGpuTime, the handler before, counted this buffer)
                     double ms = kmtlTakeFrameGpuTime() * 1e3;
                     state->gpuMs[state->gpuSamples++ % 8] = ms;
-                    kmtlDynamicNoteFrame(level, ms);
+                    kmtlDynamicNoteFrame(level, ms, extent.width, extent.height);
                     if (kmtlDrainOn()) kmtlDrainFrameGpu(counted, CACurrentMediaTime(), ms);
                     if (KPresentState::Frame* f = findFrame(*state, n)) {
                         f->gpuDone = true;
@@ -449,7 +493,7 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
                     state->cv.notify_all();
                 }];
                 bool late = kmtlConfig().lateFrameStart > 0 && !kmtlConfig().frameInterpolation;
-                double cadence = late ? sc->cadenceMs : 0;
+                double cadence = late ? sc->frameMs : 0;  // also at one refresh, which isn't paced
                 double step = kmtlConfig().lateFrameStart;
                 if (drawable) [drawable addPresentedHandler:^(id<MTLDrawable> d) {
                     std::lock_guard<std::mutex> lock(state->m);

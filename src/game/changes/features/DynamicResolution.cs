@@ -24,12 +24,13 @@ namespace KsaMetal.Hooks.Features;
 // and MetalFX's input and jitter (RenderScale, Upscale), the bloom's last step (RenderScale), and the sizes that the
 // clouds, the ambient occlusion, the exhausts, the atmosphere and the screen-space particles keep from their last
 // rebuild and pass to their shaders, and the cockpit's ray tracing's image sizes (below). The driver picks each
-// frame's level when the frame starts (Program.Render, before the camera data and any of its commands), by the
-// experiment's settings (dynamic_level, dynamic_target_ms); without them nothing registers and nothing changes.
+// frame's level when the frame starts (Program.Render, before the camera data and any of its commands), by Steady
+// Frame Rate's cadence (or the experiments dynamic_level, dynamic_target_ms); without them nothing registers and
+// nothing changes.
 internal static class DynamicResolution
 {
     [DllImport("libvulkan.1.dylib")]
-    private static extern void ksaMtlDynamicResolution(uint width, uint height);
+    private static extern void ksaMtlDynamicResolution(uint width, uint height, uint outputWidth, uint outputHeight);
 
     [DllImport("libvulkan.1.dylib")]
     private static extern void ksaMtlDynamicResolutionSize(out uint width, out uint height, out uint level);
@@ -48,14 +49,16 @@ internal static class DynamicResolution
 
     public static bool Active => _render != int2.Zero && _level != _render;
 
-    // After each rebuild of the main view's targets (before they are made): its render size (zero: none)
-    public static void Register(int2 render)
+    // After each rebuild of the main view's targets (before they are made): its render size (zero: none) and the size
+    // MetalFX scales it up to
+    public static void Register(int2 render, int2 output)
     {
         try
         {
-            ksaMtlDynamicResolution((uint)Math.Max(render.X, 0), (uint)Math.Max(render.Y, 0));
+            ksaMtlDynamicResolution((uint)Math.Max(render.X, 0), (uint)Math.Max(render.Y, 0), (uint)Math.Max(output.X, 0),
+                (uint)Math.Max(output.Y, 0));
             ksaMtlDynamicResolutionSize(out uint w, out uint h, out uint level);
-            // The driver registers only with an experiment's level: otherwise nothing changes here either
+            // The driver registers only with Steady Frame Rate or the experiment's level: otherwise nothing changes here either
             _render = w > 0 && h > 0 ? render : int2.Zero;
             Take(w, h, level);
             if (Active)
@@ -77,7 +80,7 @@ internal static class DynamicResolution
     private static void RebuildPrefix()
     {
         if (_render != int2.Zero && !RenderScale.OwnsExtent(Program.GetRenderer()))
-            Register(int2.Zero);
+            Register(int2.Zero, int2.Zero);
     }
 
     // Program.Render's prefix: this frame's level

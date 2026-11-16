@@ -43,6 +43,7 @@ struct KSwapchain {
     VkExtent2D extent{};
     bool vsync = false;
     double cadenceMs = 0;  // each image shown at least this long after the one before (0: as soon as Vsync allows)
+    double frameMs = 0;    // the game's frame time the cadence holds (dynamic resolution's target): also at one refresh
     NSArray* observers = nil;  // display changes that set the cadence again (swapchain.mm)
 };
 

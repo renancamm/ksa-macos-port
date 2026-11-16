@@ -260,9 +260,10 @@ static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uin
         MTLFXTemporalScalerDescriptor* td = [MTLFXTemporalScalerDescriptor new];
         float most = [MTLFXTemporalScalerDescriptor supportedInputContentMaxScaleForDevice:d];
         // With dynamic resolution, the content can shrink to minContent of the input: the temporal scaler's output is
-        // as far as it scales from there, and the spatial one takes it the rest of the way
-        uint32_t midW = std::min(outW, std::max(inW, (uint32_t)(inW * minContent * most)));
-        uint32_t midH = std::min(outH, std::max(inH, (uint32_t)(inH * minContent * most)));
+        // as far as it scales from there (the lowest level's size rounded as dynres.mm rounds it), and the spatial one
+        // takes it the rest of the way
+        uint32_t midW = std::min(outW, std::max(inW, (uint32_t)(std::round(inW * minContent) * most)));
+        uint32_t midH = std::min(outH, std::max(inH, (uint32_t)(std::round(inH * minContent) * most)));
         bool rest = midW != outW || midH != outH;
         td.colorTextureFormat = colorFormat;
         td.depthTextureFormat = MTLPixelFormatDepth32Float;
@@ -273,7 +274,10 @@ static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uin
         if (minContent < 1) {
             td.inputContentPropertiesEnabled = YES;
             td.inputContentMinScale = std::max(1.f, (float)midW / inW);
-            td.inputContentMaxScale = std::max(td.inputContentMinScale, std::min(most, (float)midW / (inW * minContent)));
+            // From the lowest level's size rounded down: a level's size may round below inW * minContent
+            float least = std::max((float)midW / std::max(1.f, std::floor(inW * minContent)),
+                                   (float)midH / std::max(1.f, std::floor(inH * minContent)));
+            td.inputContentMaxScale = std::max(td.inputContentMinScale, std::min(most, least));
         }
         // The game's own exposure, passed each frame (exposureTexture): with MetalFX's estimate, in dark views such as
         // stars against space, faint stars came out as short streaks and a third of them dropped out
