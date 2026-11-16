@@ -373,7 +373,7 @@ internal static class Tests
         var quality = TabPresets.Find("quality")!;
         Equal("off", TabPresets.Port(quality)["upscaling"], "Quality's upscaling");
         Check(!TabPresets.Port(quality).ContainsKey("render_scale"), "no render scale without upscaling");
-        Equal("0.75", TabPresets.Port(TabPresets.Find("balanced")!)["render_scale"], "Balanced's render scale");
+        Equal("1.0", TabPresets.Port(TabPresets.Find("balanced")!)["render_scale"], "Balanced's render scale");
         var small = TabPresets.GameValues(quality, true)!;
         foreach (var (field, key, atMost) in AutoMemorySaving.SmallGame)
         {

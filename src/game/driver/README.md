@@ -45,7 +45,7 @@ These switches turn a feature off or change a default, to work around a problem 
 | `frame_interpolation` | on: frame interpolation ([MetalFX](#from-vulkan-to-metal)) |
 | `hdr_output` | off: offer the game no HDR output ([Presentation](#from-vulkan-to-metal)): its HDR settings (Display) stay hidden |
 | `vsync_pacing` | off: with Vsync, the game's wait for an earlier frame ends only when the display shows it ([Presentation](#from-vulkan-to-metal)); in a window, frames that take less than about 23 ms on the GPU then run slower |
-| `steady_frame_rate` | `30`, `40` or `60`, with Vsync: each game frame shown at least that rate's whole refreshes of the display the window is on after the one before, never faster (40 is 30 at 60 Hz; an even count with frame interpolation; one refresh is Vsync's own, unpaced), set again when the window moves to another display; at 40 fps or less with two drawables instead of three, one frame less latency (three with frame interpolation) ([Presentation](#from-vulkan-to-metal)). With MetalFX, dynamic resolution too, aiming at 90 % of that frame time on the GPU (`resources/dynres.mm`) |
+| `steady_frame_rate` | `30`, `40` or `60`, with Vsync: each game frame shown at least that rate's whole refreshes of the display the window is on after the one before, never faster (40 is 30 at 60 Hz; an even count with frame interpolation; one refresh is Vsync's own, unpaced), set again when the window moves to another display; at 40 fps or less with two drawables instead of three, one frame less latency (three with frame interpolation) ([Presentation](#from-vulkan-to-metal)). With MetalFX, dynamic resolution too, aiming at 90 % of that frame time on the GPU (`resources/dynres.mm`), and the next slower rate when even its lowest level can't hold it, the faster one back when the lowest is expected to (GPU times at the full clock: `resources/gpuclock.mm`) |
 
 ## Build
 
@@ -277,7 +277,9 @@ frames' GPU and CPU times). Frames then start when the GPU can take them, withou
 `steady_frame_rate`, each drawable is presented with a minimum duration (the rate's refreshes, half as long with frame
 interpolation's frame in between), so the frame rate holds one step of the display's refresh instead of moving between
 them. With MetalFX it also turns on dynamic resolution, which draws the main view smaller when a frame would miss that
-step.
+step, and takes the next slower rate when even its lowest level would. Paced frames leave the GPU idle, and macOS then
+lowers its clock until the frame just fits its slot, so a frame's GPU time no longer shows its work: dynamic resolution
+scales each one by the GPU's clock, read from macOS's IOReport as Activity Monitor does, to its time at the full clock.
 
 **HDR.** On a display with EDR (brighter than SDR white), the surface also offers HDR10: `A2B10G10R10` in PQ with Rec.
 2020 primaries, which holds the game's absolute nits, and the game then shows its HDR settings (Display). Not scRGB:
@@ -365,7 +367,8 @@ share is in that folder's header too, under a heading that says so (`stages.h` f
 | `resources/format.mm` | Vulkan formats to Metal pixel and vertex formats |
 | `resources/descriptor.mm` | descriptor sets as argument buffers, pipeline layouts |
 | `resources/accel.mm` | acceleration structures for ray queries |
-| `resources/dynres.mm` | dynamic resolution (`steady_frame_rate`; `dynamic_level`, an experiment): the images of the main view's size and its fractions, a texture per level in the same memory, the level's changes and choice |
+| `resources/dynres.mm` | dynamic resolution (`steady_frame_rate`; `dynamic_level`, an experiment): the images of the main view's size and its fractions, a texture per level in the same memory, the level's changes and choice, the rate's steps |
+| `resources/gpuclock.mm` | the GPU's clock from IOReport, for dynamic resolution's GPU times under paced frames |
 | `shaders/translate.mm`, `translate.h` | a shader stage's translation from SPIR-V to MSL |
 | `shaders/shadercache.mm` | the translation cache on disk and the background compile |
 | `shaders/corpus.mm` | the shader corpus (`shader_corpus`): translations recorded for the tests |

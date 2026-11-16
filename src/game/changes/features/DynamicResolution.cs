@@ -30,7 +30,8 @@ namespace KsaMetal.Hooks.Features;
 internal static class DynamicResolution
 {
     [DllImport("libvulkan.1.dylib")]
-    private static extern void ksaMtlDynamicResolution(uint width, uint height, uint outputWidth, uint outputHeight);
+    private static extern void ksaMtlDynamicResolution(uint width, uint height, uint outputWidth, uint outputHeight,
+        uint leastWidth, uint leastHeight);
 
     [DllImport("libvulkan.1.dylib")]
     private static extern void ksaMtlDynamicResolutionSize(out uint width, out uint height, out uint level);
@@ -49,14 +50,14 @@ internal static class DynamicResolution
 
     public static bool Active => _render != int2.Zero && _level != _render;
 
-    // After each rebuild of the main view's targets (before they are made): its render size (zero: none) and the size
-    // MetalFX scales it up to
-    public static void Register(int2 render, int2 output)
+    // After each rebuild of the main view's targets (before they are made): its render size (zero: none), the size
+    // MetalFX scales it up to, and the least size a level may have (zero: the driver's rule, from the display)
+    public static void Register(int2 render, int2 output, int2 least)
     {
         try
         {
             ksaMtlDynamicResolution((uint)Math.Max(render.X, 0), (uint)Math.Max(render.Y, 0), (uint)Math.Max(output.X, 0),
-                (uint)Math.Max(output.Y, 0));
+                (uint)Math.Max(output.Y, 0), (uint)Math.Max(least.X, 0), (uint)Math.Max(least.Y, 0));
             ksaMtlDynamicResolutionSize(out uint w, out uint h, out uint level);
             // The driver registers only with Steady Frame Rate or the experiment's level: otherwise nothing changes here either
             _render = w > 0 && h > 0 ? render : int2.Zero;
@@ -80,7 +81,7 @@ internal static class DynamicResolution
     private static void RebuildPrefix()
     {
         if (_render != int2.Zero && !RenderScale.OwnsExtent(Program.GetRenderer()))
-            Register(int2.Zero, int2.Zero);
+            Register(int2.Zero, int2.Zero, int2.Zero);
     }
 
     // Program.Render's prefix: this frame's level

@@ -124,8 +124,10 @@ internal static class RenderScale
         Scaled = render != Window;
         _ours = new VkExtent2D(render.X, render.Y);
         __instance.ExtentOverride = _ours;
-        // Through MetalFX, which takes the size drawn each frame
-        DynamicResolution.Register(Upscale.Wanted && Upscalable(_ours.Value) ? render : int2.Zero, Output);
+        // Through MetalFX, which takes the size drawn each frame. With Spatial, which keeps no history to fill in, the
+        // levels go no lower than half the window, the Performance card's size before dynamic resolution
+        DynamicResolution.Register(Upscale.Wanted && Upscalable(_ours.Value) ? render : int2.Zero, Output,
+            Upscale.Spatial ? new int2((Window.X + 1) / 2, (Window.Y + 1) / 2) : int2.Zero);
     }
 
     // The main view's composite stretches the render size to the swapchain
