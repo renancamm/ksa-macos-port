@@ -75,7 +75,8 @@ internal static class FarTerrain
     // A level smaller than this stays built near the body with the window (the coarse ones, a few MB together)
     private const long SmallBytes = 8L << 20;
 
-    private sealed class Collection(PlanetMeshCollection meshes, List<Celestial> bodies, bool raytraced, bool home, bool ocean)
+    private sealed class Collection(PlanetMeshCollection meshes, List<Celestial> bodies, bool raytraced, bool cpuMemory, bool home,
+        bool ocean)
     {
         public readonly PlanetMeshCollection Meshes = meshes;
         // Its levels, coarsest first: the cube meshes its references resolved to when the content loaded (a cube mesh is
@@ -85,6 +86,9 @@ internal static class FarTerrain
         public readonly bool Ocean = ocean;
         // Loading asked for an acceleration structure of the finest level (a body with ground clutter), never an ocean's
         public readonly bool Raytraced = raytraced;
+        // Loading asked for the finest level's acceleration structure or BVH outside device-local memory (since KSA 5901
+        // with AccelerationStructure, PrioritizeMemoryOverTracePerformance)
+        public readonly bool CpuMemory = cpuMemory;
         public readonly bool Home = home;
         // The level always built, its smallest; the finest when clutter places with a BVH
         public int Kept;
@@ -166,7 +170,8 @@ internal static class FarTerrain
             var homeBody = system.HomeBody as Celestial;
             bool home = isOcean ? OceanId(homeBody) == __instance.Id : homeBody?.BodyTemplate?.MeshCollection?.Value == __instance;
             bool raytraced = !isOcean && (flags & PlanetMeshLibrary.GenerateFlags.AccelerationStructure) != 0;
-            Collections[__instance] = new Collection(__instance, isOcean ? ocean : terrain, raytraced, home, isOcean);
+            bool cpuMemory = (flags & PlanetMeshLibrary.GenerateFlags.PrioritizeMemoryOverTracePerformance) != 0;
+            Collections[__instance] = new Collection(__instance, isOcean ? ocean : terrain, raytraced, cpuMemory, home, isOcean);
             _system = system;
             if (isOcean || !home && RayQueries)
                 flags &= ~PlanetMeshLibrary.GenerateFlags.AccelerationStructure;
@@ -667,7 +672,7 @@ internal static class FarTerrain
     {
         var levels = c.Levels;
         int finest = levels.Length - 1;
-        bool raytraced = c.Raytraced, ocean = c.Ocean;
+        bool raytraced = c.Raytraced, cpuMemory = c.CpuMemory, ocean = c.Ocean;
         var renderer = Program.GetRenderer();
         var result = new TaskCompletionSource<CubeMesh?[]>(TaskCreationOptions.RunContinuationsAsynchronously);
         var thread = new Thread(() =>
@@ -678,7 +683,7 @@ internal static class FarTerrain
                 Parallel.ForEach(build, i =>
                 {
                     built[i] = new CubeMesh { Mesh = null!, Id = levels[i].Id, BaseLayer = levels[i].BaseLayer, Layers = levels[i].Layers };
-                    built[i]!.Generate(renderer, raytraced && i == finest);
+                    built[i]!.Generate(renderer, raytraced && i == finest, cpuMemory);
                     if (ocean)
                         DropOceanBuffers(built[i]!);
                 });

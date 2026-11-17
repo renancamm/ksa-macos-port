@@ -81,7 +81,6 @@ skip_unused_outlines | bool | true | | restart | hooks:OutlineSkip | | | | Skip 
 skip_unused_overlays | bool | true | | restart | hooks:OverlaySkip | | | | Skip Unused Overlays | Draws gizmos and orbit lines only on frames that have some.
 skip_unused_ocean_blending | bool | true | | restart | hooks:OceanBlending | | | | Skip Unused Ocean Blending | Below 9 km, skips a step of drawing the ocean that only views from higher up need.
 skip_hidden_crew_portraits | bool | true | | live | hooks:CrewPortraits | | | | Skip Hidden Crew Portraits | Draws the crew panel's portraits only while the panel is open.
-skip_unused_aero_meshes | bool | true | | restart | hooks:AeroMeshSkip | | | | Skip Unused Aero Meshes | Builds a vessel's aerodynamic mesh only in the Vehicle Editor and while Draw Aero Mesh is on. Less work at staging and breakups.
 shared_shadow_samples | bool | true | | restart | driver | | | | Shared Shadow Samples | Neighbouring pixels share the work of terrain shadows. A little faster near the ground.
 iva_ray_search | bool | true | ray_tracing | restart | driver | | | | IVA Ray Search | With IVA Ray Tracing (Graphics), the cockpit's rays use a faster search. The cockpit draws about 6 % faster.
 vsync_pacing | bool | true | game:vsync | restart | driver | | | | Vsync Pacing | With Vsync, starts each frame as soon as the GPU is ready for it. A higher frame rate in a window.
