@@ -20,6 +20,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -123,8 +124,8 @@ struct KStallTimer {
 // locals) stay in that function.
 //
 // Threads and locks. The game calls in from several threads; Metal's completion handlers, Core Animation's presented
-// handlers and the driver's own threads (the pipeline workers, the GPU clock's sampler, the screenshot and pass dump
-// writers) run on threads of their own. A lock is taken only while every lock held is above it here (outermost
+// handlers and the driver's own threads (the pipeline workers, the shader prewarm's, the GPU clock's sampler, the
+// screenshot and pass dump writers) run on threads of their own. A lock is taken only while every lock held is above it here (outermost
 // first); two locks on the same line are never held together:
 //   1. g_fr.m (presentation/framerate.mm)
 //   2. g_dyn.m (resources/dynres.mm)
@@ -246,6 +247,11 @@ struct KDevice : KDispatchable {
         id<MTLBuffer> scratch = nil;
         std::mutex mutex;
     } tess;
+    // The shader prewarm's threads (shaders/shadercache.mm): told to stop and joined before the device goes
+    struct Prewarm {
+        std::atomic<bool> stop{false};
+        std::vector<std::thread> threads;
+    } prewarm;
     id<MTLBuffer> timestampScratch = nil;  // target of the fill in timestamp encoders (made with the device)
 
     void addResident(id<MTLAllocation> a);

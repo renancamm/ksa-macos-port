@@ -34,9 +34,9 @@ struct DynamicState {
     // Every level's texture of a dynamic image or view, by resource ID: what a descriptor's texture is now
     struct Owner { KImage* image; KImageView* view; };
     std::unordered_map<uint64_t, Owner> owners;
-    KDevice* device = nullptr;
     uint64_t changes = 0;
-    // The level change's resampling: a pipeline per pixel format
+    // The level change's resampling: a pipeline per pixel format, made with the system's Metal device (every Vulkan
+    // device's)
     id<MTLLibrary> library = nil;
     std::unordered_map<NSUInteger, id<MTLRenderPipelineState>> resample;
 };
@@ -162,7 +162,6 @@ static id<MTLTexture> viewAt(KImageView* v, uint32_t level, id<MTLTexture> tex) 
 void kmtlDynamicBind(KImage* img) {
     img->full = img->mtl;
     std::lock_guard<std::mutex> lock(g_dyn.m);
-    if (!g_dyn.device) g_dyn.device = img->device;
     if (!fits(img->info, g_dyn.width, g_dyn.height)) return;
     img->dynamic = true;
     img->mainW = g_dyn.width;
@@ -351,10 +350,11 @@ static void prepareLevels(const std::vector<uint32_t>& levels) {
     }
 }
 
-// The change of level, between frames (under g_dyn.m)
+// The change of level, between frames (under g_dyn.m). The images are the main view's, of the game's device: the
+// carries go to its queue
 static void changeLevel(uint32_t level) {
-    KDevice* dev = g_dyn.device;
-    if (!dev) { g_dyn.level = level; return; }
+    if (g_dyn.images.empty()) { g_dyn.level = level; return; }
+    KDevice* dev = g_dyn.images.front()->device;
     auto t0 = std::chrono::steady_clock::now();
     struct Carry { id<MTLTexture> from, to; id<MTLRenderPipelineState> ps; };
     std::vector<Carry> carries;
