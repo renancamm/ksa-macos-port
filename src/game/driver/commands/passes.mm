@@ -62,13 +62,15 @@ static void setAttachmentTexture(MTLRenderPassAttachmentDescriptor* a, KImageVie
 }
 
 // Dynamic resolution (dynres.mm): a pass that draws into dynamic images draws at their level. The viewports and scissors
-// the game sets at the images' own size are scaled by it (state.mm), and the pass is as large as its textures
+// the game sets at the images' own size are scaled by it (state.mm)
 static void scaleForAttachment(KCommandBuffer* cb, const KImageView* v, bool* found) {
     if (*found || !v || !v->image || !v->image->dynamic) return;
     *found = true;
     kmtlDynamicScale(v->image, &cb->pass.viewportScale[0], &cb->pass.viewportScale[1]);
 }
 
+// Every pass, a render pass or dynamic rendering, is at most as large as each of its colour and depth attachments'
+// textures (Metal rejects a larger one; a dynamic image's texture at a level is smaller than the image)
 static void fitToAttachment(const KImageView* v, uint32_t* w, uint32_t* h) {
     if (!v || !v->mtl) return;
     *w = std::min<uint32_t>(*w, (uint32_t)v->mtl.width);
@@ -126,11 +128,9 @@ VKFN(void) vkCmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPas
     for (int c : sp.colors)
         if (c >= 0 && c < (int)viewCount) scaleForAttachment(cb, views[c], &found);
     if (sp.depth >= 0 && sp.depth < (int)viewCount) scaleForAttachment(cb, views[sp.depth], &found);
-    if (found) {
-        for (int c : sp.colors)
-            if (c >= 0 && c < (int)viewCount) fitToAttachment(views[c], &w, &h);
-        if (sp.depth >= 0 && sp.depth < (int)viewCount) fitToAttachment(views[sp.depth], &w, &h);
-    }
+    for (int c : sp.colors)
+        if (c >= 0 && c < (int)viewCount) fitToAttachment(views[c], &w, &h);
+    if (sp.depth >= 0 && sp.depth < (int)viewCount) fitToAttachment(views[sp.depth], &w, &h);
     d.renderTargetWidth = w;
     d.renderTargetHeight = h;
     if (fb->layers > 1) d.renderTargetArrayLength = fb->layers;
@@ -183,8 +183,7 @@ VKFN(void) vkCmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingI
         MTLRenderPassColorAttachmentDescriptor* ca = d.colorAttachments[i];
         setRenderingAttachment(ca, a, resuming);
         ca.clearColor = kmtlClearColor(v->format, a.clearValue.color);
-        w = std::min<uint32_t>(w, (uint32_t)v->mtl.width);
-        h = std::min<uint32_t>(h, (uint32_t)v->mtl.height);
+        fitToAttachment(v, &w, &h);
     }
     if (ri->pDepthAttachment && ri->pDepthAttachment->imageView) {
         auto* v = (KImageView*)ri->pDepthAttachment->imageView;
@@ -192,8 +191,7 @@ VKFN(void) vkCmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingI
         d.depthAttachment.clearDepth = ri->pDepthAttachment->clearValue.depthStencil.depth;
         if (ri->pDepthAttachment->resolveMode == VK_RESOLVE_MODE_MIN_BIT) d.depthAttachment.depthResolveFilter = MTLMultisampleDepthResolveFilterMin;
         else if (ri->pDepthAttachment->resolveMode == VK_RESOLVE_MODE_MAX_BIT) d.depthAttachment.depthResolveFilter = MTLMultisampleDepthResolveFilterMax;
-        w = std::min<uint32_t>(w, (uint32_t)v->mtl.width);
-        h = std::min<uint32_t>(h, (uint32_t)v->mtl.height);
+        fitToAttachment(v, &w, &h);
     }
     if (ri->pStencilAttachment && ri->pStencilAttachment->imageView) {
         const KFormatInfo* fi = kmtlFormat(((KImageView*)ri->pStencilAttachment->imageView)->image->format);
