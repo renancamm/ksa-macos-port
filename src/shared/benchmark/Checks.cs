@@ -183,6 +183,17 @@ public static class Checks
             yield return Note("probe-cost", $"measured with probes that cost the game time ({string.Join(", ", costly)}): their own cost is in the numbers");
         foreach (var e in run.Events.Where(e => e.Type == "disturbed"))
             yield return Note("disturbed", $"{(e.Pass > 1 ? $"pass {e.Pass}: " : "")}{e.Scenario} {e.Part}: left out of the numbers, {e.Text}");
+        // The game cut the warp the script asked for, as it does in a player's game (KSA 5901: a vessel's probe core
+        // power, its crew's supplies or radiation); the director asked for the speed again at once and made up the game
+        // time, but the parts' warp numbers carry the stop
+        var stops = run.Events.Where(e => e.Type == "warp-stopped").ToList();
+        if (stops.Count > 0)
+        {
+            var where = stops.Select(e => $"{(e.Pass > 1 ? $"pass {e.Pass}: " : "")}{e.Scenario}{(e.Part != null ? $" {e.Part}" : "")}").Distinct();
+            yield return Note("warp-stopped", $"the game stopped time warp {stops.Count} {(stops.Count == 1 ? "time" : "times")} " +
+                                              $"({string.Join(", ", where)}), as for a vessel's probe core power, its crew's supplies or radiation: " +
+                                              "the benchmark asked for the speed again at once and made up the game time, but the warp numbers there carry the stop");
+        }
     }
 
     // macOS's memory pressure, swap and a busy GPU, as the host saw them

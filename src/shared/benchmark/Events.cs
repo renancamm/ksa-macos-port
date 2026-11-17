@@ -26,6 +26,9 @@
 //   trigger    a trigger's rule ran (Triggers.cs): Scenario, Part (a part, or a checkpoint's screenshot), Text the rule
 //              and why
 //   disturbed  a trigger's heavy work went on while a part measured, which leaves the numbers: Scenario, Part, Text
+//   warp-stopped  the game cut the warp the director asked for (KSA 5901: a vessel's probe core power, its crew's
+//              supplies or radiation), asked for again: Scenario, Part the window open then, Game, Value the speed
+//              asked
 //   window     the window probe asks for a picture of the game's window: Scenario, Part the screenshot's name, Value the
 //              window's number
 //   windowed   benchmark.sh's answer, the picture taken or not: Scenario, Part, Text its file
