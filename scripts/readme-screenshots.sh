@@ -27,8 +27,10 @@ done
 
 # The game's settings, on a fresh install's. The card picked last is Game Defaults, so that the scenario's click turns
 # Quality's card gold: a click on the card the settings are based on leaves it as it is. The tab's picture then shows
-# Quality's values as pending changes.
-SETTINGS=(--defaults --tab-preset quality --port upscaling=metalfx --port steady_frame_rate=60 --port preset=game_defaults)
+# Quality's values as pending changes. Lower Rate Under Heavy Load is off: the view takes about 16 ms of the GPU on an
+# M5, too close to 60's frame time for the rate to stay at 60 with it on.
+SETTINGS=(--defaults --tab-preset quality --port upscaling=metalfx --port steady_frame_rate=60
+    --port lower_rate_under_heavy_load=false --port preset=game_defaults)
 
 IMAGES="${REPO}/.github/images"
 LOG="${BUILD}/readme-screenshots.log"
