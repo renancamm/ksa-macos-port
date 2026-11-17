@@ -43,11 +43,11 @@ internal static class DynamicResolution
     [DllImport("libvulkan.1.dylib")]
     private static extern void ksaMtlImageSize(ulong image, out uint width, out uint height);
 
-    private const int LevelParts = 64;  // the driver's kDynamicParts: a level is this many parts of the full size
+    [DllImport("libvulkan.1.dylib")]
+    private static extern void ksaMtlDynamicSizeAt(ref uint width, ref uint height);
 
     private static int2 _render;  // the main view's render size, as its targets are made
     private static int2 _level;   // its size at the level drawn (the render size at full)
-    private static int _parts;    // the level, in LevelParts (0: full)
     private static bool _driver;  // the driver has these calls (registered once)
     private static bool _applied; // the frame's call and the rebuild's are patched (Apply)
     private static bool _levels;  // every one of the game's sizes follows a level (Apply's parts): else none is drawn
@@ -69,29 +69,24 @@ internal static class DynamicResolution
         {
             ksaMtlDynamicResolution((uint)Math.Max(render.X, 0), (uint)Math.Max(render.Y, 0), (uint)Math.Max(output.X, 0),
                 (uint)Math.Max(output.Y, 0), (uint)Math.Max(least.X, 0), (uint)Math.Max(least.Y, 0));
-            ksaMtlDynamicResolutionSize(out uint w, out uint h, out uint level);
+            ksaMtlDynamicResolutionSize(out uint w, out uint h, out _);
             _driver = true;
             // The driver registers levels only with Dynamic Resolution or the experiment's level: otherwise nothing changes here either
             _render = w > 0 && h > 0 ? render : int2.Zero;
-            Take(w, h, level);
+            Take(w, h);
             if (Active)
                 Hooks.Log($"Dynamic resolution: {render.X}x{render.Y} drawn at {_level.X}x{_level.Y}");
         }
         catch (EntryPointNotFoundException e)
         {
             _render = _level = int2.Zero;
-            _parts = 0;
             _driver = false;
             _missing = true;
             Hooks.Log($"Dynamic resolution: off, the driver has no {e.Message}");
         }
     }
 
-    private static void Take(uint w, uint h, uint level)
-    {
-        _level = w > 0 && h > 0 ? new int2((int)w, (int)h) : _render;
-        _parts = (int)level;
-    }
+    private static void Take(uint w, uint h) => _level = w > 0 && h > 0 ? new int2((int)w, (int)h) : _render;
 
     // Also without levels: the driver then has no display size, and the screenshot's frame no rate to step
     private static void RebuildPrefix()
@@ -106,8 +101,8 @@ internal static class DynamicResolution
     {
         if (!_driver)
             return;
-        ksaMtlDynamicResolutionFrame(out uint w, out uint h, out uint level);
-        Take(w, h, level);
+        ksaMtlDynamicResolutionFrame(out uint w, out uint h, out _);
+        Take(w, h);
     }
 
     // The share of the render size drawn, by height (1 at full)
@@ -116,11 +111,16 @@ internal static class DynamicResolution
     // A size of the main view at its render size, at the level drawn; any other size as it is
     public static int2 AtLevel(int2 size) => Active && size == _render ? _level : size;
 
-    // Any size of an image the driver draws at the level (the main view's or a fraction of it), as the driver scales it
-    public static int2 Scale(int2 size) => !Active ? size : new int2(Scale(size.X), Scale(size.Y));
-
-    private static int Scale(int size) =>
-        Math.Max(1, (int)Math.Round((double)size * _parts / LevelParts, MidpointRounding.AwayFromZero));
+    // Any size of an image the driver draws at the level (the main view's or a fraction of it), as the driver sizes its
+    // texture there: a fraction of the main view's size at the level, rounded as the game rounds its own
+    public static int2 Scale(int2 size)
+    {
+        if (!Active)
+            return size;
+        uint w = (uint)Math.Max(size.X, 0), h = (uint)Math.Max(size.Y, 0);
+        ksaMtlDynamicSizeAt(ref w, ref h);
+        return new int2((int)w, (int)h);
+    }
 
     // By RenderScale.Apply, with MetalFX or Steady Frame Rate: the frame's level and rate step (without it, none of the
     // rest), and with levels (MetalFX with Dynamic Resolution or dynamic_level) the game's sizes, each part on its own.
@@ -208,7 +208,7 @@ internal static class DynamicResolution
     {
         if (_render == int2.Zero || !(bool)_isMain.GetValue(inResources)!)
             return;
-        int2 want = Scale(_render);
+        int2 want = _level;
         if ((int)_screenWidth.GetValue(inResources)! == want.X && (int)_screenHeight.GetValue(inResources)! == want.Y)
             return;
         _setDimensions.Invoke(__instance, [inResources, want]);

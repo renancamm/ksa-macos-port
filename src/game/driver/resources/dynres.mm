@@ -4,8 +4,9 @@
 // sets the level between frames (kmtlDynamicSetLevel).
 //
 // An image bound after a registration that is drawn into and is the main view's size or a fraction of it (fits) is
-// dynamic: besides its texture at its own size it gets one per level (n/kDynamicParts of its size), placed in the same
-// memory, and draws, copies and views use the level's. What the game draws with the image then sees the smaller size,
+// dynamic: besides its texture at its own size it gets one per level, placed in the same memory, and draws, copies and
+// views use the level's. A level's size is the main view's n/kDynamicParts, and a fraction's the same fraction of it,
+// rounded as the game rounds it (sizeAt). What the game draws with the image then sees the smaller size,
 // as after a rebuild: the shaders' image sizes and normalised coordinates, the viewports and scissors (scaled by the
 // pass's attachments, passes.mm and state.mm), the copies (transfers.mm). What the game works out from its sizes itself
 // (the cameras' screen size, push constants) the hooks give the level's size (framerate.mm's ksaMtlDynamicResolution*).
@@ -51,6 +52,30 @@ uint32_t kmtlDynamicScaled(uint32_t size, uint32_t level) {
     return std::max(1u, (uint32_t)lround((double)size * level / kDynamicParts));
 }
 
+// How a size follows the main view's: its size divided by a whole number k, rounded up or down. The game derives its
+// fractions from the main view's size ((h + 1) / 2 for the ambient occlusion's, w / 4 for the exhausts'), and at a
+// level from the level's size (the hooks give it that): an image's texture at a level is the same fraction of the main
+// view's size at the level, rounded the same way, so that the two agree (the ambient occlusion's own half sizes a row
+// apart from its textures drew a dark band across the ground at some levels). A size both ways (an exact fraction) is
+// taken as rounded up, as the clouds' and the ambient occlusion's are; the hooks give the exhausts and the particles
+// the textures' sizes. k = 0: no such fraction (within a pixel of one: scaled itself)
+using KFraction = KImage::KFraction;
+static KFraction fractionOf(uint32_t size, uint32_t main) {
+    for (uint32_t k = 1; k <= kMostDivisor && main; k++) {
+        if (size == (main + k - 1) / k) return {(uint8_t)k, true};
+        if (size == main / k) return {(uint8_t)k, false};
+    }
+    return {};
+}
+
+// A size at a level: as a fraction of the main view's there, or scaled itself
+static uint32_t sizeAt(uint32_t size, KFraction f, uint32_t main, uint32_t level) {
+    if (level == 0) return size;
+    if (!f.k) return kmtlDynamicScaled(size, level);
+    uint32_t m = kmtlDynamicScaled(main, level);
+    return std::max(1u, f.up ? (m + f.k - 1) / f.k : m / f.k);
+}
+
 // Whether a size is the main view's divided by a whole number, within a pixel (rounded or padded either way)
 static bool divides(uint32_t size, uint32_t full) {
     for (uint32_t k = 1; k <= kMostDivisor; k++)
@@ -89,8 +114,8 @@ static id<MTLTexture> levelTexture(KImage* img, uint32_t level) {
     if (img->levels.size() <= level) img->levels.resize(kDynamicParts);
     if (img->levels[level]) return img->levels[level];
     MTLTextureDescriptor* d = [img->desc copy];
-    d.width = kmtlDynamicScaled(img->info.extent.width, level);
-    d.height = kmtlDynamicScaled(img->info.extent.height, level);
+    d.width = sizeAt(img->info.extent.width, img->fractionW, img->mainW, level);
+    d.height = sizeAt(img->info.extent.height, img->fractionH, img->mainH, level);
     d.mipmapLevelCount = std::min<NSUInteger>(d.mipmapLevelCount, mipsFor((uint32_t)d.width, (uint32_t)d.height));
     id<MTLTexture> t = nil;
     if (memoryless) {
@@ -140,6 +165,10 @@ void kmtlDynamicBind(KImage* img) {
     if (!g_dyn.device) g_dyn.device = img->device;
     if (!fits(img->info, g_dyn.width, g_dyn.height)) return;
     img->dynamic = true;
+    img->mainW = g_dyn.width;
+    img->mainH = g_dyn.height;
+    img->fractionW = fractionOf(img->info.extent.width, g_dyn.width);
+    img->fractionH = fractionOf(img->info.extent.height, g_dyn.height);
     g_dyn.prepared = false;
     g_dyn.images.push_back(img);
     g_dyn.owners[img->full.gpuResourceID._impl] = {img, nullptr};
@@ -420,4 +449,11 @@ KMTL_EXPORT void ksaMtlImageSize(VkImage image, uint32_t* width, uint32_t* heigh
     auto* img = (KImage*)image;
     *width = img && img->mtl ? (uint32_t)img->mtl.width : 0;
     *height = img && img->mtl ? (uint32_t)img->mtl.height : 0;
+}
+
+// The hooks: a size of the main view's or a fraction of it, at the level now, as its image's texture has it (sizeAt)
+KMTL_EXPORT void ksaMtlDynamicSizeAt(uint32_t* width, uint32_t* height) {
+    std::lock_guard<std::mutex> lock(g_dyn.m);
+    *width = sizeAt(*width, fractionOf(*width, g_dyn.width), g_dyn.width, g_dyn.level);
+    *height = sizeAt(*height, fractionOf(*height, g_dyn.height), g_dyn.height, g_dyn.level);
 }

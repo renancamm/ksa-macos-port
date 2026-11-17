@@ -41,6 +41,9 @@ struct KImage {
     // mtl is the texture of that level, placed in the same memory as the one at the image's own size (full)
     bool dynamic = false;
     uint32_t level = 0;  // the level mtl has (0: full)
+    // How its size follows the main view's (mainW x mainH at its bind) at a level, each way (dynres.mm, KFraction)
+    uint32_t mainW = 0, mainH = 0;
+    struct KFraction { uint8_t k = 0; bool up = true; } fractionW, fractionH;
     id<MTLTexture> full = nil;
     std::vector<id<MTLTexture>> levels;  // by level, made when first used
     std::vector<KImageView*> views;      // its views, which follow it to another level
@@ -189,7 +192,7 @@ void kmtlDestroyImage(KImage* img);
 // dynres.mm: dynamic resolution's mechanism, the main view at a level of its size (which level: presentation/framerate.mm)
 constexpr uint32_t kDynamicParts = 64;     // a level is this many parts of the main view's size (0: the full size)
 constexpr uint32_t kDynamicMinLevel = 16;  // the lowest a level can be
-uint32_t kmtlDynamicScaled(uint32_t size, uint32_t level);  // a size at a level, rounded (as the hooks round it)
+uint32_t kmtlDynamicScaled(uint32_t size, uint32_t level);  // a size at a level, rounded
 void kmtlDynamicSetView(uint32_t width, uint32_t height, const std::vector<uint32_t>& levels);  // images of this size dynamic from now on, these levels made ahead (0 x 0: none)
 void kmtlDynamicPrepare();                 // before a frame: the levels' textures of images bound since
 void kmtlDynamicSetLevel(uint32_t level);  // between frames: every dynamic image at this level, what it holds carried
