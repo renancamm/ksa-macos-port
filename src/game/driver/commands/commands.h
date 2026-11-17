@@ -42,33 +42,32 @@ struct KCommandBuffer : KDispatchable {
     KUploadRing ring;
     bool submittedOnce = false;
 
-    // Deferred store actions: with tessellation on, or GPU zones split, render passes start with MTLStoreActionUnknown
-    // so a pass can be suspended for the compute stages or a timestamp (store everything, resolve what has a resolve
-    // image) and resumed (load everything); the real store actions are applied when the pass really ends
-    MTLRenderPassDescriptor* passDesc = nil;
-    MTLStoreAction colorStores[8] = {}, depthStore = MTLStoreActionStore, stencilStore = MTLStoreActionStore;
-    bool deferredStores = false, suspending = false;
-
     // Encoder ordering (encoders.mm): every encoder has stage classes (roles); each class keeps the fence of its last
     // encoder, and a Vulkan barrier makes later encoders of its destination classes wait on the last fences of its
     // source classes. Command buffers start after and end before the queue's chain fence.
     enum : uint32_t { kClassCompute = 1, kClassTransfer = 2, kClassAccel = 4, kClassVertex = 8, kClassFragment = 16, kClassAll = 31 };
-    id<MTLFence> lastFence[5] = {};
-    uint32_t needMask[5] = {};
-    uint32_t encRoles = 0;
-    std::vector<id<MTLFence>> encWaited;  // fences the open encoder waited on
-    std::vector<id<MTLFence>> fencePool;
-    size_t fenceNext = 0;
+    struct Order {
+        id<MTLFence> lastFence[5] = {};
+        uint32_t needMask[5] = {};
+        uint32_t roles = 0;                // the open encoder's
+        std::vector<id<MTLFence>> waited;  // fences the open encoder waited on
+        std::vector<id<MTLFence>> fencePool;
+        size_t fenceNext = 0;
+    } order;
     // MSAA resolves: a render pass's fences can signal before its resolve store actions have written the resolve
     // textures, so a pass that resolves also signals this event, and the next compute or blit encoder that depends on
     // fragment work (and the end of the command buffer) waits for it
-    id<MTLEvent> resolveEvent = nil;
-    uint64_t resolveSignaled = 0, resolveWaited = 0;
-    bool passResolves = false;
+    struct Resolves {
+        id<MTLEvent> event = nil;
+        uint64_t signaled = 0, waited = 0;
+        bool inPass = false;  // the open pass resolves
+    } resolves;
     // MetalFX's passes (kmtlFxBarrier, upscale.mm): full barriers around its encoders
-    id<MTLEvent> fxEvent = nil;
-    uint64_t fxValue = 0;
-    uint32_t fxSnapshots = 0;  // the stages vkCmdUpscaleSnapshotKSA copied in this recording (a bit each)
+    struct Fx {
+        id<MTLEvent> event = nil;
+        uint64_t value = 0;
+        uint32_t snapshots = 0;  // the stages vkCmdUpscaleSnapshotKSA copied in this recording (a bit each)
+    } fx;
     void waitForResolves(uint32_t roles);  // an encoder of these roles that depends on fragment work
     void waitForAllResolves();             // whatever comes next (the end of recording, MetalFX)
     void beginCommands();
@@ -79,51 +78,64 @@ struct KCommandBuffer : KDispatchable {
     void barrierClasses(uint32_t src, uint32_t dst);
 
     // Render pass state
-    uint32_t rtWidth = 0, rtHeight = 0;
-    float viewportScale[2] = {1, 1};  // dynamic resolution: the pass's attachments' level (dynres.mm), for viewports and scissors
-    bool inRenderPass = false;
-    KRenderPass* renderPass = nullptr;
-    KFramebuffer* framebuffer = nullptr;
-    uint32_t subpass = 0;
+    struct Pass {
+        uint32_t width = 0, height = 0;
+        float viewportScale[2] = {1, 1};  // dynamic resolution: the pass's attachments' level (dynres.mm), for viewports and scissors
+        bool active = false;              // a render encoder is open (beginRender to endEncoder)
+        KRenderPass* renderPass = nullptr;
+        KFramebuffer* framebuffer = nullptr;
+        uint32_t subpass = 0;
+        // Deferred store actions: with tessellation on, or GPU zones split, render passes start with
+        // MTLStoreActionUnknown so a pass can be suspended for the compute stages or a timestamp (store everything,
+        // resolve what has a resolve image) and resumed (load everything); the real store actions are applied when the
+        // pass really ends
+        MTLRenderPassDescriptor* desc = nil;
+        MTLStoreAction colorStores[8] = {}, depthStore = MTLStoreActionStore, stencilStore = MTLStoreActionStore;
+        bool deferredStores = false, suspending = false;
+    } pass;
 
     // Bound state
-    KPipeline* graphicsPipeline = nullptr;
-    KPipeline* computePipeline = nullptr;
-    KBoundSet graphicsSets[kMaxSets], computeSets[kMaxSets];
-    uint32_t graphicsSetsDirty = 0, computeSetsDirty = 0;
-    uint8_t push[kMaxPushConstants];
-    uint32_t pushSize = 0;
-    bool graphicsPushDirty = true, computePushDirty = true;
     struct VB { id<MTLBuffer> buf = nil; NSUInteger off = 0; VkDeviceSize size = 0; };
-    VB vertexBuffers[16];
-    uint32_t vertexBuffersDirty = 0;
-    id<MTLBuffer> indexBuffer = nil;
-    NSUInteger indexOffset = 0;
-    VkDeviceSize indexBytes = 0;  // bytes of the bound VkBuffer from the binding offset
-    MTLIndexType indexType = MTLIndexTypeUInt16;
-    std::vector<VkViewport> viewports;
-    std::vector<VkRect2D> scissors;
-    bool viewportDirty = false, scissorDirty = false;
-    float depthBias[3] = {0, 0, 0};
-    bool depthBiasDirty = false;
-    float blendConstants[4] = {0, 0, 0, 0};  // dynamic state, applied when the pipeline declares it dynamic
-    uint32_t stencilRef[2] = {0, 0};         // front, back
-    bool blendConstantsDirty = false, stencilRefDirty = false;
-    bool pipelineDirty = false;
-    KPipeline* encodedPipeline = nullptr;
+    struct Bound {
+        KPipeline* graphicsPipeline = nullptr;
+        KPipeline* computePipeline = nullptr;
+        KBoundSet graphicsSets[kMaxSets], computeSets[kMaxSets];
+        uint32_t graphicsSetsDirty = 0, computeSetsDirty = 0;
+        uint8_t push[kMaxPushConstants];
+        uint32_t pushSize = 0;
+        bool graphicsPushDirty = true, computePushDirty = true;
+        VB vertexBuffers[16];
+        uint32_t vertexBuffersDirty = 0;
+        id<MTLBuffer> indexBuffer = nil;
+        NSUInteger indexOffset = 0;
+        VkDeviceSize indexBytes = 0;  // bytes of the bound VkBuffer from the binding offset
+        MTLIndexType indexType = MTLIndexTypeUInt16;
+        std::vector<VkViewport> viewports;
+        std::vector<VkRect2D> scissors;
+        bool viewportDirty = false, scissorDirty = false;
+        float depthBias[3] = {0, 0, 0};
+        bool depthBiasDirty = false;
+        float blendConstants[4] = {0, 0, 0, 0};  // dynamic state, applied when the pipeline declares it dynamic
+        uint32_t stencilRef[2] = {0, 0};         // front, back
+        bool blendConstantsDirty = false, stencilRefDirty = false;
+        bool pipelineDirty = false;
+        KPipeline* encodedPipeline = nullptr;
+    } bound;
 
     // Timestamp queries (timestamps.mm): one counter sample per write (end of a tiny ordered encoder); writes inside a
     // render pass are taken when the pass ends, or split it
     struct TimestampWrite { KQueryPool* pool; uint32_t query; uint32_t sample; };
-    id<MTLCounterSampleBuffer> tsSamples = nil;
-    uint32_t tsUsed = 0;
-    std::vector<TimestampWrite> tsWrites;
-    std::vector<std::pair<KQueryPool*, uint32_t>> tsDeferred;
-    bool tsSplit = false;  // tsDeferred split the pass at its next draw (stampSplit)
-    // The event before a timestamp's blit (stampTimestamp), and whether the last encoder was such a blit
-    id<MTLEvent> stampEvent = nil;
-    uint64_t stampSignaled = 0;
-    bool stampedLast = false;
+    struct Timestamps {
+        id<MTLCounterSampleBuffer> samples = nil;
+        uint32_t used = 0;
+        std::vector<TimestampWrite> writes;
+        std::vector<std::pair<KQueryPool*, uint32_t>> deferred;
+        bool split = false;  // deferred split the pass at its next draw (stampSplit)
+        // The event before a timestamp's blit (stampTimestamp), and whether the last encoder was such a blit
+        id<MTLEvent> event = nil;
+        uint64_t signaled = 0;
+        bool last = false;
+    } ts;
     void writeTimestamp(KQueryPool* pool, uint32_t query);
     void stampTimestamp(KQueryPool* pool, uint32_t query);
     void stampSplit();
@@ -132,26 +144,30 @@ struct KCommandBuffer : KDispatchable {
     void releaseTimestamps();
 
     // Counters for the frame log
-    uint32_t draws = 0, dispatches = 0, passes = 0;
+    struct Counts { uint32_t draws = 0, dispatches = 0, passes = 0; } counts;
 
     // KSA_MTL_LABELS=1: the open encoder's name, from the pipelines it ran (the game sets no debug labels in its
-    // release builds); Instruments, the Metal HUD and Xcode's frame capture show it
-    std::string encLabel;
-    // The game's GPU profiler's open zones in this recording (ksaMtlZoneBegin), and the one the encoder's first draw or
-    // dispatch ran in, which leads its name
-    std::vector<std::string> zones;
-    std::string encZone;
-    uint32_t encPipelines = 0;
-    uint64_t encLastPipeline = 0;
+    // release builds); Instruments, the Metal HUD and Xcode's frame capture show it. The game's GPU profiler's open
+    // zones in this recording (ksaMtlZoneBegin), and the one the encoder's first draw or dispatch ran in, which leads
+    // its name
+    struct Labels {
+        std::string encoder;
+        std::vector<std::string> zones;
+        std::string zone;
+        uint32_t pipelines = 0;
+        uint64_t lastPipeline = 0;
+    } labels;
     void notePipelineLabel(KPipeline* p);
-    // Pass dump (passdump.mm), while a frame is dumped: the open pass's descriptor and its first load actions, its name (the
-    // first encoder's, as it may suspend and resume), its draws so far, whether its draws were skipped, whether the recording is
-    // being dropped
-    MTLRenderPassDescriptor* dumpDesc = nil;
-    MTLLoadAction dumpLoads[8] = {}, dumpDepthLoad = MTLLoadActionDontCare;
-    std::string dumpName;
-    uint32_t dumpDraws = 0;
-    bool dumpDrawsSkipped = false, dropping = false;
+    // Pass dump (passdump.mm), while a frame is dumped: the open pass's descriptor and its first load actions, its name
+    // (the first encoder's, as it may suspend and resume), its draws so far, whether its draws were skipped, whether the
+    // recording is being dropped
+    struct Dump {
+        MTLRenderPassDescriptor* desc = nil;
+        MTLLoadAction loads[8] = {}, depthLoad = MTLLoadActionDontCare;
+        std::string name;
+        uint32_t draws = 0;
+        bool drawsSkipped = false, dropping = false;
+    } dump;
     template <typename E> void nameEncoder(E enc);
 
     void endEncoder();

@@ -30,7 +30,7 @@ VKFN(void) vkCmdBuildAccelerationStructuresKHR(VkCommandBuffer commandBuffer, ui
         [enc buildAccelerationStructure:dst->mtl descriptor:d scratchBuffer:scratch scratchBufferOffset:0];
         if (instances) [enc useResource:instances usage:MTLResourceUsageRead];
     }
-    [enc updateFence:cb->finishFence(cb->encRoles)];
+    [enc updateFence:cb->finishFence(cb->order.roles)];
     [enc endEncoding];
-    cb->encRoles = 0;
+    cb->order.roles = 0;
 }

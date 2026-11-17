@@ -51,8 +51,8 @@ static id<MTLLibrary> compileMSL(KDevice* dev, const std::string& msl, std::stri
     std::shared_ptr<KDevice::LibraryEntry> entry;
     bool owner = false;
     {
-        std::lock_guard<std::mutex> lock(dev->libraryMutex);
-        auto& slot = dev->libraryCache[h];
+        std::lock_guard<std::mutex> lock(dev->libraries.mutex);
+        auto& slot = dev->libraries.cache[h];
         if (!slot) { slot = std::make_shared<KDevice::LibraryEntry>(); owner = true; }
         entry = slot;
     }

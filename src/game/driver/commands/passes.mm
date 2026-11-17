@@ -66,7 +66,7 @@ static void setAttachmentTexture(MTLRenderPassAttachmentDescriptor* a, KImageVie
 static void scaleForAttachment(KCommandBuffer* cb, const KImageView* v, bool* found) {
     if (*found || !v || !v->image || !v->image->dynamic) return;
     *found = true;
-    kmtlDynamicScale(v->image, &cb->viewportScale[0], &cb->viewportScale[1]);
+    kmtlDynamicScale(v->image, &cb->pass.viewportScale[0], &cb->pass.viewportScale[1]);
 }
 
 static void fitToAttachment(const KImageView* v, uint32_t* w, uint32_t* h) {
@@ -121,7 +121,7 @@ VKFN(void) vkCmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPas
         }
     }
     uint32_t w = fb->width, h = fb->height;
-    cb->viewportScale[0] = cb->viewportScale[1] = 1;
+    cb->pass.viewportScale[0] = cb->pass.viewportScale[1] = 1;
     bool found = false;
     for (int c : sp.colors)
         if (c >= 0 && c < (int)viewCount) scaleForAttachment(cb, views[c], &found);
@@ -135,8 +135,8 @@ VKFN(void) vkCmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPas
     d.renderTargetHeight = h;
     if (fb->layers > 1) d.renderTargetArrayLength = fb->layers;
     if (sp.viewMask) d.renderTargetArrayLength = 32 - __builtin_clz(sp.viewMask);
-    cb->renderPass = rp;
-    cb->framebuffer = fb;
+    cb->pass.renderPass = rp;
+    cb->pass.framebuffer = fb;
     cb->barrierClasses(KCommandBuffer::kClassAll, KCommandBuffer::kClassVertex | KCommandBuffer::kClassFragment);
     cb->beginRender(d, w, h);
 }
@@ -204,7 +204,7 @@ VKFN(void) vkCmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingI
             d.stencilAttachment.clearStencil = ri->pStencilAttachment->clearValue.depthStencil.stencil;
         }
     }
-    cb->viewportScale[0] = cb->viewportScale[1] = 1;
+    cb->pass.viewportScale[0] = cb->pass.viewportScale[1] = 1;
     bool found = false;
     for (uint32_t i = 0; i < ri->colorAttachmentCount; i++)
         scaleForAttachment(cb, (KImageView*)ri->pColorAttachments[i].imageView, &found);

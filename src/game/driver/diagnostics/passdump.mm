@@ -329,7 +329,7 @@ void copyPassImages(KCommandBuffer* cb, MTLRenderPassDescriptor* pass, const std
     for (int i = 0; i < 8; i++) {
         MTLRenderPassColorAttachmentDescriptor* a = pass.colorAttachments[i];
         if (!a.texture) continue;
-        MTLStoreAction store = cb->deferredStores ? cb->colorStores[i] : a.storeAction;
+        MTLStoreAction store = cb->pass.deferredStores ? cb->pass.colorStores[i] : a.storeAction;
         if (a.resolveTexture) sources.push_back({a.resolveTexture, a.resolveLevel, a.resolveSlice, a.resolveDepthPlane});
         else if (passEnd && store == MTLStoreActionDontCare) appendLine(dir, "[" + name + "] colour" + std::to_string(i) + ": left out, the pass does not store it");
         else sources.push_back({a.texture, a.level, a.slice, a.depthPlane});
@@ -355,11 +355,11 @@ void copyDrawBuffers(KCommandBuffer* cb, KPipeline* pipeline, const std::string&
     {
         std::lock_guard<std::mutex> lock(g_mutex);
         for (uint32_t s = 0; s < kMaxSets; s++) {
-            const KBoundSet& bound = cb->graphicsSets[s];
-            if (!bound.buffer || !bound.layout || !bound.slots) continue;
-            const auto* slots = (const uint64_t*)bound.slots;
-            const auto* sizes = (const uint32_t*)(bound.slots + bound.layout->slotCount * 8);
-            for (const KBinding& b : bound.layout->bindings) {
+            const KBoundSet& set = cb->bound.graphicsSets[s];
+            if (!set.buffer || !set.layout || !set.slots) continue;
+            const auto* slots = (const uint64_t*)set.slots;
+            const auto* sizes = (const uint32_t*)(set.slots + set.layout->slotCount * 8);
+            for (const KBinding& b : set.layout->bindings) {
                 if (b.type != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER && b.type != VK_DESCRIPTOR_TYPE_STORAGE_BUFFER &&
                     b.type != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC && b.type != VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC) continue;
                 for (uint32_t e = 0; e < b.count; e++) {
@@ -462,11 +462,11 @@ void kmtlPassDumpEncoder(KCommandBuffer* cb, const std::string& name, MTLRenderP
     std::string actions;
     for (int i = 0; pass && i < 8; i++) {
         if (!pass.colorAttachments[i].texture) continue;
-        MTLStoreAction store = cb->deferredStores ? cb->colorStores[i] : pass.colorAttachments[i].storeAction;
-        actions += " colour" + std::to_string(i) + " load " + loadName(cb->dumpLoads[i]) + " store " + storeName(store) +
+        MTLStoreAction store = cb->pass.deferredStores ? cb->pass.colorStores[i] : pass.colorAttachments[i].storeAction;
+        actions += " colour" + std::to_string(i) + " load " + loadName(cb->dump.loads[i]) + " store " + storeName(store) +
                    " samples " + std::to_string((int)pass.colorAttachments[i].texture.sampleCount);
     }
-    if (pass && pass.depthAttachment.texture) actions += std::string(" depth load ") + loadName(cb->dumpDepthLoad);
+    if (pass && pass.depthAttachment.texture) actions += std::string(" depth load ") + loadName(cb->dump.depthLoad);
     appendLine(dir, "-- " + name + actions);
     if (pass) copyPassImages(cb, pass, name, dir, true);
     {
@@ -479,8 +479,8 @@ void kmtlPassDumpEncoder(KCommandBuffer* cb, const std::string& name, MTLRenderP
 // Splits the pass after a draw and copies what the draws so far left. A multisampled image can't be copied: each split resolves
 // it, which the pass's own resolve overwrites at its end.
 void kmtlPassDumpAfterDraw(KCommandBuffer* cb, KPipeline* pipeline) {
-    uint32_t draw = cb->dumpDraws++;
-    MTLRenderPassDescriptor* pass = cb->dumpDesc;
+    uint32_t draw = cb->dump.draws++;
+    MTLRenderPassDescriptor* pass = cb->dump.desc;
     bool colour = false, tileOnly = false;
     for (int i = 0; i < 8; i++) {
         id<MTLTexture> t = pass.colorAttachments[i].texture;
@@ -492,9 +492,9 @@ void kmtlPassDumpAfterDraw(KCommandBuffer* cb, KPipeline* pipeline) {
     if (!colour || (draw >= kDrawsAll && draw % kDrawsStride)) return;
     // A split would lose a memoryless image, and draws must not use up what the passes after them need
     if (tileOnly || g_used > kBudgetBytes / 2) {
-        if (!std::exchange(cb->dumpDrawsSkipped, true)) {
+        if (!std::exchange(cb->dump.drawsSkipped, true)) {
             std::lock_guard<std::mutex> lock(g_mutex);
-            appendLine(g_dir, "[" + cb->dumpName + "] no images or buffers after its draws: " + (tileOnly ? "it has a memoryless image" : "half of the budget is used"));
+            appendLine(g_dir, "[" + cb->dump.name + "] no images or buffers after its draws: " + (tileOnly ? "it has a memoryless image" : "half of the budget is used"));
         }
         return;
     }
@@ -504,8 +504,8 @@ void kmtlPassDumpAfterDraw(KCommandBuffer* cb, KPipeline* pipeline) {
         std::lock_guard<std::mutex> lock(g_mutex);
         dir = g_dir;
     }
-    copyPassImages(cb, pass, cb->dumpName + " after draw " + std::to_string(draw) + " " + (pipeline ? pipeline->profName : ""), dir, false);
-    copyDrawBuffers(cb, pipeline, cb->dumpName + " after draw " + std::to_string(draw), dir);
+    copyPassImages(cb, pass, cb->dump.name + " after draw " + std::to_string(draw) + " " + (pipeline ? pipeline->profName : ""), dir, false);
+    copyDrawBuffers(cb, pipeline, cb->dump.name + " after draw " + std::to_string(draw), dir);
     cb->resumeRender();
 }
 

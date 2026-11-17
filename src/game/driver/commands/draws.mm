@@ -16,7 +16,7 @@ static bool throttled(const KPipeline* p) {
 
 // Multiview: one draw per view in the mask, with spvViewMask = {view, 1}
 template <typename F> static void forEachView(KCommandBuffer* cb, F&& draw) {
-    uint32_t mask = cb->graphicsPipeline->viewMask;
+    uint32_t mask = cb->bound.graphicsPipeline->viewMask;
     if (!mask) { draw(); return; }
     while (mask) {
         uint32_t v = __builtin_ctz(mask);
@@ -45,8 +45,8 @@ static uint32_t lcm(uint32_t a, uint32_t b) {
 // The shared scratch buffer, at least `size` bytes. A grown buffer replaces the old one for later draws; command
 // buffers already recorded keep the old one alive until they complete
 static id<MTLBuffer> tessScratch(KDevice* dev, uint64_t size) {
-    std::lock_guard<std::mutex> lock(dev->tessScratchMutex);
-    if (dev->tessScratch && dev->tessScratch.length >= size) return dev->tessScratch;
+    std::lock_guard<std::mutex> lock(dev->tess.mutex);
+    if (dev->tess.scratch && dev->tess.scratch.length >= size) return dev->tess.scratch;
     uint64_t len = kmtlAlignUp<uint64_t>(size, 16 << 20);
     id<MTLBuffer> b = [dev->mtl newBufferWithLength:len options:MTLResourceStorageModePrivate | MTLResourceHazardTrackingModeUntracked];
     if (!b) {
@@ -54,16 +54,16 @@ static id<MTLBuffer> tessScratch(KDevice* dev, uint64_t size) {
         return nil;
     }
     b.label = @"tessellation scratch";
-    g_internalBytes += (int64_t)len - (int64_t)(dev->tessScratch ? dev->tessScratch.length : 0);
+    g_internalBytes += (int64_t)len - (int64_t)(dev->tess.scratch ? dev->tess.scratch.length : 0);
     KLOG(1, "tessellation scratch: %llu MB", (unsigned long long)(len >> 20));
-    dev->tessScratch = b;
+    dev->tess.scratch = b;
     return b;
 }
 
 static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
-    KPipeline* p = cb->graphicsPipeline;
+    KPipeline* p = cb->bound.graphicsPipeline;
     KDevice* dev = cb->device;
-    int idxType = t.indexed ? (cb->indexType == MTLIndexTypeUInt16 ? 1 : 2) : 0;
+    int idxType = t.indexed ? (cb->bound.indexType == MTLIndexTypeUInt16 ? 1 : 2) : 0;
     NSUInteger idxSize = idxType == 1 ? 2 : 4;
     uint64_t maxVerts;
     if (t.indirect) {
@@ -71,7 +71,7 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
             KERR_ONCE("non-indexed indirect tessellated draws are not supported");
             return;
         }
-        maxVerts = std::min<uint64_t>(cb->indexBytes / idxSize, kmtlTessCap(dev));
+        maxVerts = std::min<uint64_t>(cb->bound.indexBytes / idxSize, kmtlTessCap(dev));
     } else {
         maxVerts = (uint64_t)t.count * t.instances;
     }
@@ -100,10 +100,10 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
     // The game's graphics resources, bound for a kernel (the control kernel has no stage-in, so no vertex buffers)
     auto bindGame = [&](id<MTLComputeCommandEncoder> e, bool vertexBuffers) {
         for (uint32_t s = 0; s < kMaxSets; s++)
-            if (cb->graphicsSets[s].buffer) [e setBuffer:cb->graphicsSets[s].buffer offset:cb->graphicsSets[s].offset atIndex:s];
-        if (cb->pushSize) [e setBytes:cb->push length:kmtlAlignUp(cb->pushSize, 16u) atIndex:kPushConstantBufferIndex];
+            if (cb->bound.graphicsSets[s].buffer) [e setBuffer:cb->bound.graphicsSets[s].buffer offset:cb->bound.graphicsSets[s].offset atIndex:s];
+        if (cb->bound.pushSize) [e setBytes:cb->bound.push length:kmtlAlignUp(cb->bound.pushSize, 16u) atIndex:kPushConstantBufferIndex];
         for (uint32_t b = 0; vertexBuffers && b < 16; b++)
-            if (cb->vertexBuffers[b].buf) [e setBuffer:cb->vertexBuffers[b].buf offset:cb->vertexBuffers[b].off atIndex:vertexBufferIndex(b)];
+            if (cb->bound.vertexBuffers[b].buf) [e setBuffer:cb->bound.vertexBuffers[b].buf offset:cb->bound.vertexBuffers[b].off atIndex:vertexBufferIndex(b)];
     };
 
     // The vertex and control kernels are the draw's vertex work: they wait on what the draw's vertex stage would
@@ -145,7 +145,7 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
     [enc setComputePipelineState:vps];
     [enc setBuffer:vtxOut offset:vtxOff atIndex:kTessOutputBufferIndex];
     if (t.indexed)
-        [enc setBuffer:cb->indexBuffer offset:cb->indexOffset + (t.indirect ? 0 : t.first * idxSize) atIndex:kTessIndexBufferIndex];
+        [enc setBuffer:cb->bound.indexBuffer offset:cb->bound.indexOffset + (t.indirect ? 0 : t.first * idxSize) atIndex:kTessIndexBufferIndex];
     if (t.indirect) {
         [enc setStageInRegionWithIndirectBuffer:args indirectBufferOffset:argsOff];
         [enc dispatchThreadgroupsWithIndirectBuffer:args indirectBufferOffset:argsOff + 6 * 4 threadsPerThreadgroup:MTLSizeMake(vw, 1, 1)];
@@ -187,7 +187,7 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
     else
         [r drawPatches:p->tessOutCP patchStart:0 patchCount:patches patchIndexBuffer:nil patchIndexBufferOffset:0 instanceCount:1 baseInstance:0];
     kmtlNoteDraw(cb, p, false);
-    cb->draws++;
+    cb->counts.draws++;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -195,8 +195,8 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
 
 // Metal has no triangle fans: a shared index buffer holds (0, i, i+1) and the fan's first vertex is the base vertex
 static id<MTLBuffer> fanIndexBuffer(KDevice* dev, uint32_t vertexCount) {
-    std::lock_guard<std::mutex> lock(dev->fanMutex);
-    if (vertexCount > dev->fanVertexCapacity) {
+    std::lock_guard<std::mutex> lock(dev->fan.mutex);
+    if (vertexCount > dev->fan.vertexCapacity) {
         uint32_t cap = std::max(vertexCount, 1024u);
         id<MTLBuffer> b = [dev->mtl newBufferWithLength:(cap - 2) * 3 * 4 options:MTLResourceStorageModeShared];
         auto* idx = (uint32_t*)b.contents;
@@ -205,18 +205,18 @@ static id<MTLBuffer> fanIndexBuffer(KDevice* dev, uint32_t vertexCount) {
             idx[(i - 1) * 3 + 1] = i;
             idx[(i - 1) * 3 + 2] = i + 1;
         }
-        dev->fanIndices = b;
-        dev->fanVertexCapacity = cap;
+        dev->fan.indices = b;
+        dev->fan.vertexCapacity = cap;
     }
-    return dev->fanIndices;
+    return dev->fan.indices;
 }
 
 VKFN(void) vkCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex,
                      uint32_t firstInstance) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (throttled(cb->graphicsPipeline)) return;
-    if (cb->graphicsPipeline && cb->graphicsPipeline->tess) {
+    if (throttled(cb->bound.graphicsPipeline)) return;
+    if (cb->bound.graphicsPipeline && cb->bound.graphicsPipeline->tess) {
         if (!vertexCount || !instanceCount) return;
         KTessDraw t;
         t.count = vertexCount; t.instances = instanceCount; t.first = firstVertex; t.firstInstance = firstInstance;
@@ -225,7 +225,7 @@ VKFN(void) vkCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32
     }
     if (!kmtlFlushGraphics(cb) || !vertexCount || !instanceCount) return;
     kmtlSetDrawId(cb, 0);
-    if (cb->graphicsPipeline->triangleFan) {
+    if (cb->bound.graphicsPipeline->triangleFan) {
         if (vertexCount < 3) return;
         id<MTLBuffer> fan = fanIndexBuffer(cb->device, vertexCount);
         forEachView(cb, [&] {
@@ -233,70 +233,70 @@ VKFN(void) vkCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32
                                   indexBuffer:fan indexBufferOffset:0
                                 instanceCount:instanceCount baseVertex:firstVertex baseInstance:firstInstance];
         });
-        kmtlNoteDraw(cb, cb->graphicsPipeline, false);
-        cb->draws++;
+        kmtlNoteDraw(cb, cb->bound.graphicsPipeline, false);
+        cb->counts.draws++;
         return;
     }
     forEachView(cb, [&] {
-        [cb->render drawPrimitives:cb->graphicsPipeline->primitive vertexStart:firstVertex vertexCount:vertexCount
+        [cb->render drawPrimitives:cb->bound.graphicsPipeline->primitive vertexStart:firstVertex vertexCount:vertexCount
                      instanceCount:instanceCount baseInstance:firstInstance];
     });
-    kmtlNoteDraw(cb, cb->graphicsPipeline, false);
-    cb->draws++;
+    kmtlNoteDraw(cb, cb->bound.graphicsPipeline, false);
+    cb->counts.draws++;
 }
 
-static NSUInteger indexSize(KCommandBuffer* cb) { return cb->indexType == MTLIndexTypeUInt32 ? 4 : 2; }
+static NSUInteger indexSize(KCommandBuffer* cb) { return cb->bound.indexType == MTLIndexTypeUInt32 ? 4 : 2; }
 
 VKFN(void) vkCmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex,
                             int32_t vertexOffset, uint32_t firstInstance) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (throttled(cb->graphicsPipeline)) return;
-    if (cb->graphicsPipeline && cb->graphicsPipeline->tess) {
-        if (!indexCount || !instanceCount || !cb->indexBuffer) return;
+    if (throttled(cb->bound.graphicsPipeline)) return;
+    if (cb->bound.graphicsPipeline && cb->bound.graphicsPipeline->tess) {
+        if (!indexCount || !instanceCount || !cb->bound.indexBuffer) return;
         KTessDraw t;
         t.indexed = true; t.count = indexCount; t.instances = instanceCount; t.first = firstIndex;
         t.vertexOffset = vertexOffset; t.firstInstance = firstInstance;
         tessDraw(cb, t);
         return;
     }
-    if (!kmtlFlushGraphics(cb) || !indexCount || !instanceCount || !cb->indexBuffer) return;
-    if (cb->graphicsPipeline->triangleFan) KERR_ONCE("indexed triangle fans are not emulated (drawn as lists)");
+    if (!kmtlFlushGraphics(cb) || !indexCount || !instanceCount || !cb->bound.indexBuffer) return;
+    if (cb->bound.graphicsPipeline->triangleFan) KERR_ONCE("indexed triangle fans are not emulated (drawn as lists)");
     kmtlSetDrawId(cb, 0);
     forEachView(cb, [&] {
-        [cb->render drawIndexedPrimitives:cb->graphicsPipeline->primitive indexCount:indexCount indexType:cb->indexType
-                              indexBuffer:cb->indexBuffer indexBufferOffset:cb->indexOffset + firstIndex * indexSize(cb)
+        [cb->render drawIndexedPrimitives:cb->bound.graphicsPipeline->primitive indexCount:indexCount indexType:cb->bound.indexType
+                              indexBuffer:cb->bound.indexBuffer indexBufferOffset:cb->bound.indexOffset + firstIndex * indexSize(cb)
                             instanceCount:instanceCount baseVertex:vertexOffset baseInstance:firstInstance];
     });
-    kmtlNoteDraw(cb, cb->graphicsPipeline, false);
-    cb->draws++;
+    kmtlNoteDraw(cb, cb->bound.graphicsPipeline, false);
+    cb->counts.draws++;
 }
 
 VKFN(void) vkCmdDrawIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (throttled(cb->graphicsPipeline)) return;
+    if (throttled(cb->bound.graphicsPipeline)) return;
     if (!kmtlFlushGraphics(cb)) return;
     auto* buf = (KBuffer*)buffer;
     if (stride == 0) stride = sizeof(VkDrawIndirectCommand);
     for (uint32_t i = 0; i < drawCount; i++) {
         kmtlSetDrawId(cb, i);
         forEachView(cb, [&] {
-            [cb->render drawPrimitives:cb->graphicsPipeline->primitive indirectBuffer:buf->mtl
+            [cb->render drawPrimitives:cb->bound.graphicsPipeline->primitive indirectBuffer:buf->mtl
                   indirectBufferOffset:buf->offset + offset + (VkDeviceSize)i * stride];
         });
     }
-    kmtlNoteDraw(cb, cb->graphicsPipeline, false);
-    cb->draws += drawCount;
+    kmtlNoteDraw(cb, cb->bound.graphicsPipeline, false);
+    cb->counts.draws += drawCount;
 }
 
 VKFN(void) vkCmdDrawIndexedIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, uint32_t drawCount,
                                     uint32_t stride) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (throttled(cb->graphicsPipeline)) return;
-    if (cb->graphicsPipeline && cb->graphicsPipeline->tess) {
-        if (!cb->indexBuffer) return;
+    if (throttled(cb->bound.graphicsPipeline)) return;
+    if (cb->bound.graphicsPipeline && cb->bound.graphicsPipeline->tess) {
+        if (!cb->bound.indexBuffer) return;
         if (stride == 0) stride = sizeof(VkDrawIndexedIndirectCommand);
         for (uint32_t i = 0; i < drawCount; i++) {
             KTessDraw t;
@@ -307,44 +307,44 @@ VKFN(void) vkCmdDrawIndexedIndirect(VkCommandBuffer commandBuffer, VkBuffer buff
         }
         return;
     }
-    if (!kmtlFlushGraphics(cb) || !cb->indexBuffer) return;
+    if (!kmtlFlushGraphics(cb) || !cb->bound.indexBuffer) return;
     auto* buf = (KBuffer*)buffer;
     if (stride == 0) stride = sizeof(VkDrawIndexedIndirectCommand);
     for (uint32_t i = 0; i < drawCount; i++) {
         kmtlSetDrawId(cb, i);
         forEachView(cb, [&] {
-            [cb->render drawIndexedPrimitives:cb->graphicsPipeline->primitive indexType:cb->indexType indexBuffer:cb->indexBuffer
-                            indexBufferOffset:cb->indexOffset indirectBuffer:buf->mtl
+            [cb->render drawIndexedPrimitives:cb->bound.graphicsPipeline->primitive indexType:cb->bound.indexType indexBuffer:cb->bound.indexBuffer
+                            indexBufferOffset:cb->bound.indexOffset indirectBuffer:buf->mtl
                          indirectBufferOffset:buf->offset + offset + (VkDeviceSize)i * stride];
         });
     }
-    kmtlNoteDraw(cb, cb->graphicsPipeline, false);
-    cb->draws += drawCount;
+    kmtlNoteDraw(cb, cb->bound.graphicsPipeline, false);
+    cb->counts.draws += drawCount;
 }
 
 // After every dispatch, ray traces included: its note (zones.mm) and the count
 static void dispatched(KCommandBuffer* cb) {
-    kmtlNoteDraw(cb, cb->computePipeline, true);
-    cb->dispatches++;
+    kmtlNoteDraw(cb, cb->bound.computePipeline, true);
+    cb->counts.dispatches++;
 }
 
 VKFN(void) vkCmdDispatch(VkCommandBuffer commandBuffer, uint32_t x, uint32_t y, uint32_t z) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (throttled(cb->computePipeline)) return;
+    if (throttled(cb->bound.computePipeline)) return;
     if (!x || !y || !z || !kmtlFlushCompute(cb)) return;
-    [cb->compute dispatchThreadgroups:MTLSizeMake(x, y, z) threadsPerThreadgroup:cb->computePipeline->workgroup];
+    [cb->compute dispatchThreadgroups:MTLSizeMake(x, y, z) threadsPerThreadgroup:cb->bound.computePipeline->workgroup];
     dispatched(cb);
 }
 
 VKFN(void) vkCmdDispatchIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (throttled(cb->computePipeline)) return;
+    if (throttled(cb->bound.computePipeline)) return;
     if (!kmtlFlushCompute(cb)) return;
     auto* buf = (KBuffer*)buffer;
     [cb->compute dispatchThreadgroupsWithIndirectBuffer:buf->mtl indirectBufferOffset:buf->offset + offset
-                                  threadsPerThreadgroup:cb->computePipeline->workgroup];
+                                  threadsPerThreadgroup:cb->bound.computePipeline->workgroup];
     dispatched(cb);
 }
 
@@ -354,11 +354,11 @@ VKFN(void) vkCmdTraceRaysKHR(VkCommandBuffer commandBuffer, const VkStridedDevic
                              const VkStridedDeviceAddressRegionKHR*, const VkStridedDeviceAddressRegionKHR*, uint32_t w, uint32_t h, uint32_t d) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (throttled(cb->computePipeline)) return;
+    if (throttled(cb->bound.computePipeline)) return;
     if (!w || !h || !d || !kmtlFlushCompute(cb)) return;
     uint32_t size[4] = {w, h, d, 0};
     [cb->compute setBytes:size length:sizeof(size) atIndex:kRtLaunchBufferIndex];
-    MTLSize wg = cb->computePipeline->workgroup;
+    MTLSize wg = cb->bound.computePipeline->workgroup;
     [cb->compute dispatchThreadgroups:MTLSizeMake((w + wg.width - 1) / wg.width, (h + wg.height - 1) / wg.height, d)
                 threadsPerThreadgroup:wg];
     dispatched(cb);

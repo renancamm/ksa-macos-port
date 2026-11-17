@@ -280,7 +280,7 @@ static void clearImage(KCommandBuffer* cb, KImage* img, const VkClearColorValue*
                 }
             }
             cb->beginRender(d, w, h, false, KCommandBuffer::kClassTransfer);
-            cb->passes--;  // not a real pass in the frame log
+            cb->counts.passes--;  // not a real pass in the frame log
             cb->endEncoder();
         }
     }

@@ -22,24 +22,24 @@ static void noteChange(bool add, id<MTLAllocation> a) {
 }
 
 void KDevice::addResident(id<MTLAllocation> a) {
-    std::lock_guard<std::mutex> lock(residencyMutex);
-    [residency addAllocation:a];
-    residencyDirty = true;
+    std::lock_guard<std::mutex> lock(residency.mutex);
+    [residency.set addAllocation:a];
+    residency.dirty = true;
     noteChange(true, a);
 }
 
 void KDevice::removeResident(id<MTLAllocation> a) {
-    std::lock_guard<std::mutex> lock(residencyMutex);
-    [residency removeAllocation:a];
-    residencyDirty = true;
+    std::lock_guard<std::mutex> lock(residency.mutex);
+    [residency.set removeAllocation:a];
+    residency.dirty = true;
     noteChange(false, a);
 }
 
 void KDevice::commitResidency() {
-    std::lock_guard<std::mutex> lock(residencyMutex);
-    if (residencyDirty) {
+    std::lock_guard<std::mutex> lock(residency.mutex);
+    if (residency.dirty) {
         double t0 = CACurrentMediaTime();
-        [residency commit];
+        [residency.set commit];
         double ms = (CACurrentMediaTime() - t0) * 1000.0;
         if (kmtlDrainOn()) kmtlDrainWait("residency commit", t0, ms);
         if (kmtlConfig().stalls > 0 && ms >= kmtlConfig().stalls) {
@@ -47,10 +47,10 @@ void KDevice::commitResidency() {
             pthread_getname_np(pthread_self(), name, sizeof name);
             KLOG(0, "stall: residency commit %.1f ms on '%s': +%d (%lld MB) -%d (%lld MB), set %llu allocations; changed on %s",
                  ms, name, g_resAdds, (long long)(g_resAddBytes >> 20), g_resRemoves, (long long)(g_resRemoveBytes >> 20),
-                 (unsigned long long)residency.allocationCount, g_resThreads.c_str());
+                 (unsigned long long)residency.set.allocationCount, g_resThreads.c_str());
         }
         g_resAdds = g_resRemoves = 0; g_resAddBytes = g_resRemoveBytes = 0; g_resThreads.clear();
-        residencyDirty = false;
+        residency.dirty = false;
     }
 }
 
@@ -71,7 +71,7 @@ static KQueue* makeQueue(KDevice* dev, uint32_t family, NSUInteger maxBuffers, N
         return nullptr;
     }
     q->mtl.label = label;
-    [q->mtl addResidencySet:dev->residency];
+    [q->mtl addResidencySet:dev->residency.set];
     q->chain.label = chainLabel;
     id<MTLCommandBuffer> cb = [q->mtl commandBuffer];
     id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
@@ -92,8 +92,8 @@ VKFN(VkResult) vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCre
     MTLResidencySetDescriptor* rd = [MTLResidencySetDescriptor new];
     rd.label = @"KSA Metal";
     rd.initialCapacity = 1024;
-    dev->residency = [dev->mtl newResidencySetWithDescriptor:rd error:&err];
-    if (!dev->residency) {
+    dev->residency.set = [dev->mtl newResidencySetWithDescriptor:rd error:&err];
+    if (!dev->residency.set) {
         KERR("vkCreateDevice: residency set failed: %s", err.description.UTF8String);
         delete dev;
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -245,7 +245,7 @@ template <typename F> static VkResult submit(VkQueue queue, uint32_t submitCount
             [cb->mtl addCompletedHandler:^(id<MTLCommandBuffer> c) { checkCommandBufferError(c); kmtlNoteGpuTime(c); }];
             cb->submitTimestamps(cb->mtl);
             toCommit.push_back(cb->mtl);
-            kmtlCountWork(cb->draws, cb->dispatches, cb->passes);
+            kmtlCountWork(cb->counts.draws, cb->counts.dispatches, cb->counts.passes);
             cb->mtl = nil;
             cb->submittedOnce = true;
         }

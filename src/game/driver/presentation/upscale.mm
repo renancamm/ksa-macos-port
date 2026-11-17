@@ -352,10 +352,10 @@ void kmtlEventBarrier(id<MTLCommandBuffer> cb, id<MTLEvent> event, uint64_t* val
 // Everything before the upscaler finishes before it starts, and it finishes before anything after it: the game's
 // images are untracked, and MetalFX's own encoders can't wait on KSA Metal's fences
 void kmtlFxBarrier(KCommandBuffer* cb) {
-    if (!cb->fxEvent) cb->fxEvent = [cb->device->mtl newEvent];
-    kmtlEventBarrier(cb->mtl, cb->fxEvent, &cb->fxValue);
+    if (!cb->fx.event) cb->fx.event = [cb->device->mtl newEvent];
+    kmtlEventBarrier(cb->mtl, cb->fx.event, &cb->fx.value);
     // The encoders around it are MetalFX's own: a timestamp after them waits through its own event (stampTimestamp)
-    cb->stampedLast = false;
+    cb->ts.last = false;
 }
 
 // This frame's content in the input size the scalers are made for (dynamic resolution: the level's size), within the
@@ -419,7 +419,7 @@ static MotionParams encodeMotion(KCommandBuffer* cb, const VkUpscaleInfoKSA* inf
     uint32_t snaps = 0;
     for (uint32_t i = 0; i < 3; i++) {
         id<MTLTexture> s = g_up.snapshots[i];
-        bool taken = (cb->fxSnapshots & 1u << i) && s && s.width == color->mtl.width && s.height == color->mtl.height;
+        bool taken = (cb->fx.snapshots & 1u << i) && s && s.width == color->mtl.width && s.height == color->mtl.height;
         if (taken) snaps |= 1u << i;
         [e setTexture:taken ? s : color->mtl atIndex:i == 0 ? 3 : 4 + i];
     }
@@ -534,7 +534,7 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
     auto* color = (KImage*)info->color;
     auto* depth = (KImage*)info->depth;
     auto* out = (KImage*)info->output;
-    if (!color || !out || cb->inRenderPass) return;
+    if (!color || !out || cb->pass.active) return;
     bool spatial = (info->flags & kUpscaleSpatial) || !depth;
     uint32_t outW = (uint32_t)out->mtl.width, outH = (uint32_t)out->mtl.height;
     // Read before g_up.m is taken: the controller's lock, g_fr.m, is above it (kmtl.h, "Threads and locks")
@@ -581,7 +581,7 @@ VKFN(void) vkCmdUpscaleSnapshotKSA(VkCommandBuffer commandBuffer, VkImage image,
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
     auto* color = (KImage*)image;
-    if (!color || cb->inRenderPass || stage > 2) return;
+    if (!color || cb->pass.active || stage > 2) return;
     std::lock_guard<std::mutex> lock(g_up.m);
     id<MTLTexture> src = color->mtl;
     __strong id<MTLTexture>& snapshot = g_up.snapshots[stage];
@@ -596,7 +596,7 @@ VKFN(void) vkCmdUpscaleSnapshotKSA(VkCommandBuffer commandBuffer, VkImage image,
     [b copyFromTexture:src toTexture:snapshot];
     [b endEncoding];
     kmtlFxBarrier(cb);
-    cb->fxSnapshots |= 1u << stage;
+    cb->fx.snapshots |= 1u << stage;
 }
 
 // How far the temporal scaler scales on this Mac (dynamic resolution's lowest level), once

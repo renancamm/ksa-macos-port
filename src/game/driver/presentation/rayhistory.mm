@@ -134,7 +134,7 @@ VKFN(void) vkCmdRayHistoryKSA(VkCommandBuffer commandBuffer, const VkRayHistoryI
     auto* cb = (KCommandBuffer*)commandBuffer;
     auto* depth = (KImage*)info->depth;
     auto* normals = (KImage*)info->normals;
-    if (!depth || !normals || cb->inRenderPass) return;
+    if (!depth || !normals || cb->pass.active) return;
     // The normals are read at the depth's pixels
     if (normals->mtl.width != depth->mtl.width || normals->mtl.height != depth->mtl.height) {
         KERR_LIMIT(10, "ray history: off this frame, normals %lux%lu against depth %lux%lu", (unsigned long)normals->mtl.width,
@@ -220,7 +220,7 @@ VKFN(void) vkCmdRayHistoryKSA(VkCommandBuffer commandBuffer, const VkRayHistoryI
         s.valid = true;
     }
     // The game's compute state must be re-applied on its next dispatch
-    cb->computeSetsDirty = ~0u;
-    cb->computePushDirty = true;
+    cb->bound.computeSetsDirty = ~0u;
+    cb->bound.computePushDirty = true;
     g_rh.lastJitter[0] = info->jitterX; g_rh.lastJitter[1] = info->jitterY;
 }

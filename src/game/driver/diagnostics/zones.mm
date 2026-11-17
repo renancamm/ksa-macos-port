@@ -26,17 +26,17 @@ KMTL_EXPORT bool ksaMtlZoneMode(uint32_t mode) {
 }
 
 KMTL_EXPORT void ksaMtlZoneBegin(VkCommandBuffer commandBuffer, const char* name) {
-    if (commandBuffer && name) ((KCommandBuffer*)commandBuffer)->zones.push_back(name);
+    if (commandBuffer && name) ((KCommandBuffer*)commandBuffer)->labels.zones.push_back(name);
 }
 
 KMTL_EXPORT void ksaMtlZoneEnd(VkCommandBuffer commandBuffer) {
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (cb && !cb->zones.empty()) cb->zones.pop_back();
+    if (cb && !cb->labels.zones.empty()) cb->labels.zones.pop_back();
 }
 
 // A draw or dispatch with this pipeline in the current encoder: its name, and a pass dump's image after the draw
 void kmtlNoteDraw(KCommandBuffer* cb, KPipeline* p, bool dispatch) {
     if (!kmtlConfig().labels && !kmtlPassDumpRecording()) return;  // the common case: two predictable branches per draw
     cb->notePipelineLabel(p);  // a pass dump names its passes
-    if (!dispatch && cb->render && cb->deferredStores && cb->dumpDesc) kmtlPassDumpAfterDraw(cb, p);
+    if (!dispatch && cb->render && cb->pass.deferredStores && cb->dump.desc) kmtlPassDumpAfterDraw(cb, p);
 }

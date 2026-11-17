@@ -116,8 +116,8 @@ void kmtlInternalFillBuffer(KCommandBuffer* cb, id<MTLBuffer> buf, NSUInteger of
     [enc setBytes:p length:sizeof(p) atIndex:1];
     [enc dispatchThreads:MTLSizeMake(count, 1, 1) threadsPerThreadgroup:MTLSizeMake(std::min(count, 256u), 1, 1)];
     // The game's compute state must be re-applied on the next dispatch
-    cb->computeSetsDirty = ~0u;
-    cb->computePushDirty = true;
+    cb->bound.computeSetsDirty = ~0u;
+    cb->bound.computePushDirty = true;
 }
 
 static id<MTLRenderPipelineState> blitPipeline(KDevice* dev, MTLPixelFormat dst, int variant) {
@@ -180,7 +180,7 @@ void kmtlInternalBlit(KCommandBuffer* cb, KImage* src, KImage* dst, const VkImag
         d.colorAttachments[0].loadAction = MTLLoadActionLoad;
         d.colorAttachments[0].storeAction = MTLStoreActionStore;
         cb->beginRender(d, dw, dh, false, KCommandBuffer::kClassTransfer);
-        cb->passes--;
+        cb->counts.passes--;
         id<MTLRenderCommandEncoder> enc = cb->render;
         if (!enc) return;
         int x0 = std::min(r.dstOffsets[0].x, r.dstOffsets[1].x), x1 = std::max(r.dstOffsets[0].x, r.dstOffsets[1].x);

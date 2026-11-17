@@ -50,8 +50,8 @@ void kmtlInterpolateTakeFrame(id<MTLTexture> depth, id<MTLTexture> motion, uint3
 VKFN(void) vkCmdMarkUiKSA(VkCommandBuffer commandBuffer) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (!kmtlConfig().frameInterpolation || !cb->inRenderPass || !cb->passDesc) return;
-    id<MTLTexture> src = cb->passDesc.colorAttachments[0].texture;
+    if (!kmtlConfig().frameInterpolation || !cb->pass.active || !cb->pass.desc) return;
+    id<MTLTexture> src = cb->pass.desc.colorAttachments[0].texture;
     if (!src || src.sampleCount > 1 || src.storageMode == MTLStorageModeMemoryless) return;
     std::lock_guard<std::mutex> lock(g_fi.m);
     if (!g_fi.scene || g_fi.scene.width != src.width || g_fi.scene.height != src.height || g_fi.scene.pixelFormat != src.pixelFormat) {

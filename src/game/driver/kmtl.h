@@ -131,13 +131,13 @@ struct KStallTimer {
 //   6. g_frameMutex (diagnostics/instruments.mm)
 //   7. KPresentState::m (presentation/pacing.mm)
 //   8. g_setsMutex (resources/descriptor.mm)
-//   9. KDevice::residencyMutex
+//   9. KDevice::residency.mutex
 //  10. g_mutex (diagnostics/passdump.mm)
 //  11. the rest, under which nothing but the log's is taken: g_swapchainsMutex, g_latencyMutex
 //      (presentation/pacing.mm), g_hdrMutex (presentation/hdr.mm), g_fr.samplesMutex (presentation/framerate.mm),
 //      g_ft.m (presentation/frametime.mm), g_drainMutex (diagnostics/drain.mm), g_ts.m (commands/timestamps.mm),
-//      g_recentMutex (shaders/shadercache.mm), g_addrMutex (resources/accel.mm), KDevice::libraryMutex and its
-//      entries' m, KDevice::fanMutex, KDevice::tessScratchMutex, KInternalPipelines::m, KFence::m, KQueryPool::m,
+//      g_recentMutex (shaders/shadercache.mm), g_addrMutex (resources/accel.mm), KDevice::libraries.mutex and its
+//      entries' m, KDevice::fan.mutex, KDevice::tess.mutex, KInternalPipelines::m, KFence::m, KQueryPool::m,
 //      KPipeline::Pending::m
 //  12. the log's (kmtlLog), innermost: any of them may log
 // A handler takes only locks from 7 on, and holds the driver's state it uses by a shared pointer (KPresentState) or
@@ -211,11 +211,15 @@ struct KDevice : KDispatchable {
     KQueue* queue = nullptr;          // family 0
     KQueue* transferQueue = nullptr;  // family 1, when exposed
     KQueue* queueOf(uint32_t family) { return family == 1 && transferQueue ? transferQueue : queue; }
-    id<MTLResidencySet> residency = nil;
-    std::mutex residencyMutex;
-    bool residencyDirty = false;
+    // Every heap and the allocations of their own (textures, acceleration structures, buffers), in one residency set
+    // attached to the queues (setup/device.mm)
+    struct Residency {
+        id<MTLResidencySet> set = nil;
+        std::mutex mutex;
+        bool dirty = false;  // changed since the last commit
+    } residency;
     KInternalPipelines* internal = nullptr;
-    std::mutex libraryMutex;
+    // MSL compiled once per text (pipelines/compile.mm): a second caller waits for the first one's entry
     struct LibraryEntry {
         std::mutex m;
         std::condition_variable cv;
@@ -223,15 +227,23 @@ struct KDevice : KDispatchable {
         id<MTLLibrary> lib = nil;
         std::string err;
     };
-    std::unordered_map<uint64_t, std::shared_ptr<LibraryEntry>> libraryCache;  // MSL hash -> library
-    id<MTLBuffer> fanIndices = nil;  // triangle-fan emulation: (0, i, i+1) for i = 1..n-2
-    uint32_t fanVertexCapacity = 0;
-    std::mutex fanMutex;
-    // Tessellation stage outputs: one GPU-only buffer shared by every tessellated draw of every command buffer
-    // (all encoders run in queue order through the chain fence), grown to the largest draw
-    id<MTLBuffer> tessScratch = nil;
+    struct Libraries {
+        std::mutex mutex;
+        std::unordered_map<uint64_t, std::shared_ptr<LibraryEntry>> cache;  // MSL hash -> library
+    } libraries;
+    // Triangle-fan emulation (commands/draws.mm): (0, i, i+1) for i = 1..n-2
+    struct Fan {
+        id<MTLBuffer> indices = nil;
+        uint32_t vertexCapacity = 0;
+        std::mutex mutex;
+    } fan;
+    // Tessellation stage outputs (commands/draws.mm): one GPU-only buffer shared by every tessellated draw of every
+    // command buffer (all encoders run in queue order through the chain fence), grown to the largest draw
+    struct Tess {
+        id<MTLBuffer> scratch = nil;
+        std::mutex mutex;
+    } tess;
     id<MTLBuffer> timestampScratch = nil;  // target of the fill in timestamp encoders (made with the device)
-    std::mutex tessScratchMutex;
 
     void addResident(id<MTLAllocation> a);
     void removeResident(id<MTLAllocation> a);

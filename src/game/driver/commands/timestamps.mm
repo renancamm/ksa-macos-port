@@ -66,8 +66,8 @@ void KCommandBuffer::writeTimestamp(KQueryPool* pool, uint32_t query) {
     }
     if (render) {
         // Taken when the pass ends; split: at its next draw (stampSplit)
-        tsDeferred.push_back({pool, query});
-        if (mode == kZonesSplit && deferredStores && passDesc) tsSplit = true;
+        ts.deferred.push_back({pool, query});
+        if (mode == kZonesSplit && pass.deferredStores && pass.desc) ts.split = true;
         return;
     }
     stampTimestamp(pool, query);
@@ -75,16 +75,16 @@ void KCommandBuffer::writeTimestamp(KQueryPool* pool, uint32_t query) {
 
 // A tiny blit encoder after everything recorded so far, whose end is the timestamp
 void KCommandBuffer::stampTimestamp(KQueryPool* pool, uint32_t query) {
-    if (!tsSamples) {
-        tsSamples = acquireSamples(device, "vkCmdWriteTimestamp");
-        if (!tsSamples) {
-            tsWrites.push_back({pool, query, UINT32_MAX});
+    if (!ts.samples) {
+        ts.samples = acquireSamples(device, "vkCmdWriteTimestamp");
+        if (!ts.samples) {
+            ts.writes.push_back({pool, query, UINT32_MAX});
             return;
         }
-        tsUsed = 0;
+        ts.used = 0;
     }
-    if (tsUsed + 2 > kTimestampSamples) {
-        tsWrites.push_back({pool, query, UINT32_MAX});
+    if (ts.used + 2 > kTimestampSamples) {
+        ts.writes.push_back({pool, query, UINT32_MAX});
         return;
     }
     endEncoder();
@@ -95,39 +95,39 @@ void KCommandBuffer::stampTimestamp(KQueryPool* pool, uint32_t query) {
     // done (a split render pass's second half read the first half's stores stale: the cockpit lost its lights in 4 of 9
     // split game sessions, 0 of 8 with the same blit without its samples, 0 of 5 with no blit between the halves). An
     // event before it waits for everything recorded so far; timestamps back to back share one
-    if (!stampedLast) {
-        if (!stampEvent) stampEvent = [device->mtl newEvent];
-        [mtl encodeSignalEvent:stampEvent value:++stampSignaled];
-        [mtl encodeWaitForEvent:stampEvent value:stampSignaled];
+    if (!ts.last) {
+        if (!ts.event) ts.event = [device->mtl newEvent];
+        [mtl encodeSignalEvent:ts.event value:++ts.signaled];
+        [mtl encodeWaitForEvent:ts.event value:ts.signaled];
     }
     MTLBlitPassDescriptor* d = [MTLBlitPassDescriptor blitPassDescriptor];
-    d.sampleBufferAttachments[0].sampleBuffer = tsSamples;
-    d.sampleBufferAttachments[0].startOfEncoderSampleIndex = tsUsed;
-    d.sampleBufferAttachments[0].endOfEncoderSampleIndex = tsUsed + 1;
+    d.sampleBufferAttachments[0].sampleBuffer = ts.samples;
+    d.sampleBufferAttachments[0].startOfEncoderSampleIndex = ts.used;
+    d.sampleBufferAttachments[0].endOfEncoderSampleIndex = ts.used + 1;
     id<MTLBlitCommandEncoder> b = [mtl blitCommandEncoderWithDescriptor:d];
     waitForRoles(b, kClassAll);  // after everything recorded so far
     [b fillBuffer:device->timestampScratch range:NSMakeRange(0, 4) value:0];
     [b updateFence:finishFence(kClassAll)];
     [b endEncoding];
-    encRoles = 0;
-    stampedLast = true;
-    tsWrites.push_back({pool, query, tsUsed + 1});
-    tsUsed += 2;
+    order.roles = 0;
+    ts.last = true;
+    ts.writes.push_back({pool, query, ts.used + 1});
+    ts.used += 2;
 }
 
 // At submit: resolve the samples into the pools when the command buffer completes
 void KCommandBuffer::submitTimestamps(id<MTLCommandBuffer> c) {
-    if (tsWrites.empty()) { releaseTimestamps(); return; }
-    id<MTLCounterSampleBuffer> samples = tsSamples;
-    uint32_t used = tsUsed;
-    auto writes = std::make_shared<std::vector<TimestampWrite>>(std::move(tsWrites));
-    tsSamples = nil;
-    tsWrites.clear();
+    if (ts.writes.empty()) { releaseTimestamps(); return; }
+    id<MTLCounterSampleBuffer> samples = ts.samples;
+    uint32_t used = ts.used;
+    auto writes = std::make_shared<std::vector<TimestampWrite>>(std::move(ts.writes));
+    ts.samples = nil;
+    ts.writes.clear();
     [c addCompletedHandler:^(id<MTLCommandBuffer>) {
         NSData* data = samples && used ? [samples resolveCounterRange:NSMakeRange(0, used)] : nil;
-        const uint64_t* ts = data ? (const uint64_t*)data.bytes : nullptr;
+        const uint64_t* stamps = data ? (const uint64_t*)data.bytes : nullptr;
         for (auto& w : *writes) {
-            uint64_t v = ts && w.sample < used ? ts[w.sample] : 0;
+            uint64_t v = stamps && w.sample < used ? stamps[w.sample] : 0;
             if (v == MTLCounterErrorValue) v = 0;
             std::lock_guard<std::mutex> lock(w.pool->m);
             if (w.query < w.pool->count) {
@@ -141,11 +141,11 @@ void KCommandBuffer::submitTimestamps(id<MTLCommandBuffer> c) {
 }
 
 void KCommandBuffer::releaseTimestamps() {
-    recycleSamples(tsSamples);
-    tsSamples = nil;
-    tsWrites.clear();
-    tsDeferred.clear();
-    tsSplit = false;
+    recycleSamples(ts.samples);
+    ts.samples = nil;
+    ts.writes.clear();
+    ts.deferred.clear();
+    ts.split = false;
 }
 
 VKFN(void) vkCmdResetQueryPool(VkCommandBuffer, VkQueryPool pool, uint32_t first, uint32_t n) {
@@ -167,7 +167,7 @@ VKFN(void) vkCmdWriteTimestamp2(VkCommandBuffer commandBuffer, VkPipelineStageFl
 // Timestamps back to back split it once, and those after its last draw are taken when it ends, its stores and resolves
 // in the zone they close; what is encoded between a timestamp and the next draw counts in the zone before it
 void KCommandBuffer::stampSplit() {
-    if (!tsSplit) return;
+    if (!ts.split) return;
     suspendRender();
     takeSplitStamps();
     resumeRender();
@@ -175,8 +175,8 @@ void KCommandBuffer::stampSplit() {
 
 // The split's timestamps, the pass suspended (each waits for the first half through stampTimestamp's event)
 void KCommandBuffer::takeSplitStamps() {
-    if (!tsSplit) return;
-    tsSplit = false;
-    for (auto& d : tsDeferred) stampTimestamp(d.first, d.second);
-    tsDeferred.clear();
+    if (!ts.split) return;
+    ts.split = false;
+    for (auto& d : ts.deferred) stampTimestamp(d.first, d.second);
+    ts.deferred.clear();
 }
