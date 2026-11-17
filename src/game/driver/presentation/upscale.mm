@@ -58,6 +58,14 @@ struct Params { float4x4 egoFromClip, scene, object, sky, nearby; float4 sphere,
                 uint clouds; float cloudSeen; float2 lastJitter; uint history; float pad; };
 // How far from the followed vessel, in its bounding spheres, its own motion is a candidate for flames and smoke
 constant float kNearVessel = 6.0;
+// The clouds' motion where they have none of their own: their upscaler writes the lowest half
+constant float kNoOwnMotion = -60000.0;
+// A candidate motion past this many pixels a frame (or NaN) is none; this close to the one it would replace, the same
+constant float kMostMotion = 4096.0, kSameMotion = 0.25;
+// Without the last frame, the clouds' own motion where they hide more than this share of what is behind them
+constant float kCloudCovers = 0.5;
+// The motion texture's range (half floats), which the motion is clamped to
+constant float kMotionRange = 16384.0;
 static float luma(float3 c) { return max(dot(c, float3(0.2126, 0.7152, 0.0722)), 0.0); }
 // How far the 8 pixels around one are from where a motion takes them in the last frame's image: the lower, the better
 // that motion explains what changed. The pixel itself is left out, so its own noise doesn't pick
@@ -114,7 +122,7 @@ kernel void motion(depth2d<float, access::read> depth [[texture(0)]], texture2d<
     float fit = -1;  // the misfit of v, once needed
     auto consider = [&](float2 c) {
         // Out of range (NaN fails the test too), or the same motion (far clouds against the sky): no need to look
-        if (!all(abs(c) < 4096.0) || distance(c, v) < 0.25)
+        if (!all(abs(c) < kMostMotion) || distance(c, v) < kSameMotion)
             return;
         if (fit < 0)
             fit = misfit(color, last, int2(gid), lastAt + v, p.size);
@@ -126,11 +134,11 @@ kernel void motion(depth2d<float, access::read> depth [[texture(0)]], texture2d<
         float seen = 1.0 - float(cloudColor.read(gid).a);
         float2 m = float2(cloudMotion.read(gid).xy);
         volume = seen >= p.cloudSeen;
-        if (volume && all(m > -60000.0)) {
+        if (volume && all(m > kNoOwnMotion)) {
             float2 own = -m * p.size + p.jitter;
             if (p.history != 0)
                 consider(own);
-            else if (seen > 0.5 && all(abs(own) < 4096.0))
+            else if (seen > kCloudCovers && all(abs(own) < kMostMotion))
                 v = own;
         }
     }
@@ -144,7 +152,7 @@ kernel void motion(depth2d<float, access::read> depth [[texture(0)]], texture2d<
                 consider((was.xy / was.w * 0.5 + 0.5) * p.size - (pix - p.jitter));
         }
     }
-    mv.write(half4(half2(clamp(v, -16384.0, 16384.0)), 0, 0), gid);
+    mv.write(half4(half2(clamp(v, -kMotionRange, kMotionRange)), 0, 0), gid);
     reactive.write(half4(r), gid);
 }
 // KSA_MTL_FX_DEBUG=1: the output shows the motion vectors (red |x|, green |y|, 32 px = full) and the object mask (blue)
@@ -167,6 +175,18 @@ kernel void stretch(texture2d<half, access::sample> color [[texture(0)]], textur
     out.write(color.sample(s, min(at, content - 0.5)), gid);
 }
 )";
+
+// The motion kernel's parameters, as kMotionSource's Params
+struct MotionParams {
+    float egoFromClip[16], scene[16], object[16], sky[16], nearby[16], sphere[4], body[4];
+    float size[2], jitter[2];
+    float reactiveGain;
+    uint32_t snapshots, clouds;
+    float cloudSeen, lastJitter[2];
+    uint32_t history;
+    float pad;
+};
+static_assert(sizeof(MotionParams) == 400, "MotionParams must match kMotionSource's Params");
 
 namespace {
 struct UpscaleState {
@@ -199,7 +219,7 @@ struct UpscaleState {
     uint32_t lastW = 0, lastH = 0;  // the render size it was taken at
     id<MTLTexture> reactiveTex = nil;
     // The game's exposure as MetalFX reads it, 1x1; a new one when the value changes (never written while in use), the
-    // one before kept a while for frames still in flight
+    // one before kept until the next change for frames still in flight
     id<MTLTexture> exposureTex = nil, previousExposureTex = nil;
     float exposure = 0;
     id<MTLTexture> snapshots[3] = {nil, nil, nil};  // vkCmdUpscaleSnapshotKSA's stages: before the effects, before the bloom, after it
@@ -224,21 +244,45 @@ struct UpscaleState {
 UpscaleState& g_up = *new UpscaleState;  // never destroyed: releasing a scaler at exit aborts in MetalFX's MPSGraph teardown
 }
 
+id<MTLTexture> kmtlPrivateTexture(id<MTLDevice> d, MTLPixelFormat format, NSUInteger width, NSUInteger height,
+                                  MTLTextureUsage usage) {
+    MTLTextureDescriptor* t = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format width:width height:height
+                                                                             mipmapped:NO];
+    t.usage = usage;
+    t.storageMode = MTLStorageModePrivate;
+    return [d newTextureWithDescriptor:t];
+}
+
+std::vector<id<MTLComputePipelineState>> kmtlComputePipelines(id<MTLDevice> d, const char* source,
+                                                              std::initializer_list<const char*> names, std::string* error) {
+    std::vector<id<MTLComputePipelineState>> pipelines;
+    NSError* err = nil;
+    id<MTLLibrary> lib = [d newLibraryWithSource:[NSString stringWithUTF8String:source] options:nil error:&err];
+    if (!lib && error) *error = err.localizedDescription.UTF8String ?: "no library";
+    for (const char* name : names) {
+        id<MTLFunction> f = lib ? [lib newFunctionWithName:[NSString stringWithUTF8String:name]] : nil;
+        NSError* perr = nil;
+        id<MTLComputePipelineState> ps = f ? [d newComputePipelineStateWithFunction:f error:&perr] : nil;
+        if (!ps && lib && error && error->empty())
+            *error = perr && perr.localizedDescription.UTF8String ? perr.localizedDescription.UTF8String
+                                                                  : std::string("no function ") + name;
+        pipelines.push_back(ps);
+    }
+    return pipelines;
+}
+
 static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uint32_t outH, bool spatial,
                     MTLPixelFormat colorFormat, MTLPixelFormat outFormat, float minContent) {
     if (g_up.failed) return false;
     id<MTLDevice> d = dev->mtl;
     if (!g_up.motion) {
-        NSError* err = nil;
-        id<MTLLibrary> lib = [d newLibraryWithSource:[NSString stringWithUTF8String:kMotionSource] options:nil error:&err];
-        id<MTLFunction> f = [lib newFunctionWithName:@"motion"];
-        g_up.motion = f ? [d newComputePipelineStateWithFunction:f error:&err] : nil;
-        id<MTLFunction> dv = [lib newFunctionWithName:@"debugView"];
-        g_up.debugView = dv ? [d newComputePipelineStateWithFunction:dv error:&err] : nil;
-        id<MTLFunction> st = [lib newFunctionWithName:@"stretch"];
-        g_up.stretch = st ? [d newComputePipelineStateWithFunction:st error:&err] : nil;
+        std::string err;
+        auto kernels = kmtlComputePipelines(d, kMotionSource, {"motion", "debugView", "stretch"}, &err);
+        g_up.motion = kernels[0];
+        g_up.debugView = kernels[1];
+        g_up.stretch = kernels[2];
         if (!g_up.motion) {
-            KERR("upscale: motion kernel: %s", err.localizedDescription.UTF8String);
+            KERR("upscale: motion kernel: %s", err.c_str());
             g_up.failed = true;
             return false;
         }
@@ -269,8 +313,8 @@ static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uin
         // With dynamic resolution, the content can shrink to minContent of the input: the temporal scaler's output is
         // as far as it scales from there (the lowest level's size rounded as dynres.mm rounds it), and the spatial one
         // takes it the rest of the way
-        uint32_t midW = std::min(outW, std::max(inW, (uint32_t)(std::round(inW * minContent) * most)));
-        uint32_t midH = std::min(outH, std::max(inH, (uint32_t)(std::round(inH * minContent) * most)));
+        uint32_t midW = std::min(outW, std::max(inW, kmtlUpscaleReach((uint32_t)std::round(inW * minContent), most)));
+        uint32_t midH = std::min(outH, std::max(inH, kmtlUpscaleReach((uint32_t)std::round(inH * minContent), most)));
         bool rest = midW != outW || midH != outH;
         td.colorTextureFormat = colorFormat;
         td.depthTextureFormat = MTLPixelFormatDepth32Float;
@@ -293,13 +337,9 @@ static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uin
         td.reactiveMaskTextureEnabled = YES;
         td.reactiveMaskTextureFormat = MTLPixelFormatR8Unorm;
         g_up.temporal = [td newTemporalScalerWithDevice:d];
-        MTLTextureDescriptor* md = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRG16Float
-                                                                                      width:inW height:inH mipmapped:NO];
-        md.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
-        md.storageMode = MTLStorageModePrivate;
-        g_up.motionTex = [d newTextureWithDescriptor:md];
-        md.pixelFormat = MTLPixelFormatR8Unorm;
-        g_up.reactiveTex = [d newTextureWithDescriptor:md];
+        MTLTextureUsage readWrite = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
+        g_up.motionTex = kmtlPrivateTexture(d, MTLPixelFormatRG16Float, inW, inH, readWrite);
+        g_up.reactiveTex = kmtlPrivateTexture(d, MTLPixelFormatR8Unorm, inW, inH, readWrite);
         if (g_up.temporal && rest) {
             MTLFXSpatialScalerDescriptor* sd = [MTLFXSpatialScalerDescriptor new];
             sd.colorTextureFormat = MTLPixelFormatRGBA16Float;
@@ -307,11 +347,8 @@ static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uin
             sd.inputWidth = midW; sd.inputHeight = midH; sd.outputWidth = outW; sd.outputHeight = outH;
             sd.colorProcessingMode = MTLFXSpatialScalerColorProcessingModeHDR;
             g_up.rest = [sd newSpatialScalerWithDevice:d];
-            MTLTextureDescriptor* rd = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA16Float
-                                                                                          width:midW height:midH mipmapped:NO];
-            rd.usage = g_up.temporal.outputTextureUsage | MTLTextureUsageShaderRead;
-            rd.storageMode = MTLStorageModePrivate;
-            g_up.restTex = [d newTextureWithDescriptor:rd];
+            g_up.restTex = kmtlPrivateTexture(d, MTLPixelFormatRGBA16Float, midW, midH,
+                                              g_up.temporal.outputTextureUsage | MTLTextureUsageShaderRead);
             if (!g_up.rest || !g_up.restTex) g_up.temporal = nil;
         }
         if (g_up.temporal)
@@ -365,6 +402,180 @@ static void fullBarrier(KCommandBuffer* cb) {
     cb->stampedLast = false;
 }
 
+// This frame's content in the input size the scalers are made for (dynamic resolution: the level's size), within the
+// textures it is read from (the motion kernel reads the depth at the colour's pixels)
+static void contentSize(const VkUpscaleInfoKSA* info, const KImage* color, const KImage* depth, bool spatial, uint32_t* cw,
+                        uint32_t* ch) {
+    *cw = info->contentWidth ? std::min(info->contentWidth, info->inputWidth) : info->inputWidth;
+    *ch = info->contentHeight ? std::min(info->contentHeight, info->inputHeight) : info->inputHeight;
+    *cw = std::min<uint32_t>(*cw, (uint32_t)color->mtl.width);
+    *ch = std::min<uint32_t>(*ch, (uint32_t)color->mtl.height);
+    if (!spatial) {
+        *cw = std::min<uint32_t>(*cw, (uint32_t)depth->mtl.width);
+        *ch = std::min<uint32_t>(*ch, (uint32_t)depth->mtl.height);
+    }
+}
+
+// Where MetalFX can't scale this frame: the content stretched to the output, filtered (g_up.m held)
+static void encodeStretch(KCommandBuffer* cb, id<MTLTexture> color, id<MTLTexture> out, uint32_t cw, uint32_t ch) {
+    float content[2] = {(float)cw, (float)ch};
+    id<MTLComputeCommandEncoder> e = [cb->mtl computeCommandEncoder];
+    e.label = @"upscale stretch";
+    [e setComputePipelineState:g_up.stretch];
+    [e setTexture:color atIndex:0];
+    [e setTexture:out atIndex:1];
+    [e setBytes:content length:sizeof(content) atIndex:0];
+    [e dispatchThreads:MTLSizeMake(out.width, out.height, 1) threadsPerThreadgroup:MTLSizeMake(16, 16, 1)];
+    [e endEncoding];
+}
+
+static void encodeSpatial(KCommandBuffer* cb, id<MTLFXSpatialScaler> scaler, id<MTLTexture> color, id<MTLTexture> out,
+                          uint32_t cw, uint32_t ch) {
+    scaler.colorTexture = color;
+    scaler.outputTexture = out;
+    scaler.inputContentWidth = cw;
+    scaler.inputContentHeight = ch;
+    [scaler encodeToCommandBuffer:cb->mtl];
+}
+
+// MetalFX Temporal's motion vectors and reactive mask (g_up.m held): the motion kernel over the content, with the
+// snapshots taken this frame, the clouds' own colour and motion where they are this frame's at this size, and the last
+// frame's image where it is the frame just before at this size. Its parameters, for the debug view; clouds: whether the
+// clouds' were used
+static MotionParams encodeMotion(KCommandBuffer* cb, const VkUpscaleInfoKSA* info, KImage* color, KImage* depth,
+                                 uint32_t cw, uint32_t ch, bool haveLast, bool* clouds) {
+    MotionParams p;
+    memcpy(p.egoFromClip, info->egoFromClip, sizeof(p.egoFromClip));
+    memcpy(p.scene, info->prevClipFromEgo, sizeof(p.scene));
+    memcpy(p.object, info->prevClipFromEgoObject, sizeof(p.object));
+    memcpy(p.sky, info->prevClipFromEgoSky, sizeof(p.sky));
+    memcpy(p.nearby, info->prevClipFromEgoNearby, sizeof(p.nearby));
+    memcpy(p.body, info->bodySphere, sizeof(p.body));
+    memcpy(p.sphere, info->objectSphere, sizeof(p.sphere));
+    p.size[0] = (float)cw; p.size[1] = (float)ch;
+    p.jitter[0] = info->jitterX; p.jitter[1] = info->jitterY;
+    id<MTLComputeCommandEncoder> e = [cb->mtl computeCommandEncoder];
+    e.label = @"upscale motion vectors";
+    [e setComputePipelineState:g_up.motion];
+    [e setTexture:depth->mtl atIndex:0];
+    [e setTexture:g_up.motionTex atIndex:1];
+    [e setTexture:color->mtl atIndex:2];
+    uint32_t snaps = 0;
+    for (uint32_t i = 0; i < 3; i++) {
+        id<MTLTexture> s = g_up.snapshots[i];
+        bool taken = (cb->fxSnapshots & 1u << i) && s && s.width == color->mtl.width && s.height == color->mtl.height;
+        if (taken) snaps |= 1u << i;
+        [e setTexture:taken ? s : color->mtl atIndex:i == 0 ? 3 : 4 + i];
+    }
+    [e setTexture:g_up.reactiveTex atIndex:4];
+    auto* cloudColor = (KImage*)info->cloudColor;
+    auto* cloudMotion = (KImage*)info->cloudMotion;
+    *clouds = cloudColor && cloudMotion && cloudColor->mtl.width == color->mtl.width &&
+              cloudColor->mtl.height == color->mtl.height && cloudMotion->mtl.width == color->mtl.width &&
+              cloudMotion->mtl.height == color->mtl.height;
+    [e setTexture:*clouds ? cloudColor->mtl : color->mtl atIndex:7];
+    [e setTexture:*clouds ? cloudMotion->mtl : color->mtl atIndex:8];
+    if (!g_up.lastColor || g_up.lastColor.width != color->mtl.width || g_up.lastColor.height != color->mtl.height ||
+        g_up.lastColor.pixelFormat != color->mtl.pixelFormat) {
+        g_up.lastColor = kmtlPrivateTexture(cb->device->mtl, color->mtl.pixelFormat, color->mtl.width, color->mtl.height,
+                                            MTLTextureUsageShaderRead);
+        haveLast = false;
+    }
+    bool history = haveLast && g_up.lastW == cw && g_up.lastH == ch && !(info->flags & kUpscaleReset);
+    [e setTexture:history ? g_up.lastColor : color->mtl atIndex:9];
+    p.reactiveGain = kReactiveGain;
+    p.snapshots = snaps;
+    p.clouds = *clouds ? 1 : 0;
+    p.cloudSeen = kCloudSeen;
+    p.lastJitter[0] = g_up.lastJitter[0]; p.lastJitter[1] = g_up.lastJitter[1];
+    p.history = history ? 1 : 0;
+    p.pad = 0;
+    [e setBytes:&p length:sizeof(p) atIndex:0];
+    [e dispatchThreads:MTLSizeMake(cw, ch, 1) threadsPerThreadgroup:MTLSizeMake(16, 16, 1)];
+    [e endEncoding];
+    return p;
+}
+
+// This frame's image for the next frame's motion candidates (g_up.m held), only when one can use it: clouds or smoke
+// drawn, or a vessel followed
+static void keepLastImage(KCommandBuffer* cb, const VkUpscaleInfoKSA* info, id<MTLTexture> color, bool clouds,
+                          uint32_t cw, uint32_t ch) {
+    g_up.haveLast = g_up.lastColor && (clouds || info->objectSphere[3] > 0);
+    if (!g_up.haveLast) return;
+    id<MTLBlitCommandEncoder> b = [cb->mtl blitCommandEncoder];
+    b.label = @"upscale last image";
+    [b copyFromTexture:color toTexture:g_up.lastColor];
+    [b endEncoding];
+    fullBarrier(cb);
+    g_up.lastJitter[0] = info->jitterX; g_up.lastJitter[1] = info->jitterY;
+    g_up.lastW = cw; g_up.lastH = ch;
+}
+
+// KSA_MTL_FX_DEBUG=1: the motion vectors and the object mask in the output instead of the image
+static void encodeDebugView(KCommandBuffer* cb, id<MTLTexture> depth, id<MTLTexture> out, const MotionParams& p) {
+    id<MTLComputeCommandEncoder> e = [cb->mtl computeCommandEncoder];
+    [e setComputePipelineState:g_up.debugView];
+    [e setTexture:depth atIndex:0];
+    [e setTexture:g_up.motionTex atIndex:1];
+    [e setTexture:out atIndex:2];
+    [e setBytes:&p length:sizeof(p) atIndex:0];
+    [e dispatchThreads:MTLSizeMake(out.width, out.height, 1) threadsPerThreadgroup:MTLSizeMake(16, 16, 1)];
+    [e endEncoding];
+}
+
+// The game's exposure as MetalFX reads it (g_up.m held): a 1x1 texture, a new one when the value changes, as one may
+// still be read by frames in flight
+static id<MTLTexture> exposureTexture(id<MTLDevice> d, float value) {
+    float exposure = value > 0 && std::isfinite(value) ? value : 1.f;
+    if (!g_up.exposureTex || exposure != g_up.exposure) {
+        MTLTextureDescriptor* ed = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR16Float
+                                                                                      width:1 height:1 mipmapped:NO];
+        ed.usage = MTLTextureUsageShaderRead;
+        ed.storageMode = MTLStorageModeShared;
+        id<MTLTexture> t = [d newTextureWithDescriptor:ed];
+        __fp16 v = (__fp16)exposure;
+        [t replaceRegion:MTLRegionMake2D(0, 0, 1, 1) mipmapLevel:0 withBytes:&v bytesPerRow:sizeof(v)];
+        g_up.previousExposureTex = g_up.exposureTex;
+        g_up.exposureTex = t;
+        g_up.exposure = exposure;
+    }
+    return g_up.exposureTex;
+}
+
+// MetalFX Temporal, and past its largest scale the spatial scaler the rest of the way (g_up.m held); the frame's inputs
+// kept for frame interpolation at present
+static void encodeTemporal(KCommandBuffer* cb, const VkUpscaleInfoKSA* info, id<MTLTexture> color, id<MTLTexture> depth,
+                           id<MTLTexture> out, uint32_t cw, uint32_t ch) {
+    g_up.temporal.colorTexture = color;
+    g_up.temporal.depthTexture = depth;
+    g_up.temporal.motionTexture = g_up.motionTex;
+    g_up.temporal.outputTexture = g_up.rest ? g_up.restTex : out;
+    g_up.temporal.inputContentWidth = cw;
+    g_up.temporal.inputContentHeight = ch;
+    g_up.temporal.jitterOffsetX = info->jitterX;
+    g_up.temporal.jitterOffsetY = info->jitterY;
+    g_up.temporal.motionVectorScaleX = 1.f;
+    g_up.temporal.motionVectorScaleY = 1.f;
+    g_up.temporal.depthReversed = YES;
+    g_up.temporal.reset = (info->flags & kUpscaleReset) != 0;
+    g_up.temporal.reactiveMaskTexture = g_up.reactiveTex;
+    g_up.temporal.exposureTexture = exposureTexture(cb->device->mtl, info->exposure);
+    [g_up.temporal encodeToCommandBuffer:cb->mtl];
+    if (g_up.rest) {
+        fullBarrier(cb);
+        g_up.rest.colorTexture = g_up.restTex;
+        g_up.rest.outputTexture = out;
+        g_up.rest.inputContentWidth = g_up.restTex.width;
+        g_up.rest.inputContentHeight = g_up.restTex.height;
+        [g_up.rest encodeToCommandBuffer:cb->mtl];
+    }
+    g_up.frameDepth = depth;
+    g_up.frameJitter[0] = info->jitterX; g_up.frameJitter[1] = info->jitterY;
+    g_up.fovY = info->fovY; g_up.nearPlane = info->nearPlane; g_up.farPlane = info->farPlane; g_up.deltaTime = info->deltaTime;
+    g_up.frameReset = (info->flags & kUpscaleReset) != 0;
+    g_up.frameSerial++;
+}
+
 VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA* info) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
@@ -379,11 +590,8 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
     // in between leaves it older
     bool haveLast = g_up.haveLast;
     g_up.haveLast = false;
-    // Dynamic resolution: this frame's content, in the input size the scalers are made for
-    uint32_t cw = info->contentWidth ? std::min(info->contentWidth, info->inputWidth) : info->inputWidth;
-    uint32_t ch = info->contentHeight ? std::min(info->contentHeight, info->inputHeight) : info->inputHeight;
-    cw = std::min<uint32_t>(cw, (uint32_t)color->mtl.width);
-    ch = std::min<uint32_t>(ch, (uint32_t)color->mtl.height);
+    uint32_t cw, ch;
+    contentSize(info, color, depth, spatial, &cw, &ch);
     bool ready = prepare(cb->device, info->inputWidth, info->inputHeight, outW, outH, spatial, color->mtl.pixelFormat,
                          out->mtl.pixelFormat, kmtlDynamicMinContent());
     id<MTLFXSpatialScaler> spatialScaler = ready && spatial ? spatialFor(cb->device->mtl, cw, ch) : nil;
@@ -396,142 +604,20 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
     cb->waitForAllResolves();
     fullBarrier(cb);
     if (!ready) {
-        float content[2] = {(float)cw, (float)ch};
-        id<MTLComputeCommandEncoder> e = [cb->mtl computeCommandEncoder];
-        e.label = @"upscale stretch";
-        [e setComputePipelineState:g_up.stretch];
-        [e setTexture:color->mtl atIndex:0];
-        [e setTexture:out->mtl atIndex:1];
-        [e setBytes:content length:sizeof(content) atIndex:0];
-        [e dispatchThreads:MTLSizeMake(outW, outH, 1) threadsPerThreadgroup:MTLSizeMake(16, 16, 1)];
-        [e endEncoding];
+        encodeStretch(cb, color->mtl, out->mtl, cw, ch);
     } else if (spatial) {
-        spatialScaler.colorTexture = color->mtl;
-        spatialScaler.outputTexture = out->mtl;
-        spatialScaler.inputContentWidth = cw;
-        spatialScaler.inputContentHeight = ch;
-        [spatialScaler encodeToCommandBuffer:cb->mtl];
+        encodeSpatial(cb, spatialScaler, color->mtl, out->mtl, cw, ch);
     } else {
-        struct { float egoFromClip[16], scene[16], object[16], sky[16], nearby[16], sphere[4], body[4]; float size[2]; float jitter[2]; float reactiveGain; uint32_t snapshots;
-                 uint32_t clouds; float cloudSeen; float lastJitter[2]; uint32_t history; float pad; } p;
-        memcpy(p.egoFromClip, info->egoFromClip, sizeof(p.egoFromClip));
-        memcpy(p.scene, info->prevClipFromEgo, sizeof(p.scene));
-        memcpy(p.object, info->prevClipFromEgoObject, sizeof(p.object));
-        memcpy(p.sky, info->prevClipFromEgoSky, sizeof(p.sky));
-        memcpy(p.nearby, info->prevClipFromEgoNearby, sizeof(p.nearby));
-        memcpy(p.body, info->bodySphere, sizeof(p.body));
-        memcpy(p.sphere, info->objectSphere, sizeof(p.sphere));
-        p.size[0] = (float)cw; p.size[1] = (float)ch;
-        p.jitter[0] = info->jitterX; p.jitter[1] = info->jitterY;
-        id<MTLComputeCommandEncoder> e = [cb->mtl computeCommandEncoder];
-        e.label = @"upscale motion vectors";
-        [e setComputePipelineState:g_up.motion];
-        [e setTexture:depth->mtl atIndex:0];
-        [e setTexture:g_up.motionTex atIndex:1];
-        [e setTexture:color->mtl atIndex:2];
-        uint32_t snaps = 0;
-        for (uint32_t i = 0; i < 3; i++) {
-            id<MTLTexture> s = g_up.snapshots[i];
-            bool taken = (cb->fxSnapshots & 1u << i) && s && s.width == color->mtl.width && s.height == color->mtl.height;
-            if (taken) snaps |= 1u << i;
-            [e setTexture:taken ? s : color->mtl atIndex:i == 0 ? 3 : 4 + i];
-        }
-        [e setTexture:g_up.reactiveTex atIndex:4];
-        auto* cloudColor = (KImage*)info->cloudColor;
-        auto* cloudMotion = (KImage*)info->cloudMotion;
-        bool clouds = cloudColor && cloudMotion && cloudColor->mtl.width == color->mtl.width &&
-                      cloudColor->mtl.height == color->mtl.height && cloudMotion->mtl.width == color->mtl.width &&
-                      cloudMotion->mtl.height == color->mtl.height;
-        [e setTexture:clouds ? cloudColor->mtl : color->mtl atIndex:7];
-        [e setTexture:clouds ? cloudMotion->mtl : color->mtl atIndex:8];
-        if ((!g_up.lastColor || g_up.lastColor.width != color->mtl.width || g_up.lastColor.height != color->mtl.height ||
-                       g_up.lastColor.pixelFormat != color->mtl.pixelFormat)) {
-            MTLTextureDescriptor* ld = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:color->mtl.pixelFormat
-                                                                                          width:color->mtl.width height:color->mtl.height mipmapped:NO];
-            ld.usage = MTLTextureUsageShaderRead;
-            ld.storageMode = MTLStorageModePrivate;
-            g_up.lastColor = [cb->device->mtl newTextureWithDescriptor:ld];
-            haveLast = false;
-        }
-        bool history = haveLast && g_up.lastW == cw && g_up.lastH == ch &&
-                       !(info->flags & kUpscaleReset);
-        [e setTexture:history ? g_up.lastColor : color->mtl atIndex:9];
-        p.reactiveGain = kReactiveGain;
-        p.snapshots = snaps;
-        p.clouds = clouds ? 1 : 0;
-        p.cloudSeen = kCloudSeen;
-        p.lastJitter[0] = g_up.lastJitter[0]; p.lastJitter[1] = g_up.lastJitter[1];
-        p.history = history ? 1 : 0;
-        p.pad = 0;
-        [e setBytes:&p length:sizeof(p) atIndex:0];
-        [e dispatchThreads:MTLSizeMake(cw, ch, 1) threadsPerThreadgroup:MTLSizeMake(16, 16, 1)];
-        [e endEncoding];
+        bool clouds = false;
+        MotionParams p = encodeMotion(cb, info, color, depth, cw, ch, haveLast, &clouds);
         fullBarrier(cb);
-        // This frame's image for the next frame's choices
-        // Only when a candidate can use it: clouds or smoke drawn, or a vessel followed
-        g_up.haveLast = g_up.lastColor && (clouds || info->objectSphere[3] > 0);
-        if (g_up.haveLast) {
-            id<MTLBlitCommandEncoder> b = [cb->mtl blitCommandEncoder];
-            b.label = @"upscale last image";
-            [b copyFromTexture:color->mtl toTexture:g_up.lastColor];
-            [b endEncoding];
-            fullBarrier(cb);
-            g_up.lastJitter[0] = info->jitterX; g_up.lastJitter[1] = info->jitterY;
-            g_up.lastW = cw; g_up.lastH = ch;
-        }
+        keepLastImage(cb, info, color->mtl, clouds, cw, ch);
         if (kmtlConfig().fxDebug && g_up.debugView) {
-            id<MTLComputeCommandEncoder> e2 = [cb->mtl computeCommandEncoder];
-            [e2 setComputePipelineState:g_up.debugView];
-            [e2 setTexture:depth->mtl atIndex:0];
-            [e2 setTexture:g_up.motionTex atIndex:1];
-            [e2 setTexture:out->mtl atIndex:2];
-            [e2 setBytes:&p length:sizeof(p) atIndex:0];
-            [e2 dispatchThreads:MTLSizeMake(outW, outH, 1) threadsPerThreadgroup:MTLSizeMake(16, 16, 1)];
-            [e2 endEncoding];
+            encodeDebugView(cb, depth->mtl, out->mtl, p);
             fullBarrier(cb);
             return;
         }
-        g_up.temporal.colorTexture = color->mtl;
-        g_up.temporal.depthTexture = depth->mtl;
-        g_up.temporal.motionTexture = g_up.motionTex;
-        g_up.temporal.outputTexture = g_up.rest ? g_up.restTex : out->mtl;
-        g_up.temporal.inputContentWidth = cw;
-        g_up.temporal.inputContentHeight = ch;
-        g_up.temporal.jitterOffsetX = info->jitterX;
-        g_up.temporal.jitterOffsetY = info->jitterY;
-        g_up.temporal.motionVectorScaleX = 1.f;
-        g_up.temporal.motionVectorScaleY = 1.f;
-        g_up.temporal.depthReversed = YES;
-        g_up.temporal.reset = (info->flags & kUpscaleReset) != 0;
-        g_up.temporal.reactiveMaskTexture = g_up.reactiveTex;
-        float exposure = info->exposure > 0 && std::isfinite(info->exposure) ? info->exposure : 1.f;
-        if (!g_up.exposureTex || exposure != g_up.exposure) {
-            MTLTextureDescriptor* ed = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR16Float
-                                                                                          width:1 height:1 mipmapped:NO];
-            ed.usage = MTLTextureUsageShaderRead;
-            ed.storageMode = MTLStorageModeShared;
-            id<MTLTexture> t = [cb->device->mtl newTextureWithDescriptor:ed];
-            __fp16 v = (__fp16)exposure;
-            [t replaceRegion:MTLRegionMake2D(0, 0, 1, 1) mipmapLevel:0 withBytes:&v bytesPerRow:sizeof(v)];
-            g_up.previousExposureTex = g_up.exposureTex;
-            g_up.exposureTex = t;
-            g_up.exposure = exposure;
-        }
-        g_up.temporal.exposureTexture = g_up.exposureTex;
-        [g_up.temporal encodeToCommandBuffer:cb->mtl];
-        if (g_up.rest) {
-            fullBarrier(cb);
-            g_up.rest.colorTexture = g_up.restTex;
-            g_up.rest.outputTexture = out->mtl;
-            g_up.rest.inputContentWidth = g_up.restTex.width;
-            g_up.rest.inputContentHeight = g_up.restTex.height;
-            [g_up.rest encodeToCommandBuffer:cb->mtl];
-        }
-        g_up.frameDepth = depth->mtl;
-        g_up.frameJitter[0] = info->jitterX; g_up.frameJitter[1] = info->jitterY;
-        g_up.fovY = info->fovY; g_up.nearPlane = info->nearPlane; g_up.farPlane = info->farPlane; g_up.deltaTime = info->deltaTime;
-        g_up.frameReset = (info->flags & kUpscaleReset) != 0;
-        g_up.frameSerial++;
+        encodeTemporal(cb, info, color->mtl, depth->mtl, out->mtl, cw, ch);
     }
     fullBarrier(cb);
 }
@@ -546,11 +632,7 @@ VKFN(void) vkCmdUpscaleSnapshotKSA(VkCommandBuffer commandBuffer, VkImage image,
     id<MTLTexture> src = color->mtl;
     __strong id<MTLTexture>& snapshot = g_up.snapshots[stage];
     if (!snapshot || snapshot.width != src.width || snapshot.height != src.height || snapshot.pixelFormat != src.pixelFormat) {
-        MTLTextureDescriptor* d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:src.pixelFormat width:src.width
-                                                                                   height:src.height mipmapped:NO];
-        d.usage = MTLTextureUsageShaderRead;
-        d.storageMode = MTLStorageModePrivate;
-        snapshot = [cb->device->mtl newTextureWithDescriptor:d];
+        snapshot = kmtlPrivateTexture(cb->device->mtl, src.pixelFormat, src.width, src.height, MTLTextureUsageShaderRead);
     }
     cb->endEncoder();
     cb->waitForAllResolves();
@@ -574,12 +656,15 @@ float kmtlUpscaleMaxScale() {
     return most;
 }
 
+// The temporal scaler's output from a content size, as far as it scales (whole pixels): prepare()'s, and the lowest
+// level framerate.mm picks from the display
+uint32_t kmtlUpscaleReach(uint32_t content, float most) {
+    return (uint32_t)(content * most);
+}
+
 // How far the temporal scaler scales on this Mac, past which the spatial one does the rest: for the Mac Port tab
 VKFN(float) vkGetUpscaleMaxScaleKSA(void) {
-    @autoreleasepool {
-        id<MTLDevice> d = MTLCreateSystemDefaultDevice();
-        return d ? [MTLFXTemporalScalerDescriptor supportedInputContentMaxScaleForDevice:d] : 0.0f;
-    }
+    return kmtlUpscaleMaxScale();
 }
 
 // For frame interpolation: the game calls it inside its final pass, between the composited scene and the UI. The pass

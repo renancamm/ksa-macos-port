@@ -112,9 +112,12 @@ static double displayRefresh(CAMetalLayer* layer) {
 
 // Steady Frame Rate's rate (KSA_MTL_STEADY_FRAME_RATE: 30, 40 or 60; 0: off)
 int kmtlSteadyFps() {
-    const char* v = kmtlConfig().steadyFrameRate;
-    int fps = v ? atoi(v) : 0;
-    return fps == 30 || fps == 40 || fps == 60 ? fps : 0;
+    static const int fps = [] {  // read once, as the settings are
+        const char* v = kmtlConfig().steadyFrameRate;
+        int f = v ? atoi(v) : 0;
+        return f == 30 || f == 40 || f == 60 ? f : 0;
+    }();
+    return fps;
 }
 
 // The live swapchains, for the main view's frame time and steps (kmtlFrameMs, kmtlSteadyStep). Their cadence fields
@@ -138,12 +141,18 @@ static std::vector<double> steadySteps(double hz) {
     return steps;
 }
 
-// A step's frame time and cadence (g_swapchainsMutex held, or the swapchain not listed yet). One refresh is what Vsync
-// does by itself: the frame time is then dynamic resolution's target only
+// The cadence that holds a frame time: with Vsync and more than one refresh (one is what Vsync does by itself; more
+// than one and a half, as a step's frame time is whole refreshes), else none
+static double pacedCadence(const KSwapchain* sc, double frameMs) {
+    return sc->vsync && frameMs > 1.5 * 1000.0 / sc->refreshHz ? frameMs : 0;
+}
+
+// A step's frame time and cadence (g_swapchainsMutex held, or the swapchain not listed yet). At one refresh the frame
+// time is dynamic resolution's target only
 static void takeStep(KSwapchain* sc, size_t step) {
     sc->steadyStep = step;
     sc->frameMs = sc->steadySteps[step];
-    sc->cadenceMs = sc->vsync && sc->frameMs > 1500.0 / sc->refreshHz ? sc->frameMs.load() : 0;
+    sc->cadenceMs = pacedCadence(sc, sc->frameMs);
 }
 
 // A swapchain's cadence and drawables. KSA_MTL_STEADY_FRAME_RATE: its rate's step (steadySteps), again whenever the
@@ -158,6 +167,7 @@ static void applyCadence(KSwapchain* sc) {
     // an experiment, instead of it
     bool steady = kmtlSteadyFps() && kmtlConfig().frameCadence <= 0 && sc->vsync;
     double hz = steady ? displayRefresh(layer) : 0;
+    double own;
     {
         std::lock_guard<std::mutex> lock(g_swapchainsMutex);
         if (steady) {
@@ -172,11 +182,10 @@ static void applyCadence(KSwapchain* sc) {
             sc->steadySteps.clear();
             sc->cadenceMs = sc->frameMs = kmtlConfig().frameCadence > 0 ? kmtlConfig().frameCadence : 0;
         }
+        // The rate's own step's cadence, not the step taken now: a slower step's two drawables would stay after the
+        // faster one comes back, and at 60 FPS the game then waits for a drawable and shows every other frame
+        own = sc->steadySteps.empty() ? sc->cadenceMs.load() : pacedCadence(sc, sc->steadySteps[0]);
     }
-    // The rate's own step's cadence, not the step taken now: a slower step's two drawables would stay after the faster
-    // one comes back, and at 60 FPS the game then waits for a drawable and shows every other frame
-    double own = sc->steadySteps.empty() ? sc->cadenceMs.load()
-               : sc->vsync && sc->steadySteps[0] > 1500.0 / sc->refreshHz ? sc->steadySteps[0] : 0;
     int forced = kmtlConfig().drawableCount;
     bool two = forced == 2 || (forced != 3 && own >= 25);
     layer.maximumDrawableCount = two && !kmtlConfig().frameInterpolation ? 2 : 3;

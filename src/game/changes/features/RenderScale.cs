@@ -98,9 +98,10 @@ internal static class RenderScale
         harmony.Patch(Find.Method(typeof(UiCoverageMaskSystem), "ReplayDrawData"), transpiler: maskScale);
         ApplyBloom(harmony);
         // The frame's level and Steady Frame Rate's rate steps, which work without MetalFX too (the full size their
-        // lowest level); the game's sizes at a level only with MetalFX, which alone draws below the render size
+        // lowest level); the game's sizes at a level only with MetalFX, which alone draws below the render size, and
+        // Dynamic Resolution (or the experiment dynamic_level)
         if (Upscale.Wanted || Settings.SteadyFrameRate != "off")
-            DynamicResolution.Apply(harmony, levels: Upscale.Wanted);
+            DynamicResolution.Apply(harmony, levels: Upscale.Wanted && (Settings.DynamicResolution || Settings.DynamicLevel > 0));
         // Last: it sets the game's sample count, which a Skip wouldn't undo
         if (Upscale.Wanted)
             Upscale.Apply(harmony);
@@ -352,9 +353,7 @@ internal static class RenderScale
                 postfix: new HarmonyMethod(typeof(RenderScale), nameof(BloomBuildPostfix)));
             try
             {
-                harmony.Patch(update, transpiler: new HarmonyMethod(typeof(RenderScale), nameof(BloomSpreadTranspiler)),
-                    prefix: new HarmonyMethod(typeof(RenderScale), nameof(BloomUpdatePrefix)),
-                    finalizer: new HarmonyMethod(typeof(RenderScale), nameof(BloomUpdateFinalizer)));
+                harmony.Patch(update, transpiler: new HarmonyMethod(typeof(RenderScale), nameof(BloomSpreadTranspiler)));
             }
             catch
             {
@@ -412,25 +411,6 @@ internal static class RenderScale
 
     private static bool IsOurs(Renderer renderer) =>
         Scaled && renderer.ExtentOverride is { } current && _ours is { } ours && current.Width == ours.Width && current.Height == ours.Height;
-
-    // Dynamic resolution: the shader tells its last step, which adds the glow to the main view's image, by that image's
-    // height, which the game passes as the chain's first size: the level's while the frame's data is written (otherwise
-    // the last step took the main image for another of the chain and wrote the glow alone over the scene)
-    private static void BloomUpdatePrefix(KawaseBloomRenderer __instance, out int2 __state)
-    {
-        __state = int2.Zero;
-        if (!DynamicResolution.Active || _bloomSizes(__instance) is not { Length: > 0 } sizes)
-            return;
-        __state = sizes[0];
-        sizes[0] = DynamicResolution.AtLevel(sizes[0]);
-    }
-
-    private static Exception? BloomUpdateFinalizer(Exception? __exception, KawaseBloomRenderer __instance, int2 __state)
-    {
-        if (__state != int2.Zero && _bloomSizes(__instance) is { Length: > 0 } sizes)
-            sizes[0] = __state;
-        return __exception;
-    }
 
     // The chain's first size back to the main view's: the last step's dispatch and the shader's test for it
     private static void BloomBuildPostfix(KawaseBloomRenderer __instance, Renderer ____renderer)

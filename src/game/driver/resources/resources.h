@@ -41,6 +41,9 @@ struct KImage {
     // mtl is the texture of that level, placed in the same memory as the one at the image's own size (full)
     bool dynamic = false;
     uint32_t level = 0;  // the level mtl has (0: full)
+    // How its size follows the main view's (mainW x mainH at its bind) at a level, each way (dynres.mm, KFraction)
+    uint32_t mainW = 0, mainH = 0;
+    struct KFraction { uint8_t k = 0; bool up = true; } fractionW, fractionH;
     id<MTLTexture> full = nil;
     std::vector<id<MTLTexture>> levels;  // by level, made when first used
     std::vector<KImageView*> views;      // its views, which follow it to another level
@@ -57,7 +60,8 @@ struct KImageView {
     MTLTextureType viewType = MTLTextureType2D;
     MTLTextureSwizzleChannels swizzle{};
     bool identitySwizzle = true, whole = true;
-    uint32_t level = 0;  // the image's level mtl is a view of
+    // A view of a dynamic image (dynres.mm), which follows its level: its own flag, as the image may be destroyed first
+    bool dynamic = false;
     std::vector<id<MTLTexture>> levels;  // by level
 };
 
@@ -185,7 +189,13 @@ MTLVertexFormat kmtlVertexFormat(VkFormat f);
 // Helpers (memory.mm, images.mm)
 KImage* kmtlCreateSwapchainImage(KDevice* dev, VkFormat format, uint32_t w, uint32_t h);
 void kmtlDestroyImage(KImage* img);
-// dynres.mm: dynamic resolution
+// dynres.mm: dynamic resolution's mechanism, the main view at a level of its size (which level: presentation/framerate.mm)
+constexpr uint32_t kDynamicParts = 64;     // a level is this many parts of the main view's size (0: the full size)
+constexpr uint32_t kDynamicMinLevel = 16;  // the lowest a level can be
+uint32_t kmtlDynamicScaled(uint32_t size, uint32_t level);  // a size at a level, rounded
+void kmtlDynamicSetView(uint32_t width, uint32_t height, const std::vector<uint32_t>& levels);  // images of this size dynamic from now on, these levels made ahead (0 x 0: none)
+void kmtlDynamicPrepare();                 // before a frame: the levels' textures of images bound since
+void kmtlDynamicSetLevel(uint32_t level);  // between frames: every dynamic image at this level, what it holds carried
 void kmtlDynamicBind(KImage* img);
 void kmtlDynamicForget(KImage* img);
 void kmtlDynamicAddView(KImageView* v);
@@ -194,17 +204,11 @@ void kmtlDynamicScale(const KImage* img, float* sx, float* sy);
 id<MTLTexture> kmtlViewTexture(KImageView* v, id<MTLTexture> tex);
 bool kmtlDynamicView(VkImageView view);                       // a view of a dynamic image
 void kmtlDynamicTranslate(const KSetLayout* l, uint64_t* slots);  // a set's copy: its textures at the frame's level
-float kmtlDynamicMinContent();  // the least share of the main view's size a level may have (1: dynamic resolution off)
 uint32_t kmtlDynamicLevelNow();  // the level the frame being presented was drawn at
-void kmtlDynamicNoteFrame(uint32_t level, double gpuMs, uint32_t width, uint32_t height);  // a frame's GPU time and its swapchain's size, for the level's choice
-float kmtlUpscaleMaxScale();     // upscale.mm: how far MetalFX's temporal scaler scales on this Mac
 void kmtlGpuClockStart();       // gpuclock.mm: the GPU clock's sampler, once (IOReport)
 double kmtlGpuClockShare();      // gpuclock.mm: the GPU's clock lately over its highest (1: unknown)
 double kmtlGpuClockMhz();        // gpuclock.mm: the GPU's clock lately (0: unknown)
 bool kmtlGpuClockKnown();        // gpuclock.mm: a clock read at least once
-int kmtlSteadyFps();             // swapchain.mm: Steady Frame Rate's rate (0: off)
-double kmtlFrameMs(uint32_t width, uint32_t height);  // swapchain.mm: the frame time the cadence holds, of the swapchain of this size (0: none)
-double kmtlSteadyStep(uint32_t width, uint32_t height, int dir, bool take);  // swapchain.mm: Steady Frame Rate's next step (1: slower, -1: faster), its frame time (0: none)
 // memory.mm: a VkMemoryDedicatedRequirements in the chain, filled (prefer: its prefersDedicatedAllocation)
 void kmtlFillDedicated(void* pNext, bool prefer);
 uint64_t kmtlBufferViewId(VkBufferView view);

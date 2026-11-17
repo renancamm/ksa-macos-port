@@ -109,6 +109,7 @@ setting; those of the hooks:
 | `frame_interpolation` | on: frame interpolation (the driver reads it too) |
 | `skip_game_anti_aliasing` | off: with MetalFX, the game's anti-aliasing setting applies (but CMAA2) |
 | `steady_frame_rate` | `30`, `40` or `60`: the frame's start calls the driver, which steps the rate, also without MetalFX (the driver paces the frames) |
+| `dynamic_resolution`, `dynamic_level` | on, or a level: with MetalFX, the game's own sizes for the main view follow the driver's level each frame (none drawn if one of them can't) |
 | `fewer_cloud_steps`, `fewer_cloud_light_samples`, `fewer_smoke_steps`, `fewer_cloud_shadow_updates`, `fewer_sky_lighting_updates`, `lighter_warp_cloud_shadows`, `lighter_plume_shadows`, `simpler_pcss_shadows`, `baked_milky_way`, `crew_portraits_at_15_fps`, `lighter_tumbling_physics`, `debris_settles_in_warp` | on: the Extra Performance rows |
 | `skip_hidden_crew_portraits`, `fit_hud_to_display` | off: the game's own crew portraits and flight HUD; both change while the game runs |
 | `terrain_cache`, `skip_unused_outlines`, `skip_unused_overlays`, `skip_hidden_vessel_parts`, `skip_unused_ocean_blending`, `skip_unused_aero_meshes`, `idle_thread_sleep`, `loading_screen_fps_cap`, `smoother_srb_flames` | off: leave out that patch |

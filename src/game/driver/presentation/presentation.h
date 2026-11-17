@@ -53,5 +53,25 @@ struct KSwapchain {
     NSArray* observers = nil;  // display changes that set the cadence again (swapchain.mm)
 };
 
+// The Frame Rate section (framerate.mm): the least share of the main view's size a level may have (1: no levels), for
+// MetalFX's scalers; a frame's GPU time and its swapchain's size as its present completes, for the level's and the
+// rate's choice
+float kmtlDynamicMinContent();
+void kmtlDynamicNoteFrame(uint32_t level, double gpuMs, uint32_t width, uint32_t height);
+// swapchain.mm: Steady Frame Rate's rate (0: off); the frame time the cadence holds, of the swapchain of this size (0:
+// none); its next step (dir 1: slower, -1: faster) and that step's frame time (0: none), with take taken
+int kmtlSteadyFps();
+double kmtlFrameMs(uint32_t width, uint32_t height);
+double kmtlSteadyStep(uint32_t width, uint32_t height, int dir, bool take);
+// upscale.mm: how far MetalFX's temporal scaler scales on this Mac; its output from a content size, scaled that far
+float kmtlUpscaleMaxScale();
+uint32_t kmtlUpscaleReach(uint32_t content, float most);
+// upscale.mm, for the presentation's own passes (MetalFX's, the ray history): a private 2D texture; compute pipelines
+// from MSL source, one per function name (nil where it failed; error: the first failure's)
+id<MTLTexture> kmtlPrivateTexture(id<MTLDevice> d, MTLPixelFormat format, NSUInteger width, NSUInteger height,
+                                  MTLTextureUsage usage);
+std::vector<id<MTLComputePipelineState>> kmtlComputePipelines(id<MTLDevice> d, const char* source,
+                                                              std::initializer_list<const char*> names, std::string* error);
+
 // upscale.mm: the present's MetalFX passes
 id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<MTLTexture> color);

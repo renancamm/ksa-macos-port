@@ -155,6 +155,10 @@ public partial class Director
         if (!open)
         {
             GameSettings.Close();
+            // The interface hidden again, if the window needed it shown
+            if (_drawUiBefore is { } before)
+                Program.DrawUI = before;
+            _drawUiBefore = null;
             return true;
         }
         var index = typeof(GameSettings).GetField("_openTabIndex", BindingFlags.NonPublic | BindingFlags.Static);
@@ -172,6 +176,7 @@ public partial class Director
             catch (Exception e)
             {
                 Log($"@settings: the window can't be drawn without the game's interface ({e.Message}): the interface shows");
+                _drawUiBefore ??= Program.DrawUI;
                 Program.DrawUI = true;
             }
         }
@@ -180,6 +185,7 @@ public partial class Director
     }
 
     private static bool _settingsAlone;
+    private static bool? _drawUiBefore;  // the interface's state before the window needed it shown (no postfix)
 
     // @settings pick <preset>: the Mac Port tab clicks that card the next time it draws its cards in the window open now,
     // as a player does (Runs.Install has the hooks' click). The card turns gold unless the settings are based on it

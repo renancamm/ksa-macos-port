@@ -16,7 +16,7 @@ source "$(dirname "$0")/lib.sh"
 APP="${HOME}/Applications/${APP_NAME}.app"
 while [ $# -gt 0 ]; do
     case "$1" in
-        --app) APP="${2%/}"; shift ;;
+        --app) [ $# -ge 2 ] || die "--app needs a path."; APP="${2%/}"; shift ;;
         -h | --help) sed -n '2,/^set -eo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
         *) die "no option $1 (--app <path>)." ;;
     esac

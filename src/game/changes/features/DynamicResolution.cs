@@ -19,14 +19,15 @@ namespace KsaMetal.Hooks.Features;
 
 // Dynamic resolution: the main view drawn at a level of its render size, frame by frame, without rebuilding its
 // targets. KSA Metal gives each image of that size (or a fraction of it) a texture per level in the same memory, and
-// the passes that draw into them, the copies and the shaders' image sizes follow (src/game/driver/resources/dynres.mm).
+// the passes that draw into them, the copies and the shaders' image sizes follow (src/game/driver/resources/dynres.mm;
+// the level's choice: presentation/framerate.mm).
 // What the game works out from the main view's size itself takes the level's size from here: the cameras' screen size
-// and MetalFX's input and jitter (RenderScale, Upscale), the bloom's last step (RenderScale), and the sizes that the
-// clouds, the ambient occlusion, the exhausts, the atmosphere and the screen-space particles keep from their last
-// rebuild and pass to their shaders, and the cockpit's ray tracing's image sizes (below). The driver picks each
-// frame's level when the frame starts (Program.Render, before the camera data and any of its commands), with Dynamic
-// Resolution by Steady Frame Rate's cadence (or the experiments dynamic_level, dynamic_target_ms); without them nothing
-// registers and nothing changes. Steady Frame Rate's rate steps at the same call, with or without MetalFX.
+// and MetalFX's input and jitter (RenderScale, Upscale), and below the sizes that the clouds, the ambient occlusion,
+// the exhausts, the atmosphere and the screen-space particles keep from their last rebuild and pass to their shaders,
+// the cockpit's ray tracing's image sizes and the bloom's last step: all of them, or no level is drawn. The driver
+// picks each frame's level when the frame starts (Program.Render, before the camera data and any of its commands),
+// with Dynamic Resolution by Steady Frame Rate's cadence (or the experiment dynamic_level); without
+// them nothing registers and nothing changes. Steady Frame Rate's rate steps at the same call, with or without MetalFX.
 internal static class DynamicResolution
 {
     [DllImport("libvulkan.1.dylib")]
@@ -42,44 +43,50 @@ internal static class DynamicResolution
     [DllImport("libvulkan.1.dylib")]
     private static extern void ksaMtlImageSize(ulong image, out uint width, out uint height);
 
-    private const int LevelSteps = 64;  // the driver's: a level is this many parts of the full size
+    [DllImport("libvulkan.1.dylib")]
+    private static extern void ksaMtlDynamicSizeAt(ref uint width, ref uint height);
 
     private static int2 _render;  // the main view's render size, as its targets are made
     private static int2 _level;   // its size at the level drawn (the render size at full)
-    private static int _steps;    // the level, of LevelSteps (0: full)
     private static bool _driver;  // the driver has these calls (registered once)
+    private static bool _applied; // the frame's call and the rebuild's are patched (Apply)
+    private static bool _levels;  // every one of the game's sizes follows a level (Apply's parts): else none is drawn
+    private static bool _missing; // the driver has no such calls (an older one): nothing to register
 
     public static bool Active => _render != int2.Zero && _level != _render;
 
     // After each rebuild of the main view's targets (before they are made): its render size (zero: none), the size
-    // MetalFX scales it up to, and the least size a level may have (zero: the driver's rule, from the display)
+    // MetalFX scales it up to, and the least size a level may have (zero: the driver's rule, from the display). Without
+    // all of the game's sizes at a level (_levels), the render size is none: the driver draws no level, and Steady Frame
+    // Rate's rate still steps
     public static void Register(int2 render, int2 output, int2 least)
     {
+        if (!_applied || _missing)
+            return;
+        if (!_levels)
+            render = int2.Zero;
         try
         {
             ksaMtlDynamicResolution((uint)Math.Max(render.X, 0), (uint)Math.Max(render.Y, 0), (uint)Math.Max(output.X, 0),
                 (uint)Math.Max(output.Y, 0), (uint)Math.Max(least.X, 0), (uint)Math.Max(least.Y, 0));
-            ksaMtlDynamicResolutionSize(out uint w, out uint h, out uint level);
+            ksaMtlDynamicResolutionSize(out uint w, out uint h, out _);
             _driver = true;
             // The driver registers levels only with Dynamic Resolution or the experiment's level: otherwise nothing changes here either
             _render = w > 0 && h > 0 ? render : int2.Zero;
-            Take(w, h, level);
+            Take(w, h);
             if (Active)
                 Hooks.Log($"Dynamic resolution: {render.X}x{render.Y} drawn at {_level.X}x{_level.Y}");
         }
-        catch (EntryPointNotFoundException)
+        catch (EntryPointNotFoundException e)
         {
             _render = _level = int2.Zero;
-            _steps = 0;
             _driver = false;
+            _missing = true;
+            Hooks.Log($"Dynamic resolution: off, the driver has no {e.Message}");
         }
     }
 
-    private static void Take(uint w, uint h, uint level)
-    {
-        _level = w > 0 && h > 0 ? new int2((int)w, (int)h) : _render;
-        _steps = (int)level;
-    }
+    private static void Take(uint w, uint h) => _level = w > 0 && h > 0 ? new int2((int)w, (int)h) : _render;
 
     // Also without levels: the driver then has no display size, and the screenshot's frame no rate to step
     private static void RebuildPrefix()
@@ -94,8 +101,8 @@ internal static class DynamicResolution
     {
         if (!_driver)
             return;
-        ksaMtlDynamicResolutionFrame(out uint w, out uint h, out uint level);
-        Take(w, h, level);
+        ksaMtlDynamicResolutionFrame(out uint w, out uint h, out _);
+        Take(w, h);
     }
 
     // The share of the render size drawn, by height (1 at full)
@@ -104,49 +111,73 @@ internal static class DynamicResolution
     // A size of the main view at its render size, at the level drawn; any other size as it is
     public static int2 AtLevel(int2 size) => Active && size == _render ? _level : size;
 
-    // Any size of an image the driver draws at the level (the main view's or a fraction of it), as the driver scales it
-    public static int2 Scale(int2 size) => !Active ? size : new int2(Scale(size.X), Scale(size.Y));
-
-    private static int Scale(int size) =>
-        Math.Max(1, (int)Math.Round((double)size * _steps / LevelSteps, MidpointRounding.AwayFromZero));
+    // Any size of an image the driver draws at the level (the main view's or a fraction of it), as the driver sizes its
+    // texture there: a fraction of the main view's size at the level, rounded as the game rounds its own
+    public static int2 Scale(int2 size)
+    {
+        if (!Active)
+            return size;
+        uint w = (uint)Math.Max(size.X, 0), h = (uint)Math.Max(size.Y, 0);
+        ksaMtlDynamicSizeAt(ref w, ref h);
+        return new int2((int)w, (int)h);
+    }
 
     // By RenderScale.Apply, with MetalFX or Steady Frame Rate: the frame's level and rate step (without it, none of the
-    // rest), and with levels (MetalFX) the game's sizes, each part on its own: one the game no longer has is left out
+    // rest), and with levels (MetalFX with Dynamic Resolution or dynamic_level) the game's sizes, each part on its own.
+    // One the game no longer has leaves its system drawing at the full size into a level's textures (the bloom's: black
+    // frames with a glow; the clouds': the scene magnified): then no level is drawn at all
     public static void Apply(Harmony harmony, bool levels)
     {
         try
         {
-            harmony.Patch(Find.Method(typeof(Program), "Render", typeof(double), typeof(FrameResult), typeof(AcquiredFrame)),
-                prefix: new HarmonyMethod(typeof(DynamicResolution), nameof(FramePrefix)));
+            var render = Find.Method(typeof(Program), "Render", typeof(double), typeof(FrameResult), typeof(AcquiredFrame));
+            var frame = new HarmonyMethod(typeof(DynamicResolution), nameof(FramePrefix));
             // A high-resolution screenshot rebuilds the main view's targets at its own size without the swapchain
             // (RenderScale's registration doesn't see it): drawn at the full size, its targets not dynamic
-            harmony.Patch(Find.Method(typeof(Program), nameof(Program.RebuildRenderer)),
-                prefix: new HarmonyMethod(typeof(DynamicResolution), nameof(RebuildPrefix)));
+            var rebuild = Find.Method(typeof(Program), nameof(Program.RebuildRenderer));
+            harmony.Patch(render, prefix: frame);
+            try
+            {
+                harmony.Patch(rebuild, prefix: new HarmonyMethod(typeof(DynamicResolution), nameof(RebuildPrefix)));
+            }
+            catch
+            {
+                harmony.Unpatch(render, frame.method);
+                throw;
+            }
         }
         catch (Exception e)
         {
             Hooks.Log($"Dynamic resolution: off ({Skip.In(e)?.Message ?? e.Message})");
             return;
         }
+        _applied = true;
         if (!levels)
             return;
-        Part(harmony, "clouds", ApplyClouds);
-        Part(harmony, "ambient occlusion", ApplyAmbientOcclusion);
-        Part(harmony, "exhausts", ApplyExhausts);
-        Part(harmony, "atmosphere", ApplyAtmosphere);
-        Part(harmony, "particles", ApplyParticles);
-        Part(harmony, "ray tracing", ApplyRayTracing);
+        // Every part tried, so that the log names each one missing
+        bool all = Part(harmony, "clouds", ApplyClouds);
+        all &= Part(harmony, "ambient occlusion", ApplyAmbientOcclusion);
+        all &= Part(harmony, "exhausts", ApplyExhausts);
+        all &= Part(harmony, "atmosphere", ApplyAtmosphere);
+        all &= Part(harmony, "particles", ApplyParticles);
+        all &= Part(harmony, "ray tracing", ApplyRayTracing);
+        all &= Part(harmony, "bloom", ApplyBloom);
+        _levels = all;
+        if (!all)
+            Hooks.Log("Dynamic resolution: no levels, as one of the game's sizes wouldn't follow them");
     }
 
-    private static void Part(Harmony harmony, string name, Action<Harmony> apply)
+    private static bool Part(Harmony harmony, string name, Action<Harmony> apply)
     {
         try
         {
             apply(harmony);
+            return true;
         }
         catch (Exception e)
         {
             Hooks.Log($"Dynamic resolution's {name}: off ({Skip.In(e)?.Message ?? e.Message})");
+            return false;
         }
     }
 
@@ -161,7 +192,7 @@ internal static class DynamicResolution
     {
         Type resources = AccessTools.Inner(typeof(CloudRenderer), "ViewportResources")
             ?? throw new Skip("CloudRenderer.ViewportResources is gone");
-        _setDimensions = Find.Method(typeof(CloudRenderer), "SetRenderTargetDimensions");
+        _setDimensions = Find.Method(typeof(CloudRenderer), "SetRenderTargetDimensions", resources, typeof(int2));
         _isMain = Find.Field(resources, "IsMain");
         _screenWidth = Find.Field(resources, "ScreenWidth");
         _screenHeight = Find.Field(resources, "ScreenHeight");
@@ -177,7 +208,7 @@ internal static class DynamicResolution
     {
         if (_render == int2.Zero || !(bool)_isMain.GetValue(inResources)!)
             return;
-        int2 want = Scale(_render);
+        int2 want = _level;
         if ((int)_screenWidth.GetValue(inResources)! == want.X && (int)_screenHeight.GetValue(inResources)! == want.Y)
             return;
         _setDimensions.Invoke(__instance, [inResources, want]);
@@ -259,6 +290,8 @@ internal static class DynamicResolution
     // The screen-space particles (ScreenspaceParticleRenderer, the game's one kind of them): the quarter-size grid they
     // gather and bin into, and its tiles, from the last rebuild; the level's while they draw
     private static AccessTools.FieldRef<Particles, int2> _lowResDim = null!, _tileGrid = null!;
+    private const int ParticleTile = 8;  // the game's tile, in grid pixels (CreateResources: (dim + 7) / 8)
+    private static bool _tileChanged;
 
     private static void ApplyParticles(Harmony harmony)
     {
@@ -274,10 +307,18 @@ internal static class DynamicResolution
         __state = (_lowResDim(__instance), _tileGrid(__instance));
         if (!Active)
             return;
+        if (__state.Grid != Tiles(__state.Dim) && !_tileChanged)
+        {
+            _tileChanged = true;
+            Hooks.Log($"Dynamic resolution's particles: the game's grid {__state.Grid} isn't {ParticleTile}-pixel tiles of {__state.Dim}");
+        }
         int2 dim = Scale(__state.Dim);
         _lowResDim(__instance) = dim;
-        _tileGrid(__instance) = new int2((dim.X + 7) / 8, (dim.Y + 7) / 8);
+        _tileGrid(__instance) = Tiles(dim);
     }
+
+    private static int2 Tiles(int2 dim) =>
+        new((dim.X + ParticleTile - 1) / ParticleTile, (dim.Y + ParticleTile - 1) / ParticleTile);
 
     private static Exception? ParticlesFinalizer(Exception? __exception, Particles __instance, (int2 Dim, int2 Grid) __state)
     {
@@ -312,5 +353,41 @@ internal static class DynamicResolution
     {
         ksaMtlImageSize(Unsafe.As<VkImage, ulong>(ref image), out uint w, out uint h);
         return new int2((int)w, (int)h);
+    }
+
+    // The bloom (KawaseBloomRenderer): its shader tells its last step, which adds the glow to the main view's image, by
+    // that image's height, which the game passes as the chain's first size (RenderScale sizes the chain): the level's
+    // while the frame's data is written (otherwise the last step took the main image for another of the chain and wrote
+    // the glow alone over the scene). Each frame writes its own slot of the data (the frame in flight's), but the
+    // overall bloom's SetBlurSettings writes slot 0 too, every frame: a frame still on the GPU with slot 0 then read the
+    // next frame's height, and a step up to a larger level drew it black with a glow. With levels, a slot other than the
+    // frame's is left alone; the frame that uses it writes it
+    private static AccessTools.FieldRef<KawaseBloomRenderer, int2[]> _bloomSizes = null!;
+
+    private static void ApplyBloom(Harmony harmony)
+    {
+        _bloomSizes = AccessTools.FieldRefAccess<KawaseBloomRenderer, int2[]>(Find.Field(typeof(KawaseBloomRenderer), "_renderingTargetSizes"));
+        harmony.Patch(Find.Method(typeof(KawaseBloomRenderer), nameof(KawaseBloomRenderer.UpdateShaderPass)),
+            prefix: new HarmonyMethod(typeof(DynamicResolution), nameof(BloomUpdatePrefix)),
+            finalizer: new HarmonyMethod(typeof(DynamicResolution), nameof(BloomUpdateFinalizer)));
+    }
+
+    private static bool BloomUpdatePrefix(KawaseBloomRenderer __instance, int frameIndex, out int2 __state)
+    {
+        __state = int2.Zero;
+        if (_render != int2.Zero && frameIndex != Program.Instance.ResourceFrameIndex)
+            return false;
+        if (!Active || _bloomSizes(__instance) is not { Length: > 0 } sizes)
+            return true;
+        __state = sizes[0];
+        sizes[0] = AtLevel(sizes[0]);
+        return true;
+    }
+
+    private static Exception? BloomUpdateFinalizer(Exception? __exception, KawaseBloomRenderer __instance, int2 __state)
+    {
+        if (__state != int2.Zero && _bloomSizes(__instance) is { Length: > 0 } sizes)
+            sizes[0] = __state;
+        return __exception;
     }
 }
