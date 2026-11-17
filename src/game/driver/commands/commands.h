@@ -185,6 +185,7 @@ void kmtlZeroImage(KImage* img);  // transfers.mm: a new color image cleared to 
 
 // Internal shaders (fills, image blits, the prep kernel of indirect tessellated draws)
 void kmtlInitInternal(KDevice* dev);
+void kmtlDestroyInternal(KDevice* dev);  // frees them, from vkDestroyDevice
 void kmtlInternalFillBuffer(KCommandBuffer* cb, id<MTLBuffer> buf, NSUInteger offset, NSUInteger size, uint32_t data);
 void kmtlInternalBlit(KCommandBuffer* cb, KImage* src, KImage* dst, const VkImageBlit2& region, VkFilter filter);
 id<MTLComputePipelineState> kmtlTessPrepPipeline(KDevice* dev);

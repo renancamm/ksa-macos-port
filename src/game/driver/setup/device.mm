@@ -130,6 +130,7 @@ VKFN(void) vkDestroyDevice(VkDevice device, const VkAllocationCallbacks*) {
     KTRACE_FIRST_PLAIN();
     auto* dev = (KDevice*)device;
     if (!dev) return;
+    kmtlDestroyInternal(dev);
     delete dev->queue;
     delete dev->transferQueue;
     delete dev;

@@ -105,6 +105,11 @@ void kmtlInitInternal(KDevice* dev) {
     dev->internal = ip;
 }
 
+void kmtlDestroyInternal(KDevice* dev) {
+    delete dev->internal;
+    dev->internal = nullptr;
+}
+
 void kmtlInternalFillBuffer(KCommandBuffer* cb, id<MTLBuffer> buf, NSUInteger offset, NSUInteger size, uint32_t data) {
     KInternalPipelines* ip = cb->device->internal;
     if (!ip->fill32) return;
