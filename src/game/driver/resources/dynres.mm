@@ -9,7 +9,7 @@
 // rounded as the game rounds it (sizeAt). What the game draws with the image then sees the smaller size,
 // as after a rebuild: the shaders' image sizes and normalised coordinates, the viewports and scissors (scaled by the
 // pass's attachments, passes.mm and state.mm), the copies (transfers.mm). What the game works out from its sizes itself
-// (the cameras' screen size, push constants) the hooks give the level's size (framerate.mm's ksaMtlDynamicResolution*).
+// (the cameras' screen size, push constants) the hooks give the level's size (framerate.mm's ksaMtlFrameRate*).
 //
 // A change of level, at the start of the game's frame, carries what each image holds over to its texture at the new
 // level (scaled: the game's histories), in the queue's order after the frames before, and moves the images and their
@@ -445,7 +445,7 @@ void kmtlDynamicSetLevel(uint32_t level) {
 }
 
 // An image's size as its texture has it now (a dynamic image's at the frame's level)
-KMTL_EXPORT void ksaMtlImageSize(VkImage image, uint32_t* width, uint32_t* height) {
+KMTL_EXPORT void ksaMtlDynamicImageSize(VkImage image, uint32_t* width, uint32_t* height) {
     auto* img = (KImage*)image;
     *width = img && img->mtl ? (uint32_t)img->mtl.width : 0;
     *height = img && img->mtl ? (uint32_t)img->mtl.height : 0;

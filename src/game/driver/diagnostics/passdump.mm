@@ -571,7 +571,7 @@ KMTL_EXPORT bool ksaMtlPassDump(const char* dir) {
     return true;
 }
 
-KMTL_EXPORT bool ksaMtlPassDumping() {
+KMTL_EXPORT bool ksaMtlPassDumpRunning() {
     giveUpIfLate();
     return g_state != Idle;
 }

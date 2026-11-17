@@ -136,9 +136,9 @@ The debugging settings, used the same way:
 Metal's own tools work too: `MTL_HUD_ENABLED=1` shows Apple's performance overlay, and `MTL_DEBUG_LAYER=1` and
 `MTL_SHADER_VALIDATION=1` check API use and catch out-of-bounds memory access in shaders (slow).
 
-The benchmark's mod and the hooks talk to the driver through the only functions it exports besides Vulkan's, in
-`diagnostics/instruments.mm`, `diagnostics/drain.mm`, `diagnostics/zones.mm`, `diagnostics/passdump.mm`,
-`pipelines/stages.mm` and `presentation/swapchain.mm`:
+The benchmark's mod and the hooks talk to the driver through the only functions it exports besides Vulkan's, which
+`exports.h` declares with the structs they pass and the C# that imports each (`vkCmd<Name>KSA` records GPU work into a
+command buffer, `ksaMtl<Area>` does the rest):
 
 | Function | |
 |---|---|
@@ -146,13 +146,18 @@ The benchmark's mod and the hooks talk to the driver through the only functions 
 | `ksaMtlDrainOpen`, `ksaMtlDrain`, `ksaMtlDrainDropped`, `ksaMtlDrainClose` | the drain: once a reader opens it with the layout it knows, every present (the `ksaMtlFrameStats` numbers), when each frame began, was presented, finished on the GPU and was shown, each frame's own GPU time when its present's command buffer completed, each wait of at least the reader's threshold (the `stalls` scopes, residency commits, the wait for an earlier present) and each allocation or free of 16 MB or more, as records in a 1 MB ring the reader empties; a record that finds it full is counted and dropped, nothing waits |
 | `ksaMtlScreenshot` | a PNG of the next frame |
 | `ksaMtlMarker` | begins or ends a signpost interval, one per measured part, under Points of Interest in Instruments |
-| `ksaMtlPassDump`, `ksaMtlPassDumping` | the next frame's colour attachments after each draw of a render pass (the first 64, then every 16th) and at its end, the images at the frame's end that it can read, as PNGs (NaN magenta, infinity cyan), and the first 64 KB of the buffers bound for each draw, with their numbers and heap places in `passes.txt`, which says why others are left out; that frame's passes don't overlap, so a clean dump doesn't rule out a missing barrier. The second says whether they are still being written |
+| `ksaMtlPassDump`, `ksaMtlPassDumpRunning` | the next frame's colour attachments after each draw of a render pass (the first 64, then every 16th) and at its end, the images at the frame's end that it can read, as PNGs (NaN magenta, infinity cyan), and the first 64 KB of the buffers bound for each draw, with their numbers and heap places in `passes.txt`, which says why others are left out; that frame's passes don't overlap, so a clean dump doesn't rule out a missing barrier. The second says whether they are still being written |
 | `ksaMtlGpuErrors` | how many command buffers failed; after a hang the GPU refuses the process's work, and pass dumps refuse to start |
-| `ksaMtlCapture`, `ksaMtlCapturing` | an Xcode GPU frame capture of the next frames (with `MTL_CAPTURE_ENABLED=1`), and whether it is still being written |
+| `ksaMtlCapture`, `ksaMtlCaptureRunning` | an Xcode GPU frame capture of the next frames (with `MTL_CAPTURE_ENABLED=1`), and whether it is still being written |
 | `ksaMtlZoneMode` | how the game's GPU profiler's timestamps are answered: as they come (each one a tiny encoder with counter samples that waits for all the work before it, through an event: such an encoder doesn't keep the fences' order; one inside a render pass is taken at the pass's end, so a zone inside a pass reads about 0), labels only (answered at once, no encoder), or split (a render pass splits before the next draw after them; needs `gpu_zones`) |
 | `ksaMtlZoneBegin`, `ksaMtlZoneEnd` | a zone of the game's GPU profiler begins or ends in a recording; with `labels`, each encoder is named after the zone its first draw or dispatch ran in |
 | `ksaMtlEarlyFragmentTests` | whether draws use the pipelines' states that test depth first (below); the hooks' Skip Hidden Vessel Parts sets it at the start of a frame |
 | `ksaMtlHdrNits` | the game's HDR UI Brightness and HDR Peak Brightness in nits, which HDR output maps to the display (below); the hooks pass them when the game applies its Display settings |
+| `ksaMtlMemory` | the bytes the driver holds now: device memory by type (private, shared write-combined, shared cached), then its own (descriptor pool chunks, upload rings) |
+| `ksaMtlFrameRateView`, `ksaMtlFrameRateSize`, `ksaMtlFrameRateBeginFrame` | the Frame Rate section's controller (`steady_frame_rate`, `dynamic_resolution`): the main view's size and the display's after each rebuild; the main view's size at the level now; at the start of each frame, the rate's step and the frame's level |
+| `ksaMtlDynamicImageSize`, `ksaMtlDynamicSizeAt` | dynamic resolution: an image's size as its texture has it now; a size of the main view's, or a fraction of it, at the level now |
+| `vkCmdUpscaleKSA`, `vkCmdUpscaleSnapshotKSA`, `vkCmdMarkUiKSA`, `ksaMtlUpscaleMaxScale` | MetalFX (below): the upscale, the scene's copies for the reactive mask and for frame interpolation, how far the temporal scaler scales on this Mac (the Mac Port tab) |
+| `vkCmdRayHistoryKSA` | the cockpit's ray-traced lighting with a history of its own (below) |
 
 The benchmark's tools `profile`, `trace`, `capture` and `hud` use them too.
 
@@ -342,7 +347,7 @@ The complete mapping:
 | Transient attachments | memoryless textures (tile memory only) |
 | Swapchain | own textures at the display's pixels, copied into the `CAMetalLayer` drawable at present |
 | HDR10 colour space, `vkSetHdrMetadataEXT` | the layer in PQ with EDR and `CAEDRMetadata`, the game's UI brightness at SDR white |
-| `vkCmdUpscaleKSA`, `vkCmdUpscaleSnapshotKSA`, `vkCmdMarkUiKSA`, `vkGetUpscaleMaxScaleKSA`, `vkCmdRayHistoryKSA` | the driver's own: MetalFX for the hooks |
+| `vkCmdUpscaleKSA`, `vkCmdUpscaleSnapshotKSA`, `vkCmdMarkUiKSA`, `vkCmdRayHistoryKSA` | the driver's own: MetalFX for the hooks |
 
 Buffer indices per shader stage: 0-9 descriptor sets, 10 push constants, 11 draw index, 12 buffer sizes, 13 view
 mask, 14 dynamic offsets, 15 texture swizzles, 16-21 tessellation stage buffers, 22 ray tracing launch size, 30 - n
@@ -358,7 +363,8 @@ starts, how a file keeps its state, the order the driver's locks are taken in, a
 
 | Folder, file | What it holds |
 |---|---|
-| `kmtl.h` | the core: logging, the configuration, buffer indices, the dispatchable objects (instance, physical device, queue, device), shared helpers; then the layers' headers |
+| `kmtl.h` | the core: the rules, logging, the configuration, buffer indices, the dispatchable objects (instance, physical device, queue, device), shared helpers; then the layers' headers |
+| `exports.h` | the driver's own API: every export besides Vulkan's, the structs they pass, their C# mirrors |
 | `setup/config.mm` | the settings above, read once from their variables (their names and defaults from `port-settings.h`, which the build makes from the settings table), and the log |
 | `setup/entry.mm` | the table behind `vkGetInstanceProcAddr` and `vkGetDeviceProcAddr`, `entries.inc`, which the build makes from Vulkan's registry and the driver's sources ([`../../build-tools/entries-generator/`](../../build-tools/entries-generator/)) |
 | `setup/aliases.txt` | the aliases the entry table answers for besides those the registry brings ([`../../build-tools/entries-generator/`](../../build-tools/entries-generator/)) |

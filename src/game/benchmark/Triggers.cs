@@ -155,7 +155,7 @@ internal sealed class TriggerRunner : Probe
         // A slow frame's work and a dump the driver's watch started go first (the driver does one at a time); this view's
         // own comes after them. The size counts once the driver has written all of the file
         _holding = true;
-        var work = Probes.Then(Probes.Until(() => _queue.Count == 0 && _working == null && !DriverStats.PassDumping() && !DriverStats.Capturing() &&
+        var work = Probes.Then(Probes.Until(() => _queue.Count == 0 && _working == null && !DriverStats.PassDumpRunning() && !DriverStats.CaptureRunning() &&
                                                   Images.Written(view.Path), WorkSeconds), () =>
         {
             // A stop that came meanwhile (a GPU error): nothing more
@@ -219,9 +219,9 @@ internal sealed class TriggerRunner : Probe
                     return null;
                 }
                 _context.Log($"{label}: its passes in caught/{name}/ (present {DriverStats.Read()?.Present})");
-                return Probes.Then(Probes.Until(() => !DriverStats.PassDumping(), 120), () =>
+                return Probes.Then(Probes.Until(() => !DriverStats.PassDumpRunning(), 120), () =>
                 {
-                    if (DriverStats.PassDumping())
+                    if (DriverStats.PassDumpRunning())
                         _context.Log($"{label}: the pass dump did not finish");
                     return null;
                 });
@@ -232,7 +232,7 @@ internal sealed class TriggerRunner : Probe
                     _context.Log($"{label}: no frame capture: the driver could not start one (does the game have MTL_CAPTURE_ENABLED=1?)");
                     return null;
                 }
-                return Probes.Then(Probes.Until(() => !DriverStats.Capturing(), 120), () =>
+                return Probes.Then(Probes.Until(() => !DriverStats.CaptureRunning(), 120), () =>
                 {
                     _context.Log($"{label}: frame capture {(Directory.Exists(gputrace) || File.Exists(gputrace) ? Path.GetFileName(gputrace) : "missing")}");
                     return null;

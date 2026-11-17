@@ -1,6 +1,6 @@
-// MetalFX upscaling for the hooks' render scale (src/game/hooks/), behind private entry points the patched game calls:
-// vkCmdUpscaleKSA between its scene and its final composite, vkCmdUpscaleSnapshotKSA before its translucent effects
-// and on both sides of its bloom.
+// MetalFX upscaling for the hooks' render scale (src/game/hooks/), behind private entry points the patched game calls
+// (exports.h): vkCmdUpscaleKSA between its scene and its final composite, vkCmdUpscaleSnapshotKSA before its
+// translucent effects and on both sides of its bloom.
 // KSA Metal makes the motion vectors itself from the depth buffer and the matrices the game passes: the scene's
 // motion through the nearby body's frame up to its highest ground and with the followed vessel's centre above it, the
 // sky's by the camera's turn alone, and inside a bounding sphere the motion of the vessel the camera follows, through
@@ -19,33 +19,6 @@
 #include <cmath>
 #include "kmtl.h"
 
-extern "C" {
-struct VkUpscaleInfoKSA {
-    VkImage color;           // render size, linear HDR
-    VkImage depth;           // render size, D32, reversed (0 = far)
-    VkImage output;          // output size, color format, storage usage
-    uint32_t inputWidth, inputHeight;
-    float jitterX, jitterY;  // pixels the projection moved the image by (y down)
-    // Row-vector, row-major matrices. Ego = camera-centred position, ecliptic axes.
-    float egoFromClip[16];      // (ndc.xy, depth, 1) * M = homogeneous ego position (inverse jittered view-projection)
-    float prevClipFromEgo[16];  // ego * M = the previous frame's unjittered clip position, for the scene
-    float prevClipFromEgoObject[16];  // the same for the followed object
-    float prevClipFromEgoSky[16];     // the same for the sky (depth 0)
-    float prevClipFromEgoNearby[16];  // the same for what is outside the body's sphere: moving with the followed object
-    float objectSphere[4];      // its bounding sphere in ego (radius 0: none)
-    float bodySphere[4];        // the nearby body's highest ground or sea and 1 km, in ego (radius 0: no body)
-    float fovY, nearPlane, farPlane, deltaTime;  // for frame interpolation
-    uint32_t flags;          // kUpscaleReset, kUpscaleSpatial
-    float exposure;          // what the game's tonemapping multiplies the image by (Tonemap Exposure; 0: 1)
-    // The game's clouds and smoke trails, as its cloud upscaler drew them this frame at the render size (none: 0): their
-    // colour with the light that passes them in alpha, and their own motion (uv now minus uv before, the lowest half
-    // where it has none)
-    VkImage cloudColor, cloudMotion;
-    // Dynamic resolution (dynres.mm): the size drawn this frame, within the input size the scaler is made for (0: that)
-    uint32_t contentWidth, contentHeight;
-};
-}
-enum : uint32_t { kUpscaleReset = 1, kUpscaleSpatial = 2 };
 // How strongly a colour change between two snapshots marks a pixel reactive
 static const float kReactiveGain = 2.f;
 // Where the game's clouds and smoke hide at least this share of what is behind them, the pixel may move with them
@@ -586,7 +559,7 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
     bool spatial = (info->flags & kUpscaleSpatial) || !depth;
     uint32_t outW = (uint32_t)out->mtl.width, outH = (uint32_t)out->mtl.height;
     // Read before g_up.m is taken: the controller's lock, g_fr.m, is above it (kmtl.h, "Threads and locks")
-    float minContent = kmtlDynamicMinContent();
+    float minContent = kmtlFrameRateMinContent();
     std::lock_guard<std::mutex> lock(g_up.m);
     // The last image counts only from the frame just before, through MetalFX Temporal: a stretched or spatial frame
     // in between leaves it older
@@ -664,8 +637,7 @@ uint32_t kmtlUpscaleReach(uint32_t content, float most) {
     return (uint32_t)(content * most);
 }
 
-// How far the temporal scaler scales on this Mac, past which the spatial one does the rest: for the Mac Port tab
-VKFN(float) vkGetUpscaleMaxScaleKSA(void) {
+KMTL_EXPORT float ksaMtlUpscaleMaxScale() {
     return kmtlUpscaleMaxScale();
 }
 

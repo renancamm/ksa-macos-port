@@ -34,6 +34,8 @@
 // A struct either kind passes has a mirror in C# (the hooks, the benchmark), field for field.
 #define KMTL_EXPORT extern "C" __attribute__((visibility("default")))
 #define VKFN(ret) KMTL_EXPORT VKAPI_ATTR ret VKAPI_CALL
+// All of them, with their structs and the C# that mirrors them
+#include "exports.h"
 
 // Reported as driverVersion and driverInfo
 #define KMTL_VERSION_MAJOR 0

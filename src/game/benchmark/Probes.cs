@@ -530,7 +530,7 @@ internal sealed class CaptureProbe(ProbeContext context) : Probe
             context.Error($"{view.Shot}: the driver could not capture a frame (does the game have MTL_CAPTURE_ENABLED=1?)");
             return null;
         }
-        return Probes.Then(Probes.Until(() => !DriverStats.Capturing(), 120), () =>
+        return Probes.Then(Probes.Until(() => !DriverStats.CaptureRunning(), 120), () =>
         {
             if (Directory.Exists(path) || File.Exists(path))
                 context.Log($"{view.Shot}: frame capture {Path.GetFileName(path)}");

@@ -1,4 +1,4 @@
-// Frame instruments: the frame log, shots and exits, the benchmark's interface (ksaMtl*), frame captures, signposts,
+// Frame instruments: the frame log, shots and exits, the benchmark's interface (exports.h), frame captures, signposts,
 // and the display and GPU times measured at each present (swapchain.mm reports what the display showed, command
 // buffers' completion handlers their GPU time). Vulkan layers cannot run on this driver (it is the loader), so it
 // carries its own.
@@ -56,21 +56,7 @@ static std::mutex g_gpuMutex;
 static double g_gpuBusy = 0, g_gpuLastEnd = 0;
 static double g_gpuBusyFrame = 0;  // the same, since the last present completed: one frame's GPU time
 
-// Interface for the benchmark's director (src/game/benchmark), which calls these through P/Invoke:
-//   ksaMtlFrameStats(out, size)  the latest present's numbers (the KSA_MTL_FRAMES columns); returns the bytes written
-//   ksaMtlScreenshot(path)       PNG of the next presented image
-//   ksaMtlMarker(name, begin)    begins or ends a signpost interval "part" with that name (Points of Interest in
-//                                Instruments), so a trace comes split into the benchmark's parts
-//   ksaMtlPassDump(dir)          the next frame's passes' images, and the images at its end (passdump.mm);
-//                                ksaMtlPassDumping() is true until they are written; ksaMtlGpuErrors() counts the command
-//                                buffers that failed, after which nothing the GPU would have to do can be dumped or captured
-//   ksaMtlCapture(path, frames)  Xcode GPU frame capture of the next frames into path (.gputrace); false when Metal
-//                                does not allow it (the game needs MTL_CAPTURE_ENABLED=1); ksaMtlCapturing() is true
-//                                until the file is written
-//   ksaMtlDrain*                 the drain: every present, frame shown, wait and large allocation as records (drain.mm)
-//   ksaMtlMemory(out, n)         the bytes the driver holds now: device memory by type (private, shared write-combined,
-//                                shared cached), then its own (descriptor pool chunks, upload rings); returns how many it wrote
-// KsaMtlFrameStats, the struct, is in diagnostics.h.
+// The benchmark's interface (ksaMtlFrameStats, ksaMtlScreenshot, ksaMtlMarker, ksaMtlCapture, ksaMtlMemory): exports.h
 static KsaMtlFrameStats g_lastFrame{};
 static std::vector<std::string> g_shotRequests;
 // Frame capture: the file, the swapchain whose presents count (a pop-out window's come in the same frame), the presents
@@ -122,7 +108,7 @@ KMTL_EXPORT bool ksaMtlCapture(const char* path, uint32_t frames) {
     return true;
 }
 
-KMTL_EXPORT bool ksaMtlCapturing() { return g_capturing; }
+KMTL_EXPORT bool ksaMtlCaptureRunning() { return g_capturing; }
 
 KMTL_EXPORT uint32_t ksaMtlMemory(int64_t* out, uint32_t n) {
     const int64_t all[4] = {g_allocatedByType[0].load(), g_allocatedByType[1].load(), g_allocatedByType[2].load(), g_internalBytes.load()};

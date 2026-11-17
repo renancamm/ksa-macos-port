@@ -56,8 +56,8 @@ struct KSwapchain {
 // The Frame Rate section (framerate.mm): the least share of the main view's size a level may have (1: no levels), for
 // MetalFX's scalers; a frame's GPU time and its swapchain's size as its present completes, for the level's and the
 // rate's choice
-float kmtlDynamicMinContent();
-void kmtlDynamicNoteFrame(uint32_t level, double gpuMs, uint32_t width, uint32_t height);
+float kmtlFrameRateMinContent();
+void kmtlFrameRateNoteFrame(uint32_t level, double gpuMs, uint32_t width, uint32_t height);
 // swapchain.mm: Steady Frame Rate's rate (0: off); the frame time the cadence holds, of the swapchain of this size (0:
 // none); its next step (dir 1: slower, -1: faster) and that step's frame time (0: none), with take taken
 int kmtlSteadyFps();

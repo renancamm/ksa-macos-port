@@ -1,31 +1,13 @@
 // A history for the cockpit's ray-traced lighting under MetalFX Temporal, behind the private entry point
-// vkCmdRayHistoryKSA (the hooks' Upscale.cs). The game traces its lighting images (direct light, indirect light,
-// reflections) from the prepass every frame anew, at a fraction of the render size, and smooths them only in space; with
-// a seed per jittered frame and the jitter moving where each ray starts, they change from frame to frame and MetalFX
-// can't settle on them. Here each image is blended with its own last frames (up to a number of frames per image),
+// vkCmdRayHistoryKSA (exports.h; the hooks' Upscale.cs). The game traces its lighting images (direct light, indirect
+// light, reflections) from the prepass every frame anew, at a fraction of the render size, and smooths them only in
+// space; with a seed per jittered frame and the jitter moving where each ray starts, they change from frame to frame
+// and MetalFX can't settle on them. Here each image is blended with its own last frames (up to a number of frames per image),
 // reprojected through the motion MetalFX gets, kept only where the surface is the same (its normal and its distance in
 // the last frame) and held within the spread of this frame's pixels around it, so that what moved or changed doesn't
 // trail. The result goes back into the game's image.
 #import <Metal/Metal.h>
 #include "kmtl.h"
-
-extern "C" {
-struct VkRayHistoryInfoKSA {
-    VkImage images[4];      // the lighting images, each at its own size (none: 0)
-    float maxFrames[4];     // how many frames each one's history holds at most
-    float clip[4];          // how far the history may stray from this frame's 3x3 pixels' mean, in their spread (0: free)
-    VkImage depth;          // the prepass's depth, render size, reversed (0 = far)
-    VkImage normals;        // the prepass's normals (xyz, roughness in w), render size
-    // Row-vector, row-major matrices, as in VkUpscaleInfoKSA: this frame's jittered clip to ego, ego to the last frame's
-    // plain clip for the scene, the followed object and what is near the object (the sky has no ray-traced surface)
-    float egoFromClip[16], scene[16], object[16], nearby[16];
-    float objectSphere[4], bodySphere[4];
-    float jitterX, jitterY;  // pixels (render size) the projection moved the image by
-    uint32_t flags;          // kRayHistoryReset
-    uint32_t frame;          // the main view's frame count (the hooks'): a history counts only from the frame just before
-};
-}
-enum : uint32_t { kRayHistoryReset = 1 };
 
 static const char* kHistorySource = R"(
 #include <metal_stdlib>

@@ -2,13 +2,13 @@
 // Heavy Load (stepRate), and with Dynamic Resolution the level of its size the main view is drawn at, frame by frame
 // (chooseLevel). The cadence that holds the rate is swapchain.mm's; the mechanism that draws at a level, dynres.mm's.
 //
-// The hooks pass the main view's size after each rebuild (ksaMtlDynamicResolution) and call in at the start of each of
-// the game's frames, before it records any of it (ksaMtlDynamicResolutionFrame): the rate's step, then the level,
+// The hooks pass the main view's size after each rebuild (ksaMtlFrameRateView) and call in at the start of each of
+// the game's frames, before it records any of it (ksaMtlFrameRateBeginFrame): the rate's step, then the level,
 // changed there, and the main view's size at it, which the game's own sizes take. Steady Frame Rate alone registers the
 // display's size only, for the rate's steps.
 //
 // The level: each frame the highest whose GPU time is expected to stay under the target, from the last frames' GPU
-// times (kmtlDynamicNoteFrame, as each present completes), each at the full clock (gpuclock.mm: with the frames paced,
+// times (kmtlFrameRateNoteFrame, as each present completes), each at the full clock (gpuclock.mm: with the frames paced,
 // macOS slows the GPU down to each frame's deadline, and the time measured tells the deadline). The target: 90 % of the
 // cadence Steady Frame Rate shows frames at, and when even the lowest level runs over it, the next slower rate. The
 // lowest level: with MetalFX Temporal, the lowest from which MetalFX scales the main view up to the display no more than
@@ -63,7 +63,7 @@ struct FrameRateState {
     std::vector<uint32_t> grid;              // the levels a target picks from, highest first: the full size, every
                                              // kGridStep down to the lowest, and the lowest
     bool steady = false;                     // Steady Frame Rate held (with Vsync) at the last registration: its rate steps
-    uint64_t frames = 0;                     // frames begun (ksaMtlDynamicResolutionFrame)
+    uint64_t frames = 0;                     // frames begun (ksaMtlFrameRateBeginFrame)
     // The level's steps: the frame of the last change, whether it was a step up, the frames before a step up
     uint64_t changedAt = 0;
     bool steppedUp = false;
@@ -106,7 +106,7 @@ static double target() {
     return kmtlSteadyFps() && g_fr.outW ? kCadenceShare * kmtlFrameMs(g_fr.outW, g_fr.outH) : 0;
 }
 
-void kmtlDynamicNoteFrame(uint32_t level, double gpuMs, uint32_t width, uint32_t height) {
+void kmtlFrameRateNoteFrame(uint32_t level, double gpuMs, uint32_t width, uint32_t height) {
     // The main window's frames only: a pop-out window's present would add a small sample at the same level
     if (width != g_fr.outW.load(std::memory_order_relaxed) || height != g_fr.outH.load(std::memory_order_relaxed)) return;
     if (gpuMs <= 0) return;
@@ -260,7 +260,7 @@ static uint32_t chooseLevel(double t) {
 }
 
 // The least share of the main view's size a level may have (1: no levels), for MetalFX's scalers
-float kmtlDynamicMinContent() {
+float kmtlFrameRateMinContent() {
     std::lock_guard<std::mutex> lock(g_fr.m);
     return g_fr.width ? (float)g_fr.lowest / kDynamicParts : 1.f;
 }
@@ -293,8 +293,8 @@ static uint32_t lowestLevel(uint32_t width, uint32_t height, uint32_t outW, uint
 // display's, and the least size a level may have (0 x 0: the display's rule). Levels only with Dynamic Resolution (and
 // Steady Frame Rate's frame time, with Vsync) or the experiment's level; Steady Frame Rate alone registers the display's
 // size, for its rate's steps (the main view's is then none); without either, nothing changes
-KMTL_EXPORT void ksaMtlDynamicResolution(uint32_t width, uint32_t height, uint32_t outW, uint32_t outH, uint32_t leastW,
-                                         uint32_t leastH) {
+KMTL_EXPORT void ksaMtlFrameRateView(uint32_t width, uint32_t height, uint32_t outW, uint32_t outH, uint32_t leastW,
+                                     uint32_t leastH) {
     KAutoreleasePool pool;  // a level change's command buffer and encoders, from a .NET thread
     std::lock_guard<std::mutex> lock(g_fr.m);
     g_fr.outW = outW;
@@ -346,7 +346,7 @@ KMTL_EXPORT void ksaMtlDynamicResolution(uint32_t width, uint32_t height, uint32
 }
 
 // The main view's size at the level now: what the game's own sizes for it become
-KMTL_EXPORT void ksaMtlDynamicResolutionSize(uint32_t* width, uint32_t* height, uint32_t* level) {
+KMTL_EXPORT void ksaMtlFrameRateSize(uint32_t* width, uint32_t* height, uint32_t* level) {
     std::lock_guard<std::mutex> lock(g_fr.m);
     *level = kmtlDynamicLevelNow();
     *width = kmtlDynamicScaled(g_fr.width, *level);
@@ -355,7 +355,7 @@ KMTL_EXPORT void ksaMtlDynamicResolutionSize(uint32_t* width, uint32_t* height, 
 
 // The hooks, at the start of the game's frame, before it records any of it: the rate's step, this frame's level,
 // changed here, and the main view's size at it
-KMTL_EXPORT void ksaMtlDynamicResolutionFrame(uint32_t* width, uint32_t* height, uint32_t* level) {
+KMTL_EXPORT void ksaMtlFrameRateBeginFrame(uint32_t* width, uint32_t* height, uint32_t* level) {
     KAutoreleasePool pool;  // as above
     std::lock_guard<std::mutex> lock(g_fr.m);
     g_fr.frames++;

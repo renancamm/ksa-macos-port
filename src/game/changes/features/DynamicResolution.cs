@@ -30,18 +30,20 @@ namespace KsaMetal.Hooks.Features;
 // them nothing registers and nothing changes. Steady Frame Rate's rate steps at the same call, with or without MetalFX.
 internal static class DynamicResolution
 {
+    // The driver's calls (src/game/driver/exports.h): the Frame Rate section's controller, and dynamic resolution's
+    // sizes
     [DllImport("libvulkan.1.dylib")]
-    private static extern void ksaMtlDynamicResolution(uint width, uint height, uint outputWidth, uint outputHeight,
+    private static extern void ksaMtlFrameRateView(uint width, uint height, uint outputWidth, uint outputHeight,
         uint leastWidth, uint leastHeight);
 
     [DllImport("libvulkan.1.dylib")]
-    private static extern void ksaMtlDynamicResolutionSize(out uint width, out uint height, out uint level);
+    private static extern void ksaMtlFrameRateSize(out uint width, out uint height, out uint level);
 
     [DllImport("libvulkan.1.dylib")]
-    private static extern void ksaMtlDynamicResolutionFrame(out uint width, out uint height, out uint level);
+    private static extern void ksaMtlFrameRateBeginFrame(out uint width, out uint height, out uint level);
 
     [DllImport("libvulkan.1.dylib")]
-    private static extern void ksaMtlImageSize(ulong image, out uint width, out uint height);
+    private static extern void ksaMtlDynamicImageSize(ulong image, out uint width, out uint height);
 
     [DllImport("libvulkan.1.dylib")]
     private static extern void ksaMtlDynamicSizeAt(ref uint width, ref uint height);
@@ -67,9 +69,9 @@ internal static class DynamicResolution
             render = int2.Zero;
         try
         {
-            ksaMtlDynamicResolution((uint)Math.Max(render.X, 0), (uint)Math.Max(render.Y, 0), (uint)Math.Max(output.X, 0),
+            ksaMtlFrameRateView((uint)Math.Max(render.X, 0), (uint)Math.Max(render.Y, 0), (uint)Math.Max(output.X, 0),
                 (uint)Math.Max(output.Y, 0), (uint)Math.Max(least.X, 0), (uint)Math.Max(least.Y, 0));
-            ksaMtlDynamicResolutionSize(out uint w, out uint h, out _);
+            ksaMtlFrameRateSize(out uint w, out uint h, out _);
             _driver = true;
             // The driver registers levels only with Dynamic Resolution or the experiment's level: otherwise nothing changes here either
             _render = w > 0 && h > 0 ? render : int2.Zero;
@@ -101,7 +103,7 @@ internal static class DynamicResolution
     {
         if (!_driver)
             return;
-        ksaMtlDynamicResolutionFrame(out uint w, out uint h, out _);
+        ksaMtlFrameRateBeginFrame(out uint w, out uint h, out _);
         Take(w, h);
     }
 
@@ -351,7 +353,7 @@ internal static class DynamicResolution
 
     private static int2 TextureSize(VkImage image)
     {
-        ksaMtlImageSize(Unsafe.As<VkImage, ulong>(ref image), out uint w, out uint h);
+        ksaMtlDynamicImageSize(Unsafe.As<VkImage, ulong>(ref image), out uint w, out uint h);
         return new int2((int)w, (int)h);
     }
 

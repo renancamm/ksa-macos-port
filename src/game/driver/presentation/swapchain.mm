@@ -546,7 +546,7 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
                     // (kmtlNoteGpuTime, the handler before, counted this buffer)
                     double ms = kmtlTakeFrameGpuTime() * 1e3;
                     state->gpuMs[state->gpuSamples++ % 8] = ms;
-                    if (!shot) kmtlDynamicNoteFrame(level, ms, extent.width, extent.height);
+                    if (!shot) kmtlFrameRateNoteFrame(level, ms, extent.width, extent.height);
                     if (kmtlDrainOn()) kmtlDrainFrameGpu(counted, CACurrentMediaTime(), ms);
                     if (KPresentState::Frame* f = findFrame(*state, n)) {
                         f->gpuDone = true;

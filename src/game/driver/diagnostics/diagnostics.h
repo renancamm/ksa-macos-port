@@ -2,25 +2,6 @@
 // profiler. Included by kmtl.h.
 #pragma once
 
-// A present's numbers, as the benchmark reads them (ksaMtlFrameStats, the drain's present records). The caller passes the
-// size of the struct it knows and gets back how much was filled; the benchmark's director takes the stats only when that
-// is all of its struct, so a director and a driver from different builds don't misread them.
-struct KsaMtlFrameStats {
-    uint64_t present;
-    double cpuMs, gpuMs;
-    uint32_t draws, dispatches, passes, submits;
-    int64_t allocatedMb;
-    // NSProcessInfo.thermalState (0 nominal, 1 fair, 2 serious, 3 critical), MSL compiled (not from the cache) and
-    // pipeline states made since the start, the presented image's size in pixels
-    int32_t thermalState;
-    uint32_t shadersCompiled, pipelinesCreated, drawableWidth, drawableHeight, reserved;
-    // The process's memory footprint (what Activity Monitor shows), the time between the last two images the display
-    // actually showed (0 until known)
-    int64_t footprintMb;
-    double displayMs;
-};
-extern "C" uint32_t ksaMtlFrameStats(KsaMtlFrameStats* out, uint32_t size);
-
 // The benchmark's drain (drain.mm): records for the reader, once it opened the drain (kmtlDrainOn, kmtl.h)
 void kmtlDrainPresent(double t, const KsaMtlFrameStats& stats);
 void kmtlDrainShown(uint64_t present, double began, double presented, double gpuEnd, double shown, double waitedMs, bool paced);
@@ -43,7 +24,6 @@ void kmtlPassDumpAfterDraw(KCommandBuffer* cb, KPipeline* pipeline);
 void kmtlPassDumpAtPresent(KQueue* queue, KSwapchain* swapchain, id<MTLCommandBuffer> cb);
 void kmtlWatchAtPresent(KQueue* queue, KImage* image, id<MTLCommandBuffer> cb);
 void kmtlNoteGpuError();
-extern "C" uint32_t ksaMtlGpuErrors();
 void kmtlWritePNG(id<MTLBuffer> buf, NSUInteger w, NSUInteger h, bool bgra, const std::string& path);
 void kmtlCountWork(uint32_t draws, uint32_t dispatches, uint32_t passes);
 void kmtlNoteGpuTime(id<MTLCommandBuffer> cb);  // from completion handlers: GPU busy time for the frame log

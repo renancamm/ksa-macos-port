@@ -45,6 +45,7 @@ internal static class Upscale
         Spatial = Settings.Upscaling == "spatial" && !Interpolate;
     }
 
+    // The driver's structs and calls, field for field (src/game/driver/exports.h, which checks their layout)
     [StructLayout(LayoutKind.Sequential)]
     private unsafe struct VkUpscaleInfoKSA
     {

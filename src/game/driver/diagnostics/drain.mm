@@ -2,59 +2,11 @@
 // into its run's store (ksaMtlDrainOpen, ksaMtlDrain, ksaMtlDrainDropped, ksaMtlDrainClose; src/shared/DriverStats.cs
 // reads the records). Nothing is recorded until a reader opens it. Times are CACurrentMediaTime's clock, in seconds.
 //
-//   1 present  at each present (instruments.mm): its time and KsaMtlFrameStats
-//   2 shown    from the drawable's presented handler (presentation/swapchain.mm): when the frame began (the game's wait
-//              for an earlier frame ended), was presented, finished on the GPU and was shown (0: never), how long it
-//              waited for an earlier frame, and whether pacing ended that wait
-//   3 wait     a scope that blocked its caller at least the reader's threshold (KStallTimer, residency commits)
-//   4 memory   an allocation (bytes positive) or a free (negative) of 16 MB or more (resources/memory.mm)
-//   5 gpu      a frame's own GPU time, when its present's command buffer completed (presentation/swapchain.mm): the
-//              present (as the present record numbers it), when, and the GPU's busy time since the frame before's
-//              present completed. The present record's GPU time is what completed between two presents on the CPU's
-//              clock, which lags by the frames in flight and puts two frames' work in one after a stall
-//
-// Each record is a header (type, size of the whole record, 4 bytes unused) and its fields; a record that finds the ring
-// full is dropped and counted, so nothing ever waits for the reader. kDrainVersion names this layout: the reader opens
-// the drain with the version it knows, and a driver of another layout refuses.
+// The records and their layout (kKsaMtlDrainVersion) are in exports.h. A record that finds the ring full is dropped
+// and counted, so nothing ever waits for the reader.
 #include "kmtl.h"
 
 namespace {
-
-constexpr uint32_t kDrainVersion = 1;
-
-struct Header {
-    uint16_t type, size;
-    uint32_t reserved;
-};
-struct PresentRec {
-    Header h;
-    double t;
-    KsaMtlFrameStats stats;
-};
-struct ShownRec {
-    Header h;
-    uint64_t present;
-    double began, presented, gpuEnd, shown, waitedMs;
-    uint32_t paced, reserved;
-};
-struct WaitRec {
-    Header h;
-    double t, ms;
-    uint64_t present;
-    char what[40];
-};
-struct MemoryRec {
-    Header h;
-    double t;
-    int64_t bytes;
-    uint32_t type, reserved;
-    uint64_t present;
-};
-struct GpuRec {
-    Header h;
-    uint64_t present;
-    double t, ms;
-};
 
 std::mutex g_drainMutex;
 std::vector<uint8_t> g_ring;
@@ -88,8 +40,8 @@ void copyOut(uint8_t* to, size_t at, size_t n) {
 std::atomic<bool> g_kmtlDrainOn{false};
 
 KMTL_EXPORT bool ksaMtlDrainOpen(uint32_t version, double waitMs, uint32_t capacity) {
-    if (version != kDrainVersion) {
-        KLOG(0, "drain: a reader of layout %u, this driver's is %u", version, kDrainVersion);
+    if (version != kKsaMtlDrainVersion) {
+        KLOG(0, "drain: a reader of layout %u, this driver's is %u", version, kKsaMtlDrainVersion);
         return false;
     }
     {
@@ -117,8 +69,8 @@ KMTL_EXPORT void ksaMtlDrainClose() {
 KMTL_EXPORT uint32_t ksaMtlDrain(uint8_t* out, uint32_t capacity) {
     std::lock_guard<std::mutex> lock(g_drainMutex);
     uint32_t written = 0;
-    while (g_used >= sizeof(Header)) {
-        Header h;
+    while (g_used >= sizeof(KsaMtlDrainHeader)) {
+        KsaMtlDrainHeader h;
         copyOut((uint8_t*)&h, g_head, sizeof h);
         if (written + h.size > capacity) break;
         copyOut(out + written, g_head, h.size);
@@ -132,14 +84,14 @@ KMTL_EXPORT uint32_t ksaMtlDrain(uint8_t* out, uint32_t capacity) {
 KMTL_EXPORT uint64_t ksaMtlDrainDropped() { return g_dropped; }
 
 void kmtlDrainPresent(double t, const KsaMtlFrameStats& stats) {
-    PresentRec r{};
+    KsaMtlPresentRecord r{};
     r.t = t;
     r.stats = stats;
     push(1, r);
 }
 
 void kmtlDrainShown(uint64_t present, double began, double presented, double gpuEnd, double shown, double waitedMs, bool paced) {
-    ShownRec r{};
+    KsaMtlShownRecord r{};
     r.present = present;
     r.began = began;
     r.presented = presented;
@@ -152,7 +104,7 @@ void kmtlDrainShown(uint64_t present, double began, double presented, double gpu
 
 void kmtlDrainWait(const char* what, double start, double ms) {
     if (ms < g_waitMs) return;
-    WaitRec r{};
+    KsaMtlWaitRecord r{};
     r.t = start;
     r.ms = ms;
     r.present = kmtlPresentCount();
@@ -161,7 +113,7 @@ void kmtlDrainWait(const char* what, double start, double ms) {
 }
 
 void kmtlDrainFrameGpu(uint64_t present, double t, double ms) {
-    GpuRec r{};
+    KsaMtlGpuRecord r{};
     r.present = present;
     r.t = t;
     r.ms = ms;
@@ -169,7 +121,7 @@ void kmtlDrainFrameGpu(uint64_t present, double t, double ms) {
 }
 
 void kmtlDrainMemory(int64_t bytes, uint32_t type) {
-    MemoryRec r{};
+    KsaMtlMemoryRecord r{};
     r.t = CACurrentMediaTime();
     r.bytes = bytes;
     r.type = type;
