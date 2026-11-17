@@ -23,6 +23,15 @@
 #include <unordered_map>
 #include <vector>
 
+// The library exports only Vulkan's functions and the driver's own (exports.txt). The driver's own are named by what
+// they are:
+// - vkCmd<Name>KSA(VkCommandBuffer, ...): GPU work the driver records into a command buffer, as Vulkan's vkCmd* do;
+//   a struct it takes is Vk<Name>InfoKSA. Defined with VKFN, but not in the entry table (the registry doesn't know
+//   them): C# imports them by name, as it does the others
+// - ksaMtl<Area>[<What>]: every other call, which sets or reads the driver's state; the area is the feature or the
+//   instrument it belongs to, the same for all of its calls (ksaMtlDrain, ksaMtlDrainOpen), and one file, the area's
+//   own, defines all of them. A struct such a call passes is KsaMtl<Name>
+// A struct either kind passes has a mirror in C# (the hooks, the benchmark), field for field.
 #define KMTL_EXPORT extern "C" __attribute__((visibility("default")))
 #define VKFN(ret) KMTL_EXPORT VKAPI_ATTR ret VKAPI_CALL
 
@@ -33,7 +42,18 @@
 #define KMTL_VERSION "0.1.0"
 
 // ---------------------------------------------------------------------------------------------------------------
-// Logging. KSA_MTL_LOG: 0 errors only, 1 + first call of each entry point and warnings, 2 + object creation.
+// Logging. What each level of KSA_MTL_LOG adds:
+// - KERR, always: an error, a call that failed or something the driver can't do as asked
+// - 0, always too: what a setting or the benchmark asked the driver to report (stalls, screenshots, frame captures,
+//   pass dumps), the load's milestones (the first in-game present, the pipelines' cost so far, the shader prewarm), a
+//   feature's state when it is set up or changes (MetalFX's sizes, dynamic resolution's view, the GPU clock's source),
+//   the first use of an unimplemented call. A line comes once per event, never once per frame or per call: what could
+//   repeat goes through KLOG_LIMIT or KERR_LIMIT, or drops to 1 after its first ones (dynamic resolution's level and
+//   Steady Frame Rate's rate: 20 at 0)
+// - 1: the first call of each entry point, the setup (instance, device, their extensions, surfaces, swapchains),
+//   warnings (something ignored or worked around), the changes of a feature's state past its first ones (every
+//   level step, with its samples), the present lines (the first five, then every 500th)
+// - 2: every other object made, and other detail per call
 extern int g_logLevel;
 void kmtlLog(int level, const char* fmt, ...) __attribute__((format(printf, 2, 3)));
 #define KLOG(lvl, ...) do { if (g_logLevel >= (lvl)) kmtlLog(lvl, __VA_ARGS__); } while (0)
@@ -53,9 +73,11 @@ struct KAutoreleasePool {
     ~KAutoreleasePool() { objc_autoreleasePoolPop(token); }
 };
 
-// Every entry point starts with one of these: the log of its first call at level 1, and an autorelease pool unless
-// the entry point only stores what it is given and calls no Metal method that returns an object (the state setters
-// between draws: binds, push constants, viewport, scissor, depth bias, blend constants, stencil reference)
+// Every entry point, Vulkan's and the driver's own, starts with one of these: the log of its first call at level 1,
+// and an autorelease pool unless the entry point only stores what it is given and calls no Metal method that returns
+// an object (the state setters between draws: binds, push constants, viewport, scissor, depth bias, blend constants,
+// stencil reference). None is needed in an entry point that only calls another, which has one (vkCmdBeginRenderPass2
+// calls vkCmdBeginRenderPass), or that does nothing or only says it is unimplemented (KUNIMPL)
 #define KTRACE_FIRST_PLAIN() do { static std::atomic<bool> s_seen{false}; \
     if (g_logLevel >= 1 && !s_seen.exchange(true)) kmtlLog(1, "first call: %s", __func__); } while (0)
 #define KTRACE_FIRST() KAutoreleasePool _kpool; KTRACE_FIRST_PLAIN()
@@ -89,6 +111,44 @@ struct KStallTimer {
         if (kmtlDrainOn()) kmtlDrainWait(what, start, ms);
     }
 };
+
+// ---------------------------------------------------------------------------------------------------------------
+// A file's state. What a file keeps for the whole process (not on an object) is one struct in an anonymous namespace,
+// g_<name>, made with *new and never destroyed: handlers and the driver's threads can still run while the process
+// exits, after static destructors, and MetalFX aborts if a scaler is released then (framerate.mm's g_fr, upscale.mm's
+// g_up). Its lock, when it has one, is m, its first field; each field says what it holds, and a field that a lock of
+// its own guards, or that is read without the lock (an atomic), says so.
+//
+// Threads and locks. The game calls in from several threads; Metal's completion handlers, Core Animation's presented
+// handlers and the driver's own threads (the pipeline workers, the GPU clock's sampler, the screenshot and pass dump
+// writers) run on threads of their own. A lock is taken only while every lock held is above it here (outermost
+// first); two locks on the same line are never held together:
+//   1. g_fr.m (presentation/framerate.mm)
+//   2. g_dyn.m (resources/dynres.mm)
+//   3. KQueue::submitMutex: every commit of recorded work (a submit, a present, a level change, a new image's clear)
+//   4. g_up.m (presentation/upscale.mm), g_rh.m (presentation/rayhistory.mm)
+//   5. g_frameMutex (diagnostics/instruments.mm)
+//   6. KPresentState::m (presentation/swapchain.mm)
+//   7. g_setsMutex (resources/descriptor.mm)
+//   8. KDevice::residencyMutex
+//   9. g_mutex (diagnostics/passdump.mm)
+//  10. the rest, under which nothing but the log's is taken: g_swapchainsMutex, g_latencyMutex, g_hdrMutex
+//      (presentation/swapchain.mm), g_fr.samplesMutex (presentation/framerate.mm), g_gpuMutex
+//      (diagnostics/instruments.mm), g_drainMutex (diagnostics/drain.mm), g_timestampMutex (diagnostics/zones.mm),
+//      g_recentMutex (shaders/shadercache.mm), g_addrMutex (resources/accel.mm), KDevice::libraryMutex and its
+//      entries' m, KDevice::fanMutex, KDevice::tessScratchMutex, KInternalPipelines::m, KFence::m, KQueryPool::m,
+//      KPipeline::Pending::m
+//  11. the log's (kmtlLog), innermost: any of them may log
+// A handler takes only locks from 6 on, and holds the driver's state it uses by a shared pointer (KPresentState) or
+// a copy, never an object the game may destroy before the work completes (a KSwapchain, a KCommandBuffer); a fence
+// or a query pool, which Vulkan keeps until then, by pointer. Core Animation runs
+// presented handlers while it holds the drawable's lock, which addPresentedHandler takes too: a presented handler is
+// added with none of the locks a presented handler takes held, or the present deadlocks with it. Slow work a
+// completion handler starts (a screenshot's PNG, a pass dump's files) goes to a queue of its own, as a queue's
+// handlers run one at a time; with three screenshots waiting, the handler waits for its own (instruments.mm).
+// No lock is held across waitUntilCompleted. A wait with a lock held is for a free drawable (nextDrawable, with
+// submitMutex); a condition variable's wait (KPresentState's, a fence's, a query pool's, a compile's, a pipeline's)
+// holds no lock but its own, and whatever thread signals it does so under that lock alone.
 
 // ---------------------------------------------------------------------------------------------------------------
 // Buffer indices per stage (vertex buffers count down from 30, so the low indices stay free for sets and push constants)

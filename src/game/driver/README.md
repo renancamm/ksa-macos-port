@@ -352,7 +352,9 @@ vertex buffer n.
 
 The driver is in folders by layer, each with a header that `kmtl.h` includes: a file includes `kmtl.h` and sees every
 layer's types and the functions the layers call each other by (named `kmtl*`). A function only the files of one folder
-share is in that folder's header too, under a heading that says so (`stages.h` for the pipelines).
+share is in that folder's header too, under a heading that says so (`stages.h` for the pipelines). `kmtl.h` also has
+the rules every file follows: how the driver's own exports are named, what each log level holds, how an entry point
+starts, how a file keeps its state, the order the driver's locks are taken in, and what Metal's handlers may do.
 
 | Folder, file | What it holds |
 |---|---|
