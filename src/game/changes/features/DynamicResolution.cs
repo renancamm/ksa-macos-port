@@ -358,7 +358,10 @@ internal static class DynamicResolution
     // The bloom (KawaseBloomRenderer): its shader tells its last step, which adds the glow to the main view's image, by
     // that image's height, which the game passes as the chain's first size (RenderScale sizes the chain): the level's
     // while the frame's data is written (otherwise the last step took the main image for another of the chain and wrote
-    // the glow alone over the scene)
+    // the glow alone over the scene). Each frame writes its own slot of the data (the frame in flight's), but the
+    // overall bloom's SetBlurSettings writes slot 0 too, every frame: a frame still on the GPU with slot 0 then read the
+    // next frame's height, and a step up to a larger level drew it black with a glow. With levels, a slot other than the
+    // frame's is left alone; the frame that uses it writes it
     private static AccessTools.FieldRef<KawaseBloomRenderer, int2[]> _bloomSizes = null!;
 
     private static void ApplyBloom(Harmony harmony)
@@ -369,13 +372,16 @@ internal static class DynamicResolution
             finalizer: new HarmonyMethod(typeof(DynamicResolution), nameof(BloomUpdateFinalizer)));
     }
 
-    private static void BloomUpdatePrefix(KawaseBloomRenderer __instance, out int2 __state)
+    private static bool BloomUpdatePrefix(KawaseBloomRenderer __instance, int frameIndex, out int2 __state)
     {
         __state = int2.Zero;
+        if (_render != int2.Zero && frameIndex != Program.Instance.ResourceFrameIndex)
+            return false;
         if (!Active || _bloomSizes(__instance) is not { Length: > 0 } sizes)
-            return;
+            return true;
         __state = sizes[0];
         sizes[0] = AtLevel(sizes[0]);
+        return true;
     }
 
     private static Exception? BloomUpdateFinalizer(Exception? __exception, KawaseBloomRenderer __instance, int2 __state)
