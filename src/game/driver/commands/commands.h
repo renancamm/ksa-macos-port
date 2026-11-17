@@ -112,8 +112,8 @@ struct KCommandBuffer : KDispatchable {
     bool pipelineDirty = false;
     KPipeline* encodedPipeline = nullptr;
 
-    // Timestamp queries: one counter sample per write (end of a tiny ordered encoder); writes inside a render pass
-    // are taken when the pass ends, or split it (zones.mm)
+    // Timestamp queries (timestamps.mm): one counter sample per write (end of a tiny ordered encoder); writes inside a
+    // render pass are taken when the pass ends, or split it
     struct TimestampWrite { KQueryPool* pool; uint32_t query; uint32_t sample; };
     id<MTLCounterSampleBuffer> tsSamples = nil;
     uint32_t tsUsed = 0;
@@ -175,31 +175,15 @@ id<MTLComputePipelineState> kmtlTessPrepPipeline(KDevice* dev);
 id<MTLBuffer> kmtlTessStats(KDevice* dev);
 uint32_t kmtlTessCap(KDevice* dev);
 
-// What only the command files share (encoders.mm, state.mm, draws.mm, passes.mm, transfers.mm)
+// What only the command files share
 static const MTLRenderStages kAllRenderStages = MTLRenderStageVertex | MTLRenderStageFragment;
 
 // KSA_MTL_STRICT_SYNC=1: every encoder is of every class and every barrier covers every class, so encoders run in
 // submission order
 inline bool strictSync() { return kmtlConfig().strictSync; }
 
-// Multiview: one draw per view in the mask, with spvViewMask = {view, 1}
-template <typename F> void kmtlForEachView(KCommandBuffer* cb, F&& draw) {
-    uint32_t mask = cb->graphicsPipeline->viewMask;
-    if (!mask) { draw(); return; }
-    while (mask) {
-        uint32_t v = __builtin_ctz(mask);
-        mask &= mask - 1;
-        uint32_t vm[2] = {v, 1};
-        [cb->render setVertexBytes:vm length:sizeof(vm) atIndex:kViewMaskBufferIndex];
-        [cb->render setFragmentBytes:vm length:sizeof(vm) atIndex:kViewMaskBufferIndex];
-        draw();
-    }
-}
-
 uint32_t kmtlStageClasses(VkPipelineStageFlags2 m, bool src);  // encoders.mm
 bool kmtlFlushGraphics(KCommandBuffer* cb);  // state.mm
 void kmtlSetDrawId(KCommandBuffer* cb, uint32_t id);  // state.mm
 bool kmtlFlushCompute(KCommandBuffer* cb);  // state.mm
-MTLLoadAction kmtlLoadAction(VkAttachmentLoadOp op);  // passes.mm
-MTLStoreAction kmtlStoreAction(VkAttachmentStoreOp op, bool resolve);  // passes.mm
 MTLClearColor kmtlClearColor(VkFormat f, const VkClearColorValue& c);  // passes.mm

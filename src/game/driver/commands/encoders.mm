@@ -381,24 +381,6 @@ void KCommandBuffer::endRender() {
     tsSplit = false;
 }
 
-// The game's timestamps since the last draw, while zones are split: the pass ends there and goes on after them.
-// Timestamps back to back split it once, and those after its last draw are taken when it ends, its stores and resolves
-// in the zone they close; what is encoded between a timestamp and the next draw counts in the zone before it
-void KCommandBuffer::stampSplit() {
-    if (!tsSplit) return;
-    suspendRender();
-    takeSplitStamps();
-    resumeRender();
-}
-
-// The split's timestamps, the pass suspended (each waits for the first half through stampTimestamp's event)
-void KCommandBuffer::takeSplitStamps() {
-    if (!tsSplit) return;
-    tsSplit = false;
-    for (auto& d : tsDeferred) stampTimestamp(d.first, d.second);
-    tsDeferred.clear();
-}
-
 void KCommandBuffer::resetState() {
     graphicsPipeline = computePipeline = nullptr;
     for (auto& s : graphicsSets) s = KBoundSet();

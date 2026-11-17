@@ -11,11 +11,7 @@
 // A limit: each render pass with images is followed by a full wait, so passes that overlap in other frames don't overlap in
 // this one (compute encoders are not held). A fault that comes from a missing barrier may not appear: a clean dump doesn't
 // rule one out.
-//
-// The watch (KSA_MTL_WATCH=<dir>): every kWatchEvery presents, a copy of the presented image and a look at a sample of it,
-// off the game's thread. An image that is broken without doubt, by what no clean view has shown, is kept and gets a pass dump
-// of the next frame; watch.txt has when each fault began and ended. Dark or partly wrong images need a clean image of the
-// same view to compare with: the benchmark's --catch does that.
+
 #include "kmtl.h"
 #import <CoreGraphics/CoreGraphics.h>
 #import <ImageIO/ImageIO.h>
@@ -54,7 +50,6 @@ std::atomic<int> g_state{Idle};
 std::atomic<uint64_t> g_used{0};
 std::atomic<int> g_pending{0};
 std::atomic<uint32_t> g_sequence{0};
-std::atomic<uint32_t> g_gpuErrors{0};
 std::mutex g_mutex;  // the images and the fields below
 std::set<KImage*> g_images;
 std::map<uint64_t, id<MTLBuffer>> g_memory;  // by GPU address
@@ -64,10 +59,6 @@ KSwapchain* g_swapchain = nullptr;
 int g_otherPresents = 0;
 std::chrono::steady_clock::time_point g_started;
 
-dispatch_queue_t writer() {
-    static dispatch_queue_t q = dispatch_queue_create("ksa-metal.passdump", DISPATCH_QUEUE_SERIAL);
-    return q;
-}
 
 // Bytes a texel and how many channels, for the formats it can read; 0 for the others
 struct Layout { uint32_t bytes, channels; bool isFloat; };
@@ -306,7 +297,7 @@ void writeWhenDone(id<MTLCommandBuffer> cb, std::vector<Item> items) {
         // After a GPU error the copies never ran: their buffers hold nothing that was on the GPU
         if (done.status == MTLCommandBufferStatusError) kmtlNoteGpuError();
         std::string failed = done.status == MTLCommandBufferStatusError ? std::string(": left out, its command buffer failed: ") + done.error.localizedDescription.UTF8String : "";
-        dispatch_async(writer(), ^{
+        dispatch_async(kmtlPassDumpWriter(), ^{
             @autoreleasepool {
                 for (const Item& item : batch->items) {
                     if (failed.empty()) writeItem(item);
@@ -559,7 +550,7 @@ void kmtlPassDumpAtPresent(KQueue* queue, KSwapchain* swapchain, id<MTLCommandBu
 KMTL_EXPORT bool ksaMtlPassDump(const char* dir) {
     giveUpIfLate();
     // The GPU refuses this process's work after a hang: a dump would hold nothing
-    if (g_gpuErrors) return false;
+    if (ksaMtlGpuErrors()) return false;
     std::lock_guard<std::mutex> lock(g_mutex);
     if (g_state != Idle) return false;
     g_dir = dir;
@@ -576,142 +567,7 @@ KMTL_EXPORT bool ksaMtlPassDumpRunning() {
     return g_state != Idle;
 }
 
-KMTL_EXPORT uint32_t ksaMtlGpuErrors() { return g_gpuErrors; }
-
-// The share of a sample of the image with what clean views don't show, in percent. Measured on 4400 screenshots of 44 views:
-// white at most 14 % on a clean view and from 50 % on a broken one, the others only on broken ones
-namespace {
-
-constexpr uint64_t kWatchEvery = 31;  // odd: the game alternates between two sets of frame data, and a fault can be in one
-constexpr NSUInteger kWatchStride = 8, kWatchMinWidth = 640;
-constexpr double kWatchBlack = 99.9, kWatchColour = 0.1;
-constexpr int kWatchDumps = 3, kWatchDumpSeconds = 10, kWatchBlackLooks = 4;
-
-struct WatchSample { double white, black, green, primary; };
-
-WatchSample sampleImage(const uint8_t* bgra, NSUInteger width, NSUInteger height) {
-    uint64_t n = 0, white = 0, black = 0, green = 0, primary = 0;
-    for (NSUInteger y = 0; y < height; y += kWatchStride) {
-        const uint8_t* row = bgra + y * width * 4;
-        for (NSUInteger x = 0; x < width; x += kWatchStride) {
-            int b = row[x * 4], g = row[x * 4 + 1], r = row[x * 4 + 2];
-            n++;
-            white += r >= 250 && g >= 250 && b >= 250;
-            black += r <= 1 && g <= 1 && b <= 1;
-            green += g > 60 && r * 6 < g && b * 6 < g;
-            bool full[3] = {r >= 240, g >= 240, b >= 240}, none[3] = {r <= 16, g <= 16, b <= 16};
-            primary += (full[0] && full[1] && none[2]) || (full[0] && none[1] && none[2]) ||
-                       (none[0] && full[1] && none[2]) || (none[0] && none[1] && full[2]);
-        }
-    }
-    double scale = 100.0 / std::max<uint64_t>(n, 1);
-    return {white * scale, black * scale, green * scale, primary * scale};
-}
-
-void watchLine(const std::string& text) {
-    if (FILE* f = fopen((std::string(kmtlConfig().watch) + "/watch.txt").c_str(), "a")) {
-        time_t now = time(nullptr);
-        char when[32];
-        strftime(when, sizeof when, "%H:%M:%S", localtime(&now));
-        fprintf(f, "%s %s\n", when, text.c_str());
-        fclose(f);
-    }
-}
-
-id<MTLBuffer> g_watchBuffer;
-std::atomic<bool> g_watchBusy{false};
-uint64_t g_watchPresents = 0;
-// On the writer's queue only
-bool g_watchBroken = false, g_watchSeenClean = false;
-int g_watchBlackLooks = 0;
-int g_watchDumped = 0;
-std::chrono::steady_clock::time_point g_watchLastDump, g_watchBrokenSince;
-
-void watchLook(id<MTLBuffer> buffer, NSUInteger width, NSUInteger height, uint64_t present) {
-    WatchSample s = sampleImage((const uint8_t*)buffer.contents, width, height);
-    // A fade or a loading screen is black too: black counts when it stays, and for one dump
-    g_watchBlackLooks = s.black >= kWatchBlack ? g_watchBlackLooks + 1 : 0;
-    bool colours = s.white >= kmtlConfig().watchWhite || s.green >= kWatchColour || s.primary >= kWatchColour;
-    bool broken = colours || g_watchBlackLooks >= kWatchBlackLooks;
-    auto now = std::chrono::steady_clock::now();
-    if (FILE* f = fopen((std::string(kmtlConfig().watch) + "/watch.csv").c_str(), "a")) {
-        fseek(f, 0, SEEK_END);
-        if (ftell(f) == 0) fprintf(f, "present,seconds,white,black,green,primary\n");
-        fprintf(f, "%llu,%.2f,%.2f,%.2f,%.2f,%.2f\n", (unsigned long long)present, std::chrono::duration<double>(now.time_since_epoch()).count(), s.white, s.black, s.green, s.primary);
-        fclose(f);
-    }
-    // Loading and fades can be black: only an image that follows a clean one counts (a limit of 0 is a test, always broken)
-    g_watchSeenClean |= !broken;
-    if (!g_watchSeenClean && kmtlConfig().watchWhite > 0) return;
-    if (broken != g_watchBroken) {
-        char line[160];
-        if (broken) {
-            g_watchBrokenSince = now;
-            snprintf(line, sizeof line, "present %llu broken: white %.2f %% black %.2f %% green %.2f %% primary %.2f %%", (unsigned long long)present, s.white, s.black, s.green, s.primary);
-        } else {
-            snprintf(line, sizeof line, "present %llu clear after %.1f s", (unsigned long long)present, std::chrono::duration<double>(now - g_watchBrokenSince).count());
-        }
-        watchLine(line);
-        g_watchBroken = broken;
-    }
-    if (!broken || g_watchDumped >= (colours ? kWatchDumps : 1) || (g_watchDumped && now - g_watchLastDump < std::chrono::seconds(kWatchDumpSeconds)))
-        return;
-    std::string name = "watch_" + std::to_string(g_watchDumped + 1);
-    std::string dir = std::string(kmtlConfig().watch) + "/" + name;
-    if (!ksaMtlPassDump(dir.c_str())) {
-        watchLine("present " + std::to_string(present) + " no pass dump: another is running or the GPU has failed");
-        return;
-    }
-    g_watchDumped++;
-    g_watchLastDump = now;
-    kmtlWritePNG(buffer, width, height, true, std::string(kmtlConfig().watch) + "/" + name + ".png");
-    watchLine("present " + std::to_string(present) + " " + name + ": the image, and the next frame's passes");
-}
-
-}  // namespace
-
-void kmtlWatchAtPresent(KQueue* queue, KImage* image, id<MTLCommandBuffer> cb) {
-    if (!kmtlConfig().watch || !image->mtl || image->mtl.width < kWatchMinWidth || ++g_watchPresents % kWatchEvery) return;
-    id<MTLTexture> t = image->mtl;
-    if (t.pixelFormat != MTLPixelFormatBGRA8Unorm && t.pixelFormat != MTLPixelFormatBGRA8Unorm_sRGB) {
-        KERR_ONCE("watch: this image's format can't be read: the watch does nothing");
-        return;
-    }
-    NSUInteger size = t.width * t.height * 4;
-    if (g_watchBusy.exchange(true)) return;
-    static std::once_flag folder;
-    std::call_once(folder, [] {
-        [[NSFileManager defaultManager] createDirectoryAtPath:@(kmtlConfig().watch) withIntermediateDirectories:YES attributes:nil error:nil];
-    });
-    if (g_watchBuffer.length != size) g_watchBuffer = [t.device newBufferWithLength:size options:MTLResourceStorageModeShared];
-    id<MTLBuffer> buffer = g_watchBuffer;
-    if (!buffer) {
-        g_watchBusy = false;
-        return;
-    }
-    id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
-    blit.label = @"watch";
-    [blit waitForFence:queue->chain];
-    [blit copyFromTexture:t sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(t.width, t.height, 1)
-                 toBuffer:buffer destinationOffset:0 destinationBytesPerRow:t.width * 4 destinationBytesPerImage:size];
-    [blit endEncoding];
-    NSUInteger width = t.width, height = t.height;
-    uint64_t present = g_watchPresents;
-    [cb addCompletedHandler:^(id<MTLCommandBuffer> done) {
-        if (done.status == MTLCommandBufferStatusError) {
-            kmtlNoteGpuError();
-            g_watchBusy = false;
-            return;
-        }
-        dispatch_async(writer(), ^{
-            @autoreleasepool {
-                watchLook(buffer, width, height, present);
-            }
-            g_watchBusy = false;
-        });
-    }];
-}
-
-void kmtlNoteGpuError() {
-    if (g_gpuErrors++ == 0 && kmtlConfig().watch) watchLine("the GPU failed a command buffer: nothing after this can be dumped");
+dispatch_queue_t kmtlPassDumpWriter() {
+    static dispatch_queue_t q = dispatch_queue_create("ksa-metal.passdump", DISPATCH_QUEUE_SERIAL);
+    return q;
 }

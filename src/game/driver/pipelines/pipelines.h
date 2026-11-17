@@ -83,13 +83,9 @@ struct KPipeline {
     std::string profName;
     int throttle = -1;  // KSA_MTL_THROTTLE: run every N-th present (0 never, -1 always)
 };
-// KSA_MTL_THROTTLE (setup/config.mm): a pipeline whose name holds one of its module hashes runs every N-th present
-int kmtlThrottleFor(const std::string& profName);
-inline bool kmtlThrottled(const KPipeline* p) {
-    if (!p || p->throttle < 0) return false;
-    return p->throttle == 0 || kmtlPresentCount() % (uint64_t)p->throttle != 0;
-}
 
+// stages.mm: whether draws bind the early-test states of pipelines that have one (ksaMtlEarlyFragmentTests)
+bool kmtlEarlyFragmentTests();
 // stages.mm
 id<MTLLibrary> kmtlCompileStageMSL(KDevice* dev, const std::string& msl, std::string* err);
 // stages.mm: threads per shader-compile pool (the pipeline workers, and the prewarm's own): all cores but two; the

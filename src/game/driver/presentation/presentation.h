@@ -1,4 +1,5 @@
-// KSA Metal's presentation (presentation/): surfaces and swapchains. Included by kmtl.h.
+// KSA Metal's presentation (presentation/): surfaces and swapchains, the frames' timing, the Frame Rate section, MetalFX.
+// Included by kmtl.h.
 #pragma once
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -32,7 +33,7 @@ struct KPresentState {
     uint64_t lastShownPresent = 0;
 };
 
-// Pixel size of a surface's layer (bounds x contentsScale): the surface's current extent
+// Pixel size of a surface's layer (bounds x contentsScale): the surface's current extent (surface.mm)
 VkExtent2D kmtlLayerExtent(CAMetalLayer* layer);
 
 struct KSwapchain {
@@ -72,6 +73,26 @@ id<MTLTexture> kmtlPrivateTexture(id<MTLDevice> d, MTLPixelFormat format, NSUInt
                                   MTLTextureUsage usage);
 std::vector<id<MTLComputePipelineState>> kmtlComputePipelines(id<MTLDevice> d, const char* source,
                                                               std::initializer_list<const char*> names, std::string* error);
+
+// Players' frame timing (frametime.mm): a present counted (its number); from completion handlers, a command buffer's
+// GPU busy time; one frame's GPU busy time in seconds since the last present completed, and since the instruments
+// took it at the last present, each reset; from the presented handlers, the display showed a drawable at t
+// (presentedTime), timed: a game frame, whose interval since the last one is display_ms (interpolated frames only
+// count); the drawables shown, the latest display_ms
+uint64_t kmtlCountPresent();
+void kmtlNoteGpuTime(id<MTLCommandBuffer> cb);
+double kmtlTakeFrameGpuTime();
+double kmtlTakePresentGpuTime();
+void kmtlNoteShown(double t, bool timed);
+uint64_t kmtlShownCount();
+double kmtlDisplayMs();
+
+// The GPU's clock (gpuclock.mm, IOReport), for the frame rate's GPU times under paced frames: its sampler started,
+// once; the clock lately over its highest (1: unknown); the clock lately (0: unknown); a clock read at least once
+void kmtlGpuClockStart();
+double kmtlGpuClockShare();
+double kmtlGpuClockMhz();
+bool kmtlGpuClockKnown();
 
 // upscale.mm: the present's MetalFX passes
 id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<MTLTexture> color);

@@ -2,7 +2,6 @@
 // (shaders/translate.mm) or taken from the disk cache, overridden, compiled into its function.
 #include "stages.h"
 #include "spirv_msl.hpp"
-#include <sys/stat.h>
 #include <memory>
 #include <set>
 #include <regex>
@@ -37,14 +36,6 @@ void kmtlPipelineCounts(uint32_t* shaders, uint32_t* pipelines) {
     *pipelines = (uint32_t)g_nPipeline.load();
 }
 
-uint64_t kmtlHash(const void* data, size_t size) {
-    // FNV-1a 64
-    uint64_t h = 1469598103934665603ull;
-    auto* p = (const uint8_t*)data;
-    for (size_t i = 0; i < size; i++) { h ^= p[i]; h *= 1099511628211ull; }
-    return h;
-}
-
 // ---------------------------------------------------------------------------------------------------------------
 // Shader modules
 
@@ -69,17 +60,6 @@ VKFN(void) vkDestroyShaderModule(VkDevice, VkShaderModule m, const VkAllocationC
 
 // ---------------------------------------------------------------------------------------------------------------
 // MSL compilation (cached per device by MSL text hash)
-
-void kmtlDumpFile(const char* dir, const std::string& name, const void* data, size_t size, bool keep) {
-    mkdir(dir, 0755);
-    std::string path = std::string(dir) + "/" + name;
-    struct stat st;
-    if (keep && stat(path.c_str(), &st) == 0) return;
-    if (FILE* f = fopen(path.c_str(), "wb")) {
-        fwrite(data, 1, size, f);
-        fclose(f);
-    }
-}
 
 static void dumpMSL(const std::string& name, const std::string& msl, const std::string& err) {
     const char* dir = kmtlConfig().dumpMsl;

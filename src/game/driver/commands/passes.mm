@@ -33,7 +33,7 @@ VKFN(void) vkCmdPipelineBarrier2(VkCommandBuffer commandBuffer, const VkDependen
 // ---------------------------------------------------------------------------------------------------------------
 // Render passes
 
-MTLLoadAction kmtlLoadAction(VkAttachmentLoadOp op) {
+static MTLLoadAction loadAction(VkAttachmentLoadOp op) {
     switch (op) {
     case VK_ATTACHMENT_LOAD_OP_CLEAR: return MTLLoadActionClear;
     case VK_ATTACHMENT_LOAD_OP_DONT_CARE: return MTLLoadActionDontCare;
@@ -41,7 +41,7 @@ MTLLoadAction kmtlLoadAction(VkAttachmentLoadOp op) {
     }
 }
 
-MTLStoreAction kmtlStoreAction(VkAttachmentStoreOp op, bool resolve) {
+static MTLStoreAction storeAction(VkAttachmentStoreOp op, bool resolve) {
     bool store = op != VK_ATTACHMENT_STORE_OP_DONT_CARE;
     if (resolve) return store ? MTLStoreActionStoreAndMultisampleResolve : MTLStoreActionMultisampleResolve;
     return store ? MTLStoreActionStore : MTLStoreActionDontCare;
@@ -94,14 +94,14 @@ VKFN(void) vkCmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPas
         const auto& a = rp->attachments[c];
         MTLRenderPassColorAttachmentDescriptor* ca = d.colorAttachments[i];
         setAttachmentTexture(ca, views[c]);
-        ca.loadAction = kmtlLoadAction(a.loadOp);
+        ca.loadAction = loadAction(a.loadOp);
         if (c < (int)bi->clearValueCount) ca.clearColor = kmtlClearColor(a.format, bi->pClearValues[c].color);
         int r = sp.resolves[i];
         if (r >= 0 && r < (int)viewCount) {
             ca.resolveTexture = views[r]->mtl;
             ca.resolveLevel = 0;
         }
-        ca.storeAction = kmtlStoreAction(a.storeOp, r >= 0);
+        ca.storeAction = storeAction(a.storeOp, r >= 0);
     }
     if (sp.depth >= 0 && sp.depth < (int)viewCount) {
         const auto& a = rp->attachments[sp.depth];
@@ -109,14 +109,14 @@ VKFN(void) vkCmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPas
         KImageView* v = views[sp.depth];
         if (fi && fi->depth) {
             setAttachmentTexture(d.depthAttachment, v);
-            d.depthAttachment.loadAction = kmtlLoadAction(a.loadOp);
-            d.depthAttachment.storeAction = kmtlStoreAction(a.storeOp, false);
+            d.depthAttachment.loadAction = loadAction(a.loadOp);
+            d.depthAttachment.storeAction = storeAction(a.storeOp, false);
             if (sp.depth < (int)bi->clearValueCount) d.depthAttachment.clearDepth = bi->pClearValues[sp.depth].depthStencil.depth;
         }
         if (fi && fi->stencil) {
             setAttachmentTexture(d.stencilAttachment, v);
-            d.stencilAttachment.loadAction = kmtlLoadAction(a.stencilLoadOp);
-            d.stencilAttachment.storeAction = kmtlStoreAction(a.stencilStoreOp, false);
+            d.stencilAttachment.loadAction = loadAction(a.stencilLoadOp);
+            d.stencilAttachment.storeAction = storeAction(a.stencilStoreOp, false);
             if (sp.depth < (int)bi->clearValueCount) d.stencilAttachment.clearStencil = bi->pClearValues[sp.depth].depthStencil.stencil;
         }
     }
@@ -160,13 +160,13 @@ VKFN(void) vkCmdEndRenderPass2(VkCommandBuffer commandBuffer, const VkSubpassEnd
 static void setRenderingAttachment(MTLRenderPassAttachmentDescriptor* a, const VkRenderingAttachmentInfo& ri, bool resuming) {
     auto* v = (KImageView*)ri.imageView;
     setAttachmentTexture(a, v);
-    a.loadAction = resuming ? MTLLoadActionLoad : kmtlLoadAction(ri.loadOp);
+    a.loadAction = resuming ? MTLLoadActionLoad : loadAction(ri.loadOp);
     bool resolve = ri.resolveMode != VK_RESOLVE_MODE_NONE && ri.resolveImageView;
     if (resolve) {
         a.resolveTexture = ((KImageView*)ri.resolveImageView)->mtl;
         a.resolveLevel = 0;
     }
-    a.storeAction = kmtlStoreAction(ri.storeOp, resolve);
+    a.storeAction = storeAction(ri.storeOp, resolve);
 }
 
 VKFN(void) vkCmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo* ri) {

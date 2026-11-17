@@ -4,15 +4,10 @@
 // KSA builds a few bottom-level structures from meshes (float3 positions, uint32 indices) and top-level structures
 // whose instances it writes from the CPU into host-visible memory. Device addresses in the build inputs are mapped
 // back to (MTLBuffer, offset) through the address table of device memory; instances are converted on the CPU at
-// record time into Metal indirect instance descriptors, which name bottom-level structures by gpuResourceID.
+// record time into Metal indirect instance descriptors, which name bottom-level structures by gpuResourceID. The builds
+// are recorded by commands/accelbuild.mm.
 #include "kmtl.h"
 #include <map>
-
-struct KAccel {
-    id<MTLAccelerationStructure> mtl = nil;
-    uint64_t address = 0;  // what vkGetAccelerationStructureDeviceAddressKHR hands out
-    bool placed = false;   // in the heap of its Vulkan buffer (resident with it), not memory of its own
-};
 
 // ---------------------------------------------------------------------------------------------------------------
 // Device address -> memory
@@ -45,10 +40,10 @@ static KDeviceMemory* memoryAt(uint64_t addr, NSUInteger* offset) {
 // ---------------------------------------------------------------------------------------------------------------
 // Descriptors
 
-static MTLAccelerationStructureDescriptor* describe(const VkAccelerationStructureBuildGeometryInfoKHR* info,
-                                                    const uint32_t* primitiveCounts, bool resolveBuffers,
-                                                    const VkAccelerationStructureBuildRangeInfoKHR* ranges,
-                                                    id<MTLDevice> dev, id<MTLBuffer>* outInstances) {
+MTLAccelerationStructureDescriptor* kmtlAccelDescriptor(const VkAccelerationStructureBuildGeometryInfoKHR* info,
+                                                       const uint32_t* primitiveCounts, bool resolveBuffers,
+                                                       const VkAccelerationStructureBuildRangeInfoKHR* ranges,
+                                                       id<MTLDevice> dev, id<MTLBuffer>* outInstances) {
     if (info->type == VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR) {
         MTLInstanceAccelerationStructureDescriptor* d = [MTLInstanceAccelerationStructureDescriptor descriptor];
         d.instanceDescriptorType = MTLAccelerationStructureInstanceDescriptorTypeIndirect;
@@ -148,7 +143,7 @@ VKFN(void) vkGetAccelerationStructureBuildSizesKHR(VkDevice device, VkAccelerati
     KTRACE_FIRST();
     auto* dev = (KDevice*)device;
     id<MTLBuffer> unused = nil;
-    MTLAccelerationStructureDescriptor* d = describe(info, maxPrimitiveCounts, false, nullptr, dev->mtl, &unused);
+    MTLAccelerationStructureDescriptor* d = kmtlAccelDescriptor(info, maxPrimitiveCounts, false, nullptr, dev->mtl, &unused);
     if (!d) { sizes->accelerationStructureSize = sizes->buildScratchSize = sizes->updateScratchSize = 0; return; }
     MTLAccelerationStructureSizes s = [dev->mtl accelerationStructureSizesWithDescriptor:d];
     // The size a structure takes in a heap (the same as its own on the M5), so that the app's buffer can hold it
@@ -217,37 +212,4 @@ VKFN(VkDeviceAddress) vkGetAccelerationStructureDeviceAddressKHR(VkDevice, const
 uint64_t kmtlAccelId(VkAccelerationStructureKHR as) {
     auto* a = (KAccel*)as;
     return a && a->mtl ? a->mtl.gpuResourceID._impl : 0;
-}
-
-VKFN(void) vkCmdBuildAccelerationStructuresKHR(VkCommandBuffer commandBuffer, uint32_t n,
-                                               const VkAccelerationStructureBuildGeometryInfoKHR* infos,
-                                               const VkAccelerationStructureBuildRangeInfoKHR* const* ranges) {
-    KTRACE_FIRST();
-    auto* cb = (KCommandBuffer*)commandBuffer;
-    KDevice* dev = cb->device;
-    cb->endEncoder();
-    id<MTLAccelerationStructureCommandEncoder> enc = [cb->mtl accelerationStructureCommandEncoder];
-    cb->waitForRoles(enc, KCommandBuffer::kClassAccel);
-    for (uint32_t i = 0; i < n; i++) {
-        auto* dst = (KAccel*)infos[i].dstAccelerationStructure;
-        // An update (refit in place, src == dst) is done as a full build: KSA's per-frame TLAS has few instances
-        if (infos[i].mode != VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR) KLOG_LIMIT(1, 1, "acceleration structure update: rebuilt");
-        id<MTLBuffer> instances = nil;
-        MTLAccelerationStructureDescriptor* d = describe(&infos[i], nullptr, true, ranges[i], dev->mtl, &instances);
-        if (!d || !dst) continue;
-        MTLAccelerationStructureSizes s = [dev->mtl accelerationStructureSizesWithDescriptor:d];
-        if (s.accelerationStructureSize > dst->mtl.size) KERR("acceleration structure too small (%lu > %lu)",
-                                                              (unsigned long)s.accelerationStructureSize, (unsigned long)dst->mtl.size);
-        id<MTLBuffer> scratch = [dev->mtl newBufferWithLength:std::max<NSUInteger>(s.buildScratchBufferSize, 256)
-                                                      options:MTLResourceStorageModePrivate];
-        if (!scratch) {
-            KERR("vkCmdBuildAccelerationStructuresKHR: scratch buffer of %lu bytes failed", (unsigned long)s.buildScratchBufferSize);
-            continue;
-        }
-        [enc buildAccelerationStructure:dst->mtl descriptor:d scratchBuffer:scratch scratchBufferOffset:0];
-        if (instances) [enc useResource:instances usage:MTLResourceUsageRead];
-    }
-    [enc updateFence:cb->finishFence(cb->encRoles)];
-    [enc endEncoding];
-    cb->encRoles = 0;
 }

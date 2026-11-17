@@ -1,4 +1,4 @@
-// The GPU's clock, for dynamic resolution's GPU times (dynres.mm). With the frames paced (Steady Frame Rate), macOS runs
+// The GPU's clock, for the Frame Rate section's GPU times (framerate.mm). With the frames paced (Steady Frame Rate), macOS runs
 // the GPU only as fast as each frame's deadline needs (an M5 at 30 FPS: 340-800 MHz instead of 1620), so a frame's GPU
 // time tells the deadline more than the work. Scaled by the clock it ran at over the highest, it tells the work again:
 // about the time the frame would take at the full clock (the part bound by memory doesn't follow the clock: a guess on
@@ -6,8 +6,8 @@
 //
 // From macOS's IOReport (a private interface, read without root, as Activity Monitor's energy figures are; loaded at
 // run time, as the benchmark's power channel reads it): GPU Stats' performance states, their time in each over the last
-// kEvery weighted by their frequencies (the IORegistry's pmgr voltage-states9). Started by dynamic resolution only when
-// Steady Frame Rate drives it. Missing (another macOS or chip, a table it can't read): the GPU times as measured, said
+// kEvery weighted by their frequencies (the IORegistry's pmgr voltage-states9). Started by the controller only when
+// Steady Frame Rate paces the frames and the levels or the rate's steps use it. Missing (another macOS or chip, a table it can't read): the GPU times as measured, said
 // once.
 #include "kmtl.h"
 #include <IOKit/IOKitLib.h>

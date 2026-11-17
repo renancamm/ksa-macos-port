@@ -338,6 +338,24 @@ static bool buildTessKernels(KDevice* dev, const VkGraphicsPipelineCreateInfo* c
     return (passthrough && *passthrough) || buildControl(tcs);
 }
 
+// KSA_MTL_THROTTLE=<hash>:<N>,...: a pipeline whose name holds one of the module hashes runs every N-th present
+static int throttleFor(const std::string& profName) {
+    const char* t = kmtlConfig().throttle;
+    if (!t) return -1;
+    std::string list = t;
+    size_t pos = 0;
+    while (pos < list.size()) {
+        size_t end = list.find(',', pos);
+        if (end == std::string::npos) end = list.size();
+        std::string item = list.substr(pos, end - pos);
+        size_t colon = item.find(':');
+        if (colon != std::string::npos && profName.find(item.substr(0, colon)) != std::string::npos)
+            return atoi(item.c_str() + colon + 1);
+        pos = end + 1;
+    }
+    return -1;
+}
+
 static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineCreateInfo* ci) {
     auto* layout = (KPipelineLayout*)ci->layout;
     KAttachmentFormats af = attachmentFormats(ci);
@@ -574,7 +592,7 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
             p->profName += nm;
         }
         p->profId = kmtlHash(p->profName.data(), p->profName.size());
-        p->throttle = kmtlThrottleFor(p->profName);
+        p->throttle = throttleFor(p->profName);
     }
     if (rs) {
         p->cull = rs->cullMode == VK_CULL_MODE_FRONT_BIT ? MTLCullModeFront
@@ -698,7 +716,7 @@ KPipeline* kmtlCreateComputeFromStage(KDevice* dev, KPipelineLayout* layout, con
         snprintf(nm, sizeof(nm), "c%016llx", (unsigned long long)((KShaderModule*)stage->module)->hash);
         p->profName = nm;
         p->profId = kmtlHash(nm, strlen(nm));
-        p->throttle = kmtlThrottleFor(p->profName);
+        p->throttle = throttleFor(p->profName);
     }
     return p;
 }

@@ -46,7 +46,7 @@ These switches turn a feature off or change a default, to work around a problem 
 | `hdr_output` | off: offer the game no HDR output ([Presentation](#from-vulkan-to-metal)): its HDR settings (Display) stay hidden |
 | `vsync_pacing` | off: with Vsync, the game's wait for an earlier frame ends only when the display shows it ([Presentation](#from-vulkan-to-metal)); in a window, frames that take less than about 23 ms on the GPU then run slower |
 | `steady_frame_rate` | `30`, `40` or `60`, with Vsync: each game frame shown at least that rate's whole refreshes of the display the window is on after the one before, never faster (40 is 30 at 60 Hz; an even count with frame interpolation; one refresh is Vsync's own, unpaced), set again when the window moves to another display; at 40 fps or less with two drawables instead of three, one frame less latency (three with frame interpolation) ([Presentation](#from-vulkan-to-metal)) |
-| `dynamic_resolution` | on, with MetalFX (`upscaling`) and `steady_frame_rate`: the main view drawn at a level of its render size each frame, the highest expected to stay under 90 % of the rate's frame time on the GPU (`presentation/framerate.mm` picks it, `resources/dynres.mm` draws at it; GPU times at the full clock: `resources/gpuclock.mm`) |
+| `dynamic_resolution` | on, with MetalFX (`upscaling`) and `steady_frame_rate`: the main view drawn at a level of its render size each frame, the highest expected to stay under 90 % of the rate's frame time on the GPU (`presentation/framerate.mm` picks it, `resources/dynres.mm` draws at it; GPU times at the full clock: `presentation/gpuclock.mm`) |
 | `lower_rate_under_heavy_load` | off, with `steady_frame_rate`: the rate stays, instead of the next slower one when even the lowest level (the full size, without `dynamic_resolution` or room below it) can't hold it, and the faster one back when the lowest is expected to |
 
 ## Build
@@ -364,6 +364,7 @@ starts, how a file keeps its state, the order the driver's locks are taken in, a
 | Folder, file | What it holds |
 |---|---|
 | `kmtl.h` | the core: the rules, logging, the configuration, buffer indices, the dispatchable objects (instance, physical device, queue, device), shared helpers; then the layers' headers |
+| `kmtl.mm` | the core's helpers: a hash, files in the dump folders |
 | `exports.h` | the driver's own API: every export besides Vulkan's, the structs they pass, their C# mirrors |
 | `setup/config.mm` | the settings above, read once from their variables (their names and defaults from `port-settings.h`, which the build makes from the settings table), and the log |
 | `setup/entry.mm` | the table behind `vkGetInstanceProcAddr` and `vkGetDeviceProcAddr`, `entries.inc`, which the build makes from Vulkan's registry and the driver's sources ([`../../build-tools/entries-generator/`](../../build-tools/entries-generator/)) |
@@ -377,7 +378,6 @@ starts, how a file keeps its state, the order the driver's locks are taken in, a
 | `resources/descriptor.mm` | descriptor sets as argument buffers, pipeline layouts |
 | `resources/accel.mm` | acceleration structures for ray queries |
 | `resources/dynres.mm` | dynamic resolution (`dynamic_resolution`; `dynamic_level`, an experiment): the images of the main view's size and its fractions, a texture per level in the same memory, the level's changes |
-| `resources/gpuclock.mm` | the GPU's clock from IOReport, for dynamic resolution's GPU times under paced frames |
 | `shaders/translate.mm`, `translate.h` | a shader stage's translation from SPIR-V to MSL |
 | `shaders/shadercache.mm` | the translation cache on disk and the background compile |
 | `shaders/corpus.mm` | the shader corpus (`shader_corpus`): translations recorded for the tests |
@@ -389,16 +389,22 @@ starts, how a file keeps its state, the order the driver's locks are taken in, a
 | `commands/state.mm` | the state set between draws, and its flush before a draw or dispatch |
 | `commands/draws.mm` | draws and dispatches, tessellated draws |
 | `commands/passes.mm` | barriers, render passes and dynamic rendering |
-| `commands/transfers.mm` | copies, blits, fills, clears, updates, queries, debug labels |
+| `commands/transfers.mm` | copies, blits, fills, clears, updates, debug labels |
+| `commands/timestamps.mm` | timestamp queries: their sample buffers, the tiny encoders whose end each one is, a render pass split for them |
+| `commands/accelbuild.mm` | acceleration structure builds |
 | `commands/internal.mm` | the driver's own shaders: buffer fills, scaled blits, tessellation helpers |
+| `presentation/surface.mm` | surfaces: presentation support, extent and capabilities, formats (HDR10 with EDR), present modes |
 | `presentation/swapchain.mm` | swapchain and presentation: pacing, HDR, frame interpolation at present, latency |
+| `presentation/frametime.mm` | the frames' timing: presents counted, the GPU's busy time, what the display showed |
 | `presentation/upscale.mm` | MetalFX: upscaling, motion vectors, frame interpolation |
 | `presentation/rayhistory.mm` | MetalFX: the cockpit's ray-traced lighting with a history of its own |
+| `presentation/gpuclock.mm` | the GPU's clock from IOReport, for the frame rate's GPU times under paced frames |
 | `presentation/framerate.mm` | the Frame Rate section's controller: Steady Frame Rate's rate steps (`lower_rate_under_heavy_load`) and dynamic resolution's level each frame |
 | `diagnostics/instruments.mm` | what is measured at each present: frame log, screenshots, exits, the benchmark's interface, frame captures, signposts |
 | `diagnostics/drain.mm` | the benchmark's drain: what is measured, as records for its run's store |
 | `diagnostics/passdump.mm` | one frame's images, pass by pass (`ksaMtlPassDump`) |
-| `diagnostics/zones.mm` | the game's GPU profiler: its timestamps' sample buffers and how they are answered, encoders named after its zones |
+| `diagnostics/watch.mm` | the watch (`watch`): a look at the presented image now and then, a pass dump of a broken one |
+| `diagnostics/zones.mm` | the game's GPU profiler: how its timestamps are answered, encoders named after its zones |
 | `tests/` | the tests that run without the game |
 | `CMakeLists.txt`, `exports.txt` | the build: sources, flags, and the symbols the library exports |
 

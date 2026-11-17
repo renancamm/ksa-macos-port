@@ -32,7 +32,7 @@ static void latencyAtPresent(id<CAMetalDrawable> drawable, id<MTLCommandBuffer> 
     // drawable's lock, which addPresentedHandler takes too, and the handler takes this mutex (a deadlock otherwise:
     // the game hung in vkQueuePresentKHR)
     double now, began, waited;
-    uint64_t n, present = kmtlPresentCount();  // kmtlOnPresent counted this present already
+    uint64_t n, present = kmtlPresentCount();  // vkQueuePresentKHR counted this present already
     bool paced, drain = kmtlDrainOn();
     FILE* csv;
     {
@@ -69,7 +69,7 @@ static bool outdated(KSwapchain* sc) {
     return e.width && e.height && (e.width != sc->extent.width || e.height != sc->extent.height);
 }
 
-// HDR output. The game offers HDR in its Display settings when the surface has an HDR format, which instance.mm gives
+// HDR output. The game offers HDR in its Display settings when the surface has an HDR format, which surface.mm gives
 // on a display with EDR (extended dynamic range: brighter than SDR white, as Apple's XDR displays and HDR monitors in
 // HDR mode): HDR10, the game's absolute nits in PQ. The layer shows it with EDR, and its metadata maps the game's UI
 // brightness (Display > HDR UI Brightness) to the display's SDR white: its UI then sits at the brightness of other
@@ -518,11 +518,10 @@ VKFN(VkResult) vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pi) {
             [b endEncoding];
             [cb addCompletedHandler:^(id<MTLCommandBuffer> c) { kmtlNoteGpuTime(c); }];
             uint64_t shotsBefore = kmtlShotsTaken();
-            kmtlOnPresent(q->device, sc, img, cb);
+            uint64_t counted = kmtlCountPresent();  // this present's number, as the present record has it
+            kmtlOnPresent(q->device, sc, img, cb, counted);
             // A screenshot's copy is in this frame's GPU time: not the game's load, left out of dynamic resolution's choice
             bool shot = kmtlShotsTaken() != shotsBefore;
-            // This present's number as the present record has it (kmtlOnPresent counted it), for its frame's GPU time
-            uint64_t counted = kmtlPresentCount();
             {
                 // For vkWaitForPresentKHR: when this present was made, ended on the GPU, and was shown
                 std::shared_ptr<KPresentState> state = sc->presentState;

@@ -2,8 +2,8 @@
 #include "kmtl.h"
 
 // ---------------------------------------------------------------------------------------------------------------
-// Query pools and pipeline caches (KSA writes timestamps only while its profiler is open, commands/transfers.mm; caches are kept
-// empty)
+// Query pools and pipeline caches (KSA writes timestamps only while its profiler is open, commands/timestamps.mm; caches
+// are kept empty)
 
 VKFN(VkResult) vkCreateQueryPool(VkDevice, const VkQueryPoolCreateInfo* ci, const VkAllocationCallbacks*, VkQueryPool* out) {
     KTRACE_FIRST();

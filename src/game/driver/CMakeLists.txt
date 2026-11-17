@@ -34,13 +34,13 @@ add_custom_command(OUTPUT "${KSA_GENERATED_DIR}/entries.stamp"
 add_custom_target(ksa-metal-entries DEPENDS "${KSA_GENERATED_DIR}/entries.stamp")
 
 add_library(ksa-metal-objects OBJECT
-    setup/config.mm setup/entry.mm setup/instance.mm setup/device.mm
-    resources/memory.mm resources/images.mm resources/queries.mm resources/format.mm resources/descriptor.mm resources/accel.mm resources/dynres.mm resources/gpuclock.mm
-    commands/encoders.mm commands/state.mm commands/draws.mm commands/passes.mm commands/transfers.mm commands/internal.mm
+    kmtl.mm setup/config.mm setup/entry.mm setup/instance.mm setup/device.mm
+    resources/memory.mm resources/images.mm resources/queries.mm resources/format.mm resources/descriptor.mm resources/accel.mm resources/dynres.mm
+    commands/encoders.mm commands/state.mm commands/draws.mm commands/passes.mm commands/transfers.mm commands/timestamps.mm commands/accelbuild.mm commands/internal.mm
     pipelines/stages.mm pipelines/pipelines.mm pipelines/rtpipeline.mm
     shaders/translate.mm shaders/shadercache.mm shaders/corpus.mm shaders/tessspirv.cpp shaders/rtspirv.cpp
-    presentation/swapchain.mm presentation/upscale.mm presentation/rayhistory.mm presentation/framerate.mm
-    diagnostics/instruments.mm diagnostics/drain.mm diagnostics/passdump.mm diagnostics/zones.mm)
+    presentation/surface.mm presentation/swapchain.mm presentation/frametime.mm presentation/gpuclock.mm presentation/upscale.mm presentation/rayhistory.mm presentation/framerate.mm
+    diagnostics/instruments.mm diagnostics/drain.mm diagnostics/passdump.mm diagnostics/watch.mm diagnostics/zones.mm)
 set_target_properties(ksa-metal-objects PROPERTIES
     CXX_STANDARD 17
     CXX_EXTENSIONS OFF

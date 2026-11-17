@@ -8,6 +8,26 @@
 // count from a one-thread prep kernel; their scratch is sized from an index cap that grows to the largest draw seen
 // (kmtlTessCap), within the bound index buffer's capacity.
 
+// KSA_MTL_THROTTLE: a pipeline that runs only every N-th present (0: never) is skipped in the others
+static bool throttled(const KPipeline* p) {
+    if (!p || p->throttle < 0) return false;
+    return p->throttle == 0 || kmtlPresentCount() % (uint64_t)p->throttle != 0;
+}
+
+// Multiview: one draw per view in the mask, with spvViewMask = {view, 1}
+template <typename F> static void forEachView(KCommandBuffer* cb, F&& draw) {
+    uint32_t mask = cb->graphicsPipeline->viewMask;
+    if (!mask) { draw(); return; }
+    while (mask) {
+        uint32_t v = __builtin_ctz(mask);
+        mask &= mask - 1;
+        uint32_t vm[2] = {v, 1};
+        [cb->render setVertexBytes:vm length:sizeof(vm) atIndex:kViewMaskBufferIndex];
+        [cb->render setFragmentBytes:vm length:sizeof(vm) atIndex:kViewMaskBufferIndex];
+        draw();
+    }
+}
+
 struct KTessDraw {
     bool indexed = false, indirect = false;
     uint32_t count = 0, instances = 1, first = 0, firstInstance = 0;
@@ -195,7 +215,7 @@ VKFN(void) vkCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32
                      uint32_t firstInstance) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (kmtlThrottled(cb->graphicsPipeline)) return;
+    if (throttled(cb->graphicsPipeline)) return;
     if (cb->graphicsPipeline && cb->graphicsPipeline->tess) {
         if (!vertexCount || !instanceCount) return;
         KTessDraw t;
@@ -208,7 +228,7 @@ VKFN(void) vkCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32
     if (cb->graphicsPipeline->triangleFan) {
         if (vertexCount < 3) return;
         id<MTLBuffer> fan = fanIndexBuffer(cb->device, vertexCount);
-        kmtlForEachView(cb, [&] {
+        forEachView(cb, [&] {
             [cb->render drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:(vertexCount - 2) * 3 indexType:MTLIndexTypeUInt32
                                   indexBuffer:fan indexBufferOffset:0
                                 instanceCount:instanceCount baseVertex:firstVertex baseInstance:firstInstance];
@@ -217,7 +237,7 @@ VKFN(void) vkCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32
         cb->draws++;
         return;
     }
-    kmtlForEachView(cb, [&] {
+    forEachView(cb, [&] {
         [cb->render drawPrimitives:cb->graphicsPipeline->primitive vertexStart:firstVertex vertexCount:vertexCount
                      instanceCount:instanceCount baseInstance:firstInstance];
     });
@@ -231,7 +251,7 @@ VKFN(void) vkCmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indexCount, 
                             int32_t vertexOffset, uint32_t firstInstance) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (kmtlThrottled(cb->graphicsPipeline)) return;
+    if (throttled(cb->graphicsPipeline)) return;
     if (cb->graphicsPipeline && cb->graphicsPipeline->tess) {
         if (!indexCount || !instanceCount || !cb->indexBuffer) return;
         KTessDraw t;
@@ -243,7 +263,7 @@ VKFN(void) vkCmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indexCount, 
     if (!kmtlFlushGraphics(cb) || !indexCount || !instanceCount || !cb->indexBuffer) return;
     if (cb->graphicsPipeline->triangleFan) KERR_ONCE("indexed triangle fans are not emulated (drawn as lists)");
     kmtlSetDrawId(cb, 0);
-    kmtlForEachView(cb, [&] {
+    forEachView(cb, [&] {
         [cb->render drawIndexedPrimitives:cb->graphicsPipeline->primitive indexCount:indexCount indexType:cb->indexType
                               indexBuffer:cb->indexBuffer indexBufferOffset:cb->indexOffset + firstIndex * indexSize(cb)
                             instanceCount:instanceCount baseVertex:vertexOffset baseInstance:firstInstance];
@@ -255,13 +275,13 @@ VKFN(void) vkCmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indexCount, 
 VKFN(void) vkCmdDrawIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (kmtlThrottled(cb->graphicsPipeline)) return;
+    if (throttled(cb->graphicsPipeline)) return;
     if (!kmtlFlushGraphics(cb)) return;
     auto* buf = (KBuffer*)buffer;
     if (stride == 0) stride = sizeof(VkDrawIndirectCommand);
     for (uint32_t i = 0; i < drawCount; i++) {
         kmtlSetDrawId(cb, i);
-        kmtlForEachView(cb, [&] {
+        forEachView(cb, [&] {
             [cb->render drawPrimitives:cb->graphicsPipeline->primitive indirectBuffer:buf->mtl
                   indirectBufferOffset:buf->offset + offset + (VkDeviceSize)i * stride];
         });
@@ -274,7 +294,7 @@ VKFN(void) vkCmdDrawIndexedIndirect(VkCommandBuffer commandBuffer, VkBuffer buff
                                     uint32_t stride) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (kmtlThrottled(cb->graphicsPipeline)) return;
+    if (throttled(cb->graphicsPipeline)) return;
     if (cb->graphicsPipeline && cb->graphicsPipeline->tess) {
         if (!cb->indexBuffer) return;
         if (stride == 0) stride = sizeof(VkDrawIndexedIndirectCommand);
@@ -292,7 +312,7 @@ VKFN(void) vkCmdDrawIndexedIndirect(VkCommandBuffer commandBuffer, VkBuffer buff
     if (stride == 0) stride = sizeof(VkDrawIndexedIndirectCommand);
     for (uint32_t i = 0; i < drawCount; i++) {
         kmtlSetDrawId(cb, i);
-        kmtlForEachView(cb, [&] {
+        forEachView(cb, [&] {
             [cb->render drawIndexedPrimitives:cb->graphicsPipeline->primitive indexType:cb->indexType indexBuffer:cb->indexBuffer
                             indexBufferOffset:cb->indexOffset indirectBuffer:buf->mtl
                          indirectBufferOffset:buf->offset + offset + (VkDeviceSize)i * stride];
@@ -311,7 +331,7 @@ static void dispatched(KCommandBuffer* cb) {
 VKFN(void) vkCmdDispatch(VkCommandBuffer commandBuffer, uint32_t x, uint32_t y, uint32_t z) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (kmtlThrottled(cb->computePipeline)) return;
+    if (throttled(cb->computePipeline)) return;
     if (!x || !y || !z || !kmtlFlushCompute(cb)) return;
     [cb->compute dispatchThreadgroups:MTLSizeMake(x, y, z) threadsPerThreadgroup:cb->computePipeline->workgroup];
     dispatched(cb);
@@ -320,7 +340,7 @@ VKFN(void) vkCmdDispatch(VkCommandBuffer commandBuffer, uint32_t x, uint32_t y, 
 VKFN(void) vkCmdDispatchIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (kmtlThrottled(cb->computePipeline)) return;
+    if (throttled(cb->computePipeline)) return;
     if (!kmtlFlushCompute(cb)) return;
     auto* buf = (KBuffer*)buffer;
     [cb->compute dispatchThreadgroupsWithIndirectBuffer:buf->mtl indirectBufferOffset:buf->offset + offset
@@ -334,7 +354,7 @@ VKFN(void) vkCmdTraceRaysKHR(VkCommandBuffer commandBuffer, const VkStridedDevic
                              const VkStridedDeviceAddressRegionKHR*, const VkStridedDeviceAddressRegionKHR*, uint32_t w, uint32_t h, uint32_t d) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (kmtlThrottled(cb->computePipeline)) return;
+    if (throttled(cb->computePipeline)) return;
     if (!w || !h || !d || !kmtlFlushCompute(cb)) return;
     uint32_t size[4] = {w, h, d, 0};
     [cb->compute setBytes:size length:sizeof(size) atIndex:kRtLaunchBufferIndex];

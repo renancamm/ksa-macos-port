@@ -91,10 +91,8 @@ struct KAutoreleasePool {
 // field per setting named after its key (port-settings.h, made from the settings table). README.md documents them in
 // two groups. Text is null when unset.
 const PortSettings& kmtlConfig();
-// Whether draws bind the early-test states of pipelines that have one (ksaMtlEarlyFragmentTests, pipelines/stages.mm)
-bool kmtlEarlyFragmentTests();
 
-uint64_t kmtlPresentCount();  // instruments.mm
+uint64_t kmtlPresentCount();  // presentation/frametime.mm: presents made
 // The benchmark's drain (diagnostics/drain.mm): on once a reader opened it; a wait goes in when it reached the reader's
 // threshold
 extern std::atomic<bool> g_kmtlDrainOn;
@@ -135,8 +133,8 @@ struct KStallTimer {
 //   8. KDevice::residencyMutex
 //   9. g_mutex (diagnostics/passdump.mm)
 //  10. the rest, under which nothing but the log's is taken: g_swapchainsMutex, g_latencyMutex, g_hdrMutex
-//      (presentation/swapchain.mm), g_fr.samplesMutex (presentation/framerate.mm), g_gpuMutex
-//      (diagnostics/instruments.mm), g_drainMutex (diagnostics/drain.mm), g_timestampMutex (diagnostics/zones.mm),
+//      (presentation/swapchain.mm), g_fr.samplesMutex (presentation/framerate.mm), g_ft.m
+//      (presentation/frametime.mm), g_drainMutex (diagnostics/drain.mm), g_ts.m (commands/timestamps.mm),
 //      g_recentMutex (shaders/shadercache.mm), g_addrMutex (resources/accel.mm), KDevice::libraryMutex and its
 //      entries' m, KDevice::fanMutex, KDevice::tessScratchMutex, KInternalPipelines::m, KFence::m, KQueryPool::m,
 //      KPipeline::Pending::m
@@ -260,9 +258,9 @@ inline const void* findNext(const void* chain, VkStructureType type) {
     return nullptr;
 }
 
+// kmtl.mm: data's FNV-1a hash; a file in a dump folder (KSA_MTL_DUMP_SPV, KSA_MTL_DUMP_MSL), the folder made if
+// missing; with keep, a file already there stays
 uint64_t kmtlHash(const void* data, size_t size);
-// pipelines/stages.mm: a file in a dump folder (KSA_MTL_DUMP_SPV, KSA_MTL_DUMP_MSL), the folder made if missing; with keep, a
-// file already there stays
 void kmtlDumpFile(const char* dir, const std::string& name, const void* data, size_t size, bool keep = false);
 
 // Memory accounting (frame log and budget)

@@ -1,7 +1,6 @@
 // Frame instruments: the frame log, shots and exits, the benchmark's interface (exports.h), frame captures, signposts,
-// and the display and GPU times measured at each present (swapchain.mm reports what the display showed, command
-// buffers' completion handlers their GPU time). Vulkan layers cannot run on this driver (it is the loader), so it
-// carries its own.
+// the GPU's failed command buffers. The display and GPU times they report come from presentation/frametime.mm. Vulkan
+// layers cannot run on this driver (it is the loader), so it carries its own.
 #include "kmtl.h"
 #import <CoreGraphics/CoreGraphics.h>
 #import <CoreImage/CoreImage.h>
@@ -11,18 +10,6 @@
 #include <algorithm>
 #include <mach/mach.h>
 #include <os/signpost.h>
-
-// The drawables the display showed, interpolated ones too; when it last showed a game frame (presentedTime) and the
-// time between the last two
-static std::atomic<uint64_t> g_displayed{0};
-static std::atomic<double> g_lastPresented{0}, g_displayMs{0};
-
-void kmtlNoteShown(double t, bool timed) {
-    g_displayed++;
-    if (!timed) return;
-    double last = g_lastPresented.exchange(t);
-    if (last > 0) g_displayMs = (t - last) * 1e3;
-}
 
 // ---------------------------------------------------------------------------------------------------------------
 // Settings
@@ -38,10 +25,7 @@ enum class ShotUnit { Presents, InGameFrames, InGameSeconds };
 struct Shot { double at; std::string path; };
 
 static std::mutex g_frameMutex;
-// Read without the lock by game threads (kmtlPresentCount: the throttle, stall logs)
-static std::atomic<uint64_t> g_presents{0};
 static uint64_t g_ingamePresent = 0;
-uint64_t kmtlPresentCount() { return g_presents; }
 static uint32_t g_frameDraws = 0, g_frameDispatches = 0, g_framePasses = 0, g_frameSubmits = 0;
 static FILE* g_frameCsv = nullptr;
 static std::chrono::steady_clock::time_point g_start, g_lastPresent, g_ingameTime;
@@ -50,11 +34,6 @@ static size_t g_nextShot = 0;
 static ShotUnit g_shotUnit = ShotUnit::Presents;
 static double g_exitSeconds = 0;
 static std::atomic<int> g_shotsPending{0};
-// GPU busy time: union of command buffer GPU intervals, in completion order, summed until the next present (so the
-// column lags the CPU interval by the frames in flight)
-static std::mutex g_gpuMutex;
-static double g_gpuBusy = 0, g_gpuLastEnd = 0;
-static double g_gpuBusyFrame = 0;  // the same, since the last present completed: one frame's GPU time
 
 // The benchmark's interface (ksaMtlFrameStats, ksaMtlScreenshot, ksaMtlMarker, ksaMtlCapture, ksaMtlMemory): exports.h
 static KsaMtlFrameStats g_lastFrame{};
@@ -95,6 +74,15 @@ KMTL_EXPORT void ksaMtlMarker(const char* name, bool begin) {
         open = OS_SIGNPOST_ID_NULL;
     }
 }
+
+// Command buffers that failed: after a hang the GPU refuses the process's work, so captures and pass dumps refuse to start
+static std::atomic<uint32_t> g_gpuErrors{0};
+
+void kmtlNoteGpuError() {
+    if (g_gpuErrors++ == 0 && kmtlConfig().watch) kmtlWatchLine("the GPU failed a command buffer: nothing after this can be dumped");
+}
+
+KMTL_EXPORT uint32_t ksaMtlGpuErrors() { return g_gpuErrors; }
 
 KMTL_EXPORT bool ksaMtlCapture(const char* path, uint32_t frames) {
     // After a GPU failure the GPU refuses this process's work: a capture would replay as nonsense
@@ -164,21 +152,6 @@ static void sampleSystem(KsaMtlFrameStats& f) {
     }
     f.thermalState = thermal;
     f.footprintMb = footprint;
-}
-
-void kmtlNoteGpuTime(id<MTLCommandBuffer> cb) {
-    double s = cb.GPUStartTime, e = cb.GPUEndTime;
-    if (e <= s) return;
-    std::lock_guard<std::mutex> lock(g_gpuMutex);
-    double busy = e - std::max(s, std::min(e, g_gpuLastEnd));
-    g_gpuBusy += busy;
-    g_gpuBusyFrame += busy;
-    g_gpuLastEnd = std::max(g_gpuLastEnd, e);
-}
-
-double kmtlTakeFrameGpuTime() {
-    std::lock_guard<std::mutex> lock(g_gpuMutex);
-    return std::exchange(g_gpuBusyFrame, 0.0);
 }
 
 static std::vector<double> parseList(const char* s) {
@@ -345,59 +318,53 @@ static void takeShot(KDevice* dev, KImage* image, id<MTLCommandBuffer> cb, const
     });
 }
 
-void kmtlOnPresent(KDevice* dev, KSwapchain* swapchain, KImage* image, id<MTLCommandBuffer> cb) {
+void kmtlOnPresent(KDevice* dev, KSwapchain* swapchain, KImage* image, id<MTLCommandBuffer> cb, uint64_t presents) {
     ensureInstruments();
     std::lock_guard<std::mutex> lock(g_frameMutex);
-    g_presents++;
     auto now = std::chrono::steady_clock::now();
     double ms = std::chrono::duration<double, std::milli>(now - g_lastPresent).count();
     g_lastPresent = now;
     if (!g_ingamePresent && g_frameDraws + g_frameDispatches > 50) {
-        g_ingamePresent = g_presents;
+        g_ingamePresent = presents;
         g_ingameTime = now;
-        KLOG(0, "in-game at present %llu, %.1f s", (unsigned long long)g_presents,
+        KLOG(0, "in-game at present %llu, %.1f s", (unsigned long long)presents,
              std::chrono::duration<double>(now - g_start).count());
         kmtlReportPipelineTimes();
     }
-    double gpu;
-    {
-        std::lock_guard<std::mutex> lock(g_gpuMutex);
-        gpu = g_gpuBusy * 1e3;
-        g_gpuBusy = 0;
-    }
-    g_lastFrame = {g_presents, ms, gpu, g_frameDraws, g_frameDispatches, g_framePasses, g_frameSubmits,
+    double gpu = kmtlTakePresentGpuTime() * 1e3;
+    g_lastFrame = {presents, ms, gpu, g_frameDraws, g_frameDispatches, g_framePasses, g_frameSubmits,
                    (int64_t)(g_allocatedBytes.load() >> 20)};
     sampleSystem(g_lastFrame);
     kmtlPipelineCounts(&g_lastFrame.shadersCompiled, &g_lastFrame.pipelinesCreated);
     g_lastFrame.drawableWidth = (uint32_t)image->mtl.width;
     g_lastFrame.drawableHeight = (uint32_t)image->mtl.height;
-    g_lastFrame.displayMs = g_displayMs.load();
+    g_lastFrame.displayMs = kmtlDisplayMs();
     if (kmtlDrainOn()) kmtlDrainPresent(CACurrentMediaTime(), g_lastFrame);
-    if (kmtlConfig().frameInterpolation && g_presents % 600 == 0) {
+    if (kmtlConfig().frameInterpolation && presents % 600 == 0) {
         static uint64_t lastShown = 0, lastPresents = 0;
         static auto lastTime = now;
         double secs = std::chrono::duration<double>(now - lastTime).count();
-        uint64_t shown = g_displayed.load();
+        uint64_t shown = kmtlShownCount();
         if (secs > 0 && lastPresents)
-            KLOG(1, "frame interpolation: game %.1f fps, display %.1f fps", (g_presents - lastPresents) / secs,
+            KLOG(1, "frame interpolation: game %.1f fps, display %.1f fps", (presents - lastPresents) / secs,
                  (shown - lastShown) / secs);
         lastShown = shown;
-        lastPresents = g_presents;
+        lastPresents = presents;
         lastTime = now;
     }
     if (g_capturing) captureAtPresent(dev, swapchain);
     kmtlPassDumpAtPresent(dev->queue, swapchain, cb);
     kmtlWatchAtPresent(dev->queue, image, cb);
     if (g_frameCsv) {
-        fprintf(g_frameCsv, "%llu,%.3f,%u,%u,%u,%u,%lld,%.3f\n", (unsigned long long)g_presents, ms, g_frameDraws, g_frameDispatches,
+        fprintf(g_frameCsv, "%llu,%.3f,%u,%u,%u,%u,%lld,%.3f\n", (unsigned long long)presents, ms, g_frameDraws, g_frameDispatches,
                 g_framePasses, g_frameSubmits, (long long)g_lastFrame.allocatedMb, gpu);
-        if (g_presents % 60 == 0) fflush(g_frameCsv);
+        if (presents % 60 == 0) fflush(g_frameCsv);
     }
-    if (g_logLevel >= 1 && (g_presents <= 5 || g_presents % 500 == 0)) {
+    if (g_logLevel >= 1 && (presents <= 5 || presents % 500 == 0)) {
 
 
         KLOG(1, "present %llu: %.2f ms, %u draws, %u dispatches, %u passes, %u submits; memory MB: private %lld, "
-             "shared %lld, shared cached %lld, internal %lld", (unsigned long long)g_presents, ms, g_frameDraws,
+             "shared %lld, shared cached %lld, internal %lld", (unsigned long long)presents, ms, g_frameDraws,
              g_frameDispatches, g_framePasses, g_frameSubmits, (long long)(g_allocatedByType[0] >> 20),
              (long long)(g_allocatedByType[1] >> 20), (long long)(g_allocatedByType[2] >> 20), (long long)(g_internalBytes >> 20));
     }
@@ -405,9 +372,9 @@ void kmtlOnPresent(KDevice* dev, KSwapchain* swapchain, KImage* image, id<MTLCom
 
     while (g_nextShot < g_shots.size()) {
         double since;
-        if (g_shotUnit == ShotUnit::Presents) since = (double)g_presents;
+        if (g_shotUnit == ShotUnit::Presents) since = (double)presents;
         else if (!g_ingamePresent) break;
-        else if (g_shotUnit == ShotUnit::InGameFrames) since = (double)(g_presents - g_ingamePresent);
+        else if (g_shotUnit == ShotUnit::InGameFrames) since = (double)(presents - g_ingamePresent);
         else since = std::chrono::duration<double>(now - g_ingameTime).count();
         if (since < g_shots[g_nextShot].at) break;
         bool last = g_nextShot + 1 == g_shots.size();
@@ -416,7 +383,7 @@ void kmtlOnPresent(KDevice* dev, KSwapchain* swapchain, KImage* image, id<MTLCom
     }
     for (const std::string& path : g_shotRequests) takeShot(dev, image, cb, path, false);
     g_shotRequests.clear();
-    if (kmtlConfig().exitAfter && g_presents == (uint64_t)kmtlConfig().exitAfter) exitSoon("KSA_MTL_EXIT_AFTER reached");
+    if (kmtlConfig().exitAfter && presents == (uint64_t)kmtlConfig().exitAfter) exitSoon("KSA_MTL_EXIT_AFTER reached");
     if (g_exitSeconds > 0 && std::chrono::duration<double>(now - g_start).count() >= g_exitSeconds) {
         g_exitSeconds = 0;
         exitSoon("KSA_MTL_EXIT_AFTER_S reached");

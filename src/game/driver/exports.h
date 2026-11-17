@@ -45,6 +45,8 @@ KMTL_EXPORT bool ksaMtlCaptureRunning();
 // The bytes the driver holds now: device memory by type (private, shared write-combined, shared cached), then its own
 // (descriptor pool chunks, upload rings); how many of the n it wrote
 KMTL_EXPORT uint32_t ksaMtlMemory(int64_t* out, uint32_t n);
+// The command buffers that failed, after which nothing the GPU would have to do can be dumped or captured
+KMTL_EXPORT uint32_t ksaMtlGpuErrors();
 
 // ---------------------------------------------------------------------------------------------------------------
 // The pass dump (diagnostics/passdump.mm). C#: src/shared/DriverStats.cs, src/player/benchmark-cli/Run.cs
@@ -53,8 +55,6 @@ KMTL_EXPORT uint32_t ksaMtlMemory(int64_t* out, uint32_t n);
 // failed; then true until they are written
 KMTL_EXPORT bool ksaMtlPassDump(const char* dir);
 KMTL_EXPORT bool ksaMtlPassDumpRunning();
-// The command buffers that failed, after which nothing the GPU would have to do can be dumped or captured
-KMTL_EXPORT uint32_t ksaMtlGpuErrors();
 
 // ---------------------------------------------------------------------------------------------------------------
 // The game's GPU profiler (diagnostics/zones.mm). C#: src/shared/DriverStats.cs; ksaMtlZoneMode also

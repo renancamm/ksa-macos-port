@@ -9,7 +9,8 @@ void kmtlDrainMemory(int64_t bytes, uint32_t type);
 void kmtlDrainFrameGpu(uint64_t present, double t, double ms);
 
 // Frame instruments (instruments.mm)
-void kmtlOnPresent(KDevice* dev, KSwapchain* swapchain, KImage* image, id<MTLCommandBuffer> cb);
+// A present (its number, as frametime.mm counted it)
+void kmtlOnPresent(KDevice* dev, KSwapchain* swapchain, KImage* image, id<MTLCommandBuffer> cb, uint64_t presents);
 uint64_t kmtlShotsTaken();  // screenshots encoded so far (kmtlOnPresent takes them)
 void kmtlOnSwapchainDestroyed(KSwapchain* swapchain);
 // Pass dump (passdump.mm)
@@ -22,23 +23,19 @@ bool kmtlPassDumpRecording();
 void kmtlPassDumpEncoder(KCommandBuffer* cb, const std::string& name, MTLRenderPassDescriptor* pass);
 void kmtlPassDumpAfterDraw(KCommandBuffer* cb, KPipeline* pipeline);
 void kmtlPassDumpAtPresent(KQueue* queue, KSwapchain* swapchain, id<MTLCommandBuffer> cb);
+// The pass dump's writer queue, which the watch writes on too
+dispatch_queue_t kmtlPassDumpWriter();
+// The watch (watch.mm): its look at the presented image; a line of its watch.txt
 void kmtlWatchAtPresent(KQueue* queue, KImage* image, id<MTLCommandBuffer> cb);
+void kmtlWatchLine(const std::string& text);
+// instruments.mm: a command buffer failed (ksaMtlGpuErrors)
 void kmtlNoteGpuError();
 void kmtlWritePNG(id<MTLBuffer> buf, NSUInteger w, NSUInteger h, bool bgra, const std::string& path);
 void kmtlCountWork(uint32_t draws, uint32_t dispatches, uint32_t passes);
-void kmtlNoteGpuTime(id<MTLCommandBuffer> cb);  // from completion handlers: GPU busy time for the frame log
-double kmtlTakeFrameGpuTime();  // one frame's GPU busy time in seconds (since the last present completed), reset
-// From swapchain.mm's presented handlers: the display showed a drawable at t (presentedTime); timed: a game frame,
-// whose interval since the last one is the frame log's display_ms (interpolated frames only count)
-void kmtlNoteShown(double t, bool timed);
 
-// The game's GPU profiler (zones.mm): the timestamp sample buffers of its queries, recycled, since Metal caps how many
-// are alive (null, logged a few times, when one can't be made); how its timestamps are answered (ksaMtlZoneMode); a
-// draw's or dispatch's note for the encoder's name and a pass dump
-constexpr uint32_t kTimestampSamples = 4096;
+// The game's GPU profiler (zones.mm): how its timestamps are answered (ksaMtlZoneMode; commands/timestamps.mm takes
+// them); a draw's or dispatch's note for the encoder's name and a pass dump
 constexpr uint32_t kZonesAsTheyCome = 0, kZonesLabels = 1, kZonesSplit = 2;
-id<MTLCounterSampleBuffer> kmtlAcquireTimestamps(KDevice* dev, const char* what);
-void kmtlRecycleTimestamps(id<MTLCounterSampleBuffer> b);
 uint32_t kmtlZoneMode();
 void kmtlNoteDraw(KCommandBuffer* cb, KPipeline* p, bool dispatch);
 
