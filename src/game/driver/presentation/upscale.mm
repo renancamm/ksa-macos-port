@@ -585,6 +585,8 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
     if (!color || !out || cb->inRenderPass) return;
     bool spatial = (info->flags & kUpscaleSpatial) || !depth;
     uint32_t outW = (uint32_t)out->mtl.width, outH = (uint32_t)out->mtl.height;
+    // Read before g_up.m is taken: the controller's lock, g_fr.m, is above it (kmtl.h, "Threads and locks")
+    float minContent = kmtlDynamicMinContent();
     std::lock_guard<std::mutex> lock(g_up.m);
     // The last image counts only from the frame just before, through MetalFX Temporal: a stretched or spatial frame
     // in between leaves it older
@@ -593,7 +595,7 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
     uint32_t cw, ch;
     contentSize(info, color, depth, spatial, &cw, &ch);
     bool ready = prepare(cb->device, info->inputWidth, info->inputHeight, outW, outH, spatial, color->mtl.pixelFormat,
-                         out->mtl.pixelFormat, kmtlDynamicMinContent());
+                         out->mtl.pixelFormat, minContent);
     id<MTLFXSpatialScaler> spatialScaler = ready && spatial ? spatialFor(cb->device->mtl, cw, ch) : nil;
     // A level's scaler takes a texture of its size only (a level whose texture wasn't placed keeps the full one): else
     // the stretch, which reads the content as it is
