@@ -1,6 +1,12 @@
-// KSA Metal's shaders (shaders/): what a translated stage is, and the shader cache. The translation itself is
-// translate.h's, which only its callers include. Included by kmtl.h.
+// KSA Metal's shaders (shaders/): shader modules, what a translated stage is, and the shader cache. The translation
+// itself is translate.h's and the MSL rewrites mslpatch.h's, which only their callers include. Included by kmtl.h.
 #pragma once
+
+// A shader module (modules.mm): the game's SPIR-V, and its hash
+struct KShaderModule {
+    std::vector<uint32_t> spirv;
+    uint64_t hash = 0;
+};
 
 // Result of translating one pipeline stage (SPIR-V -> MSL plus reflection); cached on disk by shadercache.mm
 struct KTranslated {

@@ -37,8 +37,8 @@ add_library(ksa-metal-objects OBJECT
     kmtl.mm setup/config.mm setup/entry.mm setup/instance.mm setup/device.mm
     resources/memory.mm resources/images.mm resources/queries.mm resources/format.mm resources/descriptor.mm resources/accel.mm resources/dynres.mm
     commands/encoders.mm commands/state.mm commands/draws.mm commands/passes.mm commands/transfers.mm commands/timestamps.mm commands/accelbuild.mm commands/internal.mm
-    pipelines/stages.mm pipelines/pipelines.mm pipelines/rtpipeline.mm
-    shaders/translate.mm shaders/shadercache.mm shaders/corpus.mm shaders/tessspirv.cpp shaders/rtspirv.cpp
+    pipelines/compile.mm pipelines/pipelines.mm pipelines/rtpipeline.mm
+    shaders/modules.mm shaders/mslpatch.cpp shaders/translate.mm shaders/shadercache.mm shaders/corpus.mm shaders/tessspirv.cpp shaders/rtspirv.cpp
     presentation/surface.mm presentation/swapchain.mm presentation/frametime.mm presentation/gpuclock.mm presentation/upscale.mm presentation/rayhistory.mm presentation/framerate.mm
     diagnostics/instruments.mm diagnostics/drain.mm diagnostics/passdump.mm diagnostics/watch.mm diagnostics/zones.mm)
 set_target_properties(ksa-metal-objects PROPERTIES

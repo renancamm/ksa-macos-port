@@ -3,6 +3,9 @@
 //   ksa-metal-tests smoke
 //       The driver on its own: an instance, a device, buffers in host-visible memory, a command buffer that fills one
 //       and copies it into the other, a submit and a fence, and the copy read back.
+//   ksa-metal-tests msl
+//       The text rewrites of translated MSL (shaders/mslpatch.cpp) on small shaders written for them: each rewrite
+//       where its pattern is, and the text unchanged where it isn't.
 //   ksa-metal-tests corpus [--update] [--out <dir>] <corpus>
 //       Every translation of a shader corpus (KSA_MTL_SHADER_CORPUS) again: its key from the recorded inputs (the
 //       record holds everything that shapes it), its MSL against the recorded one, and Metal's compile of it. A changed
@@ -10,6 +13,7 @@
 //       --update records it instead.
 //
 // Exits with 1 when a test fails.
+#include "shaders/mslpatch.h"
 #include "shaders/translate.h"
 #include <mach-o/dyld.h>
 #include <sys/stat.h>
@@ -19,6 +23,128 @@
 static int fail(const char* what) {
     fprintf(stderr, "FAILED: %s\n", what);
     return 1;
+}
+
+// The MSL rewrites, on shaders written for the test
+static bool expect(bool ok, const char* what) {
+    if (!ok) fprintf(stderr, "FAILED: msl: %s\n", what);
+    return ok;
+}
+
+static int msl() {
+    bool ok = true;
+    // A uniform block's struct copied field by field into a local for a helper: the helper reads the block in place
+    const std::string uniforms = R"(#include <metal_stdlib>
+using namespace metal;
+
+struct Params
+{
+    float a;
+    float b;
+};
+
+struct Params_1
+{
+    float a;
+    float b;
+};
+
+struct Block
+{
+    Params_1 p;
+};
+
+static inline __attribute__((always_inline))
+float sum(thread const Params& p)
+{
+    return p.a + p.b;
+}
+
+kernel void main0(constant Block& ubo [[buffer(0)]], device float* out [[buffer(1)]])
+{
+    Params _12;
+    _12.a = ubo.p.a;
+    _12.b = ubo.p.b;
+    out[0] = sum(_12);
+}
+)";
+    std::string refs = kmtlMslUniformRefs(uniforms);
+    ok &= expect(refs.find("float sum(constant Params_1& p)") != std::string::npos, "uniform refs: the helper takes the block");
+    ok &= expect(refs.find("out[0] = sum(ubo.p);") != std::string::npos, "uniform refs: the call reads the block in place");
+    ok &= expect(refs.find("Params _12;") == std::string::npos && refs.find("_12.a") == std::string::npos,
+                 "uniform refs: the copy is gone");
+    // A struct also read from a storage buffer stays a copy
+    std::string storage = uniforms;
+    storage.insert(storage.find("device float* out"), "device Block& ssbo [[buffer(2)]], ");
+    ok &= expect(kmtlMslUniformRefs(storage) == storage, "uniform refs: a struct a storage block holds is left as it is");
+    // A local initialised from the block becomes a reference to it
+    std::string local = uniforms;
+    local.replace(local.find("    Params _12;\n"), std::string("    Params _12;\n    _12.a = ubo.p.a;\n    _12.b = ubo.p.b;\n").size(),
+                  "    Params _12 = ubo.p;\n");
+    ok &= expect(kmtlMslUniformRefs(local).find("    constant Params_1& _12 = ubo.p;\n") != std::string::npos,
+                 "uniform refs: a local copy becomes a reference");
+
+    // Early fragment tests: a fragment shader whose only stores are to the selection mask
+    const std::string fragment = R"(#include <metal_stdlib>
+using namespace metal;
+
+fragment float4 main0(texture2d<float, access::write> selectedMap [[texture(0)]], float4 pos [[position]])
+{
+    selectedMap.write(float4(1.0), uint2(pos.xy));
+    return float4(0.0);
+}
+)";
+    ok &= expect(kmtlMslStoresOnlySelection(fragment), "early tests: stores only to the selection mask");
+    std::string discards = fragment;
+    discards.insert(discards.find("    return"), "    discard_fragment();\n");
+    ok &= expect(!kmtlMslStoresOnlySelection(discards), "early tests: not with a discard");
+    ok &= expect(kmtlMslWithEarlyTests(fragment).find("\n[[early_fragment_tests]] fragment float4 main0(") != std::string::npos,
+                 "early tests: the attribute before the fragment function");
+    ok &= expect(kmtlMslWithEarlyTests(uniforms).empty(), "early tests: none without a fragment function");
+
+    // A shader override takes the translation's specialization values
+    const std::string translated = "constant int kSteps_tmp [[function_constant(0)]];\n"
+                                   "constant int kSteps = is_function_constant_defined(kSteps_tmp) ? kSteps_tmp : 4;\n";
+    const std::string replacement = "constant int kSteps_tmp [[function_constant(0)]];\n"
+                                    "constant int kSteps = is_function_constant_defined(kSteps_tmp) ? kSteps_tmp : 1;\n"
+                                    "// the replacement's own code\n";
+    ok &= expect(kmtlMslKeepSpecialization(replacement, translated) == translated + "// the replacement's own code\n",
+                 "overrides: the translation's specialization value");
+
+    // Ray tracing: a trace as SPIRV-Cross writes it becomes an intersector call; a kernel without traces stays as it is
+    const std::string trace = R"(#include <metal_stdlib>
+using namespace metal;
+
+intersection_params spvMakeIntersectionParams(uint flags)
+{
+    intersection_params ip;
+    return ip;
+}
+
+kernel void main0(raytracing::instance_acceleration_structure as [[buffer(0)]], device float* out [[buffer(1)]])
+{
+    raytracing::intersection_query<raytracing::instancing, raytracing::triangle_data> rq;
+    rq.reset(ray(float3(0.0), float3(0.0, 0.0, 1.0), 0.001, 100.0), as, 255u, spvMakeIntersectionParams(1u));
+    bool _20 = rq.next();
+    uint _21 = uint(rq.get_committed_intersection_type());
+    out[0] = rq.get_committed_distance();
+}
+)";
+    std::string traced = kmtlMslRtIntersectors(trace);
+    ok &= expect(traced.find("_ksaRay0 = _ksaRay0_x.intersect(ray(_ksaRay0_o, _ksaRay0_d, 0.001, 100.0), as, 255u);") != std::string::npos &&
+                     traced.find("ksaConfigIntersector(_ksaRay0_x, 1u);") != std::string::npos,
+                 "intersectors: the trace is one intersect call");
+    ok &= expect(traced.find("bool _20 = false;") != std::string::npos && traced.find("uint _21 = uint(_ksaRay0.type);") != std::string::npos &&
+                     traced.find("out[0] = _ksaRay0.distance;") != std::string::npos && traced.find("rq.") == std::string::npos,
+                 "intersectors: the query's results read from the intersection");
+    ok &= expect(kmtlMslRtIntersectors(uniforms) == uniforms, "intersectors: nothing to rewrite");
+
+    // Tessellation: a struct's fields
+    std::vector<std::string> names;
+    std::vector<std::string> types = kmtlMslStructFields("struct Out\n{\n    float4 pos [[position]];\n    float2 uv;\n};\n", "Out", &names);
+    ok &= expect(types == std::vector<std::string>{"float4", "float2"} && names == std::vector<std::string>{"pos", "uv"},
+                 "struct fields: types and names");
+    return ok ? 0 : 1;
 }
 
 // A device on the Mac's GPU, without a window
@@ -231,6 +357,7 @@ int main(int argc, char** argv) {
     @autoreleasepool {
         std::string command = argc > 1 ? argv[1] : "";
         if (command == "smoke" && argc == 2) return smoke();
+        if (command == "msl" && argc == 2) return msl();
         if (command == "corpus") {
             bool update = false;
             const char* tmp = getenv("TMPDIR");
@@ -243,7 +370,7 @@ int main(int argc, char** argv) {
             }
             if (!dir.empty()) return corpus(dir, out, update);
         }
-        fprintf(stderr, "usage: ksa-metal-tests smoke | corpus [--update] [--out <dir>] <corpus>\n");
+        fprintf(stderr, "usage: ksa-metal-tests smoke | msl | corpus [--update] [--out <dir>] <corpus>\n");
         return 2;
     }
 }

@@ -357,7 +357,7 @@ vertex buffer n.
 
 The driver is in folders by layer, each with a header that `kmtl.h` includes: a file includes `kmtl.h` and sees every
 layer's types and the functions the layers call each other by (named `kmtl*`). A function only the files of one folder
-share is in that folder's header too, under a heading that says so (`stages.h` for the pipelines). `kmtl.h` also has
+share is in that folder's header too, under a heading that says so (`compile.h` for the pipelines). `kmtl.h` also has
 the rules every file follows: how the driver's own exports are named, what each log level holds, how an entry point
 starts, how a file keeps its state, the order the driver's locks are taken in, and what Metal's handlers may do.
 
@@ -378,11 +378,13 @@ starts, how a file keeps its state, the order the driver's locks are taken in, a
 | `resources/descriptor.mm` | descriptor sets as argument buffers, pipeline layouts |
 | `resources/accel.mm` | acceleration structures for ray queries |
 | `resources/dynres.mm` | dynamic resolution (`dynamic_resolution`; `dynamic_level`, an experiment): the images of the main view's size and its fractions, a texture per level in the same memory, the level's changes |
+| `shaders/modules.mm` | shader modules |
+| `shaders/mslpatch.cpp`, `mslpatch.h` | text rewrites of translated MSL: uniform structs read in place, early fragment tests, an override's specialization values, intersectors; a struct's fields (tessellation) |
 | `shaders/translate.mm`, `translate.h` | a shader stage's translation from SPIR-V to MSL |
 | `shaders/shadercache.mm` | the translation cache on disk and the background compile |
 | `shaders/corpus.mm` | the shader corpus (`shader_corpus`): translations recorded for the tests |
 | `shaders/tessspirv.cpp`, `rtspirv.cpp`, `spvmodule.h` | the SPIR-V rewrites behind passthrough tessellation and ray tracing as compute kernels; a SPIR-V module as a list of instructions, for them |
-| `pipelines/stages.mm`, `stages.h` | shader modules, MSL compilation, a stage made ready: translated or from the cache, overridden, compiled |
+| `pipelines/compile.mm`, `compile.h` | a stage made ready: translated or from the cache, overridden, its MSL rewritten and compiled, on the pipeline workers |
 | `pipelines/pipelines.mm` | render passes, framebuffers, graphics and compute pipelines |
 | `pipelines/rtpipeline.mm` | ray tracing pipelines rewritten as compute kernels |
 | `commands/encoders.mm` | encoder ordering, the upload ring, the encoders, command pools and buffers |

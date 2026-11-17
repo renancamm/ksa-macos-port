@@ -1,11 +1,6 @@
-// KSA Metal's pipelines (pipelines/): shader modules, render passes, framebuffers and the pipelines, and what the
-// other layers ask of them. Included by kmtl.h; stages.h has what only the pipeline files share.
+// KSA Metal's pipelines (pipelines/): render passes, framebuffers and the pipelines, and what the other layers ask of
+// them. Included by kmtl.h; compile.h has what only the pipeline files share.
 #pragma once
-
-struct KShaderModule {
-    std::vector<uint32_t> spirv;
-    uint64_t hash = 0;
-};
 
 struct KRenderPass {
     std::vector<VkAttachmentDescription2> attachments;
@@ -84,25 +79,22 @@ struct KPipeline {
     int throttle = -1;  // KSA_MTL_THROTTLE: run every N-th present (0 never, -1 always)
 };
 
-// stages.mm: whether draws bind the early-test states of pipelines that have one (ksaMtlEarlyFragmentTests)
+// compile.mm: whether draws bind the early-test states of pipelines that have one (ksaMtlEarlyFragmentTests)
 bool kmtlEarlyFragmentTests();
-// stages.mm
+// compile.mm
 id<MTLLibrary> kmtlCompileStageMSL(KDevice* dev, const std::string& msl, std::string* err);
-// stages.mm: threads per shader-compile pool (the pipeline workers, and the prewarm's own): all cores but two; the
+// compile.mm: threads per shader-compile pool (the pipeline workers, and the prewarm's own): all cores but two; the
 // two pools can overlap while the game loads
 unsigned kmtlWorkerCount();
 
-void kmtlPipelineCounts(uint32_t* shaders, uint32_t* pipelines);  // stages.mm: MSL compiled (not from the cache), states made
-void kmtlReportPipelineTimes();  // stages.mm: the pipelines' creation cost, with the first in-game frame
+void kmtlPipelineCounts(uint32_t* shaders, uint32_t* pipelines);  // compile.mm: MSL compiled (not from the cache), states made
+void kmtlReportPipelineTimes();  // compile.mm: the pipelines' creation cost, with the first in-game frame
 
 // Ray tracing pipelines (rtpipeline.mm): the size of a shader group handle, which the device properties report, and
 // the compute pipeline a ray tracing pipeline runs as (pipelines.mm)
 uint32_t kmtlRtGroupHandleSize();
 KPipeline* kmtlCreateComputeFromStage(KDevice* dev, KPipelineLayout* layout, const VkPipelineShaderStageCreateInfo* stage,
                                       bool rtLaunch);
-// A ray tracing kernel's MSL with its traces as intersector calls (rtpipeline.mm), or unchanged when a trace doesn't
-// have the expected shape
-std::string kmtlRtIntersectors(const std::string& msl);
 
 // The end every vkCreate*Pipelines call shares (pipelines.mm): failed pipelines, KSA_MTL_STRICT_PIPELINES
 VkResult kmtlFinishPipelines(uint32_t n, VkPipeline* out);

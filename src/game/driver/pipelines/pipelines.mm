@@ -1,11 +1,9 @@
 // Render passes, framebuffers, graphics and compute pipelines: their Metal states, from stages made ready by
-// stages.mm (stages.h).
-#include "stages.h"
+// compile.mm (compile.h).
+#include "compile.h"
 #include "shaders/tessspirv.h"
 #include "spirv_msl.hpp"
 #include <memory>
-#include <set>
-#include <regex>
 
 using namespace SPIRV_CROSS_NAMESPACE;
 
@@ -214,26 +212,6 @@ static NSUInteger outputStride(MTLComputePipelineReflection* refl, NSUInteger in
     return 0;
 }
 
-// The field types (and names) of a struct in translated MSL: how the records two kernels exchange are compared
-static std::vector<std::string> structFieldTypes(const std::string& msl, const std::string& name, std::vector<std::string>* names) {
-    std::vector<std::string> types;
-    size_t p = msl.find("struct " + name + "\n{");
-    if (p == std::string::npos) return types;
-    size_t e = msl.find("};", p);
-    std::regex field(R"(^\s+([^;]+?)\s+(\w+)(\s*\[\[[^\]]*\]\])?;\s*$)");
-    std::string body = msl.substr(p, e - p);
-    size_t pos = 0;
-    while (pos < body.size()) {
-        size_t nl = body.find('\n', pos);
-        std::string line = body.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
-        std::smatch m;
-        if (std::regex_match(line, m, field)) { types.push_back(m[1]); names->push_back(m[2]); }
-        if (nl == std::string::npos) break;
-        pos = nl + 1;
-    }
-    return types;
-}
-
 // Builds the compute stages of a tessellation pipeline: the vertex shader as three kernels (by index type) with a
 // stage-in descriptor for its vertex attributes, and the control shader as a multi-patch kernel. With *passthrough
 // given, a control stage that only copies its control points is built without the copies (see below)
@@ -326,8 +304,8 @@ static bool buildTessKernels(KDevice* dev, const VkGraphicsPipelineCreateInfo* c
         cst.module = (VkShaderModule)&km;
         std::vector<std::string> outNames, inNames;
         bool built = buildControl(&cst);
-        auto outTypes = built ? structFieldTypes(htr->msl, "main0_out", &outNames) : std::vector<std::string>();
-        auto inTypes = built ? structFieldTypes(htr->msl, "main0_in", &inNames) : std::vector<std::string>();
+        auto outTypes = built ? kmtlMslStructFields(htr->msl, "main0_out", &outNames) : std::vector<std::string>();
+        auto inTypes = built ? kmtlMslStructFields(htr->msl, "main0_in", &inNames) : std::vector<std::string>();
         if (built && !outTypes.empty() && outTypes == inTypes && st->controlStride == st->vertexStride && !st->patchStride)
             *passthrough = true;
         else
@@ -528,7 +506,7 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
     if (!async && !(ps = makeState(d))) return nullptr;
 
     bool early = fs && !tess && kmtlConfig().earlyFragmentTests && !(ms && ms->alphaToCoverageEnable) &&
-                 kmtlStoresFromFragment(ftr.msl);
+                 kmtlMslStoresOnlySelection(ftr.msl);
     auto* p = new KPipeline();
     p->render = ps;
     if (!async && early) {

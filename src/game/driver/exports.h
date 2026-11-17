@@ -135,7 +135,7 @@ KMTL_EXPORT uint64_t ksaMtlDrainDropped();
 KMTL_EXPORT void ksaMtlDrainClose();
 
 // ---------------------------------------------------------------------------------------------------------------
-// Early fragment tests (pipelines/stages.mm). C#: src/game/changes/optimizations/HiddenPartsSkip.cs
+// Early fragment tests (pipelines/compile.mm). C#: src/game/changes/optimizations/HiddenPartsSkip.cs
 
 // Whether draws bind the pipelines' states that test depth first: the hooks' Skip Hidden Vessel Parts, at the start of
 // each frame, while no part is selected
