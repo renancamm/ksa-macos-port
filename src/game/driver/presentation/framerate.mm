@@ -13,8 +13,8 @@
 // cadence Steady Frame Rate shows frames at, and when even the lowest level runs over it, the next slower rate. The
 // lowest level: with MetalFX Temporal, the lowest from which MetalFX scales the main view up to the display no more than
 // its temporal scaler reaches (3x on an M5), so the temporal scaler alone reaches the display at every level and no
-// spatial step softens the full level; with Spatial, half the window (the hooks' least size); the experiment
-// dynamic_level instead (without a target, that level all the time).
+// spatial step softens the full level; with Spatial, the hooks' least size (half the window, or 3/4 of the render size
+// where that is lower); the experiment dynamic_level instead (without a target, that level all the time).
 //
 // Levels here are in parts of the main view's size (kDynamicParts: the full size); dynres.mm, the samples and the hooks
 // count the full size as 0 (parts and levelOf convert).
@@ -260,7 +260,7 @@ float kmtlFrameRateMinContent() {
 }
 
 // The lowest level for a main view of this size shown at this one (kDynamicParts: none, no room below the render size).
-// The hooks' least size (MetalFX Spatial: half the window, the Performance card's size before) when given, else the
+// The hooks' least size (MetalFX Spatial: half the window or 3/4 of the render size, RenderScale.cs) when given, else the
 // display's: the lowest level whose size the temporal scaler takes to the display by itself. Not below what the temporal
 // scaler reaches from its input (most: 3x on an M5), whose output is made for the lowest, one step over it as a level's
 // size is rounded; dynamic_level instead, if set
@@ -336,7 +336,7 @@ KMTL_EXPORT void ksaMtlFrameRateView(VkSwapchainKHR swapchain, uint32_t width, u
     g_fr.rateBias = 1;
     KLOG(0, "dynamic resolution: main view %ux%u to %ux%u, level %u of %u, lowest %u (%s), target %.1f ms", viewW, viewH,
          outW, outH, kmtlDynamicLevelNow(), kDynamicParts, levelOf(g_fr.lowest),
-         settingLevel() ? "dynamic_level" : leastW ? "half the window" : "the display's", t);
+         settingLevel() ? "dynamic_level" : leastW ? "Spatial's least size" : "the display's", t);
 }
 
 // The main view's size at the level now: what the game's own sizes for it become

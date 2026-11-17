@@ -131,11 +131,16 @@ internal static class RenderScale
         _ours = new VkExtent2D(render.X, render.Y);
         __instance.ExtentOverride = _ours;
         // The main window's swapchain, whose cadence Steady Frame Rate steps; through MetalFX the size drawn each frame
-        // (without it, the swapchain alone, for the rate's steps). With Spatial, which keeps no history to fill in, the levels go no lower than half the window,
-        // the Performance card's size before dynamic resolution
+        // (without it, the swapchain alone, for the rate's steps). With Spatial, which keeps no history to fill in, the
+        // levels go no lower than the lower of half the window (the Performance card's size before dynamic resolution)
+        // and 3/4 of the render size (the lower under a Render Scale of 2/3), so a low Render Scale still leaves room
         DynamicResolution.Register(_swapchain(__instance), Upscale.Wanted && Upscalable(_ours.Value) ? render : int2.Zero,
-            Output, Upscale.Spatial ? new int2((Window.X + 1) / 2, (Window.Y + 1) / 2) : int2.Zero);
+            Output, Upscale.Spatial ? SpatialLeast(render) : int2.Zero);
     }
+
+    // The least size of a level under Spatial: half the window, or 3/4 of the render size where that is lower
+    private static int2 SpatialLeast(int2 render) =>
+        new(Math.Min((Window.X + 1) / 2, render.X * 3 / 4), Math.Min((Window.Y + 1) / 2, render.Y * 3 / 4));
 
     // The main view's composite stretches the render size to the swapchain
     private static void CompositePrefix(int shaderSlot, out int2? __state)
