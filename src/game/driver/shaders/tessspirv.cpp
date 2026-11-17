@@ -13,8 +13,7 @@ struct Entry {
 
 static Entry entryPoint(const Module& m) {
     Entry e;
-    for (auto& i : m.insts)
-        if (i.op() == spv::OpEntryPoint) { e.model = i.w[1]; e.fn = i.w[2]; break; }
+    if (const Inst* i = m.entryPoint()) { e.model = i->w[1]; e.fn = i->w[2]; }
     return e;
 }
 

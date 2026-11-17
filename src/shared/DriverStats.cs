@@ -1,8 +1,6 @@
-// What the driver measures for each presented frame, read through its benchmark interface
-// (src/game/driver/diagnostics/instruments.mm: ksaMtlFrameStats, ksaMtlScreenshot, ksaMtlMarker, ksaMtlCapture,
-// ksaMtlCapturing; passdump.mm: ksaMtlPassDump, ksaMtlPassDumping, ksaMtlGpuErrors; zones.mm: ksaMtlZoneMode, ksaMtlZoneBegin, ksaMtlZoneEnd;
-// drain.mm: ksaMtlDrainOpen, ksaMtlDrain, ksaMtlDrainDropped, ksaMtlDrainClose, the records below; instruments.mm:
-// ksaMtlMemory).
+// What the driver measures for each presented frame, read through its benchmark interface (src/game/driver/exports.h:
+// the instruments, the pass dump, the GPU profiler's zones, the drain and its records). Parse reads the records;
+// exports.h checks that the driver's layouts of them and of FrameStats are the ones read here.
 // The app ships the director with the driver it was built with, so the driver has all of it. With another Vulkan
 // driver the mod still measures CPU frame times.
 using System;
@@ -76,17 +74,17 @@ public static unsafe class DriverStats
     [return: MarshalAs(UnmanagedType.U1)]
     private static extern bool CaptureNative([MarshalAs(UnmanagedType.LPUTF8Str)] string path, uint frames);
 
-    [DllImport(Driver, EntryPoint = "ksaMtlCapturing")]
+    [DllImport(Driver, EntryPoint = "ksaMtlCaptureRunning")]
     [return: MarshalAs(UnmanagedType.U1)]
-    private static extern bool CapturingNative();
+    private static extern bool CaptureRunningNative();
 
     [DllImport(Driver, EntryPoint = "ksaMtlPassDump")]
     [return: MarshalAs(UnmanagedType.U1)]
     private static extern bool PassDumpNative([MarshalAs(UnmanagedType.LPUTF8Str)] string dir);
 
-    [DllImport(Driver, EntryPoint = "ksaMtlPassDumping")]
+    [DllImport(Driver, EntryPoint = "ksaMtlPassDumpRunning")]
     [return: MarshalAs(UnmanagedType.U1)]
-    private static extern bool PassDumpingNative();
+    private static extern bool PassDumpRunningNative();
 
     [DllImport(Driver, EntryPoint = "ksaMtlGpuErrors")]
     private static extern uint GpuErrorsNative();
@@ -107,7 +105,7 @@ public static unsafe class DriverStats
     [DllImport(Driver, EntryPoint = "ksaMtlDrainClose")]
     private static extern void DrainCloseNative();
 
-    // The records' layout, which drain.mm's kDrainVersion names
+    // The records' layout, which exports.h's kKsaMtlDrainVersion names
     private const uint DrainVersion = 1;
     private const int Header = 8;
     private static readonly byte[] DrainBuffer = new byte[64 << 10];
@@ -127,13 +125,13 @@ public static unsafe class DriverStats
     public static bool Capture(string path, uint frames) => Available && CaptureNative(path, frames);
 
     // Until the capture's file is written
-    public static bool Capturing() => Available && CapturingNative();
+    public static bool CaptureRunning() => Available && CaptureRunningNative();
 
     // Every pass's images of the next frame into dir, and all the images at its end
     public static bool PassDump(string dir) => Available && PassDumpNative(dir);
 
     // Until they are written
-    public static bool PassDumping() => Available && PassDumpingNative();
+    public static bool PassDumpRunning() => Available && PassDumpRunningNative();
 
     // The bytes the driver holds now: device memory by type (private, shared write-combined, shared cached), then its own
     // (descriptor pools, upload rings); null with a driver of before it

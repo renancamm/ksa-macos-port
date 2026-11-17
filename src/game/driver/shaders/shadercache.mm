@@ -35,18 +35,6 @@ static std::string entryPath(uint64_t key) {
     return cacheDir() + name;
 }
 
-static bool readFile(const std::string& path, std::string* out) {
-    FILE* f = fopen(path.c_str(), "rb");
-    if (!f) return false;
-    fseek(f, 0, SEEK_END);
-    long n = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    out->resize(n > 0 ? (size_t)n : 0);
-    bool ok = n <= 0 || fread(&(*out)[0], 1, (size_t)n, f) == (size_t)n;
-    fclose(f);
-    return ok;
-}
-
 std::string kmtlTranslatedText(const KTranslated& t) {
     char flags[160];
     snprintf(flags, sizeof(flags), "%d %lu %lu %lu %u %d %d %d %d %d %d\n", (int)t.usesDrawId, (unsigned long)t.workgroup.width,
@@ -85,56 +73,55 @@ bool kmtlTranslatedParse(const std::string& data, KTranslated* out) {
 bool kmtlCacheLoad(uint64_t key, KTranslated* out) {
     if (cacheDir().empty()) return false;
     std::string data;
-    return readFile(entryPath(key), &data) && kmtlTranslatedParse(data, out);
+    return kmtlReadFile(entryPath(key), &data) && kmtlTranslatedParse(data, out);
 }
 
 void kmtlCacheStore(uint64_t key, const KTranslated& t) {
     if (cacheDir().empty()) return;
-    std::string path = entryPath(key);
-    std::string tmp = path + ".tmp" + std::to_string((unsigned long)pthread_mach_thread_np(pthread_self()));
-    FILE* f = fopen(tmp.c_str(), "wb");
-    if (!f) return;
-    std::string text = kmtlTranslatedText(t);
-    fwrite(text.data(), 1, text.size(), f);
-    bool ok = fclose(f) == 0;
-    if (ok) rename(tmp.c_str(), path.c_str());
-    else unlink(tmp.c_str());
+    kmtlWriteFileAtomically(entryPath(key), kmtlTranslatedText(t));
 }
 
 // Keys used by this run, in first-use order: the next run prewarms them
-static std::mutex g_recentMutex;
-static std::vector<uint64_t> g_recent;
-static std::set<uint64_t> g_recentSet;
-static size_t g_recentFlushed = 0;
+namespace {
+struct RecentKeys {
+    std::mutex m;  // all of it
+    std::vector<uint64_t> keys;  // the keys this run used, in first-use order: the next run prewarms them
+    std::set<uint64_t> seen;     // the same, to find a key fast
+    size_t flushed = 0;  // keys written to the recent list
+};
+RecentKeys& g_recent = *new RecentKeys;
+}  // namespace
 
 void kmtlCacheNoteUsed(uint64_t key) {
     if (cacheDir().empty()) return;
     bool flush;
     {
-        std::lock_guard<std::mutex> lock(g_recentMutex);
-        if (!g_recentSet.insert(key).second) return;
-        g_recent.push_back(key);
+        std::lock_guard<std::mutex> lock(g_recent.m);
+        if (!g_recent.seen.insert(key).second) return;
+        g_recent.keys.push_back(key);
         // Pipelines created after the first in-game frame are added in batches
-        flush = g_recentFlushed && g_recent.size() >= g_recentFlushed + 64;
+        flush = g_recent.flushed && g_recent.keys.size() >= g_recent.flushed + 64;
     }
     if (flush) kmtlCacheFlushRecent();
 }
 
 void kmtlCacheFlushRecent() {
     if (cacheDir().empty()) return;
-    std::lock_guard<std::mutex> lock(g_recentMutex);
-    std::string tmp = cacheDir() + "/recent.tmp", path = cacheDir() + "/recent";
-    FILE* f = fopen(tmp.c_str(), "w");
-    if (!f) return;
-    for (uint64_t k : g_recent) fprintf(f, "%016llx\n", (unsigned long long)k);
-    if (fclose(f) == 0) rename(tmp.c_str(), path.c_str());
-    g_recentFlushed = g_recent.size();
+    std::lock_guard<std::mutex> lock(g_recent.m);
+    std::string list;
+    char line[24];
+    for (uint64_t k : g_recent.keys) {
+        snprintf(line, sizeof line, "%016llx\n", (unsigned long long)k);
+        list += line;
+    }
+    if (!kmtlWriteFileAtomically(cacheDir() + "/recent", list)) return;
+    g_recent.flushed = g_recent.keys.size();
 }
 
 void kmtlShaderPrewarm(KDevice* dev) {
     if (cacheDir().empty()) return;
     std::string list;
-    if (!readFile(cacheDir() + "/recent", &list)) return;
+    if (!kmtlReadFile(cacheDir() + "/recent", &list)) return;
     auto keys = std::make_shared<std::vector<uint64_t>>();
     for (size_t pos = 0; pos < list.size();) {
         size_t nl = list.find('\n', pos);

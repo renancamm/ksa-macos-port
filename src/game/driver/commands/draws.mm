@@ -8,6 +8,26 @@
 // count from a one-thread prep kernel; their scratch is sized from an index cap that grows to the largest draw seen
 // (kmtlTessCap), within the bound index buffer's capacity.
 
+// KSA_MTL_THROTTLE: a pipeline that runs only every N-th present (0: never) is skipped in the others
+static bool throttled(const KPipeline* p) {
+    if (!p || p->throttle < 0) return false;
+    return p->throttle == 0 || kmtlPresentCount() % (uint64_t)p->throttle != 0;
+}
+
+// Multiview: one draw per view in the mask, with spvViewMask = {view, 1}
+template <typename F> static void forEachView(KCommandBuffer* cb, F&& draw) {
+    uint32_t mask = cb->bound.graphicsPipeline->viewMask;
+    if (!mask) { draw(); return; }
+    while (mask) {
+        uint32_t v = __builtin_ctz(mask);
+        mask &= mask - 1;
+        uint32_t vm[2] = {v, 1};
+        [cb->render setVertexBytes:vm length:sizeof(vm) atIndex:kViewMaskBufferIndex];
+        [cb->render setFragmentBytes:vm length:sizeof(vm) atIndex:kViewMaskBufferIndex];
+        draw();
+    }
+}
+
 struct KTessDraw {
     bool indexed = false, indirect = false;
     uint32_t count = 0, instances = 1, first = 0, firstInstance = 0;
@@ -25,149 +45,183 @@ static uint32_t lcm(uint32_t a, uint32_t b) {
 // The shared scratch buffer, at least `size` bytes. A grown buffer replaces the old one for later draws; command
 // buffers already recorded keep the old one alive until they complete
 static id<MTLBuffer> tessScratch(KDevice* dev, uint64_t size) {
-    std::lock_guard<std::mutex> lock(dev->tessScratchMutex);
-    if (dev->tessScratch && dev->tessScratch.length >= size) return dev->tessScratch;
+    std::lock_guard<std::mutex> lock(dev->tess.mutex);
+    if (dev->tess.scratch && dev->tess.scratch.length >= size) return dev->tess.scratch;
     uint64_t len = kmtlAlignUp<uint64_t>(size, 16 << 20);
     id<MTLBuffer> b = [dev->mtl newBufferWithLength:len options:MTLResourceStorageModePrivate | MTLResourceHazardTrackingModeUntracked];
     if (!b) {
-        KERR("tessellation scratch of %llu MB could not be allocated", (unsigned long long)(len >> 20));
+        KERR_LIMIT(10, "tessellation scratch of %llu MB could not be allocated", (unsigned long long)(len >> 20));
         return nil;
     }
     b.label = @"tessellation scratch";
-    g_internalBytes += (int64_t)len - (int64_t)(dev->tessScratch ? dev->tessScratch.length : 0);
+    g_internalBytes += (int64_t)len - (int64_t)(dev->tess.scratch ? dev->tess.scratch.length : 0);
     KLOG(1, "tessellation scratch: %llu MB", (unsigned long long)(len >> 20));
-    dev->tessScratch = b;
+    dev->tess.scratch = b;
     return b;
 }
 
-static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
-    KPipeline* p = cb->graphicsPipeline;
+// One tessellated draw's sizes, its scratch's layout (vertex outputs, control outputs, per-patch outputs, tessellation
+// factors) and, when indirect, its arguments written by the prep kernel
+struct KTessRun {
+    KPipeline* p = nullptr;
+    int idxType = 0;          // 0 none, 1 16-bit, 2 32-bit
+    NSUInteger idxSize = 4;
+    uint64_t maxVerts = 0, maxPatches = 0;
+    uint32_t vw = 0, wg = 0;  // threads per group of the vertex and control kernels
+    uint32_t patches = 0;     // a direct draw's
+    id<MTLBuffer> scratch = nil;
+    NSUInteger vtxOff = 0, tcOff = 0, patchOff = 0, levelsOff = 0;
+    id<MTLBuffer> args = nil;  // indirect: [0..5] stage-in region, [6..8] vertex groups, [9..11] control groups,
+    NSUInteger argsOff = 0;    // [12..13] control params, [14..17] drawPatches arguments
+};
+
+// The draw's sizes and scratch (false: nothing to draw)
+static bool planTessDraw(KCommandBuffer* cb, const KTessDraw& t, KTessRun* run) {
+    KPipeline* p = run->p = cb->bound.graphicsPipeline;
     KDevice* dev = cb->device;
-    int idxType = t.indexed ? (cb->indexType == MTLIndexTypeUInt16 ? 1 : 2) : 0;
-    NSUInteger idxSize = idxType == 1 ? 2 : 4;
+    int idxType = run->idxType = t.indexed ? (cb->bound.indexType == MTLIndexTypeUInt16 ? 1 : 2) : 0;
+    NSUInteger idxSize = run->idxSize = idxType == 1 ? 2 : 4;
     uint64_t maxVerts;
     if (t.indirect) {
         if (!t.indexed) {
             KERR_ONCE("non-indexed indirect tessellated draws are not supported");
-            return;
+            return false;
         }
-        maxVerts = std::min<uint64_t>(cb->indexBytes / idxSize, kmtlTessCap(dev));
+        maxVerts = std::min<uint64_t>(cb->bound.indexBytes / idxSize, kmtlTessCap(dev));
     } else {
         maxVerts = (uint64_t)t.count * t.instances;
     }
     uint64_t maxPatches = maxVerts / p->tessInCP;
     const KTessStages& st = p->tessStages;
-    if (!maxPatches || !st.vertex[idxType] || !st.control) return;
+    if (!maxPatches || !st.vertex[idxType] || !st.control) return false;
+    run->maxVerts = maxVerts;
+    run->maxPatches = maxPatches;
     // Scratch layout: vertex outputs, control outputs, per-patch outputs, tessellation factors
     auto align = [](uint64_t n) { return kmtlAlignUp<uint64_t>(n, 256); };
     NSUInteger levelSize = p->tessQuads ? sizeof(MTLQuadTessellationFactorsHalf) : sizeof(MTLTriangleTessellationFactorsHalf);
-    NSUInteger vtxOff = 0;
-    NSUInteger tcOff = vtxOff + align(std::max<uint64_t>(maxVerts * st.vertexStride, 16));
+    run->vtxOff = 0;
+    run->tcOff = run->vtxOff + align(std::max<uint64_t>(maxVerts * st.vertexStride, 16));
     uint64_t tcBytes = p->tessPassthrough ? 16 : maxPatches * p->tessOutCP * st.controlStride;
-    NSUInteger patchOff = tcOff + align(std::max<uint64_t>(tcBytes, 16));
-    NSUInteger levelsOff = patchOff + align(maxPatches * st.patchStride);
-    uint64_t scratchSize = levelsOff + align(maxPatches * levelSize);
-    id<MTLBuffer> scratch = tessScratch(dev, scratchSize);
-    if (!scratch) return;
+    run->patchOff = run->tcOff + align(std::max<uint64_t>(tcBytes, 16));
+    run->levelsOff = run->patchOff + align(maxPatches * st.patchStride);
+    uint64_t scratchSize = run->levelsOff + align(maxPatches * levelSize);
+    run->scratch = tessScratch(dev, scratchSize);
+    if (!run->scratch) return false;
     KLOG_LIMIT(1, 12, "tessellated draw: %s%s, up to %llu vertices / %llu patches, scratch %.1f MB", t.indexed ? "indexed" : "",
                t.indirect ? " indirect" : "", (unsigned long long)maxVerts, (unsigned long long)maxPatches, scratchSize / 1048576.0);
-    id<MTLComputePipelineState> vps = st.vertex[idxType];
-    uint32_t vw = (uint32_t)vps.threadExecutionWidth;
-    uint32_t wg = lcm(p->tessOutCP, 32);
-    while (wg > st.control.maxTotalThreadsPerThreadgroup && wg > p->tessOutCP) wg /= 2;
-    uint32_t patches = t.indirect ? 0 : (t.count / p->tessInCP) * t.instances;
+    run->vw = (uint32_t)st.vertex[idxType].threadExecutionWidth;
+    run->wg = lcm(p->tessOutCP, 32);
+    while (run->wg > st.control.maxTotalThreadsPerThreadgroup && run->wg > p->tessOutCP) run->wg /= 2;
+    run->patches = t.indirect ? 0 : (t.count / p->tessInCP) * t.instances;
+    return true;
+}
 
-    // The game's graphics resources, bound for a kernel (the control kernel has no stage-in, so no vertex buffers)
-    auto bindGame = [&](id<MTLComputeCommandEncoder> e, bool vertexBuffers) {
-        for (uint32_t s = 0; s < kMaxSets; s++)
-            if (cb->graphicsSets[s].buffer) [e setBuffer:cb->graphicsSets[s].buffer offset:cb->graphicsSets[s].offset atIndex:s];
-        if (cb->pushSize) [e setBytes:cb->push length:kmtlAlignUp(cb->pushSize, 16u) atIndex:kPushConstantBufferIndex];
-        for (uint32_t b = 0; vertexBuffers && b < 16; b++)
-            if (cb->vertexBuffers[b].buf) [e setBuffer:cb->vertexBuffers[b].buf offset:cb->vertexBuffers[b].off atIndex:vertexBufferIndex(b)];
-    };
+// The game's graphics resources, bound for a kernel (the control kernel has no stage-in, so no vertex buffers)
+static void bindGame(KCommandBuffer* cb, id<MTLComputeCommandEncoder> e, bool vertexBuffers) {
+    for (uint32_t s = 0; s < kMaxSets; s++)
+        if (cb->bound.graphicsSets[s].buffer) [e setBuffer:cb->bound.graphicsSets[s].buffer offset:cb->bound.graphicsSets[s].offset atIndex:s];
+    if (cb->bound.pushSize) [e setBytes:cb->bound.push length:kmtlAlignUp(cb->bound.pushSize, 16u) atIndex:kPushConstantBufferIndex];
+    for (uint32_t b = 0; vertexBuffers && b < 16; b++)
+        if (cb->bound.vertexBuffers[b].buf) [e setBuffer:cb->bound.vertexBuffers[b].buf offset:cb->bound.vertexBuffers[b].off atIndex:vertexBufferIndex(b)];
+}
 
+// An indirect draw's arguments, from the game's indirect buffer by a one-thread prep kernel
+static void encodeTessPrep(KCommandBuffer* cb, id<MTLComputeCommandEncoder> enc, const KTessDraw& t, KTessRun* run) {
+    KPipeline* p = run->p;
+    KDevice* dev = cb->device;
+    KUploadRing::Place at = cb->ring.alloc(dev, 19 * 4);
+    run->args = at.buffer;
+    run->argsOff = at.offset;
+    const uint32_t* argsCpu = (const uint32_t*)at.ptr;
+    uint32_t prm[4] = {p->tessInCP, p->tessOutCP, run->vw, run->wg};
+    uint32_t maxIdx = (uint32_t)run->maxVerts;
+    [enc setBytes:&maxIdx length:4 atIndex:3];
+    [enc setBuffer:kmtlTessStats(dev) offset:0 atIndex:4];
+    [enc setComputePipelineState:kmtlTessPrepPipeline(dev)];
+    [enc setBuffer:t.indirectBuf->mtl offset:t.indirectBuf->offset + t.indirectOffset atIndex:0];
+    [enc setBuffer:run->args offset:run->argsOff atIndex:1];
+    [enc setBytes:prm length:sizeof(prm) atIndex:2];
+    [enc dispatchThreads:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:MTLSizeMake(1, 1, 1)];
+    [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+    static std::atomic<int> sampled{0};
+    if (g_logLevel >= 2 && sampled++ % 200 == 0) {
+        const uint32_t* a = argsCpu;
+        [cb->mtl addCompletedHandler:^(id<MTLCommandBuffer>) {
+            KLOG(2, "tessellated draw actual: %u indices (%u requested), %u patches", a[3], a[18], a[13]);
+        }];
+    }
+}
+
+// The vertex stage as a kernel with stage-in vertex fetch, into the scratch's vertex outputs
+static void encodeTessVertex(KCommandBuffer* cb, id<MTLComputeCommandEncoder> enc, const KTessDraw& t, const KTessRun& run) {
+    [enc setComputePipelineState:run.p->tessStages.vertex[run.idxType]];
+    [enc setBuffer:run.scratch offset:run.vtxOff atIndex:kTessOutputBufferIndex];
+    if (t.indexed)
+        [enc setBuffer:cb->bound.indexBuffer offset:cb->bound.indexOffset + (t.indirect ? 0 : t.first * run.idxSize) atIndex:kTessIndexBufferIndex];
+    if (t.indirect) {
+        [enc setStageInRegionWithIndirectBuffer:run.args indirectBufferOffset:run.argsOff];
+        [enc dispatchThreadgroupsWithIndirectBuffer:run.args indirectBufferOffset:run.argsOff + 6 * 4 threadsPerThreadgroup:MTLSizeMake(run.vw, 1, 1)];
+    } else {
+        NSUInteger originX = t.indexed ? (NSUInteger)(int64_t)t.vertexOffset : t.first;
+        [enc setStageInRegion:MTLRegionMake2D(originX, t.firstInstance, t.count, t.instances)];
+        [enc dispatchThreads:MTLSizeMake(t.count, t.instances, 1) threadsPerThreadgroup:MTLSizeMake(run.vw, 1, 1)];
+    }
+    [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+}
+
+// The control stage as a multi-patch kernel, from the vertex outputs into the control, per-patch and factor outputs
+static void encodeTessControl(id<MTLComputeCommandEncoder> enc, const KTessDraw& t, const KTessRun& run) {
+    KPipeline* p = run.p;
+    [enc setComputePipelineState:p->tessStages.control];
+    [enc setBuffer:run.scratch offset:run.vtxOff atIndex:kTessInputBufferIndex];
+    [enc setBuffer:run.scratch offset:run.tcOff atIndex:kTessOutputBufferIndex];
+    if (p->tessStages.patchStride) [enc setBuffer:run.scratch offset:run.patchOff atIndex:kTessPatchBufferIndex];
+    [enc setBuffer:run.scratch offset:run.levelsOff atIndex:kTessFactorBufferIndex];
+    if (t.indirect) {
+        [enc setBuffer:run.args offset:run.argsOff + 12 * 4 atIndex:kTessParamsBufferIndex];
+        [enc dispatchThreadgroupsWithIndirectBuffer:run.args indirectBufferOffset:run.argsOff + 9 * 4 threadsPerThreadgroup:MTLSizeMake(run.wg, 1, 1)];
+    } else {
+        uint32_t prm[2] = {p->tessInCP, run.patches};
+        [enc setBytes:prm length:sizeof(prm) atIndex:kTessParamsBufferIndex];
+        [enc dispatchThreads:MTLSizeMake((NSUInteger)run.patches * p->tessOutCP, 1, 1) threadsPerThreadgroup:MTLSizeMake(run.wg, 1, 1)];
+    }
+}
+
+// Metal's tessellator and the evaluation stage, in the resumed pass
+static void drawTessEvaluation(KCommandBuffer* cb, const KTessDraw& t, const KTessRun& run) {
+    KPipeline* p = run.p;
+    id<MTLRenderCommandEncoder> r = cb->render;
+    // A passthrough control stage left the control points where the vertex kernel wrote them
+    [r setVertexBuffer:run.scratch offset:p->tessPassthrough ? run.vtxOff : run.tcOff atIndex:kTessInputBufferIndex];
+    if (p->tessStages.patchStride) [r setVertexBuffer:run.scratch offset:run.patchOff atIndex:kTessPatchBufferIndex];
+    [r setVertexBuffer:run.scratch offset:run.levelsOff atIndex:kTessFactorBufferIndex];
+    [r setTessellationFactorBuffer:run.scratch offset:run.levelsOff instanceStride:0];
+    if (t.indirect)
+        [r drawPatches:p->tessOutCP patchIndexBuffer:nil patchIndexBufferOffset:0 indirectBuffer:run.args indirectBufferOffset:run.argsOff + 14 * 4];
+    else
+        [r drawPatches:p->tessOutCP patchStart:0 patchCount:run.patches patchIndexBuffer:nil patchIndexBufferOffset:0 instanceCount:1 baseInstance:0];
+}
+
+static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
+    KTessRun run;
+    if (!planTessDraw(cb, t, &run)) return;
     // The vertex and control kernels are the draw's vertex work: they wait on what the draw's vertex stage would
     cb->suspendRender();
     cb->takeSplitStamps();
     id<MTLComputeCommandEncoder> enc = cb->computeEncoder(KCommandBuffer::kClassVertex);
-    id<MTLBuffer> args = nil;
-    NSUInteger argsOff = 0;
-    const uint32_t* argsCpu = nullptr;
-    if (t.indirect) {
-        // args: [0..5] stage-in region, [6..8] vertex groups, [9..11] control groups, [12..13] control params,
-        // [14..17] drawPatches arguments
-        KUploadRing::Place at = cb->ring.alloc(dev, 19 * 4);
-        args = at.buffer;
-        argsOff = at.offset;
-        argsCpu = (const uint32_t*)at.ptr;
-        uint32_t prm[4] = {p->tessInCP, p->tessOutCP, vw, wg};
-        uint32_t maxIdx = (uint32_t)maxVerts;
-        [enc setBytes:&maxIdx length:4 atIndex:3];
-        [enc setBuffer:kmtlTessStats(dev) offset:0 atIndex:4];
-        [enc setComputePipelineState:kmtlTessPrepPipeline(dev)];
-        [enc setBuffer:t.indirectBuf->mtl offset:t.indirectBuf->offset + t.indirectOffset atIndex:0];
-        [enc setBuffer:args offset:argsOff atIndex:1];
-        [enc setBytes:prm length:sizeof(prm) atIndex:2];
-        [enc dispatchThreads:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:MTLSizeMake(1, 1, 1)];
-        [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
-        static std::atomic<int> sampled{0};
-        if (g_logLevel >= 2 && sampled++ % 200 == 0) {
-            const uint32_t* a = argsCpu;
-            [cb->mtl addCompletedHandler:^(id<MTLCommandBuffer>) {
-                KLOG(2, "tessellated draw actual: %u indices (%u requested), %u patches", a[3], a[18], a[13]);
-            }];
-        }
-    }
-    bindGame(enc, true);
-
-    // Vertex stage
-    id<MTLBuffer> vtxOut = scratch, tcOut = scratch, patchOut = st.patchStride ? scratch : nil, levels = scratch;
-    [enc setComputePipelineState:vps];
-    [enc setBuffer:vtxOut offset:vtxOff atIndex:kTessOutputBufferIndex];
-    if (t.indexed)
-        [enc setBuffer:cb->indexBuffer offset:cb->indexOffset + (t.indirect ? 0 : t.first * idxSize) atIndex:kTessIndexBufferIndex];
-    if (t.indirect) {
-        [enc setStageInRegionWithIndirectBuffer:args indirectBufferOffset:argsOff];
-        [enc dispatchThreadgroupsWithIndirectBuffer:args indirectBufferOffset:argsOff + 6 * 4 threadsPerThreadgroup:MTLSizeMake(vw, 1, 1)];
-    } else {
-        NSUInteger originX = t.indexed ? (NSUInteger)(int64_t)t.vertexOffset : t.first;
-        [enc setStageInRegion:MTLRegionMake2D(originX, t.firstInstance, t.count, t.instances)];
-        [enc dispatchThreads:MTLSizeMake(t.count, t.instances, 1) threadsPerThreadgroup:MTLSizeMake(vw, 1, 1)];
-    }
-    [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
-
-    // Control stage
-    [enc setComputePipelineState:st.control];
-    [enc setBuffer:vtxOut offset:vtxOff atIndex:kTessInputBufferIndex];
-    [enc setBuffer:tcOut offset:tcOff atIndex:kTessOutputBufferIndex];
-    if (patchOut) [enc setBuffer:patchOut offset:patchOff atIndex:kTessPatchBufferIndex];
-    [enc setBuffer:levels offset:levelsOff atIndex:kTessFactorBufferIndex];
-    if (t.indirect) {
-        [enc setBuffer:args offset:argsOff + 12 * 4 atIndex:kTessParamsBufferIndex];
-        [enc dispatchThreadgroupsWithIndirectBuffer:args indirectBufferOffset:argsOff + 9 * 4 threadsPerThreadgroup:MTLSizeMake(wg, 1, 1)];
-    } else {
-        uint32_t prm[2] = {p->tessInCP, patches};
-        [enc setBytes:prm length:sizeof(prm) atIndex:kTessParamsBufferIndex];
-        [enc dispatchThreads:MTLSizeMake((NSUInteger)patches * p->tessOutCP, 1, 1) threadsPerThreadgroup:MTLSizeMake(wg, 1, 1)];
-    }
-    kmtlNoteDraw(cb, p, true);
+    if (t.indirect) encodeTessPrep(cb, enc, t, &run);
+    bindGame(cb, enc, true);
+    encodeTessVertex(cb, enc, t, run);
+    encodeTessControl(enc, t, run);
+    kmtlNoteDraw(cb, run.p, true);
     cb->endEncoder();  // the resumed pass waits on the kernels (vertex class) and the suspended pass (fragment class)
 
     // Evaluation and rasterization
     cb->resumeRender();
     if (!kmtlFlushGraphics(cb)) return;
-    id<MTLRenderCommandEncoder> r = cb->render;
-    // A passthrough control stage left the control points where the vertex kernel wrote them
-    [r setVertexBuffer:p->tessPassthrough ? vtxOut : tcOut offset:p->tessPassthrough ? vtxOff : tcOff atIndex:kTessInputBufferIndex];
-    if (patchOut) [r setVertexBuffer:patchOut offset:patchOff atIndex:kTessPatchBufferIndex];
-    [r setVertexBuffer:levels offset:levelsOff atIndex:kTessFactorBufferIndex];
-    [r setTessellationFactorBuffer:levels offset:levelsOff instanceStride:0];
-    if (t.indirect)
-        [r drawPatches:p->tessOutCP patchIndexBuffer:nil patchIndexBufferOffset:0 indirectBuffer:args indirectBufferOffset:argsOff + 14 * 4];
-    else
-        [r drawPatches:p->tessOutCP patchStart:0 patchCount:patches patchIndexBuffer:nil patchIndexBufferOffset:0 instanceCount:1 baseInstance:0];
-    kmtlNoteDraw(cb, p, false);
-    cb->draws++;
+    drawTessEvaluation(cb, t, run);
+    kmtlNoteDraw(cb, run.p, false);
+    cb->counts.draws++;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -175,8 +229,8 @@ static void tessDraw(KCommandBuffer* cb, const KTessDraw& t) {
 
 // Metal has no triangle fans: a shared index buffer holds (0, i, i+1) and the fan's first vertex is the base vertex
 static id<MTLBuffer> fanIndexBuffer(KDevice* dev, uint32_t vertexCount) {
-    std::lock_guard<std::mutex> lock(dev->fanMutex);
-    if (vertexCount > dev->fanVertexCapacity) {
+    std::lock_guard<std::mutex> lock(dev->fan.mutex);
+    if (vertexCount > dev->fan.vertexCapacity) {
         uint32_t cap = std::max(vertexCount, 1024u);
         id<MTLBuffer> b = [dev->mtl newBufferWithLength:(cap - 2) * 3 * 4 options:MTLResourceStorageModeShared];
         auto* idx = (uint32_t*)b.contents;
@@ -185,18 +239,18 @@ static id<MTLBuffer> fanIndexBuffer(KDevice* dev, uint32_t vertexCount) {
             idx[(i - 1) * 3 + 1] = i;
             idx[(i - 1) * 3 + 2] = i + 1;
         }
-        dev->fanIndices = b;
-        dev->fanVertexCapacity = cap;
+        dev->fan.indices = b;
+        dev->fan.vertexCapacity = cap;
     }
-    return dev->fanIndices;
+    return dev->fan.indices;
 }
 
 VKFN(void) vkCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex,
                      uint32_t firstInstance) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (kmtlThrottled(cb->graphicsPipeline)) return;
-    if (cb->graphicsPipeline && cb->graphicsPipeline->tess) {
+    if (throttled(cb->bound.graphicsPipeline)) return;
+    if (cb->bound.graphicsPipeline && cb->bound.graphicsPipeline->tess) {
         if (!vertexCount || !instanceCount) return;
         KTessDraw t;
         t.count = vertexCount; t.instances = instanceCount; t.first = firstVertex; t.firstInstance = firstInstance;
@@ -205,78 +259,78 @@ VKFN(void) vkCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32
     }
     if (!kmtlFlushGraphics(cb) || !vertexCount || !instanceCount) return;
     kmtlSetDrawId(cb, 0);
-    if (cb->graphicsPipeline->triangleFan) {
+    if (cb->bound.graphicsPipeline->triangleFan) {
         if (vertexCount < 3) return;
         id<MTLBuffer> fan = fanIndexBuffer(cb->device, vertexCount);
-        kmtlForEachView(cb, [&] {
+        forEachView(cb, [&] {
             [cb->render drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:(vertexCount - 2) * 3 indexType:MTLIndexTypeUInt32
                                   indexBuffer:fan indexBufferOffset:0
                                 instanceCount:instanceCount baseVertex:firstVertex baseInstance:firstInstance];
         });
-        kmtlNoteDraw(cb, cb->graphicsPipeline, false);
-        cb->draws++;
+        kmtlNoteDraw(cb, cb->bound.graphicsPipeline, false);
+        cb->counts.draws++;
         return;
     }
-    kmtlForEachView(cb, [&] {
-        [cb->render drawPrimitives:cb->graphicsPipeline->primitive vertexStart:firstVertex vertexCount:vertexCount
+    forEachView(cb, [&] {
+        [cb->render drawPrimitives:cb->bound.graphicsPipeline->primitive vertexStart:firstVertex vertexCount:vertexCount
                      instanceCount:instanceCount baseInstance:firstInstance];
     });
-    kmtlNoteDraw(cb, cb->graphicsPipeline, false);
-    cb->draws++;
+    kmtlNoteDraw(cb, cb->bound.graphicsPipeline, false);
+    cb->counts.draws++;
 }
 
-static NSUInteger indexSize(KCommandBuffer* cb) { return cb->indexType == MTLIndexTypeUInt32 ? 4 : 2; }
+static NSUInteger indexSize(KCommandBuffer* cb) { return cb->bound.indexType == MTLIndexTypeUInt32 ? 4 : 2; }
 
 VKFN(void) vkCmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex,
                             int32_t vertexOffset, uint32_t firstInstance) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (kmtlThrottled(cb->graphicsPipeline)) return;
-    if (cb->graphicsPipeline && cb->graphicsPipeline->tess) {
-        if (!indexCount || !instanceCount || !cb->indexBuffer) return;
+    if (throttled(cb->bound.graphicsPipeline)) return;
+    if (cb->bound.graphicsPipeline && cb->bound.graphicsPipeline->tess) {
+        if (!indexCount || !instanceCount || !cb->bound.indexBuffer) return;
         KTessDraw t;
         t.indexed = true; t.count = indexCount; t.instances = instanceCount; t.first = firstIndex;
         t.vertexOffset = vertexOffset; t.firstInstance = firstInstance;
         tessDraw(cb, t);
         return;
     }
-    if (!kmtlFlushGraphics(cb) || !indexCount || !instanceCount || !cb->indexBuffer) return;
-    if (cb->graphicsPipeline->triangleFan) KERR_ONCE("indexed triangle fans are not emulated (drawn as lists)");
+    if (!kmtlFlushGraphics(cb) || !indexCount || !instanceCount || !cb->bound.indexBuffer) return;
+    if (cb->bound.graphicsPipeline->triangleFan) KERR_ONCE("indexed triangle fans are not emulated (drawn as lists)");
     kmtlSetDrawId(cb, 0);
-    kmtlForEachView(cb, [&] {
-        [cb->render drawIndexedPrimitives:cb->graphicsPipeline->primitive indexCount:indexCount indexType:cb->indexType
-                              indexBuffer:cb->indexBuffer indexBufferOffset:cb->indexOffset + firstIndex * indexSize(cb)
+    forEachView(cb, [&] {
+        [cb->render drawIndexedPrimitives:cb->bound.graphicsPipeline->primitive indexCount:indexCount indexType:cb->bound.indexType
+                              indexBuffer:cb->bound.indexBuffer indexBufferOffset:cb->bound.indexOffset + firstIndex * indexSize(cb)
                             instanceCount:instanceCount baseVertex:vertexOffset baseInstance:firstInstance];
     });
-    kmtlNoteDraw(cb, cb->graphicsPipeline, false);
-    cb->draws++;
+    kmtlNoteDraw(cb, cb->bound.graphicsPipeline, false);
+    cb->counts.draws++;
 }
 
 VKFN(void) vkCmdDrawIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (kmtlThrottled(cb->graphicsPipeline)) return;
+    if (throttled(cb->bound.graphicsPipeline)) return;
     if (!kmtlFlushGraphics(cb)) return;
     auto* buf = (KBuffer*)buffer;
     if (stride == 0) stride = sizeof(VkDrawIndirectCommand);
     for (uint32_t i = 0; i < drawCount; i++) {
         kmtlSetDrawId(cb, i);
-        kmtlForEachView(cb, [&] {
-            [cb->render drawPrimitives:cb->graphicsPipeline->primitive indirectBuffer:buf->mtl
+        forEachView(cb, [&] {
+            [cb->render drawPrimitives:cb->bound.graphicsPipeline->primitive indirectBuffer:buf->mtl
                   indirectBufferOffset:buf->offset + offset + (VkDeviceSize)i * stride];
         });
     }
-    kmtlNoteDraw(cb, cb->graphicsPipeline, false);
-    cb->draws += drawCount;
+    kmtlNoteDraw(cb, cb->bound.graphicsPipeline, false);
+    cb->counts.draws += drawCount;
 }
 
 VKFN(void) vkCmdDrawIndexedIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, uint32_t drawCount,
                                     uint32_t stride) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (kmtlThrottled(cb->graphicsPipeline)) return;
-    if (cb->graphicsPipeline && cb->graphicsPipeline->tess) {
-        if (!cb->indexBuffer) return;
+    if (throttled(cb->bound.graphicsPipeline)) return;
+    if (cb->bound.graphicsPipeline && cb->bound.graphicsPipeline->tess) {
+        if (!cb->bound.indexBuffer) return;
         if (stride == 0) stride = sizeof(VkDrawIndexedIndirectCommand);
         for (uint32_t i = 0; i < drawCount; i++) {
             KTessDraw t;
@@ -287,44 +341,44 @@ VKFN(void) vkCmdDrawIndexedIndirect(VkCommandBuffer commandBuffer, VkBuffer buff
         }
         return;
     }
-    if (!kmtlFlushGraphics(cb) || !cb->indexBuffer) return;
+    if (!kmtlFlushGraphics(cb) || !cb->bound.indexBuffer) return;
     auto* buf = (KBuffer*)buffer;
     if (stride == 0) stride = sizeof(VkDrawIndexedIndirectCommand);
     for (uint32_t i = 0; i < drawCount; i++) {
         kmtlSetDrawId(cb, i);
-        kmtlForEachView(cb, [&] {
-            [cb->render drawIndexedPrimitives:cb->graphicsPipeline->primitive indexType:cb->indexType indexBuffer:cb->indexBuffer
-                            indexBufferOffset:cb->indexOffset indirectBuffer:buf->mtl
+        forEachView(cb, [&] {
+            [cb->render drawIndexedPrimitives:cb->bound.graphicsPipeline->primitive indexType:cb->bound.indexType indexBuffer:cb->bound.indexBuffer
+                            indexBufferOffset:cb->bound.indexOffset indirectBuffer:buf->mtl
                          indirectBufferOffset:buf->offset + offset + (VkDeviceSize)i * stride];
         });
     }
-    kmtlNoteDraw(cb, cb->graphicsPipeline, false);
-    cb->draws += drawCount;
+    kmtlNoteDraw(cb, cb->bound.graphicsPipeline, false);
+    cb->counts.draws += drawCount;
 }
 
 // After every dispatch, ray traces included: its note (zones.mm) and the count
 static void dispatched(KCommandBuffer* cb) {
-    kmtlNoteDraw(cb, cb->computePipeline, true);
-    cb->dispatches++;
+    kmtlNoteDraw(cb, cb->bound.computePipeline, true);
+    cb->counts.dispatches++;
 }
 
 VKFN(void) vkCmdDispatch(VkCommandBuffer commandBuffer, uint32_t x, uint32_t y, uint32_t z) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (kmtlThrottled(cb->computePipeline)) return;
+    if (throttled(cb->bound.computePipeline)) return;
     if (!x || !y || !z || !kmtlFlushCompute(cb)) return;
-    [cb->compute dispatchThreadgroups:MTLSizeMake(x, y, z) threadsPerThreadgroup:cb->computePipeline->workgroup];
+    [cb->compute dispatchThreadgroups:MTLSizeMake(x, y, z) threadsPerThreadgroup:cb->bound.computePipeline->workgroup];
     dispatched(cb);
 }
 
 VKFN(void) vkCmdDispatchIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (kmtlThrottled(cb->computePipeline)) return;
+    if (throttled(cb->bound.computePipeline)) return;
     if (!kmtlFlushCompute(cb)) return;
     auto* buf = (KBuffer*)buffer;
     [cb->compute dispatchThreadgroupsWithIndirectBuffer:buf->mtl indirectBufferOffset:buf->offset + offset
-                                  threadsPerThreadgroup:cb->computePipeline->workgroup];
+                                  threadsPerThreadgroup:cb->bound.computePipeline->workgroup];
     dispatched(cb);
 }
 
@@ -334,11 +388,11 @@ VKFN(void) vkCmdTraceRaysKHR(VkCommandBuffer commandBuffer, const VkStridedDevic
                              const VkStridedDeviceAddressRegionKHR*, const VkStridedDeviceAddressRegionKHR*, uint32_t w, uint32_t h, uint32_t d) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (kmtlThrottled(cb->computePipeline)) return;
+    if (throttled(cb->bound.computePipeline)) return;
     if (!w || !h || !d || !kmtlFlushCompute(cb)) return;
     uint32_t size[4] = {w, h, d, 0};
     [cb->compute setBytes:size length:sizeof(size) atIndex:kRtLaunchBufferIndex];
-    MTLSize wg = cb->computePipeline->workgroup;
+    MTLSize wg = cb->bound.computePipeline->workgroup;
     [cb->compute dispatchThreadgroups:MTLSizeMake((w + wg.width - 1) / wg.width, (h + wg.height - 1) / wg.height, d)
                 threadsPerThreadgroup:wg];
     dispatched(cb);

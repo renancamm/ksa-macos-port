@@ -1,7 +1,5 @@
-// The game's GPU profiler as KSA Metal serves it: the counter sample buffers its timestamps take (vkCmdWriteTimestamp,
-// commands/transfers.mm), how those timestamps are answered, and the encoders named after its zones. Apple GPUs sample
-// counters only at encoder stage boundaries, so a timestamp is the end of a tiny blit encoder ordered after everything
-// before it.
+// The game's GPU profiler as KSA Metal serves it: how its timestamps are answered (taken by commands/timestamps.mm), and
+// the encoders named after its zones.
 //
 //   ksaMtlZoneMode(mode)    how the game's timestamps are answered from the next one on:
 //                           0 as they come: each one ends the encoder and waits for everything before it, through an
@@ -17,68 +15,36 @@
 //                           is named after the zone its first draw or dispatch ran in
 #include "kmtl.h"
 
-// Timestamp sample buffers, for the game's timestamp queries. Metal caps the number of live counter sample buffers:
-// they are recycled once their command buffer completes.
-static std::mutex g_timestampMutex;
-static std::vector<id<MTLCounterSampleBuffer>> g_timestampPool;
-static std::atomic<uint32_t> g_zoneMode{kZonesAsTheyCome};
+namespace {
+struct ZoneState {
+    std::atomic<uint32_t> mode{kZonesAsTheyCome};  // how the game's timestamps are answered (ksaMtlZoneMode)
+};
+ZoneState& g_zones = *new ZoneState;
+}  // namespace
 
-static id<MTLCounterSet> timestampSet(KDevice* dev) {
-    static id<MTLCounterSet> set = nil;
-    static std::once_flag once;
-    std::call_once(once, [dev] {
-        for (id<MTLCounterSet> cs in dev->mtl.counterSets)
-            if ([cs.name isEqualToString:MTLCommonCounterSetTimestamp]) set = cs;
-    });
-    return set;
-}
-
-id<MTLCounterSampleBuffer> kmtlAcquireTimestamps(KDevice* dev, const char* what) {
-    {
-        std::lock_guard<std::mutex> lock(g_timestampMutex);
-        if (!g_timestampPool.empty()) {
-            id<MTLCounterSampleBuffer> b = g_timestampPool.back();
-            g_timestampPool.pop_back();
-            return b;
-        }
-    }
-    id<MTLCounterSet> set = timestampSet(dev);
-    MTLCounterSampleBufferDescriptor* d = [MTLCounterSampleBufferDescriptor new];
-    d.counterSet = set;
-    d.storageMode = MTLStorageModeShared;
-    d.sampleCount = kTimestampSamples;
-    NSError* e = nil;
-    id<MTLCounterSampleBuffer> b = set ? [dev->mtl newCounterSampleBufferWithDescriptor:d error:&e] : nil;
-    if (!b) KERR_LIMIT(3, "%s: timestamp sample buffer: %s", what, e ? e.description.UTF8String : "no timestamp counters");
-    return b;
-}
-
-void kmtlRecycleTimestamps(id<MTLCounterSampleBuffer> b) {
-    if (!b) return;
-    std::lock_guard<std::mutex> lock(g_timestampMutex);
-    g_timestampPool.push_back(b);
-}
-
-uint32_t kmtlZoneMode() { return g_zoneMode.load(std::memory_order_relaxed); }
+uint32_t kmtlZoneMode() { return g_zones.mode.load(std::memory_order_relaxed); }
 
 KMTL_EXPORT bool ksaMtlZoneMode(uint32_t mode) {
+    KTRACE_FIRST_PLAIN();
     if (mode > kZonesSplit || (mode == kZonesSplit && !kmtlConfig().gpuZones)) return false;
-    g_zoneMode = mode;
+    g_zones.mode = mode;
     return true;
 }
 
 KMTL_EXPORT void ksaMtlZoneBegin(VkCommandBuffer commandBuffer, const char* name) {
-    if (commandBuffer && name) ((KCommandBuffer*)commandBuffer)->zones.push_back(name);
+    KTRACE_FIRST_PLAIN();
+    if (commandBuffer && name) ((KCommandBuffer*)commandBuffer)->labels.zones.push_back(name);
 }
 
 KMTL_EXPORT void ksaMtlZoneEnd(VkCommandBuffer commandBuffer) {
+    KTRACE_FIRST_PLAIN();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (cb && !cb->zones.empty()) cb->zones.pop_back();
+    if (cb && !cb->labels.zones.empty()) cb->labels.zones.pop_back();
 }
 
 // A draw or dispatch with this pipeline in the current encoder: its name, and a pass dump's image after the draw
 void kmtlNoteDraw(KCommandBuffer* cb, KPipeline* p, bool dispatch) {
     if (!kmtlConfig().labels && !kmtlPassDumpRecording()) return;  // the common case: two predictable branches per draw
     cb->notePipelineLabel(p);  // a pass dump names its passes
-    if (!dispatch && cb->render && cb->deferredStores && cb->dumpDesc) kmtlPassDumpAfterDraw(cb, p);
+    if (!dispatch && cb->render && cb->pass.deferredStores && cb->dump.desc) kmtlPassDumpAfterDraw(cb, p);
 }

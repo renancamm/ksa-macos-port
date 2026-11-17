@@ -46,7 +46,7 @@ These switches turn a feature off or change a default, to work around a problem 
 | `hdr_output` | off: offer the game no HDR output ([Presentation](#from-vulkan-to-metal)): its HDR settings (Display) stay hidden |
 | `vsync_pacing` | off: with Vsync, the game's wait for an earlier frame ends only when the display shows it ([Presentation](#from-vulkan-to-metal)); in a window, frames that take less than about 23 ms on the GPU then run slower |
 | `steady_frame_rate` | `30`, `40` or `60`, with Vsync: each game frame shown at least that rate's whole refreshes of the display the window is on after the one before, never faster (40 is 30 at 60 Hz; an even count with frame interpolation; one refresh is Vsync's own, unpaced), set again when the window moves to another display; at 40 fps or less with two drawables instead of three, one frame less latency (three with frame interpolation) ([Presentation](#from-vulkan-to-metal)) |
-| `dynamic_resolution` | on, with MetalFX (`upscaling`) and `steady_frame_rate`: the main view drawn at a level of its render size each frame, the highest expected to stay under 90 % of the rate's frame time on the GPU (`presentation/framerate.mm` picks it, `resources/dynres.mm` draws at it; GPU times at the full clock: `resources/gpuclock.mm`) |
+| `dynamic_resolution` | on, with MetalFX (`upscaling`) and `steady_frame_rate`: the main view drawn at a level of its render size each frame, the highest expected to stay under 90 % of the rate's frame time on the GPU (`presentation/framerate.mm` picks it, `resources/dynres.mm` draws at it; GPU times at the full clock: `presentation/gpuclock.mm`) |
 | `lower_rate_under_heavy_load` | off, with `steady_frame_rate`: the rate stays, instead of the next slower one when even the lowest level (the full size, without `dynamic_resolution` or room below it) can't hold it, and the faster one back when the lowest is expected to |
 
 ## Build
@@ -136,9 +136,9 @@ The debugging settings, used the same way:
 Metal's own tools work too: `MTL_HUD_ENABLED=1` shows Apple's performance overlay, and `MTL_DEBUG_LAYER=1` and
 `MTL_SHADER_VALIDATION=1` check API use and catch out-of-bounds memory access in shaders (slow).
 
-The benchmark's mod and the hooks talk to the driver through the only functions it exports besides Vulkan's, in
-`diagnostics/instruments.mm`, `diagnostics/drain.mm`, `diagnostics/zones.mm`, `diagnostics/passdump.mm`,
-`pipelines/stages.mm` and `presentation/swapchain.mm`:
+The benchmark's mod and the hooks talk to the driver through the only functions it exports besides Vulkan's, which
+`exports.h` declares with the structs they pass and the C# that imports each (`vkCmd<Name>KSA` records GPU work into a
+command buffer, `ksaMtl<Area>` does the rest):
 
 | Function | |
 |---|---|
@@ -146,13 +146,18 @@ The benchmark's mod and the hooks talk to the driver through the only functions 
 | `ksaMtlDrainOpen`, `ksaMtlDrain`, `ksaMtlDrainDropped`, `ksaMtlDrainClose` | the drain: once a reader opens it with the layout it knows, every present (the `ksaMtlFrameStats` numbers), when each frame began, was presented, finished on the GPU and was shown, each frame's own GPU time when its present's command buffer completed, each wait of at least the reader's threshold (the `stalls` scopes, residency commits, the wait for an earlier present) and each allocation or free of 16 MB or more, as records in a 1 MB ring the reader empties; a record that finds it full is counted and dropped, nothing waits |
 | `ksaMtlScreenshot` | a PNG of the next frame |
 | `ksaMtlMarker` | begins or ends a signpost interval, one per measured part, under Points of Interest in Instruments |
-| `ksaMtlPassDump`, `ksaMtlPassDumping` | the next frame's colour attachments after each draw of a render pass (the first 64, then every 16th) and at its end, the images at the frame's end that it can read, as PNGs (NaN magenta, infinity cyan), and the first 64 KB of the buffers bound for each draw, with their numbers and heap places in `passes.txt`, which says why others are left out; that frame's passes don't overlap, so a clean dump doesn't rule out a missing barrier. The second says whether they are still being written |
+| `ksaMtlPassDump`, `ksaMtlPassDumpRunning` | the next frame's colour attachments after each draw of a render pass (the first 64, then every 16th) and at its end, the images at the frame's end that it can read, as PNGs (NaN magenta, infinity cyan), and the first 64 KB of the buffers bound for each draw, with their numbers and heap places in `passes.txt`, which says why others are left out; that frame's passes don't overlap, so a clean dump doesn't rule out a missing barrier. The second says whether they are still being written |
 | `ksaMtlGpuErrors` | how many command buffers failed; after a hang the GPU refuses the process's work, and pass dumps refuse to start |
-| `ksaMtlCapture`, `ksaMtlCapturing` | an Xcode GPU frame capture of the next frames (with `MTL_CAPTURE_ENABLED=1`), and whether it is still being written |
+| `ksaMtlCapture`, `ksaMtlCaptureRunning` | an Xcode GPU frame capture of the next frames (with `MTL_CAPTURE_ENABLED=1`), and whether it is still being written |
 | `ksaMtlZoneMode` | how the game's GPU profiler's timestamps are answered: as they come (each one a tiny encoder with counter samples that waits for all the work before it, through an event: such an encoder doesn't keep the fences' order; one inside a render pass is taken at the pass's end, so a zone inside a pass reads about 0), labels only (answered at once, no encoder), or split (a render pass splits before the next draw after them; needs `gpu_zones`) |
 | `ksaMtlZoneBegin`, `ksaMtlZoneEnd` | a zone of the game's GPU profiler begins or ends in a recording; with `labels`, each encoder is named after the zone its first draw or dispatch ran in |
 | `ksaMtlEarlyFragmentTests` | whether draws use the pipelines' states that test depth first (below); the hooks' Skip Hidden Vessel Parts sets it at the start of a frame |
 | `ksaMtlHdrNits` | the game's HDR UI Brightness and HDR Peak Brightness in nits, which HDR output maps to the display (below); the hooks pass them when the game applies its Display settings |
+| `ksaMtlMemory` | the bytes the driver holds now: device memory by type (private, shared write-combined, shared cached), then its own (descriptor pool chunks, upload rings) |
+| `ksaMtlFrameRateView`, `ksaMtlFrameRateSize`, `ksaMtlFrameRateBeginFrame` | the Frame Rate section's controller (`steady_frame_rate`, `dynamic_resolution`): the main window's swapchain, the main view's size and the display's after each rebuild; the main view's size at the level now; at the start of each frame, the rate's step and the frame's level |
+| `ksaMtlDynamicImageSize`, `ksaMtlDynamicSizeAt` | dynamic resolution: an image's size as its texture has it now; a size of the main view's, or a fraction of it, at the level now |
+| `vkCmdUpscaleKSA`, `vkCmdUpscaleSnapshotKSA`, `vkCmdMarkUiKSA`, `ksaMtlUpscaleMaxScale` | MetalFX (below): the upscale, the scene's copies for the reactive mask and for frame interpolation, how far the temporal scaler scales on this Mac (the Mac Port tab) |
+| `vkCmdRayHistoryKSA` | the cockpit's ray-traced lighting with a history of its own (below) |
 
 The benchmark's tools `profile`, `trace`, `capture` and `hud` use them too.
 
@@ -342,7 +347,7 @@ The complete mapping:
 | Transient attachments | memoryless textures (tile memory only) |
 | Swapchain | own textures at the display's pixels, copied into the `CAMetalLayer` drawable at present |
 | HDR10 colour space, `vkSetHdrMetadataEXT` | the layer in PQ with EDR and `CAEDRMetadata`, the game's UI brightness at SDR white |
-| `vkCmdUpscaleKSA`, `vkCmdUpscaleSnapshotKSA`, `vkCmdMarkUiKSA`, `vkGetUpscaleMaxScaleKSA`, `vkCmdRayHistoryKSA` | the driver's own: MetalFX for the hooks |
+| `vkCmdUpscaleKSA`, `vkCmdUpscaleSnapshotKSA`, `vkCmdMarkUiKSA`, `vkCmdRayHistoryKSA` | the driver's own: MetalFX for the hooks |
 
 Buffer indices per shader stage: 0-9 descriptor sets, 10 push constants, 11 draw index, 12 buffer sizes, 13 view
 mask, 14 dynamic offsets, 15 texture swizzles, 16-21 tessellation stage buffers, 22 ray tracing launch size, 30 - n
@@ -352,11 +357,15 @@ vertex buffer n.
 
 The driver is in folders by layer, each with a header that `kmtl.h` includes: a file includes `kmtl.h` and sees every
 layer's types and the functions the layers call each other by (named `kmtl*`). A function only the files of one folder
-share is in that folder's header too, under a heading that says so (`stages.h` for the pipelines).
+share is in that folder's header too, under a heading that says so (`compile.h` for the pipelines). `kmtl.h` also has
+the rules every file follows: how the driver's own exports are named, what each log level holds, how an entry point
+starts, how a file keeps its state, the order the driver's locks are taken in, and what Metal's handlers may do.
 
 | Folder, file | What it holds |
 |---|---|
-| `kmtl.h` | the core: logging, the configuration, buffer indices, the dispatchable objects (instance, physical device, queue, device), shared helpers; then the layers' headers |
+| `kmtl.h` | the core: the rules, logging, the configuration, buffer indices, the dispatchable objects (instance, physical device, queue, device), shared helpers; then the layers' headers |
+| `kmtl.mm` | the core's helpers: a hash, files (dump folders, whole reads, atomic writes), a median, MSL compiled from source, compute pipelines and private textures for the driver's own passes |
+| `exports.h` | the driver's own API: every export besides Vulkan's, the structs they pass, their C# mirrors |
 | `setup/config.mm` | the settings above, read once from their variables (their names and defaults from `port-settings.h`, which the build makes from the settings table), and the log |
 | `setup/entry.mm` | the table behind `vkGetInstanceProcAddr` and `vkGetDeviceProcAddr`, `entries.inc`, which the build makes from Vulkan's registry and the driver's sources ([`../../build-tools/entries-generator/`](../../build-tools/entries-generator/)) |
 | `setup/aliases.txt` | the aliases the entry table answers for besides those the registry brings ([`../../build-tools/entries-generator/`](../../build-tools/entries-generator/)) |
@@ -369,28 +378,38 @@ share is in that folder's header too, under a heading that says so (`stages.h` f
 | `resources/descriptor.mm` | descriptor sets as argument buffers, pipeline layouts |
 | `resources/accel.mm` | acceleration structures for ray queries |
 | `resources/dynres.mm` | dynamic resolution (`dynamic_resolution`; `dynamic_level`, an experiment): the images of the main view's size and its fractions, a texture per level in the same memory, the level's changes |
-| `resources/gpuclock.mm` | the GPU's clock from IOReport, for dynamic resolution's GPU times under paced frames |
+| `shaders/modules.mm` | shader modules |
+| `shaders/mslpatch.cpp`, `mslpatch.h` | text rewrites of translated MSL: uniform structs read in place, early fragment tests, an override's specialization values, intersectors; a struct's fields (tessellation); the translation's own edits (multiview's layer, arrays of acceleration structures) |
 | `shaders/translate.mm`, `translate.h` | a shader stage's translation from SPIR-V to MSL |
 | `shaders/shadercache.mm` | the translation cache on disk and the background compile |
 | `shaders/corpus.mm` | the shader corpus (`shader_corpus`): translations recorded for the tests |
 | `shaders/tessspirv.cpp`, `rtspirv.cpp`, `spvmodule.h` | the SPIR-V rewrites behind passthrough tessellation and ray tracing as compute kernels; a SPIR-V module as a list of instructions, for them |
-| `pipelines/stages.mm`, `stages.h` | shader modules, MSL compilation, a stage made ready: translated or from the cache, overridden, compiled |
+| `pipelines/compile.mm`, `compile.h` | a stage made ready: translated or from the cache, overridden, its MSL rewritten and compiled, on the pipeline workers |
 | `pipelines/pipelines.mm` | render passes, framebuffers, graphics and compute pipelines |
 | `pipelines/rtpipeline.mm` | ray tracing pipelines rewritten as compute kernels |
 | `commands/encoders.mm` | encoder ordering, the upload ring, the encoders, command pools and buffers |
 | `commands/state.mm` | the state set between draws, and its flush before a draw or dispatch |
 | `commands/draws.mm` | draws and dispatches, tessellated draws |
 | `commands/passes.mm` | barriers, render passes and dynamic rendering |
-| `commands/transfers.mm` | copies, blits, fills, clears, updates, queries, debug labels |
+| `commands/transfers.mm` | copies, blits, fills, clears, updates, debug labels |
+| `commands/timestamps.mm` | timestamp queries: their sample buffers, the tiny encoders whose end each one is, a render pass split for them |
+| `commands/accelbuild.mm` | acceleration structure builds |
 | `commands/internal.mm` | the driver's own shaders: buffer fills, scaled blits, tessellation helpers |
-| `presentation/swapchain.mm` | swapchain and presentation: pacing, HDR, frame interpolation at present, latency |
-| `presentation/upscale.mm` | MetalFX: upscaling, motion vectors, frame interpolation |
+| `presentation/surface.mm` | surfaces: presentation support, extent and capabilities, formats (HDR10 with EDR), present modes |
+| `presentation/swapchain.mm` | swapchains and the present: frame interpolation's frame first, the image into a drawable |
+| `presentation/pacing.mm` | present pacing: Steady Frame Rate's cadence and steps, the present wait, late frame start, latency |
+| `presentation/hdr.mm` | HDR output: the layer in HDR10 with EDR, its metadata, the game's brightness settings |
+| `presentation/frametime.mm` | the frames' timing: presents counted, the GPU's busy time, what the display showed |
+| `presentation/upscale.mm` | MetalFX: upscaling, motion vectors, the scene's snapshots; the barriers MetalFX's passes share |
+| `presentation/interpolate.mm` | MetalFX: frame interpolation at present, the scene before the UI (`vkCmdMarkUiKSA`) |
 | `presentation/rayhistory.mm` | MetalFX: the cockpit's ray-traced lighting with a history of its own |
+| `presentation/gpuclock.mm` | the GPU's clock from IOReport, for the frame rate's GPU times under paced frames |
 | `presentation/framerate.mm` | the Frame Rate section's controller: Steady Frame Rate's rate steps (`lower_rate_under_heavy_load`) and dynamic resolution's level each frame |
 | `diagnostics/instruments.mm` | what is measured at each present: frame log, screenshots, exits, the benchmark's interface, frame captures, signposts |
 | `diagnostics/drain.mm` | the benchmark's drain: what is measured, as records for its run's store |
 | `diagnostics/passdump.mm` | one frame's images, pass by pass (`ksaMtlPassDump`) |
-| `diagnostics/zones.mm` | the game's GPU profiler: its timestamps' sample buffers and how they are answered, encoders named after its zones |
+| `diagnostics/watch.mm` | the watch (`watch`): a look at the presented image now and then, a pass dump of a broken one |
+| `diagnostics/zones.mm` | the game's GPU profiler: how its timestamps are answered, encoders named after its zones |
 | `tests/` | the tests that run without the game |
 | `CMakeLists.txt`, `exports.txt` | the build: sources, flags, and the symbols the library exports |
 

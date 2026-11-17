@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <cstring>
 #include <map>
-#include <set>
 #include <string>
 
 namespace {
@@ -40,8 +39,7 @@ struct Callee {
 static bool transformCallee(const std::vector<uint32_t>& spirv, const std::string& fn, const std::string& payloadName, Callee* out, std::string* err) {
     Module m;
     if (!m.parse(spirv)) { *err = m.err; return false; }
-    uint32_t entry = 0;
-    for (auto& i : m.insts) if (i.op() == spv::OpEntryPoint) { entry = i.w[2]; break; }
+    uint32_t entry = m.entryPoint() ? m.entryPoint()->w[2] : 0;
     if (!entry) { *err = "no entry point"; return false; }
     m.insts.erase(std::remove_if(m.insts.begin(), m.insts.end(), [&](const Inst& i) {
         return i.op() == spv::OpEntryPoint || ((i.op() == spv::OpExecutionMode || i.op() == spv::OpExecutionModeId) && i.w[1] == entry);
@@ -145,11 +143,125 @@ static bool scanTraces(const std::vector<uint32_t>& spirv, size_t missCount, Ray
     return true;
 }
 
+// The launch id becomes the global invocation id (one made if the shader has none), the launch size a private
+// variable the prologue fills (none if unused); false for another ray tracing built-in
+static bool launchInputs(Module& m, uint32_t v3u, uint32_t* gidVar, uint32_t* sizeVar, std::string* err) {
+    for (uint32_t v : m.globalVariables(spv::StorageClassInput)) {
+        bool found;
+        uint32_t b = m.decoration(v, spv::DecorationBuiltIn, &found);
+        if (!found) continue;
+        if (b == spv::BuiltInLaunchIdKHR) {
+            for (auto& i : m.insts)
+                if (i.op() == spv::OpDecorate && i.w[1] == v && i.w[2] == spv::DecorationBuiltIn) i.w[3] = spv::BuiltInGlobalInvocationId;
+            *gidVar = v;
+        } else if (b == spv::BuiltInLaunchSizeKHR) {
+            m.removeDecoration(v, spv::DecorationBuiltIn);
+            m.makePrivate(v);
+            *sizeVar = v;
+        } else if (isRayTracingBuiltin(b)) {
+            *err = "ray generation shader uses built-in " + std::to_string(b);
+            return false;
+        }
+    }
+    if (!*gidVar) {
+        *gidVar = m.newId();
+        m.addGlobal(make(spv::OpVariable, {m.pointer(spv::StorageClassInput, v3u), *gidVar, (uint32_t)spv::StorageClassInput}));
+        m.addDecoration(make(spv::OpDecorate, {*gidVar, (uint32_t)spv::DecorationBuiltIn, (uint32_t)spv::BuiltInGlobalInvocationId}));
+    }
+    return true;
+}
+
+// The launch size's uniform: set 15, binding 0, struct { uvec3 size; } (its variable)
+static uint32_t launchSizeUniform(Module& m, uint32_t v3u) {
+    uint32_t lsStruct = m.newId();
+    m.insertAfterDefs(make(spv::OpTypeStruct, {lsStruct, v3u}), {v3u});
+    m.addDecoration(make(spv::OpDecorate, {lsStruct, (uint32_t)spv::DecorationBlock}));
+    m.addDecoration(make(spv::OpMemberDecorate, {lsStruct, 0, (uint32_t)spv::DecorationOffset, 0}));
+    uint32_t lsVar = m.newId();
+    m.addGlobal(make(spv::OpVariable, {m.pointer(spv::StorageClassUniform, lsStruct), lsVar, (uint32_t)spv::StorageClassUniform}));
+    m.addDecoration(make(spv::OpDecorate, {lsVar, (uint32_t)spv::DecorationDescriptorSet, 15}));
+    m.addDecoration(make(spv::OpDecorate, {lsVar, (uint32_t)spv::DecorationBinding, 0}));
+    return lsVar;
+}
+
+// The built-ins and hit attributes the callees read, as exported private variables, which the callees import (built-in -> variable, type); the
+// float2 type; false for a built-in a ray query can't give
+static bool calleeInputs(Module& m, const std::vector<const Callee*>& callees,
+                         std::map<uint32_t, std::pair<uint32_t, uint32_t>>* builtinVars, uint32_t* v2f, uint32_t* hitAttrVar,
+                         std::string* err) {
+    bool hitAttributes = false;
+    for (const Callee* c : callees) {
+        if (!c) continue;
+        hitAttributes |= c->hitAttributes;
+        for (auto& b : c->builtins) {
+            if (builtinVars->count(b.first)) continue;
+            bool inter;
+            if (builtinGetter(b.first, &inter) == spv::OpNop && b.first != spv::BuiltInHitKindKHR) {
+                *err = "built-in " + std::to_string(b.first) + " has no ray query equivalent";
+                return false;
+            }
+            uint32_t t = m.fromSig(b.second), v = m.newId();
+            m.addGlobal(make(spv::OpVariable, {m.pointer(spv::StorageClassPrivate, t), v, (uint32_t)spv::StorageClassPrivate}));
+            m.link(v, "ksa_bi_" + std::to_string(b.first), true);
+            (*builtinVars)[b.first] = {v, t};
+        }
+    }
+    uint32_t f32 = m.type(spv::OpTypeFloat, {32});
+    *v2f = m.type(spv::OpTypeVector, {f32, 2});
+    if (hitAttributes) {
+        *hitAttrVar = m.newId();
+        m.addGlobal(make(spv::OpVariable, {m.pointer(spv::StorageClassPrivate, *v2f), *hitAttrVar, (uint32_t)spv::StorageClassPrivate}));
+        m.link(*hitAttrVar, "ksa_hitattr", true);
+    }
+    return true;
+}
+
+// The callees as imported functions, by name
+static std::map<std::string, uint32_t> importCallees(Module& m, const std::vector<const Callee*>& callees, uint32_t voidT) {
+    uint32_t fnType = m.type(spv::OpTypeFunction, {voidT});
+    std::map<std::string, uint32_t> imported;
+    for (const Callee* c : callees) {
+        if (!c || imported.count(c->fn)) continue;
+        uint32_t id = m.newId();
+        size_t at = m.firstFunction();
+        m.insts.insert(m.insts.begin() + at, make(spv::OpFunction, {voidT, id, (uint32_t)spv::FunctionControlMaskNone, fnType}));
+        m.insts.insert(m.insts.begin() + at + 1, make(spv::OpFunctionEnd, {}));
+        m.link(id, c->fn, false);
+        imported[c->fn] = id;
+    }
+    return imported;
+}
+
+// Main's prologue, if (gid.x >= size.x || gid.y >= size.y) return;, with the launch size stored for the shader: the
+// label of the block that goes on
+static uint32_t launchBounds(Module& m, std::vector<Inst>& out_, uint32_t lsVar, uint32_t sizeVar, uint32_t gidVar,
+                             uint32_t v3u, uint32_t u32, uint32_t boolT) {
+    uint32_t ptr = m.newId(), size = m.newId(), gid = m.newId(), gx = m.newId(), gy = m.newId(), sx = m.newId(), sy = m.newId();
+    uint32_t cx = m.newId(), cy = m.newId(), oob = m.newId(), lret = m.newId(), lbody = m.newId();
+    uint32_t pU = m.pointer(spv::StorageClassUniform, v3u);
+    out_.push_back(make(spv::OpAccessChain, {pU, ptr, lsVar, m.constant(m.type(spv::OpTypeInt, {32, 1}), 0)}));
+    out_.push_back(make(spv::OpLoad, {v3u, size, ptr}));
+    if (sizeVar) out_.push_back(make(spv::OpStore, {sizeVar, size}));
+    out_.push_back(make(spv::OpLoad, {v3u, gid, gidVar}));
+    out_.push_back(make(spv::OpCompositeExtract, {u32, gx, gid, 0}));
+    out_.push_back(make(spv::OpCompositeExtract, {u32, gy, gid, 1}));
+    out_.push_back(make(spv::OpCompositeExtract, {u32, sx, size, 0}));
+    out_.push_back(make(spv::OpCompositeExtract, {u32, sy, size, 1}));
+    out_.push_back(make(spv::OpUGreaterThanEqual, {boolT, cx, gx, sx}));
+    out_.push_back(make(spv::OpUGreaterThanEqual, {boolT, cy, gy, sy}));
+    out_.push_back(make(spv::OpLogicalOr, {boolT, oob, cx, cy}));
+    out_.push_back(make(spv::OpSelectionMerge, {lbody, (uint32_t)spv::SelectionControlMaskNone}));
+    out_.push_back(make(spv::OpBranchConditional, {oob, lret, lbody}));
+    out_.push_back(make(spv::OpLabel, {lret}));
+    out_.push_back(make(spv::OpReturn, {}));
+    out_.push_back(make(spv::OpLabel, {lbody}));
+    return lbody;
+}
+
 static bool transformRaygen(const std::vector<uint32_t>& spirv, const RaygenPlan& plan, std::vector<uint32_t>* out, std::string* err) {
     Module m;
     if (!m.parse(spirv)) { *err = m.err; return false; }
-    Inst* ep = nullptr;
-    for (auto& i : m.insts) if (i.op() == spv::OpEntryPoint) { ep = &i; break; }
+    Inst* ep = m.entryPoint();
     if (!ep || ep->w[1] != spv::ExecutionModelRayGenerationKHR) { *err = "not a ray generation shader"; return false; }
     uint32_t mainFn = ep->w[2];
     ep->w[1] = spv::ExecutionModelGLCompute;
@@ -166,87 +278,26 @@ static bool transformRaygen(const std::vector<uint32_t>& spirv, const RaygenPlan
 
     // Launch id / size
     uint32_t gidVar = 0, sizeVar = 0;
-    for (uint32_t v : m.globalVariables(spv::StorageClassInput)) {
-        bool found;
-        uint32_t b = m.decoration(v, spv::DecorationBuiltIn, &found);
-        if (!found) continue;
-        if (b == spv::BuiltInLaunchIdKHR) {
-            for (auto& i : m.insts)
-                if (i.op() == spv::OpDecorate && i.w[1] == v && i.w[2] == spv::DecorationBuiltIn) i.w[3] = spv::BuiltInGlobalInvocationId;
-            gidVar = v;
-        } else if (b == spv::BuiltInLaunchSizeKHR) {
-            m.removeDecoration(v, spv::DecorationBuiltIn);
-            m.makePrivate(v);
-            sizeVar = v;
-        } else if (isRayTracingBuiltin(b)) {
-            *err = "ray generation shader uses built-in " + std::to_string(b);
-            return false;
-        }
-    }
-    if (!gidVar) {
-        gidVar = m.newId();
-        m.addGlobal(make(spv::OpVariable, {m.pointer(spv::StorageClassInput, v3u), gidVar, (uint32_t)spv::StorageClassInput}));
-        m.addDecoration(make(spv::OpDecorate, {gidVar, (uint32_t)spv::DecorationBuiltIn, (uint32_t)spv::BuiltInGlobalInvocationId}));
-    }
+    if (!launchInputs(m, v3u, &gidVar, &sizeVar, err)) return false;
     // Launch size uniform: set 15, binding 0, struct { uvec3 size; }
-    uint32_t lsStruct = m.newId();
-    m.insertAfterDefs(make(spv::OpTypeStruct, {lsStruct, v3u}), {v3u});
-    m.addDecoration(make(spv::OpDecorate, {lsStruct, (uint32_t)spv::DecorationBlock}));
-    m.addDecoration(make(spv::OpMemberDecorate, {lsStruct, 0, (uint32_t)spv::DecorationOffset, 0}));
-    uint32_t lsVar = m.newId();
-    m.addGlobal(make(spv::OpVariable, {m.pointer(spv::StorageClassUniform, lsStruct), lsVar, (uint32_t)spv::StorageClassUniform}));
-    m.addDecoration(make(spv::OpDecorate, {lsVar, (uint32_t)spv::DecorationDescriptorSet, 15}));
-    m.addDecoration(make(spv::OpDecorate, {lsVar, (uint32_t)spv::DecorationBinding, 0}));
-
-    // Payloads
+    uint32_t lsVar = launchSizeUniform(m, v3u);
+    // Payloads: exported private variables
     for (uint32_t v : m.globalVariables(spv::StorageClassRayPayloadKHR)) {
         m.removeDecoration(v, spv::DecorationLocation);
         m.makePrivate(v);
         m.link(v, "ksa_payload_" + std::to_string(v), true);
     }
     // Built-ins and hit attributes the callees read
-    std::map<uint32_t, std::pair<uint32_t, uint32_t>> builtinVars;  // built-in -> (variable, type)
-    bool hitAttributes = false;
     std::vector<const Callee*> callees = plan.misses;
     if (plan.chit) callees.push_back(plan.chit);
-    for (const Callee* c : callees) {
-        if (!c) continue;
-        hitAttributes |= c->hitAttributes;
-        for (auto& b : c->builtins) {
-            if (builtinVars.count(b.first)) continue;
-            bool inter;
-            if (builtinGetter(b.first, &inter) == spv::OpNop && b.first != spv::BuiltInHitKindKHR) {
-                *err = "built-in " + std::to_string(b.first) + " has no ray query equivalent";
-                return false;
-            }
-            uint32_t t = m.fromSig(b.second), v = m.newId();
-            m.addGlobal(make(spv::OpVariable, {m.pointer(spv::StorageClassPrivate, t), v, (uint32_t)spv::StorageClassPrivate}));
-            m.link(v, "ksa_bi_" + std::to_string(b.first), true);
-            builtinVars[b.first] = {v, t};
-        }
-    }
-    uint32_t f32 = m.type(spv::OpTypeFloat, {32}), v2f = m.type(spv::OpTypeVector, {f32, 2});
-    uint32_t hitAttrVar = 0;
-    if (hitAttributes) {
-        hitAttrVar = m.newId();
-        m.addGlobal(make(spv::OpVariable, {m.pointer(spv::StorageClassPrivate, v2f), hitAttrVar, (uint32_t)spv::StorageClassPrivate}));
-        m.link(hitAttrVar, "ksa_hitattr", true);
-    }
+    std::map<uint32_t, std::pair<uint32_t, uint32_t>> builtinVars;  // built-in -> (variable, type)
+    uint32_t v2f = 0, hitAttrVar = 0;
+    if (!calleeInputs(m, callees, &builtinVars, &v2f, &hitAttrVar, err)) return false;
     uint32_t rqType = m.type(spv::OpTypeRayQueryKHR, {});
     uint32_t rq = m.newId();
     m.addGlobal(make(spv::OpVariable, {m.pointer(spv::StorageClassPrivate, rqType), rq, (uint32_t)spv::StorageClassPrivate}));
     // Imported functions
-    uint32_t fnType = m.type(spv::OpTypeFunction, {voidT});
-    std::map<std::string, uint32_t> imported;
-    for (const Callee* c : callees) {
-        if (!c || imported.count(c->fn)) continue;
-        uint32_t id = m.newId();
-        size_t at = m.firstFunction();
-        m.insts.insert(m.insts.begin() + at, make(spv::OpFunction, {voidT, id, (uint32_t)spv::FunctionControlMaskNone, fnType}));
-        m.insts.insert(m.insts.begin() + at + 1, make(spv::OpFunctionEnd, {}));
-        m.link(id, c->fn, false);
-        imported[c->fn] = id;
-    }
+    std::map<std::string, uint32_t> imported = importCallees(m, callees, voidT);
 
     auto constValue = [&](uint32_t id, bool* isConst) -> uint32_t {
         const Inst* d = m.def(id);
@@ -269,26 +320,7 @@ static bool transformRaygen(const std::vector<uint32_t>& spirv, const RaygenPlan
         bool isVarLike = in.op() == spv::OpVariable || in.op() == spv::OpLine || in.op() == spv::OpNoLine;
         if (needPrologue && curLabel && !isVarLike && in.op() != spv::OpLabel) {
             needPrologue = false;
-            // if (gid.x >= size.x || gid.y >= size.y) return;
-            uint32_t ptr = m.newId(), size = m.newId(), gid = m.newId(), gx = m.newId(), gy = m.newId(), sx = m.newId(), sy = m.newId();
-            uint32_t cx = m.newId(), cy = m.newId(), oob = m.newId(), lret = m.newId(), lbody = m.newId();
-            uint32_t pU = m.pointer(spv::StorageClassUniform, v3u);
-            out_.push_back(make(spv::OpAccessChain, {pU, ptr, lsVar, m.constant(m.type(spv::OpTypeInt, {32, 1}), 0)}));
-            out_.push_back(make(spv::OpLoad, {v3u, size, ptr}));
-            if (sizeVar) out_.push_back(make(spv::OpStore, {sizeVar, size}));
-            out_.push_back(make(spv::OpLoad, {v3u, gid, gidVar}));
-            out_.push_back(make(spv::OpCompositeExtract, {u32, gx, gid, 0}));
-            out_.push_back(make(spv::OpCompositeExtract, {u32, gy, gid, 1}));
-            out_.push_back(make(spv::OpCompositeExtract, {u32, sx, size, 0}));
-            out_.push_back(make(spv::OpCompositeExtract, {u32, sy, size, 1}));
-            out_.push_back(make(spv::OpUGreaterThanEqual, {boolT, cx, gx, sx}));
-            out_.push_back(make(spv::OpUGreaterThanEqual, {boolT, cy, gy, sy}));
-            out_.push_back(make(spv::OpLogicalOr, {boolT, oob, cx, cy}));
-            out_.push_back(make(spv::OpSelectionMerge, {lbody, (uint32_t)spv::SelectionControlMaskNone}));
-            out_.push_back(make(spv::OpBranchConditional, {oob, lret, lbody}));
-            out_.push_back(make(spv::OpLabel, {lret}));
-            out_.push_back(make(spv::OpReturn, {}));
-            out_.push_back(make(spv::OpLabel, {lbody}));
+            uint32_t lbody = launchBounds(m, out_, lsVar, sizeVar, gidVar, v3u, u32, boolT);
             lastSegment[curLabel] = lbody;
             curLabel = lbody;
         }

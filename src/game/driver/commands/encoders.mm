@@ -47,24 +47,24 @@ uint32_t kmtlStageClasses(VkPipelineStageFlags2 m, bool src) {
 }
 
 void KCommandBuffer::beginCommands() {
-    for (auto& f : lastFence) f = queue->chain;
-    for (auto& m : needMask) m = 0;
-    encRoles = 0;
-    stampedLast = false;
-    encWaited.clear();
-    fenceNext = 0;
-    resolveWaited = resolveSignaled;
-    passResolves = false;
+    for (auto& f : order.lastFence) f = queue->chain;
+    for (auto& m : order.needMask) m = 0;
+    order.roles = 0;
+    ts.last = false;
+    order.waited.clear();
+    order.fenceNext = 0;
+    resolves.waited = resolves.signaled;
+    resolves.inPass = false;
 }
 
 id<MTLFence> KCommandBuffer::newFence() {
-    if (fenceNext == fencePool.size()) fencePool.push_back([device->mtl newFence]);
-    return fencePool[fenceNext++];
+    if (order.fenceNext == order.fencePool.size()) order.fencePool.push_back([device->mtl newFence]);
+    return order.fencePool[order.fenceNext++];
 }
 
 id<MTLFence> KCommandBuffer::finishFence(uint32_t roles) {
     id<MTLFence> f = newFence();
-    for (uint32_t r = roles; r; r &= r - 1) lastFence[classIndex(r & -r)] = f;
+    for (uint32_t r = roles; r; r &= r - 1) order.lastFence[classIndex(r & -r)] = f;
     return f;
 }
 
@@ -72,10 +72,10 @@ id<MTLFence> KCommandBuffer::finishFence(uint32_t roles) {
 static void collectWaits(KCommandBuffer* cb, uint32_t roles, std::vector<id<MTLFence>>& out) {
     for (uint32_t r = roles; r; r &= r - 1) {
         uint32_t i = classIndex(r & -r);
-        uint32_t need = cb->needMask[i] | (1u << i);
-        cb->needMask[i] = 0;
+        uint32_t need = cb->order.needMask[i] | (1u << i);
+        cb->order.needMask[i] = 0;
         for (uint32_t s = need; s; s &= s - 1) {
-            id<MTLFence> f = cb->lastFence[classIndex(s & -s)];
+            id<MTLFence> f = cb->order.lastFence[classIndex(s & -s)];
             if (f && std::find(out.begin(), out.end(), f) == out.end()) out.push_back(f);
         }
     }
@@ -83,27 +83,27 @@ static void collectWaits(KCommandBuffer* cb, uint32_t roles, std::vector<id<MTLF
 
 template <typename E> void KCommandBuffer::waitForRoles(E enc, uint32_t roles) {
     if (strictSync()) roles = kClassAll;
-    encRoles = roles;
-    stampedLast = false;
-    encWaited.clear();
-    collectWaits(this, roles, encWaited);
-    for (id<MTLFence> f : encWaited) [enc waitForFence:f];
+    order.roles = roles;
+    ts.last = false;
+    order.waited.clear();
+    collectWaits(this, roles, order.waited);
+    for (id<MTLFence> f : order.waited) [enc waitForFence:f];
 }
 template <> void KCommandBuffer::waitForRoles(id<MTLRenderCommandEncoder> enc, uint32_t roles) {
     if (strictSync()) roles = kClassAll;
-    encRoles = roles;
-    stampedLast = false;
-    encWaited.clear();
+    order.roles = roles;
+    ts.last = false;
+    order.waited.clear();
     // Waiting before the vertex stage covers the fragment stage too
-    collectWaits(this, roles & ~kClassFragment, encWaited);
-    for (id<MTLFence> f : encWaited) [enc waitForFence:f beforeStages:MTLRenderStageVertex];
+    collectWaits(this, roles & ~kClassFragment, order.waited);
+    for (id<MTLFence> f : order.waited) [enc waitForFence:f beforeStages:MTLRenderStageVertex];
     if (roles & kClassFragment) {
         std::vector<id<MTLFence>> frag;
         collectWaits(this, kClassFragment, frag);
         for (id<MTLFence> f : frag) {
-            if (std::find(encWaited.begin(), encWaited.end(), f) != encWaited.end()) continue;
+            if (std::find(order.waited.begin(), order.waited.end(), f) != order.waited.end()) continue;
             [enc waitForFence:f beforeStages:MTLRenderStageFragment];
-            encWaited.push_back(f);
+            order.waited.push_back(f);
         }
     }
 }
@@ -112,16 +112,16 @@ template void KCommandBuffer::waitForRoles(id<MTLAccelerationStructureCommandEnc
 // A Vulkan barrier outside a render pass (inside one, barriers are memory barriers in the render encoder)
 void KCommandBuffer::barrierClasses(uint32_t src, uint32_t dst) {
     if (!src || !dst) return;
-    for (uint32_t d = dst; d; d &= d - 1) needMask[classIndex(d & -d)] |= src;
+    for (uint32_t d = dst; d; d &= d - 1) order.needMask[classIndex(d & -d)] |= src;
     if (blit && (dst & kClassTransfer)) { endEncoder(); return; }  // blit commands of one encoder may overlap
     if (!compute) return;
-    if (!(dst & encRoles)) return;
+    if (!(dst & order.roles)) return;
     // Later work in the open compute encoder needs the sources: fine if they are this encoder's own earlier work
     // (a memory barrier orders it) or encoders it already waited on
     bool reopen = false;
-    for (uint32_t s = src & ~encRoles; s; s &= s - 1) {
-        id<MTLFence> f = lastFence[classIndex(s & -s)];
-        if (f && std::find(encWaited.begin(), encWaited.end(), f) == encWaited.end()) reopen = true;
+    for (uint32_t s = src & ~order.roles; s; s &= s - 1) {
+        id<MTLFence> f = order.lastFence[classIndex(s & -s)];
+        if (f && std::find(order.waited.begin(), order.waited.end(), f) == order.waited.end()) reopen = true;
     }
     if (reopen) endEncoder();
     else [compute memoryBarrierWithScope:MTLBarrierScopeBuffers | MTLBarrierScopeTextures];
@@ -135,14 +135,14 @@ void KCommandBuffer::joinCommands() {
     waitForAllResolves();
     id<MTLBlitCommandEncoder> b = [mtl blitCommandEncoder];
     std::vector<id<MTLFence>> seen;
-    for (id<MTLFence> f : lastFence) {
+    for (id<MTLFence> f : order.lastFence) {
         if (!f || std::find(seen.begin(), seen.end(), f) != seen.end()) continue;
         seen.push_back(f);
         [b waitForFence:f];
     }
     [b updateFence:queue->chain];
     [b endEncoding];
-    for (auto& f : lastFence) f = queue->chain;
+    for (auto& f : order.lastFence) f = queue->chain;
 }
 
 
@@ -179,27 +179,27 @@ KUploadRing::Place KUploadRing::alloc(KDevice* dev, size_t size) {
 // The encoder's name: the game's GPU zone it began in (zones.mm), its first pipeline (shader hashes, the pipeline's
 // name), how many others it ran, and a render pass's size
 void KCommandBuffer::notePipelineLabel(KPipeline* p) {
-    if (!p || p->profId == encLastPipeline) return;
-    if (encLabel.empty()) {
-        encLabel = p->profName;
-        if (!zones.empty()) encZone = zones.back();
+    if (!p || p->profId == labels.lastPipeline) return;
+    if (labels.encoder.empty()) {
+        labels.encoder = p->profName;
+        if (!labels.zones.empty()) labels.zone = labels.zones.back();
     }
-    encPipelines++;
-    encLastPipeline = p->profId;
+    labels.pipelines++;
+    labels.lastPipeline = p->profId;
 }
 
 template <typename E> void KCommandBuffer::nameEncoder(E enc) {
-    if (!encLabel.empty()) {
-        std::string name = encLabel;
-        if (encPipelines > 1) name += " +" + std::to_string(encPipelines - 1);
-        if (!encZone.empty()) name = encZone + ": " + name;
-        if (render) name = std::to_string(rtWidth) + "x" + std::to_string(rtHeight) + " " + name;
+    if (!labels.encoder.empty()) {
+        std::string name = labels.encoder;
+        if (labels.pipelines > 1) name += " +" + std::to_string(labels.pipelines - 1);
+        if (!labels.zone.empty()) name = labels.zone + ": " + name;
+        if (render) name = std::to_string(pass.width) + "x" + std::to_string(pass.height) + " " + name;
         enc.label = [NSString stringWithUTF8String:name.c_str()];
     }
-    encLabel.clear();
-    encZone.clear();
-    encPipelines = 0;
-    encLastPipeline = 0;
+    labels.encoder.clear();
+    labels.zone.clear();
+    labels.pipelines = 0;
+    labels.lastPipeline = 0;
 }
 
 // A suspended pass keeps everything for its resumed half. An attachment with a resolve texture must end in a resolve
@@ -210,61 +210,61 @@ static MTLStoreAction suspendedStore(MTLRenderPassAttachmentDescriptor* a) {
 }
 
 void KCommandBuffer::endEncoder() {
-    bool dump = !dropping && kmtlPassDumpRecording();
-    if (render && deferredStores) {
+    bool dumping = !dump.dropping && kmtlPassDumpRecording();
+    if (render && pass.deferredStores) {
         for (int i = 0; i < 8; i++) {
-            id<MTLTexture> t = passDesc.colorAttachments[i].texture;
+            id<MTLTexture> t = pass.desc.colorAttachments[i].texture;
             if (!t) continue;
             bool tileOnly = t.storageMode == MTLStorageModeMemoryless;
-            if (suspending && tileOnly)
+            if (pass.suspending && tileOnly)
                 KERR_ONCE("render pass suspended with a memoryless attachment (a tessellated draw): "
                           "its contents are lost");
-            [render setColorStoreAction:suspending && !tileOnly ? suspendedStore(passDesc.colorAttachments[i]) : colorStores[i] atIndex:i];
+            [render setColorStoreAction:pass.suspending && !tileOnly ? suspendedStore(pass.desc.colorAttachments[i]) : pass.colorStores[i] atIndex:i];
         }
-        if (passDesc.depthAttachment.texture) [render setDepthStoreAction:suspending ? suspendedStore(passDesc.depthAttachment) : depthStore];
-        if (passDesc.stencilAttachment.texture) [render setStencilStoreAction:suspending ? suspendedStore(passDesc.stencilAttachment) : stencilStore];
-        if (!suspending) passDesc = nil;
+        if (pass.desc.depthAttachment.texture) [render setDepthStoreAction:pass.suspending ? suspendedStore(pass.desc.depthAttachment) : pass.depthStore];
+        if (pass.desc.stencilAttachment.texture) [render setStencilStoreAction:pass.suspending ? suspendedStore(pass.desc.stencilAttachment) : pass.stencilStore];
+        if (!pass.suspending) pass.desc = nil;
     }
     if (render) {
-        if (encRoles & kClassVertex) [render updateFence:finishFence(kClassVertex) afterStages:MTLRenderStageVertex];
-        uint32_t late = encRoles & ~kClassVertex;
+        if (order.roles & kClassVertex) [render updateFence:finishFence(kClassVertex) afterStages:MTLRenderStageVertex];
+        uint32_t late = order.roles & ~kClassVertex;
         if (late) [render updateFence:finishFence(late) afterStages:kAllRenderStages];
         nameEncoder(render);
-        if (dump) {
-            if (dumpName.empty())
-                dumpName = render.label ? std::string(render.label.UTF8String)
-                    : std::to_string(rtWidth) + "x" + std::to_string(rtHeight) + " " + (encodedPipeline ? encodedPipeline->profName : "no pipeline");
+        if (dumping) {
+            if (dump.name.empty())
+                dump.name = render.label ? std::string(render.label.UTF8String)
+                    : std::to_string(pass.width) + "x" + std::to_string(pass.height) + " " + (bound.encodedPipeline ? bound.encodedPipeline->profName : "no pipeline");
         }
         [render endEncoding];
         render = nil;
-        inRenderPass = false;
-        if (dump && !suspending) {
-            kmtlPassDumpEncoder(this, dumpName, dumpDesc);
-            dumpName.clear();
-            dumpDesc = nil;
+        pass.active = false;
+        if (dumping && !pass.suspending) {
+            kmtlPassDumpEncoder(this, dump.name, dump.desc);
+            dump.name.clear();
+            dump.desc = nil;
         }
-        if (passResolves && !suspending) {
-            passResolves = false;
-            if (!resolveEvent) resolveEvent = [device->mtl newEvent];
-            [mtl encodeSignalEvent:resolveEvent value:++resolveSignaled];
+        if (resolves.inPass && !pass.suspending) {
+            resolves.inPass = false;
+            if (!resolves.event) resolves.event = [device->mtl newEvent];
+            [mtl encodeSignalEvent:resolves.event value:++resolves.signaled];
         }
     }
     if (compute) {
-        [compute updateFence:finishFence(encRoles)];
+        [compute updateFence:finishFence(order.roles)];
         nameEncoder(compute);
-        std::string dumpName = !dump ? "" : compute.label ? std::string(compute.label.UTF8String)
-            : computePipeline ? computePipeline->profName : "compute";
+        std::string name = !dumping ? "" : compute.label ? std::string(compute.label.UTF8String)
+            : bound.computePipeline ? bound.computePipeline->profName : "compute";
         [compute endEncoding];
         compute = nil;
-        if (dump) kmtlPassDumpEncoder(this, dumpName, nil);
+        if (dumping) kmtlPassDumpEncoder(this, name, nil);
     }
     if (blit) {
-        [blit updateFence:finishFence(encRoles)];
+        [blit updateFence:finishFence(order.roles)];
         nameEncoder(blit);
         [blit endEncoding];
         blit = nil;
     }
-    encRoles = 0;
+    order.roles = 0;
 }
 
 // Before a compute or blit encoder: MSAA resolves of earlier render passes are not covered by their fences (on Apple
@@ -274,27 +274,27 @@ void KCommandBuffer::endEncoder() {
 // KSA's passes after a resolve load the multisample attachments, and those that sample resolved images come after
 // compute work that has waited; waiting there would cost the overlap of every pass with the previous one.
 void KCommandBuffer::waitForResolves(uint32_t roles) {
-    if (resolveWaited == resolveSignaled) return;
+    if (resolves.waited == resolves.signaled) return;
     bool dependent = false;
     for (uint32_t r = roles; r; r &= r - 1)
-        if (needMask[classIndex(r & -r)] & kClassFragment) dependent = true;
+        if (order.needMask[classIndex(r & -r)] & kClassFragment) dependent = true;
     if (dependent) waitForAllResolves();
 }
 
 void KCommandBuffer::waitForAllResolves() {
-    if (resolveWaited == resolveSignaled) return;
-    [mtl encodeWaitForEvent:resolveEvent value:resolveSignaled];
-    resolveWaited = resolveSignaled;
+    if (resolves.waited == resolves.signaled) return;
+    [mtl encodeWaitForEvent:resolves.event value:resolves.signaled];
+    resolves.waited = resolves.signaled;
 }
 
 id<MTLComputeCommandEncoder> KCommandBuffer::computeEncoder(uint32_t roles) {
-    if (compute && (encRoles & roles) == roles) return compute;
+    if (compute && (order.roles & roles) == roles) return compute;
     endEncoder();
     waitForResolves(roles);
     compute = [mtl computeCommandEncoderWithDispatchType:MTLDispatchTypeSerial];
     waitForRoles(compute, roles);
-    computeSetsDirty = ~0u;
-    computePushDirty = true;
+    bound.computeSetsDirty = ~0u;
+    bound.computePushDirty = true;
     return compute;
 }
 
@@ -310,110 +310,92 @@ id<MTLBlitCommandEncoder> KCommandBuffer::blitEncoder() {
 void KCommandBuffer::beginRender(MTLRenderPassDescriptor* rp, uint32_t w, uint32_t h, bool resuming, uint32_t roles) {
     endEncoder();
     if (!resuming) {
-        passResolves = rp.depthAttachment.resolveTexture || rp.stencilAttachment.resolveTexture;
-        for (int i = 0; i < 8; i++) passResolves |= rp.colorAttachments[i].resolveTexture != nil;
-        dumpDesc = kmtlPassDumpRecording() ? rp : nil;
-        dumpDraws = 0;
-        dumpDrawsSkipped = false;
-        dumpName.clear();
-        if (dumpDesc) {
-            for (int i = 0; i < 8; i++) dumpLoads[i] = rp.colorAttachments[i].loadAction;
-            dumpDepthLoad = rp.depthAttachment.loadAction;
+        resolves.inPass = rp.depthAttachment.resolveTexture || rp.stencilAttachment.resolveTexture;
+        for (int i = 0; i < 8; i++) resolves.inPass |= rp.colorAttachments[i].resolveTexture != nil;
+        dump.desc = kmtlPassDumpRecording() ? rp : nil;
+        dump.draws = 0;
+        dump.drawsSkipped = false;
+        dump.name.clear();
+        if (dump.desc) {
+            for (int i = 0; i < 8; i++) dump.loads[i] = rp.colorAttachments[i].loadAction;
+            dump.depthLoad = rp.depthAttachment.loadAction;
         }
     }
     // A tessellated draw, or a game timestamp while zones are split (gpu_zones), suspends the pass and resumes it; a pass
     // begun before the split takes its timestamps at its end (writeTimestamp). A resumed pass keeps what it began with
     if (!resuming)
-        deferredStores = kmtlConfig().tessellation || (kmtlConfig().gpuZones && kmtlZoneMode() == kZonesSplit);
-    if (deferredStores) {
+        pass.deferredStores = kmtlConfig().tessellation || (kmtlConfig().gpuZones && kmtlZoneMode() == kZonesSplit);
+    if (pass.deferredStores) {
         if (!resuming) {
-            for (int i = 0; i < 8; i++) colorStores[i] = rp.colorAttachments[i].storeAction;
-            depthStore = rp.depthAttachment.storeAction;
-            stencilStore = rp.stencilAttachment.storeAction;
+            for (int i = 0; i < 8; i++) pass.colorStores[i] = rp.colorAttachments[i].storeAction;
+            pass.depthStore = rp.depthAttachment.storeAction;
+            pass.stencilStore = rp.stencilAttachment.storeAction;
         }
         for (int i = 0; i < 8; i++)
             if (rp.colorAttachments[i].texture) rp.colorAttachments[i].storeAction = MTLStoreActionUnknown;
         if (rp.depthAttachment.texture) rp.depthAttachment.storeAction = MTLStoreActionUnknown;
         if (rp.stencilAttachment.texture) rp.stencilAttachment.storeAction = MTLStoreActionUnknown;
-        passDesc = rp;
+        pass.desc = rp;
     }
     render = [mtl renderCommandEncoderWithDescriptor:rp];
     if (!render) {
-        KERR("render encoder creation failed (%ux%u)", w, h);
+        KERR_LIMIT(10, "render encoder creation failed (%ux%u)", w, h);
         return;
     }
     waitForRoles(render, roles);
-    rtWidth = w;
-    rtHeight = h;
-    inRenderPass = true;
-    encodedPipeline = nullptr;
-    graphicsSetsDirty = ~0u;
-    graphicsPushDirty = true;
-    vertexBuffersDirty = ~0u;
-    viewportDirty = scissorDirty = true;
-    passes++;
+    pass.width = w;
+    pass.height = h;
+    pass.active = true;
+    bound.encodedPipeline = nullptr;
+    bound.graphicsSetsDirty = ~0u;
+    bound.graphicsPushDirty = true;
+    bound.vertexBuffersDirty = ~0u;
+    bound.viewportDirty = bound.scissorDirty = true;
+    counts.passes++;
 }
 
 void KCommandBuffer::suspendRender() {
-    suspending = true;
+    pass.suspending = true;
     endEncoder();
-    suspending = false;
+    pass.suspending = false;
 }
 
 void KCommandBuffer::resumeRender() {
-    MTLRenderPassDescriptor* d = [passDesc copy];
+    MTLRenderPassDescriptor* d = [pass.desc copy];
     for (int i = 0; i < 8; i++)
         if (d.colorAttachments[i].texture)
             d.colorAttachments[i].loadAction = d.colorAttachments[i].texture.storageMode == MTLStorageModeMemoryless
                 ? MTLLoadActionDontCare : MTLLoadActionLoad;
     if (d.depthAttachment.texture) d.depthAttachment.loadAction = MTLLoadActionLoad;
     if (d.stencilAttachment.texture) d.stencilAttachment.loadAction = MTLLoadActionLoad;
-    beginRender(d, rtWidth, rtHeight, true);
-    passes--;
+    beginRender(d, pass.width, pass.height, true);
+    counts.passes--;
 }
 
 void KCommandBuffer::endRender() {
     endEncoder();
-    renderPass = nullptr;
-    framebuffer = nullptr;
-    for (auto& d : tsDeferred) writeTimestamp(d.first, d.second);
-    tsDeferred.clear();
-    tsSplit = false;
-}
-
-// The game's timestamps since the last draw, while zones are split: the pass ends there and goes on after them.
-// Timestamps back to back split it once, and those after its last draw are taken when it ends, its stores and resolves
-// in the zone they close; what is encoded between a timestamp and the next draw counts in the zone before it
-void KCommandBuffer::stampSplit() {
-    if (!tsSplit) return;
-    suspendRender();
-    takeSplitStamps();
-    resumeRender();
-}
-
-// The split's timestamps, the pass suspended (each waits for the first half through stampTimestamp's event)
-void KCommandBuffer::takeSplitStamps() {
-    if (!tsSplit) return;
-    tsSplit = false;
-    for (auto& d : tsDeferred) stampTimestamp(d.first, d.second);
-    tsDeferred.clear();
+    pass.renderPass = nullptr;
+    pass.framebuffer = nullptr;
+    for (auto& d : ts.deferred) writeTimestamp(d.first, d.second);
+    ts.deferred.clear();
+    ts.split = false;
 }
 
 void KCommandBuffer::resetState() {
-    graphicsPipeline = computePipeline = nullptr;
-    for (auto& s : graphicsSets) s = KBoundSet();
-    for (auto& s : computeSets) s = KBoundSet();
-    for (auto& v : vertexBuffers) v = VB();
-    indexBuffer = nil;
-    viewports.clear();
-    scissors.clear();
-    pushSize = 0;
-    memset(blendConstants, 0, sizeof(blendConstants));
-    stencilRef[0] = stencilRef[1] = 0;
-    depthBiasDirty = blendConstantsDirty = stencilRefDirty = false;
-    draws = dispatches = passes = 0;
-    fxSnapshots = 0;
-    encodedPipeline = nullptr;
+    bound.graphicsPipeline = bound.computePipeline = nullptr;
+    for (auto& s : bound.graphicsSets) s = KBoundSet();
+    for (auto& s : bound.computeSets) s = KBoundSet();
+    for (auto& v : bound.vertexBuffers) v = VB();
+    bound.indexBuffer = nil;
+    bound.viewports.clear();
+    bound.scissors.clear();
+    bound.pushSize = 0;
+    memset(bound.blendConstants, 0, sizeof(bound.blendConstants));
+    bound.stencilRef[0] = bound.stencilRef[1] = 0;
+    bound.depthBiasDirty = bound.blendConstantsDirty = bound.stencilRefDirty = false;
+    counts.draws = counts.dispatches = counts.passes = 0;
+    fx.snapshots = 0;
+    bound.encodedPipeline = nullptr;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -430,11 +412,11 @@ VKFN(VkResult) vkCreateCommandPool(VkDevice device, const VkCommandPoolCreateInf
 
 static void dropRecording(KCommandBuffer* cb) {
     if (cb->mtl) {
-        cb->dropping = true;
+        cb->dump.dropping = true;
         cb->endEncoder();
-        cb->dropping = false;
-        cb->dumpDesc = nil;
-        cb->dumpName.clear();
+        cb->dump.dropping = false;
+        cb->dump.desc = nil;
+        cb->dump.name.clear();
         cb->mtl = nil;
     }
     cb->releaseTimestamps();
@@ -462,7 +444,7 @@ VKFN(void) vkTrimCommandPool(VkDevice, VkCommandPool, VkCommandPoolTrimFlags) {}
 VKFN(VkResult) vkAllocateCommandBuffers(VkDevice device, const VkCommandBufferAllocateInfo* ai, VkCommandBuffer* out) {
     KTRACE_FIRST();
     auto* p = (KCommandPool*)ai->commandPool;
-    if (ai->level != VK_COMMAND_BUFFER_LEVEL_PRIMARY) KERR("secondary command buffers are not supported");
+    if (ai->level != VK_COMMAND_BUFFER_LEVEL_PRIMARY) KERR_LIMIT(10, "secondary command buffers are not supported");
     for (uint32_t i = 0; i < ai->commandBufferCount; i++) {
         auto* cb = new KCommandBuffer();
         cb->device = (KDevice*)device;
@@ -502,7 +484,7 @@ VKFN(VkResult) vkBeginCommandBuffer(VkCommandBuffer commandBuffer, const VkComma
     } else {
         cb->mtl = [cb->queue->mtl commandBuffer];
     }
-    cb->zones.clear();
+    cb->labels.zones.clear();
     cb->beginCommands();
     cb->resetState();
     cb->ring.reset();
@@ -512,12 +494,12 @@ VKFN(VkResult) vkBeginCommandBuffer(VkCommandBuffer commandBuffer, const VkComma
 VKFN(VkResult) vkEndCommandBuffer(VkCommandBuffer commandBuffer) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (cb->inRenderPass) KERR("vkEndCommandBuffer inside a render pass");
+    if (cb->pass.active) KERR_LIMIT(10, "vkEndCommandBuffer inside a render pass");
     // The game closes every zone of a frame: one left open means a zone's end was not seen (the benchmark's postfix
     // missed a call the JIT inlined), and the encoders after it carry the wrong zone's name
-    if (!cb->zones.empty())
+    if (!cb->labels.zones.empty())
         KERR_ONCE("zone labels: %zu zones left open at the end of a recording, from \"%s\": encoder names may name the wrong zone",
-                  cb->zones.size(), cb->zones.front().c_str());
+                  cb->labels.zones.size(), cb->labels.zones.front().c_str());
     cb->endEncoder();
     cb->joinCommands();
     return VK_SUCCESS;

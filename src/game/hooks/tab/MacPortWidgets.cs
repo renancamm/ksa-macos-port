@@ -174,7 +174,7 @@ internal static partial class MacPortTab
 
     // How far MetalFX Temporal scales on this Mac, past which Spatial does the rest (0: not known)
     [DllImport("libvulkan.1.dylib")]
-    private static extern float vkGetUpscaleMaxScaleKSA();
+    private static extern float ksaMtlUpscaleMaxScale();
 
     private static float? _temporalMax;
 
@@ -184,7 +184,7 @@ internal static partial class MacPortTab
         {
             try
             {
-                _temporalMax = vkGetUpscaleMaxScaleKSA();
+                _temporalMax = ksaMtlUpscaleMaxScale();
             }
             catch (Exception e) when (e is EntryPointNotFoundException or DllNotFoundException)
             {

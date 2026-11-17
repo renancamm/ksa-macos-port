@@ -90,7 +90,10 @@ VKFN(void) vkUnmapMemory(VkDevice, VkDeviceMemory) { KTRACE_FIRST(); }
 VKFN(VkResult) vkFlushMappedMemoryRanges(VkDevice, uint32_t, const VkMappedMemoryRange*) { KTRACE_FIRST(); return VK_SUCCESS; }
 VKFN(VkResult) vkInvalidateMappedMemoryRanges(VkDevice, uint32_t, const VkMappedMemoryRange*) { return VK_SUCCESS; }
 
-VKFN(void) vkGetDeviceMemoryCommitment(VkDevice, VkDeviceMemory m, VkDeviceSize* c) { *c = ((KDeviceMemory*)m)->size; }
+VKFN(void) vkGetDeviceMemoryCommitment(VkDevice, VkDeviceMemory m, VkDeviceSize* c) {
+    KTRACE_FIRST_PLAIN();
+    *c = ((KDeviceMemory*)m)->size;
+}
 
 // ---------------------------------------------------------------------------------------------------------------
 // Buffers
@@ -148,6 +151,7 @@ VKFN(void) vkGetBufferMemoryRequirements2(VkDevice device, const VkBufferMemoryR
 }
 
 VKFN(void) vkGetDeviceBufferMemoryRequirements(VkDevice device, const VkDeviceBufferMemoryRequirements* info, VkMemoryRequirements2* r) {
+    KTRACE_FIRST_PLAIN();
     KBuffer tmp;
     tmp.size = info->pCreateInfo->size;
     tmp.accelStorage = (info->pCreateInfo->usage & VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR) != 0;
@@ -169,6 +173,7 @@ VKFN(VkResult) vkBindBufferMemory(VkDevice, VkBuffer buffer, VkDeviceMemory memo
 }
 
 VKFN(VkResult) vkBindBufferMemory2(VkDevice, uint32_t n, const VkBindBufferMemoryInfo* infos) {
+    KTRACE_FIRST();
     for (uint32_t i = 0; i < n; i++) bindBuffer(infos[i].buffer, infos[i].memory, infos[i].memoryOffset);
     return VK_SUCCESS;
 }
@@ -210,6 +215,7 @@ VKFN(VkResult) vkCreateBufferView(VkDevice, const VkBufferViewCreateInfo* ci, co
 }
 
 VKFN(void) vkDestroyBufferView(VkDevice, VkBufferView view, const VkAllocationCallbacks*) {
+    KTRACE_FIRST_PLAIN();
     delete (KBufferView*)view;
 }
 

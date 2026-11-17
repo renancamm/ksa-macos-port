@@ -67,8 +67,8 @@ static bool atLevel(const KImage* img, uint32_t mip, KRegion2D& r, bool grow = t
     float sx, sy;
     kmtlDynamicScale(img, &sx, &sy);
     int64_t tw = std::max<int64_t>(1, (int64_t)img->mtl.width >> mip), th = std::max<int64_t>(1, (int64_t)img->mtl.height >> mip);
-    int64_t x0 = (int64_t)std::floor(r.x * (double)sx), y0 = (int64_t)std::floor(r.y * (double)sy);
-    int64_t x1 = std::min(tw, (int64_t)std::ceil(((double)r.x + r.w) * sx)), y1 = std::min(th, (int64_t)std::ceil(((double)r.y + r.h) * sy));
+    int64_t x0, y0, x1, y1;
+    kmtlDynamicRect(sx, sy, r.x, r.y, r.w, r.h, tw, th, &x0, &y0, &x1, &y1);
     // A copy to or from a buffer keeps at most the game's extent: its rows are laid out for it
     if (!grow) {
         x1 = std::min<int64_t>(x1, x0 + r.w);
@@ -145,7 +145,7 @@ VKFN(void) vkCmdCopyImage(VkCommandBuffer commandBuffer, VkImage src, VkImageLay
         // Size-compatible formats: copy through a view of the source in the destination format
         srcTex = [s->mtl newTextureViewWithPixelFormat:d->pixelFormat];
         if (!srcTex) {
-            KERR("vkCmdCopyImage between formats %d and %d unsupported", s->format, d->format);
+            KERR_LIMIT(10, "vkCmdCopyImage between formats %d and %d unsupported", s->format, d->format);
             return;
         }
     }
@@ -209,8 +209,8 @@ VKFN(void) vkCmdBlitImage(VkCommandBuffer commandBuffer, VkImage src, VkImageLay
             float sx, sy;
             kmtlDynamicScale(img, &sx, &sy);
             for (int k = 0; k < 2; k++) {
-                o[k].x = (int32_t)lround(o[k].x * (double)sx);
-                o[k].y = (int32_t)lround(o[k].y * (double)sy);
+                o[k].x = kmtlDynamicPoint(o[k].x, sx);
+                o[k].y = kmtlDynamicPoint(o[k].y, sy);
             }
         };
         scaleCorners(s, b2.srcOffsets);
@@ -280,7 +280,7 @@ static void clearImage(KCommandBuffer* cb, KImage* img, const VkClearColorValue*
                 }
             }
             cb->beginRender(d, w, h, false, KCommandBuffer::kClassTransfer);
-            cb->passes--;  // not a real pass in the frame log
+            cb->counts.passes--;  // not a real pass in the frame log
             cb->endEncoder();
         }
     }
@@ -305,120 +305,8 @@ VKFN(void) vkCmdClearAttachments(VkCommandBuffer, uint32_t, const VkClearAttachm
 VKFN(void) vkCmdResolveImage(VkCommandBuffer, VkImage, VkImageLayout, VkImage, VkImageLayout, uint32_t, const VkImageResolve*) { KUNIMPL(); }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Queries and debug labels
+// Debug labels
 
-// Timestamps (the game's GPU profiler; zones.mm says how they are answered)
-
-void KCommandBuffer::writeTimestamp(KQueryPool* pool, uint32_t query) {
-    uint32_t mode = kmtlZoneMode();
-    // Labels: answered at once, no encoder and no wait
-    if (mode == kZonesLabels) {
-        std::lock_guard<std::mutex> lock(pool->m);
-        if (query < pool->count) {
-            pool->values[query] = 0;
-            pool->available[query] = 1;
-        }
-        pool->cv.notify_all();
-        return;
-    }
-    if (render) {
-        // Taken when the pass ends; split: at its next draw (stampSplit)
-        tsDeferred.push_back({pool, query});
-        if (mode == kZonesSplit && deferredStores && passDesc) tsSplit = true;
-        return;
-    }
-    stampTimestamp(pool, query);
-}
-
-// A tiny blit encoder after everything recorded so far, whose end is the timestamp
-void KCommandBuffer::stampTimestamp(KQueryPool* pool, uint32_t query) {
-    if (!tsSamples) {
-        tsSamples = kmtlAcquireTimestamps(device, "vkCmdWriteTimestamp");
-        if (!tsSamples) {
-            tsWrites.push_back({pool, query, UINT32_MAX});
-            return;
-        }
-        tsUsed = 0;
-    }
-    if (tsUsed + 2 > kTimestampSamples) {
-        tsWrites.push_back({pool, query, UINT32_MAX});
-        return;
-    }
-    endEncoder();
-    // It waits for everything before it, MSAA resolves too: its wait clears what later encoders would wait for
-    // (waitForResolves), so they would no longer wait for those
-    waitForAllResolves();
-    // A blit with counter samples doesn't keep the fences' order: work after it can start before the work before it is
-    // done (a split render pass's second half read the first half's stores stale: the cockpit lost its lights in 4 of 9
-    // split game sessions, 0 of 8 with the same blit without its samples, 0 of 5 with no blit between the halves). An
-    // event before it waits for everything recorded so far; timestamps back to back share one
-    if (!stampedLast) {
-        if (!stampEvent) stampEvent = [device->mtl newEvent];
-        [mtl encodeSignalEvent:stampEvent value:++stampSignaled];
-        [mtl encodeWaitForEvent:stampEvent value:stampSignaled];
-    }
-    MTLBlitPassDescriptor* d = [MTLBlitPassDescriptor blitPassDescriptor];
-    d.sampleBufferAttachments[0].sampleBuffer = tsSamples;
-    d.sampleBufferAttachments[0].startOfEncoderSampleIndex = tsUsed;
-    d.sampleBufferAttachments[0].endOfEncoderSampleIndex = tsUsed + 1;
-    id<MTLBlitCommandEncoder> b = [mtl blitCommandEncoderWithDescriptor:d];
-    waitForRoles(b, kClassAll);  // after everything recorded so far
-    [b fillBuffer:device->timestampScratch range:NSMakeRange(0, 4) value:0];
-    [b updateFence:finishFence(kClassAll)];
-    [b endEncoding];
-    encRoles = 0;
-    stampedLast = true;
-    tsWrites.push_back({pool, query, tsUsed + 1});
-    tsUsed += 2;
-}
-
-// At submit: resolve the samples into the pools when the command buffer completes
-void KCommandBuffer::submitTimestamps(id<MTLCommandBuffer> c) {
-    if (tsWrites.empty()) { releaseTimestamps(); return; }
-    id<MTLCounterSampleBuffer> samples = tsSamples;
-    uint32_t used = tsUsed;
-    auto writes = std::make_shared<std::vector<TimestampWrite>>(std::move(tsWrites));
-    tsSamples = nil;
-    tsWrites.clear();
-    [c addCompletedHandler:^(id<MTLCommandBuffer>) {
-        NSData* data = samples && used ? [samples resolveCounterRange:NSMakeRange(0, used)] : nil;
-        const uint64_t* ts = data ? (const uint64_t*)data.bytes : nullptr;
-        for (auto& w : *writes) {
-            uint64_t v = ts && w.sample < used ? ts[w.sample] : 0;
-            if (v == MTLCounterErrorValue) v = 0;
-            std::lock_guard<std::mutex> lock(w.pool->m);
-            if (w.query < w.pool->count) {
-                w.pool->values[w.query] = v;
-                w.pool->available[w.query] = 1;
-            }
-            w.pool->cv.notify_all();
-        }
-        kmtlRecycleTimestamps(samples);
-    }];
-}
-
-void KCommandBuffer::releaseTimestamps() {
-    kmtlRecycleTimestamps(tsSamples);
-    tsSamples = nil;
-    tsWrites.clear();
-    tsDeferred.clear();
-    tsSplit = false;
-}
-
-VKFN(void) vkCmdResetQueryPool(VkCommandBuffer, VkQueryPool pool, uint32_t first, uint32_t n) {
-    KTRACE_FIRST();
-    ((KQueryPool*)pool)->reset(first, n);
-}
-
-VKFN(void) vkCmdWriteTimestamp(VkCommandBuffer commandBuffer, VkPipelineStageFlagBits, VkQueryPool pool, uint32_t query) {
-    KTRACE_FIRST();
-    ((KCommandBuffer*)commandBuffer)->writeTimestamp((KQueryPool*)pool, query);
-}
-
-VKFN(void) vkCmdWriteTimestamp2(VkCommandBuffer commandBuffer, VkPipelineStageFlags2, VkQueryPool pool, uint32_t query) {
-    KTRACE_FIRST();
-    ((KCommandBuffer*)commandBuffer)->writeTimestamp((KQueryPool*)pool, query);
-}
 VKFN(void) vkCmdBeginDebugUtilsLabelEXT(VkCommandBuffer, const VkDebugUtilsLabelEXT*) {}
 VKFN(void) vkCmdEndDebugUtilsLabelEXT(VkCommandBuffer) {}
 VKFN(void) vkCmdInsertDebugUtilsLabelEXT(VkCommandBuffer, const VkDebugUtilsLabelEXT*) {}

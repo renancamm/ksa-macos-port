@@ -7,10 +7,12 @@ driver, into `deps/build/cmake/src/game/driver/tests/`.
 | Test | What it checks | Runs |
 |---|---|---|
 | `driver-smoke` | an instance and a device on the Mac's GPU, buffers in host-visible memory, a fill and a copy in a command buffer, a submit, a fence, the copy read back | after every build (`build.sh`) |
+| `msl-patches` | the text rewrites of translated MSL (`shaders/mslpatch.cpp`), on small shaders written for the test: uniform structs read in place, early fragment tests, an override's specialization values, intersectors, a struct's fields | after every build |
 | `shader-corpus` | every translation of a recorded run again: its key from the recorded inputs, its MSL against the recorded one, Metal's compile of it | by hand, on a recorded corpus |
 
 ```bash
 ctest --test-dir deps/build/cmake -R driver-smoke # the smoke test
+ctest --test-dir deps/build/cmake -R msl-patches  # the MSL rewrites
 ctest --test-dir deps/build/cmake -L corpus     # the shader corpus test
 ```
 

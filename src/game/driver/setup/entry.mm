@@ -1,5 +1,5 @@
 // Name table behind vkGetInstanceProcAddr / vkGetDeviceProcAddr, made from Vulkan's registry (entries.inc,
-// ../entries/Generate.cs). Unknown names return NULL so gaps fail loudly.
+// src/build-tools/entries-generator/). Unknown names return NULL so gaps fail loudly.
 #include "kmtl.h"
 
 struct KEntry {
@@ -41,12 +41,14 @@ static PFN_vkVoidFunction lookup(const char* name, int maxLevel) {
 }
 
 VKFN(PFN_vkVoidFunction) vkGetInstanceProcAddr(VkInstance instance, const char* name) {
+    KTRACE_FIRST_PLAIN();
     if (!name) return nullptr;
     // Without an instance only global functions resolve (plus vkGetInstanceProcAddr itself)
     return lookup(name, instance ? 2 : 0);
 }
 
 VKFN(PFN_vkVoidFunction) vkGetDeviceProcAddr(VkDevice, const char* name) {
+    KTRACE_FIRST_PLAIN();
     if (!name) return nullptr;
     // Device-level queries return only device-level functions
     const KEntry* e = findEntry(name);

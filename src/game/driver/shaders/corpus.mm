@@ -19,16 +19,6 @@ static std::string hex64(uint64_t v) {
     return s;
 }
 
-// Writes <path> through a temporary file, so that a reader never sees half of it
-static void writeAtomically(const std::string& path, const std::string& data) {
-    std::string tmp = path + ".tmp" + std::to_string((unsigned long)pthread_mach_thread_np(pthread_self()));
-    FILE* f = fopen(tmp.c_str(), "wb");
-    if (!f) return;
-    fwrite(data.data(), 1, data.size(), f);
-    if (fclose(f) == 0) rename(tmp.c_str(), path.c_str());
-    else unlink(tmp.c_str());
-}
-
 void kmtlCorpusRecord(uint64_t key, KShaderModule* mod, const char* entry, spv::ExecutionModel model, KPipelineLayout* layout,
                       const VkSpecializationInfo* spec, const KStageOptions& so, const KTranslated& out) {
     std::string dir = kmtlConfig().shaderCorpus;
@@ -39,7 +29,7 @@ void kmtlCorpusRecord(uint64_t key, KShaderModule* mod, const char* entry, spv::
     mkdir(dir.c_str(), 0755);
     std::string spv = dir + "/" + hex64(mod->hash) + ".spv";
     if (stat(spv.c_str(), &st) != 0)
-        writeAtomically(spv, std::string((const char*)mod->spirv.data(), mod->spirv.size() * 4));
+        kmtlWriteFileAtomically(spv, std::string((const char*)mod->spirv.data(), mod->spirv.size() * 4));
 
     std::string t = std::string(kFormat) + "\n";
     char line[256];
@@ -82,18 +72,8 @@ void kmtlCorpusRecord(uint64_t key, KShaderModule* mod, const char* entry, spv::
         }
         t += "\n";
     }
-    writeAtomically(dir + "/" + hex64(key) + ".out", kmtlTranslatedText(out));
-    writeAtomically(in, t);  // last: an entry with its .in is complete
-}
-
-static bool readText(const std::string& path, std::string* out) {
-    FILE* f = fopen(path.c_str(), "rb");
-    if (!f) return false;
-    out->clear();
-    char buf[65536];
-    for (size_t n; (n = fread(buf, 1, sizeof(buf), f)) > 0;) out->append(buf, n);
-    fclose(f);
-    return true;
+    kmtlWriteFileAtomically(dir + "/" + hex64(key) + ".out", kmtlTranslatedText(out));
+    kmtlWriteFileAtomically(in, t);  // last: an entry with its .in is complete
 }
 
 std::vector<uint64_t> kmtlCorpusKeys(const std::string& dir) {
@@ -113,11 +93,11 @@ std::vector<uint64_t> kmtlCorpusKeys(const std::string& dir) {
 bool kmtlCorpusLoad(const std::string& dir, uint64_t key, KCorpusEntry* out, std::string* err) {
     std::string text, data;
     std::string base = dir + "/" + hex64(key);
-    if (!readText(base + ".in", &text) || text.compare(0, strlen(kFormat), kFormat) != 0) {
+    if (!kmtlReadFile(base + ".in", &text) || text.compare(0, strlen(kFormat), kFormat) != 0) {
         *err = "no inputs, or of another format";
         return false;
     }
-    if (!readText(base + ".out", &data) || !kmtlTranslatedParse(data, &out->recorded)) {
+    if (!kmtlReadFile(base + ".out", &data) || !kmtlTranslatedParse(data, &out->recorded)) {
         *err = "no result";
         return false;
     }
@@ -137,7 +117,7 @@ bool kmtlCorpusLoad(const std::string& dir, uint64_t key, KCorpusEntry* out, std
         if (what == "module") {
             out->module.hash = strtoull(r, nullptr, 16);
             std::string spv;
-            ok = readText(dir + "/" + rest + ".spv", &spv) && spv.size() % 4 == 0;
+            ok = kmtlReadFile(dir + "/" + rest + ".spv", &spv) && spv.size() % 4 == 0;
             out->module.spirv.resize(spv.size() / 4);
             if (ok) memcpy(out->module.spirv.data(), spv.data(), spv.size());
         } else if (what == "entry") {

@@ -86,7 +86,7 @@ struct KInternalPipelines {
 void kmtlInitInternal(KDevice* dev) {
     auto* ip = new KInternalPipelines();
     NSError* e = nil;
-    ip->lib = [dev->mtl newLibraryWithSource:@(kInternalMSL) options:nil error:&e];
+    ip->lib = kmtlLibrary(dev->mtl, kInternalMSL, nil, &e);
     if (!ip->lib) {
         KERR("internal shaders failed to compile: %s", e.description.UTF8String);
         dev->internal = ip;
@@ -105,6 +105,11 @@ void kmtlInitInternal(KDevice* dev) {
     dev->internal = ip;
 }
 
+void kmtlDestroyInternal(KDevice* dev) {
+    delete dev->internal;
+    dev->internal = nullptr;
+}
+
 void kmtlInternalFillBuffer(KCommandBuffer* cb, id<MTLBuffer> buf, NSUInteger offset, NSUInteger size, uint32_t data) {
     KInternalPipelines* ip = cb->device->internal;
     if (!ip->fill32) return;
@@ -116,8 +121,8 @@ void kmtlInternalFillBuffer(KCommandBuffer* cb, id<MTLBuffer> buf, NSUInteger of
     [enc setBytes:p length:sizeof(p) atIndex:1];
     [enc dispatchThreads:MTLSizeMake(count, 1, 1) threadsPerThreadgroup:MTLSizeMake(std::min(count, 256u), 1, 1)];
     // The game's compute state must be re-applied on the next dispatch
-    cb->computeSetsDirty = ~0u;
-    cb->computePushDirty = true;
+    cb->bound.computeSetsDirty = ~0u;
+    cb->bound.computePushDirty = true;
 }
 
 static id<MTLRenderPipelineState> blitPipeline(KDevice* dev, MTLPixelFormat dst, int variant) {
@@ -159,7 +164,7 @@ void kmtlInternalBlit(KCommandBuffer* cb, KImage* src, KImage* dst, const VkImag
     id<MTLTexture> srcTex = [src->mtl newTextureViewWithPixelFormat:src->mtl.pixelFormat textureType:vt
                                                              levels:NSMakeRange(sl, 1) slices:slices];
     if (!srcTex) {
-        KERR("blit: source view failed");
+        KERR_LIMIT(10, "blit: source view failed");
         return;
     }
     id<MTLRenderPipelineState> ps = blitPipeline(dev, dst->pixelFormat, variant);
@@ -180,7 +185,7 @@ void kmtlInternalBlit(KCommandBuffer* cb, KImage* src, KImage* dst, const VkImag
         d.colorAttachments[0].loadAction = MTLLoadActionLoad;
         d.colorAttachments[0].storeAction = MTLStoreActionStore;
         cb->beginRender(d, dw, dh, false, KCommandBuffer::kClassTransfer);
-        cb->passes--;
+        cb->counts.passes--;
         id<MTLRenderCommandEncoder> enc = cb->render;
         if (!enc) return;
         int x0 = std::min(r.dstOffsets[0].x, r.dstOffsets[1].x), x1 = std::max(r.dstOffsets[0].x, r.dstOffsets[1].x);

@@ -1,9 +1,14 @@
-// KSA Metal's resources (resources/): device memory, buffers, images, views, samplers, query pools, descriptor
-// sets and their layouts, formats, acceleration structures. Included by kmtl.h.
+// KSA Metal's resources (resources/): device memory, buffers, images, views, samplers, fences and semaphores, query
+// pools, descriptor sets and their layouts, formats, dynamic resolution, acceleration structures. Included by kmtl.h;
+// a section per file, the non-dispatchable objects (handles are pointers to these) with their helpers.
 #pragma once
 
+struct KFormatInfo;
+struct KImageView;
+struct KSetLayout;
+
 // ---------------------------------------------------------------------------------------------------------------
-// Non-dispatchable objects (handles are pointers to these)
+// Device memory, buffers, buffer views (memory.mm)
 struct KDeviceMemory {
     KDevice* device = nullptr;
     VkDeviceSize size = 0;
@@ -21,10 +26,12 @@ struct KBuffer {
     bool accelStorage = false;  // holds acceleration structures: aligned for placing them in its heap
     uint64_t gpuAddress() const { return mtl ? mtl.gpuAddress + offset : 0; }
 };
+// A VkMemoryDedicatedRequirements in the chain, filled (prefer: its prefersDedicatedAllocation)
+void kmtlFillDedicated(void* pNext, bool prefer);
+uint64_t kmtlBufferViewId(VkBufferView view);
 
-struct KFormatInfo;
-struct KImageView;
-
+// ---------------------------------------------------------------------------------------------------------------
+// Images, image views, samplers (images.mm)
 struct KImage {
     KDevice* device = nullptr;
     VkImageCreateInfo info{};
@@ -68,7 +75,36 @@ struct KImageView {
 struct KSampler {
     id<MTLSamplerState> mtl = nil;
 };
+KImage* kmtlCreateSwapchainImage(KDevice* dev, VkFormat format, uint32_t w, uint32_t h);
+void kmtlDestroyImage(KImage* img);
+MTLCompareFunction kmtlCompare(VkCompareOp op);
 
+// ---------------------------------------------------------------------------------------------------------------
+// Dynamic resolution (dynres.mm): the main view at a level of its size; which level: presentation/framerate.mm
+constexpr uint32_t kDynamicParts = 64;     // a level is this many parts of the main view's size (0: the full size)
+constexpr uint32_t kDynamicMinLevel = 16;  // the lowest a level can be
+uint32_t kmtlDynamicScaled(uint32_t size, uint32_t level);  // a size at a level, rounded
+void kmtlDynamicSetView(uint32_t width, uint32_t height, const std::vector<uint32_t>& levels);  // images of this size dynamic from now on, these levels made ahead (0 x 0: none)
+void kmtlDynamicPrepare();                 // before a frame: the levels' textures of images bound since
+void kmtlDynamicSetLevel(uint32_t level);  // between frames: every dynamic image at this level, what it holds carried
+void kmtlDynamicBind(KImage* img);
+void kmtlDynamicForget(KImage* img);
+void kmtlDynamicAddView(KImageView* v);
+void kmtlDynamicRemoveView(KImageView* v);
+void kmtlDynamicScale(const KImage* img, float* sx, float* sy);
+// What the game gives at an image's own size, at a level (scaled by sx, sy): a viewport, a rectangle covering what it
+// covered within limitW x limitH ([x0, x1) x [y0, y1)), a point
+MTLViewport kmtlDynamicViewport(const VkViewport& vp, double sx, double sy);
+void kmtlDynamicRect(double sx, double sy, int64_t x, int64_t y, int64_t w, int64_t h, int64_t limitW, int64_t limitH,
+                     int64_t* x0, int64_t* y0, int64_t* x1, int64_t* y1);
+int32_t kmtlDynamicPoint(int32_t v, double s);
+id<MTLTexture> kmtlViewTexture(KImageView* v, id<MTLTexture> tex);
+bool kmtlDynamicView(VkImageView view);                       // a view of a dynamic image
+void kmtlDynamicTranslate(const KSetLayout* l, uint64_t* slots);  // a set's copy: its textures at the frame's level
+uint32_t kmtlDynamicLevelNow();  // the level the frame being presented was drawn at
+
+// ---------------------------------------------------------------------------------------------------------------
+// Fences and semaphores (setup/device.mm)
 struct KFence {
     std::mutex m;
     std::condition_variable cv;
@@ -83,6 +119,8 @@ struct KSemaphore {
     KQueue* signaledBy = nullptr;
 };
 
+// ---------------------------------------------------------------------------------------------------------------
+// Query pools, pipeline caches (queries.mm)
 // Timestamp query pool: values resolve from counter samples when the command buffer completes
 struct KQueryPool {
     uint32_t count;
@@ -98,6 +136,8 @@ struct KQueryPool {
 
 struct KPipelineCache { int unused = 0; };
 
+// ---------------------------------------------------------------------------------------------------------------
+// Descriptor sets and their layouts, pipeline layouts (descriptor.mm)
 // Descriptor set layout: every binding gets consecutive 8-byte slots ("ids") in the set's argument buffer
 struct KBinding {
     uint32_t binding = 0;
@@ -172,7 +212,7 @@ struct KPipelineLayout {
 };
 
 // ---------------------------------------------------------------------------------------------------------------
-// Formats
+// Formats (format.mm)
 struct KFormatInfo {
     VkFormat vk;
     MTLPixelFormat mtl;
@@ -186,35 +226,19 @@ const KFormatInfo* kmtlFormat(VkFormat f);
 MTLPixelFormat kmtlPixelFormat(VkFormat f);
 MTLVertexFormat kmtlVertexFormat(VkFormat f);
 
-// Helpers (memory.mm, images.mm)
-KImage* kmtlCreateSwapchainImage(KDevice* dev, VkFormat format, uint32_t w, uint32_t h);
-void kmtlDestroyImage(KImage* img);
-// dynres.mm: dynamic resolution's mechanism, the main view at a level of its size (which level: presentation/framerate.mm)
-constexpr uint32_t kDynamicParts = 64;     // a level is this many parts of the main view's size (0: the full size)
-constexpr uint32_t kDynamicMinLevel = 16;  // the lowest a level can be
-uint32_t kmtlDynamicScaled(uint32_t size, uint32_t level);  // a size at a level, rounded
-void kmtlDynamicSetView(uint32_t width, uint32_t height, const std::vector<uint32_t>& levels);  // images of this size dynamic from now on, these levels made ahead (0 x 0: none)
-void kmtlDynamicPrepare();                 // before a frame: the levels' textures of images bound since
-void kmtlDynamicSetLevel(uint32_t level);  // between frames: every dynamic image at this level, what it holds carried
-void kmtlDynamicBind(KImage* img);
-void kmtlDynamicForget(KImage* img);
-void kmtlDynamicAddView(KImageView* v);
-void kmtlDynamicRemoveView(KImageView* v);
-void kmtlDynamicScale(const KImage* img, float* sx, float* sy);
-id<MTLTexture> kmtlViewTexture(KImageView* v, id<MTLTexture> tex);
-bool kmtlDynamicView(VkImageView view);                       // a view of a dynamic image
-void kmtlDynamicTranslate(const KSetLayout* l, uint64_t* slots);  // a set's copy: its textures at the frame's level
-uint32_t kmtlDynamicLevelNow();  // the level the frame being presented was drawn at
-void kmtlGpuClockStart();       // gpuclock.mm: the GPU clock's sampler, once (IOReport)
-double kmtlGpuClockShare();      // gpuclock.mm: the GPU's clock lately over its highest (1: unknown)
-double kmtlGpuClockMhz();        // gpuclock.mm: the GPU's clock lately (0: unknown)
-bool kmtlGpuClockKnown();        // gpuclock.mm: a clock read at least once
-// memory.mm: a VkMemoryDedicatedRequirements in the chain, filled (prefer: its prefersDedicatedAllocation)
-void kmtlFillDedicated(void* pNext, bool prefer);
-uint64_t kmtlBufferViewId(VkBufferView view);
-MTLCompareFunction kmtlCompare(VkCompareOp op);
-
+// ---------------------------------------------------------------------------------------------------------------
 // Acceleration structures (accel.mm)
+struct KAccel {
+    id<MTLAccelerationStructure> mtl = nil;
+    uint64_t address = 0;  // what vkGetAccelerationStructureDeviceAddressKHR hands out
+    bool placed = false;   // in the heap of its Vulkan buffer (resident with it), not memory of its own
+};
+// A structure's descriptor from a build's inputs; with resolveBuffers, its buffers found from their device addresses
+// and a top-level structure's instances converted into *outInstances (nil where the inputs can't be described)
+MTLAccelerationStructureDescriptor* kmtlAccelDescriptor(const VkAccelerationStructureBuildGeometryInfoKHR* info,
+                                                       const uint32_t* primitiveCounts, bool resolveBuffers,
+                                                       const VkAccelerationStructureBuildRangeInfoKHR* ranges,
+                                                       id<MTLDevice> dev, id<MTLBuffer>* outInstances);
 void kmtlRegisterMemory(KDeviceMemory* m);
 void kmtlUnregisterMemory(KDeviceMemory* m);
 uint64_t kmtlAccelId(VkAccelerationStructureKHR as);

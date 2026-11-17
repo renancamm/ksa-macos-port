@@ -92,6 +92,12 @@ struct Module {
     }
     uint32_t newId() { return header[3]++; }
 
+    // The first entry point (null: none)
+    Inst* entryPoint() {
+        for (auto& i : insts) if (i.op() == spv::OpEntryPoint) return &i;
+        return nullptr;
+    }
+    const Inst* entryPoint() const { return const_cast<Module*>(this)->entryPoint(); }
     size_t firstFunction() const {
         for (size_t i = 0; i < insts.size(); i++) if (insts[i].op() == spv::OpFunction) return i;
         return insts.size();
@@ -264,15 +270,13 @@ inline void setInterface(Module& m) {
         if (i.op() != spv::OpVariable || i.w[3] == spv::StorageClassFunction) continue;
         if (all || i.w[3] == spv::StorageClassInput || i.w[3] == spv::StorageClassOutput) globals.push_back(i.w[2]);
     }
-    for (auto& i : m.insts) {
-        if (i.op() != spv::OpEntryPoint) continue;
-        std::string name = readLiteral(i.w, 3);
-        std::vector<uint32_t> ops = {i.w[1], i.w[2]};
+    if (Inst* ep = m.entryPoint()) {
+        std::string name = readLiteral(ep->w, 3);
+        std::vector<uint32_t> ops = {ep->w[1], ep->w[2]};
         auto lit = literal(name);
         ops.insert(ops.end(), lit.begin(), lit.end());
         ops.insert(ops.end(), globals.begin(), globals.end());
-        i = makeV(spv::OpEntryPoint, ops);
-        break;
+        *ep = makeV(spv::OpEntryPoint, ops);
     }
 }
 

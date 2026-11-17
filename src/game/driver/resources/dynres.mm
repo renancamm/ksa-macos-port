@@ -9,7 +9,7 @@
 // rounded as the game rounds it (sizeAt). What the game draws with the image then sees the smaller size,
 // as after a rebuild: the shaders' image sizes and normalised coordinates, the viewports and scissors (scaled by the
 // pass's attachments, passes.mm and state.mm), the copies (transfers.mm). What the game works out from its sizes itself
-// (the cameras' screen size, push constants) the hooks give the level's size (framerate.mm's ksaMtlDynamicResolution*).
+// (the cameras' screen size, push constants) the hooks give the level's size (framerate.mm's ksaMtlFrameRate*).
 //
 // A change of level, at the start of the game's frame, carries what each image holds over to its texture at the new
 // level (scaled: the game's histories), in the queue's order after the frames before, and moves the images and their
@@ -256,6 +256,24 @@ void kmtlDynamicScale(const KImage* img, float* sx, float* sy) {
     *sy = (float)img->mtl.height / (float)img->info.extent.height;
 }
 
+// What the game gives at an image's own size, at its level (scaled by sx, sy), each with its own rounding. A viewport:
+// exact. A rectangle (scissors, copies): its start rounded down and its end up, so that it covers what it covered,
+// within limitW x limitH, as [x0, x1) x [y0, y1) (empty when x1 <= x0 or y1 <= y0). A point (a blit's corners): to the
+// nearest pixel
+MTLViewport kmtlDynamicViewport(const VkViewport& vp, double sx, double sy) {
+    return {vp.x * sx, vp.y * sy, vp.width * sx, vp.height * sy, vp.minDepth, vp.maxDepth};
+}
+
+void kmtlDynamicRect(double sx, double sy, int64_t x, int64_t y, int64_t w, int64_t h, int64_t limitW, int64_t limitH,
+                     int64_t* x0, int64_t* y0, int64_t* x1, int64_t* y1) {
+    *x0 = std::max<int64_t>(0, (int64_t)std::floor(x * sx));
+    *y0 = std::max<int64_t>(0, (int64_t)std::floor(y * sy));
+    *x1 = std::min<int64_t>(limitW, (int64_t)std::ceil(((double)x + w) * sx));
+    *y1 = std::min<int64_t>(limitH, (int64_t)std::ceil(((double)y + h) * sy));
+}
+
+int32_t kmtlDynamicPoint(int32_t v, double s) { return (int32_t)lround(v * s); }
+
 static const char* kResampleSource = R"(
 #include <metal_stdlib>
 using namespace metal;
@@ -303,7 +321,7 @@ static id<MTLRenderPipelineState> resamplePipeline(KDevice* dev, const KImage* i
     if (it != g_dyn.resample.end()) return it->second;
     NSError* err = nil;
     if (!g_dyn.library) {
-        g_dyn.library = [dev->mtl newLibraryWithSource:[NSString stringWithUTF8String:kResampleSource] options:nil error:&err];
+        g_dyn.library = kmtlLibrary(dev->mtl, kResampleSource, nil, &err);
         if (!g_dyn.library) KERR("dynamic resolution: resample shaders: %s", err.localizedDescription.UTF8String);
     }
     id<MTLRenderPipelineState> ps = nil;
@@ -445,7 +463,8 @@ void kmtlDynamicSetLevel(uint32_t level) {
 }
 
 // An image's size as its texture has it now (a dynamic image's at the frame's level)
-KMTL_EXPORT void ksaMtlImageSize(VkImage image, uint32_t* width, uint32_t* height) {
+KMTL_EXPORT void ksaMtlDynamicImageSize(VkImage image, uint32_t* width, uint32_t* height) {
+    KTRACE_FIRST_PLAIN();
     auto* img = (KImage*)image;
     *width = img && img->mtl ? (uint32_t)img->mtl.width : 0;
     *height = img && img->mtl ? (uint32_t)img->mtl.height : 0;
@@ -453,6 +472,7 @@ KMTL_EXPORT void ksaMtlImageSize(VkImage image, uint32_t* width, uint32_t* heigh
 
 // The hooks: a size of the main view's or a fraction of it, at the level now, as its image's texture has it (sizeAt)
 KMTL_EXPORT void ksaMtlDynamicSizeAt(uint32_t* width, uint32_t* height) {
+    KTRACE_FIRST_PLAIN();
     std::lock_guard<std::mutex> lock(g_dyn.m);
     *width = sizeAt(*width, fractionOf(*width, g_dyn.width), g_dyn.width, g_dyn.level);
     *height = sizeAt(*height, fractionOf(*height, g_dyn.height), g_dyn.height, g_dyn.level);
