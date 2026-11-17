@@ -72,6 +72,8 @@ internal sealed partial class CameraOperator
     private float? _explosionCull;
     // The camera's up in the frame before, which the next frame's up carries on from
     private static double3? _lastUp;
+    // What the camera follows as Apply placed it last (null: placed by none since its last release)
+    private static IFollowable? _followed;
 
     // Builds the flights from the sections that will play, with their keys' times on the script's clock
     internal void BuildPaths(IReadOnlyList<Director.Section> sections)
@@ -219,6 +221,7 @@ internal sealed partial class CameraOperator
     // The directives' hold on the free camera ends when something else moves it
     internal void ReleaseCamera()
     {
+        _followed = null;
         _released = _flight;
         Unhold();
         EndRig();
@@ -246,6 +249,7 @@ internal sealed partial class CameraOperator
     {
         _placed = null;
         _front = null;
+        _frontHeld = null;
         if (_explosionCull is { } cull)
             ExplosionSystem.PerceptualCullRadians = cull;
         _explosionCull = null;
@@ -495,6 +499,7 @@ internal sealed partial class CameraOperator
             else
                 camera.SetFollow(body, tidalLocking: true, changeControl: false, alert: false);
         }
+        _followed = camera.Following;
         if (viewport.Mode != CameraMode.Free)
             viewport.SetCameraMode(CameraMode.Free);
         var forward = double3.Normalize(view.forward);
