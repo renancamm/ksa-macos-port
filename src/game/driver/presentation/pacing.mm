@@ -165,25 +165,25 @@ static void applyCadence(KSwapchain* sc) {
     layer.maximumDrawableCount = two && !kmtlConfig().frameInterpolation ? 2 : 3;
 }
 
-// The newest swapchain of this size: the main view's output (g_pace.m held)
-static KSwapchain* swapchainOfSize(uint32_t width, uint32_t height) {
-    for (auto it = g_pace.swapchains.rbegin(); it != g_pace.swapchains.rend(); ++it)
-        if ((*it)->extent.width == width && (*it)->extent.height == height) return *it;
-    return nullptr;
+// The swapchain behind a handle while it is alive (g_pace.m held): the hooks' handle may outlive it
+static KSwapchain* listed(VkSwapchainKHR swapchain) {
+    auto* sc = (KSwapchain*)swapchain;
+    if (!sc) return nullptr;
+    return std::find(g_pace.swapchains.begin(), g_pace.swapchains.end(), sc) != g_pace.swapchains.end() ? sc : nullptr;
 }
 
-// The frame time the main view's swapchain holds its frames to (0: none, or no cadence)
-double kmtlFrameMs(uint32_t width, uint32_t height) {
+// The frame time a swapchain holds its frames to (0: none, or no cadence)
+double kmtlFrameMs(VkSwapchainKHR swapchain) {
     std::lock_guard<std::mutex> lock(g_pace.m);
-    KSwapchain* sc = swapchainOfSize(width, height);
+    KSwapchain* sc = listed(swapchain);
     return sc ? sc->frameMs.load() : 0;
 }
 
-// Steady Frame Rate's next step of the main view's swapchain (dir 1: slower, -1: faster): its frame time (0: none that
-// way); with take, taken
-double kmtlSteadyStep(uint32_t width, uint32_t height, int dir, bool take) {
+// Steady Frame Rate's next step of a swapchain (dir 1: slower, -1: faster): its frame time (0: none that way); with
+// take, taken
+double kmtlSteadyStep(VkSwapchainKHR swapchain, int dir, bool take) {
     std::lock_guard<std::mutex> lock(g_pace.m);
-    KSwapchain* sc = swapchainOfSize(width, height);
+    KSwapchain* sc = listed(swapchain);
     if (!sc || sc->steadySteps.empty()) return 0;
     long step = (long)sc->steadyStep + dir;
     if (step < 0 || step >= (long)sc->steadySteps.size()) return 0;
@@ -328,14 +328,14 @@ void kmtlPaceAtPresent(KSwapchain* sc, id<MTLCommandBuffer> cb, id<CAMetalDrawab
     }
     bool shownAtEnd = !drawable;
     uint32_t level = kmtlDynamicLevelNow();  // dynamic resolution's level of this frame
-    VkExtent2D extent = sc->extent;
+    VkSwapchainKHR handle = (VkSwapchainKHR)sc;
     [cb addCompletedHandler:^(id<MTLCommandBuffer> c) {
         std::lock_guard<std::mutex> lock(state->m);
         // The frame's own GPU time: its work up to this command buffer, which completes in order after it
         // (kmtlNoteGpuTime, the handler before, counted this buffer)
         double ms = kmtlTakeFrameGpuTime() * 1e3;
         state->gpuMs[state->gpuSamples++ % 8] = ms;
-        if (!shot) kmtlFrameRateNoteFrame(level, ms, extent.width, extent.height);
+        if (!shot) kmtlFrameRateNoteFrame(level, ms, handle);
         if (kmtlDrainOn()) kmtlDrainFrameGpu(counted, CACurrentMediaTime(), ms);
         if (KPresentState::Frame* f = findFrame(*state, n)) {
             f->gpuDone = true;

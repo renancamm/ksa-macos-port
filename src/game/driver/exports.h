@@ -158,10 +158,11 @@ KMTL_EXPORT void ksaMtlDynamicSizeAt(uint32_t* width, uint32_t* height);
 // ---------------------------------------------------------------------------------------------------------------
 // The Frame Rate section's controller (presentation/framerate.mm). C#: src/game/changes/features/DynamicResolution.cs
 
-// After each rebuild of the main view's targets (and before they are made): its size (0 x 0: none), the display's, and
-// the least size a level may have (0 x 0: the display's rule)
-KMTL_EXPORT void ksaMtlFrameRateView(uint32_t width, uint32_t height, uint32_t outW, uint32_t outH, uint32_t leastW,
-                                     uint32_t leastH);
+// After each rebuild of the main view's targets (and before they are made): the main window's swapchain (none: no
+// rate, no levels), the main view's size (0 x 0: none), the display's, and the least size a level may have (0 x 0: the
+// display's rule)
+KMTL_EXPORT void ksaMtlFrameRateView(VkSwapchainKHR swapchain, uint32_t width, uint32_t height, uint32_t outW,
+                                     uint32_t outH, uint32_t leastW, uint32_t leastH);
 // The main view's size at the level now, and the level (0: the full size)
 KMTL_EXPORT void ksaMtlFrameRateSize(uint32_t* width, uint32_t* height, uint32_t* level);
 // At the start of the game's frame, before it records any of it: the rate's step, this frame's level, changed here,

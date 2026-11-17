@@ -67,15 +67,15 @@ void kmtlPresentPaced(KSwapchain* sc, id<MTLCommandBuffer> cb, id<CAMetalDrawabl
 void kmtlLatencyAtPresent(id<CAMetalDrawable> drawable, id<MTLCommandBuffer> cb);
 
 // The Frame Rate section (framerate.mm): the least share of the main view's size a level may have (1: no levels), for
-// MetalFX's scalers; a frame's GPU time and its swapchain's size as its present completes, for the level's and the
-// rate's choice
+// MetalFX's scalers; a frame's GPU time and its swapchain as its present completes, for the level's and the rate's
+// choice
 float kmtlFrameRateMinContent();
-void kmtlFrameRateNoteFrame(uint32_t level, double gpuMs, uint32_t width, uint32_t height);
-// pacing.mm: Steady Frame Rate's rate (0: off); the frame time the cadence holds, of the swapchain of this size (0:
-// none); its next step (dir 1: slower, -1: faster) and that step's frame time (0: none), with take taken
+void kmtlFrameRateNoteFrame(uint32_t level, double gpuMs, VkSwapchainKHR swapchain);
+// pacing.mm: Steady Frame Rate's rate (0: off); the frame time a swapchain's cadence holds (0: none, or not a live
+// swapchain); its next step (dir 1: slower, -1: faster) and that step's frame time (0: none), with take taken
 int kmtlSteadyFps();
-double kmtlFrameMs(uint32_t width, uint32_t height);
-double kmtlSteadyStep(uint32_t width, uint32_t height, int dir, bool take);
+double kmtlFrameMs(VkSwapchainKHR swapchain);
+double kmtlSteadyStep(VkSwapchainKHR swapchain, int dir, bool take);
 // upscale.mm: how far MetalFX's temporal scaler scales on this Mac; its output from a content size, scaled that far
 float kmtlUpscaleMaxScale();
 uint32_t kmtlUpscaleReach(uint32_t content, float most);

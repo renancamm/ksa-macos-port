@@ -33,8 +33,8 @@ internal static class DynamicResolution
     // The driver's calls (src/game/driver/exports.h): the Frame Rate section's controller, and dynamic resolution's
     // sizes
     [DllImport("libvulkan.1.dylib")]
-    private static extern void ksaMtlFrameRateView(uint width, uint height, uint outputWidth, uint outputHeight,
-        uint leastWidth, uint leastHeight);
+    private static extern void ksaMtlFrameRateView(ulong swapchain, uint width, uint height, uint outputWidth,
+        uint outputHeight, uint leastWidth, uint leastHeight);
 
     [DllImport("libvulkan.1.dylib")]
     private static extern void ksaMtlFrameRateSize(out uint width, out uint height, out uint level);
@@ -57,11 +57,11 @@ internal static class DynamicResolution
 
     public static bool Active => _render != int2.Zero && _level != _render;
 
-    // After each rebuild of the main view's targets (before they are made): its render size (zero: none), the size
-    // MetalFX scales it up to, and the least size a level may have (zero: the driver's rule, from the display). Without
-    // all of the game's sizes at a level (_levels), the render size is none: the driver draws no level, and Steady Frame
-    // Rate's rate still steps
-    public static void Register(int2 render, int2 output, int2 least)
+    // After each rebuild of the main view's targets (before they are made): the main window's swapchain (default: none),
+    // the main view's render size (zero: none), the size MetalFX scales it up to, and the least size a level may have
+    // (zero: the driver's rule, from the display). Without all of the game's sizes at a level (_levels), the render size
+    // is none: the driver draws no level, and Steady Frame Rate's rate still steps
+    public static void Register(VkSwapchainKHR swapchain, int2 render, int2 output, int2 least)
     {
         if (!_applied || _missing)
             return;
@@ -69,8 +69,9 @@ internal static class DynamicResolution
             render = int2.Zero;
         try
         {
-            ksaMtlFrameRateView((uint)Math.Max(render.X, 0), (uint)Math.Max(render.Y, 0), (uint)Math.Max(output.X, 0),
-                (uint)Math.Max(output.Y, 0), (uint)Math.Max(least.X, 0), (uint)Math.Max(least.Y, 0));
+            ksaMtlFrameRateView(Unsafe.As<VkSwapchainKHR, ulong>(ref swapchain), (uint)Math.Max(render.X, 0),
+                (uint)Math.Max(render.Y, 0), (uint)Math.Max(output.X, 0), (uint)Math.Max(output.Y, 0),
+                (uint)Math.Max(least.X, 0), (uint)Math.Max(least.Y, 0));
             ksaMtlFrameRateSize(out uint w, out uint h, out _);
             _driver = true;
             // The driver registers levels only with Dynamic Resolution or the experiment's level: otherwise nothing changes here either
@@ -90,11 +91,11 @@ internal static class DynamicResolution
 
     private static void Take(uint w, uint h) => _level = w > 0 && h > 0 ? new int2((int)w, (int)h) : _render;
 
-    // Also without levels: the driver then has no display size, and the screenshot's frame no rate to step
+    // Also without levels: the driver then has no swapchain to follow, and the screenshot's frame no rate to step
     private static void RebuildPrefix()
     {
         if (_driver && !RenderScale.OwnsExtent(Program.GetRenderer()))
-            Register(int2.Zero, int2.Zero, int2.Zero);
+            Register(default, int2.Zero, int2.Zero, int2.Zero);
     }
 
     // Program.Render's prefix: this frame's level, and Steady Frame Rate's rate, which the driver also steps without

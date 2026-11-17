@@ -2,10 +2,10 @@
 // Heavy Load (stepRate), and with Dynamic Resolution the level of its size the main view is drawn at, frame by frame
 // (chooseLevel). The cadence that holds the rate is pacing.mm's; the mechanism that draws at a level, dynres.mm's.
 //
-// The hooks pass the main view's size after each rebuild (ksaMtlFrameRateView) and call in at the start of each of
-// the game's frames, before it records any of it (ksaMtlFrameRateBeginFrame): the rate's step, then the level,
-// changed there, and the main view's size at it, which the game's own sizes take. Steady Frame Rate alone registers the
-// display's size only, for the rate's steps.
+// The hooks pass the main window's swapchain and the main view's size after each rebuild (ksaMtlFrameRateView) and call
+// in at the start of each of the game's frames, before it records any of it (ksaMtlFrameRateBeginFrame): the rate's
+// step, then the level, changed there, and the main view's size at it, which the game's own sizes take. Steady Frame
+// Rate alone registers the swapchain only, for the rate's steps.
 //
 // The level: each frame the highest whose GPU time is expected to stay under the target, from the last frames' GPU
 // times (kmtlFrameRateNoteFrame, as each present completes), each at the full clock (gpuclock.mm: with the frames paced,
@@ -58,7 +58,8 @@ namespace {
 struct FrameRateState {
     std::mutex m;
     uint32_t width = 0, height = 0;          // the main view's size with levels (0: none)
-    std::atomic<uint32_t> outW{0}, outH{0};  // the display's: what MetalFX scales it up to (the main swapchain's size)
+    // The main window's swapchain (none: no rate, no target); the presents' handlers read it without m
+    std::atomic<VkSwapchainKHR> main{VK_NULL_HANDLE};
     uint32_t lowest = kDynamicParts;         // the lowest level the frames take (kDynamicParts: the full size, no levels)
     std::vector<uint32_t> grid;              // the levels a target picks from, highest first: the full size, every
                                              // kGridStep down to the lowest, and the lowest
@@ -103,12 +104,12 @@ static uint32_t settingLevel() {
 
 // The target, in GPU milliseconds a frame (0: none, the level stays): Steady Frame Rate's
 static double target() {
-    return kmtlSteadyFps() && g_fr.outW ? kCadenceShare * kmtlFrameMs(g_fr.outW, g_fr.outH) : 0;
+    return kmtlSteadyFps() && g_fr.main ? kCadenceShare * kmtlFrameMs(g_fr.main) : 0;
 }
 
-void kmtlFrameRateNoteFrame(uint32_t level, double gpuMs, uint32_t width, uint32_t height) {
+void kmtlFrameRateNoteFrame(uint32_t level, double gpuMs, VkSwapchainKHR swapchain) {
     // The main window's frames only: a pop-out window's present would add a small sample at the same level
-    if (width != g_fr.outW.load(std::memory_order_relaxed) || height != g_fr.outH.load(std::memory_order_relaxed)) return;
+    if (!swapchain || swapchain != g_fr.main.load(std::memory_order_relaxed)) return;
     if (gpuMs <= 0) return;
     std::lock_guard<std::mutex> lock(g_fr.samplesMutex);
     g_fr.samples[g_fr.sampleCount++ % kSamples] = {level, gpuMs * kmtlGpuClockShare(), gpuMs};
@@ -150,17 +151,17 @@ static void stepRate(double t) {
     double ms[kSamples], measured[kSamples];
     uint32_t n = samplesAt(now, ms, measured);
     if (n == 0) return;
-    uint32_t outW = g_fr.outW, outH = g_fr.outH;
+    VkSwapchainKHR main = g_fr.main;
     if (now == g_fr.lowest && n >= kRateDownFrames && kmtlMedian(ms, kRateDownFrames) > t &&
         g_fr.frames >= g_fr.changedAt + kRateSettleFrames && g_fr.frames >= g_fr.rateChangedAt + kRateHoldFrames) {
-        if (kmtlSteadyStep(outW, outH, 1, false) <= 0) return;
+        if (kmtlSteadyStep(main, 1, false) <= 0) return;
         // A faster rate that didn't hold: the next waits longer, and expects as much more as this one ran over
         if (g_fr.rateSteppedUp) {
             g_fr.rateUpWait = std::min(g_fr.rateUpWait * 2, kRateUpFrames * kMostWaits);
             if (g_fr.rateExpected > 0)
                 g_fr.rateBias = std::min(kRateBiasMost, std::max(g_fr.rateBias, kmtlMedian(ms, kRateDownFrames) / g_fr.rateExpected));
         }
-        double frame = kmtlSteadyStep(outW, outH, 1, true);
+        double frame = kmtlSteadyStep(main, 1, true);
         g_fr.rateChangedAt = g_fr.frames;
         g_fr.ceiling = 0;  // another target: the levels as they come
         g_fr.rateSteppedUp = false;
@@ -177,7 +178,7 @@ static void stepRate(double t) {
     }
     // At the slower rate, what a try that didn't hold taught fades (the scene it ran in passes)
     if (!g_fr.rateSteppedUp) g_fr.rateBias = 1 + (g_fr.rateBias - 1) * kRateBiasKeep;
-    double faster = kmtlSteadyStep(outW, outH, -1, false);
+    double faster = kmtlSteadyStep(main, -1, false);
     if (faster <= 0 || g_fr.frames < g_fr.rateChangedAt + g_fr.rateUpWait) return;
     // The level follows (chooseLevel: down at once if the frames run over), and if even the lowest can't hold the faster
     // rate, the slower one comes back (above)
@@ -188,7 +189,7 @@ static void stepRate(double t) {
         if (expected * g_fr.rateBias > kRateUpShare * kCadenceShare * faster) return;
     }
     g_fr.rateExpected = expected;
-    kmtlSteadyStep(outW, outH, -1, true);
+    kmtlSteadyStep(main, -1, true);
     g_fr.rateChangedAt = g_fr.frames;
     g_fr.ceiling = 0;  // another target: the levels as they come
     g_fr.rateSteppedUp = true;
@@ -282,20 +283,20 @@ static uint32_t lowestLevel(uint32_t width, uint32_t height, uint32_t outW, uint
     return std::min(std::max(lowest, reach), kDynamicParts);
 }
 
-// The hooks, after each rebuild of the main view's targets (and before they are made): its size (0 x 0: none), the
-// display's, and the least size a level may have (0 x 0: the display's rule). Levels only with Dynamic Resolution (and
-// Steady Frame Rate's frame time, with Vsync) or the experiment's level; Steady Frame Rate alone registers the display's
-// size, for its rate's steps (the main view's is then none); without either, nothing changes
-KMTL_EXPORT void ksaMtlFrameRateView(uint32_t width, uint32_t height, uint32_t outW, uint32_t outH, uint32_t leastW,
-                                     uint32_t leastH) {
+// The hooks, after each rebuild of the main view's targets (and before they are made): the main window's swapchain
+// (none: no rate and no levels), the main view's size (0 x 0: none), the display's, and the least size a level may
+// have (0 x 0: the display's rule). Levels only with Dynamic Resolution (and Steady Frame Rate's frame time, with
+// Vsync) or the experiment's level; Steady Frame Rate alone registers the swapchain, for its rate's steps (the main
+// view's size is then none); without either, nothing changes
+KMTL_EXPORT void ksaMtlFrameRateView(VkSwapchainKHR swapchain, uint32_t width, uint32_t height, uint32_t outW,
+                                     uint32_t outH, uint32_t leastW, uint32_t leastH) {
     KTRACE_FIRST();  // with a pool: a level change's command buffer and encoders, from a .NET thread
     std::lock_guard<std::mutex> lock(g_fr.m);
-    g_fr.outW = outW;
-    g_fr.outH = outH;
-    // Steady Frame Rate's, with a swapchain of the display's size to take its frame time from (with Vsync): its rate's
+    g_fr.main = swapchain;
+    // Steady Frame Rate's, with the main window's swapchain to take its frame time from (with Vsync): its rate's
     // steps, and with Dynamic Resolution the levels; or the experiment's level. Vsync turned on later waits for the next
     // rebuild, levels and rate steps alike
-    bool steady = kmtlSteadyFps() && kmtlFrameMs(outW, outH) > 0;
+    bool steady = kmtlSteadyFps() && kmtlFrameMs(swapchain) > 0;
     g_fr.steady = steady;
     if (!settingLevel() && !(steady && kmtlConfig().dynamicResolution)) width = height = 0;
     uint32_t viewW = width, viewH = height;  // for the log: the main view's size even where no level fits below it
@@ -353,8 +354,9 @@ KMTL_EXPORT void ksaMtlFrameRateBeginFrame(uint32_t* width, uint32_t* height, ui
     KTRACE_FIRST();  // as above
     std::lock_guard<std::mutex> lock(g_fr.m);
     g_fr.frames++;
-    // The rate first, whose target the level then follows (also without levels). Without a target (no swapchain of the
-    // display's size: the window's changed before the rebuild): the experiment's level, or the full size
+    // The rate first, whose target the level then follows (also without levels). Without a target (no main swapchain
+    // registered, as after a screenshot's rebuild, Steady Frame Rate off or no cadence): the experiment's level, or the
+    // full size
     if (g_fr.steady && target() > 0) stepRate(target());
     double t = target();
     uint32_t before = parts(kmtlDynamicLevelNow());

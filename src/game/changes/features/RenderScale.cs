@@ -48,6 +48,7 @@ internal static class RenderScale
     private static AccessTools.FieldRef<UboCameraData[]> _cameraData = null!;
     private static AccessTools.FieldRef<ScreenshotCapture, VkExtent2D> _captureExtent = null!;
     private static AccessTools.StructFieldRef<UboCameraData, int> _outputHeight = null!;
+    private static AccessTools.FieldRef<Renderer, VkSwapchainKHR> _swapchain = null!;
 
     public static string Apply(Harmony harmony)
     {
@@ -57,6 +58,8 @@ internal static class RenderScale
         _captureExtent = AccessTools.FieldRefAccess<ScreenshotCapture, VkExtent2D>(Find.Field(typeof(ScreenshotCapture), "_captureExtent"));
         // The camera data's spare int: the window's height, for the shader edits (0: drawn at the window's size)
         _outputHeight = AccessTools.StructFieldRefAccess<UboCameraData, int>(Find.Field(typeof(UboCameraData), "_padding2"));
+        // The main window's swapchain, which the driver's frame rate controller follows
+        _swapchain = AccessTools.FieldRefAccess<Renderer, VkSwapchainKHR>(Find.Field(typeof(Renderer), "_swapchain"));
         Upscale.Configure();
         var renderSize = new HarmonyMethod(typeof(RenderScale), nameof(RenderSizeTranspiler));
         harmony.Patch(Find.Method(typeof(Renderer), nameof(Renderer.Rebuild)),
@@ -127,11 +130,11 @@ internal static class RenderScale
         Scaled = render != Window;
         _ours = new VkExtent2D(render.X, render.Y);
         __instance.ExtentOverride = _ours;
-        // Through MetalFX, which takes the size drawn each frame (without it, the display's size alone, for Steady Frame
-        // Rate's steps). With Spatial, which keeps no history to fill in, the levels go no lower than half the window,
+        // The main window's swapchain, whose cadence Steady Frame Rate steps; through MetalFX the size drawn each frame
+        // (without it, the swapchain alone, for the rate's steps). With Spatial, which keeps no history to fill in, the levels go no lower than half the window,
         // the Performance card's size before dynamic resolution
-        DynamicResolution.Register(Upscale.Wanted && Upscalable(_ours.Value) ? render : int2.Zero, Output,
-            Upscale.Spatial ? new int2((Window.X + 1) / 2, (Window.Y + 1) / 2) : int2.Zero);
+        DynamicResolution.Register(_swapchain(__instance), Upscale.Wanted && Upscalable(_ours.Value) ? render : int2.Zero,
+            Output, Upscale.Spatial ? new int2((Window.X + 1) / 2, (Window.Y + 1) / 2) : int2.Zero);
     }
 
     // The main view's composite stretches the render size to the swapchain
