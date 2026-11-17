@@ -148,7 +148,7 @@ KMTL_EXPORT void ksaMtlEarlyFragmentTests(bool on);
 KMTL_EXPORT void ksaMtlHdrNits(float uiBrightness, float peak);
 
 // ---------------------------------------------------------------------------------------------------------------
-// Dynamic resolution's mechanism (resources/dynres.mm). C#: src/game/changes/features/DynamicResolution.cs
+// Dynamic resolution's mechanism (resources/dynamicresolution.mm). C#: src/game/changes/features/DynamicResolution.cs
 
 // An image's size as its texture has it now (a dynamic image's at the frame's level)
 KMTL_EXPORT void ksaMtlDynamicImageSize(VkImage image, uint32_t* width, uint32_t* height);
@@ -196,7 +196,8 @@ struct VkUpscaleInfoKSA {
     // colour with the light that passes them in alpha, and their own motion (uv now minus uv before, the lowest half
     // where it has none)
     VkImage cloudColor, cloudMotion;
-    // Dynamic resolution (dynres.mm): the size drawn this frame, within the input size the scaler is made for (0: that)
+    // Dynamic resolution (dynamicresolution.mm): the size drawn this frame, within the input size the scaler is made
+    // for (0: that)
     uint32_t contentWidth, contentHeight;
 };
 static_assert(sizeof(VkUpscaleInfoKSA) == 440 && offsetof(VkUpscaleInfoKSA, egoFromClip) == 40 &&

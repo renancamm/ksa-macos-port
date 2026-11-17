@@ -44,11 +44,13 @@ struct KImage {
     // Where its memory is (a memoryless attachment: nil)
     id<MTLHeap> heap = nil;
     VkDeviceSize heapOffset = 0;
-    // Dynamic resolution (dynres.mm): an image the main view's size or a fraction of it, drawn at the frame's level.
-    // mtl is the texture of that level, placed in the same memory as the one at the image's own size (full)
+    // Dynamic resolution (dynamicresolution.mm): an image the main view's size or a fraction of it, drawn at the
+    // frame's level. mtl is the texture of that level, placed in the same memory as the one at the image's own size
+    // (full)
     bool dynamic = false;
     uint32_t level = 0;  // the level mtl has (0: full)
-    // How its size follows the main view's (mainW x mainH at its bind) at a level, each way (dynres.mm, KFraction)
+    // How its size follows the main view's (mainW x mainH at its bind) at a level, each way (dynamicresolution.mm,
+    // KFraction)
     uint32_t mainW = 0, mainH = 0;
     struct KFraction { uint8_t k = 0; bool up = true; } fractionW, fractionH;
     id<MTLTexture> full = nil;
@@ -66,7 +68,8 @@ struct KImageView {
     MTLTextureType viewType = MTLTextureType2D;
     MTLTextureSwizzleChannels swizzle{};
     bool identitySwizzle = true, whole = true;
-    // A view of a dynamic image (dynres.mm), which follows its level: its own flag, as the image may be destroyed first
+    // A view of a dynamic image (dynamicresolution.mm), which follows its level: its own flag, as the image may be
+    // destroyed first
     bool dynamic = false;
     std::vector<id<MTLTexture>> levels;  // by level
 };
@@ -79,7 +82,8 @@ void kmtlDestroyImage(KImage* img);
 MTLCompareFunction kmtlCompare(VkCompareOp op);
 
 // ---------------------------------------------------------------------------------------------------------------
-// Dynamic resolution (dynres.mm): the main view at a level of its size; which level: presentation/framerate.mm
+// Dynamic resolution (dynamicresolution.mm): the main view at a level of its size; which level:
+// presentation/framerate.mm
 constexpr uint32_t kDynamicParts = 64;     // a level is this many parts of the main view's size (0: the full size)
 constexpr uint32_t kDynamicMinLevel = 16;  // the lowest a level can be
 uint32_t kmtlDynamicScaled(uint32_t size, uint32_t level);  // a size at a level, rounded
@@ -193,7 +197,7 @@ struct KDescriptorSet {
     uint32_t destroyedBinding = 0;            // the last of them, for the log
     uint32_t destroyedBytes = 0;
     std::atomic<bool> destroyedReported{false};
-    // Holds a dynamic image's texture (dynres.mm): bound through a copy that takes the frame's level
+    // Holds a dynamic image's texture (dynamicresolution.mm): bound through a copy that takes the frame's level
     std::atomic<bool> levelTextures{false};
     uint64_t* slots() const { return (uint64_t*)base; }
     uint32_t* sizes() const { return (uint32_t*)(base + layout->slotCount * 8); }

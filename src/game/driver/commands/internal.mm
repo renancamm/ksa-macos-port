@@ -178,7 +178,7 @@ void kmtlInternalBlit(KCommandBuffer* cb, KImage* src, KImage* dst, const VkImag
     }
     id<MTLRenderPipelineState> ps = blitPipeline(dev, dst->pixelFormat, variant);
     if (!ps) return;
-    // The textures' sizes: a dynamic image's are its level's (dynres.mm), as the offsets are
+    // The textures' sizes: a dynamic image's are its level's (dynamicresolution.mm), as the offsets are
     float sw = (float)std::max(1u, (uint32_t)src->mtl.width >> sl), sh = (float)std::max(1u, (uint32_t)src->mtl.height >> sl);
     float sd = (float)std::max(1u, src->info.extent.depth >> sl);
     uint32_t dw = std::max(1u, (uint32_t)dst->mtl.width >> dl), dh = std::max(1u, (uint32_t)dst->mtl.height >> dl);

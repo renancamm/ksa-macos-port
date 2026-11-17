@@ -19,15 +19,15 @@ namespace KsaMetal.Hooks.Features;
 
 // Dynamic resolution: the main view drawn at a level of its render size, frame by frame, without rebuilding its
 // targets. KSA Metal gives each image of that size (or a fraction of it) a texture per level in the same memory, and
-// the passes that draw into them, the copies and the shaders' image sizes follow (src/game/driver/resources/dynres.mm;
-// the level's choice: presentation/framerate.mm).
-// What the game works out from the main view's size itself takes the level's size from here: the cameras' screen size
-// and MetalFX's input and jitter (RenderScale, Upscale), and below the sizes that the clouds, the ambient occlusion,
-// the exhausts, the atmosphere and the screen-space particles keep from their last rebuild and pass to their shaders,
-// the cockpit's ray tracing's image sizes and the bloom's last step: all of them, or no level is drawn. The driver
-// picks each frame's level when the frame starts (Program.Render, before the camera data and any of its commands),
-// with Dynamic Resolution by Steady Frame Rate's cadence (or the experiment dynamic_level); without
-// them nothing registers and nothing changes. Steady Frame Rate's rate steps at the same call, with or without MetalFX.
+// the passes that draw into them, the copies and the shaders' image sizes follow
+// (src/game/driver/resources/dynamicresolution.mm; the level's choice: presentation/framerate.mm). What the game works
+// out from the main view's size itself takes the level's size from here: the cameras' screen size and MetalFX's input
+// and jitter (RenderScale, Upscale), and below the sizes that the clouds, the ambient occlusion, the exhausts, the
+// atmosphere and the screen-space particles keep from their last rebuild and pass to their shaders, the cockpit's ray
+// tracing's image sizes and the bloom's last step: all of them, or no level is drawn. The driver picks each frame's
+// level when the frame starts (Program.Render, before the camera data and any of its commands), with Dynamic Resolution
+// by Steady Frame Rate's cadence (or the experiment dynamic_level); without them nothing registers and nothing changes.
+// Steady Frame Rate's rate steps at the same call, with or without MetalFX.
 internal static class DynamicResolution
 {
     // The driver's calls (src/game/driver/exports.h): the Frame Rate section's controller, and dynamic resolution's

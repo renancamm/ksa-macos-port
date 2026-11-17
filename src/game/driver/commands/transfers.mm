@@ -54,8 +54,8 @@ static KBufferImageLayout bufferImageLayout(KImage* img, const VkBufferImageCopy
 
 static uint32_t imageSlice(KImage* img, uint32_t layer) { return img->info.imageType == VK_IMAGE_TYPE_3D ? 0 : layer; }
 
-// Dynamic resolution (dynres.mm): a region the game gives at a dynamic image's own size, at its texture's level, and
-// within that texture's mip level (false: nothing of it there)
+// Dynamic resolution (dynamicresolution.mm): a region the game gives at a dynamic image's own size, at its texture's
+// level, and within that texture's mip level (false: nothing of it there)
 struct KRegion2D {
     int32_t x, y;
     uint32_t w, h;

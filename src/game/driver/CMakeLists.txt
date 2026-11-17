@@ -16,7 +16,7 @@ set(KSA_MTL_DEBUG_MAP ON CACHE BOOL "Keep the debug map (object file paths) in K
 # The driver's sources, one list for its objects and for the entry table, which is made from them
 set(driver_sources
     kmtl.mm setup/config.mm setup/entry.mm setup/instance.mm setup/device.mm
-    resources/memory.mm resources/images.mm resources/queries.mm resources/format.mm resources/descriptor.mm resources/accel.mm resources/dynres.mm
+    resources/memory.mm resources/images.mm resources/queries.mm resources/format.mm resources/descriptor.mm resources/accel.mm resources/dynamicresolution.mm
     commands/encoders.mm commands/state.mm commands/draws.mm commands/passes.mm commands/transfers.mm commands/timestamps.mm commands/accelbuild.mm commands/internal.mm
     pipelines/compile.mm pipelines/pipelines.mm pipelines/rtpipeline.mm
     shaders/modules.mm shaders/mslpatch.cpp shaders/translate.mm shaders/shadercache.mm shaders/corpus.mm shaders/tessspirv.cpp shaders/rtspirv.cpp

@@ -46,7 +46,7 @@ These switches turn a feature off or change a default, to work around a problem 
 | `hdr_output` | off: offer the game no HDR output ([Presentation](#from-vulkan-to-metal)): its HDR settings (Display) stay hidden |
 | `vsync_pacing` | off: with Vsync, the game's wait for an earlier frame ends only when the display shows it ([Presentation](#from-vulkan-to-metal)); in a window, frames that take less than about 23 ms on the GPU then run slower |
 | `steady_frame_rate` | `30`, `40` or `60`, with Vsync: each game frame shown at least that rate's whole refreshes of the display the window is on after the one before, never faster (40 is 30 at 60 Hz; an even count with frame interpolation; one refresh is Vsync's own, unpaced), set again when the window moves to another display; at 40 fps or less with two drawables instead of three, one frame less latency (three with frame interpolation) ([Presentation](#from-vulkan-to-metal)) |
-| `dynamic_resolution` | on, with MetalFX (`upscaling`) and `steady_frame_rate`: the main view drawn at a level of its render size each frame, the highest expected to stay under 90 % of the rate's frame time on the GPU (`presentation/framerate.mm` picks it, `resources/dynres.mm` draws at it; GPU times at the full clock: `presentation/gpuclock.mm`) |
+| `dynamic_resolution` | on, with MetalFX (`upscaling`) and `steady_frame_rate`: the main view drawn at a level of its render size each frame, the highest expected to stay under 90 % of the rate's frame time on the GPU (`presentation/framerate.mm` picks it, `resources/dynamicresolution.mm` draws at it; GPU times at the full clock: `presentation/gpuclock.mm`) |
 | `lower_rate_under_heavy_load` | off, with `steady_frame_rate`: the rate stays, instead of the next slower one when even the lowest level (the full size, without `dynamic_resolution` or room below it) can't hold it, and the faster one back when the lowest is expected to |
 
 ## Build
@@ -377,7 +377,7 @@ starts, how a file keeps its state, the order the driver's locks are taken in, a
 | `resources/format.mm` | Vulkan formats to Metal pixel and vertex formats |
 | `resources/descriptor.mm` | descriptor sets as argument buffers, pipeline layouts |
 | `resources/accel.mm` | acceleration structures for ray queries |
-| `resources/dynres.mm` | dynamic resolution (`dynamic_resolution`; `dynamic_level`, an experiment): the images of the main view's size and its fractions, a texture per level in the same memory, the level's changes |
+| `resources/dynamicresolution.mm` | dynamic resolution (`dynamic_resolution`; `dynamic_level`, an experiment): the images of the main view's size and its fractions, a texture per level in the same memory, the level's changes |
 | `shaders/modules.mm` | shader modules |
 | `shaders/mslpatch.cpp`, `mslpatch.h` | text rewrites of translated MSL: uniform structs read in place, early fragment tests, an override's specialization values, intersectors; a struct's fields (tessellation); the translation's own edits (multiview's layer, arrays of acceleration structures) |
 | `shaders/translate.mm`, `translate.h` | a shader stage's translation from SPIR-V to MSL |
