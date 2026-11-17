@@ -1,6 +1,7 @@
 // The Frame Rate section's controller: Steady Frame Rate's rate, stepped 60 -> 40 -> 30 and back by Lower Rate Under
 // Heavy Load (stepRate), and with Dynamic Resolution the level of its size the main view is drawn at, frame by frame
-// (chooseLevel). The cadence that holds the rate is pacing.mm's; the mechanism that draws at a level, dynres.mm's.
+// (chooseLevel). The cadence that holds the rate is pacing.mm's; the mechanism that draws at a level,
+// dynamicresolution.mm's.
 //
 // The hooks pass the main window's swapchain and the main view's size after each rebuild (ksaMtlFrameRateView) and call
 // in at the start of each of the game's frames, before it records any of it (ksaMtlFrameRateBeginFrame): the rate's
@@ -16,8 +17,8 @@
 // spatial step softens the full level; with Spatial, the hooks' least size (half the window, or 3/4 of the render size
 // where that is lower); the experiment dynamic_level instead (without a target, that level all the time).
 //
-// Levels here are in parts of the main view's size (kDynamicParts: the full size); dynres.mm, the samples and the hooks
-// count the full size as 0 (parts and levelOf convert).
+// Levels here are in parts of the main view's size (kDynamicParts: the full size); dynamicresolution.mm, the samples
+// and the hooks count the full size as 0 (parts and levelOf convert).
 #include "kmtl.h"
 #include <cmath>
 
@@ -85,14 +86,15 @@ struct FrameRateState {
     double rateExpected = 0, rateBias = 1;
     // The last frames' GPU times and levels, as their presents completed: a lock of their own, for completion handlers
     std::mutex samplesMutex;
-    struct Sample { uint32_t level; double ms, measured; };  // level as dynres.mm has it; ms: at the GPU's full clock
+    // A sample: its level as dynamicresolution.mm has it, ms at the GPU's full clock
+    struct Sample { uint32_t level; double ms, measured; };
     Sample samples[kSamples];
     uint32_t sampleCount = 0;
 };
 FrameRateState& g_fr = *new FrameRateState;
 }
 
-// A level as dynres.mm has it (0: the full size) in parts, and back
+// A level as dynamicresolution.mm has it (0: the full size) in parts, and back
 static uint32_t parts(uint32_t level) { return level ? level : kDynamicParts; }
 static uint32_t levelOf(uint32_t parts) { return parts >= kDynamicParts ? 0 : parts; }
 

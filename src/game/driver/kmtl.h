@@ -128,7 +128,7 @@ struct KStallTimer {
 // screenshot and pass dump writers) run on threads of their own. A lock is taken only while every lock held is above it here (outermost
 // first); two locks on the same line are never held together:
 //   1. g_fr.m (presentation/framerate.mm)
-//   2. g_dyn.m (resources/dynres.mm)
+//   2. g_dyn.m (resources/dynamicresolution.mm)
 //   3. KQueue::submitMutex: every commit of recorded work (a submit, a present, a level change, a new image's clear)
 //   4. g_up.m (presentation/upscale.mm), g_rh.m (presentation/rayhistory.mm)
 //   5. g_fi.m (presentation/interpolate.mm)

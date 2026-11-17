@@ -240,8 +240,8 @@ static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uin
         MTLFXTemporalScalerDescriptor* td = [MTLFXTemporalScalerDescriptor new];
         float most = [MTLFXTemporalScalerDescriptor supportedInputContentMaxScaleForDevice:d];
         // With dynamic resolution, the content can shrink to minContent of the input: the temporal scaler's output is
-        // as far as it scales from there (the lowest level's size rounded as dynres.mm rounds it), and the spatial one
-        // takes it the rest of the way
+        // as far as it scales from there (the lowest level's size rounded as dynamicresolution.mm rounds it), and the
+        // spatial one takes it the rest of the way
         uint32_t midW = std::min(outW, std::max(inW, kmtlUpscaleReach((uint32_t)std::round(inW * minContent), most)));
         uint32_t midH = std::min(outH, std::max(inH, kmtlUpscaleReach((uint32_t)std::round(inH * minContent), most)));
         bool rest = midW != outW || midH != outH;

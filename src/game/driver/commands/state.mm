@@ -41,7 +41,7 @@ VKFN(void) vkCmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBind
             bound[idx].layout = l;
         } else {
             // Copy the set and add the dynamic offsets to its buffer addresses; a dynamic image's textures at this
-            // frame's level (dynres.mm), which the set itself keeps from when it was written
+            // frame's level (dynamicresolution.mm), which the set itself keeps from when it was written
             KUploadRing::Place at = cb->ring.alloc(cb->device, s->size);
             memcpy(at.ptr, s->base, s->size);
             auto* slots = (uint64_t*)at.ptr;

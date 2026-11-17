@@ -2,12 +2,13 @@
 // vkCmdRayHistoryKSA (exports.h; the hooks' Upscale.cs). The game traces its lighting images (direct light, indirect
 // light, reflections) from the prepass every frame anew, at a fraction of the render size, and smooths them only in
 // space; with a seed per jittered frame and the jitter moving where each ray starts, they change from frame to frame
-// and MetalFX can't settle on them. Here each image is blended with its own last frames (up to a number of frames per image),
-// reprojected through the motion MetalFX gets, kept only where the surface is the same (its normal and its distance in
-// the last frame) and held within the spread of this frame's pixels around it, so that what moved or changed doesn't
-// trail. The result goes back into the game's image. The history holds the last frame's image at the size it was made at:
-// under dynamic resolution (resources/dynres.mm) a level change carries it to the new size through the same
-// reprojection, read at the last frame's sizes, instead of starting it again (8-16 frames of grain in the cockpit).
+// and MetalFX can't settle on them. Here each image is blended with its own last frames (up to a number of frames per
+// image), reprojected through the motion MetalFX gets, kept only where the surface is the same (its normal and its
+// distance in the last frame) and held within the spread of this frame's pixels around it, so that what moved or
+// changed doesn't trail. The result goes back into the game's image. The history holds the last frame's image at the
+// size it was made at: under dynamic resolution (resources/dynamicresolution.mm) a level change carries it to the new
+// size through the same reprojection, read at the last frame's sizes, instead of starting it again (8-16 frames of
+// grain in the cockpit).
 #import <Metal/Metal.h>
 #include "kmtl.h"
 
@@ -178,7 +179,8 @@ VKFN(void) vkCmdRayHistoryKSA(VkCommandBuffer commandBuffer, const VkRayHistoryI
             continue;
         }
         uint32_t w = (uint32_t)image->mtl.width, h = (uint32_t)image->mtl.height;
-        id<MTLTexture> backing = image->full ? image->full : image->mtl;  // the full size (dynres.mm, at bind)
+        // The full size (dynamicresolution.mm, at bind)
+        id<MTLTexture> backing = image->full ? image->full : image->mtl;
         uint32_t fullW = (uint32_t)backing.width, fullH = (uint32_t)backing.height;
         if (s.w != fullW || s.h != fullH || !s.color[0]) {
             for (int k = 0; k < 2; k++) {

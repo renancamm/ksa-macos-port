@@ -80,7 +80,8 @@ struct KCommandBuffer : KDispatchable {
     // Render pass state
     struct Pass {
         uint32_t width = 0, height = 0;
-        float viewportScale[2] = {1, 1};  // dynamic resolution: the pass's attachments' level (dynres.mm), for viewports and scissors
+        // Dynamic resolution: the pass's attachments' level (dynamicresolution.mm), for viewports and scissors
+        float viewportScale[2] = {1, 1};
         bool active = false;              // a render encoder is open (beginRender to endEncoder)
         KRenderPass* renderPass = nullptr;
         KFramebuffer* framebuffer = nullptr;

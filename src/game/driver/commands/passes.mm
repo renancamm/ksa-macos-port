@@ -70,8 +70,8 @@ static void setAttachmentTexture(MTLRenderPassAttachmentDescriptor* a, KImageVie
     if (a.texture.textureType == MTLTextureType3D) a.depthPlane = v->baseLayer;
 }
 
-// Dynamic resolution (dynres.mm): a pass that draws into dynamic images draws at their level. The viewports and scissors
-// the game sets at the images' own size are scaled by it (state.mm)
+// Dynamic resolution (dynamicresolution.mm): a pass that draws into dynamic images draws at their level. The viewports
+// and scissors the game sets at the images' own size are scaled by it (state.mm)
 static void scaleForAttachment(KCommandBuffer* cb, const KImageView* v, bool* found) {
     if (*found || !v || !v->image || !v->image->dynamic) return;
     *found = true;
