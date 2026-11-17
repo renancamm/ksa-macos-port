@@ -1,7 +1,7 @@
 # KSA Metal (README.md in this folder) -> libvulkan.1.dylib (+ libvulkan.dylib) in KSA_NATIVES_DIR
 #
-# It implements the Vulkan calls KSA makes on top of Metal and takes the place of the Vulkan loader: Brutal, VulkanEx
-# and GLFW find their Vulkan functions in it, and VMA gets them from Brutal. SPIRV-Cross and SPIRV-Tools are linked in
+# It implements the Vulkan calls KSA makes on top of Metal and takes the place of the Vulkan loader: Brutal and GLFW
+# find their Vulkan functions in it, and VMA gets them from Brutal. SPIRV-Cross and SPIRV-Tools are linked in
 # statically; only the Vulkan functions and KSA Metal's own ksaMtl* calls are exported (exports.txt).
 
 # Its own flags instead of CMake's Release ones (-O3 -DNDEBUG). KSA_MTL_OPT changes the optimization level.
