@@ -5,7 +5,9 @@
 // and MetalFX can't settle on them. Here each image is blended with its own last frames (up to a number of frames per image),
 // reprojected through the motion MetalFX gets, kept only where the surface is the same (its normal and its distance in
 // the last frame) and held within the spread of this frame's pixels around it, so that what moved or changed doesn't
-// trail. The result goes back into the game's image.
+// trail. The result goes back into the game's image. The history holds the last frame's image at the size it was made at:
+// under dynamic resolution (resources/dynres.mm) a level change carries it to the new size through the same
+// reprojection, read at the last frame's sizes, instead of starting it again (8-16 frames of grain in the cockpit).
 #import <Metal/Metal.h>
 #include "kmtl.h"
 
@@ -13,7 +15,7 @@ static const char* kHistorySource = R"(
 #include <metal_stdlib>
 using namespace metal;
 struct Params { float4x4 egoFromClip, scene, object, nearby; float4 sphere, body; float2 renderSize, imageSize;
-                float2 lastJitter; float maxFrames; uint history; float clip; float pad[3]; };
+                float2 lastJitter, lastRenderSize, lastImageSize; float maxFrames; uint history; float clip; float pad[3]; };
 kernel void accumulate(texture2d<half, access::read> image [[texture(0)]],
                        depth2d<float, access::sample> depth [[texture(1)]],
                        texture2d<half, access::read> normals [[texture(2)]],
@@ -46,8 +48,10 @@ kernel void accumulate(texture2d<half, access::read> image [[texture(0)]],
     float3 result = float3(now.rgb);
     float frames = 1;
     if (p.history != 0 && prev.w > 0 && isfinite(prev.w)) {
-        // Where the point was in the last frame's image: its plain clip position, moved by the last frame's jitter
-        float2 lastPix = ((prev.xy / prev.w * 0.5 + 0.5) * p.renderSize + p.lastJitter) / scale - 0.5;
+        // Where the point was in the last frame's image: its plain clip position, moved by the last frame's jitter, at
+        // the last frame's sizes
+        float2 lastScale = p.lastRenderSize / p.lastImageSize;
+        float2 lastPix = ((prev.xy / prev.w * 0.5 + 0.5) * p.lastRenderSize + p.lastJitter) / lastScale - 0.5;
         int2 base = int2(floor(lastPix));
         float2 f = lastPix - float2(base);
         float3 sum = 0;
@@ -55,7 +59,7 @@ kernel void accumulate(texture2d<half, access::read> image [[texture(0)]],
         for (int y = 0; y <= 1; y++)
             for (int x = 0; x <= 1; x++) {
                 int2 tap = base + int2(x, y);
-                if (any(tap < 0) || any(tap >= int2(p.imageSize))) continue;
+                if (any(tap < 0) || any(tap >= int2(p.lastImageSize))) continue;
                 float4 g = float4(lastGeometry.read(uint2(tap)));
                 // The same surface: its normal within ~25 degrees, its distance within 4 %
                 if (g.w <= 0 || dot(g.xyz, n) < 0.9 || abs(g.w - prev.w) > 0.04 * prev.w) continue;
@@ -88,7 +92,7 @@ kernel void accumulate(texture2d<half, access::read> image [[texture(0)]],
     outGeometry.write(half4(half3(n), half(viewDepth)), gid);
 }
 // The blended image back into the game's (its alpha as the ray generation wrote it), once every pixel has read its
-// neighbours
+// neighbours; the history may be larger than the image
 kernel void writeBack(texture2d<half, access::read_write> image [[texture(0)]], texture2d<half, access::read> blended [[texture(1)]],
                       uint2 gid [[thread_position_in_grid]]) {
     if (gid.x >= image.get_width() || gid.y >= image.get_height()) return;
@@ -99,19 +103,22 @@ kernel void writeBack(texture2d<half, access::read_write> image [[texture(0)]], 
 // The accumulate kernel's parameters, as kHistorySource's Params
 struct HistoryParams {
     float egoFromClip[16], scene[16], object[16], nearby[16], sphere[4], body[4];
-    float renderSize[2], imageSize[2], lastJitter[2];
+    float renderSize[2], imageSize[2], lastJitter[2], lastRenderSize[2], lastImageSize[2];
     float maxFrames;
     uint32_t history;
     float clip, pad[3];
 };
-static_assert(sizeof(HistoryParams) == 336, "HistoryParams must match kHistorySource's Params");
+static_assert(sizeof(HistoryParams) == 352, "HistoryParams must match kHistorySource's Params");
 
 namespace {
 struct Slot {
+    // At the image's full size: a dynamic image's texture at a level is smaller, and only part of them is used
     id<MTLTexture> color[2] = {nil, nil}, geometry[2] = {nil, nil};
     uint32_t w = 0, h = 0;
     int current = 0;     // which of the two holds the last frame's
     bool valid = false;  // it holds the frame just before
+    // The sizes the last frame's was made at: the image's and the depth's (the render size)
+    uint32_t lastW = 0, lastH = 0, lastRenderW = 0, lastRenderH = 0;
 };
 struct HistoryState {
     std::mutex m;
@@ -171,16 +178,18 @@ VKFN(void) vkCmdRayHistoryKSA(VkCommandBuffer commandBuffer, const VkRayHistoryI
             continue;
         }
         uint32_t w = (uint32_t)image->mtl.width, h = (uint32_t)image->mtl.height;
-        if (s.w != w || s.h != h || !s.color[0]) {
+        id<MTLTexture> backing = image->full ? image->full : image->mtl;  // the full size (dynres.mm, at bind)
+        uint32_t fullW = (uint32_t)backing.width, fullH = (uint32_t)backing.height;
+        if (s.w != fullW || s.h != fullH || !s.color[0]) {
             for (int k = 0; k < 2; k++) {
-                s.color[k] = newTexture(d, MTLPixelFormatRGBA16Float, w, h);
-                s.geometry[k] = newTexture(d, MTLPixelFormatRGBA16Float, w, h);
+                s.color[k] = newTexture(d, MTLPixelFormatRGBA16Float, fullW, fullH);
+                s.geometry[k] = newTexture(d, MTLPixelFormatRGBA16Float, fullW, fullH);
             }
-            s.w = w; s.h = h;
+            s.w = fullW; s.h = fullH;
             s.valid = false;
         }
         if (!s.color[0] || !s.color[1] || !s.geometry[0] || !s.geometry[1]) {
-            KERR_LIMIT(10, "ray history: no %ux%u history for image %d", w, h, i);
+            KERR_LIMIT(10, "ray history: no %ux%u history for image %d", fullW, fullH, i);
             s.color[0] = nil;  // made again next frame
             s.valid = false;
             continue;
@@ -196,6 +205,8 @@ VKFN(void) vkCmdRayHistoryKSA(VkCommandBuffer commandBuffer, const VkRayHistoryI
         p.renderSize[0] = (float)depth->mtl.width; p.renderSize[1] = (float)depth->mtl.height;
         p.imageSize[0] = (float)w; p.imageSize[1] = (float)h;
         p.lastJitter[0] = g_rh.lastJitter[0]; p.lastJitter[1] = g_rh.lastJitter[1];
+        p.lastRenderSize[0] = (float)s.lastRenderW; p.lastRenderSize[1] = (float)s.lastRenderH;
+        p.lastImageSize[0] = (float)s.lastW; p.lastImageSize[1] = (float)s.lastH;
         p.maxFrames = info->maxFrames[i];
         p.clip = info->clip[i];
         p.pad[0] = p.pad[1] = p.pad[2] = 0;
@@ -218,6 +229,8 @@ VKFN(void) vkCmdRayHistoryKSA(VkCommandBuffer commandBuffer, const VkRayHistoryI
         [e setComputePipelineState:g_rh.accumulate];
         s.current = next;
         s.valid = true;
+        s.lastW = w; s.lastH = h;
+        s.lastRenderW = (uint32_t)depth->mtl.width; s.lastRenderH = (uint32_t)depth->mtl.height;
     }
     // The game's compute state must be re-applied on its next dispatch
     cb->bound.computeSetsDirty = ~0u;
