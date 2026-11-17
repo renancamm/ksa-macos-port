@@ -65,7 +65,7 @@ struct KCommandBuffer : KDispatchable {
     id<MTLEvent> resolveEvent = nil;
     uint64_t resolveSignaled = 0, resolveWaited = 0;
     bool passResolves = false;
-    // vkCmdUpscaleKSA (upscale.mm): full barriers around MetalFX
+    // MetalFX's passes (kmtlFxBarrier, upscale.mm): full barriers around its encoders
     id<MTLEvent> fxEvent = nil;
     uint64_t fxValue = 0;
     uint32_t fxSnapshots = 0;  // the stages vkCmdUpscaleSnapshotKSA copied in this recording (a bit each)

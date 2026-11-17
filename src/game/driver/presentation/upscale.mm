@@ -12,9 +12,8 @@
 // temporal upscaler's largest scale (3x on an M5), it upscales as far as it can and MetalFX's spatial upscaler does the
 // rest. With dynamic resolution, the temporal upscaler takes each level's content to the whole output; the spatial one
 // can't, and a level gets a spatial upscaler of its own size. MetalFX gets the game's exposure, which its tonemapping multiplies the image by, instead of estimating one: in
-// dark views its estimate drew faint stars as short streaks and lost a third of them. The same file has the present's
-// MetalFX pass: frame interpolation (KSA_MTL_FRAME_INTERPOLATION), for which the game marks where its UI starts
-// (vkCmdMarkUiKSA).
+// dark views its estimate drew faint stars as short streaks and lost a third of them. Each temporal frame's inputs go
+// to frame interpolation (interpolate.mm).
 #import <MetalFX/MetalFX.h>
 #include <cmath>
 #include "kmtl.h"
@@ -196,23 +195,7 @@ struct UpscaleState {
     id<MTLTexture> exposureTex = nil, previousExposureTex = nil;
     float exposure = 0;
     id<MTLTexture> snapshots[3] = {nil, nil, nil};  // vkCmdUpscaleSnapshotKSA's stages: before the effects, before the bloom, after it
-    // KSA_MTL_FRAME_INTERPOLATION=1: the last upscale's inputs, for a frame interpolated at present
-    id<MTLFXFrameInterpolator> interpolator = nil;
-    id<MTLTexture> frameDepth = nil, interpolated = nil;
-    // vkCmdMarkUiKSA: the scene without the UI, this frame's and the last one's
-    id<MTLTexture> scene = nil, prevScene = nil;
-    uint64_t sceneSerial = 0;
-    bool prevSceneValid = false;  // prevScene holds the frame before (no gap, no new interpolator)
-    float frameJitter[2] = {0, 0}, fovY = 1, nearPlane = 0.1f, farPlane = 1e11f, deltaTime = 0.016f;
-    uint64_t frameSerial = 0, presentedSerial = 0;
-    // The barriers around the interpolator in the present's command buffer, and its KSA_MTL_FX_SHOTS count
-    id<MTLEvent> presentEvent = nil;
-    uint64_t presentEventValue = 0, fxShotCount = 0;
-    bool frameReset = true;
     bool failed = false;  // the kernels didn't compile
-    // The input and output MetalFX made no interpolator for (0: none)
-    uint64_t interpolatorFailed = 0;
-    MTLPixelFormat interpolatorFailedFormat = MTLPixelFormatInvalid;
 };
 UpscaleState& g_up = *new UpscaleState;  // never destroyed: releasing a scaler at exit aborts in MetalFX's MPSGraph teardown
 }
@@ -361,16 +344,16 @@ static id<MTLFXSpatialScaler> spatialFor(id<MTLDevice> d, uint32_t cw, uint32_t 
 }
 
 // Everything encoded before it finishes before anything encoded after it starts: a signal and a wait on an event
-static void eventBarrier(id<MTLCommandBuffer> cb, id<MTLEvent> event, uint64_t* value) {
+void kmtlEventBarrier(id<MTLCommandBuffer> cb, id<MTLEvent> event, uint64_t* value) {
     [cb encodeSignalEvent:event value:++*value];
     [cb encodeWaitForEvent:event value:*value];
 }
 
 // Everything before the upscaler finishes before it starts, and it finishes before anything after it: the game's
 // images are untracked, and MetalFX's own encoders can't wait on KSA Metal's fences
-static void fullBarrier(KCommandBuffer* cb) {
+void kmtlFxBarrier(KCommandBuffer* cb) {
     if (!cb->fxEvent) cb->fxEvent = [cb->device->mtl newEvent];
-    eventBarrier(cb->mtl, cb->fxEvent, &cb->fxValue);
+    kmtlEventBarrier(cb->mtl, cb->fxEvent, &cb->fxValue);
     // The encoders around it are MetalFX's own: a timestamp after them waits through its own event (stampTimestamp)
     cb->stampedLast = false;
 }
@@ -479,7 +462,7 @@ static void keepLastImage(KCommandBuffer* cb, const VkUpscaleInfoKSA* info, id<M
     b.label = @"upscale last image";
     [b copyFromTexture:color toTexture:g_up.lastColor];
     [b endEncoding];
-    fullBarrier(cb);
+    kmtlFxBarrier(cb);
     g_up.lastJitter[0] = info->jitterX; g_up.lastJitter[1] = info->jitterY;
     g_up.lastW = cw; g_up.lastH = ch;
 }
@@ -516,7 +499,7 @@ static id<MTLTexture> exposureTexture(id<MTLDevice> d, float value) {
 }
 
 // MetalFX Temporal, and past its largest scale the spatial scaler the rest of the way (g_up.m held); the frame's inputs
-// kept for frame interpolation at present
+// handed to frame interpolation (kmtlInterpolateTakeFrame, interpolate.mm)
 static void encodeTemporal(KCommandBuffer* cb, const VkUpscaleInfoKSA* info, id<MTLTexture> color, id<MTLTexture> depth,
                            id<MTLTexture> out, uint32_t cw, uint32_t ch) {
     g_up.temporal.colorTexture = color;
@@ -535,18 +518,14 @@ static void encodeTemporal(KCommandBuffer* cb, const VkUpscaleInfoKSA* info, id<
     g_up.temporal.exposureTexture = exposureTexture(cb->device->mtl, info->exposure);
     [g_up.temporal encodeToCommandBuffer:cb->mtl];
     if (g_up.rest) {
-        fullBarrier(cb);
+        kmtlFxBarrier(cb);
         g_up.rest.colorTexture = g_up.restTex;
         g_up.rest.outputTexture = out;
         g_up.rest.inputContentWidth = g_up.restTex.width;
         g_up.rest.inputContentHeight = g_up.restTex.height;
         [g_up.rest encodeToCommandBuffer:cb->mtl];
     }
-    g_up.frameDepth = depth;
-    g_up.frameJitter[0] = info->jitterX; g_up.frameJitter[1] = info->jitterY;
-    g_up.fovY = info->fovY; g_up.nearPlane = info->nearPlane; g_up.farPlane = info->farPlane; g_up.deltaTime = info->deltaTime;
-    g_up.frameReset = (info->flags & kUpscaleReset) != 0;
-    g_up.frameSerial++;
+    kmtlInterpolateTakeFrame(depth, g_up.motionTex, g_up.inW, g_up.inH, info);
 }
 
 VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA* info) {
@@ -577,7 +556,7 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
     if (!ready && !g_up.stretch) return;
     cb->endEncoder();
     cb->waitForAllResolves();
-    fullBarrier(cb);
+    kmtlFxBarrier(cb);
     if (!ready) {
         encodeStretch(cb, color->mtl, out->mtl, cw, ch);
     } else if (spatial) {
@@ -585,16 +564,16 @@ VKFN(void) vkCmdUpscaleKSA(VkCommandBuffer commandBuffer, const VkUpscaleInfoKSA
     } else {
         bool clouds = false;
         MotionParams p = encodeMotion(cb, info, color, depth, cw, ch, haveLast, &clouds);
-        fullBarrier(cb);
+        kmtlFxBarrier(cb);
         keepLastImage(cb, info, color->mtl, clouds, cw, ch);
         if (kmtlConfig().fxDebug && g_up.debugView) {
             encodeDebugView(cb, depth->mtl, out->mtl, p);
-            fullBarrier(cb);
+            kmtlFxBarrier(cb);
             return;
         }
         encodeTemporal(cb, info, color->mtl, depth->mtl, out->mtl, cw, ch);
     }
-    fullBarrier(cb);
+    kmtlFxBarrier(cb);
 }
 
 // stage 0: before the translucent effects, 1: before the bloom, 2: after it
@@ -611,12 +590,12 @@ VKFN(void) vkCmdUpscaleSnapshotKSA(VkCommandBuffer commandBuffer, VkImage image,
     }
     cb->endEncoder();
     cb->waitForAllResolves();
-    fullBarrier(cb);
+    kmtlFxBarrier(cb);
     id<MTLBlitCommandEncoder> b = [cb->mtl blitCommandEncoder];
     b.label = @"upscale snapshot";
     [b copyFromTexture:src toTexture:snapshot];
     [b endEncoding];
-    fullBarrier(cb);
+    kmtlFxBarrier(cb);
     cb->fxSnapshots |= 1u << stage;
 }
 
@@ -639,124 +618,4 @@ uint32_t kmtlUpscaleReach(uint32_t content, float most) {
 
 KMTL_EXPORT float ksaMtlUpscaleMaxScale() {
     return kmtlUpscaleMaxScale();
-}
-
-// For frame interpolation: the game calls it inside its final pass, between the composited scene and the UI. The pass
-// is suspended (its attachments stored), the colour attachment copied, and the pass resumed.
-VKFN(void) vkCmdMarkUiKSA(VkCommandBuffer commandBuffer) {
-    KTRACE_FIRST();
-    auto* cb = (KCommandBuffer*)commandBuffer;
-    if (!kmtlConfig().frameInterpolation || !cb->inRenderPass || !cb->passDesc) return;
-    id<MTLTexture> src = cb->passDesc.colorAttachments[0].texture;
-    if (!src || src.sampleCount > 1 || src.storageMode == MTLStorageModeMemoryless) return;
-    std::lock_guard<std::mutex> lock(g_up.m);
-    if (!g_up.scene || g_up.scene.width != src.width || g_up.scene.height != src.height || g_up.scene.pixelFormat != src.pixelFormat) {
-        MTLTextureDescriptor* d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:src.pixelFormat width:src.width
-                                                                                   height:src.height mipmapped:NO];
-        d.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite | MTLTextureUsageRenderTarget;
-        d.storageMode = MTLStorageModePrivate;
-        g_up.scene = [cb->device->mtl newTextureWithDescriptor:d];
-        g_up.prevScene = [cb->device->mtl newTextureWithDescriptor:d];
-        g_up.sceneSerial = 0;
-    }
-    cb->suspendRender();
-    fullBarrier(cb);
-    id<MTLBlitCommandEncoder> b = [cb->mtl blitCommandEncoder];
-    b.label = @"scene before the UI";
-    [b copyFromTexture:src toTexture:g_up.scene];
-    [b endEncoding];
-    fullBarrier(cb);
-    cb->resumeRender();
-    g_up.sceneSerial = g_up.frameSerial;
-}
-
-// KSA_MTL_FRAME_INTERPOLATION=1: a frame between the last presented one and this one, from the scenes without the UI
-// (vkCmdMarkUiKSA) and the motion and depth of this frame's upscale; MetalFX takes this frame's UI from the presented
-// image, which has it composited, and draws it on top. Returns the texture to present first, or nil.
-id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<MTLTexture> color) {
-    std::lock_guard<std::mutex> lock(g_up.m);
-    if (!g_up.temporal || !g_up.frameDepth || g_up.frameSerial == g_up.presentedSerial) return nil;
-    g_up.presentedSerial = g_up.frameSerial;
-    // Not at a dynamic resolution's lower level: the interpolator takes no smaller content
-    if (g_up.frameDepth.width != g_up.inW || g_up.frameDepth.height != g_up.inH) {
-        g_up.prevSceneValid = false;
-        return nil;
-    }
-    // Without this frame's scene (no UI mark: a loading screen), no frame in between, and no history for the next
-    if (!g_up.scene || g_up.sceneSerial != g_up.frameSerial || g_up.scene.width != color.width ||
-        g_up.scene.height != color.height || g_up.scene.pixelFormat != color.pixelFormat) {
-        g_up.prevSceneValid = false;
-        return nil;
-    }
-    id<MTLDevice> d = dev->mtl;
-    if (!g_up.interpolator || g_up.interpolator.outputWidth != color.width || g_up.interpolator.outputHeight != color.height ||
-        g_up.interpolator.inputWidth != g_up.inW || g_up.interpolator.colorTextureFormat != color.pixelFormat) {
-        uint64_t sizes = (uint64_t)g_up.inW << 40 | (uint64_t)color.width << 20 | color.height;
-        if (g_up.interpolatorFailed == sizes && g_up.interpolatorFailedFormat == color.pixelFormat) return nil;
-        MTLFXFrameInterpolatorDescriptor* fd = [MTLFXFrameInterpolatorDescriptor new];
-        fd.colorTextureFormat = color.pixelFormat;
-        fd.outputTextureFormat = color.pixelFormat;
-        fd.depthTextureFormat = MTLPixelFormatDepth32Float;
-        fd.motionTextureFormat = MTLPixelFormatRG16Float;
-        fd.uiTextureFormat = color.pixelFormat;
-        fd.inputWidth = g_up.inW; fd.inputHeight = g_up.inH;
-        fd.outputWidth = color.width; fd.outputHeight = color.height;
-        g_up.interpolator = [fd newFrameInterpolatorWithDevice:d];
-        MTLTextureDescriptor* td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:color.pixelFormat width:color.width
-                                                                                    height:color.height mipmapped:NO];
-        td.storageMode = MTLStorageModePrivate;
-        td.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite | MTLTextureUsageRenderTarget;
-        g_up.interpolated = [d newTextureWithDescriptor:td];
-        if (!g_up.interpolator) {
-            KERR("frame interpolation: interpolator %ux%u -> %lux%lu not created", g_up.inW, g_up.inH, (unsigned long)color.width,
-                 (unsigned long)color.height);
-            g_up.interpolatorFailed = sizes;
-            g_up.interpolatorFailedFormat = color.pixelFormat;
-            return nil;
-        }
-        KLOG(0, "frame interpolation: %ux%u motion -> %lux%lu frames", g_up.inW, g_up.inH, (unsigned long)color.width,
-             (unsigned long)color.height);
-        g_up.prevSceneValid = false;
-    }
-    if (!g_up.presentEvent) g_up.presentEvent = [d newEvent];
-    id<MTLTexture> result = nil;
-    eventBarrier(cb, g_up.presentEvent, &g_up.presentEventValue);
-    if (!g_up.frameReset && g_up.prevSceneValid) {
-        id<MTLFXFrameInterpolator> fi = g_up.interpolator;
-        fi.colorTexture = g_up.scene;
-        fi.prevColorTexture = g_up.prevScene;
-        fi.uiTexture = color;
-        fi.uiTextureComposited = YES;
-        fi.depthTexture = g_up.frameDepth;
-        fi.motionTexture = g_up.motionTex;
-        fi.motionVectorScaleX = 1.f;
-        fi.motionVectorScaleY = 1.f;
-        fi.deltaTime = g_up.deltaTime;
-        fi.nearPlane = g_up.nearPlane;
-        fi.farPlane = g_up.farPlane;
-        fi.fieldOfView = g_up.fovY * 57.29578f;
-        fi.aspectRatio = (float)color.width / (float)color.height;
-        fi.jitterOffsetX = g_up.frameJitter[0];
-        fi.jitterOffsetY = g_up.frameJitter[1];
-        fi.shouldResetHistory = NO;
-        fi.depthReversed = YES;
-        fi.outputTexture = g_up.interpolated;
-        [fi encodeToCommandBuffer:cb];
-        eventBarrier(cb, g_up.presentEvent, &g_up.presentEventValue);
-        result = g_up.interpolated;
-        // KSA_MTL_FX_SHOTS=<dir>: every 300th interpolated frame, with the scenes around it and this frame as shown
-        const char* shotDir = kmtlConfig().fxShots;
-        if (shotDir && ++g_up.fxShotCount % 300 == 0) {
-            id<MTLTexture> texs[4] = {g_up.prevScene, g_up.interpolated, g_up.scene, color};
-            const char* names[4] = {"a_prev_scene", "b_interpolated", "c_scene", "d_shown"};
-            for (int i = 0; i < 4; i++)
-                kmtlSavePNG(cb, texs[i], nil, std::string(shotDir) + "/fi_" + std::to_string(g_up.fxShotCount) + "_" + names[i] + ".png");
-        }
-    }
-    g_up.prevSceneValid = true;
-    id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
-    [b copyFromTexture:g_up.scene toTexture:g_up.prevScene];
-    [b endEncoding];
-    eventBarrier(cb, g_up.presentEvent, &g_up.presentEventValue);
-    return result;
 }

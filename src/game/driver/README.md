@@ -396,9 +396,12 @@ starts, how a file keeps its state, the order the driver's locks are taken in, a
 | `commands/accelbuild.mm` | acceleration structure builds |
 | `commands/internal.mm` | the driver's own shaders: buffer fills, scaled blits, tessellation helpers |
 | `presentation/surface.mm` | surfaces: presentation support, extent and capabilities, formats (HDR10 with EDR), present modes |
-| `presentation/swapchain.mm` | swapchain and presentation: pacing, HDR, frame interpolation at present, latency |
+| `presentation/swapchain.mm` | swapchains and the present: frame interpolation's frame first, the image into a drawable |
+| `presentation/pacing.mm` | present pacing: Steady Frame Rate's cadence and steps, the present wait, late frame start, latency |
+| `presentation/hdr.mm` | HDR output: the layer in HDR10 with EDR, its metadata, the game's brightness settings |
 | `presentation/frametime.mm` | the frames' timing: presents counted, the GPU's busy time, what the display showed |
-| `presentation/upscale.mm` | MetalFX: upscaling, motion vectors, frame interpolation |
+| `presentation/upscale.mm` | MetalFX: upscaling, motion vectors, the scene's snapshots; the helpers MetalFX's passes share (barriers, private textures, kernels) |
+| `presentation/interpolate.mm` | MetalFX: frame interpolation at present, the scene before the UI (`vkCmdMarkUiKSA`) |
 | `presentation/rayhistory.mm` | MetalFX: the cockpit's ray-traced lighting with a history of its own |
 | `presentation/gpuclock.mm` | the GPU's clock from IOReport, for the frame rate's GPU times under paced frames |
 | `presentation/framerate.mm` | the Frame Rate section's controller: Steady Frame Rate's rate steps (`lower_rate_under_heavy_load`) and dynamic resolution's level each frame |

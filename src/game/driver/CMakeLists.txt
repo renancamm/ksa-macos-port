@@ -39,7 +39,7 @@ add_library(ksa-metal-objects OBJECT
     commands/encoders.mm commands/state.mm commands/draws.mm commands/passes.mm commands/transfers.mm commands/timestamps.mm commands/accelbuild.mm commands/internal.mm
     pipelines/compile.mm pipelines/pipelines.mm pipelines/rtpipeline.mm
     shaders/modules.mm shaders/mslpatch.cpp shaders/translate.mm shaders/shadercache.mm shaders/corpus.mm shaders/tessspirv.cpp shaders/rtspirv.cpp
-    presentation/surface.mm presentation/swapchain.mm presentation/frametime.mm presentation/gpuclock.mm presentation/upscale.mm presentation/rayhistory.mm presentation/framerate.mm
+    presentation/surface.mm presentation/swapchain.mm presentation/pacing.mm presentation/hdr.mm presentation/frametime.mm presentation/gpuclock.mm presentation/upscale.mm presentation/interpolate.mm presentation/rayhistory.mm presentation/framerate.mm
     diagnostics/instruments.mm diagnostics/drain.mm diagnostics/passdump.mm diagnostics/watch.mm diagnostics/zones.mm)
 set_target_properties(ksa-metal-objects PROPERTIES
     CXX_STANDARD 17

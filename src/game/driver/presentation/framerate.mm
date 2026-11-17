@@ -1,6 +1,6 @@
 // The Frame Rate section's controller: Steady Frame Rate's rate, stepped 60 -> 40 -> 30 and back by Lower Rate Under
 // Heavy Load (stepRate), and with Dynamic Resolution the level of its size the main view is drawn at, frame by frame
-// (chooseLevel). The cadence that holds the rate is swapchain.mm's; the mechanism that draws at a level, dynres.mm's.
+// (chooseLevel). The cadence that holds the rate is pacing.mm's; the mechanism that draws at a level, dynres.mm's.
 //
 // The hooks pass the main view's size after each rebuild (ksaMtlFrameRateView) and call in at the start of each of
 // the game's frames, before it records any of it (ksaMtlFrameRateBeginFrame): the rate's step, then the level,

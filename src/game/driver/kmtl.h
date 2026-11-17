@@ -127,19 +127,20 @@ struct KStallTimer {
 //   2. g_dyn.m (resources/dynres.mm)
 //   3. KQueue::submitMutex: every commit of recorded work (a submit, a present, a level change, a new image's clear)
 //   4. g_up.m (presentation/upscale.mm), g_rh.m (presentation/rayhistory.mm)
-//   5. g_frameMutex (diagnostics/instruments.mm)
-//   6. KPresentState::m (presentation/swapchain.mm)
-//   7. g_setsMutex (resources/descriptor.mm)
-//   8. KDevice::residencyMutex
-//   9. g_mutex (diagnostics/passdump.mm)
-//  10. the rest, under which nothing but the log's is taken: g_swapchainsMutex, g_latencyMutex, g_hdrMutex
-//      (presentation/swapchain.mm), g_fr.samplesMutex (presentation/framerate.mm), g_ft.m
-//      (presentation/frametime.mm), g_drainMutex (diagnostics/drain.mm), g_ts.m (commands/timestamps.mm),
+//   5. g_fi.m (presentation/interpolate.mm)
+//   6. g_frameMutex (diagnostics/instruments.mm)
+//   7. KPresentState::m (presentation/pacing.mm)
+//   8. g_setsMutex (resources/descriptor.mm)
+//   9. KDevice::residencyMutex
+//  10. g_mutex (diagnostics/passdump.mm)
+//  11. the rest, under which nothing but the log's is taken: g_swapchainsMutex, g_latencyMutex
+//      (presentation/pacing.mm), g_hdrMutex (presentation/hdr.mm), g_fr.samplesMutex (presentation/framerate.mm),
+//      g_ft.m (presentation/frametime.mm), g_drainMutex (diagnostics/drain.mm), g_ts.m (commands/timestamps.mm),
 //      g_recentMutex (shaders/shadercache.mm), g_addrMutex (resources/accel.mm), KDevice::libraryMutex and its
 //      entries' m, KDevice::fanMutex, KDevice::tessScratchMutex, KInternalPipelines::m, KFence::m, KQueryPool::m,
 //      KPipeline::Pending::m
-//  11. the log's (kmtlLog), innermost: any of them may log
-// A handler takes only locks from 6 on, and holds the driver's state it uses by a shared pointer (KPresentState) or
+//  12. the log's (kmtlLog), innermost: any of them may log
+// A handler takes only locks from 7 on, and holds the driver's state it uses by a shared pointer (KPresentState) or
 // a copy, never an object the game may destroy before the work completes (a KSwapchain, a KCommandBuffer); a fence
 // or a query pool, which Vulkan keeps until then, by pointer. Core Animation runs
 // presented handlers while it holds the drawable's lock, which addPresentedHandler takes too: a presented handler is

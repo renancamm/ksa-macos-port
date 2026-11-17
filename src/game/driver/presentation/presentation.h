@@ -6,18 +6,18 @@
 // Surface and swapchain
 struct KSurface {
     CAMetalLayer* layer = nil;
-    bool hdr = false;                         // the layer shows HDR10 with EDR (swapchain.mm)
+    bool hdr = false;                         // the layer shows HDR10 with EDR (hdr.mm)
     CGColorSpaceRef sdrColorspace = nullptr;  // the layer's colour space before, given back for SDR
 };
 
-// HDR output (swapchain.mm): whether the display the layer's window is on can show more than SDR white; the surface's
+// HDR output (hdr.mm): whether the display the layer's window is on can show more than SDR white; the surface's
 // layer set up for HDR10 or given back its SDR state
 bool kmtlEdrAvailable(CAMetalLayer* layer);
 void kmtlSetHdr(KSurface* surface, bool hdr);
 float kmtlHdrUiBrightness();
 
 // Present ids of a swapchain, waited on by vkWaitForPresentKHR, and the recent presents its pacing looks at
-// (swapchain.mm). Shared with the presents' handlers, which may run after the swapchain is destroyed
+// (pacing.mm). Shared with the presents' handlers, which may run after the swapchain is destroyed
 struct KPresentState {
     struct Frame { uint64_t present, id; double made, gpuEnd; bool gpuDone, shown; };
     std::mutex m;
@@ -51,15 +51,27 @@ struct KSwapchain {
     std::vector<double> steadySteps;
     size_t steadyStep = 0;
     double refreshHz = 0;
-    NSArray* observers = nil;  // display changes that set the cadence again (swapchain.mm)
+    NSArray* observers = nil;  // display changes that set the cadence again (pacing.mm)
 };
+
+// pacing.mm, for swapchain.mm: a new swapchain's cadence and drawables (again at each change of its display); the live
+// swapchains' list; at a present, the pacing's record of it and its handlers (its present id, its number, whether a
+// screenshot's copy is in its GPU time); a drawable shown after the cadence (interpolated: half of it); the latency
+// log's present
+void kmtlPaceSwapchain(KSwapchain* sc);
+void kmtlListSwapchain(KSwapchain* sc);
+void kmtlUnlistSwapchain(KSwapchain* sc);
+void kmtlPaceAtPresent(KSwapchain* sc, id<MTLCommandBuffer> cb, id<CAMetalDrawable> drawable, uint64_t presentId,
+                       uint64_t counted, bool shot);
+void kmtlPresentPaced(KSwapchain* sc, id<MTLCommandBuffer> cb, id<CAMetalDrawable> d, bool interpolated);
+void kmtlLatencyAtPresent(id<CAMetalDrawable> drawable, id<MTLCommandBuffer> cb);
 
 // The Frame Rate section (framerate.mm): the least share of the main view's size a level may have (1: no levels), for
 // MetalFX's scalers; a frame's GPU time and its swapchain's size as its present completes, for the level's and the
 // rate's choice
 float kmtlFrameRateMinContent();
 void kmtlFrameRateNoteFrame(uint32_t level, double gpuMs, uint32_t width, uint32_t height);
-// swapchain.mm: Steady Frame Rate's rate (0: off); the frame time the cadence holds, of the swapchain of this size (0:
+// pacing.mm: Steady Frame Rate's rate (0: off); the frame time the cadence holds, of the swapchain of this size (0:
 // none); its next step (dir 1: slower, -1: faster) and that step's frame time (0: none), with take taken
 int kmtlSteadyFps();
 double kmtlFrameMs(uint32_t width, uint32_t height);
@@ -73,6 +85,10 @@ id<MTLTexture> kmtlPrivateTexture(id<MTLDevice> d, MTLPixelFormat format, NSUInt
                                   MTLTextureUsage usage);
 std::vector<id<MTLComputePipelineState>> kmtlComputePipelines(id<MTLDevice> d, const char* source,
                                                               std::initializer_list<const char*> names, std::string* error);
+// upscale.mm, for MetalFX's passes: everything encoded before finishes before anything after starts (a signal and a
+// wait on an event); the same around MetalFX's encoders in a command buffer of the game's
+void kmtlEventBarrier(id<MTLCommandBuffer> cb, id<MTLEvent> event, uint64_t* value);
+void kmtlFxBarrier(KCommandBuffer* cb);
 
 // Players' frame timing (frametime.mm): a present counted (its number); from completion handlers, a command buffer's
 // GPU busy time; one frame's GPU busy time in seconds since the last present completed, and since the instruments
@@ -94,5 +110,8 @@ double kmtlGpuClockShare();
 double kmtlGpuClockMhz();
 bool kmtlGpuClockKnown();
 
-// upscale.mm: the present's MetalFX passes
+// interpolate.mm: the present's MetalFX pass, a frame between the last one and this one (the texture to present
+// first, or nil); the upscale's handover of a temporal frame's depth, motion, input size, jitter and camera
 id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<MTLTexture> color);
+void kmtlInterpolateTakeFrame(id<MTLTexture> depth, id<MTLTexture> motion, uint32_t inW, uint32_t inH,
+                              const VkUpscaleInfoKSA* info);

@@ -232,7 +232,7 @@ void kmtlWritePNG(id<MTLBuffer> buf, NSUInteger w, NSUInteger h, bool bgra, cons
     KLOG(0, "screenshot %s: %s", ok ? "written" : "FAILED", path.c_str());
 }
 
-// An HDR10 image (PQ in Rec.2020, swapchain.mm) as an SDR PNG: CoreImage converts it to sRGB with the game's HDR UI
+// An HDR10 image (PQ in Rec.2020, presentation/hdr.mm) as an SDR PNG: CoreImage converts it to sRGB with the game's HDR UI
 // Brightness at white, as macOS shows it; highlights above it clip
 static void writeHdrPNG(id<MTLTexture> tex, const std::string& path) {
     constexpr double kPqReferenceNits = 203;  // 1.0 of CoreImage's PQ colour space (BT.2408's reference white)
@@ -304,7 +304,7 @@ void kmtlSavePNG(id<MTLCommandBuffer> cb, id<MTLTexture> tex, id<MTLFence> after
 }
 
 // Screenshots encoded so far: a present that took one (its frame's GPU time holds the copy) is left out of dynamic
-// resolution's samples (swapchain.mm)
+// resolution's samples (presentation/pacing.mm)
 static std::atomic<uint64_t> g_shotsTaken{0};
 uint64_t kmtlShotsTaken() { return g_shotsTaken.load(std::memory_order_relaxed); }
 

@@ -102,7 +102,7 @@ follows](../hooks/README.md#the-rule-every-hook-follows)).
 | [`upscale.edits`](features/upscale.edits) | MetalFX Temporal: the cockpit's ray tracing seeded by the jitter's frame, which `Upscale` passes, so its light on the walls doesn't flicker |
 | [`window-size.edits`](features/window-size.edits) | the render scale: the sizes that mean pixels on the window use the window's size, which `RenderScale` sets |
 
-The MetalFX entry points are the driver's own ([`../driver/presentation/upscale.mm`](../driver/presentation/upscale.mm)).
+The MetalFX entry points are the driver's own ([`../driver/presentation/`](../driver/presentation/): `upscale.mm`, `interpolate.mm`, `rayhistory.mm`).
 
 ## The shader edits' format
 

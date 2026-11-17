@@ -71,12 +71,12 @@ KMTL_EXPORT void ksaMtlZoneEnd(VkCommandBuffer commandBuffer);
 // The benchmark's drain (diagnostics/drain.mm). C#: src/shared/DriverStats.cs (Parse reads the records)
 //
 //   1 present  at each present (instruments.mm): its time and KsaMtlFrameStats
-//   2 shown    from the drawable's presented handler (presentation/swapchain.mm): when the frame began (the game's wait
+//   2 shown    from the drawable's presented handler (presentation/pacing.mm): when the frame began (the game's wait
 //              for an earlier frame ended), was presented, finished on the GPU and was shown (0: never), how long it
 //              waited for an earlier frame, and whether pacing ended that wait
 //   3 wait     a scope that blocked its caller at least the reader's threshold (KStallTimer, residency commits)
 //   4 memory   an allocation (bytes positive) or a free (negative) of 16 MB or more (resources/memory.mm)
-//   5 gpu      a frame's own GPU time, when its present's command buffer completed (presentation/swapchain.mm): the
+//   5 gpu      a frame's own GPU time, when its present's command buffer completed (presentation/pacing.mm): the
 //              present (as the present record numbers it), when, and the GPU's busy time since the frame before's
 //              present completed. The present record's GPU time is what completed between two presents on the CPU's
 //              clock, which lags by the frames in flight and puts two frames' work in one after a stall
@@ -142,7 +142,7 @@ KMTL_EXPORT void ksaMtlDrainClose();
 KMTL_EXPORT void ksaMtlEarlyFragmentTests(bool on);
 
 // ---------------------------------------------------------------------------------------------------------------
-// HDR output (presentation/swapchain.mm). C#: src/game/changes/fixes/Hdr.cs
+// HDR output (presentation/hdr.mm). C#: src/game/changes/fixes/Hdr.cs
 
 // The game's HDR UI Brightness and HDR Peak Brightness, in nits, whenever it applies its Display settings
 KMTL_EXPORT void ksaMtlHdrNits(float uiBrightness, float peak);
@@ -169,7 +169,7 @@ KMTL_EXPORT void ksaMtlFrameRateSize(uint32_t* width, uint32_t* height, uint32_t
 KMTL_EXPORT void ksaMtlFrameRateBeginFrame(uint32_t* width, uint32_t* height, uint32_t* level);
 
 // ---------------------------------------------------------------------------------------------------------------
-// MetalFX (presentation/upscale.mm, presentation/rayhistory.mm). C#: src/game/changes/features/Upscale.cs;
+// MetalFX (presentation/upscale.mm, interpolate.mm, rayhistory.mm). C#: src/game/changes/features/Upscale.cs;
 // ksaMtlUpscaleMaxScale src/game/hooks/tab/MacPortWidgets.cs
 
 // The main view's image scaled into an image of the swapchain's size, between the game's scene and its final composite.
