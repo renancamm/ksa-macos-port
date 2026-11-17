@@ -339,7 +339,7 @@ void KCommandBuffer::beginRender(MTLRenderPassDescriptor* rp, uint32_t w, uint32
     }
     render = [mtl renderCommandEncoderWithDescriptor:rp];
     if (!render) {
-        KERR("render encoder creation failed (%ux%u)", w, h);
+        KERR_LIMIT(10, "render encoder creation failed (%ux%u)", w, h);
         return;
     }
     waitForRoles(render, roles);
@@ -444,7 +444,7 @@ VKFN(void) vkTrimCommandPool(VkDevice, VkCommandPool, VkCommandPoolTrimFlags) {}
 VKFN(VkResult) vkAllocateCommandBuffers(VkDevice device, const VkCommandBufferAllocateInfo* ai, VkCommandBuffer* out) {
     KTRACE_FIRST();
     auto* p = (KCommandPool*)ai->commandPool;
-    if (ai->level != VK_COMMAND_BUFFER_LEVEL_PRIMARY) KERR("secondary command buffers are not supported");
+    if (ai->level != VK_COMMAND_BUFFER_LEVEL_PRIMARY) KERR_LIMIT(10, "secondary command buffers are not supported");
     for (uint32_t i = 0; i < ai->commandBufferCount; i++) {
         auto* cb = new KCommandBuffer();
         cb->device = (KDevice*)device;
@@ -494,7 +494,7 @@ VKFN(VkResult) vkBeginCommandBuffer(VkCommandBuffer commandBuffer, const VkComma
 VKFN(VkResult) vkEndCommandBuffer(VkCommandBuffer commandBuffer) {
     KTRACE_FIRST();
     auto* cb = (KCommandBuffer*)commandBuffer;
-    if (cb->pass.active) KERR("vkEndCommandBuffer inside a render pass");
+    if (cb->pass.active) KERR_LIMIT(10, "vkEndCommandBuffer inside a render pass");
     // The game closes every zone of a frame: one left open means a zone's end was not seen (the benchmark's postfix
     // missed a call the JIT inlined), and the encoders after it carry the wrong zone's name
     if (!cb->labels.zones.empty())

@@ -13,15 +13,21 @@ set(KSA_MTL_OPT "-O2" CACHE STRING "Optimization flag for KSA Metal")
 # build folder's path. The symbols stay, for crash reports.
 set(KSA_MTL_DEBUG_MAP ON CACHE BOOL "Keep the debug map (object file paths) in KSA Metal")
 
-# The driver's code as objects, which the library and the tests (tests/) both link The entry table that
-# vkGetInstanceProcAddr and vkGetDeviceProcAddr answer from (setup/entry.mm): entries.inc, which
+# The driver's sources, one list for its objects and for the entry table, which is made from them
+set(driver_sources
+    kmtl.mm setup/config.mm setup/entry.mm setup/instance.mm setup/device.mm
+    resources/memory.mm resources/images.mm resources/queries.mm resources/format.mm resources/descriptor.mm resources/accel.mm resources/dynres.mm
+    commands/encoders.mm commands/state.mm commands/draws.mm commands/passes.mm commands/transfers.mm commands/timestamps.mm commands/accelbuild.mm commands/internal.mm
+    pipelines/compile.mm pipelines/pipelines.mm pipelines/rtpipeline.mm
+    shaders/modules.mm shaders/mslpatch.cpp shaders/translate.mm shaders/shadercache.mm shaders/corpus.mm shaders/tessspirv.cpp shaders/rtspirv.cpp
+    presentation/surface.mm presentation/swapchain.mm presentation/pacing.mm presentation/hdr.mm presentation/frametime.mm presentation/gpuclock.mm presentation/upscale.mm presentation/interpolate.mm presentation/rayhistory.mm presentation/framerate.mm
+    diagnostics/instruments.mm diagnostics/drain.mm diagnostics/passdump.mm diagnostics/watch.mm diagnostics/zones.mm)
+
+# The entry table that vkGetInstanceProcAddr and vkGetDeviceProcAddr answer from (setup/entry.mm): entries.inc, which
 # KsaPort.Tools.EntriesGenerator (src/build-tools/entries-generator/) makes from Vulkan's registry, the driver's
 # sources and setup/aliases.txt, written only when it differs
 port_dotnet_tool(ENTRIES_GENERATOR
     "${PROJECT_SOURCE_DIR}/src/build-tools/entries-generator/KsaPort.Tools.EntriesGenerator.csproj")
-file(GLOB_RECURSE driver_sources RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" CONFIGURE_DEPENDS "*.mm" "*.cpp")
-list(FILTER driver_sources EXCLUDE REGEX "^tests/")
-list(TRANSFORM driver_sources PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
 add_custom_command(OUTPUT "${KSA_GENERATED_DIR}/entries.stamp"
     BYPRODUCTS "${KSA_GENERATED_DIR}/entries.inc"
     COMMAND "${DOTNET}" "${ENTRIES_GENERATOR}" "${vulkan_headers_SOURCE_DIR}/registry/vk.xml"
@@ -33,14 +39,8 @@ add_custom_command(OUTPUT "${KSA_GENERATED_DIR}/entries.stamp"
     COMMENT "Making KSA Metal's entry table" VERBATIM)
 add_custom_target(ksa-metal-entries DEPENDS "${KSA_GENERATED_DIR}/entries.stamp")
 
-add_library(ksa-metal-objects OBJECT
-    kmtl.mm setup/config.mm setup/entry.mm setup/instance.mm setup/device.mm
-    resources/memory.mm resources/images.mm resources/queries.mm resources/format.mm resources/descriptor.mm resources/accel.mm resources/dynres.mm
-    commands/encoders.mm commands/state.mm commands/draws.mm commands/passes.mm commands/transfers.mm commands/timestamps.mm commands/accelbuild.mm commands/internal.mm
-    pipelines/compile.mm pipelines/pipelines.mm pipelines/rtpipeline.mm
-    shaders/modules.mm shaders/mslpatch.cpp shaders/translate.mm shaders/shadercache.mm shaders/corpus.mm shaders/tessspirv.cpp shaders/rtspirv.cpp
-    presentation/surface.mm presentation/swapchain.mm presentation/pacing.mm presentation/hdr.mm presentation/frametime.mm presentation/gpuclock.mm presentation/upscale.mm presentation/interpolate.mm presentation/rayhistory.mm presentation/framerate.mm
-    diagnostics/instruments.mm diagnostics/drain.mm diagnostics/passdump.mm diagnostics/watch.mm diagnostics/zones.mm)
+# The driver's code as objects, which the library and the tests (tests/) both link
+add_library(ksa-metal-objects OBJECT ${driver_sources})
 set_target_properties(ksa-metal-objects PROPERTIES
     CXX_STANDARD 17
     CXX_EXTENSIONS OFF

@@ -83,6 +83,7 @@ VKFN(VkResult) vkCreateInstance(const VkInstanceCreateInfo* ci, const VkAllocati
 }
 
 VKFN(void) vkDestroyInstance(VkInstance instance, const VkAllocationCallbacks*) {
+    KTRACE_FIRST_PLAIN();
     auto* inst = (KInstance*)instance;
     if (!inst) return;
     delete inst->physical;
@@ -105,6 +106,7 @@ VKFN(VkResult) vkEnumerateDeviceExtensionProperties(VkPhysicalDevice, const char
 }
 
 VKFN(VkResult) vkEnumerateDeviceLayerProperties(VkPhysicalDevice, uint32_t* count, VkLayerProperties*) {
+    KTRACE_FIRST_PLAIN();
     *count = 0;
     return VK_SUCCESS;
 }
@@ -590,6 +592,7 @@ VKFN(void) vkGetPhysicalDeviceQueueFamilyProperties(VkPhysicalDevice, uint32_t* 
 }
 
 VKFN(void) vkGetPhysicalDeviceQueueFamilyProperties2(VkPhysicalDevice pd, uint32_t* count, VkQueueFamilyProperties2* out) {
+    KTRACE_FIRST_PLAIN();
     VkQueueFamilyProperties props[2];
     uint32_t n = 2;
     vkGetPhysicalDeviceQueueFamilyProperties(pd, &n, props);
@@ -616,6 +619,7 @@ VKFN(void) vkGetPhysicalDeviceMemoryProperties(VkPhysicalDevice pd, VkPhysicalDe
 
 
 VKFN(void) vkGetPhysicalDeviceMemoryProperties2(VkPhysicalDevice pd, VkPhysicalDeviceMemoryProperties2* p) {
+    KTRACE_FIRST_PLAIN();
     vkGetPhysicalDeviceMemoryProperties(pd, &p->memoryProperties);
     if (auto* b = (VkPhysicalDeviceMemoryBudgetPropertiesEXT*)findNext(p->pNext, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT)) {
         memset(b->heapBudget, 0, sizeof(b->heapBudget));

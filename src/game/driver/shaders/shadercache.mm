@@ -82,35 +82,40 @@ void kmtlCacheStore(uint64_t key, const KTranslated& t) {
 }
 
 // Keys used by this run, in first-use order: the next run prewarms them
-static std::mutex g_recentMutex;
-static std::vector<uint64_t> g_recent;
-static std::set<uint64_t> g_recentSet;
-static size_t g_recentFlushed = 0;
+namespace {
+struct RecentKeys {
+    std::mutex m;  // all of it
+    std::vector<uint64_t> keys;  // the keys this run used, in first-use order: the next run prewarms them
+    std::set<uint64_t> seen;     // the same, to find a key fast
+    size_t flushed = 0;  // keys written to the recent list
+};
+RecentKeys& g_recent = *new RecentKeys;
+}  // namespace
 
 void kmtlCacheNoteUsed(uint64_t key) {
     if (cacheDir().empty()) return;
     bool flush;
     {
-        std::lock_guard<std::mutex> lock(g_recentMutex);
-        if (!g_recentSet.insert(key).second) return;
-        g_recent.push_back(key);
+        std::lock_guard<std::mutex> lock(g_recent.m);
+        if (!g_recent.seen.insert(key).second) return;
+        g_recent.keys.push_back(key);
         // Pipelines created after the first in-game frame are added in batches
-        flush = g_recentFlushed && g_recent.size() >= g_recentFlushed + 64;
+        flush = g_recent.flushed && g_recent.keys.size() >= g_recent.flushed + 64;
     }
     if (flush) kmtlCacheFlushRecent();
 }
 
 void kmtlCacheFlushRecent() {
     if (cacheDir().empty()) return;
-    std::lock_guard<std::mutex> lock(g_recentMutex);
+    std::lock_guard<std::mutex> lock(g_recent.m);
     std::string list;
     char line[24];
-    for (uint64_t k : g_recent) {
+    for (uint64_t k : g_recent.keys) {
         snprintf(line, sizeof line, "%016llx\n", (unsigned long long)k);
         list += line;
     }
     if (!kmtlWriteFileAtomically(cacheDir() + "/recent", list)) return;
-    g_recentFlushed = g_recent.size();
+    g_recent.flushed = g_recent.keys.size();
 }
 
 void kmtlShaderPrewarm(KDevice* dev) {

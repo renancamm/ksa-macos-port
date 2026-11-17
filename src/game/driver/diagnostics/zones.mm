@@ -15,21 +15,29 @@
 //                           is named after the zone its first draw or dispatch ran in
 #include "kmtl.h"
 
-static std::atomic<uint32_t> g_zoneMode{kZonesAsTheyCome};
+namespace {
+struct ZoneState {
+    std::atomic<uint32_t> mode{kZonesAsTheyCome};  // how the game's timestamps are answered (ksaMtlZoneMode)
+};
+ZoneState& g_zones = *new ZoneState;
+}  // namespace
 
-uint32_t kmtlZoneMode() { return g_zoneMode.load(std::memory_order_relaxed); }
+uint32_t kmtlZoneMode() { return g_zones.mode.load(std::memory_order_relaxed); }
 
 KMTL_EXPORT bool ksaMtlZoneMode(uint32_t mode) {
+    KTRACE_FIRST_PLAIN();
     if (mode > kZonesSplit || (mode == kZonesSplit && !kmtlConfig().gpuZones)) return false;
-    g_zoneMode = mode;
+    g_zones.mode = mode;
     return true;
 }
 
 KMTL_EXPORT void ksaMtlZoneBegin(VkCommandBuffer commandBuffer, const char* name) {
+    KTRACE_FIRST_PLAIN();
     if (commandBuffer && name) ((KCommandBuffer*)commandBuffer)->labels.zones.push_back(name);
 }
 
 KMTL_EXPORT void ksaMtlZoneEnd(VkCommandBuffer commandBuffer) {
+    KTRACE_FIRST_PLAIN();
     auto* cb = (KCommandBuffer*)commandBuffer;
     if (cb && !cb->labels.zones.empty()) cb->labels.zones.pop_back();
 }

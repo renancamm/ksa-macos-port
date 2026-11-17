@@ -13,12 +13,14 @@ VKFN(VkResult) vkCreateMetalSurfaceEXT(VkInstance, const VkMetalSurfaceCreateInf
 }
 
 VKFN(void) vkDestroySurfaceKHR(VkInstance, VkSurfaceKHR surface, const VkAllocationCallbacks*) {
+    KTRACE_FIRST_PLAIN();
     if (!surface) return;
     kmtlSetHdr((KSurface*)surface, false);
     delete (KSurface*)surface;
 }
 
 VKFN(VkResult) vkGetPhysicalDeviceSurfaceSupportKHR(VkPhysicalDevice, uint32_t family, VkSurfaceKHR, VkBool32* supported) {
+    KTRACE_FIRST_PLAIN();
     *supported = family == 0;  // presentation is on the graphics queue
     return VK_SUCCESS;
 }
@@ -73,6 +75,7 @@ VKFN(VkResult) vkGetPhysicalDeviceSurfaceFormatsKHR(VkPhysicalDevice, VkSurfaceK
 }
 
 VKFN(VkResult) vkGetPhysicalDeviceSurfaceFormats2KHR(VkPhysicalDevice, const VkPhysicalDeviceSurfaceInfo2KHR* info, uint32_t* count, VkSurfaceFormat2KHR* out) {
+    KTRACE_FIRST();
     return kmtlEnumerate(surfaceFormatCount(info->surface), count, out,
                          [](uint32_t i, VkSurfaceFormat2KHR& o) { o.surfaceFormat = kSurfaceFormats[i]; });
 }

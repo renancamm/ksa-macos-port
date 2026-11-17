@@ -99,7 +99,7 @@ VKFN(void) vkCmdBindIndexBuffer(VkCommandBuffer commandBuffer, VkBuffer buffer, 
     cb->bound.indexOffset = buf->offset + offset;
     cb->bound.indexBytes = buf->size > offset ? buf->size - offset : 0;
     cb->bound.indexType = type == VK_INDEX_TYPE_UINT32 ? MTLIndexTypeUInt32 : MTLIndexTypeUInt16;
-    if (type == VK_INDEX_TYPE_UINT8) KERR("8-bit indices not supported");
+    if (type == VK_INDEX_TYPE_UINT8) KERR_LIMIT(10, "8-bit indices not supported");
 }
 
 VKFN(void) vkCmdSetViewport(VkCommandBuffer commandBuffer, uint32_t first, uint32_t count, const VkViewport* vps) {

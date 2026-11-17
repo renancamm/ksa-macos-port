@@ -12,24 +12,29 @@
 // ---------------------------------------------------------------------------------------------------------------
 // Device address -> memory
 
-static std::mutex g_addrMutex;
-static std::map<uint64_t, KDeviceMemory*> g_addrMap;  // whole-buffer gpuAddress -> memory
-static std::unordered_map<uint64_t, KAccel*> g_accels;  // handed-out address -> structure
+namespace {
+struct AccelState {
+    std::mutex m;  // both maps
+    std::map<uint64_t, KDeviceMemory*> memory;      // whole-buffer gpuAddress -> memory
+    std::unordered_map<uint64_t, KAccel*> structures;  // handed-out address -> structure
+};
+AccelState& g_accel = *new AccelState;
+}  // namespace
 
 void kmtlRegisterMemory(KDeviceMemory* m) {
-    std::lock_guard<std::mutex> lock(g_addrMutex);
-    g_addrMap[m->whole.gpuAddress] = m;
+    std::lock_guard<std::mutex> lock(g_accel.m);
+    g_accel.memory[m->whole.gpuAddress] = m;
 }
 
 void kmtlUnregisterMemory(KDeviceMemory* m) {
-    std::lock_guard<std::mutex> lock(g_addrMutex);
-    g_addrMap.erase(m->whole.gpuAddress);
+    std::lock_guard<std::mutex> lock(g_accel.m);
+    g_accel.memory.erase(m->whole.gpuAddress);
 }
 
 static KDeviceMemory* memoryAt(uint64_t addr, NSUInteger* offset) {
-    std::lock_guard<std::mutex> lock(g_addrMutex);
-    auto it = g_addrMap.upper_bound(addr);
-    if (it == g_addrMap.begin()) return nullptr;
+    std::lock_guard<std::mutex> lock(g_accel.m);
+    auto it = g_accel.memory.upper_bound(addr);
+    if (it == g_accel.memory.begin()) return nullptr;
     --it;
     KDeviceMemory* m = it->second;
     if (addr >= it->first + m->size) return nullptr;
@@ -54,14 +59,14 @@ MTLAccelerationStructureDescriptor* kmtlAccelDescriptor(const VkAccelerationStru
             NSUInteger off = 0;
             KDeviceMemory* m = memoryAt(g->geometry.instances.data.deviceAddress + ranges[0].primitiveOffset, &off);
             if (!m || !m->mapped || g->geometry.instances.arrayOfPointers) {
-                KERR("TLAS instances must be an array in host-visible memory (KSA writes them from the CPU)");
+                KERR_LIMIT(10, "TLAS instances must be an array in host-visible memory (KSA writes them from the CPU)");
                 return nil;
             }
             auto* src = (const VkAccelerationStructureInstanceKHR*)((uint8_t*)m->mapped + off);
             id<MTLBuffer> buf = [dev newBufferWithLength:std::max<NSUInteger>(1, count) * sizeof(MTLIndirectAccelerationStructureInstanceDescriptor)
                                                  options:MTLResourceStorageModeShared];
             if (!buf) {
-                KERR("vkCmdBuildAccelerationStructuresKHR: instance buffer of %u instances failed", count);
+                KERR_LIMIT(10, "vkCmdBuildAccelerationStructuresKHR: instance buffer of %u instances failed", count);
                 return nil;
             }
             auto* dst = (MTLIndirectAccelerationStructureInstanceDescriptor*)buf.contents;
@@ -84,12 +89,12 @@ MTLAccelerationStructureDescriptor* kmtlAccelDescriptor(const VkAccelerationStru
                 o.userID = s.instanceCustomIndex;
                 KAccel* blas = nullptr;
                 {
-                    std::lock_guard<std::mutex> lock(g_addrMutex);
-                    auto it = g_accels.find(s.accelerationStructureReference);
-                    if (it != g_accels.end()) blas = it->second;
+                    std::lock_guard<std::mutex> lock(g_accel.m);
+                    auto it = g_accel.structures.find(s.accelerationStructureReference);
+                    if (it != g_accel.structures.end()) blas = it->second;
                 }
                 if (blas) o.accelerationStructureID = blas->mtl.gpuResourceID;
-                else KERR("TLAS instance %u references unknown structure 0x%llx", i, (unsigned long long)s.accelerationStructureReference);
+                else KERR_LIMIT(10, "TLAS instance %u references unknown structure 0x%llx", i, (unsigned long long)s.accelerationStructureReference);
             }
             d.instanceDescriptorBuffer = buf;
             d.instanceDescriptorBufferOffset = 0;
@@ -103,7 +108,7 @@ MTLAccelerationStructureDescriptor* kmtlAccelDescriptor(const VkAccelerationStru
     for (uint32_t i = 0; i < info->geometryCount; i++) {
         const VkAccelerationStructureGeometryKHR* g = info->pGeometries ? &info->pGeometries[i] : info->ppGeometries[i];
         if (g->geometryType != VK_GEOMETRY_TYPE_TRIANGLES_KHR) {
-            KERR("acceleration structure geometry type %d not supported", g->geometryType);
+            KERR_LIMIT(10, "acceleration structure geometry type %d not supported", g->geometryType);
             return nil;
         }
         const auto& t = g->geometry.triangles;
@@ -118,12 +123,12 @@ MTLAccelerationStructureDescriptor* kmtlAccelDescriptor(const VkAccelerationStru
             const auto& r = ranges[i];
             NSUInteger off = 0;
             KDeviceMemory* vm = memoryAt(t.vertexData.deviceAddress, &off);
-            if (!vm) { KERR("BLAS vertex address not found"); return nil; }
+            if (!vm) { KERR_LIMIT(10, "BLAS vertex address not found"); return nil; }
             gd.vertexBuffer = vm->whole;
             gd.vertexBufferOffset = off + (NSUInteger)r.firstVertex * t.vertexStride;
             if (t.indexType != VK_INDEX_TYPE_NONE_KHR) {
                 KDeviceMemory* im = memoryAt(t.indexData.deviceAddress, &off);
-                if (!im) { KERR("BLAS index address not found"); return nil; }
+                if (!im) { KERR_LIMIT(10, "BLAS index address not found"); return nil; }
                 gd.indexBuffer = im->whole;
                 gd.indexBufferOffset = off + r.primitiveOffset;
             } else {
@@ -184,21 +189,22 @@ VKFN(VkResult) vkCreateAccelerationStructureKHR(VkDevice device, const VkAcceler
     // tracing writes that buffer address (not vkGetAccelerationStructureDeviceAddressKHR's) into TLAS instances
     a->address = buf && buf->mtl ? buf->gpuAddress() + ci->offset : a->mtl.gpuResourceID._impl;
     {
-        std::lock_guard<std::mutex> lock(g_addrMutex);
-        g_accels[a->address] = a;
+        std::lock_guard<std::mutex> lock(g_accel.m);
+        g_accel.structures[a->address] = a;
     }
     *out = (VkAccelerationStructureKHR)a;
     return VK_SUCCESS;
 }
 
 VKFN(void) vkDestroyAccelerationStructureKHR(VkDevice device, VkAccelerationStructureKHR as, const VkAllocationCallbacks*) {
+    KTRACE_FIRST();
     auto* a = (KAccel*)as;
     if (!a) return;
     {
-        std::lock_guard<std::mutex> lock(g_addrMutex);
+        std::lock_guard<std::mutex> lock(g_accel.m);
         // A newer structure may already sit at the same buffer address
-        auto it = g_accels.find(a->address);
-        if (it != g_accels.end() && it->second == a) g_accels.erase(it);
+        auto it = g_accel.structures.find(a->address);
+        if (it != g_accel.structures.end() && it->second == a) g_accel.structures.erase(it);
     }
     if (!a->placed) ((KDevice*)device)->removeResident(a->mtl);
     delete a;

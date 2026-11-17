@@ -55,6 +55,7 @@ VKFN(VkResult) vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfo
 }
 
 VKFN(void) vkDestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain, const VkAllocationCallbacks*) {
+    KTRACE_FIRST();
     auto* sc = (KSwapchain*)swapchain;
     if (!sc) return;
     vkDeviceWaitIdle(device);

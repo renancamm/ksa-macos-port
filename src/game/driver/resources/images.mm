@@ -205,6 +205,7 @@ VKFN(VkResult) vkBindImageMemory2(VkDevice, uint32_t n, const VkBindImageMemoryI
 }
 
 VKFN(void) vkGetImageSubresourceLayout(VkDevice, VkImage image, const VkImageSubresource* sub, VkSubresourceLayout* l) {
+    KTRACE_FIRST_PLAIN();
     auto* img = (KImage*)image;
     const KFormatInfo* fi = kmtlFormat(img->format);
     uint32_t w = std::max(1u, img->info.extent.width >> sub->mipLevel);
@@ -392,5 +393,6 @@ VKFN(VkResult) vkCreateSampler(VkDevice device, const VkSamplerCreateInfo* ci, c
 }
 
 VKFN(void) vkDestroySampler(VkDevice, VkSampler sampler, const VkAllocationCallbacks*) {
+    KTRACE_FIRST_PLAIN();
     delete (KSampler*)sampler;
 }

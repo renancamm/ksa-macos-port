@@ -19,12 +19,13 @@ VKFN(void) vkCmdBuildAccelerationStructuresKHR(VkCommandBuffer commandBuffer, ui
         MTLAccelerationStructureDescriptor* d = kmtlAccelDescriptor(&infos[i], nullptr, true, ranges[i], dev->mtl, &instances);
         if (!d || !dst) continue;
         MTLAccelerationStructureSizes s = [dev->mtl accelerationStructureSizesWithDescriptor:d];
-        if (s.accelerationStructureSize > dst->mtl.size) KERR("acceleration structure too small (%lu > %lu)",
-                                                              (unsigned long)s.accelerationStructureSize, (unsigned long)dst->mtl.size);
+        if (s.accelerationStructureSize > dst->mtl.size)
+            KERR_LIMIT(10, "acceleration structure too small (%lu > %lu)", (unsigned long)s.accelerationStructureSize,
+                       (unsigned long)dst->mtl.size);
         id<MTLBuffer> scratch = [dev->mtl newBufferWithLength:std::max<NSUInteger>(s.buildScratchBufferSize, 256)
                                                       options:MTLResourceStorageModePrivate];
         if (!scratch) {
-            KERR("vkCmdBuildAccelerationStructuresKHR: scratch buffer of %lu bytes failed", (unsigned long)s.buildScratchBufferSize);
+            KERR_LIMIT(10, "vkCmdBuildAccelerationStructuresKHR: scratch buffer of %lu bytes failed", (unsigned long)s.buildScratchBufferSize);
             continue;
         }
         [enc buildAccelerationStructure:dst->mtl descriptor:d scratchBuffer:scratch scratchBufferOffset:0];

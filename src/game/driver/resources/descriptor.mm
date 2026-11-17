@@ -21,18 +21,23 @@ static bool isBuffer(VkDescriptorType t) {
 // descriptors to 1 MiB of zeros with size 0, and binding the set logs it. A set's buffer slots hold addresses, so
 // finding them needs no record per descriptor, only a scan for the buffers ever written to one (about 10 us each).
 static constexpr NSUInteger kZeroPageBytes = 1 << 20;
-static std::mutex g_setsMutex;  // the pools' sets and their slots
-static std::vector<KDescriptorPool*> g_pools;
-static id<MTLBuffer> g_zeroPage = nil;
+namespace {
+struct DescriptorState {
+    std::mutex m;  // the pools' sets and their slots
+    std::vector<KDescriptorPool*> pools;  // the live pools, for a destroyed buffer's descriptors
+    id<MTLBuffer> zeroPage = nil;         // where descriptors left on a destroyed buffer point (made at the first)
+};
+DescriptorState& g_desc = *new DescriptorState;
+}  // namespace
 std::atomic<uint64_t> g_zeroPageAddress{0};
 
 static uint64_t zeroPage(KDevice* dev) {
-    if (!g_zeroPage) {
-        g_zeroPage = [dev->mtl newBufferWithLength:kZeroPageBytes options:MTLResourceStorageModeShared | MTLResourceHazardTrackingModeUntracked];
-        g_zeroPage.label = @"zero page";
-        memset(g_zeroPage.contents, 0, kZeroPageBytes);
-        dev->addResident(g_zeroPage);
-        g_zeroPageAddress.store(g_zeroPage.gpuAddress, std::memory_order_release);
+    if (!g_desc.zeroPage) {
+        g_desc.zeroPage = [dev->mtl newBufferWithLength:kZeroPageBytes options:MTLResourceStorageModeShared | MTLResourceHazardTrackingModeUntracked];
+        g_desc.zeroPage.label = @"zero page";
+        memset(g_desc.zeroPage.contents, 0, kZeroPageBytes);
+        dev->addResident(g_desc.zeroPage);
+        g_zeroPageAddress.store(g_desc.zeroPage.gpuAddress, std::memory_order_release);
     }
     return g_zeroPageAddress.load(std::memory_order_relaxed);
 }
@@ -41,8 +46,8 @@ void kmtlForgetBuffer(KBuffer* buf) {
     uint64_t first = buf->gpuAddress();
     if (!first) return;
     uint64_t end = first + buf->size;
-    std::lock_guard<std::mutex> lock(g_setsMutex);
-    for (auto* p : g_pools) {
+    std::lock_guard<std::mutex> lock(g_desc.m);
+    for (auto* p : g_desc.pools) {
         for (auto* s : p->sets) {
             for (const auto& b : s->layout->bindings) {
                 if (!isBuffer(b.type)) continue;
@@ -113,6 +118,7 @@ VKFN(void) vkDestroyDescriptorSetLayout(VkDevice, VkDescriptorSetLayout l, const
 }
 
 VKFN(void) vkGetDescriptorSetLayoutSupport(VkDevice, const VkDescriptorSetLayoutCreateInfo*, VkDescriptorSetLayoutSupport* s) {
+    KTRACE_FIRST_PLAIN();
     s->supported = VK_TRUE;
 }
 
@@ -135,8 +141,8 @@ VKFN(VkResult) vkCreateDescriptorPool(VkDevice device, const VkDescriptorPoolCre
     p->device = dev;
     p->chunkSize = std::max<VkDeviceSize>(cap, 4096);
     {
-        std::lock_guard<std::mutex> lock(g_setsMutex);
-        g_pools.push_back(p);
+        std::lock_guard<std::mutex> lock(g_desc.m);
+        g_desc.pools.push_back(p);
     }
     KLOG(2, "descriptor pool %p: maxSets %u, %llu bytes", p, ci->maxSets, (unsigned long long)cap);
     *out = (VkDescriptorPool)p;
@@ -159,8 +165,8 @@ VKFN(void) vkDestroyDescriptorPool(VkDevice, VkDescriptorPool pool, const VkAllo
     KTRACE_FIRST();
     auto* p = (KDescriptorPool*)pool;
     if (!p) return;
-    std::lock_guard<std::mutex> lock(g_setsMutex);
-    g_pools.erase(std::find(g_pools.begin(), g_pools.end(), p));
+    std::lock_guard<std::mutex> lock(g_desc.m);
+    g_desc.pools.erase(std::find(g_desc.pools.begin(), g_desc.pools.end(), p));
     for (auto* s : p->sets) delete s;
 
     for (auto& c : p->chunks) g_internalBytes -= (int64_t)c.capacity;
@@ -168,8 +174,9 @@ VKFN(void) vkDestroyDescriptorPool(VkDevice, VkDescriptorPool pool, const VkAllo
 }
 
 VKFN(VkResult) vkResetDescriptorPool(VkDevice, VkDescriptorPool pool, VkDescriptorPoolResetFlags) {
+    KTRACE_FIRST_PLAIN();
     auto* p = (KDescriptorPool*)pool;
-    std::lock_guard<std::mutex> lock(g_setsMutex);
+    std::lock_guard<std::mutex> lock(g_desc.m);
     for (auto* s : p->sets) delete s;
     p->sets.clear();
     for (auto& c : p->chunks) c.used = 0;
@@ -190,7 +197,7 @@ static void writeImmutableSamplers(KDescriptorSet* s) {
 VKFN(VkResult) vkAllocateDescriptorSets(VkDevice, const VkDescriptorSetAllocateInfo* ai, VkDescriptorSet* out) {
     KTRACE_FIRST();
     auto* p = (KDescriptorPool*)ai->descriptorPool;
-    std::lock_guard<std::mutex> lock(g_setsMutex);
+    std::lock_guard<std::mutex> lock(g_desc.m);
     for (uint32_t i = 0; i < ai->descriptorSetCount; i++) {
         auto* l = (KSetLayout*)ai->pSetLayouts[i];
         VkDeviceSize size = kmtlAlignUp<VkDeviceSize>(l->bytes(), 64);
@@ -229,7 +236,7 @@ VKFN(VkResult) vkAllocateDescriptorSets(VkDevice, const VkDescriptorSetAllocateI
 VKFN(VkResult) vkFreeDescriptorSets(VkDevice, VkDescriptorPool pool, uint32_t n, const VkDescriptorSet* sets) {
     KTRACE_FIRST();
     auto* p = (KDescriptorPool*)pool;
-    std::lock_guard<std::mutex> lock(g_setsMutex);
+    std::lock_guard<std::mutex> lock(g_desc.m);
     for (uint32_t i = 0; i < n; i++) {
         auto* s = (KDescriptorSet*)sets[i];
         if (!s) continue;
@@ -299,7 +306,7 @@ static void writeOne(KDescriptorSet* s, const KBinding* b, uint32_t elem, VkDesc
 VKFN(void) vkUpdateDescriptorSets(VkDevice, uint32_t writeCount, const VkWriteDescriptorSet* writes, uint32_t copyCount,
                                   const VkCopyDescriptorSet* copies) {
     KTRACE_FIRST();
-    std::lock_guard<std::mutex> lock(g_setsMutex);
+    std::lock_guard<std::mutex> lock(g_desc.m);
     for (uint32_t w = 0; w < writeCount; w++) {
         const auto& wr = writes[w];
         auto* s = (KDescriptorSet*)wr.dstSet;
@@ -316,7 +323,7 @@ VKFN(void) vkUpdateDescriptorSets(VkDevice, uint32_t writeCount, const VkWriteDe
                 b = s->layout->find(++binding);
             }
             if (!b) {
-                KERR("descriptor write past the last binding (set layout %p, binding %u)", s->layout, wr.dstBinding);
+                KERR_LIMIT(10, "descriptor write past the last binding (set layout %p, binding %u)", s->layout, wr.dstBinding);
                 break;
             }
             if (asw) {

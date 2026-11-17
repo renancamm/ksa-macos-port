@@ -145,7 +145,7 @@ VKFN(void) vkCmdCopyImage(VkCommandBuffer commandBuffer, VkImage src, VkImageLay
         // Size-compatible formats: copy through a view of the source in the destination format
         srcTex = [s->mtl newTextureViewWithPixelFormat:d->pixelFormat];
         if (!srcTex) {
-            KERR("vkCmdCopyImage between formats %d and %d unsupported", s->format, d->format);
+            KERR_LIMIT(10, "vkCmdCopyImage between formats %d and %d unsupported", s->format, d->format);
             return;
         }
     }

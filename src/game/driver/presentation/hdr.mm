@@ -12,9 +12,14 @@
 // windows, and its scene and highlights reach up to HDR Peak Brightness, tone-mapped by macOS to what the display has
 // to spare. The game sends the peak with vkSetHdrMetadataEXT and keeps UI brightness to itself, so the hooks pass both
 // in (ksaMtlHdrNits) whenever the game applies its Display settings.
-static std::mutex g_hdrMutex;
-static float g_hdrUiBrightness = 200, g_hdrPeak = 1000, g_hdrMin = 0;  // the game's defaults, until it or the hooks say
-static CAMetalLayer* g_hdrLayer = nil;  // the HDR layer, which the metadata goes to: KSA has one HDR window
+namespace {
+struct HdrState {
+    std::mutex m;  // all of it
+    float uiBrightness = 200, peak = 1000, min = 0;  // the game's defaults, until it or the hooks say
+    CAMetalLayer* layer = nil;  // the HDR layer, which the metadata goes to: KSA has one HDR window
+};
+HdrState& g_hdr = *new HdrState;
+}  // namespace
 
 bool kmtlEdrAvailable(CAMetalLayer* layer) {
     // The display of the window the layer is in (AppKit calls: the game makes surfaces and swapchains on its main
@@ -29,22 +34,22 @@ bool kmtlEdrAvailable(CAMetalLayer* layer) {
     return false;
 }
 
-static void applyHdrMetadata() {  // g_hdrMutex held
-    if (!g_hdrLayer) return;
-    g_hdrLayer.EDRMetadata = [CAEDRMetadata HDR10MetadataWithMinLuminance:g_hdrMin maxLuminance:g_hdrPeak
-                                                       opticalOutputScale:g_hdrUiBrightness];
+static void applyHdrMetadata() {  // g_hdr.m held
+    if (!g_hdr.layer) return;
+    g_hdr.layer.EDRMetadata = [CAEDRMetadata HDR10MetadataWithMinLuminance:g_hdr.min maxLuminance:g_hdr.peak
+                                                       opticalOutputScale:g_hdr.uiBrightness];
 }
 
 void kmtlSetHdr(KSurface* surface, bool hdr) {
     CAMetalLayer* layer = surface->layer;
-    std::lock_guard<std::mutex> lock(g_hdrMutex);
+    std::lock_guard<std::mutex> lock(g_hdr.m);
     if (hdr && !surface->hdr) surface->sdrColorspace = CGColorSpaceRetain(layer.colorspace);
     if (hdr) {
         CGColorSpaceRef pq = CGColorSpaceCreateWithName(kCGColorSpaceITUR_2100_PQ);
         layer.colorspace = pq;
         CGColorSpaceRelease(pq);
         layer.wantsExtendedDynamicRangeContent = YES;
-        g_hdrLayer = layer;
+        g_hdr.layer = layer;
         applyHdrMetadata();
     } else if (surface->hdr) {
         layer.colorspace = surface->sdrColorspace;
@@ -52,22 +57,23 @@ void kmtlSetHdr(KSurface* surface, bool hdr) {
         surface->sdrColorspace = nullptr;
         layer.wantsExtendedDynamicRangeContent = NO;
         layer.EDRMetadata = nil;
-        if (g_hdrLayer == layer) g_hdrLayer = nil;
+        if (g_hdr.layer == layer) g_hdr.layer = nil;
     }
     surface->hdr = hdr;
 }
 
 float kmtlHdrUiBrightness() {
-    std::lock_guard<std::mutex> lock(g_hdrMutex);
-    return g_hdrUiBrightness;
+    std::lock_guard<std::mutex> lock(g_hdr.m);
+    return g_hdr.uiBrightness;
 }
 
 KMTL_EXPORT void ksaMtlHdrNits(float uiBrightness, float peak) {
+    KTRACE_FIRST();
     if (uiBrightness <= 0 || peak <= 0) return;
-    std::lock_guard<std::mutex> lock(g_hdrMutex);
-    if (g_hdrUiBrightness == uiBrightness && g_hdrPeak == peak) return;
-    g_hdrUiBrightness = uiBrightness;
-    g_hdrPeak = peak;
+    std::lock_guard<std::mutex> lock(g_hdr.m);
+    if (g_hdr.uiBrightness == uiBrightness && g_hdr.peak == peak) return;
+    g_hdr.uiBrightness = uiBrightness;
+    g_hdr.peak = peak;
     applyHdrMetadata();
     KLOG(1, "HDR UI brightness %.0f nits, peak %.0f nits", uiBrightness, peak);
 }
@@ -75,8 +81,8 @@ KMTL_EXPORT void ksaMtlHdrNits(float uiBrightness, float peak) {
 VKFN(void) vkSetHdrMetadataEXT(VkDevice, uint32_t count, const VkSwapchainKHR*, const VkHdrMetadataEXT* metadata) {
     KTRACE_FIRST();
     if (!count) return;
-    std::lock_guard<std::mutex> lock(g_hdrMutex);
-    if (metadata[0].maxLuminance > 0) g_hdrPeak = metadata[0].maxLuminance;
-    g_hdrMin = std::max(metadata[0].minLuminance, 0.0f);
+    std::lock_guard<std::mutex> lock(g_hdr.m);
+    if (metadata[0].maxLuminance > 0) g_hdr.peak = metadata[0].maxLuminance;
+    g_hdr.min = std::max(metadata[0].minLuminance, 0.0f);
     applyHdrMetadata();
 }

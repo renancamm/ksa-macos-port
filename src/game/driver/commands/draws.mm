@@ -50,7 +50,7 @@ static id<MTLBuffer> tessScratch(KDevice* dev, uint64_t size) {
     uint64_t len = kmtlAlignUp<uint64_t>(size, 16 << 20);
     id<MTLBuffer> b = [dev->mtl newBufferWithLength:len options:MTLResourceStorageModePrivate | MTLResourceHazardTrackingModeUntracked];
     if (!b) {
-        KERR("tessellation scratch of %llu MB could not be allocated", (unsigned long long)(len >> 20));
+        KERR_LIMIT(10, "tessellation scratch of %llu MB could not be allocated", (unsigned long long)(len >> 20));
         return nil;
     }
     b.label = @"tessellation scratch";

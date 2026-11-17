@@ -46,18 +46,23 @@ struct Item {
     std::string dir, file, line;
 };
 
-std::atomic<int> g_state{Idle};
-std::atomic<uint64_t> g_used{0};
-std::atomic<int> g_pending{0};
-std::atomic<uint32_t> g_sequence{0};
-std::mutex g_mutex;  // the images and the fields below
-std::set<KImage*> g_images;
-std::map<uint64_t, id<MTLBuffer>> g_memory;  // by GPU address
-std::set<std::tuple<KPipeline*, uint64_t, uint32_t>> g_buffersSeen;  // in this pass
-std::string g_dir;
-KSwapchain* g_swapchain = nullptr;
-int g_otherPresents = 0;
-std::chrono::steady_clock::time_point g_started;
+struct PassDumpState {
+    std::mutex m;  // the fields after the atomics
+    // Read without the lock: where the dump is (State), the bytes of copies waiting to be written (kBudgetBytes), the
+    // batches waiting to be written, the files' numbers in the order they were recorded
+    std::atomic<int> state{Idle};
+    std::atomic<uint64_t> used{0};
+    std::atomic<int> pending{0};
+    std::atomic<uint32_t> sequence{0};
+    std::set<KImage*> images;
+    std::map<uint64_t, id<MTLBuffer>> memory;  // by GPU address
+    std::set<std::tuple<KPipeline*, uint64_t, uint32_t>> buffersSeen;  // in this pass
+    std::string dir;
+    KSwapchain* swapchain = nullptr;
+    int otherPresents = 0;
+    std::chrono::steady_clock::time_point started;
+};
+PassDumpState& g_dump = *new PassDumpState;
 
 
 // Bytes a texel and how many channels, for the formats it can read; 0 for the others
@@ -240,14 +245,14 @@ void copyTexture(id<MTLBlitCommandEncoder> blit, id<MTLTexture> t, NSUInteger le
         return;
     }
     NSUInteger rowBytes = width * layout.bytes, size = rowBytes * height;
-    if (g_used.fetch_add(size) + size > kBudgetBytes) {
-        g_used -= size;
+    if (g_dump.used.fetch_add(size) + size > kBudgetBytes) {
+        g_dump.used -= size;
         appendLine(dir, what + ": left out, over the budget");
         return;
     }
     id<MTLBuffer> buffer = [t.device newBufferWithLength:size options:MTLResourceStorageModeShared];
     if (!buffer) {
-        g_used -= size;
+        g_dump.used -= size;
         appendLine(dir, what + ": left out, no memory");
         return;
     }
@@ -257,7 +262,7 @@ void copyTexture(id<MTLBlitCommandEncoder> blit, id<MTLTexture> t, NSUInteger le
     char where[160] = "";
     if (t.heap) snprintf(where, sizeof where, " heap %p offset %llu size %llu", (__bridge void*)t.heap, (unsigned long long)t.heapOffset, (unsigned long long)t.allocatedSize);
     char file[64];
-    snprintf(file, sizeof file, "%04u.png", g_sequence++);
+    snprintf(file, sizeof file, "%04u.png", g_dump.sequence++);
     char line[160];
     snprintf(line, sizeof line, " texture %p usage %lu depth %lu layers %lu", (__bridge void*)t, (unsigned long)t.usage, (unsigned long)t.depth, (unsigned long)t.arrayLength);
     items.push_back({buffer, width, height, rowBytes, t.pixelFormat, dir, file, std::string(file) + " " + what + line + where});
@@ -268,16 +273,16 @@ void copyTexture(id<MTLBlitCommandEncoder> blit, id<MTLTexture> t, NSUInteger le
 struct Batch {
     std::vector<Item> items;
     ~Batch() {
-        for (const Item& item : items) g_used -= item.rowBytes * item.height;
-        if (--g_pending == 0) {
+        for (const Item& item : items) g_dump.used -= item.rowBytes * item.height;
+        if (--g_dump.pending == 0) {
             int writing = Writing;
-            if (g_state.compare_exchange_strong(writing, Idle)) KLOG(0, "pass dump written");
+            if (g_dump.state.compare_exchange_strong(writing, Idle)) KLOG(0, "pass dump written");
         }
     }
 };
 
 void writeWhenDone(id<MTLCommandBuffer> cb, std::vector<Item> items) {
-    g_pending++;
+    g_dump.pending++;
     auto batch = std::make_shared<Batch>();
     batch->items = std::move(items);
     [cb addCompletedHandler:^(id<MTLCommandBuffer> done) {
@@ -340,7 +345,7 @@ void copyDrawBuffers(KCommandBuffer* cb, KPipeline* pipeline, const std::string&
     struct Source { id<MTLBuffer> buffer; NSUInteger offset, size; std::string line; };
     std::vector<Source> sources;
     {
-        std::lock_guard<std::mutex> lock(g_mutex);
+        std::lock_guard<std::mutex> lock(g_dump.m);
         for (uint32_t s = 0; s < kMaxSets; s++) {
             const KBoundSet& set = cb->bound.graphicsSets[s];
             if (!set.buffer || !set.layout || !set.slots) continue;
@@ -352,11 +357,11 @@ void copyDrawBuffers(KCommandBuffer* cb, KPipeline* pipeline, const std::string&
                 for (uint32_t e = 0; e < b.count; e++) {
                     uint64_t address = slots[b.id + e];
                     uint32_t size = sizes[b.id + e];
-                    if (!address || !size || !g_buffersSeen.insert({pipeline, address, size}).second) continue;
+                    if (!address || !size || !g_dump.buffersSeen.insert({pipeline, address, size}).second) continue;
                     std::string what = "[" + name + "] set " + std::to_string(s) + " binding " + std::to_string(b.binding) +
                                        " element " + std::to_string(e) + " size " + std::to_string(size) + " address " + std::to_string(address);
-                    auto memory = g_memory.upper_bound(address);
-                    if (memory == g_memory.begin() || address - std::prev(memory)->first >= std::prev(memory)->second.length) {
+                    auto memory = g_dump.memory.upper_bound(address);
+                    if (memory == g_dump.memory.begin() || address - std::prev(memory)->first >= std::prev(memory)->second.length) {
                         appendLine(dir, "buffer " + what + ": left out, in no memory");
                         continue;
                     }
@@ -374,20 +379,20 @@ void copyDrawBuffers(KCommandBuffer* cb, KPipeline* pipeline, const std::string&
     blit.label = @"pass dump";
     std::vector<Item> items;
     for (const Source& s : sources) {
-        if (g_used.fetch_add(s.size) + s.size > kBudgetBytes) {
-            g_used -= s.size;
+        if (g_dump.used.fetch_add(s.size) + s.size > kBudgetBytes) {
+            g_dump.used -= s.size;
             appendLine(dir, "buffer " + s.line + ": left out, over the budget");
             continue;
         }
         id<MTLBuffer> copy = [cb->device->mtl newBufferWithLength:s.size options:MTLResourceStorageModeShared];
         if (!copy) {
-            g_used -= s.size;
+            g_dump.used -= s.size;
             appendLine(dir, "buffer " + s.line + ": left out, no memory");
             continue;
         }
         [blit copyFromBuffer:s.buffer sourceOffset:s.offset toBuffer:copy destinationOffset:0 size:s.size];
         char file[64];
-        snprintf(file, sizeof file, "%04u.bin", g_sequence++);
+        snprintf(file, sizeof file, "%04u.bin", g_dump.sequence++);
         items.push_back({copy, s.size, 1, s.size, MTLPixelFormatInvalid, dir, file, std::string(file) + " buffer " + s.line});
     }
     [blit endEncoding];
@@ -399,41 +404,41 @@ void copyDrawBuffers(KCommandBuffer* cb, KPipeline* pipeline, const std::string&
 // Past the limit, a dump that didn't end (no present, a recording that never ran) gives way to the next; copies still to
 // come go on to their own folder
 void giveUpIfLate() {
-    std::lock_guard<std::mutex> lock(g_mutex);
-    if (g_state == Idle || std::chrono::steady_clock::now() - g_started < std::chrono::seconds(kLimitSeconds)) return;
+    std::lock_guard<std::mutex> lock(g_dump.m);
+    if (g_dump.state == Idle || std::chrono::steady_clock::now() - g_dump.started < std::chrono::seconds(kLimitSeconds)) return;
     KERR("pass dump: not finished after %d s, given up", kLimitSeconds);
-    appendLine(g_dir, "-- given up: this dump did not finish");
-    g_state = Idle;
+    appendLine(g_dump.dir, "-- given up: this dump did not finish");
+    g_dump.state = Idle;
 }
 
 }  // namespace
 
 void kmtlPassDumpTrack(KImage* image) {
-    std::lock_guard<std::mutex> lock(g_mutex);
-    g_images.insert(image);
+    std::lock_guard<std::mutex> lock(g_dump.m);
+    g_dump.images.insert(image);
 }
 
 void kmtlPassDumpForget(KImage* image) {
-    std::lock_guard<std::mutex> lock(g_mutex);
-    g_images.erase(image);
+    std::lock_guard<std::mutex> lock(g_dump.m);
+    g_dump.images.erase(image);
 }
 
 void kmtlPassDumpTrackMemory(id<MTLBuffer> whole) {
-    std::lock_guard<std::mutex> lock(g_mutex);
-    g_memory[whole.gpuAddress] = whole;
+    std::lock_guard<std::mutex> lock(g_dump.m);
+    g_dump.memory[whole.gpuAddress] = whole;
 }
 
 void kmtlPassDumpForgetMemory(id<MTLBuffer> whole) {
-    std::lock_guard<std::mutex> lock(g_mutex);
-    g_memory.erase(whole.gpuAddress);
+    std::lock_guard<std::mutex> lock(g_dump.m);
+    g_dump.memory.erase(whole.gpuAddress);
 }
 
 void kmtlPassDumpSwapchainGone(KSwapchain* swapchain) {
-    std::lock_guard<std::mutex> lock(g_mutex);
-    if (g_swapchain == swapchain) g_swapchain = nullptr;
+    std::lock_guard<std::mutex> lock(g_dump.m);
+    if (g_dump.swapchain == swapchain) g_dump.swapchain = nullptr;
 }
 
-bool kmtlPassDumpRecording() { return g_state == Recording; }
+bool kmtlPassDumpRecording() { return g_dump.state == Recording; }
 
 // After a render pass, or a compute encoder (a line only). A new event each time: with a shared one, a value signalled by
 // a command buffer submitted earlier would satisfy this one's wait, and the copy would overlap the pass. The signal comes
@@ -442,8 +447,8 @@ void kmtlPassDumpEncoder(KCommandBuffer* cb, const std::string& name, MTLRenderP
     giveUpIfLate();
     std::string dir;
     {
-        std::lock_guard<std::mutex> lock(g_mutex);
-        dir = g_dir;
+        std::lock_guard<std::mutex> lock(g_dump.m);
+        dir = g_dump.dir;
     }
     // The original load actions (a resumed pass's descriptor says load) and the store actions the pass ends with
     std::string actions;
@@ -458,8 +463,8 @@ void kmtlPassDumpEncoder(KCommandBuffer* cb, const std::string& name, MTLRenderP
     if (pass) copyPassImages(cb, pass, name, dir, true);
     {
         // A pass's buffers show anew in the next: a pass in between may have written them
-        std::lock_guard<std::mutex> lock(g_mutex);
-        g_buffersSeen.clear();
+        std::lock_guard<std::mutex> lock(g_dump.m);
+        g_dump.buffersSeen.clear();
     }
 }
 
@@ -478,18 +483,18 @@ void kmtlPassDumpAfterDraw(KCommandBuffer* cb, KPipeline* pipeline) {
                 pass.stencilAttachment.texture.storageMode == MTLStorageModeMemoryless;
     if (!colour || (draw >= kDrawsAll && draw % kDrawsStride)) return;
     // A split would lose a memoryless image, and draws must not use up what the passes after them need
-    if (tileOnly || g_used > kBudgetBytes / 2) {
+    if (tileOnly || g_dump.used > kBudgetBytes / 2) {
         if (!std::exchange(cb->dump.drawsSkipped, true)) {
-            std::lock_guard<std::mutex> lock(g_mutex);
-            appendLine(g_dir, "[" + cb->dump.name + "] no images or buffers after its draws: " + (tileOnly ? "it has a memoryless image" : "half of the budget is used"));
+            std::lock_guard<std::mutex> lock(g_dump.m);
+            appendLine(g_dump.dir, "[" + cb->dump.name + "] no images or buffers after its draws: " + (tileOnly ? "it has a memoryless image" : "half of the budget is used"));
         }
         return;
     }
     cb->suspendRender();
     std::string dir;
     {
-        std::lock_guard<std::mutex> lock(g_mutex);
-        dir = g_dir;
+        std::lock_guard<std::mutex> lock(g_dump.m);
+        dir = g_dump.dir;
     }
     copyPassImages(cb, pass, cb->dump.name + " after draw " + std::to_string(draw) + " " + (pipeline ? pipeline->profName : ""), dir, false);
     copyDrawBuffers(cb, pipeline, cb->dump.name + " after draw " + std::to_string(draw), dir);
@@ -499,22 +504,22 @@ void kmtlPassDumpAfterDraw(KCommandBuffer* cb, KPipeline* pipeline) {
 // At a present: the frame after the one the request came in is the one dumped, and its present ends it with all the images.
 // A pop-out window's presents don't end it, unless the first window to present stops presenting.
 void kmtlPassDumpAtPresent(KQueue* queue, KSwapchain* swapchain, id<MTLCommandBuffer> cb) {
-    int state = g_state;
+    int state = g_dump.state;
     if (state != Armed && state != Recording) return;
     std::vector<id<MTLTexture>> textures;
     std::string dir;
     size_t tiny = 0;
     {
-        std::lock_guard<std::mutex> lock(g_mutex);
+        std::lock_guard<std::mutex> lock(g_dump.m);
         if (state == Armed) {
-            g_swapchain = swapchain;
-            g_otherPresents = 0;
-            g_state = Recording;
+            g_dump.swapchain = swapchain;
+            g_dump.otherPresents = 0;
+            g_dump.state = Recording;
             return;
         }
-        if (g_swapchain && g_swapchain != swapchain && ++g_otherPresents < kOtherPresents) return;
-        dir = g_dir;
-        for (KImage* image : g_images) {
+        if (g_dump.swapchain && g_dump.swapchain != swapchain && ++g_dump.otherPresents < kOtherPresents) return;
+        dir = g_dump.dir;
+        for (KImage* image : g_dump.images) {
             if (!image->mtl) continue;
             if (image->mtl.width >= kMinSize && image->mtl.height >= kMinSize) textures.push_back(image->mtl);
             else tiny++;
@@ -531,27 +536,29 @@ void kmtlPassDumpAtPresent(KQueue* queue, KSwapchain* swapchain, id<MTLCommandBu
     [blit updateFence:queue->chain];
     [blit endEncoding];
     writeWhenDone(cb, std::move(items));  // before the state: the last batch to finish, which this one is, needs both
-    g_state = Writing;
+    g_dump.state = Writing;
 }
 
 KMTL_EXPORT bool ksaMtlPassDump(const char* dir) {
+    KTRACE_FIRST();
     giveUpIfLate();
     // The GPU refuses this process's work after a hang: a dump would hold nothing
     if (ksaMtlGpuErrors()) return false;
-    std::lock_guard<std::mutex> lock(g_mutex);
-    if (g_state != Idle) return false;
-    g_dir = dir;
-    g_buffersSeen.clear();
-    g_sequence = 0;
-    g_started = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> lock(g_dump.m);
+    if (g_dump.state != Idle) return false;
+    g_dump.dir = dir;
+    g_dump.buffersSeen.clear();
+    g_dump.sequence = 0;
+    g_dump.started = std::chrono::steady_clock::now();
     [[NSFileManager defaultManager] createDirectoryAtPath:@(dir) withIntermediateDirectories:YES attributes:nil error:nil];
-    g_state = Armed;
+    g_dump.state = Armed;
     return true;
 }
 
 KMTL_EXPORT bool ksaMtlPassDumpRunning() {
+    KTRACE_FIRST_PLAIN();
     giveUpIfLate();
-    return g_state != Idle;
+    return g_dump.state != Idle;
 }
 
 dispatch_queue_t kmtlPassDumpWriter() {

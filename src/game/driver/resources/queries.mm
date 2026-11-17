@@ -16,9 +16,15 @@ VKFN(VkResult) vkCreateQueryPool(VkDevice, const VkQueryPoolCreateInfo* ci, cons
     return VK_SUCCESS;
 }
 
-VKFN(void) vkDestroyQueryPool(VkDevice, VkQueryPool p, const VkAllocationCallbacks*) { delete (KQueryPool*)p; }
+VKFN(void) vkDestroyQueryPool(VkDevice, VkQueryPool p, const VkAllocationCallbacks*) {
+    KTRACE_FIRST_PLAIN();
+    delete (KQueryPool*)p;
+}
 
-VKFN(void) vkResetQueryPool(VkDevice, VkQueryPool pool, uint32_t first, uint32_t n) { ((KQueryPool*)pool)->reset(first, n); }
+VKFN(void) vkResetQueryPool(VkDevice, VkQueryPool pool, uint32_t first, uint32_t n) {
+    KTRACE_FIRST_PLAIN();
+    ((KQueryPool*)pool)->reset(first, n);
+}
 
 VKFN(VkResult) vkGetQueryPoolResults(VkDevice, VkQueryPool pool, uint32_t first, uint32_t count, size_t dataSize, void* data,
                                      VkDeviceSize stride, VkQueryResultFlags flags) {
@@ -59,6 +65,7 @@ VKFN(void) vkDestroyPipelineCache(VkDevice, VkPipelineCache c, const VkAllocatio
 }
 
 VKFN(VkResult) vkGetPipelineCacheData(VkDevice, VkPipelineCache, size_t* size, void*) {
+    KTRACE_FIRST_PLAIN();
     *size = 0;
     return VK_SUCCESS;
 }

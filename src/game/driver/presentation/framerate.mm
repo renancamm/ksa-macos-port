@@ -288,7 +288,7 @@ static uint32_t lowestLevel(uint32_t width, uint32_t height, uint32_t outW, uint
 // size, for its rate's steps (the main view's is then none); without either, nothing changes
 KMTL_EXPORT void ksaMtlFrameRateView(uint32_t width, uint32_t height, uint32_t outW, uint32_t outH, uint32_t leastW,
                                      uint32_t leastH) {
-    KAutoreleasePool pool;  // a level change's command buffer and encoders, from a .NET thread
+    KTRACE_FIRST();  // with a pool: a level change's command buffer and encoders, from a .NET thread
     std::lock_guard<std::mutex> lock(g_fr.m);
     g_fr.outW = outW;
     g_fr.outH = outH;
@@ -340,6 +340,7 @@ KMTL_EXPORT void ksaMtlFrameRateView(uint32_t width, uint32_t height, uint32_t o
 
 // The main view's size at the level now: what the game's own sizes for it become
 KMTL_EXPORT void ksaMtlFrameRateSize(uint32_t* width, uint32_t* height, uint32_t* level) {
+    KTRACE_FIRST_PLAIN();
     std::lock_guard<std::mutex> lock(g_fr.m);
     *level = kmtlDynamicLevelNow();
     *width = kmtlDynamicScaled(g_fr.width, *level);
@@ -349,7 +350,7 @@ KMTL_EXPORT void ksaMtlFrameRateSize(uint32_t* width, uint32_t* height, uint32_t
 // The hooks, at the start of the game's frame, before it records any of it: the rate's step, this frame's level,
 // changed here, and the main view's size at it
 KMTL_EXPORT void ksaMtlFrameRateBeginFrame(uint32_t* width, uint32_t* height, uint32_t* level) {
-    KAutoreleasePool pool;  // as above
+    KTRACE_FIRST();  // as above
     std::lock_guard<std::mutex> lock(g_fr.m);
     g_fr.frames++;
     // The rate first, whose target the level then follows (also without levels). Without a target (no swapchain of the

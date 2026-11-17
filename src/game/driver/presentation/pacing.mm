@@ -14,16 +14,26 @@
 // when its frame began (the game's wait for an earlier present returned, or else the previous present), when it was
 // presented, finished on the GPU and was shown (seconds, presentedTime's clock), how long the frame waited for an earlier
 // present, and whether pacing ended that wait before the display
-static std::mutex g_latencyMutex;
-static FILE* g_latencyCsv = nullptr;
-static double g_frameBegan = 0, g_frameWaited = 0;
-static bool g_framePaced = false;
+namespace {
+struct PacingState {
+    // The live swapchains, for the main view's frame time and steps (kmtlFrameMs, kmtlSteadyStep). Their cadence
+    // fields are written under m; the presents read them without it (atomics)
+    std::mutex m;
+    std::vector<KSwapchain*> swapchains;
+    // The latency log's, under a lock of their own
+    std::mutex latencyMutex;
+    FILE* latencyCsv = nullptr;
+    double frameBegan = 0, frameWaited = 0;
+    bool framePaced = false;
+};
+PacingState& g_pace = *new PacingState;
+}  // namespace
 
 static void latencyBegin(double waited, bool paced) {
-    std::lock_guard<std::mutex> lock(g_latencyMutex);
-    g_frameBegan = CACurrentMediaTime();
-    g_frameWaited += waited;
-    g_framePaced = paced;
+    std::lock_guard<std::mutex> lock(g_pace.latencyMutex);
+    g_pace.frameBegan = CACurrentMediaTime();
+    g_pace.frameWaited += waited;
+    g_pace.framePaced = paced;
 }
 
 void kmtlLatencyAtPresent(id<CAMetalDrawable> drawable, id<MTLCommandBuffer> cb) {
@@ -36,26 +46,26 @@ void kmtlLatencyAtPresent(id<CAMetalDrawable> drawable, id<MTLCommandBuffer> cb)
     bool paced, drain = kmtlDrainOn();
     FILE* csv;
     {
-        std::lock_guard<std::mutex> lock(g_latencyMutex);
-        if (!g_latencyCsv && kmtlConfig().latency) {
-            g_latencyCsv = fopen(kmtlConfig().latency, "w");
-            if (g_latencyCsv) fprintf(g_latencyCsv, "present,began,presented,gpu_end,shown,waited_ms,paced\n");
+        std::lock_guard<std::mutex> lock(g_pace.latencyMutex);
+        if (!g_pace.latencyCsv && kmtlConfig().latency) {
+            g_pace.latencyCsv = fopen(kmtlConfig().latency, "w");
+            if (g_pace.latencyCsv) fprintf(g_pace.latencyCsv, "present,began,presented,gpu_end,shown,waited_ms,paced\n");
         }
-        if (!g_latencyCsv && !drain) return;
+        if (!g_pace.latencyCsv && !drain) return;
         now = CACurrentMediaTime();
-        began = g_frameBegan ? g_frameBegan : now;
-        waited = g_frameWaited * 1e3;
+        began = g_pace.frameBegan ? g_pace.frameBegan : now;
+        waited = g_pace.frameWaited * 1e3;
         n = ++presents;
-        paced = g_framePaced;
-        g_frameBegan = now;
-        g_frameWaited = 0;
-        g_framePaced = false;
-        csv = g_latencyCsv;
+        paced = g_pace.framePaced;
+        g_pace.frameBegan = now;
+        g_pace.frameWaited = 0;
+        g_pace.framePaced = false;
+        csv = g_pace.latencyCsv;
     }
     [drawable addPresentedHandler:^(id<MTLDrawable> d) {
         if (drain) kmtlDrainShown(present, began, now, cb.GPUEndTime, d.presentedTime, waited, paced);
         if (!csv) return;
-        std::lock_guard<std::mutex> lock(g_latencyMutex);
+        std::lock_guard<std::mutex> lock(g_pace.latencyMutex);
         fprintf(csv, "%llu,%.6f,%.6f,%.6f,%.6f,%.3f,%d\n", (unsigned long long)n, began, now, cb.GPUEndTime,
                 d.presentedTime, waited, paced ? 1 : 0);
         if (n % 60 == 0) fflush(csv);
@@ -89,11 +99,6 @@ int kmtlSteadyFps() {
     return fps;
 }
 
-// The live swapchains, for the main view's frame time and steps (kmtlFrameMs, kmtlSteadyStep). Their cadence fields
-// are written under the lock; the presents read them without it (atomics)
-static std::mutex g_swapchainsMutex;
-static std::vector<KSwapchain*> g_swapchains;
-
 // Steady Frame Rate's steps: the frame time at its rate, then at 40 and 30 where slower. With Vsync, as whole refreshes
 // of the display, never faster (60 fps at 60 or 120 Hz, 40 at 120 Hz and 30 at 60 Hz, 30 at either), and an even count
 // with frame interpolation, which shows two images a frame, each for half of it. Only with Vsync (applyCadence)
@@ -116,7 +121,7 @@ static double pacedCadence(const KSwapchain* sc, double frameMs) {
     return sc->vsync && frameMs > 1.5 * 1000.0 / sc->refreshHz ? frameMs : 0;
 }
 
-// A step's frame time and cadence (g_swapchainsMutex held, or the swapchain not listed yet). At one refresh the frame
+// A step's frame time and cadence (g_pace.m held, or the swapchain not listed yet). At one refresh the frame
 // time is dynamic resolution's target only
 static void takeStep(KSwapchain* sc, size_t step) {
     sc->steadyStep = step;
@@ -138,7 +143,7 @@ static void applyCadence(KSwapchain* sc) {
     double hz = steady ? displayRefresh(layer) : 0;
     double own;
     {
-        std::lock_guard<std::mutex> lock(g_swapchainsMutex);
+        std::lock_guard<std::mutex> lock(g_pace.m);
         if (steady) {
             // A notification that changed nothing keeps the step taken: the display reports one each time the
             // frames' pacing changes (a slower step on a ProMotion display: three, each of which put it back)
@@ -160,16 +165,16 @@ static void applyCadence(KSwapchain* sc) {
     layer.maximumDrawableCount = two && !kmtlConfig().frameInterpolation ? 2 : 3;
 }
 
-// The newest swapchain of this size: the main view's output (g_swapchainsMutex held)
+// The newest swapchain of this size: the main view's output (g_pace.m held)
 static KSwapchain* swapchainOfSize(uint32_t width, uint32_t height) {
-    for (auto it = g_swapchains.rbegin(); it != g_swapchains.rend(); ++it)
+    for (auto it = g_pace.swapchains.rbegin(); it != g_pace.swapchains.rend(); ++it)
         if ((*it)->extent.width == width && (*it)->extent.height == height) return *it;
     return nullptr;
 }
 
 // The frame time the main view's swapchain holds its frames to (0: none, or no cadence)
 double kmtlFrameMs(uint32_t width, uint32_t height) {
-    std::lock_guard<std::mutex> lock(g_swapchainsMutex);
+    std::lock_guard<std::mutex> lock(g_pace.m);
     KSwapchain* sc = swapchainOfSize(width, height);
     return sc ? sc->frameMs.load() : 0;
 }
@@ -177,7 +182,7 @@ double kmtlFrameMs(uint32_t width, uint32_t height) {
 // Steady Frame Rate's next step of the main view's swapchain (dir 1: slower, -1: faster): its frame time (0: none that
 // way); with take, taken
 double kmtlSteadyStep(uint32_t width, uint32_t height, int dir, bool take) {
-    std::lock_guard<std::mutex> lock(g_swapchainsMutex);
+    std::lock_guard<std::mutex> lock(g_pace.m);
     KSwapchain* sc = swapchainOfSize(width, height);
     if (!sc || sc->steadySteps.empty()) return 0;
     long step = (long)sc->steadyStep + dir;
@@ -209,14 +214,14 @@ void kmtlPaceSwapchain(KSwapchain* sc) {
 
 // The live swapchains' list: a swapchain made, and one about to be destroyed (its display observers removed first)
 void kmtlListSwapchain(KSwapchain* sc) {
-    std::lock_guard<std::mutex> lock(g_swapchainsMutex);
-    g_swapchains.push_back(sc);
+    std::lock_guard<std::mutex> lock(g_pace.m);
+    g_pace.swapchains.push_back(sc);
 }
 
 void kmtlUnlistSwapchain(KSwapchain* sc) {
     for (id observer in sc->observers) [NSNotificationCenter.defaultCenter removeObserver:observer];
-    std::lock_guard<std::mutex> lock(g_swapchainsMutex);
-    g_swapchains.erase(std::remove(g_swapchains.begin(), g_swapchains.end(), sc), g_swapchains.end());
+    std::lock_guard<std::mutex> lock(g_pace.m);
+    g_pace.swapchains.erase(std::remove(g_pace.swapchains.begin(), g_pace.swapchains.end(), sc), g_pace.swapchains.end());
 }
 
 // Present pacing. With Vsync the game waits for the present before last before it reads input. If a present counted

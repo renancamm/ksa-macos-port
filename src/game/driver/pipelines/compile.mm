@@ -9,9 +9,17 @@
 
 using namespace SPIRV_CROSS_NAMESPACE;
 
-// Pipeline creation cost, reported with the first in-game frame (kmtlReportPipelineTimes)
-static std::atomic<int64_t> g_usCompile{0}, g_usPipeline{0};
-static std::atomic<int> g_nCompile{0}, g_nCompileCached{0}, g_nPipeline{0};
+namespace {
+struct CompileState {
+    // Pipeline creation cost, reported with the first in-game frame (kmtlReportPipelineTimes): MSL compiled (and found
+    // compiled), pipeline states made, and the microseconds they took
+    std::atomic<int64_t> usCompile{0}, usPipeline{0};
+    std::atomic<int> nCompile{0}, nCompileCached{0}, nPipeline{0};
+    std::atomic<bool> earlyFragmentTests{false};  // ksaMtlEarlyFragmentTests
+};
+CompileState& g_compile = *new CompileState;
+}  // namespace
+
 static int64_t usSince(std::chrono::steady_clock::time_point t) {
     return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t).count();
 }
@@ -21,18 +29,18 @@ void kmtlReportPipelineTimes() {
     int64_t usTranslate;
     kmtlTranslateStats(&nTranslate, &usTranslate);
     KLOG(0, "pipeline cost so far: SPIRV-Cross %d modules %.2f s, MSL compile %d (+%d cached) %.2f s, pipeline states %d %.2f s",
-         nTranslate, usTranslate / 1e6, g_nCompile.load(), g_nCompileCached.load(), g_usCompile / 1e6,
-         g_nPipeline.load(), g_usPipeline / 1e6);
+         nTranslate, usTranslate / 1e6, g_compile.nCompile.load(), g_compile.nCompileCached.load(), g_compile.usCompile / 1e6,
+         g_compile.nPipeline.load(), g_compile.usPipeline / 1e6);
 }
 
 void kmtlNotePipelineState(std::chrono::steady_clock::time_point started) {
-    g_usPipeline += usSince(started);
-    g_nPipeline++;
+    g_compile.usPipeline += usSince(started);
+    g_compile.nPipeline++;
 }
 
 void kmtlPipelineCounts(uint32_t* shaders, uint32_t* pipelines) {
-    *shaders = (uint32_t)g_nCompile.load();
-    *pipelines = (uint32_t)g_nPipeline.load();
+    *shaders = (uint32_t)g_compile.nCompile.load();
+    *pipelines = (uint32_t)g_compile.nPipeline.load();
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -59,7 +67,7 @@ static id<MTLLibrary> compileMSL(KDevice* dev, const std::string& msl, std::stri
     if (!owner) {
         std::unique_lock<std::mutex> lock(entry->m);
         entry->cv.wait(lock, [&] { return entry->done; });
-        g_nCompileCached++;
+        g_compile.nCompileCached++;
         if (!entry->lib && err) *err = entry->err;
         return entry->lib;
     }
@@ -70,8 +78,8 @@ static id<MTLLibrary> compileMSL(KDevice* dev, const std::string& msl, std::stri
     o.preserveInvariance = YES;
     NSError* e = nil;
     id<MTLLibrary> lib = kmtlLibrary(dev->mtl, msl.c_str(), o, &e);
-    g_usCompile += usSince(t0);
-    g_nCompile++;
+    g_compile.usCompile += usSince(t0);
+    g_compile.nCompile++;
     std::lock_guard<std::mutex> lock(entry->m);
     entry->lib = lib;
     if (!lib) entry->err = e ? e.description.UTF8String : "unknown error";
@@ -171,11 +179,12 @@ bool kmtlPrepareStage(const VkPipelineShaderStageCreateInfo* st, spv::ExecutionM
 // depth first, which draws bind while the hooks say no part is selected; with nothing selected the stores never run, so
 // the image is the same. Only for shaders whose every store is to that mask, without atomics, writable buffers,
 // discard or outputs besides colour (depth, sample mask, stencil); the pipeline checks alpha to coverage.
-static std::atomic<bool> g_earlyFragmentTests{false};
+KMTL_EXPORT void ksaMtlEarlyFragmentTests(bool on) {
+    KTRACE_FIRST_PLAIN();
+    g_compile.earlyFragmentTests.store(on, std::memory_order_relaxed);
+}
 
-KMTL_EXPORT void ksaMtlEarlyFragmentTests(bool on) { g_earlyFragmentTests.store(on, std::memory_order_relaxed); }
-
-bool kmtlEarlyFragmentTests() { return g_earlyFragmentTests.load(std::memory_order_relaxed); }
+bool kmtlEarlyFragmentTests() { return g_compile.earlyFragmentTests.load(std::memory_order_relaxed); }
 
 // MSL compile and function of a prepared stage: thread-safe, so asynchronous pipeline creation runs it on workers. A
 // ray tracing kernel traces with intersectors (KSA_MTL_IVA_RAY_SEARCH), or as translated when that doesn't compile;

@@ -589,5 +589,6 @@ uint32_t kmtlUpscaleReach(uint32_t content, float most) {
 }
 
 KMTL_EXPORT float ksaMtlUpscaleMaxScale() {
+    KTRACE_FIRST_PLAIN();
     return kmtlUpscaleMaxScale();
 }

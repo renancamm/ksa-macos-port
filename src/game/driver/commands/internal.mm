@@ -159,7 +159,7 @@ void kmtlInternalBlit(KCommandBuffer* cb, KImage* src, KImage* dst, const VkImag
     id<MTLTexture> srcTex = [src->mtl newTextureViewWithPixelFormat:src->mtl.pixelFormat textureType:vt
                                                              levels:NSMakeRange(sl, 1) slices:slices];
     if (!srcTex) {
-        KERR("blit: source view failed");
+        KERR_LIMIT(10, "blit: source view failed");
         return;
     }
     id<MTLRenderPipelineState> ps = blitPipeline(dev, dst->pixelFormat, variant);

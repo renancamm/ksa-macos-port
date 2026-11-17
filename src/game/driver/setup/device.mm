@@ -10,15 +10,22 @@ std::atomic<int64_t> g_internalBytes{0};  // descriptor pool chunks and upload r
 // reached only through argument buffers are resident without per-encoder useResource calls.
 
 // KSA_MTL_STALLS: what changed in the set since its last commit, and on which threads, for the log of a slow commit
-static int g_resAdds, g_resRemoves; static int64_t g_resAddBytes, g_resRemoveBytes; static std::string g_resThreads;
+namespace {
+struct ResidencyLog {
+    int adds = 0, removes = 0;
+    int64_t addBytes = 0, removeBytes = 0;
+    std::string threads;
+};
+ResidencyLog& g_res = *new ResidencyLog;  // under KDevice::residency.mutex
+}  // namespace
 static void noteChange(bool add, id<MTLAllocation> a) {
     if (kmtlConfig().stalls <= 0) return;
-    (add ? g_resAdds : g_resRemoves)++;
-    (add ? g_resAddBytes : g_resRemoveBytes) += (int64_t)a.allocatedSize;
+    (add ? g_res.adds : g_res.removes)++;
+    (add ? g_res.addBytes : g_res.removeBytes) += (int64_t)a.allocatedSize;
     char name[64] = "";
     pthread_getname_np(pthread_self(), name, sizeof name);
     if (!name[0]) snprintf(name, sizeof name, "%p", (void*)pthread_self());
-    if (g_resThreads.find(name) == std::string::npos && g_resThreads.size() < 200) g_resThreads += std::string(name) + " ";
+    if (g_res.threads.find(name) == std::string::npos && g_res.threads.size() < 200) g_res.threads += std::string(name) + " ";
 }
 
 void KDevice::addResident(id<MTLAllocation> a) {
@@ -46,10 +53,10 @@ void KDevice::commitResidency() {
             char name[64] = "";
             pthread_getname_np(pthread_self(), name, sizeof name);
             KLOG(0, "stall: residency commit %.1f ms on '%s': +%d (%lld MB) -%d (%lld MB), set %llu allocations; changed on %s",
-                 ms, name, g_resAdds, (long long)(g_resAddBytes >> 20), g_resRemoves, (long long)(g_resRemoveBytes >> 20),
-                 (unsigned long long)residency.set.allocationCount, g_resThreads.c_str());
+                 ms, name, g_res.adds, (long long)(g_res.addBytes >> 20), g_res.removes, (long long)(g_res.removeBytes >> 20),
+                 (unsigned long long)residency.set.allocationCount, g_res.threads.c_str());
         }
-        g_resAdds = g_resRemoves = 0; g_resAddBytes = g_resRemoveBytes = 0; g_resThreads.clear();
+        g_res.adds = g_res.removes = 0; g_res.addBytes = g_res.removeBytes = 0; g_res.threads.clear();
         residency.dirty = false;
     }
 }
@@ -120,6 +127,7 @@ VKFN(VkResult) vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCre
 }
 
 VKFN(void) vkDestroyDevice(VkDevice device, const VkAllocationCallbacks*) {
+    KTRACE_FIRST_PLAIN();
     auto* dev = (KDevice*)device;
     if (!dev) return;
     delete dev->queue;
@@ -133,6 +141,7 @@ VKFN(void) vkGetDeviceQueue(VkDevice device, uint32_t family, uint32_t index, Vk
 }
 
 VKFN(void) vkGetDeviceQueue2(VkDevice device, const VkDeviceQueueInfo2* info, VkQueue* out) {
+    KTRACE_FIRST_PLAIN();
     *out = (VkQueue)((KDevice*)device)->queueOf(info->queueFamilyIndex);
 }
 
@@ -238,7 +247,7 @@ template <typename F> static VkResult submit(VkQueue queue, uint32_t submitCount
         for (uint32_t i = 0; i < cbs.count; i++) {
             auto* cb = (KCommandBuffer*)cbs.at<VkCommandBuffer>(i);
             if (!cb->mtl) {
-                if (cb->submittedOnce) KERR("command buffer %p submitted again without re-recording (unsupported)", cb);
+                if (cb->submittedOnce) KERR_LIMIT(10, "command buffer %p submitted again without re-recording (unsupported)", cb);
                 continue;
             }
             cb->endEncoder();
@@ -312,6 +321,7 @@ VKFN(VkResult) vkCreateFence(VkDevice, const VkFenceCreateInfo* ci, const VkAllo
 }
 
 VKFN(void) vkDestroyFence(VkDevice, VkFence fence, const VkAllocationCallbacks*) {
+    KTRACE_FIRST_PLAIN();
     // A completion handler may still hold it; fences are tiny, so leak those that are pending
     auto* f = (KFence*)fence;
     if (!f) return;
@@ -330,6 +340,7 @@ VKFN(VkResult) vkResetFences(VkDevice, uint32_t n, const VkFence* fences) {
 }
 
 VKFN(VkResult) vkGetFenceStatus(VkDevice, VkFence fence) {
+    KTRACE_FIRST_PLAIN();
     auto* f = (KFence*)fence;
     std::lock_guard<std::mutex> lock(f->m);
     return f->signaled ? VK_SUCCESS : VK_NOT_READY;
@@ -366,5 +377,6 @@ VKFN(VkResult) vkCreateSemaphore(VkDevice, const VkSemaphoreCreateInfo*, const V
 }
 
 VKFN(void) vkDestroySemaphore(VkDevice, VkSemaphore s, const VkAllocationCallbacks*) {
+    KTRACE_FIRST_PLAIN();
     delete (KSemaphore*)s;
 }

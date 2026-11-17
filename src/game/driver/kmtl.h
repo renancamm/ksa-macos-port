@@ -117,7 +117,10 @@ struct KStallTimer {
 // g_<name>, made with *new and never destroyed: handlers and the driver's threads can still run while the process
 // exits, after static destructors, and MetalFX aborts if a scaler is released then (framerate.mm's g_fr, upscale.mm's
 // g_up). Its lock, when it has one, is m, its first field; each field says what it holds, and a field that a lock of
-// its own guards, or that is read without the lock (an atomic), says so.
+// its own guards, or that is read without the lock (an atomic), says so. Plain globals are only what other files read
+// (declared in a header: the log level, the memory counts, the drain's switch, the zero page's address) and the log's
+// file, which a constructor sets as the library loads. A function's own lazily made handles and counters (static
+// locals) stay in that function.
 //
 // Threads and locks. The game calls in from several threads; Metal's completion handlers, Core Animation's presented
 // handlers and the driver's own threads (the pipeline workers, the GPU clock's sampler, the screenshot and pass dump
@@ -128,15 +131,15 @@ struct KStallTimer {
 //   3. KQueue::submitMutex: every commit of recorded work (a submit, a present, a level change, a new image's clear)
 //   4. g_up.m (presentation/upscale.mm), g_rh.m (presentation/rayhistory.mm)
 //   5. g_fi.m (presentation/interpolate.mm)
-//   6. g_frameMutex (diagnostics/instruments.mm)
+//   6. g_ins.m (diagnostics/instruments.mm)
 //   7. KPresentState::m (presentation/pacing.mm)
-//   8. g_setsMutex (resources/descriptor.mm)
+//   8. g_desc.m (resources/descriptor.mm)
 //   9. KDevice::residency.mutex
-//  10. g_mutex (diagnostics/passdump.mm)
-//  11. the rest, under which nothing but the log's is taken: g_swapchainsMutex, g_latencyMutex
-//      (presentation/pacing.mm), g_hdrMutex (presentation/hdr.mm), g_fr.samplesMutex (presentation/framerate.mm),
-//      g_ft.m (presentation/frametime.mm), g_drainMutex (diagnostics/drain.mm), g_ts.m (commands/timestamps.mm),
-//      g_recentMutex (shaders/shadercache.mm), g_addrMutex (resources/accel.mm), KDevice::libraries.mutex and its
+//  10. g_dump.m (diagnostics/passdump.mm)
+//  11. the rest, under which nothing but the log's is taken: g_pace.m, g_pace.latencyMutex
+//      (presentation/pacing.mm), g_hdr.m (presentation/hdr.mm), g_fr.samplesMutex (presentation/framerate.mm),
+//      g_ft.m (presentation/frametime.mm), g_drain.m (diagnostics/drain.mm), g_ts.m (commands/timestamps.mm),
+//      g_recent.m (shaders/shadercache.mm), g_accel.m (resources/accel.mm), KDevice::libraries.mutex and its
 //      entries' m, KDevice::fan.mutex, KDevice::tess.mutex, KInternalPipelines::m, KFence::m, KQueryPool::m,
 //      KPipeline::Pending::m
 //  12. the log's (kmtlLog), innermost: any of them may log

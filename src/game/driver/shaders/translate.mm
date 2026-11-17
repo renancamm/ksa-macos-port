@@ -6,15 +6,22 @@
 
 using namespace SPIRV_CROSS_NAMESPACE;
 
-static std::atomic<int64_t> g_usTranslate{0};
-static std::atomic<int> g_nTranslate{0};
+namespace {
+struct TranslateState {
+    // Translations made and the time they took (kmtlTranslateStats)
+    std::atomic<int64_t> us{0};
+    std::atomic<int> count{0};
+};
+TranslateState& g_tr = *new TranslateState;
+}  // namespace
+
 static int64_t usSince(std::chrono::steady_clock::time_point t) {
     return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t).count();
 }
 
 void kmtlTranslateStats(int* count, int64_t* us) {
-    *count = g_nTranslate.load();
-    *us = g_usTranslate.load();
+    *count = g_tr.count.load();
+    *us = g_tr.us.load();
 }
 
 // The tessellation execution modes a stage declares (the control and evaluation stages each declare part of them)
@@ -294,7 +301,7 @@ static MTLSize workgroupSize(CompilerMSL& c) {
 bool kmtlTranslate(KShaderModule* mod, const char* entryName, spv::ExecutionModel model, KPipelineLayout* layout,
                    const VkSpecializationInfo* spec, const KStageOptions& so, KTranslated* out, std::string* err) {
     auto t0 = std::chrono::steady_clock::now();
-    struct Timer { std::chrono::steady_clock::time_point t; ~Timer() { g_usTranslate += usSince(t); g_nTranslate++; } } timer{t0};
+    struct Timer { std::chrono::steady_clock::time_point t; ~Timer() { g_tr.us += usSince(t); g_tr.count++; } } timer{t0};
     try {
         CompilerMSL c(sizeRuntimeArrays(mod->spirv, layout));
         c.set_entry_point(entryName, model);

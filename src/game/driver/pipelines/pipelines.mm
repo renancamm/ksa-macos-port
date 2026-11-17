@@ -91,10 +91,14 @@ VKFN(VkResult) vkCreateFramebuffer(VkDevice, const VkFramebufferCreateInfo* ci, 
 }
 
 VKFN(void) vkDestroyFramebuffer(VkDevice, VkFramebuffer fb, const VkAllocationCallbacks*) {
+    KTRACE_FIRST_PLAIN();
     delete (KFramebuffer*)fb;
 }
 
-VKFN(void) vkGetRenderAreaGranularity(VkDevice, VkRenderPass, VkExtent2D* g) { *g = {1, 1}; }
+VKFN(void) vkGetRenderAreaGranularity(VkDevice, VkRenderPass, VkExtent2D* g) {
+    KTRACE_FIRST_PLAIN();
+    *g = {1, 1};
+}
 
 // ---------------------------------------------------------------------------------------------------------------
 // Graphics pipelines

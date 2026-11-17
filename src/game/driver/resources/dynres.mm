@@ -464,6 +464,7 @@ void kmtlDynamicSetLevel(uint32_t level) {
 
 // An image's size as its texture has it now (a dynamic image's at the frame's level)
 KMTL_EXPORT void ksaMtlDynamicImageSize(VkImage image, uint32_t* width, uint32_t* height) {
+    KTRACE_FIRST_PLAIN();
     auto* img = (KImage*)image;
     *width = img && img->mtl ? (uint32_t)img->mtl.width : 0;
     *height = img && img->mtl ? (uint32_t)img->mtl.height : 0;
@@ -471,6 +472,7 @@ KMTL_EXPORT void ksaMtlDynamicImageSize(VkImage image, uint32_t* width, uint32_t
 
 // The hooks: a size of the main view's or a fraction of it, at the level now, as its image's texture has it (sizeAt)
 KMTL_EXPORT void ksaMtlDynamicSizeAt(uint32_t* width, uint32_t* height) {
+    KTRACE_FIRST_PLAIN();
     std::lock_guard<std::mutex> lock(g_dyn.m);
     *width = sizeAt(*width, fractionOf(*width, g_dyn.width), g_dyn.width, g_dyn.level);
     *height = sizeAt(*height, fractionOf(*height, g_dyn.height), g_dyn.height, g_dyn.level);
