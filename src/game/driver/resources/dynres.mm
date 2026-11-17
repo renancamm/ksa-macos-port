@@ -135,17 +135,19 @@ static id<MTLTexture> levelTexture(KImage* img, uint32_t level) {
     return t;
 }
 
-// A view's texture over the image's texture at a level, made as the view was (images.mm: at its own level)
-id<MTLTexture> kmtlViewTexture(KImageView* v, id<MTLTexture> tex) {
+// A view's texture over the image's texture at a level, made as the view was (images.mm: at its own level), in the
+// view's format or in this one (an attachment's, passes.mm)
+id<MTLTexture> kmtlViewTexture(KImageView* v, id<MTLTexture> tex, MTLPixelFormat format) {
     if (v->whole) return tex;
+    MTLPixelFormat pf = format != MTLPixelFormatInvalid ? format : v->viewFormat;
     uint32_t mips = (uint32_t)tex.mipmapLevelCount;
     uint32_t base = std::min(v->baseLevel, mips - 1);
     uint32_t count = std::max(1u, std::min(v->levelCount, mips - base));
     NSRange levels = NSMakeRange(base, count);
     NSRange slices = NSMakeRange(v->baseLayer, v->viewType == MTLTextureType3D ? 1 : v->layerCount);
     return v->identitySwizzle
-        ? [tex newTextureViewWithPixelFormat:v->viewFormat textureType:v->viewType levels:levels slices:slices]
-        : [tex newTextureViewWithPixelFormat:v->viewFormat textureType:v->viewType levels:levels slices:slices swizzle:v->swizzle];
+        ? [tex newTextureViewWithPixelFormat:pf textureType:v->viewType levels:levels slices:slices]
+        : [tex newTextureViewWithPixelFormat:pf textureType:v->viewType levels:levels slices:slices swizzle:v->swizzle];
 }
 
 // A view's texture at a level, made once (under g_dyn.m)

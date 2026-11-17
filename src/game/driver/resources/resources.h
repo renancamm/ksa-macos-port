@@ -59,7 +59,6 @@ struct KImage {
 struct KImageView {
     KImage* image = nullptr;
     id<MTLTexture> mtl = nil;
-    // For depth/stencil aspect-only views of combined formats the render pass still uses the image
     VkFormat format = VK_FORMAT_UNDEFINED;
     uint32_t baseLevel = 0, levelCount = 1, baseLayer = 0, layerCount = 1;
     // How it views the image's texture (whole: the texture itself), to view another level's the same way
@@ -98,7 +97,7 @@ MTLViewport kmtlDynamicViewport(const VkViewport& vp, double sx, double sy);
 void kmtlDynamicRect(double sx, double sy, int64_t x, int64_t y, int64_t w, int64_t h, int64_t limitW, int64_t limitH,
                      int64_t* x0, int64_t* y0, int64_t* x1, int64_t* y1);
 int32_t kmtlDynamicPoint(int32_t v, double s);
-id<MTLTexture> kmtlViewTexture(KImageView* v, id<MTLTexture> tex);
+id<MTLTexture> kmtlViewTexture(KImageView* v, id<MTLTexture> tex, MTLPixelFormat format = MTLPixelFormatInvalid);
 bool kmtlDynamicView(VkImageView view);                       // a view of a dynamic image
 void kmtlDynamicTranslate(const KSetLayout* l, uint64_t* slots);  // a set's copy: its textures at the frame's level
 uint32_t kmtlDynamicLevelNow();  // the level the frame being presented was drawn at
