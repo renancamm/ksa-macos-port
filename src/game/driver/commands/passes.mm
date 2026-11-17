@@ -54,11 +54,20 @@ MTLClearColor kmtlClearColor(VkFormat f, const VkClearColorValue& c) {
     return MTLClearColorMake(c.float32[0], c.float32[1], c.float32[2], c.float32[3]);
 }
 
+// An attachment's texture: the view's. An attachment uses every aspect of its image, whatever the view's aspect mask:
+// a stencil-only view of a combined depth/stencil image (images.mm: an X32_Stencil8 texture to sample, which can't be
+// drawn into) attaches the same levels and layers in the image's format, as a depth-only view does
+static id<MTLTexture> attachmentTexture(KImageView* v) {
+    const KFormatInfo* fi = kmtlFormat(v->format);
+    if (!fi || !fi->depth || !fi->stencil || !v->image || v->viewFormat == v->image->mtl.pixelFormat) return v->mtl;
+    return kmtlViewTexture(v, v->image->mtl, v->image->mtl.pixelFormat);
+}
+
 static void setAttachmentTexture(MTLRenderPassAttachmentDescriptor* a, KImageView* v) {
-    a.texture = v->mtl;
+    a.texture = attachmentTexture(v);
     a.level = 0;
     a.slice = 0;
-    if (v->mtl.textureType == MTLTextureType3D) a.depthPlane = v->baseLayer;
+    if (a.texture.textureType == MTLTextureType3D) a.depthPlane = v->baseLayer;
 }
 
 // Dynamic resolution (dynres.mm): a pass that draws into dynamic images draws at their level. The viewports and scissors
@@ -69,7 +78,7 @@ static void scaleForAttachment(KCommandBuffer* cb, const KImageView* v, bool* fo
     kmtlDynamicScale(v->image, &cb->pass.viewportScale[0], &cb->pass.viewportScale[1]);
 }
 
-// Every pass, a render pass or dynamic rendering, is at most as large as each of its colour and depth attachments'
+// Every pass, a render pass or dynamic rendering, is at most as large as each of its attachments'
 // textures (Metal rejects a larger one; a dynamic image's texture at a level is smaller than the image)
 static void fitToAttachment(const KImageView* v, uint32_t* w, uint32_t* h) {
     if (!v || !v->mtl) return;
@@ -100,7 +109,7 @@ VKFN(void) vkCmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPas
         if (c < (int)bi->clearValueCount) ca.clearColor = kmtlClearColor(a.format, bi->pClearValues[c].color);
         int r = sp.resolves[i];
         if (r >= 0 && r < (int)viewCount) {
-            ca.resolveTexture = views[r]->mtl;
+            ca.resolveTexture = attachmentTexture(views[r]);
             ca.resolveLevel = 0;
         }
         ca.storeAction = storeAction(a.storeOp, r >= 0);
@@ -163,7 +172,7 @@ static void setRenderingAttachment(MTLRenderPassAttachmentDescriptor* a, const V
     a.loadAction = resuming ? MTLLoadActionLoad : loadAction(ri.loadOp);
     bool resolve = ri.resolveMode != VK_RESOLVE_MODE_NONE && ri.resolveImageView;
     if (resolve) {
-        a.resolveTexture = ((KImageView*)ri.resolveImageView)->mtl;
+        a.resolveTexture = attachmentTexture((KImageView*)ri.resolveImageView);
         a.resolveLevel = 0;
     }
     a.storeAction = storeAction(ri.storeOp, resolve);
@@ -194,12 +203,12 @@ VKFN(void) vkCmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingI
         fitToAttachment(v, &w, &h);
     }
     if (ri->pStencilAttachment && ri->pStencilAttachment->imageView) {
-        const KFormatInfo* fi = kmtlFormat(((KImageView*)ri->pStencilAttachment->imageView)->image->format);
+        auto* v = (KImageView*)ri->pStencilAttachment->imageView;
+        const KFormatInfo* fi = kmtlFormat(v->format);
         if (fi && fi->stencil) {
             setRenderingAttachment(d.stencilAttachment, *ri->pStencilAttachment, resuming);
-            // Stencil attachments need the combined texture, not a depth-only view
-            d.stencilAttachment.texture = ((KImageView*)ri->pStencilAttachment->imageView)->mtl;
             d.stencilAttachment.clearStencil = ri->pStencilAttachment->clearValue.depthStencil.stencil;
+            fitToAttachment(v, &w, &h);
         }
     }
     cb->pass.viewportScale[0] = cb->pass.viewportScale[1] = 1;
@@ -207,6 +216,7 @@ VKFN(void) vkCmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingI
     for (uint32_t i = 0; i < ri->colorAttachmentCount; i++)
         scaleForAttachment(cb, (KImageView*)ri->pColorAttachments[i].imageView, &found);
     if (ri->pDepthAttachment) scaleForAttachment(cb, (KImageView*)ri->pDepthAttachment->imageView, &found);
+    if (ri->pStencilAttachment) scaleForAttachment(cb, (KImageView*)ri->pStencilAttachment->imageView, &found);
     d.renderTargetWidth = w;
     d.renderTargetHeight = h;
     if (ri->viewMask) d.renderTargetArrayLength = 32 - __builtin_clz(ri->viewMask);

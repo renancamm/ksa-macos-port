@@ -137,9 +137,9 @@ void kmtlShaderPrewarm(KDevice* dev) {
     auto t0 = std::chrono::steady_clock::now();
     KLOG(1, "shader prewarm: %zu shaders on %u threads", keys->size(), workers);
     for (unsigned w = 0; w < workers; w++) {
-        std::thread([dev, keys, next, done, workers, t0] {
+        dev->prewarm.threads.emplace_back([dev, keys, next, done, workers, t0] {
             @autoreleasepool {
-                for (size_t i; (i = (*next)++) < keys->size();) {
+                for (size_t i; !dev->prewarm.stop && (i = (*next)++) < keys->size();) {
                     @autoreleasepool {
                         KTranslated t;
                         if (!kmtlCacheLoad((*keys)[i], &t)) continue;
@@ -148,9 +148,16 @@ void kmtlShaderPrewarm(KDevice* dev) {
                     }
                 }
             }
-            if (++*done == workers)
+            if (++*done == workers && !dev->prewarm.stop)
                 KLOG(0, "shader prewarm: %zu shaders in %.2f s", keys->size(),
                      std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count());
-        }).detach();
+        });
     }
+}
+
+// vkDestroyDevice: each thread stops once the shader it compiles now is done
+void kmtlShaderPrewarmStop(KDevice* dev) {
+    dev->prewarm.stop = true;
+    for (std::thread& t : dev->prewarm.threads) t.join();
+    dev->prewarm.threads.clear();
 }

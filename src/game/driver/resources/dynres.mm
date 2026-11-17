@@ -34,9 +34,9 @@ struct DynamicState {
     // Every level's texture of a dynamic image or view, by resource ID: what a descriptor's texture is now
     struct Owner { KImage* image; KImageView* view; };
     std::unordered_map<uint64_t, Owner> owners;
-    KDevice* device = nullptr;
     uint64_t changes = 0;
-    // The level change's resampling: a pipeline per pixel format
+    // The level change's resampling: a pipeline per pixel format, made with the system's Metal device (every Vulkan
+    // device's)
     id<MTLLibrary> library = nil;
     std::unordered_map<NSUInteger, id<MTLRenderPipelineState>> resample;
 };
@@ -135,17 +135,19 @@ static id<MTLTexture> levelTexture(KImage* img, uint32_t level) {
     return t;
 }
 
-// A view's texture over the image's texture at a level, made as the view was (images.mm: at its own level)
-id<MTLTexture> kmtlViewTexture(KImageView* v, id<MTLTexture> tex) {
+// A view's texture over the image's texture at a level, made as the view was (images.mm: at its own level), in the
+// view's format or in this one (an attachment's, passes.mm)
+id<MTLTexture> kmtlViewTexture(KImageView* v, id<MTLTexture> tex, MTLPixelFormat format) {
     if (v->whole) return tex;
+    MTLPixelFormat pf = format != MTLPixelFormatInvalid ? format : v->viewFormat;
     uint32_t mips = (uint32_t)tex.mipmapLevelCount;
     uint32_t base = std::min(v->baseLevel, mips - 1);
     uint32_t count = std::max(1u, std::min(v->levelCount, mips - base));
     NSRange levels = NSMakeRange(base, count);
     NSRange slices = NSMakeRange(v->baseLayer, v->viewType == MTLTextureType3D ? 1 : v->layerCount);
     return v->identitySwizzle
-        ? [tex newTextureViewWithPixelFormat:v->viewFormat textureType:v->viewType levels:levels slices:slices]
-        : [tex newTextureViewWithPixelFormat:v->viewFormat textureType:v->viewType levels:levels slices:slices swizzle:v->swizzle];
+        ? [tex newTextureViewWithPixelFormat:pf textureType:v->viewType levels:levels slices:slices]
+        : [tex newTextureViewWithPixelFormat:pf textureType:v->viewType levels:levels slices:slices swizzle:v->swizzle];
 }
 
 // A view's texture at a level, made once (under g_dyn.m)
@@ -162,7 +164,6 @@ static id<MTLTexture> viewAt(KImageView* v, uint32_t level, id<MTLTexture> tex) 
 void kmtlDynamicBind(KImage* img) {
     img->full = img->mtl;
     std::lock_guard<std::mutex> lock(g_dyn.m);
-    if (!g_dyn.device) g_dyn.device = img->device;
     if (!fits(img->info, g_dyn.width, g_dyn.height)) return;
     img->dynamic = true;
     img->mainW = g_dyn.width;
@@ -351,10 +352,11 @@ static void prepareLevels(const std::vector<uint32_t>& levels) {
     }
 }
 
-// The change of level, between frames (under g_dyn.m)
+// The change of level, between frames (under g_dyn.m). The images are the main view's, of the game's device: the
+// carries go to its queue
 static void changeLevel(uint32_t level) {
-    KDevice* dev = g_dyn.device;
-    if (!dev) { g_dyn.level = level; return; }
+    if (g_dyn.images.empty()) { g_dyn.level = level; return; }
+    KDevice* dev = g_dyn.images.front()->device;
     auto t0 = std::chrono::steady_clock::now();
     struct Carry { id<MTLTexture> from, to; id<MTLRenderPipelineState> ps; };
     std::vector<Carry> carries;

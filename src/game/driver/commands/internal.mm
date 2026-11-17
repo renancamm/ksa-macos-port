@@ -83,26 +83,36 @@ struct KInternalPipelines {
     std::unordered_map<uint64_t, id<MTLRenderPipelineState>> blit;  // (pixel format, variant) -> pipeline
 };
 
-void kmtlInitInternal(KDevice* dev) {
+// Every one of them, or the device fails: the commands that use them have no other way
+bool kmtlInitInternal(KDevice* dev) {
     auto* ip = new KInternalPipelines();
+    dev->internal = ip;
     NSError* e = nil;
     ip->lib = kmtlLibrary(dev->mtl, kInternalMSL, nil, &e);
     if (!ip->lib) {
-        KERR("internal shaders failed to compile: %s", e.description.UTF8String);
-        dev->internal = ip;
-        return;
+        KERR("vkCreateDevice: internal shaders failed to compile: %s", e.description.UTF8String);
+        return false;
     }
     ip->fill32 = [dev->mtl newComputePipelineStateWithFunction:[ip->lib newFunctionWithName:@"kmtl_fill32"] error:&e];
-    ip->tessPrep = [dev->mtl newComputePipelineStateWithFunction:[ip->lib newFunctionWithName:@"kmtl_tess_prep"] error:&e];
+    if (ip->fill32)
+        ip->tessPrep = [dev->mtl newComputePipelineStateWithFunction:[ip->lib newFunctionWithName:@"kmtl_tess_prep"] error:&e];
+    if (!ip->fill32 || !ip->tessPrep) {
+        KERR("vkCreateDevice: internal pipeline failed: %s", e.description.UTF8String);
+        return false;
+    }
     ip->tessStats = [dev->mtl newBufferWithLength:32 options:MTLResourceStorageModeShared | MTLResourceHazardTrackingModeUntracked];
-    memset(ip->tessStats.contents, 0, 32);
-    ip->tessCap = 1u << 19;
     MTLSamplerDescriptor* sd = [MTLSamplerDescriptor new];
     sd.sAddressMode = sd.tAddressMode = sd.rAddressMode = MTLSamplerAddressModeClampToEdge;
     ip->nearest = [dev->mtl newSamplerStateWithDescriptor:sd];
     sd.minFilter = sd.magFilter = MTLSamplerMinMagFilterLinear;
     ip->linear = [dev->mtl newSamplerStateWithDescriptor:sd];
-    dev->internal = ip;
+    if (!ip->tessStats || !ip->nearest || !ip->linear) {
+        KERR("vkCreateDevice: internal buffer or samplers failed");
+        return false;
+    }
+    memset(ip->tessStats.contents, 0, 32);
+    ip->tessCap = 1u << 19;
+    return true;
 }
 
 void kmtlDestroyInternal(KDevice* dev) {
@@ -112,7 +122,6 @@ void kmtlDestroyInternal(KDevice* dev) {
 
 void kmtlInternalFillBuffer(KCommandBuffer* cb, id<MTLBuffer> buf, NSUInteger offset, NSUInteger size, uint32_t data) {
     KInternalPipelines* ip = cb->device->internal;
-    if (!ip->fill32) return;
     id<MTLComputeCommandEncoder> enc = cb->computeEncoder(KCommandBuffer::kClassTransfer);
     uint32_t count = (uint32_t)(size / 4);
     uint32_t p[2] = {data, count};

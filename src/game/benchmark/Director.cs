@@ -459,6 +459,13 @@ public partial class Director
         _clock.BeforeStep(stepping, _sectionStart + (_next < section.Steps.Count ? section.Steps[_next].At : section.Length));
     }
 
+    // After the game's events of a frame (the hooks call it from InputEvents.ApplyInputEvents), before it is drawn
+    public void AfterGameEvents()
+    {
+        if (_active && _plan.Play.Here <= 0 && _wall.IsRunning && _phase != Phase.Hold)
+            _camera.AfterGameEvents();
+    }
+
     // Whether a views scenario is setting up: its steps play at a fixed pace (Clock.cs) until the game pauses for its views
     private bool InSetup => _phase == Phase.Play && !Paused && !Live && _section >= 0 && _sections[_section].Kind == Kind.Views;
 
@@ -595,8 +602,7 @@ public partial class Director
                 Log($"the setup's steps: the game fell short of {_clock.ShortSteps} of them (slow frames of physics), finished in the frame after");
             Log(FormattableString.Invariant($"done after {_wall.Elapsed.TotalSeconds:F1} s"));
             // The camera's field of view and the game's explosions as they were
-            _camera.Unhold();
-            _camera.EndRig();
+            _camera.ReleaseCamera();
             Done = true;
             // Out of the game once the triggers' work is done (OnFrame)
             if (!_plan.Play.Stay)
@@ -780,8 +786,7 @@ public partial class Director
         StopProfilers();
         Probes.Each(_probes, p => p.End());
         Log($"stopped: {why}");
-        _camera.Unhold();
-        _camera.EndRig();
+        _camera.ReleaseCamera();
         Done = true;
     }
 

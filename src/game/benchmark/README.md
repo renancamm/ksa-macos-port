@@ -387,7 +387,7 @@ table when it starts. Around it:
 | Part | |
 |---|---|
 | `Clock.cs` | the script's clock and the game's. Just before the game works out each step of its simulation, the hooks call the director (a prefix on the game's `Universe.GetJobSimStep`), which gives that step the game's own limit (`Universe.LimitNextStep`): a flight's steps never pass the next checkpoint, a catch-up lands on its moment, and a views scenario's setup runs the same steps of the simulation on every Mac |
-| `Camera.cs`, `Path.cs`, `Rig.cs` | the camera: its flights through the `@key` places (`Path.cs`), the vehicle camera that follows or watches a vehicle (`Rig.cs`), the cockpit and front views |
+| `Camera.cs`, `Path.cs`, `Rig.cs` | the camera: its flights through the `@key` places (`Path.cs`), the vehicle camera that follows or watches a vehicle (`Rig.cs`), the cockpit and front views. The director places it after each frame; when the game's events at the start of the next one (a vehicle blown up or broken up, a docking) move the camera to what it follows next, the hooks call the director again before that frame is drawn (a postfix on the game's `InputEvents.ApplyInputEvents`), which puts it back |
 | `Vehicles.cs` | the vehicle directives: launch pads, flights, kittens, staging, explosions |
 | `Probes.cs` | the tools of `investigate`: each watches the parts, the checkpoints or the frames; one that works on a view holds its checkpoint until it is done |
 | `Here.cs` | the tab's recording of the player's own game (the plan's `play.here`): no script, one part named `here`, everything a run records, a screenshot at its start |

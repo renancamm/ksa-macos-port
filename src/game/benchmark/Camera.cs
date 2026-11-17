@@ -33,6 +33,7 @@ internal sealed partial class CameraOperator(Clock clock)
     internal void Restart()
     {
         _flight = _released = null;
+        _followed = null;
         Unhold();
         EndRig();
         _lookMove = null;
@@ -42,6 +43,15 @@ internal sealed partial class CameraOperator(Clock clock)
 
     // A new place of the free camera starts its up afresh
     internal static void ForgetUp() => _lastUp = null;
+
+    // The game's events (a vehicle blown up or broken up, a docking) hand the camera to what the game follows next, and
+    // move it there (Camera.SetFollow): the director's camera, placed after the frame before, goes back to its place
+    // before this frame is drawn, not one frame later (a frame of the view from the wreckage)
+    internal void AfterGameEvents()
+    {
+        if (_followed != null && Program.GetHoveredCamera() is { } camera && camera.Following != _followed)
+            UpdateCamera(0);
+    }
 
     // Yaw and pitch (degrees) of the cockpit camera from its seat's forward view
     private record LookMove(double2 From, double2 To, double Start, double Seconds);
@@ -82,6 +92,8 @@ internal sealed partial class CameraOperator(Clock clock)
     private record Front(Vehicle Vehicle, double3 AxisBody, double3 UpBody, double Distance, double Aim, double From,
         double GameStart, double GameSeconds);
     private Front? _front;
+    // @front's last view over the celestial (in its fixed frame: place, aim, up), held once the vehicle is gone
+    private (Celestial Body, double3 Place, double3 Aim, double3 Up)? _frontHeld;
 
     private static double3? BodyAxis(string s) =>
         (s.StartsWith('-') ? -1 : 1) * s.TrimStart('-') switch
@@ -104,15 +116,26 @@ internal sealed partial class CameraOperator(Clock clock)
         _lookMove = null;
         _lastUp = null;
         _front = new Front(v, axis, up, dist, aim, from, Universe.GetElapsedSeconds(), seconds);
+        _frontHeld = null;
         Hold();
         UpdateCamera(0);
         return true;
     }
 
-    private static void FrontView(Front f)
+    private void FrontView(Front f)
     {
         if (f.Vehicle.IsDisposed || f.Vehicle.Parent is not Celestial body)
+        {
+            // Blown up or broken up: the view stays where it was, as the game's camera moves to what is left
+            if (_frontHeld is { } h)
+            {
+                var cce = h.Body.GetCcf2Cce();
+                var placeEcl = h.Body.GetPositionEcl() + h.Place.Transform(cce);
+                var aimEcl = h.Body.GetPositionEcl() + h.Aim.Transform(cce);
+                Apply(h.Body, (placeEcl, aimEcl - placeEcl, h.Up.Transform(cce)), RigClearance);
+            }
             return;
+        }
         var axis = double3.Normalize(f.AxisBody.Transform(f.Vehicle.Body2Cce));
         var up = double3.Normalize(f.UpBody.Transform(f.Vehicle.Body2Cce));
         var aim = f.Vehicle.GetPositionEcl() + up * f.Aim;
@@ -120,6 +143,7 @@ internal sealed partial class CameraOperator(Clock clock)
         double u = f.GameSeconds > 0
             ? Smooth(Math.Clamp((Universe.GetElapsedSeconds() - f.GameStart) / f.GameSeconds, 0, 1)) : 1;
         var position = aim + axis * Math.Exp(Math.Log(f.From) + (Math.Log(f.Distance) - Math.Log(f.From)) * u);
+        _frontHeld = (body, ToCcf(body, position), ToCcf(body, aim), up.Transform(body.GetCce2Ccf()));
         Apply(body, (position, aim - position, up), RigClearance, f.Vehicle);
     }
 

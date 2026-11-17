@@ -88,6 +88,15 @@ static KQueue* makeQueue(KDevice* dev, uint32_t family, NSUInteger maxBuffers, N
     return q;
 }
 
+// What the device holds, freed: by vkDestroyDevice, and by vkCreateDevice when a part fails (any part may be null)
+static void destroyDevice(KDevice* dev) {
+    kmtlShaderPrewarmStop(dev);
+    kmtlDestroyInternal(dev);
+    delete dev->queue;
+    delete dev->transferQueue;
+    delete dev;
+}
+
 VKFN(VkResult) vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* ci, const VkAllocationCallbacks*, VkDevice* out) {
     KTRACE_FIRST();
     auto* pd = (KPhysicalDevice*)physicalDevice;
@@ -102,24 +111,22 @@ VKFN(VkResult) vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCre
     dev->residency.set = [dev->mtl newResidencySetWithDescriptor:rd error:&err];
     if (!dev->residency.set) {
         KERR("vkCreateDevice: residency set failed: %s", err.description.UTF8String);
-        delete dev;
+        destroyDevice(dev);
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     dev->timestampScratch = [dev->mtl newBufferWithLength:256 options:MTLResourceStorageModePrivate];
     if (!dev->timestampScratch) {
         KERR("vkCreateDevice: timestamp scratch buffer failed");
-        delete dev;
+        destroyDevice(dev);
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     dev->queue = makeQueue(dev, 0, 256, @"KSA Metal queue", @"KSA Metal encoder chain");
     // A transfer-only queue family: KSA's texture streamer then uploads on its own queue
     dev->transferQueue = dev->queue ? makeQueue(dev, 1, 64, @"KSA Metal transfer queue", @"KSA Metal transfer chain") : nullptr;
-    if (!dev->transferQueue) {
-        delete dev->queue;
-        delete dev;
+    if (!dev->transferQueue || !kmtlInitInternal(dev)) {
+        destroyDevice(dev);
         return VK_ERROR_INITIALIZATION_FAILED;
     }
-    kmtlInitInternal(dev);
     kmtlShaderPrewarm(dev);
     KLOG(1, "device created");
     *out = (VkDevice)dev;
@@ -128,12 +135,7 @@ VKFN(VkResult) vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCre
 
 VKFN(void) vkDestroyDevice(VkDevice device, const VkAllocationCallbacks*) {
     KTRACE_FIRST_PLAIN();
-    auto* dev = (KDevice*)device;
-    if (!dev) return;
-    kmtlDestroyInternal(dev);
-    delete dev->queue;
-    delete dev->transferQueue;
-    delete dev;
+    if (device) destroyDevice((KDevice*)device);
 }
 
 VKFN(void) vkGetDeviceQueue(VkDevice device, uint32_t family, uint32_t index, VkQueue* out) {

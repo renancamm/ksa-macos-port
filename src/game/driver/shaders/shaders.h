@@ -31,3 +31,4 @@ bool kmtlTranslatedParse(const std::string& text, KTranslated* out);
 void kmtlCacheNoteUsed(uint64_t key);
 void kmtlCacheFlushRecent();
 void kmtlShaderPrewarm(KDevice* dev);
+void kmtlShaderPrewarmStop(KDevice* dev);

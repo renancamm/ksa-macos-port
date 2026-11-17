@@ -285,6 +285,19 @@ public static class Runs
         }
     }
 
+    // After the game's events of a frame, before it is drawn: the director's camera back in its place
+    public static void AfterGameEvents()
+    {
+        try
+        {
+            _run?.AfterGameEvents();
+        }
+        catch (Exception e)
+        {
+            Log($"BenchmarkRun: {e}");
+        }
+    }
+
     private static void Frame()
     {
         if (_firstFrame)
