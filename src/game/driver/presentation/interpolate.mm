@@ -54,13 +54,10 @@ VKFN(void) vkCmdMarkUiKSA(VkCommandBuffer commandBuffer) {
     id<MTLTexture> src = cb->pass.desc.colorAttachments[0].texture;
     if (!src || src.sampleCount > 1 || src.storageMode == MTLStorageModeMemoryless) return;
     std::lock_guard<std::mutex> lock(g_fi.m);
-    if (!g_fi.scene || g_fi.scene.width != src.width || g_fi.scene.height != src.height || g_fi.scene.pixelFormat != src.pixelFormat) {
-        MTLTextureDescriptor* d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:src.pixelFormat width:src.width
-                                                                                   height:src.height mipmapped:NO];
-        d.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite | MTLTextureUsageRenderTarget;
-        d.storageMode = MTLStorageModePrivate;
-        g_fi.scene = [cb->device->mtl newTextureWithDescriptor:d];
-        g_fi.prevScene = [cb->device->mtl newTextureWithDescriptor:d];
+    if (!kmtlTextureIs(g_fi.scene, src.width, src.height, src.pixelFormat)) {
+        MTLTextureUsage usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite | MTLTextureUsageRenderTarget;
+        g_fi.scene = kmtlPrivateTexture(cb->device->mtl, src.pixelFormat, src.width, src.height, usage);
+        g_fi.prevScene = kmtlPrivateTexture(cb->device->mtl, src.pixelFormat, src.width, src.height, usage);
         g_fi.sceneSerial = 0;
     }
     cb->suspendRender();
@@ -87,8 +84,7 @@ id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<
         return nil;
     }
     // Without this frame's scene (no UI mark: a loading screen), no frame in between, and no history for the next
-    if (!g_fi.scene || g_fi.sceneSerial != g_fi.frameSerial || g_fi.scene.width != color.width ||
-        g_fi.scene.height != color.height || g_fi.scene.pixelFormat != color.pixelFormat) {
+    if (g_fi.sceneSerial != g_fi.frameSerial || !kmtlTextureIs(g_fi.scene, color.width, color.height, color.pixelFormat)) {
         g_fi.prevSceneValid = false;
         return nil;
     }
@@ -106,11 +102,8 @@ id<MTLTexture> kmtlPresentInterpolate(KDevice* dev, id<MTLCommandBuffer> cb, id<
         fd.inputWidth = g_fi.inW; fd.inputHeight = g_fi.inH;
         fd.outputWidth = color.width; fd.outputHeight = color.height;
         g_fi.interpolator = [fd newFrameInterpolatorWithDevice:d];
-        MTLTextureDescriptor* td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:color.pixelFormat width:color.width
-                                                                                    height:color.height mipmapped:NO];
-        td.storageMode = MTLStorageModePrivate;
-        td.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite | MTLTextureUsageRenderTarget;
-        g_fi.interpolated = [d newTextureWithDescriptor:td];
+        g_fi.interpolated = kmtlPrivateTexture(d, color.pixelFormat, color.width, color.height,
+                                               MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite | MTLTextureUsageRenderTarget);
         if (!g_fi.interpolator) {
             KERR("frame interpolation: interpolator %ux%u -> %lux%lu not created", g_fi.inW, g_fi.inH, (unsigned long)color.width,
                  (unsigned long)color.height);

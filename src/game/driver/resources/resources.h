@@ -92,6 +92,12 @@ void kmtlDynamicForget(KImage* img);
 void kmtlDynamicAddView(KImageView* v);
 void kmtlDynamicRemoveView(KImageView* v);
 void kmtlDynamicScale(const KImage* img, float* sx, float* sy);
+// What the game gives at an image's own size, at a level (scaled by sx, sy): a viewport, a rectangle covering what it
+// covered within limitW x limitH ([x0, x1) x [y0, y1)), a point
+MTLViewport kmtlDynamicViewport(const VkViewport& vp, double sx, double sy);
+void kmtlDynamicRect(double sx, double sy, int64_t x, int64_t y, int64_t w, int64_t h, int64_t limitW, int64_t limitH,
+                     int64_t* x0, int64_t* y0, int64_t* x1, int64_t* y1);
+int32_t kmtlDynamicPoint(int32_t v, double s);
 id<MTLTexture> kmtlViewTexture(KImageView* v, id<MTLTexture> tex);
 bool kmtlDynamicView(VkImageView view);                       // a view of a dynamic image
 void kmtlDynamicTranslate(const KSetLayout* l, uint64_t* slots);  // a set's copy: its textures at the frame's level

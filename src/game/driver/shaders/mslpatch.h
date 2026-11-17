@@ -19,3 +19,7 @@ std::string kmtlMslKeepSpecialization(std::string msl, const std::string& transl
 std::string kmtlMslRtIntersectors(const std::string& msl);
 // The field types and names of a struct in translated MSL (none when it has no such struct)
 std::vector<std::string> kmtlMslStructFields(const std::string& msl, const std::string& name, std::vector<std::string>* names);
+// The translation's own edits (translate.mm): multiview's layer as the view index; arrays of acceleration structures
+// passed as device pointers
+std::string kmtlMslViewLayer(std::string msl);
+std::string kmtlMslAccelArrays(const std::string& msl);

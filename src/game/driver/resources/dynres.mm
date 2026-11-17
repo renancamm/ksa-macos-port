@@ -256,6 +256,24 @@ void kmtlDynamicScale(const KImage* img, float* sx, float* sy) {
     *sy = (float)img->mtl.height / (float)img->info.extent.height;
 }
 
+// What the game gives at an image's own size, at its level (scaled by sx, sy), each with its own rounding. A viewport:
+// exact. A rectangle (scissors, copies): its start rounded down and its end up, so that it covers what it covered,
+// within limitW x limitH, as [x0, x1) x [y0, y1) (empty when x1 <= x0 or y1 <= y0). A point (a blit's corners): to the
+// nearest pixel
+MTLViewport kmtlDynamicViewport(const VkViewport& vp, double sx, double sy) {
+    return {vp.x * sx, vp.y * sy, vp.width * sx, vp.height * sy, vp.minDepth, vp.maxDepth};
+}
+
+void kmtlDynamicRect(double sx, double sy, int64_t x, int64_t y, int64_t w, int64_t h, int64_t limitW, int64_t limitH,
+                     int64_t* x0, int64_t* y0, int64_t* x1, int64_t* y1) {
+    *x0 = std::max<int64_t>(0, (int64_t)std::floor(x * sx));
+    *y0 = std::max<int64_t>(0, (int64_t)std::floor(y * sy));
+    *x1 = std::min<int64_t>(limitW, (int64_t)std::ceil(((double)x + w) * sx));
+    *y1 = std::min<int64_t>(limitH, (int64_t)std::ceil(((double)y + h) * sy));
+}
+
+int32_t kmtlDynamicPoint(int32_t v, double s) { return (int32_t)lround(v * s); }
+
 static const char* kResampleSource = R"(
 #include <metal_stdlib>
 using namespace metal;
@@ -303,7 +321,7 @@ static id<MTLRenderPipelineState> resamplePipeline(KDevice* dev, const KImage* i
     if (it != g_dyn.resample.end()) return it->second;
     NSError* err = nil;
     if (!g_dyn.library) {
-        g_dyn.library = [dev->mtl newLibraryWithSource:[NSString stringWithUTF8String:kResampleSource] options:nil error:&err];
+        g_dyn.library = kmtlLibrary(dev->mtl, kResampleSource, nil, &err);
         if (!g_dyn.library) KERR("dynamic resolution: resample shaders: %s", err.localizedDescription.UTF8String);
     }
     id<MTLRenderPipelineState> ps = nil;

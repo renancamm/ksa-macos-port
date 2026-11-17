@@ -275,6 +275,23 @@ inline const void* findNext(const void* chain, VkStructureType type) {
 // missing; with keep, a file already there stays
 uint64_t kmtlHash(const void* data, size_t size);
 void kmtlDumpFile(const char* dir, const std::string& name, const void* data, size_t size, bool keep = false);
+// kmtl.mm: the median of n values (the upper one of an even count; 0 for none); a whole file read (false where it
+// can't be); a file written through a temporary one, so that a reader never sees half of it
+double kmtlMedian(const double* v, uint32_t n);
+bool kmtlReadFile(const std::string& path, std::string* out);
+bool kmtlWriteFileAtomically(const std::string& path, const std::string& data);
+// kmtl.mm, for every compile of MSL source (the game's stages with their options, the driver's own kernels with
+// Metal's defaults: options nil): the library, nil with *error
+id<MTLLibrary> kmtlLibrary(id<MTLDevice> d, const char* source, MTLCompileOptions* options, NSError** error);
+// kmtl.mm, for the driver's own passes: compute pipelines from MSL source, one per function name (nil where it failed;
+// error: the first failure's); a private 2D texture; whether a texture is there with this size and format
+std::vector<id<MTLComputePipelineState>> kmtlComputePipelines(id<MTLDevice> d, const char* source,
+                                                              std::initializer_list<const char*> names, std::string* error);
+id<MTLTexture> kmtlPrivateTexture(id<MTLDevice> d, MTLPixelFormat format, NSUInteger width, NSUInteger height,
+                                  MTLTextureUsage usage);
+inline bool kmtlTextureIs(id<MTLTexture> t, NSUInteger width, NSUInteger height, MTLPixelFormat format) {
+    return t && t.width == width && t.height == height && t.pixelFormat == format;
+}
 
 // Memory accounting (frame log and budget)
 extern std::atomic<int64_t> g_allocatedBytes;

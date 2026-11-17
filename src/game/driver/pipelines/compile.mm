@@ -69,7 +69,7 @@ static id<MTLLibrary> compileMSL(KDevice* dev, const std::string& msl, std::stri
     o.mathMode = kmtlConfig().preciseMath ? MTLMathModeSafe : MTLMathModeFast;
     o.preserveInvariance = YES;
     NSError* e = nil;
-    id<MTLLibrary> lib = [dev->mtl newLibraryWithSource:[NSString stringWithUTF8String:msl.c_str()] options:o error:&e];
+    id<MTLLibrary> lib = kmtlLibrary(dev->mtl, msl.c_str(), o, &e);
     g_usCompile += usSince(t0);
     g_nCompile++;
     std::lock_guard<std::mutex> lock(entry->m);
@@ -118,16 +118,11 @@ static void applyOverride(const char* name, uint64_t key, KTranslated* tr) {
     if (!dir) return;
     char path[1200];
     snprintf(path, sizeof(path), "%s/%016llx.metal", dir, (unsigned long long)key);
-    FILE* f = fopen(path, "rb");
-    if (!f) {
-        snprintf(path, sizeof(path), "%s/%s.metal", dir, name);
-        f = fopen(path, "rb");
-    }
-    if (!f) return;
     std::string msl;
-    char buf[65536];
-    for (size_t n; (n = fread(buf, 1, sizeof(buf), f)) > 0;) msl.append(buf, n);
-    fclose(f);
+    if (!kmtlReadFile(path, &msl)) {
+        snprintf(path, sizeof(path), "%s/%s.metal", dir, name);
+        if (!kmtlReadFile(path, &msl)) return;
+    }
     // One file for every translation of a module stage holds the specialization values of the translation it was copied
     // from: those lines are taken from this one
     tr->msl = kmtlMslKeepSpecialization(msl, tr->msl);

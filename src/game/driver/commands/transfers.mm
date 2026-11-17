@@ -67,8 +67,8 @@ static bool atLevel(const KImage* img, uint32_t mip, KRegion2D& r, bool grow = t
     float sx, sy;
     kmtlDynamicScale(img, &sx, &sy);
     int64_t tw = std::max<int64_t>(1, (int64_t)img->mtl.width >> mip), th = std::max<int64_t>(1, (int64_t)img->mtl.height >> mip);
-    int64_t x0 = (int64_t)std::floor(r.x * (double)sx), y0 = (int64_t)std::floor(r.y * (double)sy);
-    int64_t x1 = std::min(tw, (int64_t)std::ceil(((double)r.x + r.w) * sx)), y1 = std::min(th, (int64_t)std::ceil(((double)r.y + r.h) * sy));
+    int64_t x0, y0, x1, y1;
+    kmtlDynamicRect(sx, sy, r.x, r.y, r.w, r.h, tw, th, &x0, &y0, &x1, &y1);
     // A copy to or from a buffer keeps at most the game's extent: its rows are laid out for it
     if (!grow) {
         x1 = std::min<int64_t>(x1, x0 + r.w);
@@ -209,8 +209,8 @@ VKFN(void) vkCmdBlitImage(VkCommandBuffer commandBuffer, VkImage src, VkImageLay
             float sx, sy;
             kmtlDynamicScale(img, &sx, &sy);
             for (int k = 0; k < 2; k++) {
-                o[k].x = (int32_t)lround(o[k].x * (double)sx);
-                o[k].y = (int32_t)lround(o[k].y * (double)sy);
+                o[k].x = kmtlDynamicPoint(o[k].x, sx);
+                o[k].y = kmtlDynamicPoint(o[k].y, sy);
             }
         };
         scaleCorners(s, b2.srcOffsets);

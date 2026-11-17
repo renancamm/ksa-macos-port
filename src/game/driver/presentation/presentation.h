@@ -79,12 +79,6 @@ double kmtlSteadyStep(uint32_t width, uint32_t height, int dir, bool take);
 // upscale.mm: how far MetalFX's temporal scaler scales on this Mac; its output from a content size, scaled that far
 float kmtlUpscaleMaxScale();
 uint32_t kmtlUpscaleReach(uint32_t content, float most);
-// upscale.mm, for the presentation's own passes (MetalFX's, the ray history): a private 2D texture; compute pipelines
-// from MSL source, one per function name (nil where it failed; error: the first failure's)
-id<MTLTexture> kmtlPrivateTexture(id<MTLDevice> d, MTLPixelFormat format, NSUInteger width, NSUInteger height,
-                                  MTLTextureUsage usage);
-std::vector<id<MTLComputePipelineState>> kmtlComputePipelines(id<MTLDevice> d, const char* source,
-                                                              std::initializer_list<const char*> names, std::string* error);
 // upscale.mm, for MetalFX's passes: everything encoded before finishes before anything after starts (a signal and a
 // wait on an event); the same around MetalFX's encoders in a command buffer of the game's
 void kmtlEventBarrier(id<MTLCommandBuffer> cb, id<MTLEvent> event, uint64_t* value);

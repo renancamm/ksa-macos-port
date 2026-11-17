@@ -208,14 +208,9 @@ static void exitSoon(const char* why) {
     dispatch_async(dispatch_get_global_queue(0, 0), ^{ usleep(300000); _exit(0); });
 }
 
-void kmtlWritePNG(id<MTLBuffer> buf, NSUInteger w, NSUInteger h, bool bgra, const std::string& path) {
-    uint8_t* px = (uint8_t*)buf.contents;
-    if (bgra) {
-        for (NSUInteger i = 0; i < w * h; i++) std::swap(px[i * 4], px[i * 4 + 2]);
-    }
-    for (NSUInteger i = 0; i < w * h; i++) px[i * 4 + 3] = 255;
+bool kmtlEncodePNG(uint8_t* rgbx, NSUInteger w, NSUInteger h, const std::string& path) {
     CGColorSpaceRef cs = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
-    CGContextRef ctx = CGBitmapContextCreate(px, w, h, 8, w * 4, cs, kCGImageAlphaNoneSkipLast);
+    CGContextRef ctx = CGBitmapContextCreate(rgbx, w, h, 8, w * 4, cs, kCGImageAlphaNoneSkipLast);
     CGImageRef image = CGBitmapContextCreateImage(ctx);
     CFURLRef url = CFURLCreateFromFileSystemRepresentation(nullptr, (const UInt8*)path.c_str(), path.size(), false);
     CGImageDestinationRef dest = CGImageDestinationCreateWithURL(url, (__bridge CFStringRef)UTTypePNG.identifier, 1, nullptr);
@@ -229,6 +224,16 @@ void kmtlWritePNG(id<MTLBuffer> buf, NSUInteger w, NSUInteger h, bool bgra, cons
     CGImageRelease(image);
     CGContextRelease(ctx);
     CGColorSpaceRelease(cs);
+    return ok;
+}
+
+void kmtlWritePNG(id<MTLBuffer> buf, NSUInteger w, NSUInteger h, bool bgra, const std::string& path) {
+    uint8_t* px = (uint8_t*)buf.contents;
+    if (bgra) {
+        for (NSUInteger i = 0; i < w * h; i++) std::swap(px[i * 4], px[i * 4 + 2]);
+    }
+    for (NSUInteger i = 0; i < w * h; i++) px[i * 4 + 3] = 255;
+    bool ok = kmtlEncodePNG(px, w, h, path);
     KLOG(0, "screenshot %s: %s", ok ? "written" : "FAILED", path.c_str());
 }
 
@@ -278,10 +283,7 @@ static void writeShot(void (^write)(void), void (^done)(void)) {
 void kmtlSavePNG(id<MTLCommandBuffer> cb, id<MTLTexture> tex, id<MTLFence> after, std::string path, void (^done)(void)) {
     NSUInteger w = tex.width, h = tex.height;
     if (tex.pixelFormat == MTLPixelFormatRGB10A2Unorm) {
-        MTLTextureDescriptor* d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:tex.pixelFormat width:w
-                                                                                    height:h mipmapped:NO];
-        d.storageMode = MTLStorageModePrivate;
-        id<MTLTexture> copy = [tex.device newTextureWithDescriptor:d];
+        id<MTLTexture> copy = kmtlPrivateTexture(tex.device, tex.pixelFormat, w, h, MTLTextureUsageShaderRead);
         id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
         if (after) [b waitForFence:after];
         [b copyFromTexture:tex toTexture:copy];

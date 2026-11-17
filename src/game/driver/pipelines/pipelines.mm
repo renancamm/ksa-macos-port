@@ -334,23 +334,184 @@ static int throttleFor(const std::string& profName) {
     return -1;
 }
 
+// A graphics pipeline's stages (false, logged, for a stage it can't have)
+static bool findStages(const VkGraphicsPipelineCreateInfo* ci, const VkPipelineShaderStageCreateInfo** vs,
+                       const VkPipelineShaderStageCreateInfo** fs, const VkPipelineShaderStageCreateInfo** tcs,
+                       const VkPipelineShaderStageCreateInfo** tes) {
+    for (uint32_t i = 0; i < ci->stageCount; i++) {
+        if (ci->pStages[i].stage == VK_SHADER_STAGE_VERTEX_BIT) *vs = &ci->pStages[i];
+        else if (ci->pStages[i].stage == VK_SHADER_STAGE_FRAGMENT_BIT) *fs = &ci->pStages[i];
+        else if (ci->pStages[i].stage == VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT) *tcs = &ci->pStages[i];
+        else if (ci->pStages[i].stage == VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT) *tes = &ci->pStages[i];
+        else {
+            KERR("graphics pipeline stage 0x%x not supported", ci->pStages[i].stage);
+            return false;
+        }
+    }
+    return true;
+}
+
+// A tessellation pipeline's modes, merged from both stages (each declares only part of them): evaluation first, the
+// control stage's declarations win
+static KTranslated tessModes(const VkPipelineShaderStageCreateInfo* tcs, const VkPipelineShaderStageCreateInfo* tes) {
+    KTranslated tmodes;
+    kmtlTessModes((KShaderModule*)tes->module, tes->pName, spv::ExecutionModelTessellationEvaluation, &tmodes);
+    KTranslated hm;
+    kmtlTessModes((KShaderModule*)tcs->module, tcs->pName, spv::ExecutionModelTessellationControl, &hm);
+    if (hm.outputVertices) tmodes.outputVertices = hm.outputVertices;
+    if (hm.hasDomain) { tmodes.quads = hm.quads; tmodes.hasDomain = true; }
+    if (hm.hasWinding && !tmodes.hasWinding) { tmodes.cw = hm.cw; tmodes.hasWinding = true; }
+    if (hm.hasPartition && !tmodes.hasPartition) { tmodes.partition = hm.partition; tmodes.hasPartition = true; }
+    return tmodes;
+}
+
+// Metal's tessellator for a tessellation pipeline's modes
+static void setTessellation(MTLRenderPipelineDescriptor* d, const VkGraphicsPipelineCreateInfo* ci, const KTranslated& tmodes) {
+    bool cw = tmodes.cw;
+    d.maxTessellationFactor = 64;
+    d.tessellationFactorFormat = MTLTessellationFactorFormatHalf;
+    d.tessellationFactorStepFunction = MTLTessellationFactorStepFunctionPerPatch;
+    d.tessellationControlPointIndexType = MTLTessellationControlPointIndexTypeNone;
+    d.tessellationPartitionMode = tmodes.partition;
+    // Reversed because of the Y flip; reversed again for a lower-left domain origin
+    MTLWinding w = cw ? MTLWindingCounterClockwise : MTLWindingClockwise;
+    auto* dom = ci->pTessellationState ? (const VkPipelineTessellationDomainOriginStateCreateInfo*)findNext(
+        ci->pTessellationState->pNext, VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_DOMAIN_ORIGIN_STATE_CREATE_INFO) : nullptr;
+    if (dom && dom->domainOrigin == VK_TESSELLATION_DOMAIN_ORIGIN_LOWER_LEFT)
+        w = w == MTLWindingClockwise ? MTLWindingCounterClockwise : MTLWindingClockwise;
+    d.tessellationOutputWindingOrder = w;
+}
+
+// The vertex input's layouts and attributes
+static MTLVertexDescriptor* vertexDescriptor(const VkPipelineVertexInputStateCreateInfo* vi) {
+    MTLVertexDescriptor* vd = [MTLVertexDescriptor vertexDescriptor];
+    for (uint32_t i = 0; i < vi->vertexBindingDescriptionCount; i++) {
+        const auto& b = vi->pVertexBindingDescriptions[i];
+        MTLVertexBufferLayoutDescriptor* l = vd.layouts[vertexBufferIndex(b.binding)];
+        if (b.stride == 0) {
+            l.stepFunction = MTLVertexStepFunctionConstant;
+            l.stepRate = 0;
+            l.stride = 16;
+        } else {
+            l.stride = b.stride;
+            l.stepFunction = b.inputRate == VK_VERTEX_INPUT_RATE_INSTANCE ? MTLVertexStepFunctionPerInstance : MTLVertexStepFunctionPerVertex;
+            l.stepRate = 1;
+        }
+    }
+    for (uint32_t i = 0; i < vi->vertexAttributeDescriptionCount; i++) {
+        const auto& a = vi->pVertexAttributeDescriptions[i];
+        MTLVertexAttributeDescriptor* ad = vd.attributes[a.location];
+        ad.format = kmtlVertexFormat(a.format);
+        if (ad.format == MTLVertexFormatInvalid) KERR("vertex format %d unsupported", a.format);
+        ad.offset = a.offset;
+        ad.bufferIndex = vertexBufferIndex(a.binding);
+    }
+    return vd;
+}
+
+// The attachments' formats, blending and samples
+static void setAttachments(MTLRenderPipelineDescriptor* d, const VkGraphicsPipelineCreateInfo* ci, const KAttachmentFormats& af) {
+    const auto* ms = ci->pMultisampleState;
+    const auto* cb = ci->pColorBlendState;
+    for (size_t i = 0; i < af.colors.size(); i++) {
+        MTLRenderPipelineColorAttachmentDescriptor* ca = d.colorAttachments[i];
+        ca.pixelFormat = af.colors[i];
+        if (af.colors[i] == MTLPixelFormatInvalid || !cb || i >= cb->attachmentCount) continue;
+        const auto& b = cb->pAttachments[i];
+        ca.blendingEnabled = b.blendEnable;
+        ca.sourceRGBBlendFactor = blendFactor(b.srcColorBlendFactor);
+        ca.destinationRGBBlendFactor = blendFactor(b.dstColorBlendFactor);
+        ca.rgbBlendOperation = blendOp(b.colorBlendOp);
+        ca.sourceAlphaBlendFactor = blendFactor(b.srcAlphaBlendFactor);
+        ca.destinationAlphaBlendFactor = blendFactor(b.dstAlphaBlendFactor);
+        ca.alphaBlendOperation = blendOp(b.alphaBlendOp);
+        MTLColorWriteMask wm = MTLColorWriteMaskNone;
+        if (b.colorWriteMask & VK_COLOR_COMPONENT_R_BIT) wm |= MTLColorWriteMaskRed;
+        if (b.colorWriteMask & VK_COLOR_COMPONENT_G_BIT) wm |= MTLColorWriteMaskGreen;
+        if (b.colorWriteMask & VK_COLOR_COMPONENT_B_BIT) wm |= MTLColorWriteMaskBlue;
+        if (b.colorWriteMask & VK_COLOR_COMPONENT_A_BIT) wm |= MTLColorWriteMaskAlpha;
+        ca.writeMask = wm;
+    }
+    d.depthAttachmentPixelFormat = af.depth;
+    d.stencilAttachmentPixelFormat = af.stencil;
+    d.rasterSampleCount = ms ? ms->rasterizationSamples : 1;
+    if (ms) {
+        d.alphaToCoverageEnabled = ms->alphaToCoverageEnable;
+        d.alphaToOneEnabled = ms->alphaToOneEnable;
+    }
+}
+
+// A pipeline's name from its shader modules' hashes, and what follows from it (its id, the throttle)
+static void nameGraphicsPipeline(KPipeline* p, const VkPipelineShaderStageCreateInfo* first, bool tess,
+                                 const VkPipelineShaderStageCreateInfo* fs) {
+    char nm[80];
+    auto* vm = (KShaderModule*)first->module;
+    snprintf(nm, sizeof(nm), "%c%016llx", tess ? 't' : 'v', (unsigned long long)vm->hash);
+    p->profName = nm;
+    if (fs) {
+        snprintf(nm, sizeof(nm), "+f%016llx", (unsigned long long)((KShaderModule*)fs->module)->hash);
+        p->profName += nm;
+    }
+    p->profId = kmtlHash(p->profName.data(), p->profName.size());
+    p->throttle = throttleFor(p->profName);
+}
+
+// The rasterizer's state
+static void setRaster(KPipeline* p, const VkPipelineRasterizationStateCreateInfo* rs) {
+    p->cull = rs->cullMode == VK_CULL_MODE_FRONT_BIT ? MTLCullModeFront
+            : rs->cullMode == VK_CULL_MODE_BACK_BIT ? MTLCullModeBack : MTLCullModeNone;
+    if (rs->cullMode == VK_CULL_MODE_FRONT_AND_BACK) KLOG(1, "cull front-and-back unsupported");
+    p->winding = rs->frontFace == VK_FRONT_FACE_CLOCKWISE ? MTLWindingClockwise : MTLWindingCounterClockwise;
+    p->fill = rs->polygonMode == VK_POLYGON_MODE_LINE ? MTLTriangleFillModeLines : MTLTriangleFillModeFill;
+    p->depthClip = rs->depthClampEnable ? MTLDepthClipModeClamp : MTLDepthClipModeClip;
+    p->depthBiasEnable = rs->depthBiasEnable;
+    p->depthBias[0] = rs->depthBiasConstantFactor;
+    p->depthBias[1] = rs->depthBiasSlopeFactor;
+    p->depthBias[2] = rs->depthBiasClamp;
+}
+
+// The depth and stencil tests, and the stencil references
+static void setDepthStencil(KDevice* dev, KPipeline* p, const VkPipelineDepthStencilStateCreateInfo* ds,
+                            const KAttachmentFormats& af) {
+    MTLDepthStencilDescriptor* dsd = [MTLDepthStencilDescriptor new];
+    if (ds && af.depth != MTLPixelFormatInvalid && ds->depthTestEnable) {
+        dsd.depthCompareFunction = kmtlCompare(ds->depthCompareOp);
+        dsd.depthWriteEnabled = ds->depthWriteEnable;
+    }
+    if (ds && af.stencil != MTLPixelFormatInvalid && ds->stencilTestEnable) {
+        dsd.frontFaceStencil = stencilDesc(ds->front);
+        dsd.backFaceStencil = stencilDesc(ds->back);
+        p->stencilRef[0] = ds->front.reference;
+        p->stencilRef[1] = ds->back.reference;
+    }
+    p->depthStencil = [dev->mtl newDepthStencilStateWithDescriptor:dsd];
+}
+
+// The state set by commands instead (dynamic), and the viewports and scissors that aren't
+static void setDynamicState(KPipeline* p, const VkGraphicsPipelineCreateInfo* ci) {
+    if (const auto* dy = ci->pDynamicState) {
+        for (uint32_t i = 0; i < dy->dynamicStateCount; i++) {
+            switch (dy->pDynamicStates[i]) {
+            case VK_DYNAMIC_STATE_VIEWPORT: case VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT: p->dynamicViewport = true; break;
+            case VK_DYNAMIC_STATE_SCISSOR: case VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT: p->dynamicScissor = true; break;
+            case VK_DYNAMIC_STATE_DEPTH_BIAS: p->dynamicDepthBias = true; break;
+            case VK_DYNAMIC_STATE_STENCIL_REFERENCE: p->dynamicStencilRef = true; break;
+            case VK_DYNAMIC_STATE_BLEND_CONSTANTS: p->dynamicBlendConstants = true; break;
+            default: KLOG(1, "dynamic state %d ignored", dy->pDynamicStates[i]); break;
+            }
+        }
+    }
+    if (const auto* vp = ci->pViewportState) {
+        if (!p->dynamicViewport && vp->pViewports) p->viewports.assign(vp->pViewports, vp->pViewports + vp->viewportCount);
+        if (!p->dynamicScissor && vp->pScissors) p->scissors.assign(vp->pScissors, vp->pScissors + vp->scissorCount);
+    }
+}
+
 static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineCreateInfo* ci) {
     auto* layout = (KPipelineLayout*)ci->layout;
     KAttachmentFormats af = attachmentFormats(ci);
-    const VkPipelineShaderStageCreateInfo* vs = nullptr;
-    const VkPipelineShaderStageCreateInfo* fs = nullptr;
-    const VkPipelineShaderStageCreateInfo* tcs = nullptr;
-    const VkPipelineShaderStageCreateInfo* tes = nullptr;
-    for (uint32_t i = 0; i < ci->stageCount; i++) {
-        if (ci->pStages[i].stage == VK_SHADER_STAGE_VERTEX_BIT) vs = &ci->pStages[i];
-        else if (ci->pStages[i].stage == VK_SHADER_STAGE_FRAGMENT_BIT) fs = &ci->pStages[i];
-        else if (ci->pStages[i].stage == VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT) tcs = &ci->pStages[i];
-        else if (ci->pStages[i].stage == VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT) tes = &ci->pStages[i];
-        else {
-            KERR("graphics pipeline stage 0x%x not supported", ci->pStages[i].stage);
-            return nullptr;
-        }
-    }
+    const VkPipelineShaderStageCreateInfo *vs = nullptr, *fs = nullptr, *tcs = nullptr, *tes = nullptr;
+    if (!findStages(ci, &vs, &fs, &tcs, &tes)) return nullptr;
     bool tess = tcs && tes;
     if ((tcs || tes) && (!tess || !kmtlConfig().tessellation)) {
         KERR("tessellation pipeline skipped (%s)", tess ? "tessellation disabled by KSA_MTL_TESSELLATION=0"
@@ -361,14 +522,7 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
     bool passthrough = false;
     KTranslated htr, dtr, tmodes;
     if (tess) {
-        // Merge both stages' modes: evaluation first, the control stage's declarations win
-        kmtlTessModes((KShaderModule*)tes->module, tes->pName, spv::ExecutionModelTessellationEvaluation, &tmodes);
-        KTranslated hm;
-        kmtlTessModes((KShaderModule*)tcs->module, tcs->pName, spv::ExecutionModelTessellationControl, &hm);
-        if (hm.outputVertices) tmodes.outputVertices = hm.outputVertices;
-        if (hm.hasDomain) { tmodes.quads = hm.quads; tmodes.hasDomain = true; }
-        if (hm.hasWinding && !tmodes.hasWinding) { tmodes.cw = hm.cw; tmodes.hasWinding = true; }
-        if (hm.hasPartition && !tmodes.hasPartition) { tmodes.partition = hm.partition; tmodes.hasPartition = true; }
+        tmodes = tessModes(tcs, tes);
         if (!buildTessKernels(dev, ci, vs, tcs, layout, &tessStages, &htr, tmodes, &passthrough)) return nullptr;
     }
     if (!vs) {
@@ -416,77 +570,15 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
     d.fragmentFunction = ffn;
     d.supportIndirectCommandBuffers = NO;
 
-    if (tess) {
-        bool cw = tmodes.cw;
-        d.maxTessellationFactor = 64;
-        d.tessellationFactorFormat = MTLTessellationFactorFormatHalf;
-        d.tessellationFactorStepFunction = MTLTessellationFactorStepFunctionPerPatch;
-        d.tessellationControlPointIndexType = MTLTessellationControlPointIndexTypeNone;
-        d.tessellationPartitionMode = tmodes.partition;
-        // Reversed because of the Y flip; reversed again for a lower-left domain origin
-        MTLWinding w = cw ? MTLWindingCounterClockwise : MTLWindingClockwise;
-        auto* dom = ci->pTessellationState ? (const VkPipelineTessellationDomainOriginStateCreateInfo*)findNext(
-            ci->pTessellationState->pNext, VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_DOMAIN_ORIGIN_STATE_CREATE_INFO) : nullptr;
-        if (dom && dom->domainOrigin == VK_TESSELLATION_DOMAIN_ORIGIN_LOWER_LEFT)
-            w = w == MTLWindingClockwise ? MTLWindingCounterClockwise : MTLWindingClockwise;
-        d.tessellationOutputWindingOrder = w;
-    }
+    if (tess) setTessellation(d, ci, tmodes);
 
     // Vertex input (tessellation pipelines read it in the vertex kernel instead)
     if (const auto* vi = tess ? nullptr : ci->pVertexInputState) {
-        MTLVertexDescriptor* vd = [MTLVertexDescriptor vertexDescriptor];
-        for (uint32_t i = 0; i < vi->vertexBindingDescriptionCount; i++) {
-            const auto& b = vi->pVertexBindingDescriptions[i];
-            MTLVertexBufferLayoutDescriptor* l = vd.layouts[vertexBufferIndex(b.binding)];
-            if (b.stride == 0) {
-                l.stepFunction = MTLVertexStepFunctionConstant;
-                l.stepRate = 0;
-                l.stride = 16;
-            } else {
-                l.stride = b.stride;
-                l.stepFunction = b.inputRate == VK_VERTEX_INPUT_RATE_INSTANCE ? MTLVertexStepFunctionPerInstance : MTLVertexStepFunctionPerVertex;
-                l.stepRate = 1;
-            }
-        }
-        for (uint32_t i = 0; i < vi->vertexAttributeDescriptionCount; i++) {
-            const auto& a = vi->pVertexAttributeDescriptions[i];
-            MTLVertexAttributeDescriptor* ad = vd.attributes[a.location];
-            ad.format = kmtlVertexFormat(a.format);
-            if (ad.format == MTLVertexFormatInvalid) KERR("vertex format %d unsupported", a.format);
-            ad.offset = a.offset;
-            ad.bufferIndex = vertexBufferIndex(a.binding);
-        }
-        if (vi->vertexAttributeDescriptionCount) d.vertexDescriptor = vd;
+        if (vi->vertexAttributeDescriptionCount) d.vertexDescriptor = vertexDescriptor(vi);
     }
 
     // Attachments and blending
-    const auto* cb = ci->pColorBlendState;
-    for (size_t i = 0; i < af.colors.size(); i++) {
-        MTLRenderPipelineColorAttachmentDescriptor* ca = d.colorAttachments[i];
-        ca.pixelFormat = af.colors[i];
-        if (af.colors[i] == MTLPixelFormatInvalid || !cb || i >= cb->attachmentCount) continue;
-        const auto& b = cb->pAttachments[i];
-        ca.blendingEnabled = b.blendEnable;
-        ca.sourceRGBBlendFactor = blendFactor(b.srcColorBlendFactor);
-        ca.destinationRGBBlendFactor = blendFactor(b.dstColorBlendFactor);
-        ca.rgbBlendOperation = blendOp(b.colorBlendOp);
-        ca.sourceAlphaBlendFactor = blendFactor(b.srcAlphaBlendFactor);
-        ca.destinationAlphaBlendFactor = blendFactor(b.dstAlphaBlendFactor);
-        ca.alphaBlendOperation = blendOp(b.alphaBlendOp);
-        MTLColorWriteMask wm = MTLColorWriteMaskNone;
-        if (b.colorWriteMask & VK_COLOR_COMPONENT_R_BIT) wm |= MTLColorWriteMaskRed;
-        if (b.colorWriteMask & VK_COLOR_COMPONENT_G_BIT) wm |= MTLColorWriteMaskGreen;
-        if (b.colorWriteMask & VK_COLOR_COMPONENT_B_BIT) wm |= MTLColorWriteMaskBlue;
-        if (b.colorWriteMask & VK_COLOR_COMPONENT_A_BIT) wm |= MTLColorWriteMaskAlpha;
-        ca.writeMask = wm;
-    }
-    d.depthAttachmentPixelFormat = af.depth;
-    d.stencilAttachmentPixelFormat = af.stencil;
-    d.rasterSampleCount = ms ? ms->rasterizationSamples : 1;
-    if (ms) {
-        d.alphaToCoverageEnabled = ms->alphaToCoverageEnable;
-        d.alphaToOneEnabled = ms->alphaToOneEnable;
-    }
+    setAttachments(d, ci, af);
     VkPrimitiveTopology topo = ci->pInputAssemblyState ? ci->pInputAssemblyState->topology : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     if (!tess) d.inputPrimitiveTopology = topologyClass(topo);
     const auto* rs = ci->pRasterizationState;
@@ -560,64 +652,15 @@ static KPipeline* createGraphicsPipeline(KDevice* dev, const VkGraphicsPipelineC
     p->vertexUsesDrawId = vtr.usesDrawId;
     p->fragmentUsesDrawId = ftr.usesDrawId;
     p->viewMask = af.viewMask;
-    {
-        char nm[80];
-        auto* vm = (KShaderModule*)(tess ? tes->module : vs->module);
-        snprintf(nm, sizeof(nm), "%c%016llx", tess ? 't' : 'v', (unsigned long long)vm->hash);
-        p->profName = nm;
-        if (fs) {
-            snprintf(nm, sizeof(nm), "+f%016llx", (unsigned long long)((KShaderModule*)fs->module)->hash);
-            p->profName += nm;
-        }
-        p->profId = kmtlHash(p->profName.data(), p->profName.size());
-        p->throttle = throttleFor(p->profName);
-    }
-    if (rs) {
-        p->cull = rs->cullMode == VK_CULL_MODE_FRONT_BIT ? MTLCullModeFront
-                : rs->cullMode == VK_CULL_MODE_BACK_BIT ? MTLCullModeBack : MTLCullModeNone;
-        if (rs->cullMode == VK_CULL_MODE_FRONT_AND_BACK) KLOG(1, "cull front-and-back unsupported");
-        p->winding = rs->frontFace == VK_FRONT_FACE_CLOCKWISE ? MTLWindingClockwise : MTLWindingCounterClockwise;
-        p->fill = rs->polygonMode == VK_POLYGON_MODE_LINE ? MTLTriangleFillModeLines : MTLTriangleFillModeFill;
-        p->depthClip = rs->depthClampEnable ? MTLDepthClipModeClamp : MTLDepthClipModeClip;
-        p->depthBiasEnable = rs->depthBiasEnable;
-        p->depthBias[0] = rs->depthBiasConstantFactor;
-        p->depthBias[1] = rs->depthBiasSlopeFactor;
-        p->depthBias[2] = rs->depthBiasClamp;
-    }
-    if (cb) memcpy(p->blendConstants, cb->blendConstants, sizeof(p->blendConstants));
+    nameGraphicsPipeline(p, tess ? tes : vs, tess, fs);
+    if (rs) setRaster(p, rs);
+    if (const auto* cb = ci->pColorBlendState) memcpy(p->blendConstants, cb->blendConstants, sizeof(p->blendConstants));
 
     // Depth/stencil state
-    MTLDepthStencilDescriptor* dsd = [MTLDepthStencilDescriptor new];
-    const auto* ds = ci->pDepthStencilState;
-    if (ds && af.depth != MTLPixelFormatInvalid && ds->depthTestEnable) {
-        dsd.depthCompareFunction = kmtlCompare(ds->depthCompareOp);
-        dsd.depthWriteEnabled = ds->depthWriteEnable;
-    }
-    if (ds && af.stencil != MTLPixelFormatInvalid && ds->stencilTestEnable) {
-        dsd.frontFaceStencil = stencilDesc(ds->front);
-        dsd.backFaceStencil = stencilDesc(ds->back);
-        p->stencilRef[0] = ds->front.reference;
-        p->stencilRef[1] = ds->back.reference;
-    }
-    p->depthStencil = [dev->mtl newDepthStencilStateWithDescriptor:dsd];
+    setDepthStencil(dev, p, ci->pDepthStencilState, af);
 
     // Dynamic and static viewport/scissor
-    if (const auto* dy = ci->pDynamicState) {
-        for (uint32_t i = 0; i < dy->dynamicStateCount; i++) {
-            switch (dy->pDynamicStates[i]) {
-            case VK_DYNAMIC_STATE_VIEWPORT: case VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT: p->dynamicViewport = true; break;
-            case VK_DYNAMIC_STATE_SCISSOR: case VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT: p->dynamicScissor = true; break;
-            case VK_DYNAMIC_STATE_DEPTH_BIAS: p->dynamicDepthBias = true; break;
-            case VK_DYNAMIC_STATE_STENCIL_REFERENCE: p->dynamicStencilRef = true; break;
-            case VK_DYNAMIC_STATE_BLEND_CONSTANTS: p->dynamicBlendConstants = true; break;
-            default: KLOG(1, "dynamic state %d ignored", dy->pDynamicStates[i]); break;
-            }
-        }
-    }
-    if (const auto* vp = ci->pViewportState) {
-        if (!p->dynamicViewport && vp->pViewports) p->viewports.assign(vp->pViewports, vp->pViewports + vp->viewportCount);
-        if (!p->dynamicScissor && vp->pScissors) p->scissors.assign(vp->pScissors, vp->pScissors + vp->scissorCount);
-    }
+    setDynamicState(p, ci);
     return p;
 }
 

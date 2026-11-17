@@ -364,7 +364,7 @@ starts, how a file keeps its state, the order the driver's locks are taken in, a
 | Folder, file | What it holds |
 |---|---|
 | `kmtl.h` | the core: the rules, logging, the configuration, buffer indices, the dispatchable objects (instance, physical device, queue, device), shared helpers; then the layers' headers |
-| `kmtl.mm` | the core's helpers: a hash, files in the dump folders |
+| `kmtl.mm` | the core's helpers: a hash, files (dump folders, whole reads, atomic writes), a median, MSL compiled from source, compute pipelines and private textures for the driver's own passes |
 | `exports.h` | the driver's own API: every export besides Vulkan's, the structs they pass, their C# mirrors |
 | `setup/config.mm` | the settings above, read once from their variables (their names and defaults from `port-settings.h`, which the build makes from the settings table), and the log |
 | `setup/entry.mm` | the table behind `vkGetInstanceProcAddr` and `vkGetDeviceProcAddr`, `entries.inc`, which the build makes from Vulkan's registry and the driver's sources ([`../../build-tools/entries-generator/`](../../build-tools/entries-generator/)) |
@@ -379,7 +379,7 @@ starts, how a file keeps its state, the order the driver's locks are taken in, a
 | `resources/accel.mm` | acceleration structures for ray queries |
 | `resources/dynres.mm` | dynamic resolution (`dynamic_resolution`; `dynamic_level`, an experiment): the images of the main view's size and its fractions, a texture per level in the same memory, the level's changes |
 | `shaders/modules.mm` | shader modules |
-| `shaders/mslpatch.cpp`, `mslpatch.h` | text rewrites of translated MSL: uniform structs read in place, early fragment tests, an override's specialization values, intersectors; a struct's fields (tessellation) |
+| `shaders/mslpatch.cpp`, `mslpatch.h` | text rewrites of translated MSL: uniform structs read in place, early fragment tests, an override's specialization values, intersectors; a struct's fields (tessellation); the translation's own edits (multiview's layer, arrays of acceleration structures) |
 | `shaders/translate.mm`, `translate.h` | a shader stage's translation from SPIR-V to MSL |
 | `shaders/shadercache.mm` | the translation cache on disk and the background compile |
 | `shaders/corpus.mm` | the shader corpus (`shader_corpus`): translations recorded for the tests |
@@ -400,7 +400,7 @@ starts, how a file keeps its state, the order the driver's locks are taken in, a
 | `presentation/pacing.mm` | present pacing: Steady Frame Rate's cadence and steps, the present wait, late frame start, latency |
 | `presentation/hdr.mm` | HDR output: the layer in HDR10 with EDR, its metadata, the game's brightness settings |
 | `presentation/frametime.mm` | the frames' timing: presents counted, the GPU's busy time, what the display showed |
-| `presentation/upscale.mm` | MetalFX: upscaling, motion vectors, the scene's snapshots; the helpers MetalFX's passes share (barriers, private textures, kernels) |
+| `presentation/upscale.mm` | MetalFX: upscaling, motion vectors, the scene's snapshots; the barriers MetalFX's passes share |
 | `presentation/interpolate.mm` | MetalFX: frame interpolation at present, the scene before the UI (`vkCmdMarkUiKSA`) |
 | `presentation/rayhistory.mm` | MetalFX: the cockpit's ray-traced lighting with a history of its own |
 | `presentation/gpuclock.mm` | the GPU's clock from IOReport, for the frame rate's GPU times under paced frames |

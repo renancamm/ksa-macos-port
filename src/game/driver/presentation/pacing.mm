@@ -225,13 +225,6 @@ void kmtlUnlistSwapchain(KSwapchain* sc) {
 // also counts once its GPU work has ended, the present before it was shown, and the GPU is about to need the next
 // frame: the previous frame's predicted GPU end, less the CPU's part and a 2 ms margin. Frames then start when the GPU
 // can take them instead of queueing up. KSA_MTL_VSYNC_PACING=0: the display only (Vulkan's meaning)
-static double median8(const double* v, uint32_t n) {
-    double s[8];
-    n = std::min(n, 8u);
-    std::copy(v, v + n, s);
-    std::sort(s, s + n);
-    return n ? s[n / 2] : 0;
-}
 
 static KPresentState::Frame* findFrame(KPresentState& st, uint64_t present) {
     if (st.frames.empty() || present < st.frames.front().present || present > st.frames.back().present) return nullptr;
@@ -247,7 +240,7 @@ static double pacedEnd(KPresentState& st, uint64_t id) {
     KPresentState::Frame* prev = findFrame(st, f->present - 1);
     if (prev && !prev->shown) return -1;
     KPresentState::Frame* next = findFrame(st, f->present + 1);
-    double lead = median8(st.gpuMs, st.gpuSamples) - median8(st.cpuMs, st.cpuSamples) - 2.0;
+    double lead = kmtlMedian(st.gpuMs, std::min(st.gpuSamples, 8u)) - kmtlMedian(st.cpuMs, std::min(st.cpuSamples, 8u)) - 2.0;
     return lead > 0 ? std::max(f->gpuEnd, next ? next->made : 0.0) + lead * 1e-3 : 0;
 }
 

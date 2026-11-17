@@ -1,8 +1,8 @@
 // SPIR-V -> MSL: one shader stage with SPIRV-Cross, the set layouts' slots, specialization and the MSL patches
 // (translate.h)
 #include "translate.h"
+#include "mslpatch.h"
 #include "spirv_parser.hpp"
-#include <regex>
 
 using namespace SPIRV_CROSS_NAMESPACE;
 
@@ -117,10 +117,182 @@ static bool hasSpecId(const KShaderModule* mod, uint32_t specId) {
     return false;
 }
 
+// SPIRV-Cross's MSL options for a stage: argument buffers, the driver's buffer indices, multiview, tessellation's roles
+static CompilerMSL::Options mslOptions(const KStageOptions& so) {
+    CompilerMSL::Options mo;
+    mo.platform = CompilerMSL::Options::macOS;
+    mo.set_msl_version(3, 2);
+    mo.argument_buffers = true;
+    mo.argument_buffers_tier = CompilerMSL::Options::ArgumentBuffersTier::Tier2;
+    mo.pad_argument_buffer_resources = true;
+    mo.texture_buffer_native = true;
+    mo.swizzle_buffer_index = kSwizzleBufferIndex;
+    mo.buffer_size_buffer_index = kBufferSizeBufferIndex;
+    mo.view_mask_buffer_index = kViewMaskBufferIndex;
+    mo.dynamic_offsets_buffer_index = kDynamicOffsetBufferIndex;
+    mo.draw_id_buffer_index = kDrawIdBufferIndex;
+    mo.agx_manual_cube_grad_fixup = true;
+    mo.enable_frag_output_mask = so.fragMask;
+    mo.force_sample_rate_shading = so.sampleRate;
+    // Multiview: the driver draws once per view with spvViewMask = {view, 1} (indirect draws cannot have their
+    // instance count multiplied), and the layer assignment is the view index itself (kmtlMslViewLayer)
+    mo.multiview = so.viewMask != 0;
+    mo.multiview_layered_rendering = true;
+    // Tessellation (Metal has no hull stage): vertex and control stages run as compute kernels writing buffers,
+    // the evaluation stage is a post-tessellation vertex function reading them
+    switch (so.tess) {
+    case KTessRole::VertexKernel:
+        mo.vertex_for_tessellation = true;
+        mo.capture_output_to_buffer = true;
+        mo.disable_rasterization = true;
+        mo.shader_output_buffer_index = kTessOutputBufferIndex;
+        mo.shader_index_buffer_index = kTessIndexBufferIndex;
+        mo.vertex_index_type = so.indexType;
+        break;
+    case KTessRole::ControlKernel:
+        mo.capture_output_to_buffer = true;
+        mo.multi_patch_workgroup = true;
+        mo.shader_input_buffer_index = kTessInputBufferIndex;
+        mo.shader_output_buffer_index = kTessOutputBufferIndex;
+        mo.shader_patch_output_buffer_index = kTessPatchBufferIndex;
+        mo.shader_tess_factor_buffer_index = kTessFactorBufferIndex;
+        mo.indirect_params_buffer_index = kTessParamsBufferIndex;
+        mo.fixed_subgroup_size = 32;
+        break;
+    case KTessRole::Evaluation:
+        mo.raw_buffer_tese_input = true;
+        mo.shader_input_buffer_index = kTessInputBufferIndex;
+        mo.shader_patch_input_buffer_index = kTessPatchBufferIndex;
+        mo.shader_tess_factor_buffer_index = kTessFactorBufferIndex;
+        break;
+    default:
+        break;
+    }
+    return mo;
+}
+
+// The stage's resources at the driver's slots: each set's argument buffer and its bindings' slots, the buffer-size
+// table, a ray tracing kernel's launch size, the push constants
+static void bindResources(CompilerMSL& c, spv::ExecutionModel model, KPipelineLayout* layout, const KStageOptions& so) {
+    if (layout) {
+        for (uint32_t s = 0; s < layout->sets.size(); s++) {
+            KSetLayout* sl = layout->sets[s];
+            if (!sl) continue;
+            // Shaders read their argument buffers from the constant address space, which lets the compiler load
+            // resource handles as uniforms (2-5% faster across the benchmark than device;
+            // KSA_MTL_SHADER_CONSTANT_MEMORY=0: device everywhere). Ray tracing kernels (rtspirv.cpp) pass their
+            // resources to functions declared for device memory, and the constant address space holds at most 64
+            // KiB
+            if (!kmtlConfig().shaderConstantMemory || so.rtLaunch || sl->bytes() > 65536)
+                c.set_argument_buffer_device_address_space(s, true);
+            MSLResourceBinding ab;
+            ab.stage = model;
+            ab.desc_set = s;
+            ab.binding = kArgumentBufferBinding;
+            ab.basetype = SPIRType::Void;  // padding is on: every binding needs a base type
+            ab.msl_buffer = s;
+            c.add_msl_resource_binding(ab);
+            for (auto& b : sl->bindings) {
+                MSLResourceBinding rb;
+                rb.stage = model;
+                rb.desc_set = s;
+                rb.binding = b.binding;
+                rb.count = b.count;
+                rb.basetype = bindingBaseType(b.type);
+                rb.msl_buffer = rb.msl_texture = rb.msl_sampler = b.id;
+                if (b.type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) rb.msl_sampler = b.samplerId;
+                c.add_msl_resource_binding(rb);
+            }
+            MSLResourceBinding sz;
+            sz.stage = model;
+            sz.desc_set = s;
+            sz.binding = kBufferSizeBufferBinding;
+            sz.count = 1;
+            sz.basetype = SPIRType::UInt;
+            sz.msl_buffer = sl->sizeSlot;
+            c.add_msl_resource_binding(sz);
+        }
+    }
+    if (so.rtLaunch) {
+        c.add_discrete_descriptor_set(15);
+        MSLResourceBinding ls;
+        ls.stage = model;
+        ls.desc_set = 15;
+        ls.binding = 0;
+        ls.count = 1;
+        ls.basetype = SPIRType::Void;
+        ls.msl_buffer = kRtLaunchBufferIndex;
+        c.add_msl_resource_binding(ls);
+    }
+    MSLResourceBinding pc;
+    pc.stage = model;
+    pc.desc_set = kPushConstDescSet;
+    pc.binding = kPushConstBinding;
+    pc.basetype = SPIRType::Void;
+    pc.msl_buffer = kPushConstantBufferIndex;
+    c.add_msl_resource_binding(pc);
+}
+
+// The specialization constants' values: the game's, then KSA_MTL_SPEC's presets, then the shader edits' switches
+static void specialize(CompilerMSL& c, const KShaderModule* mod, const VkSpecializationInfo* spec) {
+    // Specialization: overwrite the default values in the IR (SPIRV-Cross's function-constant fallbacks use them)
+    if (spec) {
+        for (auto& sc : c.get_specialization_constants()) {
+            for (uint32_t i = 0; i < spec->mapEntryCount; i++) {
+                const auto& me = spec->pMapEntries[i];
+                if (me.constantID != sc.constant_id) continue;
+                SPIRConstant& k = c.get_constant(sc.id);
+                const uint8_t* src = (const uint8_t*)spec->pData + me.offset;
+                if (me.size == 8) memcpy(&k.m.c[0].r[0].u64, src, 8);
+                else if (me.size == 4) memcpy(&k.m.c[0].r[0].u32, src, 4);
+                else if (me.size == 2) { uint16_t v; memcpy(&v, src, 2); k.m.c[0].r[0].u32 = v; }
+                else if (me.size == 1) k.m.c[0].r[0].u32 = *src;
+            }
+        }
+    }
+
+    // Quality presets (KSA_MTL_SPEC=<module hash>:<constant id>=<value>[,...]): replace a specialization constant
+    // of one module whatever the game passes, e.g. fewer iterations of an expensive loop
+    if (const char* presets = kmtlConfig().spec) {
+        char want[24];
+        snprintf(want, sizeof(want), "%016llx:", (unsigned long long)mod->hash);
+        for (const char* q = strstr(presets, want); q; q = strstr(q + 1, want)) {
+            unsigned id = 0, value = 0;
+            if (sscanf(q + strlen(want), "%u=%u", &id, &value) != 2) continue;
+            for (auto& sc : c.get_specialization_constants())
+                if (sc.constant_id == id) {
+                    c.get_constant(sc.id).m.c[0].r[0].u32 = value;
+                }
+        }
+    }
+
+    // KSA_MTL_SKIP_SHADOWS_ON_UNLIT_SIDES=0, KSA_MTL_SHARED_SHADOW_SAMPLES=0: the shadow edits read these constants
+    for (uint32_t id : switchesOff())
+        for (auto& sc : c.get_specialization_constants())
+            if (sc.constant_id == id) c.get_constant(sc.id).m.c[0].r[0].u32 = 0;
+}
+
+// A compute stage's workgroup size: its execution mode's, or its specialization constants'
+static MTLSize workgroupSize(CompilerMSL& c) {
+    SpecializationConstant x, y, z;
+    c.get_work_group_size_specialization_constants(x, y, z);
+    uint32_t wx = c.get_execution_mode_argument(spv::ExecutionModeLocalSize, 0);
+    uint32_t wy = c.get_execution_mode_argument(spv::ExecutionModeLocalSize, 1);
+    uint32_t wz = c.get_execution_mode_argument(spv::ExecutionModeLocalSize, 2);
+    auto& modes = c.get_execution_mode_bitset();
+    if (modes.get(spv::ExecutionModeLocalSizeId)) {
+        wx = constantValue(c, c.get_execution_mode_argument(spv::ExecutionModeLocalSizeId, 0));
+        wy = constantValue(c, c.get_execution_mode_argument(spv::ExecutionModeLocalSizeId, 1));
+        wz = constantValue(c, c.get_execution_mode_argument(spv::ExecutionModeLocalSizeId, 2));
+    }
+    if (x.id) wx = constantValue(c, x.id);
+    if (y.id) wy = constantValue(c, y.id);
+    if (z.id) wz = constantValue(c, z.id);
+    return MTLSizeMake(std::max(1u, wx), std::max(1u, wy), std::max(1u, wz));
+}
+
 bool kmtlTranslate(KShaderModule* mod, const char* entryName, spv::ExecutionModel model, KPipelineLayout* layout,
                    const VkSpecializationInfo* spec, const KStageOptions& so, KTranslated* out, std::string* err) {
-    uint32_t fragOutputMask = so.fragMask, viewMask = so.viewMask;
-    bool sampleRate = so.sampleRate;
     auto t0 = std::chrono::steady_clock::now();
     struct Timer { std::chrono::steady_clock::time_point t; ~Timer() { g_usTranslate += usSince(t); g_nTranslate++; } } timer{t0};
     try {
@@ -131,56 +303,7 @@ bool kmtlTranslate(KShaderModule* mod, const char* entryName, spv::ExecutionMode
             if (so.tessControlPoints) c.set_execution_mode(spv::ExecutionModeOutputVertices, so.tessControlPoints);
         }
 
-        CompilerMSL::Options mo;
-        mo.platform = CompilerMSL::Options::macOS;
-        mo.set_msl_version(3, 2);
-        mo.argument_buffers = true;
-        mo.argument_buffers_tier = CompilerMSL::Options::ArgumentBuffersTier::Tier2;
-        mo.pad_argument_buffer_resources = true;
-        mo.texture_buffer_native = true;
-        mo.swizzle_buffer_index = kSwizzleBufferIndex;
-        mo.buffer_size_buffer_index = kBufferSizeBufferIndex;
-        mo.view_mask_buffer_index = kViewMaskBufferIndex;
-        mo.dynamic_offsets_buffer_index = kDynamicOffsetBufferIndex;
-        mo.draw_id_buffer_index = kDrawIdBufferIndex;
-        mo.agx_manual_cube_grad_fixup = true;
-        mo.enable_frag_output_mask = fragOutputMask;
-        mo.force_sample_rate_shading = sampleRate;
-        // Multiview: the driver draws once per view with spvViewMask = {view, 1} (indirect draws cannot have their
-        // instance count multiplied), and the layer assignment is patched below to use the view index directly
-        mo.multiview = viewMask != 0;
-        mo.multiview_layered_rendering = true;
-        // Tessellation (Metal has no hull stage): vertex and control stages run as compute kernels writing buffers,
-        // the evaluation stage is a post-tessellation vertex function reading them
-        switch (so.tess) {
-        case KTessRole::VertexKernel:
-            mo.vertex_for_tessellation = true;
-            mo.capture_output_to_buffer = true;
-            mo.disable_rasterization = true;
-            mo.shader_output_buffer_index = kTessOutputBufferIndex;
-            mo.shader_index_buffer_index = kTessIndexBufferIndex;
-            mo.vertex_index_type = so.indexType;
-            break;
-        case KTessRole::ControlKernel:
-            mo.capture_output_to_buffer = true;
-            mo.multi_patch_workgroup = true;
-            mo.shader_input_buffer_index = kTessInputBufferIndex;
-            mo.shader_output_buffer_index = kTessOutputBufferIndex;
-            mo.shader_patch_output_buffer_index = kTessPatchBufferIndex;
-            mo.shader_tess_factor_buffer_index = kTessFactorBufferIndex;
-            mo.indirect_params_buffer_index = kTessParamsBufferIndex;
-            mo.fixed_subgroup_size = 32;
-            break;
-        case KTessRole::Evaluation:
-            mo.raw_buffer_tese_input = true;
-            mo.shader_input_buffer_index = kTessInputBufferIndex;
-            mo.shader_patch_input_buffer_index = kTessPatchBufferIndex;
-            mo.shader_tess_factor_buffer_index = kTessFactorBufferIndex;
-            break;
-        default:
-            break;
-        }
-        c.set_msl_options(mo);
+        c.set_msl_options(mslOptions(so));
 
         // Y is flipped in the last stage before rasterization
         CompilerGLSL::Options co = c.get_common_options();
@@ -188,136 +311,18 @@ bool kmtlTranslate(KShaderModule* mod, const char* entryName, spv::ExecutionMode
                                 so.tess == KTessRole::Evaluation;
         c.set_common_options(co);
 
-        if (layout) {
-            for (uint32_t s = 0; s < layout->sets.size(); s++) {
-                KSetLayout* sl = layout->sets[s];
-                if (!sl) continue;
-                // Shaders read their argument buffers from the constant address space, which lets the compiler load
-                // resource handles as uniforms (2-5% faster across the benchmark than device;
-                // KSA_MTL_SHADER_CONSTANT_MEMORY=0: device everywhere). Ray tracing kernels (rtspirv.cpp) pass their
-                // resources to functions declared for device memory, and the constant address space holds at most 64
-                // KiB
-                if (!kmtlConfig().shaderConstantMemory || so.rtLaunch || sl->bytes() > 65536)
-                    c.set_argument_buffer_device_address_space(s, true);
-                MSLResourceBinding ab;
-                ab.stage = model;
-                ab.desc_set = s;
-                ab.binding = kArgumentBufferBinding;
-                ab.basetype = SPIRType::Void;  // padding is on: every binding needs a base type
-                ab.msl_buffer = s;
-                c.add_msl_resource_binding(ab);
-                for (auto& b : sl->bindings) {
-                    MSLResourceBinding rb;
-                    rb.stage = model;
-                    rb.desc_set = s;
-                    rb.binding = b.binding;
-                    rb.count = b.count;
-                    rb.basetype = bindingBaseType(b.type);
-                    rb.msl_buffer = rb.msl_texture = rb.msl_sampler = b.id;
-                    if (b.type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) rb.msl_sampler = b.samplerId;
-                    c.add_msl_resource_binding(rb);
-                }
-                MSLResourceBinding sz;
-                sz.stage = model;
-                sz.desc_set = s;
-                sz.binding = kBufferSizeBufferBinding;
-                sz.count = 1;
-                sz.basetype = SPIRType::UInt;
-                sz.msl_buffer = sl->sizeSlot;
-                c.add_msl_resource_binding(sz);
-            }
-        }
-        if (so.rtLaunch) {
-            c.add_discrete_descriptor_set(15);
-            MSLResourceBinding ls;
-            ls.stage = model;
-            ls.desc_set = 15;
-            ls.binding = 0;
-            ls.count = 1;
-            ls.basetype = SPIRType::Void;
-            ls.msl_buffer = kRtLaunchBufferIndex;
-            c.add_msl_resource_binding(ls);
-        }
-        MSLResourceBinding pc;
-        pc.stage = model;
-        pc.desc_set = kPushConstDescSet;
-        pc.binding = kPushConstBinding;
-        pc.basetype = SPIRType::Void;
-        pc.msl_buffer = kPushConstantBufferIndex;
-        c.add_msl_resource_binding(pc);
+        bindResources(c, model, layout, so);
 
-        // Specialization: overwrite the default values in the IR (SPIRV-Cross's function-constant fallbacks use them)
-        if (spec) {
-            for (auto& sc : c.get_specialization_constants()) {
-                for (uint32_t i = 0; i < spec->mapEntryCount; i++) {
-                    const auto& me = spec->pMapEntries[i];
-                    if (me.constantID != sc.constant_id) continue;
-                    SPIRConstant& k = c.get_constant(sc.id);
-                    const uint8_t* src = (const uint8_t*)spec->pData + me.offset;
-                    if (me.size == 8) memcpy(&k.m.c[0].r[0].u64, src, 8);
-                    else if (me.size == 4) memcpy(&k.m.c[0].r[0].u32, src, 4);
-                    else if (me.size == 2) { uint16_t v; memcpy(&v, src, 2); k.m.c[0].r[0].u32 = v; }
-                    else if (me.size == 1) k.m.c[0].r[0].u32 = *src;
-                }
-            }
-        }
-
-        // Quality presets (KSA_MTL_SPEC=<module hash>:<constant id>=<value>[,...]): replace a specialization constant
-        // of one module whatever the game passes, e.g. fewer iterations of an expensive loop
-        if (const char* presets = kmtlConfig().spec) {
-            char want[24];
-            snprintf(want, sizeof(want), "%016llx:", (unsigned long long)mod->hash);
-            for (const char* q = strstr(presets, want); q; q = strstr(q + 1, want)) {
-                unsigned id = 0, value = 0;
-                if (sscanf(q + strlen(want), "%u=%u", &id, &value) != 2) continue;
-                for (auto& sc : c.get_specialization_constants())
-                    if (sc.constant_id == id) {
-                        c.get_constant(sc.id).m.c[0].r[0].u32 = value;
-                    }
-            }
-        }
-
-        // KSA_MTL_SKIP_SHADOWS_ON_UNLIT_SIDES=0, KSA_MTL_SHARED_SHADOW_SAMPLES=0: the shadow edits read these constants
-        for (uint32_t id : switchesOff())
-            for (auto& sc : c.get_specialization_constants())
-                if (sc.constant_id == id) c.get_constant(sc.id).m.c[0].r[0].u32 = 0;
+        specialize(c, mod, spec);
 
         out->msl = c.compile();
-        if (viewMask) {
-            // "layer = gl_ViewIndex - spvViewMask[0];" -> "layer = gl_ViewIndex;" and drop the fragment re-offset
-            std::string& m = out->msl;
-            for (size_t pos; (pos = m.find(" - spvViewMask[0];")) != std::string::npos;) m.replace(pos, 18, ";");
-            for (size_t pos; (pos = m.find(" += spvViewMask[0];")) != std::string::npos;) m.replace(pos, 19, " += 0;");
-        }
-        // SPIRV-Cross declares an array of acceleration structures in an argument buffer as a C array but passes it to
-        // helper functions as spvUnsafeArray&: take it as a device pointer instead (the array decays to one)
-        {
-            static const std::regex asArray(
-                R"((?:thread )?const (?:device )?spvUnsafeArray<(raytracing::acceleration_structure<[^>]*>), \d+>(?: const device)?& (\w+))");
-            if (out->msl.find("spvUnsafeArray<raytracing::acceleration_structure") != std::string::npos)
-                out->msl = std::regex_replace(out->msl, asArray, "const device $1* $2");
-        }
+        if (so.viewMask) out->msl = kmtlMslViewLayer(out->msl);
+        out->msl = kmtlMslAccelArrays(out->msl);
         out->entry = c.get_cleansed_entry_point_name(entryName, model);
         if (so.tess == KTessRole::ControlKernel || so.tess == KTessRole::Evaluation) readTessModes(c, out);
         out->usesDrawId = out->msl.find("spvDrawIndex") != std::string::npos;
 
-        if (model == spv::ExecutionModelGLCompute) {
-            SpecializationConstant x, y, z;
-            c.get_work_group_size_specialization_constants(x, y, z);
-            uint32_t wx = c.get_execution_mode_argument(spv::ExecutionModeLocalSize, 0);
-            uint32_t wy = c.get_execution_mode_argument(spv::ExecutionModeLocalSize, 1);
-            uint32_t wz = c.get_execution_mode_argument(spv::ExecutionModeLocalSize, 2);
-            auto& modes = c.get_execution_mode_bitset();
-            if (modes.get(spv::ExecutionModeLocalSizeId)) {
-                wx = constantValue(c, c.get_execution_mode_argument(spv::ExecutionModeLocalSizeId, 0));
-                wy = constantValue(c, c.get_execution_mode_argument(spv::ExecutionModeLocalSizeId, 1));
-                wz = constantValue(c, c.get_execution_mode_argument(spv::ExecutionModeLocalSizeId, 2));
-            }
-            if (x.id) wx = constantValue(c, x.id);
-            if (y.id) wy = constantValue(c, y.id);
-            if (z.id) wz = constantValue(c, z.id);
-            out->workgroup = MTLSizeMake(std::max(1u, wx), std::max(1u, wy), std::max(1u, wz));
-        }
+        if (model == spv::ExecutionModelGLCompute) out->workgroup = workgroupSize(c);
         return true;
     } catch (const std::exception& e) {
         *err = std::string("SPIRV-Cross: ") + e.what();

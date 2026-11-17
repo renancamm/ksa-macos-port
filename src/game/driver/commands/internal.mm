@@ -86,7 +86,7 @@ struct KInternalPipelines {
 void kmtlInitInternal(KDevice* dev) {
     auto* ip = new KInternalPipelines();
     NSError* e = nil;
-    ip->lib = [dev->mtl newLibraryWithSource:@(kInternalMSL) options:nil error:&e];
+    ip->lib = kmtlLibrary(dev->mtl, kInternalMSL, nil, &e);
     if (!ip->lib) {
         KERR("internal shaders failed to compile: %s", e.description.UTF8String);
         dev->internal = ip;

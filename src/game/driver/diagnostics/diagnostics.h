@@ -30,6 +30,9 @@ void kmtlWatchAtPresent(KQueue* queue, KImage* image, id<MTLCommandBuffer> cb);
 void kmtlWatchLine(const std::string& text);
 // instruments.mm: a command buffer failed (ksaMtlGpuErrors)
 void kmtlNoteGpuError();
+// instruments.mm: 8-bit RGBX pixels as a PNG (false where it couldn't be written); a screenshot's buffer (RGBA or BGRA)
+// as one, logged
+bool kmtlEncodePNG(uint8_t* rgbx, NSUInteger w, NSUInteger h, const std::string& path);
 void kmtlWritePNG(id<MTLBuffer> buf, NSUInteger w, NSUInteger h, bool bgra, const std::string& path);
 void kmtlCountWork(uint32_t draws, uint32_t dispatches, uint32_t passes);
 

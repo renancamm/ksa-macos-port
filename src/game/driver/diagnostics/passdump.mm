@@ -212,20 +212,7 @@ void writeItem(const Item& item) {
             }
         }
     }
-    CGColorSpaceRef cs = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
-    CGContextRef ctx = CGBitmapContextCreate(png.data(), w, h, 8, w * 4, cs, kCGImageAlphaNoneSkipLast);
-    CGImageRef image = CGBitmapContextCreateImage(ctx);
-    std::string path = item.dir + "/" + item.file;
-    CFURLRef url = CFURLCreateFromFileSystemRepresentation(nullptr, (const UInt8*)path.c_str(), path.size(), false);
-    if (CGImageDestinationRef dest = CGImageDestinationCreateWithURL(url, (__bridge CFStringRef)UTTypePNG.identifier, 1, nullptr)) {
-        CGImageDestinationAddImage(dest, image, nullptr);
-        CGImageDestinationFinalize(dest);
-        CFRelease(dest);
-    }
-    CFRelease(url);
-    CGImageRelease(image);
-    CGContextRelease(ctx);
-    CGColorSpaceRelease(cs);
+    kmtlEncodePNG(png.data(), w, h, item.dir + "/" + item.file);
     char numbers[400];
     int n = snprintf(numbers, sizeof numbers, " nan %llu inf %llu", (unsigned long long)nan, (unsigned long long)inf);
     for (uint32_t c = 0; c < layout.channels && n < (int)sizeof numbers - 60; c++)

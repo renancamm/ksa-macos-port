@@ -200,33 +200,6 @@ struct UpscaleState {
 UpscaleState& g_up = *new UpscaleState;  // never destroyed: releasing a scaler at exit aborts in MetalFX's MPSGraph teardown
 }
 
-id<MTLTexture> kmtlPrivateTexture(id<MTLDevice> d, MTLPixelFormat format, NSUInteger width, NSUInteger height,
-                                  MTLTextureUsage usage) {
-    MTLTextureDescriptor* t = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format width:width height:height
-                                                                             mipmapped:NO];
-    t.usage = usage;
-    t.storageMode = MTLStorageModePrivate;
-    return [d newTextureWithDescriptor:t];
-}
-
-std::vector<id<MTLComputePipelineState>> kmtlComputePipelines(id<MTLDevice> d, const char* source,
-                                                              std::initializer_list<const char*> names, std::string* error) {
-    std::vector<id<MTLComputePipelineState>> pipelines;
-    NSError* err = nil;
-    id<MTLLibrary> lib = [d newLibraryWithSource:[NSString stringWithUTF8String:source] options:nil error:&err];
-    if (!lib && error) *error = err.localizedDescription.UTF8String ?: "no library";
-    for (const char* name : names) {
-        id<MTLFunction> f = lib ? [lib newFunctionWithName:[NSString stringWithUTF8String:name]] : nil;
-        NSError* perr = nil;
-        id<MTLComputePipelineState> ps = f ? [d newComputePipelineStateWithFunction:f error:&perr] : nil;
-        if (!ps && lib && error && error->empty())
-            *error = perr && perr.localizedDescription.UTF8String ? perr.localizedDescription.UTF8String
-                                                                  : std::string("no function ") + name;
-        pipelines.push_back(ps);
-    }
-    return pipelines;
-}
-
 static bool prepare(KDevice* dev, uint32_t inW, uint32_t inH, uint32_t outW, uint32_t outH, bool spatial,
                     MTLPixelFormat colorFormat, MTLPixelFormat outFormat, float minContent) {
     if (g_up.failed) return false;
@@ -431,8 +404,7 @@ static MotionParams encodeMotion(KCommandBuffer* cb, const VkUpscaleInfoKSA* inf
               cloudMotion->mtl.height == color->mtl.height;
     [e setTexture:*clouds ? cloudColor->mtl : color->mtl atIndex:7];
     [e setTexture:*clouds ? cloudMotion->mtl : color->mtl atIndex:8];
-    if (!g_up.lastColor || g_up.lastColor.width != color->mtl.width || g_up.lastColor.height != color->mtl.height ||
-        g_up.lastColor.pixelFormat != color->mtl.pixelFormat) {
+    if (!kmtlTextureIs(g_up.lastColor, color->mtl.width, color->mtl.height, color->mtl.pixelFormat)) {
         g_up.lastColor = kmtlPrivateTexture(cb->device->mtl, color->mtl.pixelFormat, color->mtl.width, color->mtl.height,
                                             MTLTextureUsageShaderRead);
         haveLast = false;
@@ -585,7 +557,7 @@ VKFN(void) vkCmdUpscaleSnapshotKSA(VkCommandBuffer commandBuffer, VkImage image,
     std::lock_guard<std::mutex> lock(g_up.m);
     id<MTLTexture> src = color->mtl;
     __strong id<MTLTexture>& snapshot = g_up.snapshots[stage];
-    if (!snapshot || snapshot.width != src.width || snapshot.height != src.height || snapshot.pixelFormat != src.pixelFormat) {
+    if (!kmtlTextureIs(snapshot, src.width, src.height, src.pixelFormat)) {
         snapshot = kmtlPrivateTexture(cb->device->mtl, src.pixelFormat, src.width, src.height, MTLTextureUsageShaderRead);
     }
     cb->endEncoder();

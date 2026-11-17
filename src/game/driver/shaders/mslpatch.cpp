@@ -2,7 +2,7 @@
 // driver state (the driver's tests call them on their own). Each gives the text back unchanged where what it looks for
 // isn't there, or isn't of the shape it expects. Who calls them: pipelines/compile.mm (uniform structs in place, early
 // fragment tests, a shader override's specialization values), pipelines/rtpipeline.mm (intersectors),
-// pipelines/pipelines.mm (the records tessellation's kernels exchange).
+// pipelines/pipelines.mm (the records tessellation's kernels exchange), shaders/translate.mm (its own edits).
 #include "shaders/mslpatch.h"
 #include <algorithm>
 #include <cctype>
@@ -378,4 +378,24 @@ std::vector<std::string> kmtlMslStructFields(const std::string& msl, const std::
         pos = nl + 1;
     }
     return types;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Translation (shaders/translate.mm)
+
+// Multiview's layer: "layer = gl_ViewIndex - spvViewMask[0];" -> "layer = gl_ViewIndex;", and no fragment re-offset
+// (the driver draws once per view with spvViewMask = {view, 1})
+std::string kmtlMslViewLayer(std::string m) {
+    for (size_t pos; (pos = m.find(" - spvViewMask[0];")) != std::string::npos;) m.replace(pos, 18, ";");
+    for (size_t pos; (pos = m.find(" += spvViewMask[0];")) != std::string::npos;) m.replace(pos, 19, " += 0;");
+    return m;
+}
+
+// SPIRV-Cross declares an array of acceleration structures in an argument buffer as a C array but passes it to helper
+// functions as spvUnsafeArray&: a device pointer instead (the array decays to one)
+std::string kmtlMslAccelArrays(const std::string& msl) {
+    static const std::regex asArray(
+        R"((?:thread )?const (?:device )?spvUnsafeArray<(raytracing::acceleration_structure<[^>]*>), \d+>(?: const device)?& (\w+))");
+    if (msl.find("spvUnsafeArray<raytracing::acceleration_structure") == std::string::npos) return msl;
+    return std::regex_replace(msl, asArray, "const device $1* $2");
 }

@@ -145,29 +145,28 @@ VKFN(void) vkCmdSetStencilReference(VkCommandBuffer commandBuffer, VkStencilFace
 // ---------------------------------------------------------------------------------------------------------------
 // Flushing state before draws and dispatches
 
-bool kmtlFlushGraphics(KCommandBuffer* cb) {
-    cb->stampSplit();
-    KPipeline* p = cb->bound.graphicsPipeline;
-    id<MTLRenderCommandEncoder> enc = cb->render;
-    if (!enc || !p || !p->render) return false;
-    if (cb->bound.encodedPipeline != p) {
-        [enc setRenderPipelineState:p->renderEarly && kmtlEarlyFragmentTests() ? p->renderEarly : p->render];
-        [enc setDepthStencilState:p->depthStencil];
-        [enc setCullMode:p->cull];
-        [enc setFrontFacingWinding:p->winding];
-        [enc setTriangleFillMode:p->fill];
-        [enc setDepthClipMode:p->depthClip];
-        // Static state from the pipeline; what it declares dynamic comes from the command buffer, below
-        if (!p->dynamicStencilRef) [enc setStencilFrontReferenceValue:p->stencilRef[0] backReferenceValue:p->stencilRef[1]];
-        else cb->bound.stencilRefDirty = true;
-        if (!p->dynamicBlendConstants)
-            [enc setBlendColorRed:p->blendConstants[0] green:p->blendConstants[1] blue:p->blendConstants[2] alpha:p->blendConstants[3]];
-        else cb->bound.blendConstantsDirty = true;
-        if (!p->depthBiasEnable) [enc setDepthBias:0 slopeScale:0 clamp:0];
-        else if (!p->dynamicDepthBias) [enc setDepthBias:p->depthBias[0] slopeScale:p->depthBias[1] clamp:p->depthBias[2]];
-        else cb->bound.depthBiasDirty = true;
-        cb->bound.encodedPipeline = p;
-    }
+// A newly bound pipeline's state, and its static state (what it declares dynamic comes from the command buffer)
+static void encodePipeline(KCommandBuffer* cb, id<MTLRenderCommandEncoder> enc, KPipeline* p) {
+    [enc setRenderPipelineState:p->renderEarly && kmtlEarlyFragmentTests() ? p->renderEarly : p->render];
+    [enc setDepthStencilState:p->depthStencil];
+    [enc setCullMode:p->cull];
+    [enc setFrontFacingWinding:p->winding];
+    [enc setTriangleFillMode:p->fill];
+    [enc setDepthClipMode:p->depthClip];
+    // Static state from the pipeline; what it declares dynamic comes from the command buffer (flushDynamicState)
+    if (!p->dynamicStencilRef) [enc setStencilFrontReferenceValue:p->stencilRef[0] backReferenceValue:p->stencilRef[1]];
+    else cb->bound.stencilRefDirty = true;
+    if (!p->dynamicBlendConstants)
+        [enc setBlendColorRed:p->blendConstants[0] green:p->blendConstants[1] blue:p->blendConstants[2] alpha:p->blendConstants[3]];
+    else cb->bound.blendConstantsDirty = true;
+    if (!p->depthBiasEnable) [enc setDepthBias:0 slopeScale:0 clamp:0];
+    else if (!p->dynamicDepthBias) [enc setDepthBias:p->depthBias[0] slopeScale:p->depthBias[1] clamp:p->depthBias[2]];
+    else cb->bound.depthBiasDirty = true;
+    cb->bound.encodedPipeline = p;
+}
+
+// The dynamic state the command buffer set since: depth bias, stencil references, blend constants
+static void flushDynamicState(KCommandBuffer* cb, id<MTLRenderCommandEncoder> enc, KPipeline* p) {
     if (cb->bound.depthBiasDirty && p->depthBiasEnable && p->dynamicDepthBias) {
         [enc setDepthBias:cb->bound.depthBias[0] slopeScale:cb->bound.depthBias[1] clamp:cb->bound.depthBias[2]];
         cb->bound.depthBiasDirty = false;
@@ -180,29 +179,34 @@ bool kmtlFlushGraphics(KCommandBuffer* cb) {
         [enc setBlendColorRed:cb->bound.blendConstants[0] green:cb->bound.blendConstants[1] blue:cb->bound.blendConstants[2] alpha:cb->bound.blendConstants[3]];
         cb->bound.blendConstantsDirty = false;
     }
+}
+
+// The viewports, at a dynamic level scaled to it
+static void flushViewports(KCommandBuffer* cb, id<MTLRenderCommandEncoder> enc) {
     if (cb->bound.viewportDirty && !cb->bound.viewports.empty()) {
         MTLViewport v[16];
         uint32_t n = (uint32_t)std::min<size_t>(cb->bound.viewports.size(), 16);
         for (uint32_t i = 0; i < n; i++) {
             const auto& vp = cb->bound.viewports[i];
-            double sx = cb->pass.viewportScale[0], sy = cb->pass.viewportScale[1];
-            v[i] = {vp.x * sx, vp.y * sy, vp.width * sx, vp.height * sy, vp.minDepth, vp.maxDepth};
+            v[i] = kmtlDynamicViewport(vp, cb->pass.viewportScale[0], cb->pass.viewportScale[1]);
         }
         if (n == 1) [enc setViewport:v[0]];
         else [enc setViewports:v count:n];
         cb->bound.viewportDirty = false;
     }
+}
+
+// The scissors, within the render target (false: one is empty, nothing to draw)
+static bool flushScissors(KCommandBuffer* cb, id<MTLRenderCommandEncoder> enc) {
     if (cb->bound.scissorDirty && !cb->bound.scissors.empty()) {
         MTLScissorRect r[16];
         uint32_t n = (uint32_t)std::min<size_t>(cb->bound.scissors.size(), 16);
         for (uint32_t i = 0; i < n; i++) {
             // Metal rejects scissors outside the render target: clamp. At a dynamic level, scaled outwards
             const VkRect2D& sc = cb->bound.scissors[i];
-            double sx = cb->pass.viewportScale[0], sy = cb->pass.viewportScale[1];
-            int64_t x0 = std::max<int64_t>(0, (int64_t)std::floor(sc.offset.x * sx));
-            int64_t y0 = std::max<int64_t>(0, (int64_t)std::floor(sc.offset.y * sy));
-            int64_t x1 = std::min<int64_t>(cb->pass.width, (int64_t)std::ceil(((double)sc.offset.x + sc.extent.width) * sx));
-            int64_t y1 = std::min<int64_t>(cb->pass.height, (int64_t)std::ceil(((double)sc.offset.y + sc.extent.height) * sy));
+            int64_t x0, y0, x1, y1;
+            kmtlDynamicRect(cb->pass.viewportScale[0], cb->pass.viewportScale[1], sc.offset.x, sc.offset.y, sc.extent.width,
+                            sc.extent.height, cb->pass.width, cb->pass.height, &x0, &y0, &x1, &y1);
             if (x1 <= x0 || y1 <= y0) return false;  // empty scissor: nothing to draw (state stays dirty)
             r[i] = {(NSUInteger)x0, (NSUInteger)y0, (NSUInteger)(x1 - x0), (NSUInteger)(y1 - y0)};
         }
@@ -210,6 +214,11 @@ bool kmtlFlushGraphics(KCommandBuffer* cb) {
         else [enc setScissorRects:r count:n];
         cb->bound.scissorDirty = false;
     }
+    return true;
+}
+
+// The resources bound since: vertex buffers, descriptor sets, push constants
+static void flushResources(KCommandBuffer* cb, id<MTLRenderCommandEncoder> enc) {
     while (cb->bound.vertexBuffersDirty) {
         int b = __builtin_ctz(cb->bound.vertexBuffersDirty);
         cb->bound.vertexBuffersDirty &= ~(1u << b);
@@ -234,6 +243,18 @@ bool kmtlFlushGraphics(KCommandBuffer* cb) {
         [enc setFragmentBytes:cb->bound.push length:n atIndex:kPushConstantBufferIndex];
         cb->bound.graphicsPushDirty = false;
     }
+}
+
+bool kmtlFlushGraphics(KCommandBuffer* cb) {
+    cb->stampSplit();
+    KPipeline* p = cb->bound.graphicsPipeline;
+    id<MTLRenderCommandEncoder> enc = cb->render;
+    if (!enc || !p || !p->render) return false;
+    if (cb->bound.encodedPipeline != p) encodePipeline(cb, enc, p);
+    flushDynamicState(cb, enc, p);
+    flushViewports(cb, enc);
+    if (!flushScissors(cb, enc)) return false;
+    flushResources(cb, enc);
     return true;
 }
 

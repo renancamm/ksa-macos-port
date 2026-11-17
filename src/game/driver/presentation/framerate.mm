@@ -128,13 +128,6 @@ static uint32_t samplesAt(uint32_t level, double* ms, double* measured = nullptr
     return n;
 }
 
-static double medianOf(const double* ms, uint32_t k) {
-    double m[kSamples];
-    std::copy(ms, ms + k, m);
-    std::nth_element(m, m + k / 2, m + k);
-    return m[k / 2];
-}
-
 // The GPU time expected at another level, from the time at this one: a fixed share and a share by the pixels
 static double expectedAt(double gpu, uint32_t level, uint32_t now) {
     double r = (double)level / now;
@@ -158,14 +151,14 @@ static void stepRate(double t) {
     uint32_t n = samplesAt(now, ms, measured);
     if (n == 0) return;
     uint32_t outW = g_fr.outW, outH = g_fr.outH;
-    if (now == g_fr.lowest && n >= kRateDownFrames && medianOf(ms, kRateDownFrames) > t &&
+    if (now == g_fr.lowest && n >= kRateDownFrames && kmtlMedian(ms, kRateDownFrames) > t &&
         g_fr.frames >= g_fr.changedAt + kRateSettleFrames && g_fr.frames >= g_fr.rateChangedAt + kRateHoldFrames) {
         if (kmtlSteadyStep(outW, outH, 1, false) <= 0) return;
         // A faster rate that didn't hold: the next waits longer, and expects as much more as this one ran over
         if (g_fr.rateSteppedUp) {
             g_fr.rateUpWait = std::min(g_fr.rateUpWait * 2, kRateUpFrames * kMostWaits);
             if (g_fr.rateExpected > 0)
-                g_fr.rateBias = std::min(kRateBiasMost, std::max(g_fr.rateBias, medianOf(ms, kRateDownFrames) / g_fr.rateExpected));
+                g_fr.rateBias = std::min(kRateBiasMost, std::max(g_fr.rateBias, kmtlMedian(ms, kRateDownFrames) / g_fr.rateExpected));
         }
         double frame = kmtlSteadyStep(outW, outH, 1, true);
         g_fr.rateChangedAt = g_fr.frames;
@@ -173,7 +166,7 @@ static void stepRate(double t) {
         g_fr.rateSteppedUp = false;
         KLOG(++g_fr.rateChanges <= 20 ? 0 : 1,
              "steady frame rate: slower, %.1f ms a frame (the lowest level at %.1f ms at the full clock, %.1f ms at %.0f MHz)",
-             frame, medianOf(ms, kRateDownFrames), medianOf(measured, kRateDownFrames), kmtlGpuClockMhz());
+             frame, kmtlMedian(ms, kRateDownFrames), kmtlMedian(measured, kRateDownFrames), kmtlGpuClockMhz());
         return;
     }
     // A faster rate that held: the wait back to the shortest, the expectations as the model has them
@@ -191,7 +184,7 @@ static void stepRate(double t) {
     double expected = 0;
     if (kmtlGpuClockKnown()) {
         if (n < kUpSamples) return;
-        expected = expectedAt(medianOf(ms, n), g_fr.lowest, now);
+        expected = expectedAt(kmtlMedian(ms, n), g_fr.lowest, now);
         if (expected * g_fr.rateBias > kRateUpShare * kCadenceShare * faster) return;
     }
     g_fr.rateExpected = expected;
@@ -202,7 +195,7 @@ static void stepRate(double t) {
     if (expected > 0)
         KLOG(++g_fr.rateChanges <= 20 ? 0 : 1,
              "steady frame rate: faster, %.1f ms a frame (the lowest level expected at %.1f ms at the full clock, x%.2f; now %.1f ms at %.0f MHz)",
-             faster, expected, g_fr.rateBias, medianOf(measured, n), kmtlGpuClockMhz());
+             faster, expected, g_fr.rateBias, kmtlMedian(measured, n), kmtlGpuClockMhz());
     else
         KLOG(++g_fr.rateChanges <= 20 ? 0 : 1, "steady frame rate: faster, %.1f ms a frame (tried after %u frames, no GPU clock)",
              faster, g_fr.rateUpWait);
@@ -219,7 +212,7 @@ static uint32_t chooseLevel(double t) {
     uint32_t n = samplesAt(now, ms);
     if (n == 0) return now;
     const std::vector<uint32_t>& grid = g_fr.grid;
-    if (now > grid.back() && n >= kDownFrames && medianOf(ms, kDownFrames) > t) {
+    if (now > grid.back() && n >= kDownFrames && kmtlMedian(ms, kDownFrames) > t) {
         // Down: the highest level below this one expected under the target, or the lowest. A step up that didn't hold
         // (as long as it takes to count as held, below) was a mistake of the model's: the next waits longer (else a
         // still view near the target climbs and drops again every second or so, its sharpness pumping)
@@ -232,7 +225,7 @@ static uint32_t chooseLevel(double t) {
             g_fr.ceiling = now;
             g_fr.ceilingUntil = g_fr.frames + g_fr.ceilingWait;
         }
-        double gpu = medianOf(ms, kDownFrames);
+        double gpu = kmtlMedian(ms, kDownFrames);
         for (uint32_t l : grid)
             if (l < now && expectedAt(gpu, l, now) <= t * kDownShare) return l;
         return grid.back();
@@ -243,7 +236,7 @@ static uint32_t chooseLevel(double t) {
         if (g_fr.ceiling && now >= g_fr.ceiling) g_fr.ceiling = 0;
     }
     if (g_fr.frames < g_fr.changedAt + g_fr.upWait || n < kUpSamples) return now;
-    double gpu = medianOf(ms, n);
+    double gpu = kmtlMedian(ms, n);
     if (gpu >= t * kUpWhenUnder) return now;
     // Up to the highest level expected to stay under the target, below a ceiling: in one change, which a still view
     // shows once instead of at every step. Upwards the model errs on the safe side where more of a frame stays at any
