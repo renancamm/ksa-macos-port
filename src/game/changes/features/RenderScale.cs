@@ -75,6 +75,10 @@ internal static class RenderScale
         harmony.Patch(Find.Method(typeof(Cmaa2Renderer), "CreateResourcesIfNeeded"),
             prefix: new HarmonyMethod(typeof(RenderScale), nameof(Cmaa2Prefix)),
             finalizer: new HarmonyMethod(typeof(RenderScale), nameof(Cmaa2Finalizer)));
+        var swapchainArea = new HarmonyMethod(typeof(RenderScale), nameof(SwapchainAreaTranspiler));
+        harmony.Patch(Find.Method(typeof(SelectSystem), nameof(SelectSystem.OnFrame)), transpiler: swapchainArea);
+        harmony.Patch(Find.Method(typeof(ConfirmMods), nameof(ConfirmMods.OnFrame)), transpiler: swapchainArea);
+        harmony.Patch(Find.Method(typeof(Loading), nameof(Loading.OnFrame)), transpiler: swapchainArea);
         harmony.Patch(Find.Method(typeof(GameViewport), "SetSize"),
             postfix: new HarmonyMethod(typeof(RenderScale), nameof(SetSizePostfix)));
         harmony.Patch(Find.Method(typeof(Program), nameof(Program.SetCameraUbo)), transpiler: renderSize);
@@ -141,6 +145,30 @@ internal static class RenderScale
     // The least size of a level under Spatial: half the window, or 3/4 of the render size where that is lower
     private static int2 SpatialLeast(int2 render) =>
         new(Math.Min((Window.X + 1) / 2, render.X * 3 / 4), Math.Min((Window.Y + 1) / 2, render.Y * 3 / 4));
+
+    // The screens without a world (the system choice, the mods' confirmation, the loading screen) draw their UI on the
+    // swapchain's image, or with HDR on HDR's UI image of its size, over the renderer's Extent, which is the main view's
+    // render size here. Until KSA 5801 they drew in a render pass, whose target is its framebuffer's size; since 5901
+    // they use dynamic rendering, whose target is the render area: on a Retina display the system choice filled the
+    // top left quarter of the screen. They take the swapchain's own size, as the game's frame does for its UI. A method
+    // that already reads it is left as it is.
+    private static IEnumerable<CodeInstruction> SwapchainAreaTranspiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var code = instructions.ToList();
+        var extent = Find.Getter(typeof(Renderer), nameof(Renderer.Extent));
+        var swapchain = Find.Getter(typeof(Renderer), nameof(Renderer.SwapchainExtent));
+        int found = 0;
+        for (int i = 0; i < code.Count; i++)
+        {
+            if (!code[i].Calls(extent))
+                continue;
+            code[i] = new CodeInstruction(code[i].opcode, swapchain).MoveLabelsFrom(code[i]).MoveBlocksFrom(code[i]);
+            found++;
+        }
+        if (found == 0 && !code.Any(c => c.Calls(swapchain)))
+            throw new Skip("a screen without a world no longer reads the renderer's size");
+        return code;
+    }
 
     // The main view's composite stretches the render size to the swapchain
     private static void CompositePrefix(int shaderSlot, out int2? __state)
