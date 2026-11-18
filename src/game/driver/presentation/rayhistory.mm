@@ -5,8 +5,11 @@
 // and MetalFX can't settle on them. Here each image is blended with its own last frames (up to a number of frames per
 // image), reprojected through the motion MetalFX gets, kept only where the surface is the same (its normal and its
 // distance in the last frame) and held within the spread of this frame's pixels around it, so that what moved or
-// changed doesn't trail. The result goes back into the game's image. The history holds the last frame's image at the
-// size it was made at: under dynamic resolution (resources/dynamicresolution.mm) a level change carries it to the new
+// changed doesn't trail. An image the game smoothed in space (the indirect light: its noise is blotches wider than the
+// 3x3 pixels around, flat inside) may also stray by the pixel's own spread over its last frames, kept beside its
+// history: held to the 3x3 spread alone, it followed each frame's blotches and the jitter's seeds pumped the light. The
+// result goes back into the game's image. The history holds the last frame's image at the size it was made at: under
+// dynamic resolution (resources/dynamicresolution.mm) a level change carries it to the new
 // size through the same reprojection, read at the last frame's sizes, instead of starting it again (8-16 frames of
 // grain in the cockpit).
 #import <Metal/Metal.h>
@@ -16,7 +19,8 @@ static const char* kHistorySource = R"(
 #include <metal_stdlib>
 using namespace metal;
 struct Params { float4x4 egoFromClip, scene, object, nearby; float4 sphere, body; float2 renderSize, imageSize;
-                float2 lastJitter, lastRenderSize, lastImageSize; float maxFrames; uint history; float clip; float pad[3]; };
+                float2 lastJitter, lastRenderSize, lastImageSize; float maxFrames; uint history; float clip; uint overTime;
+                float pad[2]; };
 kernel void accumulate(texture2d<half, access::read> image [[texture(0)]],
                        depth2d<float, access::sample> depth [[texture(1)]],
                        texture2d<half, access::read> normals [[texture(2)]],
@@ -24,6 +28,8 @@ kernel void accumulate(texture2d<half, access::read> image [[texture(0)]],
                        texture2d<half, access::read> lastGeometry [[texture(4)]],
                        texture2d<half, access::write> outColor [[texture(5)]],
                        texture2d<half, access::write> outGeometry [[texture(6)]],
+                       texture2d<half, access::read> lastSpread [[texture(7)]],
+                       texture2d<half, access::write> outSpread [[texture(8)]],
                        constant Params& p [[buffer(0)]], uint2 gid [[thread_position_in_grid]]) {
     if (gid.x >= uint(p.imageSize.x) || gid.y >= uint(p.imageSize.y)) return;
     float2 scale = p.renderSize / p.imageSize;
@@ -38,6 +44,7 @@ kernel void accumulate(texture2d<half, access::read> image [[texture(0)]],
     if (all(n == 0) || d == 0) {
         outColor.write(half4(now.rgb, 0), gid);
         outGeometry.write(half4(0), gid);
+        if (p.overTime) outSpread.write(half4(0), gid);
         return;
     }
     float4 ego = p.egoFromClip * float4(uv * 2.0 - 1.0, d, 1.0);
@@ -48,6 +55,7 @@ kernel void accumulate(texture2d<half, access::read> image [[texture(0)]],
     float4 prev = (onObject ? p.object : onBody ? p.scene : p.nearby) * float4(pos, 1.0);
     float3 result = float3(now.rgb);
     float frames = 1;
+    float spread = 0;  // of the pixel's level (its channels' mean) over its last frames: a standard deviation
     if (p.history != 0 && prev.w > 0 && isfinite(prev.w)) {
         // Where the point was in the last frame's image: its plain clip position, moved by the last frame's jitter, at
         // the last frame's sizes
@@ -56,7 +64,7 @@ kernel void accumulate(texture2d<half, access::read> image [[texture(0)]],
         int2 base = int2(floor(lastPix));
         float2 f = lastPix - float2(base);
         float3 sum = 0;
-        float weight = 0, len = 0;
+        float weight = 0, len = 0, lastSpreadSum = 0;
         for (int y = 0; y <= 1; y++)
             for (int x = 0; x <= 1; x++) {
                 int2 tap = base + int2(x, y);
@@ -68,10 +76,13 @@ kernel void accumulate(texture2d<half, access::read> image [[texture(0)]],
                 half4 c = lastColor.read(uint2(tap));
                 sum += float3(c.rgb) * w;
                 len += float(c.a) * w;
+                if (p.overTime) lastSpreadSum += float(lastSpread.read(uint2(tap)).r) * w;
                 weight += w;
             }
         if (weight > 0.05) {
             float3 last = sum / weight;
+            float3 kept = last;
+            float lastDeviation = lastSpreadSum / weight;
             if (p.clip > 0) {
                 // Within this frame's 3x3 around it, mean +- clip x spread: what no longer is there doesn't trail
                 float3 m1 = 0, m2 = 0;
@@ -82,13 +93,32 @@ kernel void accumulate(texture2d<half, access::read> image [[texture(0)]],
                     }
                 m1 /= 9; m2 /= 9;
                 float3 sigma = sqrt(max(m2 - m1 * m1, 0.0));
+                if (p.overTime) {
+                    // Or the pixel's spread over its last frames, given to each channel by its share of the level (the
+                    // noise is in the light's strength: the same paths carry its colour)
+                    float level = (m1.r + m1.g + m1.b) / 3;
+                    float3 share = level > 0 ? m1 / level : float3(1);
+                    sigma = max(sigma, lastDeviation * share);
+                }
                 last = clamp(last, m1 - p.clip * sigma, m1 + p.clip * sigma);
             }
             frames = min(len / weight + 1, p.maxFrames);
-            result = mix(last, result, 1.0 / frames);
+            float a = 1.0 / frames;
+            if (p.overTime) {
+                // An exponentially weighted variance. While the history fills (after a reset or where the surface is
+                // new) against the history as it was, so that the spread is learnt where the 3x3 spread is 0; then
+                // against the history as the clip keeps it, so that a real change of the light, which the clip cuts,
+                // widens it by about the clip's width a frame and doesn't open it at once
+                float3 against = frames < p.maxFrames ? kept : last;
+                float d = (result.r + result.g + result.b - against.r - against.g - against.b) / 3;
+                spread = sqrt((1 - a) * (lastDeviation * lastDeviation + a * d * d));
+            }
+            result = mix(last, result, a);
         }
     }
     if (!all(isfinite(result))) result = float3(now.rgb);
+    if (!isfinite(spread)) spread = 0;
+    if (p.overTime) outSpread.write(half4(half(min(spread, 60000.0)), 0, 0, 0), gid);
     outColor.write(half4(half3(result), half(frames)), gid);
     outGeometry.write(half4(half3(n), half(viewDepth)), gid);
 }
@@ -107,7 +137,9 @@ struct HistoryParams {
     float renderSize[2], imageSize[2], lastJitter[2], lastRenderSize[2], lastImageSize[2];
     float maxFrames;
     uint32_t history;
-    float clip, pad[3];
+    float clip;
+    uint32_t overTime;
+    float pad[2];
 };
 static_assert(sizeof(HistoryParams) == 352, "HistoryParams must match kHistorySource's Params");
 
@@ -115,6 +147,7 @@ namespace {
 struct Slot {
     // At the image's full size: a dynamic image's texture at a level is smaller, and only part of them is used
     id<MTLTexture> color[2] = {nil, nil}, geometry[2] = {nil, nil};
+    id<MTLTexture> spread[2] = {nil, nil};  // the pixels' spread over time, where the image asks for it
     uint32_t w = 0, h = 0;
     int current = 0;     // which of the two holds the last frame's
     bool valid = false;  // it holds the frame just before
@@ -124,6 +157,9 @@ struct Slot {
 struct HistoryState {
     std::mutex m;
     id<MTLComputePipelineState> accumulate = nil, writeBack = nil;
+    // Bound in place of a slot's spread where its image doesn't ask for one: the kernel doesn't touch it then, but
+    // Metal's validation wants every texture it names bound
+    id<MTLTexture> noSpread[2] = {nil, nil};
     bool failed = false;
     Slot slots[4];
     float lastJitter[2] = {0, 0};
@@ -157,8 +193,10 @@ VKFN(void) vkCmdRayHistoryKSA(VkCommandBuffer commandBuffer, const VkRayHistoryI
         auto kernels = kmtlComputePipelines(d, kHistorySource, {"accumulate", "writeBack"}, &err);
         g_rh.accumulate = kernels[0];
         g_rh.writeBack = kernels[1];
-        if (!g_rh.accumulate || !g_rh.writeBack) {
-            KERR("ray history: kernel: %s", err.c_str());
+        for (int k = 0; k < 2; k++)
+            g_rh.noSpread[k] = newTexture(d, MTLPixelFormatR16Float, 1, 1);
+        if (!g_rh.accumulate || !g_rh.writeBack || !g_rh.noSpread[0] || !g_rh.noSpread[1]) {
+            KERR("ray history: kernel or textures: %s", err.c_str());
             g_rh.failed = true;
             return;
         }
@@ -187,10 +225,19 @@ VKFN(void) vkCmdRayHistoryKSA(VkCommandBuffer commandBuffer, const VkRayHistoryI
                 s.color[k] = newTexture(d, MTLPixelFormatRGBA16Float, fullW, fullH);
                 s.geometry[k] = newTexture(d, MTLPixelFormatRGBA16Float, fullW, fullH);
             }
+            s.spread[0] = s.spread[1] = nil;
             s.w = fullW; s.h = fullH;
             s.valid = false;
         }
-        if (!s.color[0] || !s.color[1] || !s.geometry[0] || !s.geometry[1]) {
+        bool overTime = (info->spreadOverTime >> i & 1) != 0;
+        if (!overTime)
+            s.spread[0] = s.spread[1] = nil;
+        else if (!s.spread[0]) {
+            for (int k = 0; k < 2; k++)
+                s.spread[k] = newTexture(d, MTLPixelFormatR16Float, fullW, fullH);
+            s.valid = false;
+        }
+        if (!s.color[0] || !s.color[1] || !s.geometry[0] || !s.geometry[1] || (overTime && (!s.spread[0] || !s.spread[1]))) {
             KERR_LIMIT(10, "ray history: no %ux%u history for image %d", fullW, fullH, i);
             s.color[0] = nil;  // made again next frame
             s.valid = false;
@@ -211,7 +258,8 @@ VKFN(void) vkCmdRayHistoryKSA(VkCommandBuffer commandBuffer, const VkRayHistoryI
         p.lastImageSize[0] = (float)s.lastW; p.lastImageSize[1] = (float)s.lastH;
         p.maxFrames = info->maxFrames[i];
         p.clip = info->clip[i];
-        p.pad[0] = p.pad[1] = p.pad[2] = 0;
+        p.overTime = overTime ? 1 : 0;
+        p.pad[0] = p.pad[1] = 0;
         p.history = s.valid && !reset ? 1 : 0;
         [e setTexture:image->mtl atIndex:0];
         [e setTexture:depth->mtl atIndex:1];
@@ -220,6 +268,8 @@ VKFN(void) vkCmdRayHistoryKSA(VkCommandBuffer commandBuffer, const VkRayHistoryI
         [e setTexture:s.geometry[last] atIndex:4];
         [e setTexture:s.color[next] atIndex:5];
         [e setTexture:s.geometry[next] atIndex:6];
+        [e setTexture:overTime ? s.spread[last] : g_rh.noSpread[0] atIndex:7];
+        [e setTexture:overTime ? s.spread[next] : g_rh.noSpread[1] atIndex:8];
         [e setBytes:&p length:sizeof(p) atIndex:0];
         [e dispatchThreads:MTLSizeMake(w, h, 1) threadsPerThreadgroup:MTLSizeMake(16, 16, 1)];
         [e memoryBarrierWithScope:MTLBarrierScopeTextures];
