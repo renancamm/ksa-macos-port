@@ -25,7 +25,7 @@ You need:
 
 - A Mac with Apple Silicon (M1 or later) and **macOS 26** or later.
 - The **Linux version of KSA** from [ksa.ahwoo.com](https://ksa.ahwoo.com). It is a file like
-  `ksa_linux_v2026.11.10.5801.tar.gz`; leave it in your Downloads folder.
+  `ksa_linux_v2026.11.16.5901.tar.gz`; leave it in your Downloads folder.
 
 Then:
 

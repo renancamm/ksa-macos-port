@@ -2,7 +2,7 @@
 
 This folder turns the Linux version of Kitten Space Agency into a Mac app. It holds everything except the game,
 which you download yourself from [ksa.ahwoo.com](https://ksa.ahwoo.com) (a file like
-`ksa_linux_v2026.11.10.5801.tar.gz`, left in your Downloads folder). It needs an Apple Silicon Mac with macOS 26.
+`ksa_linux_v2026.11.16.5901.tar.gz`, left in your Downloads folder). It needs an Apple Silicon Mac with macOS 26.
 
 In Terminal, from this folder:
 
