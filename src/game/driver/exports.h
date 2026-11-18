@@ -228,9 +228,13 @@ struct VkRayHistoryInfoKSA {
     float jitterX, jitterY;  // pixels (render size) the projection moved the image by
     uint32_t flags;          // kRayHistoryReset
     uint32_t frame;          // the main view's frame count (the hooks'): a history counts only from the frame just before
+    // Bit i: image i was smoothed in space before (the game's a-trous), so its 3x3 spread is no measure of its noise: the
+    // history may also stray by the pixel's own spread over its last frames
+    uint32_t spreadOverTime;
 };
-static_assert(sizeof(VkRayHistoryInfoKSA) == 384 && offsetof(VkRayHistoryInfoKSA, depth) == 64 &&
-              offsetof(VkRayHistoryInfoKSA, objectSphere) == 336 && offsetof(VkRayHistoryInfoKSA, flags) == 376,
+static_assert(sizeof(VkRayHistoryInfoKSA) == 392 && offsetof(VkRayHistoryInfoKSA, depth) == 64 &&
+              offsetof(VkRayHistoryInfoKSA, objectSphere) == 336 && offsetof(VkRayHistoryInfoKSA, flags) == 376 &&
+              offsetof(VkRayHistoryInfoKSA, spreadOverTime) == 384,
               "C#'s VkRayHistoryInfoKSA has this layout");
 constexpr uint32_t kRayHistoryReset = 1;  // its flag
 

@@ -92,6 +92,7 @@ internal static class Upscale
         public fixed float BodySphere[4];
         public float JitterX, JitterY;
         public uint Flags, Frame;
+        public uint SpreadOverTime;
     }
 
     [DllImport("libvulkan.1.dylib")]
@@ -99,9 +100,13 @@ internal static class Upscale
 
     // The cockpit's ray-traced lighting images, in the order the game makes them, and how many frames each one's history
     // holds and how far the history may stray from the pixels around (in their spread; ray history in the driver): the
-    // direct light (the sun's patches, the kittens' shadows), the indirect light (smoothed by the game's a-trous passes
-    // before this), the reflections. The glass's reflections come from the translucent prepass, which isn't reprojected.
-    private static readonly (float Frames, float Clip)[] RayHistory = [(8f, 1.5f), (16f, 2f), (8f, 1f), (0f, 0f)];
+    // direct light (the sun's patches, the kittens' shadows), the indirect light, the reflections. The glass's
+    // reflections come from the translucent prepass, which isn't reprojected. The indirect light is smoothed by the
+    // game's a-trous passes before this: its noise is blotches wider than 3x3 pixels, flat inside, so their spread held
+    // the history to each frame's blotches and the jitter's 16 seeds pumped the light on the cockpit's walls (the front
+    // panel at Balanced: 0.9 of 255, a 16-frame cycle); it strays by the pixel's own spread over its last frames too
+    private static readonly (float Frames, float Clip, bool SpreadOverTime)[] RayHistory =
+        [(8f, 1.5f, false), (16f, 2.5f, true), (8f, 1f, false), (0f, 0f, false)];
 
     public static void Apply(Harmony harmony)
     {
@@ -607,6 +612,8 @@ internal static class Upscale
             info.Images[i] = Unsafe.As<VkImage, ulong>(ref image);
             info.MaxFrames[i] = RayHistory[i].Frames;
             info.Clip[i] = RayHistory[i].Clip;
+            if (RayHistory[i].SpreadOverTime)
+                info.SpreadOverTime |= 1u << i;
         }
         Put(info.EgoFromClip, in _egoFromClip);
         Put(info.Scene, in _scene);
