@@ -112,8 +112,8 @@ setting; those of the hooks:
 | `dynamic_resolution`, `dynamic_level` | on, or a level: with MetalFX, the game's own sizes for the main view follow the driver's level each frame (none drawn if one of them can't) |
 | `fewer_cloud_steps`, `fewer_cloud_light_samples`, `fewer_smoke_steps`, `fewer_cloud_shadow_updates`, `fewer_sky_lighting_updates`, `lighter_warp_cloud_shadows`, `lighter_plume_shadows`, `simpler_pcss_shadows`, `baked_milky_way`, `crew_portraits_at_15_fps`, `lighter_tumbling_physics`, `debris_settles_in_warp` | on: the Extra Performance rows |
 | `skip_hidden_crew_portraits`, `fit_hud_to_display` | off: the game's own crew portraits and flight HUD; both change while the game runs |
-| `terrain_cache`, `skip_unused_outlines`, `skip_unused_overlays`, `skip_hidden_vessel_parts`, `skip_unused_ocean_blending`, `skip_unused_aero_meshes`, `idle_thread_sleep`, `loading_screen_fps_cap`, `smoother_srb_flames` | off: leave out that patch |
-| `unload_far_terrain`, `load_textures_once`, `unload_far_textures`, `release_freed_memory`, `sounds_kept_on_disk`, `fewer_effects_at_once` | on: that patch; off, the default: the game's own ([Auto Memory Saving](../../shared/settings/README.md#auto-memory-saving) sets them) |
+| `terrain_cache`, `skip_unused_outlines`, `skip_unused_overlays`, `skip_hidden_vessel_parts`, `skip_unused_ocean_blending`, `idle_thread_sleep`, `loading_screen_fps_cap`, `smoother_srb_flames` | off: leave out that patch |
+| `unload_far_terrain`, `load_textures_once`, `unload_far_textures`, `release_freed_memory`, `sounds_kept_on_disk` | on: that patch; off, the default: the game's own ([Auto Memory Saving](../../shared/settings/README.md#auto-memory-saving) sets them) |
 | `load_terrain_by_altitude` | on: near a world, Unload Far Terrain keeps only the levels around each camera's altitude (it needs `unload_far_terrain`) |
 | `cache_dir` | a folder: KSA Metal's cache, where Sounds Kept on Disk keeps its copies in `sounds/` (default: `~/Library/Caches/Kitten Space Agency`) |
 | `worker_park_ms` | milliseconds: how long an idle job worker spins before it sleeps (0.25) |

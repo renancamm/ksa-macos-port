@@ -14,32 +14,36 @@ namespace KsaMetal.Hooks.Features;
 
 // HUD layout (port-settings.toml, the Mac Port tab changes it while the game runs). The game lays out its flight HUD in
 // fractions of the window's height (ScreenReference's conversions): a panel's size is such a fraction times the HUD
-// scale (GaugeCanvas, RectTransform), its offset from its anchor (a corner or an edge's middle of the window) a fraction
-// alone, and inside the panels the buttons and frames are fractions too (ImGauge), while the text of the hosted panels
-// (resources, staging, crew, burn) has a fixed size (20 points times the HUD scale). So a window shrinks the HUD with
-// it, on a display narrower than 16:9 the panels overlap, and in a window shorter than the game's layout (1440 high)
-// the text overflows them: a MacBook's display is 16:10 and about 1000 points high.
-// With fit_hud_to_display, the HUD's sizes belong to the display the window is on (NSWindow.screen, the one holding most
-// of it), and its positions to the window: every read of the HUD scale in the panels' classes takes it times the
+// scale (GaugeCanvas, RectTransform), its offset from its anchor (a corner or an edge's middle of the window) a
+// fraction alone, and inside the panels the buttons and frames are fractions too (ImGauge); since KSA 5901 the text of
+// the hosted panels (resources, staging, crew, burn) follows the window's height too (ScreenReference.ResolutionScale,
+// the window's height / 1080). So a window shrinks the HUD with it, and on a display narrower than 16:9 the panels
+// overlap: a MacBook's display is 16:10.
+// With fit_hud_to_display, the HUD's sizes belong to the display the window is on (NSWindow.screen, the one holding
+// most of it), and its positions to the window: every read of the HUD scale in the panels' classes takes it times the
 // display's height / the window's (sizes, not offsets, go through it there) and times min(1, the display's aspect /
-// (16/9)); inside the panels, fractions are of the display's height; the hosted panels' scale (their fonts and spacing)
-// is also multiplied by the window's height / 1440, which with the display's height / the window's makes it the
-// display's / 1440. Fullscreen, the HUD is the 16:9 layout scaled to the display's width, its text in proportion to its
-// panels. A window has the same panels at the same places in proportion to it: a small one overlaps them, and the
-// game's HUD scale at the window's height / the display's gives its layout fitted to the window. "game" leaves the
-// game's layout.
+// (16/9)); inside the panels, fractions are of the display's height; the hosted panels' scale (their fonts and
+// spacing), the HUD scale times the window's height / 1080, becomes the display's height / 1080 times the aspect factor
+// with it. Fullscreen, the HUD is the 16:9 layout scaled to the display's width, its text in proportion to its panels.
+// A window has the same panels at the same places in proportion to it: a small one overlaps them, and the game's HUD
+// scale at the window's height / the display's gives its layout fitted to the window. "game" leaves the game's layout.
 [Hook(Phase.Default)]
 internal static class HudLayout
 {
-    private const float Aspect = 16f / 9f, LayoutHeight = 1440f;
+    private const float Aspect = 16f / 9f;
 
     // The panels' classes, which read the HUD scale with every size (GameSettings.GetGaugeScale, a one-line method the
-    // JIT inlines: its callers are patched, not the method)
-    private static readonly Type[] Panels = [typeof(RectTransform), typeof(CanvasTarget), typeof(GaugeCanvas), typeof(GaugeInspector)];
+    // JIT inlines: its callers are patched, not the method). The resources panel reads it to turn its height, measured
+    // from its hosted text, back into the window's fractions
+    private static readonly Type[] Panels =
+    [
+        typeof(RectTransform), typeof(CanvasTarget), typeof(GaugeCanvas), typeof(GaugeInspector),
+        typeof(ResourcesPanel),
+    ];
 
     // The classes that draw inside the panels, whose fractions are all sizes but a window's offset (ScreenReference's
     // conversions are one-liners too)
-    private static readonly Type[] Contents = [typeof(ImGauge), typeof(CrewPortraitPanel), typeof(ResourcesPanel)];
+    private static readonly Type[] Contents = [typeof(ImGauge)];
 
     public static string Apply(Harmony harmony)
     {
@@ -53,8 +57,6 @@ internal static class HudLayout
             throw new Skip(panels == 0 ? "the HUD no longer reads its scale" : "the HUD's panels no longer convert their sizes");
         if (_offsets != 1)
             throw new Skip($"ImGauge's window offset found {_offsets} times");
-        harmony.Patch(Find.Method(typeof(ConsoleStyle), nameof(ConsoleStyle.BeginGaugeHostScope)),
-            prefix: new HarmonyMethod(typeof(HudLayout), nameof(HostScopePrefix)));
         return Settings.FitHudToDisplay ? "fit to the display" : "game's";
     }
 
@@ -192,12 +194,4 @@ internal static class HudLayout
 
     public static float2 PixelsToUv(float2 pixels) =>
         Fit(out var display, out _) ? new float2(pixels.X / display.Y, pixels.Y / display.Y) : ScreenReference.PixelsToUv(pixels);
-
-    // The hosted panels' scale (from GaugeScale already: the display's height over the window's), times the window's
-    // height over the layout's
-    private static void HostScopePrefix(ref float hostScale)
-    {
-        if (Fit(out _, out var window))
-            hostScale *= window.Y / LayoutHeight;
-    }
 }

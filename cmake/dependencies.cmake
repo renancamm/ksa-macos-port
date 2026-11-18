@@ -47,13 +47,14 @@ FetchContent_Declare(glfw_headers
 # libraries KSA's BRUTAL assemblies load, and Monitor.Host's the crash-dump helper Brutal.Monitor.Subprocess. Since
 # the packages KSA 2026.10.25 uses, the libraries are in packages of their own, Ahwoo.BRUTAL.<X>.Native, versioned with
 # Ahwoo.BRUTAL.<X> (Monitor.Host still carries its program).
-# The Linux libraries in KSA 2026.11.10's archive are exactly these packages' linux-x64 ones (its BRUTAL assemblies
-# are 2026.11.0, a build RocketWerkz hasn't published); the port's program (src/player/port-cli/Conversion.cs)
-# compares the game's libraries with them and its assemblies' versions with these.
+# The Linux libraries in KSA 2026.11.16's archive are exactly these packages' linux-x64 ones (its BRUTAL assemblies
+# are 2026.11.0 and 2026.11.1, builds RocketWerkz hasn't published); the port's program
+# (src/player/port-cli/Conversion.cs) compares the game's libraries with them and its assemblies' versions with these.
+# Ahwoo.BRUTAL.Vulkan.Native (libVulkanEx) is not among them: since KSA 2026.11.16, Brutal.Vulkan loads only the Vulkan
+# library, and the game ships no libVulkanEx.
 # Format: "<package id> <version> <SHA-512 of the .nupkg>".
 set(BRUTAL_PACKAGES
     "Ahwoo.BRUTAL.Stb.Native         2026.10.3 a2f3c40cf7c8426be0e55c2a1dcb90c3278f5a986b39fd760722e15d3b479de017a93a7cb1c6c06b941a990a9a2ba27c87c749e199ac834d774323130b1a3b78"
-    "Ahwoo.BRUTAL.Vulkan.Native      2026.10.3 8a8b27fcf6a13764b04f1cf06beee877994501d44c56e51832c8867224b7b587de4b7e3b5873e6835d903aa4979fbf93d6b8ec0ab1c73f712165a6e51b542e64"
     "Ahwoo.BRUTAL.Gli.Native         2026.10.2 d7a425c24e389d352a7e6b1b0a13f19d4fa144f4a5a89456e1b9839df4b8dfbfcb8f897661fc2b37a7ebd1c910a1e88b5fb77c4a81d441fa6b244c92bd83a0c2"
     "Ahwoo.BRUTAL.ImGui.Native       2026.10.3 ea26fc4eca8ee34847ea7cb9c769cf1edc1d78bbb18c5fcbaee2f4f62a41f000facfe602235d1901b5561b1842ab1a3156655041f4ea194b321ce8dd417bc243"
     "Ahwoo.BRUTAL.ImPlot.Native      2026.10.3 342b6691ffe37293cc56813faddad9fa38323d266e1ee0f02fed07fb8cc27d17737f8865e69b8a3d2512691b58b0213364dd25be0902f4ec59140e069ba4169b"

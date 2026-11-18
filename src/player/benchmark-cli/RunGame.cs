@@ -41,8 +41,7 @@ public static partial class Program
             foreach (var a in new[] { "-c", "trap '' INT QUIT HUP; exec \"$0\" \"$@\" < /dev/null > /dev/null 2>&1", Path.Combine(_app, "Contents", "MacOS", "KSA") })
                 start.ArgumentList.Add(a);
             start.Environment["STARMAP_INSTANCE_PATH"] = _instance;
-            // The game runs as a player's: a shell's allocator switch (MallocNanoZone=0, which some terminals and tools set)
-            // is left out
+            // The game runs as a player's: LeftOut's variables are left out
             foreach (var name in LeftOut)
                 start.Environment.Remove(name);
             foreach (var (k, v) in env)
@@ -134,8 +133,10 @@ public static partial class Program
 
         private const string Start = "a new game, from benchmark.sh";
 
-        // This program's variables the game never gets
-        private static readonly string[] LeftOut = ["MallocNanoZone"];
+        // This program's variables the game never gets: a shell's allocator switch (MallocNanoZone=0, which some
+        // terminals and tools set), and kFS's (the game's flight computer prototype since KSA 2026.11.16: work every
+        // frame and in each vessel's control step)
+        private static readonly string[] LeftOut = ["MallocNanoZone", "KFS_PROTOTYPE"];
 
         // A variable of this program's environment that changes the game: Metal's, .NET's, the port's and StarMap's, the
         // dynamic loader's and the allocator's (KSA Metal's switches are a fact of their own; benchmark.sh sets two itself)

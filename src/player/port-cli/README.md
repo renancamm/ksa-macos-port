@@ -57,12 +57,11 @@ launcher needs: DYLD environment variables, unsigned libraries and JIT.
 
 RocketWerkz publishes BRUTAL as NuGet packages (`Ahwoo.BRUTAL.*`). The native libraries are in packages of their
 own (`Ahwoo.BRUTAL.<name>.Native`; Monitor.Host carries its program itself), with RocketWerkz's builds for Windows,
-Linux and macOS on Apple Silicon. The port takes the macOS builds of the eleven it needs, unmodified:
+Linux and macOS on Apple Silicon. The port takes the macOS builds of the ten it needs, unmodified:
 
 | Package | Library | Used for |
 |---|---|---|
 | Ahwoo.BRUTAL.Stb.Native | `libstb.dylib` | loading and writing images |
-| Ahwoo.BRUTAL.Vulkan.Native | `libVulkanEx.dylib` | batched Vulkan helpers |
 | Ahwoo.BRUTAL.Vulkan.Vma.Native | `libvma.dylib` | GPU memory (Vulkan Memory Allocator) |
 | Ahwoo.BRUTAL.Glfw.Native | `libglfw.3.dylib` | the window and input (GLFW 3.5.1 fork) |
 | Ahwoo.BRUTAL.Gli.Native | `libgli.dylib` | texture formats |

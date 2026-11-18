@@ -134,6 +134,6 @@ float GetCloudDensity(vec3 position, vec3 planetPosition, float innerCloudRadius
 @@ what had the clouds' shadow volume skip the noise where it can't change their density
 @@ needs cloud-density-callers
 @@ find
-            unusedDimensionalProfile, unusedBrightness, unusedColor, unusedNoiseProfile);
+        unusedDimensionalProfile, unusedBrightness, unusedColor, unusedNoiseProfile);
 @@ replace
-            unusedDimensionalProfile, unusedBrightness, unusedColor, unusedNoiseProfile, false);  // macOS port: no edges read
+        unusedDimensionalProfile, unusedBrightness, unusedColor, unusedNoiseProfile, false);  // macOS port: no edges read

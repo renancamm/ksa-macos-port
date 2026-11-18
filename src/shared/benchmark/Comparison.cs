@@ -230,7 +230,7 @@ public static class Ground
 
     // The notes that move a run's numbers (Checks.cs)
     private static readonly HashSet<string> NumberNotes =
-        ["gpu-busy", "hot", "rested", "warming", "battery", "low-power", "swap", "pressure", "tools", "probe-cost", "profiled", "disturbed", "shaders", "in-game"];
+        ["gpu-busy", "hot", "rested", "warming", "battery", "low-power", "swap", "pressure", "tools", "probe-cost", "profiled", "disturbed", "warp-stopped", "shaders", "in-game"];
 
     // The facts that differ between the runs, with each run's value: the Mac's, and with play what it played in (the window,
     // Vsync, the size of the images drawn), with build the app's versions

@@ -131,9 +131,21 @@ internal sealed class Clock
         GameTarget += GameSeconds(stepAt, Script) - after;
     }
 
-    // Asks the game for a simulation speed (0 pauses it), as a player does: the game takes it before its next step
+    // The game cut the warp the director asked for (its speed then, the speed asked for): since KSA 5901 it stops
+    // warp at x1 for a vessel's probe core power, its crew's supplies or radiation, as in a player's game
+    public Action<double, double>? WarpStopped;
+
+    // Asks the game for a simulation speed (0 pauses it), as a player does: the game takes it before its next step.
+    // When the game cut the warp asked for last (no request waits in the input buffer, and its speed is lower but not
+    // 0, which the settings window's pause sets every frame), the speed is asked for again
     public void SetSpeed(double speed)
     {
+        double now = Universe.GetSimulationSpeed();
+        if (_speedSent > 1 && now > 0 && now < _speedSent && InputEvents.SimSpeedBuffer.Count == 0)
+        {
+            WarpStopped?.Invoke(now, _speedSent);
+            _speedSent = double.NaN;
+        }
         if (speed == _speedSent)
             return;
         _speedSent = speed;

@@ -81,7 +81,6 @@ skip_unused_outlines | bool | true | | restart | hooks:OutlineSkip | | | | Skip 
 skip_unused_overlays | bool | true | | restart | hooks:OverlaySkip | | | | Skip Unused Overlays | Draws gizmos and orbit lines only on frames that have some.
 skip_unused_ocean_blending | bool | true | | restart | hooks:OceanBlending | | | | Skip Unused Ocean Blending | Below 9 km, skips a step of drawing the ocean that only views from higher up need.
 skip_hidden_crew_portraits | bool | true | | live | hooks:CrewPortraits | | | | Skip Hidden Crew Portraits | Draws the crew panel's portraits only while the panel is open.
-skip_unused_aero_meshes | bool | true | | restart | hooks:AeroMeshSkip | | | | Skip Unused Aero Meshes | Builds a vessel's aerodynamic mesh only in the Vehicle Editor and while Draw Aero Mesh is on. Less work at staging and breakups.
 shared_shadow_samples | bool | true | | restart | driver | | | | Shared Shadow Samples | Neighbouring pixels share the work of terrain shadows. A little faster near the ground.
 iva_ray_search | bool | true | ray_tracing | restart | driver | | | | IVA Ray Search | With IVA Ray Tracing (Graphics), the cockpit's rays use a faster search. The cockpit draws about 6 % faster.
 vsync_pacing | bool | true | game:vsync | restart | driver | | | | Vsync Pacing | With Vsync, starts each frame as soon as the GPU is ready for it. A higher frame rate in a window.
@@ -102,7 +101,6 @@ load_textures_once | bool | false | | restart | hooks:SharedTextures | | true,tr
 unload_far_terrain | bool | false | | restart | hooks:FarTerrain, hooks:FarClutter | | true,true,false | trade-off | Unload Far Terrain | Unloads far worlds' terrain and rebuilds it on approach. About 1.4 GB less; a jump to another world can pause a moment.
 load_terrain_by_altitude | bool | false | unload_far_terrain | restart | hooks:FarTerrain | | true,true,false | trade-off | Load Terrain by Altitude | Near a world, keeps only the terrain detail around the camera's altitude. About 0.4 GB less; at high time warp, detail can change late.
 unload_far_textures | bool | false | | restart | hooks:FarTextures | | true,true,false | trade-off | Unload Far Textures | Unloads far worlds' ground, rock and cloud textures and reloads them on approach. About 0.25 GB less; a jump can pause a moment.
-fewer_effects_at_once | bool | false | | restart | hooks:ParticlePool | | true,false,false | trade-off | Fewer Effects at Once | Keeps less room for smoke and explosion effects. About 0.2 GB less; rarely, an effect isn't shown.
 
 [interface] Interface | Additional interface features.
 fit_hud_to_display | bool | true | | live | hooks:HudLayout | | | | Fit HUD to Display | Keeps the flight HUD's fullscreen size in a window, scaled to fit narrower displays. If panels overlap, lower HUD Scale (Interface).

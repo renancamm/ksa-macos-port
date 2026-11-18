@@ -81,7 +81,7 @@ internal static class DebrisSettle
         if (vehicle.IsControlled || vehicle.IsKitten || vehicle.AnyActuatorActive())
             return false;
         var parts = vehicle.ReadOnlyVehicle;
-        if (parts.IsControllable)
+        if (parts.HasControlModule)  // as PartFailure.IsExpendable: since KSA 5901, IsControllable is false for an empty pod or an unpowered probe
             return false;
         foreach (var seat in parts.Crew)
             if (seat.AssignedKittenHash != KeyHash.Zero)
@@ -220,7 +220,7 @@ internal static class DebrisSettle
 
     private static bool IsLoose(Vehicle vehicle)
     {
-        if (vehicle is KittenEva || vehicle.IsControllable || vehicle == Program.ControlledVehicle)
+        if (vehicle is KittenEva || vehicle.HasControlModule || vehicle == Program.ControlledVehicle)
             return false;
         foreach (var seat in vehicle.Crew)
             if (seat.AssignedKittenHash != KeyHash.Zero)

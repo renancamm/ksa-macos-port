@@ -347,11 +347,10 @@ internal static class Tests
         Equal(AutoMemorySaving.Tier.Medium, AutoMemorySaving.TierOf(16), "16 GB");
         Equal(AutoMemorySaving.Tier.Large, AutoMemorySaving.TierOf(17), "17 GB");
         var rows = AutoMemorySaving.Rows.Select(s => s.Key).ToList();
-        Check(rows.Count >= 9 && rows.Contains("unload_far_terrain") && rows.Contains("fewer_effects_at_once"), $"the rows: {string.Join(", ", rows)}");
+        Check(rows.Count >= 8 && rows.Contains("unload_far_terrain"), $"the rows: {string.Join(", ", rows)}");
         var small = AutoMemorySaving.Port(AutoMemorySaving.Tier.Small);
         Check(small.Count == rows.Count && small.Values.All(v => v == "true"), "with 8 GB every row on");
         var medium = AutoMemorySaving.Port(AutoMemorySaving.Tier.Medium);
-        Equal("false", medium.GetValueOrDefault("fewer_effects_at_once"), "fewer effects with 16 GB");
         Equal("true", medium.GetValueOrDefault("unload_far_terrain"), "far terrain with 16 GB");
         var large = AutoMemorySaving.Port(AutoMemorySaving.Tier.Large);
         Check(large.Count == rows.Count && large.All(kv => kv.Value == Setting(kv.Key).Default), "with more than 16 GB: the defaults");

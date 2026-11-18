@@ -190,6 +190,11 @@ public partial class Director
         if (string.IsNullOrEmpty(_outDir))
             return;
         _events = new EventLog(_outDir, plan.Host.Session);
+        _clock.WarpStopped = (speed, asked) =>
+        {
+            _events.Add("warp-stopped", ScenarioName, _window?.Name, game: Universe.GetElapsedSeconds(), value: asked);
+            Log(FormattableString.Invariant($"{ScenarioName} {_window?.Name} {_clock.Script:F1} s: the game cut warp from x{asked:G6} to x{speed:G6}: asked again"));
+        };
         if (plan.Play.Explore)
             _explorer = new Explorer(_outDir);
         // The player's game as it plays: no script
