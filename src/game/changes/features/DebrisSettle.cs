@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using BepuPhysics;
 using BepuUtilities;
@@ -22,8 +24,14 @@ namespace KsaMetal.Hooks.Features;
 // Touching, x64 or more, where a frame's step is about a second or more: 6 game seconds after its first touch, a piece
 // touching the ground is Landed and asleep, unless a camera follows it or a vehicle somebody flies touches it. Fragments rolling to a stop on Luna held warp at x3 for a minute
 // (ConstraintSim.UploadGuardQuads, the craters' height for each moving terrain patch).
+// At sea, x64 or more: at its first touch of the water, a piece is Floating, at rest on the surface, or Bottomed on the
+// seabed if it is denser than the water, the water is too shallow to float it or it already touches the bottom. The game
+// floats a vehicle only once it has stopped on the water, and in long steps a piece never does: it skims at hundreds of
+// m/s, dives under within a step, buoyancy spins it up and its bubble runs in 1 ms steps, a frame of physics taking
+// seconds; a dense piece sinks on through the seabed. Even 6 game seconds in the water, as on the ground, are 6000 such
+// steps.
 // Settled pieces: PhysicsBubble.ApplySurfaceMotion searches the terrain for where each one's orbit would hit it, each step.
-// A Landed piece doesn't, in warp: its flight plan is the one orbit, complete, until warp ends or it moves.
+// A piece at rest on a surface doesn't, in warp: its flight plan is the one orbit, complete, until warp ends or it moves.
 // Pairs in a bubble: ComputeBubbleUnconstrainedTime holds it to 1/60 s for two vehicles side by side, on rails too, even when
 // a frame's step is an hour. Pieces on rails and Landed vehicles have no pair to wait for, and from x1024 nor have any
 // vehicles on rails, such as a kitten out beside its ship.
@@ -36,11 +44,13 @@ namespace KsaMetal.Hooks.Features;
 [Hook(Phase.Default, Switch = nameof(Settings.DebrisSettlesInWarp))]
 internal static class DebrisSettle
 {
-    private const double MinWarp = 8, TouchWarp = 64, RailsPairWarp = 1024, TouchSeconds = 6, TouchGap = 2;
+    internal const double MinWarp = 8;
+    private const double TouchWarp = 64, RailsPairWarp = 1024, TouchSeconds = 6, TouchGap = 2;
     private const float GameEnergy = 0.005f, Energy = 0.5f;
     private const byte GameSteps = byte.MaxValue, Steps = 32;
     private static AccessTools.FieldRef<FlightPlan, bool> _planComplete = null!;
     private const double NearDistance = 5000, VehicleNearDistance = 50000, LongStep = 2, SunkDepth = 100;
+    private const double MaxDynamicPressure = 200000;  // DetectStructuralFailure's limit
     private static readonly List<Vehicle> _sunk = new();
     private static AccessTools.FieldRef<PhysicsBubble, List<VehicleUpdateState>> _bubbleVehicles = null!;
     private static AccessTools.FieldRef<VehicleUpdateTask, SimStep> _simStep = null!;
@@ -63,6 +73,7 @@ internal static class DebrisSettle
             prefix: new HarmonyMethod(typeof(DebrisSettle), nameof(ForgetKinds)));
         harmony.Patch(Find.Method(typeof(VehicleUpdateTask), "HasValidClearance"),
             prefix: new HarmonyMethod(typeof(DebrisSettle), nameof(BubblesClear)));
+        harmony.Patch(Find.Method(typeof(PhysicsBubble), "FullPhysicsStepUntil"), transpiler: new HarmonyMethod(typeof(DebrisSettle), nameof(ToAtSea)));
         harmony.Patch(Find.Method(typeof(VehicleUpdateState), nameof(VehicleUpdateState.SetCurrentOrbit)),
             prefix: new HarmonyMethod(typeof(DebrisSettle), nameof(OrbitBegin)),
             postfix: new HarmonyMethod(typeof(DebrisSettle), nameof(OrbitEnd)));
@@ -76,7 +87,7 @@ internal static class DebrisSettle
             && !vehicle.GetReadOnlyProps().Situation.HasOceanContact() && IsPiece(vehicle);
     }
 
-    private static bool IsPiece(VehicleUpdateState vehicle)
+    internal static bool IsPiece(VehicleUpdateState vehicle)
     {
         if (vehicle.IsControlled || vehicle.IsKitten || vehicle.AnyActuatorActive())
             return false;
@@ -194,7 +205,7 @@ internal static class DebrisSettle
 
     private static void OrbitBegin(VehicleUpdateState __instance, ref bool computeFirstPatchTransition, out bool __state)
     {
-        __state = __instance.GetReadOnlyProps().Situation == Situation.Landed && Universe.GetSimulationSpeed() >= MinWarp && IsPiece(__instance);
+        __state = __instance.GetReadOnlyProps().Situation.IsAsleepOnSurface() && Universe.GetSimulationSpeed() >= MinWarp && IsPiece(__instance);
         if (__state)
             computeFirstPatchTransition = false;
     }
@@ -251,6 +262,59 @@ internal static class DebrisSettle
             props.Situation = Situation.Landed;
     }
 
+    // The game's try to float a vehicle on rails becomes AtSea(..., vehicle, bubble)
+    private static IEnumerable<CodeInstruction> ToAtSea(IEnumerable<CodeInstruction> instructions)
+    {
+        var code = instructions.ToList();
+        var floats = Find.Method(typeof(PhysicsStates), nameof(PhysicsStates.CanInstantlyFloatOnRails));
+        int call = Find.Once(code, c => c.Calls(floats), "CanInstantlyFloatOnRails's call");
+        Il.SwapCall(code, call, AccessTools.Method(typeof(DebrisSettle), nameof(AtSea)), CodeInstruction.LoadLocal(Il.StepVehicle(code, call)),
+            new CodeInstruction(OpCodes.Ldarg_0));
+        return code;
+    }
+
+    // True puts the vehicle on rails and stops it, which makes one only in the water Floating, one also on the seabed Bottomed
+    private static bool AtSea(ref PhysicsStates self, VehicleUpdateState vehicle, PhysicsBubble bubble)
+    {
+        if (self.CanInstantlyFloatOnRails())
+            return true;
+        if (Universe.GetSimulationSpeed() < TouchWarp || !self.Props.Situation.HasOceanContact() || !self.Environment.InPhysicsRadius
+            || self.Environment.OceanDensity <= 0 || !vehicle.Origin.BubFrame.IsCcf() || !IsPiece(vehicle) || Followed(vehicle.ReadOnlyVehicle))
+            return false;
+        // In the water, as the game measures it: the ocean contact of a long step reaches as far as the step's travel
+        var position = self.GetPositionBub();
+        var up = position.NormalizeOrZero();
+        var geometry = double3.Unpack(self.Props.MassToGeometryAsmb).Transform(self.Kinematic.Body2Phys);
+        float radius = self.Props.ComputeBoundingSphereRadiusAsmb();
+        if (self.Environment.OceanRadius - ((position + geometry).Length() - radius) <= 0)
+            return false;
+        // Sleeping a body sleeps all it touches, as on the ground
+        if (bubble.ConstraintSim is { } sim && !OnlyPiecesTouch(sim, vehicle.BepuHandles.Body))
+            return false;
+        float density = self.Props.TotalVolume > 0 ? self.Props.TotalMass / self.Props.TotalVolume : float.PositiveInfinity;
+        float draft = 2 * radius * density / self.Environment.OceanDensity;
+        if (self.Props.Situation == Situation.Sailing)
+        {
+            // Where it rests, its geometry's bottom at the draft or on the seabed: UpdateActivity takes the draft from
+            // where it is, which the game moves a Floating vehicle to only when it wakes
+            bool floats = density < self.Environment.OceanDensity && self.Environment.OceanRadius - draft > self.Environment.TerrainRadius;
+            double bottom = floats ? self.Environment.OceanRadius - draft : self.Environment.TerrainRadius;
+            if (floats)
+                self.Props.Draft = draft;
+            else
+                self.Props.Situation = Situation.Dragging;
+            self.Kinematic.PositionPhys = (bottom - double3.Dot(up, geometry) + radius) * up - self.Origin.PositionBub;
+        }
+        // Asleep, as Rest leaves a piece on the ground
+        if (bubble.ConstraintSim is { } constraints)
+        {
+            var body = constraints.Simulation.Bodies[vehicle.BepuHandles.Body];
+            body.Velocity = default;
+            body.Awake = false;
+        }
+        return true;
+    }
+
     // Long enough to fall over: stopped at the first touch, whole rockets stay standing on their nozzles. A touch after a
     // bounce or a flight starts the time again
     private sealed class Touch { public bool Started; public UniverseTime First, Last; }
@@ -268,9 +332,11 @@ internal static class DebrisSettle
         return (now - touch.First).Seconds() >= TouchSeconds;
     }
 
-    // The stop isn't an impact: it would read as one in the step's measured acceleration, and the game exempts only debris
+    // The stop isn't an impact: it would read as one in the step's measured acceleration, and the game's g-load check
+    // exempts only debris. The dynamic pressure is the loads' own: a piece that hits the water hard still breaks up
     private static bool StopIsNoFailure(VehicleUpdateState vehicleState) => !(Universe.GetSimulationSpeed() >= TouchWarp
-        && vehicleState.GetReadOnlyProps().Situation == Situation.Landed && IsPiece(vehicleState));
+        && vehicleState.GetReadOnlyProps().Situation.IsAsleepOnSurface() && IsPiece(vehicleState))
+        || vehicleState.PeakDynamicPressure >= MaxDynamicPressure;
 
     private static bool Followed(Vehicle vehicle)
     {

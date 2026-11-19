@@ -246,3 +246,27 @@ public static class Find
         throw new Skip($"{what} not found");
     }
 }
+
+// Changes to a method's code that more than one patch makes
+public static class Il
+{
+    // The step's vehicle: the local the List<VehicleUpdateState> item read last before the call is stored in
+    public static int StepVehicle(List<CodeInstruction> code, int call)
+    {
+        var item = AccessTools.Method(typeof(List<KSA.VehicleUpdateState>), "get_Item");
+        int at = code.FindLastIndex(call, c => c.Calls(item));
+        if (at < 0 || !code[at + 1].IsStloc())
+            throw new Skip("the step's vehicle not found");
+        return code[at + 1].LocalIndex();
+    }
+
+    // The call becomes a call of to, with these arguments after the call's own; a jump to the call lands on the first of
+    // them
+    public static void SwapCall(List<CodeInstruction> code, int call, MethodInfo to, params CodeInstruction[] arguments)
+    {
+        arguments[0].MoveLabelsFrom(code[call]).MoveBlocksFrom(code[call]);
+        code[call].opcode = OpCodes.Call;
+        code[call].operand = to;
+        code.InsertRange(call, arguments);
+    }
+}
