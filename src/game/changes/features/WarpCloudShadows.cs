@@ -14,7 +14,7 @@ namespace KsaMetal.Hooks.Features;
 // also swaps the volumes it writes (flip and flop) without resampling them, so the skipped rebuild swaps them back: the
 // volumes in use keep their content while the volume follows the camera, as on a frame without a move. During warp most
 // slices hold another place's shadows and cloud light; afterwards the sun's shadows are right within about 11 frames,
-// the ambient's within about 32 (4 times that with fewer_cloud_shadow_updates) and the cloud light within 32.
+// the ambient's and the cloud light within about 32 (each 4 times that with fewer_cloud_shadow_updates).
 [Hook(Phase.Default, Switch = nameof(Settings.LighterWarpCloudShadows))]
 internal static class WarpCloudShadows
 {
