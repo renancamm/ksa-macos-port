@@ -61,7 +61,7 @@ lower_rate_under_heavy_load | bool | true | steady_frame_rate!=off | restart | d
 [performance] Extra Performance | Faster, with small trade-offs.
 fewer_cloud_steps | bool | false | | restart | hooks:CloudSteps | true,true,false | | | Fewer Cloud Steps | Draws nearby clouds in fewer, longer steps. Faster with clouds in view.
 fewer_cloud_light_samples | bool | false | | restart | hooks:CloudLightSamples | true,false,false | | | Fewer Cloud Light Samples | Works out the sunlight inside clouds from fewer points. Faster with clouds in view; their shading is a little softer.
-fewer_cloud_shadow_updates | bool | false | | restart | hooks:CloudShadows | true,true,false | | | Fewer Cloud Shadow Updates | Updates the shadows of clouds on the ground less often. A little faster; the shadows lag behind moving clouds.
+fewer_cloud_shadow_updates | bool | false | | restart | hooks:CloudShadows | true,true,false | | | Fewer Cloud Shadow Updates | Updates the shadows and light clouds cast on the ground less often. A little faster; both lag behind moving clouds.
 fewer_sky_lighting_updates | bool | false | | restart | hooks:SkyLighting | true,true,false | | | Fewer Sky Lighting Updates | Updates the sky's light on nearby surfaces less often. A little faster; it trails quick changes of light by a moment.
 baked_milky_way | bool | false | | restart | hooks:BakedMilkyWay | true,true,true | | | Baked Milky Way | Draws the Milky Way's dust from a picture made at start. Faster with much sky in view, and slightly softer.
 fewer_smoke_steps | bool | false | | restart | hooks:SmokeSteps | true,true,false | | | Fewer Smoke Steps | Draws rocket smoke in fewer, longer steps. Faster in big plumes and explosions; a launch's plume looks a little different up close.
