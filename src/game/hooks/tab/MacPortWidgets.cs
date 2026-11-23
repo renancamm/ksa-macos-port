@@ -423,6 +423,38 @@ internal static partial class MacPortTab
         ConsoleStyle.PopFont();
     }
 
+    // The last row drawn: its key, the key of the row it is nested under (none: ""), the middle and bottom of its frame,
+    // the style's alpha it was drawn with
+    private static (string Key, string Parent, float Middle, float Bottom, float Alpha) _lastRow = ("", "", 0f, 0f, 1f);
+
+    // After a row's begin: the line a nested row hangs from, in its indent (indent: its width), down from its parent's
+    // frame, or from the corner of the line of the row above it under the same parent, and across to its frame's edge;
+    // a row something stands between it and its parent (the render boxes under MetalFX) starts it at its own frame. The
+    // captions' muted colour at half strength, greyed with the row it runs beside; no pixel drawn twice, as that would
+    // darken it. Every row calls it, to be the last row
+    private static void Guide(PortSetting setting, PortSetting? parent, float indent)
+    {
+        var row = ConsoleWidgets.RowMin;
+        float height = ConsoleStyle.FrameHeightPx, middle = MathF.Round(row.Y + height * 0.5f), alpha = ImGui.GetStyle().Alpha;
+        float line = MathF.Max(1f, MathF.Round(ConsoleStyle.EffectiveInterfaceScale));
+        var last = _lastRow;
+        _lastRow = (setting.Key, parent?.Key ?? "", middle, row.Y + height, alpha);
+        if (parent == null)
+            return;
+        float gap = MathF.Max(ImGui.GetStyle().ItemSpacing.Y, ConsoleWidgets.MinRowGapPx) + line;
+        float x = MathF.Round(row.X - indent * 0.5f), top = MathF.Round(row.Y);
+        uint Colour(float a) => ConsoleStyle.ApplyAlpha(ConsoleStyle.TextMutedU32, 0.5f * a);
+        var draw = ImGui.GetWindowDrawList();
+        // Beside the row above: from its corner (a sibling) or its frame's bottom (the parent) to this row's frame
+        float from = last.Parent == parent.Key ? last.Middle + line
+            : last.Key == parent.Key && row.Y - last.Bottom <= gap ? MathF.Round(last.Bottom)
+            : top;
+        if (from < top)
+            draw.AddRectFilled(new float2(x, from), new float2(x + line, top), Colour(last.Parent == parent.Key ? last.Alpha : alpha));
+        draw.AddRectFilled(new float2(x, top), new float2(x + line, middle + line), Colour(alpha));
+        draw.AddRectFilled(new float2(x + line, middle), new float2(MathF.Round(row.X), middle + line), Colour(alpha));
+    }
+
     // A padlock after a row's label, on a row that waits for something not nested above it: a body and a shackle in the
     // muted text colour, as tall as most of the label's letters, where the control leaves room (none: the tooltip still
     // says what the row waits for). Returns where it is, for its tooltip and for a tag after it

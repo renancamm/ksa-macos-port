@@ -69,10 +69,11 @@ Extra Performance row that changes time warp has `warp`; the tab shows the tag a
 ## Rows that wait
 
 A row whose needs aren't met does nothing, and the tab draws it greyed out, with its tooltip saying what it needs. A row
-that needs the row above it in its section (with any rows between them needing it too) is drawn indented under it:
-Render Scale and Skip Game Anti-Aliasing under MetalFX, Dynamic Resolution and Lower Rate Under Heavy Load under Steady
-Frame Rate, Load Terrain by Altitude under Unload Far Terrain, Ray Tracing under Ray Queries. What else a row waits for,
-one of the game's settings or a row elsewhere, gets a lock after its label, whose tooltip says what unlocks it.
+that needs the row above it in its section (with any rows between them needing it too) is drawn indented under it, on a
+line from it: Render Scale and Skip Game Anti-Aliasing under MetalFX, Dynamic Resolution and Lower Rate Under Heavy Load
+under Steady Frame Rate, Load Terrain by Altitude under Unload Far Terrain, Ray Tracing under Ray Queries. What else a
+row waits for, one of the game's settings or a row elsewhere, gets a lock after its label, whose tooltip says what
+unlocks it.
 
 ## Typed settings
 
