@@ -1,0 +1,23 @@
+# OceanRefraction.glsl: the ocean shows the seabed through the water from a copy of the image and depth drawn before
+# it. The refracted place is found by a search over that depth, which at grazing angles runs off the seabed past the
+# horizon, and the checks after it reject only a place in front of the water. Where nothing was drawn (depth 0, the
+# sky, which is drawn after the ocean) the copy holds the black starfield: shallow water shows a dark band of "deep"
+# sea with stair-stepped edges, and notches beside a vessel. The fix rejects those places too, so they take the game's
+# own fallbacks, as a place in front of the water does.
+
+@@ edit ocean-refraction-sky Water/OceanRefraction.glsl
+@@ what rejected refracted places where nothing was drawn
+@@ find
+    if (textureLod(sceneDepth, refractionUV, 0.0f).r > oceanDepth)
+@@ replace
+    // macOS port: also where nothing was drawn (depth 0), where the copy holds the starfield
+    float refractedDepth = textureLod(sceneDepth, refractionUV, 0.0f).r;
+    if (refractedDepth > oceanDepth || refractedDepth == 0.0)
+
+@@ edit ocean-refraction-sky-fallback Water/OceanRefraction.glsl
+@@ what rejected the fallback's places where nothing was drawn
+@@ find
+    return depth > oceanDepth ? screenUV : refractionUV;
+@@ replace
+    // macOS port: also where nothing was drawn (depth 0), where the copy holds the starfield
+    return (depth > oceanDepth || depth == 0.0) ? screenUV : refractionUV;
