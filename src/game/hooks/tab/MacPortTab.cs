@@ -294,7 +294,8 @@ internal static partial class MacPortTab
     private static bool NeedsRestart(PortSetting s) =>
         !s.Live && s.Outside == null && Pending[s.Key] != s.Saved && PortSettings.Met(s, Value, Game) && Pending[s.Key] != s.Running;
 
-    // Why a setting can't change now (with a note beside it), or what it waits for (the tooltip says), or null
+    // Why a setting can't change now (with a note beside it), or what it waits for (the tooltip says; a lock beside it
+    // too, but for the row it is nested under), or null
     private static string? Reason(PortSetting s, out string note)
     {
         note = "";
@@ -312,23 +313,54 @@ internal static partial class MacPortTab
                 ? "Unavailable with this KSA version (logs/console.log says more)."
                 : "Unavailable: it ran into an error (logs/console.log says why).";
         }
-        foreach (var need in s.Needs)
-        {
-            var one = new PortSetting { Needs = [need] };
-            if (PortSettings.Met(one, Value, Game))
-                continue;
-            if (need == "game:vsync")
-                return "Needs the game's Vsync (Display).";
-            if (need == "game:plume_trail_shadows")
-                return "Needs the game's Plume trails and Plume trail shadows (Graphics).";
-            if (need == "game:pcss")
-                return "Needs the game's Cascaded Shadow Filter on Pcss (Graphics).";
-            int ne = need.IndexOf("!=", StringComparison.Ordinal), eq = need.IndexOf('=');
-            var other = PortSettings.Get(ne > 0 ? need[..ne] : eq > 0 ? need[..eq] : need);
-            var what = other == null ? need : ne < 0 && eq > 0 ? $"{other.Label} {other.LabelOf(need[(eq + 1)..])}" : other.Label;
-            return $"Needs {what}.";
-        }
-        return null;
+        var unmet = Unmet(s);
+        return unmet.Count == 0 ? null : string.Join(" ", unmet.Select(NeedText));
+    }
+
+    // The needs of a setting that aren't met now
+    private static List<string> Unmet(PortSetting s) =>
+        s.Needs.Where(need => !PortSettings.Met(new PortSetting { Needs = [need] }, Value, Game)).ToList();
+
+    // What a need asks for, as the tooltip says it
+    private static string NeedText(string need)
+    {
+        if (need == "game:vsync")
+            return "Needs the game's Vsync (Display).";
+        if (need == "game:plume_trail_shadows")
+            return "Needs the game's Plume trails and Plume trail shadows (Graphics).";
+        if (need == "game:pcss")
+            return "Needs the game's Cascaded Shadow Filter on Pcss (Graphics).";
+        int ne = need.IndexOf("!=", StringComparison.Ordinal), eq = need.IndexOf('=');
+        var other = PortSettings.Get(NeedKey(need)!);
+        var what = other == null ? need : ne < 0 && eq > 0 ? $"{other.Label} {other.LabelOf(need[(eq + 1)..])}" : other.Label;
+        return $"Needs {what}.";
+    }
+
+    // The setting a need names, or null for one of the game's
+    private static string? NeedKey(string need)
+    {
+        if (need.StartsWith("game:", StringComparison.Ordinal))
+            return null;
+        int ne = need.IndexOf("!=", StringComparison.Ordinal), eq = need.IndexOf('=');
+        return ne > 0 ? need[..ne] : eq > 0 ? need[..eq] : need;
+    }
+
+    // The row a row is nested under: a setting it needs above it in its section, with every row between them needing it
+    // too (Dynamic Resolution and Lower Rate Under Heavy Load under Steady Frame Rate), or null. The table doesn't
+    // change while the game runs
+    private static readonly Dictionary<string, PortSetting?> Parents = new();
+
+    private static PortSetting? Parent(PortSetting s)
+    {
+        if (Parents.TryGetValue(s.Key, out var parent))
+            return parent;
+        var rows = PortSettings.All.Where(r => r.InTab && r.Section == s.Section).ToList();
+        int at = rows.IndexOf(s);
+        bool Needs(PortSetting row, string key) => row.Needs.Any(n => NeedKey(n) == key);
+        for (int i = at - 1; i >= 0 && parent == null; i--)
+            if (Needs(s, rows[i].Key) && rows.Skip(i + 1).Take(at - i - 1).All(r => Needs(r, rows[i].Key)))
+                parent = rows[i];
+        return Parents[s.Key] = parent;
     }
 
     // The rows, while the tab is open (called inside the settings' content body). Not guarded as the postfixes are: an
@@ -371,9 +403,15 @@ internal static partial class MacPortTab
             note = "after a restart";
             reason = "";
         }
-        // A switch waiting for another setting can still be set, and its name says what it is about. Greyed out: what
-        // can't change (it has a note), and any other control that does nothing yet
-        ConsoleStyle.PushDisabled(reason is { Length: > 0 } && (note.Length > 0 || s.Kind != "bool"));
+        // Greyed out: what can't change (it has a note), and what does nothing yet. A row nested under the one it needs
+        // is indented, and what else it waits for gets a lock, whose tooltip says what
+        var parent = Parent(s);
+        var locked = reason is { Length: > 0 } && note.Length == 0
+            ? string.Join(" ", Unmet(s).Where(n => parent == null || NeedKey(n) != parent.Key).Select(NeedText)) : "";
+        float indent = parent == null ? 0f : MathF.Round(20f * ConsoleStyle.EffectiveInterfaceScale);
+        ConsoleStyle.PushDisabled(reason is { Length: > 0 });
+        if (indent > 0f)
+            ImGui.Indent(indent);
         // A pending row without the value it had, as the game's own rows
         if (pending)
             ConsoleWidgets.BeginPendingRow(s.Label, "");
@@ -389,8 +427,9 @@ internal static partial class MacPortTab
         }
         if (!pending && note.Length > 0)
             Note(s.Label, note);
+        var lockBox = locked.Length > 0 ? Lock(s.Label) : default;
         if (s.Tag.Length > 0)
-            Tag(s.Label, s.Tag, pending ? "" : note);
+            Tag(s.Label, s.Tag, pending ? "" : note, lockBox.Max.X);
         string? optionHelp = null;
         var id = "MacPort_" + s.Key;
         switch (s.Kind)
@@ -417,8 +456,14 @@ internal static partial class MacPortTab
         }
         bool hovered = ConsoleWidgets.RowHovered;
         ConsoleWidgets.EndRow();
+        if (indent > 0f)
+            ImGui.Unindent(indent);
         ConsoleStyle.PopDisabled();
-        if (hovered)
+        // The lock's tooltip: what the row waits for, beyond the row it is nested under
+        var slack = new float2(MathF.Round(3f * ConsoleStyle.EffectiveInterfaceScale));
+        if (hovered && locked.Length > 0 && ImGui.IsMouseHoveringRect(lockBox.Min - slack, lockBox.Max + slack))
+            Tooltip(locked);
+        else if (hovered)
         {
             var tip = optionHelp ?? s.Help;
             if (optionHelp == null && s.OptionHelp.TryGetValue(value, out var meaning))

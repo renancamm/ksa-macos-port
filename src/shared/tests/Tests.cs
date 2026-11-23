@@ -91,10 +91,11 @@ internal static class Tests
 
     // Each line of the table: its key and variable are its own, its default is one of its values, its needs name
     // settings that exist (or the game's that the tab checks) with values they take, without a loop, its presets'
-    // values are three of its own (every Extra Performance row on in Performance), its Auto Memory Saving values are
-    // three of its own, the last its default (every Memory row has them, and no row has both), the tab draws its kind,
-    // its values and its help fit, its tag is a Memory row's trade-off, and its help can be read back. Each of the
-    // tab's sections has a caption.
+    // values are three of its own (every Extra Performance row on in Performance; down the section, no row is on in
+    // more presets than the one above it), its Auto Memory Saving values are three of its own, the last its default
+    // (every Memory row has them, and no row has both), the tab draws its kind, its values and its help fit, its tag is
+    // a Memory row's trade-off or an Extra Performance row's warp, and its help can be read back. Each of the tab's
+    // sections has a caption.
     private static void TableRules()
     {
         var all = PortSettings.All;
@@ -152,7 +153,17 @@ internal static class Tests
             Check(s.Memory.Length != 3 || s.Memory[2] == s.Default, $"{s.Key}: with more than 16 GB Auto Memory Saving gives it {s.Memory.LastOrDefault()}, not its default");
             Check((s.Section == "memory") == (s.Memory.Length == 3), $"{s.Key}: Auto Memory Saving sets the Memory rows, and only those");
             Check(s.Memory.Length == 0 || s.Presets.Length == 0, $"{s.Key} has presets and Auto Memory Saving values: the graphics presets leave the Memory rows alone");
-            Check(s.Tag.Length == 0 || s.Tag == "trade-off" && s.Section == "memory", $"{s.Key}'s tag '{s.Tag}' isn't a Memory row's trade-off");
+            Check(s.Tag.Length == 0 || s.Tag == "trade-off" && s.Section == "memory" || s.Tag == "warp" && s.Section == "performance",
+                $"{s.Key}'s tag '{s.Tag}' isn't a Memory row's trade-off or an Extra Performance row's warp");
+        }
+        // Extra Performance is ordered by the presets that turn a row on: the rows of every card first, Performance's
+        // own last
+        int presetsAbove = 3;
+        foreach (var s in all.Where(s => s.Section == "performance"))
+        {
+            int on = s.Presets.Count(v => v != s.Default);
+            Check(on <= presetsAbove, $"{s.Key} is on in {on} presets, more than a row above it: Extra Performance goes by the presets");
+            presetsAbove = on;
         }
     }
 

@@ -214,7 +214,8 @@ internal static class Presets
 
     // What a preset's card shows, from its values for this Mac. Shadows are one word for the filter and the terrain's
     // shadow map, which go up in steps together: the simple filter at 2048 or 4096, the soft one up to 4096 or at 8192.
-    // MSAA is what is drawn: with MetalFX Temporal and Skip Game Anti-Aliasing, the game's setting is turned off
+    // Dynamic Res is on where the preset gives it what it needs, MetalFX and a steady rate (the game's Vsync aside,
+    // which the presets leave alone). No MSAA line: it only follows MetalFX (off with it, the game's x2 without)
     public static (string Label, string Value)[] Summary(Preset preset)
     {
         var (game, port) = (preset.Game, preset.Port);
@@ -226,13 +227,7 @@ internal static class Presets
         [
             ("Render Scale", $"{Math.Round(scale * 100)} %"),
             ("MetalFX", Settings.Get("upscaling").LabelOf(upscaling)),
-            ("MSAA", upscaling == "metalfx" && port["skip_game_anti_aliasing"] == "true" ? "Off" : game["AntiAliasingMethod"] switch
-            {
-                "MultisampleX2" => "x2",
-                "MultisampleX4" => "x4",
-                "MultisampleX8" => "x8",
-                _ => "Off",
-            }),
+            ("Dynamic Res", port["dynamic_resolution"] == "true" && upscaling != "off" && port["steady_frame_rate"] != "off" ? "On" : "Off"),
             ("Shadows", soft ? terrain >= 8192 ? "Very High" : "High" : terrain >= 4096 ? "Medium" : "Low"),
             ("Clouds", game["CloudUpscaling"]),
             ("Effects", game["ExplosionQuality"]),

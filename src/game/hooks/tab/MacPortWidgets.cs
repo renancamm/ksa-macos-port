@@ -423,13 +423,41 @@ internal static partial class MacPortTab
         ConsoleStyle.PopFont();
     }
 
-    // A row's tag after its label (trade-off), a small chip: the captions' muted font in capitals on the sliders' inset
-    // fill with a frame's hairline, where the control and the note in front of it (none: "") leave room
-    private static void Tag(string label, string tag, string note)
+    // A padlock after a row's label, on a row that waits for something not nested above it: a body and a shackle in the
+    // muted text colour, as tall as most of the label's letters, where the control leaves room (none: the tooltip still
+    // says what the row waits for). Returns where it is, for its tooltip and for a tag after it
+    private static (float2 Min, float2 Max) Lock(string label)
+    {
+        float right = ImGui.GetCursorScreenPos().X - ConsoleWidgets.GhostControlGapPx;
+        float s = ConsoleStyle.EffectiveInterfaceScale;
+        float labelEnd = ConsoleWidgets.RowMin.X + ConsoleWidgets.RowLabelInsetPx + LabelWidth(label);
+        float height = MathF.Round(LabelHeight() * 0.72f), width = MathF.Round(height * 0.78f);
+        float line = MathF.Max(1f, MathF.Round(1.5f * s));
+        var min = new float2(MathF.Round(labelEnd + ConsoleWidgets.GhostControlGapPx),
+            MathF.Round(ConsoleWidgets.RowMin.Y + (ConsoleStyle.FrameHeightPx - height) * 0.5f));
+        var max = min + new float2(width, height);
+        if (max.X >= right)
+            return default;
+        var body = new float2(min.X, MathF.Round(max.Y - height * 0.56f));
+        float radius = width * 0.3f, middle = min.X + width * 0.5f;
+        uint colour = ConsoleStyle.ApplyAlpha(ConsoleStyle.TextMutedU32);
+        var draw = ImGui.GetWindowDrawList();
+        draw.AddRectFilled(in body, in max, colour, MathF.Round(1f * s));
+        draw.PathLineTo(new float2(middle - radius, body.Y));
+        draw.PathArcTo(new float2(middle, min.Y + line * 0.5f + radius), radius, MathF.PI, MathF.PI * 2f);
+        draw.PathLineTo(new float2(middle + radius, body.Y));
+        draw.PathStroke(colour, ImDrawFlags.None, line);
+        return (min, max);
+    }
+
+    // A row's tag after its label (trade-off, warp), or after what follows the label (after: its right edge), a small
+    // chip: the captions' muted font in capitals on the sliders' inset fill with a frame's hairline, where the control
+    // and the note in front of it (none: "") leave room
+    private static void Tag(string label, string tag, string note, float after = 0f)
     {
         var at = ImGui.GetCursorScreenPos();
         float s = ConsoleStyle.EffectiveInterfaceScale;
-        float labelEnd = ConsoleWidgets.RowMin.X + ConsoleWidgets.RowLabelInsetPx + LabelWidth(label);
+        float labelEnd = MathF.Max(after, ConsoleWidgets.RowMin.X + ConsoleWidgets.RowLabelInsetPx + LabelWidth(label));
         float right = at.X - ConsoleWidgets.GhostControlGapPx;
         if (note.Length > 0)
         {

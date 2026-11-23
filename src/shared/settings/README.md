@@ -63,8 +63,16 @@ runs before the file exists, applies the tier rule to its one setting itself
 
 A row Auto Memory Saving sets has three values in the `memory` column, one per tier, the last its default. The tests
 check them, that the Memory section's rows are the ones that have them, and that none of those has presets' values.
-A Memory row with a cost a player can see (a pause, an effect not shown) has `trade-off` in the `tag` column, which the
-tab shows after its label.
+A Memory row with a cost a player can see (a pause, an effect not shown) has `trade-off` in the `tag` column, and an
+Extra Performance row that changes time warp has `warp`; the tab shows the tag after the row's label.
+
+## Rows that wait
+
+A row whose needs aren't met does nothing, and the tab draws it greyed out, with its tooltip saying what it needs. A row
+that needs the row above it in its section (with any rows between them needing it too) is drawn indented under it:
+Render Scale and Skip Game Anti-Aliasing under MetalFX, Dynamic Resolution and Lower Rate Under Heavy Load under Steady
+Frame Rate, Load Terrain by Altitude under Unload Far Terrain, Ray Tracing under Ray Queries. What else a row waits for,
+one of the game's settings or a row elsewhere, gets a lock after its label, whose tooltip says what unlocks it.
 
 ## Typed settings
 
@@ -107,5 +115,6 @@ against the table, and the build stops when it isn't in step:
 Edit its line in the table, then build: `./build.sh` makes the typed files and the template, the generator checks the
 repository, and the library's tests check the table's rules (values, needs, presets, the kinds the tab draws, a
 tooltip's 25 words at most). A new Extra Performance row gets its presets' values in the same line (on in Performance,
-the tests check), a row Auto Memory Saving sets its three tier values in the `memory` column, and its key goes into
-the README of the code that reads it.
+the tests check) and goes into its group by them: the rows every preset turns on first, those only Performance does last
+(the tests check the order). A row Auto Memory Saving sets its three tier values in the `memory` column, and its key
+goes into the README of the code that reads it.
