@@ -404,7 +404,7 @@ internal static partial class MacPortTab
             reason = "";
         }
         // Greyed out: what can't change (it has a note), and what does nothing yet. A row nested under the one it needs
-        // is indented, and what else it waits for gets a lock, whose tooltip says what
+        // is indented, hanging from a line, and what else it waits for gets a lock, whose tooltip says what
         var parent = Parent(s);
         var locked = reason is { Length: > 0 } && note.Length == 0
             ? string.Join(" ", Unmet(s).Where(n => parent == null || NeedKey(n) != parent.Key).Select(NeedText)) : "";
@@ -417,6 +417,7 @@ internal static partial class MacPortTab
             ConsoleWidgets.BeginPendingRow(s.Label, "");
         else
             ConsoleWidgets.BeginRow(s.Label);
+        Guide(s, parent, indent);
         // A segmented control is wider than the row's control column, so it starts left of it
         if (s.Kind == "choice")
         {
