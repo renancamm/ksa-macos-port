@@ -20,7 +20,8 @@
 #             other types their value
 #   needs     the settings it depends on (comma separated): <key> (on, or not empty), <key>=<value>, <key>!=<value>,
 #             game:vsync, game:plume_trail_shadows or game:pcss (the game's own settings, which only the tab checks).
-#             While one isn't met, it keeps its default
+#             While one isn't met, it keeps its default, and the tab greys it out: indented under the row above it
+#             that it needs, with a lock for what else it waits for
 #   applies   live: on Apply, in the running game (the hooks read it while the game runs); restart: when the game
 #             starts
 #   by        what does it (comma separated): driver, ktx-shim, launcher (the app's executable, which reads it
@@ -34,7 +35,8 @@
 #   memory    its values with Auto Memory Saving on, for a Mac with 8 GB of memory or less, 16 GB or less, and more,
 #             comma separated; Off gives the row its default, the last tier's. None for a setting Auto Memory Saving
 #             leaves alone (AutoMemorySaving.cs in this folder). A row has presets or memory values, never both
-#   tag       a word the tab shows after the row's label: trade-off, on a Memory row with a cost a player can see
+#   tag       a word the tab shows after the row's label: trade-off, on a Memory row with a cost a player can see;
+#             warp, on an Extra Performance row that changes time warp
 #   label     its row in the tab; help: the row's tooltip and the file's comment, which the values' help follows
 
 [presets] Presets | The game's graphics and this tab, set together.
@@ -59,18 +61,18 @@ dynamic_resolution | bool | false | upscaling!=off,steady_frame_rate!=off | rest
 lower_rate_under_heavy_load | bool | true | steady_frame_rate!=off | restart | driver | true,true,true | | | Lower Rate Under Heavy Load | Drops to 40 or 30 when the steady rate can't be held, so frames stay even.
 
 [performance] Extra Performance | Faster, with small trade-offs.
+baked_milky_way | bool | false | | restart | hooks:BakedMilkyWay | true,true,true | | | Baked Milky Way | Draws the Milky Way's dust from a picture made at start. Faster with much sky in view, and slightly softer.
+simpler_pcss_shadows | bool | false | game:pcss | restart | hooks:ShadowSearch | true,true,true | | | Simpler PCSS Shadows | With Cascaded Shadow Filter on Pcss (Graphics), nearby soft shadows are simpler. Faster in grass; shadows cast from high above can look sharper.
 fewer_cloud_steps | bool | false | | restart | hooks:CloudSteps | true,true,false | | | Fewer Cloud Steps | Draws nearby clouds in fewer, longer steps. Faster with clouds in view.
-fewer_cloud_light_samples | bool | false | | restart | hooks:CloudLightSamples | true,false,false | | | Fewer Cloud Light Samples | Works out the sunlight inside clouds from fewer points. Faster with clouds in view; their shading is a little softer.
 fewer_cloud_shadow_updates | bool | false | | restart | hooks:CloudShadows | true,true,false | | | Fewer Cloud Shadow Updates | Updates the shadows and light clouds cast on the ground less often. A little faster; both lag behind moving clouds.
 fewer_sky_lighting_updates | bool | false | | restart | hooks:SkyLighting | true,true,false | | | Fewer Sky Lighting Updates | Updates the sky's light on nearby surfaces less often. A little faster; it trails quick changes of light by a moment.
-baked_milky_way | bool | false | | restart | hooks:BakedMilkyWay | true,true,true | | | Baked Milky Way | Draws the Milky Way's dust from a picture made at start. Faster with much sky in view, and slightly softer.
 fewer_smoke_steps | bool | false | | restart | hooks:SmokeSteps | true,true,false | | | Fewer Smoke Steps | Draws rocket smoke in fewer, longer steps. Faster in big plumes and explosions; a launch's plume looks a little different up close.
 lighter_plume_shadows | bool | false | game:plume_trail_shadows | restart | hooks:PlumeShadows | true,true,false | | | Lighter Plume Shadows | With Plume trail shadows (Graphics), rocket smoke casts coarser shadows, only within 3 km. A big rocket's smoke draws about 10-20 % faster.
-simpler_pcss_shadows | bool | false | game:pcss | restart | hooks:ShadowSearch | true,true,true | | | Simpler PCSS Shadows | With Cascaded Shadow Filter on Pcss (Graphics), nearby soft shadows are simpler. Faster in grass; shadows cast from high above can look sharper.
+lighter_warp_cloud_shadows | bool | false | | restart | hooks:WarpCloudShadows | true,true,false | | warp | Lighter Warp Cloud Shadows | At very high time warp, cloud shadows aren't rebuilt every frame, so warp keeps its speed. They fall out of place, then catch up.
+lighter_tumbling_physics | bool | false | | restart | hooks:TumblingPhysics | true,true,false | | warp | Lighter Tumbling Physics | Tumbling pieces, such as falling boosters, take longer physics steps. Time warp slows down less while they fall.
+debris_settles_in_warp | bool | false | | restart | hooks:DebrisSettle | true,true,false | | warp | Debris Settles in Warp | At time warp x8 and above, pieces nobody flies settle where they lie and pass through each other. Any inside the planet are removed.
+fewer_cloud_light_samples | bool | false | | restart | hooks:CloudLightSamples | true,false,false | | | Fewer Cloud Light Samples | Works out the sunlight inside clouds from fewer points. Faster with clouds in view; their shading is a little softer.
 crew_portraits_at_15_fps | bool | false | | live | hooks:CrewPortraits | true,false,false | | | Crew Portraits at 15 FPS | Draws the crew panel's portraits at 15 FPS. The faces move less smoothly.
-lighter_warp_cloud_shadows | bool | false | | restart | hooks:WarpCloudShadows | true,true,false | | | Lighter Warp Cloud Shadows | At very high time warp, cloud shadows aren't rebuilt every frame, so warp keeps its speed. They fall out of place, then catch up.
-lighter_tumbling_physics | bool | false | | restart | hooks:TumblingPhysics | true,true,false | | | Lighter Tumbling Physics | Tumbling pieces, such as falling boosters, take longer physics steps. Time warp slows down less while they fall.
-debris_settles_in_warp | bool | false | | restart | hooks:DebrisSettle | true,true,false | | | Debris Settles in Warp | At time warp x8 and above, pieces nobody flies settle where they lie and pass through each other. Any inside the planet are removed.
 
 [optimizations] Optimizations | Faster, with no visible change.
 terrain_cache | bool | true | | restart | hooks:TerrainCache | | | | Terrain Cache | Recalculates the terrain only when it changes, not every frame.
