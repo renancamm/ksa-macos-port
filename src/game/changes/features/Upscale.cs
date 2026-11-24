@@ -300,14 +300,6 @@ internal static class Upscale
     private static double GroundRadius(Celestial body) =>
         body.GetOceanReference() is { } ocean ? Math.Max(body.MaxTerrainRadius, body.MeanRadius + (double)ocean.Level) : body.MaxTerrainRadius;
 
-    // Camera-centred ecliptic coordinates -> the nearby body's rotating frame (or the ecliptic frame in space)
-    private static double4x4 EgoToFrame(Camera camera, Celestial? body)
-    {
-        return body != null
-            ? double4x4.CreateTranslation(camera.PositionEcl - body.GetPositionEcl()) * double4x4.CreateFromQuaternion(body.GetCce2Ccf())
-            : double4x4.CreateTranslation(camera.PositionEcl);
-    }
-
     // After the main view's camera data is set (RenderScale.ShaderDataPostfix): the jittered projection, and the
     // reprojections from this frame's ego space to the previous frame's clip space
     public static void UpdateCamera(IViewport viewport, ref UboCameraData data)
@@ -351,7 +343,7 @@ internal static class Upscale
         // camera's turn moves it
         _sky = _havePrevious ? _previousViewProjection : camera.MVP.viewProjection;
         Celestial? body = camera.GetEffectiveNearbyCelestial();
-        double4x4 egoToFrame = EgoToFrame(camera, body);
+        double4x4 egoToFrame = Views.EgoToFrame(camera, body);
         double time = Universe.GetElapsedSeconds();
         if (_havePrevious && body == _previousBody)
         {

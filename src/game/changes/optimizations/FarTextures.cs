@@ -52,7 +52,6 @@ internal static class FarTextures
         public SimpleVkTexture? Texture;  // null while let go
         public Task<SimpleVkTexture>? Making;
         public long NeededFrame = -1, FarSince = -1;
-        public int Faults;  // makings that failed, logged once
         public string Name => System.IO.Path.GetFileName(Refs[0].LocalPath);
     }
 
@@ -351,11 +350,12 @@ internal static class FarTextures
             double distance = Distance(image);
             if (distance < NearM)
             {
-                // Begun now, waited for before the views are prepared (ViewsPreparing)
+                // Begun now, waited for before the views are prepared (ViewsPreparing); one made ahead that failed is
+                // tried once more, and failing again then fails the hook (MakeNow)
                 if (image.Texture == null && image.Making is not { IsFaulted: false })
                 {
-                    if (image.Making is { IsFaulted: true } && image.Faults++ == 0)
-                        Hooks.Log($"{nameof(FarTextures)}: {image.Name} not made ({Hooks.Describe(image.Making.Exception!)}), tried again each frame it is near");
+                    if (image.Making is { IsFaulted: true })
+                        Hooks.Log($"{nameof(FarTextures)}: {image.Name} not made ahead ({Hooks.Describe(image.Making.Exception!)}), tried again now that it is near");
                     image.Making = Make(image);
                 }
                 image.NeededFrame = _frame;
@@ -418,7 +418,8 @@ internal static class FarTextures
         });
     }
 
-    // Images a view needs this frame: all made at once, waited for
+    // Images a view needs this frame: all made at once, waited for. One that can't be made throws, which fails the hook
+    // (Failed: every image made again, and kept)
     private static void MakeNow(List<Image> images, string why)
     {
         if (images.Count == 0)

@@ -18,13 +18,14 @@ namespace KsaMetal.Hooks.Fixes;
 [Hook(Phase.PortParts)]
 internal static class Restart
 {
-    private static MethodInfo _processStart = null!;
+    private static MethodInfo _processStart = null!, _startAgain = null!;
 
     public static string Apply(Harmony harmony)
     {
         if (Launcher == null)
             return "off (the game was not started by the app)";
         _processStart = Find.Method(typeof(Process), nameof(Process.Start), typeof(string));
+        _startAgain = Find.Method(typeof(Restart), nameof(StartAgain), typeof(string));
         var buttons = typeof(RequiresRestartPopup).GetNestedTypes(AccessTools.all).SelectMany(AccessTools.GetDeclaredMethods)
             .Where(m => !m.IsGenericMethodDefinition && PatchProcessor.GetOriginalInstructions(m).Any(i => i.Calls(_processStart)))
             .ToList();
@@ -37,21 +38,23 @@ internal static class Restart
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
         foreach (var i in instructions)
-            yield return i.Calls(_processStart) ? new CodeInstruction(i) { operand = AccessTools.Method(typeof(Restart), nameof(StartAgain)) } : i;
+            yield return i.Calls(_processStart) ? new CodeInstruction(i) { operand = _startAgain } : i;
     }
 
-    // In place of Process.Start(<the game's executable>): the game quits right after
-    private static Process? StartAgain(string _)
+    // In place of Process.Start(<the game's executable>): the game quits right after. When the app can't be started
+    // again, the game's own restart, which works at least when the app wasn't started from the Finder
+    private static Process? StartAgain(string executable)
     {
         try
         {
             Run();
+            return null;
         }
         catch (Exception e)
         {
-            Hooks.Log($"Restart: could not start the game again: {e.Message}");
+            Hooks.Log($"Restart: could not start the app again ({Hooks.Describe(e)}): the game's own restart");
+            return Process.Start(executable);
         }
-        return null;
     }
 
     public static string? Launcher => Environment.GetEnvironmentVariable("KSA_PORT_LAUNCHER") is { Length: > 0 } l ? l : null;

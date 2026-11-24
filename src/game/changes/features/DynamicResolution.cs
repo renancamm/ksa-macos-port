@@ -258,7 +258,15 @@ internal static class DynamicResolution
         var aurora = Find.Method(typeof(AtmosphereRenderer), nameof(AtmosphereRenderer.RenderAuroraAfterClouds));
         var transpiler = new HarmonyMethod(typeof(DynamicResolution), nameof(ViewportSizeTranspiler));
         harmony.Patch(atmosphere, transpiler: transpiler);
-        harmony.Patch(aurora, transpiler: transpiler);
+        try
+        {
+            harmony.Patch(aurora, transpiler: transpiler);
+        }
+        catch
+        {
+            harmony.Unpatch(atmosphere, transpiler.method);
+            throw;
+        }
     }
 
     // viewport.Size -> AtLevel(viewport.Size)

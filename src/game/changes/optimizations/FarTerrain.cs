@@ -843,14 +843,21 @@ internal static class FarTerrain
     }
 
     // A body's clutter built on FarClutter's worker: its generate sets written with its finest level as it is now (the
-    // writes above skipped them while it was built)
+    // writes above skipped them while it was built). An error here is this hook's, not FarClutter's
     public static void ClutterBuilt(Celestial body)
     {
         if (_failed || Program.GetPlanetRenderer() is null)
             return;
-        foreach (var c in Collections.Values)
-            if (!c.Ocean && c.Bodies.Contains(body))
-                WriteClutterSets(c, body);
+        try
+        {
+            foreach (var c in Collections.Values)
+                if (!c.Ocean && c.Bodies.Contains(body))
+                    WriteClutterSets(c, body);
+        }
+        catch (Exception e)
+        {
+            Failed(e);
+        }
     }
 
     // As ClutterCubeCellGrid.BuildFrameResources writes them, one per view slot and frame slot: its writes go to the

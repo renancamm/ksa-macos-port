@@ -1,9 +1,7 @@
 using System;
 using System.IO;
-using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
-using KsaPort.Common;
 
 namespace KsaPort.Cli;
 
@@ -32,10 +30,9 @@ public static class BakedMilkyWay
         if (!File.Exists(path))
         {
             Status("WARN", "MilkyWay.frag", "not found");
+            File.Delete(bake);
             return ShaderEdits.Status.Warn;
         }
-        // An earlier version of the port wrote the bake's shader under another name
-        File.Delete(Path.Combine(shaders, "MilkyWayBake.comp"));
         var text = ShaderEdits.ReadBytes(path);
         var nl = text.Contains("\r\n") ? "\r\n" : "\n";
         // The lookup, the part of the edit that is the port's own: a file edited by another version of the port says so
