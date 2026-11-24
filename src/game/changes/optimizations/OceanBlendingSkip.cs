@@ -12,17 +12,18 @@ using KSA.Rendering.Water.Rendering;
 
 namespace KsaMetal.Hooks.Optimizations;
 
-// Ocean blending skip. The ocean is drawn blending into the image behind it (BlendTransmittance: colour = ocean + what
-// is behind x the ocean's alpha, alpha = the ocean's x what is behind), and Ocean.frag writes alpha 0 everywhere except
-// where the shore filter fades the ocean out; GetShoreFilterFade returns 0 with the camera below 10 km (half of
-// SHORE_FILTER_ALTITUDE), and its fade is still 0 at 10 km. There the blend writes the ocean's colour and alpha 0
-// unchanged, but it still reads every sample behind the ocean and keeps the GPU's hidden-surface removal off for the
-// ocean's overlapping triangles. So with the camera below 9 km (a margin for the shader's float altitude) the solid
-// ocean is drawn with twins of its two pipelines that don't blend: about 10 % less GPU time at sea level with MSAA on an
-// M5, the same image. Wire-frame mode keeps the game's pipelines. The equivalence holds for the stock shader: Apply
-// checks the lines it rests on and skips when they changed.
+// Skip Unused Ocean Blending, skip_unused_ocean_blending (port-settings.toml). The ocean is drawn blending into the
+// image behind it (BlendTransmittance: colour = ocean + what is behind x the ocean's alpha, alpha = the ocean's x what
+// is behind), and Ocean.frag writes alpha 0 everywhere except where the shore filter fades the ocean out;
+// GetShoreFilterFade returns 0 with the camera below 10 km (half of SHORE_FILTER_ALTITUDE), and its fade is still 0 at
+// 10 km. There the blend writes the ocean's colour and alpha 0 unchanged, but it still reads every sample behind the
+// ocean and keeps the GPU's hidden-surface removal off for the ocean's overlapping triangles. So with the camera below
+// 9 km (a margin for the shader's float altitude) the solid ocean is drawn with twins of its two pipelines that don't
+// blend: about 10 % less GPU time at sea level with MSAA on an M5, the same image. Wire-frame mode keeps the game's
+// pipelines. The equivalence holds for the stock shader: Apply checks the lines it rests on and skips when they
+// changed.
 [Hook(Phase.Default, Switch = nameof(Settings.SkipUnusedOceanBlending))]
-internal static class OceanBlending
+internal static class OceanBlendingSkip
 {
     private const double MaxAltitude = 9000.0;
     // What the equivalence rests on, in Content/Core/Shaders/Water
@@ -63,12 +64,12 @@ internal static class OceanBlending
         _depth = RenderingPresets.ReverseZDepthStencil.DepthTestWrite;
         _noBlend = Brutal.VulkanApi.Abstractions.Presets.BlendState.BlendNone;
         harmony.Patch(Find.Method(typeof(OceanRenderer), "Build"),
-            postfix: new HarmonyMethod(typeof(OceanBlending), nameof(BuildPostfix)));
+            postfix: new HarmonyMethod(typeof(OceanBlendingSkip), nameof(BuildPostfix)));
         harmony.Patch(Find.Method(typeof(OceanRenderer), "DestroyFrameResources"),
-            postfix: new HarmonyMethod(typeof(OceanBlending), nameof(DestroyPostfix)));
+            postfix: new HarmonyMethod(typeof(OceanBlendingSkip), nameof(DestroyPostfix)));
         harmony.Patch(Find.Method(typeof(OceanRenderer), "PerformRendering"),
-            prefix: new HarmonyMethod(typeof(OceanBlending), nameof(RenderPrefix)),
-            transpiler: new HarmonyMethod(typeof(OceanBlending), nameof(Transpiler)));
+            prefix: new HarmonyMethod(typeof(OceanBlendingSkip), nameof(RenderPrefix)),
+            transpiler: new HarmonyMethod(typeof(OceanBlendingSkip), nameof(Transpiler)));
         return "on";
     }
 
@@ -91,7 +92,7 @@ internal static class OceanBlending
         catch (Exception e)
         {
             _failed = true;
-            Hooks.Fail(nameof(OceanBlending), e);
+            Hooks.Fail(nameof(OceanBlendingSkip), e);
         }
     }
 
@@ -106,7 +107,7 @@ internal static class OceanBlending
         catch (Exception e)
         {
             _failed = true;
-            Hooks.Fail(nameof(OceanBlending), e);
+            Hooks.Fail(nameof(OceanBlendingSkip), e);
         }
         Twins.Clear();
     }
@@ -123,7 +124,7 @@ internal static class OceanBlending
         catch (Exception e)
         {
             _failed = true;
-            Hooks.Fail(nameof(OceanBlending), e);
+            Hooks.Fail(nameof(OceanBlendingSkip), e);
         }
     }
 
@@ -131,7 +132,7 @@ internal static class OceanBlending
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
         var code = instructions.ToList();
-        var pick = Find.Method(typeof(OceanBlending), nameof(Pick));
+        var pick = Find.Method(typeof(OceanBlendingSkip), nameof(Pick));
         foreach (var field in new[] { _pipeline!, _tessellationPipeline! })
         {
             int load = Find.Once(code, c => c.LoadsField(field), field.Name);

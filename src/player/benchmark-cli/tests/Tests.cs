@@ -241,7 +241,7 @@ internal static class Tests
 
     private static void Problems()
     {
-        var dir = Run("problems", facts: [new("Hooks", "TerrainCache: skipped (KSA's code moved); OutlineSkip: on; HudLayout: failed (NullReferenceException)")],
+        var dir = Run("problems", facts: [new("Hooks", "TerrainCache: skipped (KSA's code moved); OutlineSkip: on; HudFit: failed (NullReferenceException)")],
             ending: "hung, stopped", done: false);
         var events = new EventLog(dir, 1);
         events.Add("error", "earth", text: "12.0 s: '@launch Rocket at Pad' failed");
@@ -260,7 +260,7 @@ internal static class Tests
         Contains(problems, "the run did not play to its end", "an incomplete run");
         Contains(problems, "earth: 12.0 s: '@launch Rocket at Pad' failed", "a step that failed");
         Contains(problems, "the hooks' TerrainCache: skipped (KSA's code moved)", "a skipped hook");
-        Contains(problems, "the hooks' HudLayout: failed (NullReferenceException)", "a failed hook");
+        Contains(problems, "the hooks' HudFit: failed (NullReferenceException)", "a failed hook");
         Check(!problems.Any(p => p.Contains("OutlineSkip", StringComparison.Ordinal)), "a hook that is on is no problem");
         Contains(problems, "game.log: [ksa-metal ERROR] pipeline: no function (3 times)", "the driver's errors, counted");
         Contains(problems, "game.log: ERROR Something broke", "the game's own error, without its colours");

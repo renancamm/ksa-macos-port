@@ -10,19 +10,19 @@ using Key = (string File, int Cap, bool Mips, Brutal.VulkanApi.VkFormat Format, 
 
 namespace KsaMetal.Hooks.Optimizations;
 
-// Shared textures. The game makes a GPU image for each texture it names (TextureReference.Bind, on worker threads while
-// loading), and some files are named more than once under other ids: the Moon's rock material also as Saturn's ring
-// rocks, the ground textures of the Moon, Mars's snow and Pan's ice also as particles and frost (about 85 MB in the
-// solar system), often in another category, whose size cap the game's settings set (the ring rocks' none, the Moon's
-// rocks the Terrain textures'). A texture of the same file, the same cap (a cap at least the file's size counts as
-// none) and the same manifest (mip chain, formats; XML may give one without a file beside the texture) now takes the
-// image, view and bindless slot of the first one bound, and only that one frees them at exit
-// (TextureReference.Dispose). Nothing else writes a texture's slot or image after binding. Height maps load and bind
-// otherwise and keep their own, as do the maps the celestial streamer makes (Stream in the content). An error of the
-// hook's own while a texture binds fails the hook: that texture and every one after it bind as the game binds them, and
-// those already sharing keep their image.
+// Load Textures Once, load_textures_once (port-settings.toml). The game makes a GPU image for each texture it names
+// (TextureReference.Bind, on worker threads while loading), and some files are named more than once under other ids:
+// the Moon's rock material also as Saturn's ring rocks, the ground textures of the Moon, Mars's snow and Pan's ice also
+// as particles and frost (about 85 MB in the solar system), often in another category, whose size cap the game's
+// settings set (the ring rocks' none, the Moon's rocks the Terrain textures'). A texture of the same file, the same cap
+// (a cap at least the file's size counts as none) and the same manifest (mip chain, formats; XML may give one without a
+// file beside the texture) now takes the image, view and bindless slot of the first one bound, and only that one frees
+// them at exit (TextureReference.Dispose). Nothing else writes a texture's slot or image after binding. Height maps
+// load and bind otherwise and keep their own, as do the maps the celestial streamer makes (Stream in the content). An
+// error of the hook's own while a texture binds fails the hook: that texture and every one after it bind as the game
+// binds them, and those already sharing keep their image.
 [Hook(Phase.Default, Switch = nameof(Settings.LoadTexturesOnce))]
-internal static class SharedTextures
+internal static class TexturesOnce
 {
     private static readonly Dictionary<Key, object> Gates = new();
     private static readonly Dictionary<Key, TextureReference> Owners = new();
@@ -44,11 +44,11 @@ internal static class SharedTextures
         _imgui = Find.Field(typeof(TextureReference), "_addToImgui");
         _handle = Find.Setter(typeof(TextureReference), nameof(TextureReference.BindlessHandle));
         TextureImages.Lookup();
-        harmony.Patch(bind, prefix: new HarmonyMethod(typeof(SharedTextures), nameof(Binding)),
-            postfix: new HarmonyMethod(typeof(SharedTextures), nameof(Bound)),
-            finalizer: new HarmonyMethod(typeof(SharedTextures), nameof(BindEnd)));
-        harmony.Patch(dispose, prefix: new HarmonyMethod(typeof(SharedTextures), nameof(Disposing)));
-        harmony.Patch(bindAll, postfix: new HarmonyMethod(typeof(SharedTextures), nameof(AllBound)));
+        harmony.Patch(bind, prefix: new HarmonyMethod(typeof(TexturesOnce), nameof(Binding)),
+            postfix: new HarmonyMethod(typeof(TexturesOnce), nameof(Bound)),
+            finalizer: new HarmonyMethod(typeof(TexturesOnce), nameof(BindEnd)));
+        harmony.Patch(dispose, prefix: new HarmonyMethod(typeof(TexturesOnce), nameof(Disposing)));
+        harmony.Patch(bindAll, postfix: new HarmonyMethod(typeof(TexturesOnce), nameof(AllBound)));
         return "on";
     }
 
@@ -65,7 +65,7 @@ internal static class SharedTextures
         catch (Exception e)
         {
             _failed = true;
-            Hooks.Fail(nameof(SharedTextures), e);
+            Hooks.Fail(nameof(TexturesOnce), e);
             return true;
         }
     }
@@ -148,6 +148,6 @@ internal static class SharedTextures
     {
         lock (Gates)
             if (Sharers.Count > 0)
-                Hooks.Log($"{nameof(SharedTextures)}: {Sharers.Count} textures share an image, {_bytes >> 20} MB");
+                Hooks.Log($"{nameof(TexturesOnce)}: {Sharers.Count} textures share an image, {_bytes >> 20} MB");
     }
 }

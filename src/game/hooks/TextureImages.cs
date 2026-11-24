@@ -3,8 +3,8 @@ using RenderCore;
 
 namespace KsaMetal.Hooks;
 
-// What the far textures and the shared textures hooks have in common about a TextureReference's image: the setters
-// Bind writes, whether Bind makes it, the size cap Bind applies, and an image's size
+// What the far textures and the textures loaded once hooks have in common about a TextureReference's image: the
+// setters Bind writes, whether Bind makes it, the size cap Bind applies, and an image's size
 internal static class TextureImages
 {
     private static System.Reflection.MethodInfo? _texture, _view;
