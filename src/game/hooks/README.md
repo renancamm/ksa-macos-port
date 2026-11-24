@@ -52,14 +52,14 @@ throws `Skip`. Everything that hook had changed is undone, and `console.log` say
 [hooks] Documents: off
 [hooks] CloudShadows: off
 [hooks] CrewPortraits: on, when shown
-[hooks] LoadingPace: on
-[hooks] OceanBlending: on
+[hooks] IdleThreadSleep: on, 0.25 ms
+[hooks] LoadingScreenCap: on
+[hooks] OceanBlendingSkip: on
 [hooks] OutlineSkip: on
 [hooks] OverlaySkip: on
+[hooks] PcssShadows: off
 [hooks] RenderScale: skipped, the game's code changed (the sun's radius not found)
-[hooks] ShadowSearch: off
 [hooks] TerrainCache: on
-[hooks] WorkerPark: on, 0.25 ms
 [hooks] HiddenPartsSkip: on
 [hooks] BenchmarkRun: ready
 [hooks] Hdr: on
@@ -69,16 +69,16 @@ throws `Skip`. Everything that hook had changed is undone, and `console.log` say
 ```
 
 A hook that throws anything else has a bug of its own: it is undone the same way, and `console.log` says `failed`,
-followed by the error and where it happened. While the game runs, the code the game calls of most hooks catches its
-own errors the same way (`Hooks.Fail`: the terrain cache, the ocean blending, the overlay skip, the shared textures,
-the far terrain, clutter and textures, the sound files, the crew portraits, the HUD layout, the SRB flames, the Milky
-Way bake, the clutter resnap, the Resolution list, the Mac Port tab and its presets): the hook says `failed while the
-game ran`, once, also from a worker thread, and hands the game its own behaviour from then on. The render scale
-changes the whole frame and can't hand it back halfway: an error there reaches the game. The game then runs as it
+followed by the error and where it happened. While the game runs, the code the game calls of most hooks catches its own
+errors the same way (`Hooks.Fail`: the terrain cache, the ocean blending skip, the overlay skip, the textures loaded
+once, the far terrain, clutter and textures, the sounds kept on disk, the crew portraits, the HUD fit, the SRB flames,
+the baked Milky Way, the clutter resnap, the Resolution list, the Mac Port tab and its presets): the hook says `failed
+while the game ran`, once, also from a worker thread, and hands the game its own behaviour from then on. The render
+scale changes the whole frame and can't hand it back halfway: an error there reaches the game. The game then runs as it
 would without that hook; the Mac Port tab shows the settings it does as unavailable, and a benchmark run fails, so a
-release can't pass its test with a hook skipped or failed. The patches change what is drawn and how much work drawing
-it takes; only the tumbling physics and the debris settling, off by default, change what the game simulates: a piece
-that settled stays settled in a save, and one sunk inside a planet is gone.
+release can't pass its test with a hook skipped or failed. The patches change what is drawn and how much work drawing it
+takes; only the tumbling physics and the debris settling, off by default, change what the game simulates: a piece that
+settled stays settled in a save, and one sunk inside a planet is gone.
 
 A part of a hook that the hook runs on without (`Hooks.Part`: the render scale's bloom, MetalFX's cloud motion,
 dynamic resolution and its parts) says `off` in the log when the game's code doesn't fit it, and `failed` on an error
@@ -122,7 +122,7 @@ setting; those of the hooks:
 | `unload_far_terrain`, `load_textures_once`, `unload_far_textures`, `release_freed_memory`, `sounds_kept_on_disk` | on: that patch; off, the default: the game's own ([Auto Memory Saving](../../shared/settings/README.md#auto-memory-saving) sets them) |
 | `load_terrain_by_altitude` | on: near a world, Unload Far Terrain keeps only the levels around each camera's altitude (it needs `unload_far_terrain`) |
 | `cache_dir` | a folder: KSA Metal's cache, where Sounds Kept on Disk keeps its copies in `sounds/` (default: `~/Library/Caches/Kitten Space Agency`) |
-| `worker_park_ms` | milliseconds: how long an idle job worker spins before it sleeps (0.25) |
+| `idle_thread_sleep_ms` | milliseconds: how long an idle job worker spins before it sleeps (0.25) |
 | `trail_caches` | `<large>,<small>,<tiny>[,<segments>]`: the smoke's volume cache budgets in MiB (Experiments; unset: the game's) |
 | `trail_shadows` | `<cascades>,<resolution>,<metres>`: the smoke's sun shadow cascades (Experiments; wins over `lighter_plume_shadows`; unset: the game's) |
 | `harmony_generic_detours` | off: without generic detours, to tell whether a mod's problem comes from them (Troubleshooting) |

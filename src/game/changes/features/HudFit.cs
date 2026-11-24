@@ -28,7 +28,7 @@ namespace KsaMetal.Hooks.Features;
 // proportion to it: a small one overlaps them, and the game's HUD scale at the window's height / the display's gives
 // its layout fitted to the window. Off, the game's own layout.
 [Hook(Phase.Default)]
-internal static class HudLayout
+internal static class HudFit
 {
     private const float Aspect = 16f / 9f;
 
@@ -63,7 +63,7 @@ internal static class HudLayout
     // Patches the methods of these classes (and their nested ones) that call one of these
     private static int Patch(Harmony harmony, Type[] classes, string transpiler, params MethodInfo[] calls)
     {
-        var method = new HarmonyMethod(typeof(HudLayout), transpiler);
+        var method = new HarmonyMethod(typeof(HudFit), transpiler);
         int patched = 0;
         foreach (var m in classes.SelectMany(Nested).SelectMany(AccessTools.GetDeclaredMethods))
         {
@@ -81,7 +81,7 @@ internal static class HudLayout
     private static IEnumerable<CodeInstruction> PanelsTranspiler(IEnumerable<CodeInstruction> instructions)
     {
         var gaugeScale = Find.Method(typeof(GameSettings), nameof(GameSettings.GetGaugeScale));
-        var ours = Find.Method(typeof(HudLayout), nameof(GaugeScale));
+        var ours = Find.Method(typeof(HudFit), nameof(GaugeScale));
         foreach (var c in instructions)
             yield return c.Calls(gaugeScale) ? new CodeInstruction(OpCodes.Call, ours).MoveLabelsFrom(c).MoveBlocksFrom(c) : c;
     }
@@ -95,8 +95,8 @@ internal static class HudLayout
     {
         var replace = new Dictionary<MethodInfo, MethodInfo>
         {
-            [Find.Method(typeof(ScreenReference), nameof(ScreenReference.UvToPixels), typeof(float2))] = Find.Method(typeof(HudLayout), nameof(UvToPixels)),
-            [Find.Method(typeof(ScreenReference), nameof(ScreenReference.PixelsToUv), typeof(float2))] = Find.Method(typeof(HudLayout), nameof(PixelsToUv)),
+            [Find.Method(typeof(ScreenReference), nameof(ScreenReference.UvToPixels), typeof(float2))] = Find.Method(typeof(HudFit), nameof(UvToPixels)),
+            [Find.Method(typeof(ScreenReference), nameof(ScreenReference.PixelsToUv), typeof(float2))] = Find.Method(typeof(HudFit), nameof(PixelsToUv)),
         };
         CodeInstruction? previous = null;
         foreach (var c in instructions)
@@ -174,7 +174,7 @@ internal static class HudLayout
         catch (Exception e)
         {
             _failed = true;
-            Hooks.Fail(nameof(HudLayout), e);
+            Hooks.Fail(nameof(HudFit), e);
             return false;
         }
         return display.X > 0f && display.Y > 0f && window.Y > 0;

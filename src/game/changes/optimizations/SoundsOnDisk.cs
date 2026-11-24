@@ -10,19 +10,19 @@ using KSA;
 
 namespace KsaMetal.Hooks.Optimizations;
 
-// Sound file mapping. The game loads its sounds that aren't streamed from disk (GameAudio.CreateFmodSound) as FMOD
-// samples: FMOD decodes each file into PCM held in memory of its own for the session, about 145 MB in all (the
-// engines', the wind's and the interior's loops, decoded from Ogg Vorbis at about ten times their size). A prefix
-// decodes such a sound once as the game does, keeps its PCM in a copy in KSA Metal's cache folder (sounds/, named after
-// the file's path, size and date and FMOD's version), and gives FMOD that copy mapped from the file
-// (Mode.OpenMemoryPoint and OpenRaw, with the PCM's format, channels and rate): FMOD plays it in place, the same
-// samples, and macOS can let go of the pages and read them back. Later starts map the copy without decoding. A sound
-// whose copy can't be written or read, doesn't match, or that FMOD won't take mapped loads as the game loads it (the
-// first is logged), and its copy is made again at the next start; an error of the hook's own fails it, and that sound
-// and every one after it load as the game loads them. Copies unused for 60 days (an older game) are deleted when the
-// game starts, as the KTX shim's are.
+// Sounds Kept on Disk, sounds_kept_on_disk (port-settings.toml). The game loads its sounds that aren't streamed from
+// disk (GameAudio.CreateFmodSound) as FMOD samples: FMOD decodes each file into PCM held in memory of its own for the
+// session, about 145 MB in all (the engines', the wind's and the interior's loops, decoded from Ogg Vorbis at about ten
+// times their size). A prefix decodes such a sound once as the game does, keeps its PCM in a copy in KSA Metal's cache
+// folder (sounds/, named after the file's path, size and date and FMOD's version), and gives FMOD that copy mapped from
+// the file (Mode.OpenMemoryPoint and OpenRaw, with the PCM's format, channels and rate): FMOD plays it in place, the
+// same samples, and macOS can let go of the pages and read them back. Later starts map the copy without decoding. A
+// sound whose copy can't be written or read, doesn't match, or that FMOD won't take mapped loads as the game loads it
+// (the first is logged), and its copy is made again at the next start; an error of the hook's own fails it, and that
+// sound and every one after it load as the game loads them. Copies unused for 60 days (an older game) are deleted when
+// the game starts, as the KTX shim's are.
 [Hook(Phase.Default, Switch = nameof(Settings.SoundsKeptOnDisk))]
-internal static class SoundFiles
+internal static class SoundsOnDisk
 {
     private const int HeaderBytes = 32;
     // Zeros after the PCM, inside the mapping, for whatever FMOD reads past the last sample when it interpolates
@@ -37,7 +37,7 @@ internal static class SoundFiles
     public static string Apply(Harmony harmony)
     {
         var create = Find.Method(typeof(GameAudio), nameof(GameAudio.CreateFmodSound));
-        harmony.Patch(create, prefix: new HarmonyMethod(typeof(SoundFiles), nameof(Creating)));
+        harmony.Patch(create, prefix: new HarmonyMethod(typeof(SoundsOnDisk), nameof(Creating)));
         var home = Environment.GetEnvironmentVariable("HOME") ?? "";
         var root = Settings.CacheDir is { Length: > 0 } dir ? dir
             : Path.Combine(home, "Library", "Caches", "Kitten Space Agency");
@@ -89,7 +89,7 @@ internal static class SoundFiles
             {
                 _bytes += header.Bytes;
                 if (++_count % 10 == 0)
-                    Hooks.Log($"{nameof(SoundFiles)}: {_count} sounds mapped, {_bytes >> 20} MB");
+                    Hooks.Log($"{nameof(SoundsOnDisk)}: {_count} sounds mapped, {_bytes >> 20} MB");
             }
             __result = true;
             return false;
@@ -98,14 +98,14 @@ internal static class SoundFiles
         {
             // This sound's: the copy, the cache folder, or FMOD's answer to it
             if (_fallbacks++ == 0)
-                Hooks.Log($"{nameof(SoundFiles)}: {Path.GetFileName(soundReference.ModPath)} loads as the game loads it ({Hooks.Describe(e)}); others like it aren't logged");
+                Hooks.Log($"{nameof(SoundsOnDisk)}: {Path.GetFileName(soundReference.ModPath)} loads as the game loads it ({Hooks.Describe(e)}); others like it aren't logged");
             Delete(file);
             return true;
         }
         catch (Exception e)
         {
             _failed = true;
-            Hooks.Fail(nameof(SoundFiles), e);
+            Hooks.Fail(nameof(SoundsOnDisk), e);
             Delete(file);
             return true;
         }
@@ -256,7 +256,7 @@ internal static class SoundFiles
         }
         catch (Exception e)
         {
-            Hooks.Log($"{nameof(SoundFiles)}: cleaning the copies, {Hooks.Describe(e)}");
+            Hooks.Log($"{nameof(SoundsOnDisk)}: cleaning the copies, {Hooks.Describe(e)}");
         }
     }
 }

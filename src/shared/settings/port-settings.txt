@@ -62,7 +62,7 @@ lower_rate_under_heavy_load | bool | true | steady_frame_rate!=off | restart | d
 
 [performance] Extra Performance | Faster, with small trade-offs.
 baked_milky_way | bool | false | | restart | hooks:BakedMilkyWay | true,true,true | | | Baked Milky Way | Draws the Milky Way's dust from a picture made at start. Faster with much sky in view, and slightly softer.
-simpler_pcss_shadows | bool | false | game:pcss | restart | hooks:ShadowSearch | true,true,true | | | Simpler PCSS Shadows | With Cascaded Shadow Filter on Pcss (Graphics), nearby soft shadows are simpler. Faster in grass; shadows cast from high above can look sharper.
+simpler_pcss_shadows | bool | false | game:pcss | restart | hooks:PcssShadows | true,true,true | | | Simpler PCSS Shadows | With Cascaded Shadow Filter on Pcss (Graphics), nearby soft shadows are simpler. Faster in grass; shadows cast from high above can look sharper.
 fewer_cloud_steps | bool | false | | restart | hooks:CloudSteps | true,true,false | | | Fewer Cloud Steps | Draws nearby clouds in fewer, longer steps. Faster with clouds in view.
 fewer_cloud_shadow_updates | bool | false | | restart | hooks:CloudShadows | true,true,false | | | Fewer Cloud Shadow Updates | Updates the shadows and light clouds cast on the ground less often. A little faster; both lag behind moving clouds.
 fewer_sky_lighting_updates | bool | false | | restart | hooks:SkyLighting | true,true,false | | | Fewer Sky Lighting Updates | Updates the sky's light on nearby surfaces less often. A little faster; it trails quick changes of light by a moment.
@@ -81,7 +81,7 @@ skip_gpu_texture_compression | bool | true | | restart | driver | | | | Skip GPU
 skip_hidden_vessel_parts | bool | true | | restart | hooks:HiddenPartsSkip | | | | Skip Hidden Vessel Parts | Skips shading the parts of a vessel hidden behind something else. Faster, most in the cockpit.
 skip_unused_outlines | bool | true | | restart | hooks:OutlineSkip | | | | Skip Unused Outlines | Draws the outline around parts only while a part is selected.
 skip_unused_overlays | bool | true | | restart | hooks:OverlaySkip | | | | Skip Unused Overlays | Draws gizmos and orbit lines only on frames that have some.
-skip_unused_ocean_blending | bool | true | | restart | hooks:OceanBlending | | | | Skip Unused Ocean Blending | Below 9 km, skips a step of drawing the ocean that only views from higher up need.
+skip_unused_ocean_blending | bool | true | | restart | hooks:OceanBlendingSkip | | | | Skip Unused Ocean Blending | Below 9 km, skips a step of drawing the ocean that only views from higher up need.
 skip_hidden_crew_portraits | bool | true | | live | hooks:CrewPortraits | | | | Skip Hidden Crew Portraits | Draws the crew panel's portraits only while the panel is open.
 shared_shadow_samples | bool | true | | restart | driver | | | | Shared Shadow Samples | Neighbouring pixels share the work of terrain shadows. A little faster near the ground.
 iva_ray_search | bool | true | ray_tracing | restart | driver | | | | IVA Ray Search | With IVA Ray Tracing (Graphics), the cockpit's rays use a faster search. The cockpit draws about 6 % faster.
@@ -91,21 +91,21 @@ background_shader_compiling | bool | true | | restart | driver | | | | Backgroun
 shader_cache | bool | true | | restart | driver | | | | Shader Cache | Keeps translated shaders on disk, so later starts don't translate them again.
 shader_constant_memory | bool | true | | restart | driver | | | | Shader Constant Memory | Shaders read their data through a faster kind of memory.
 in_place_shader_parameters | bool | true | | restart | driver | | | | In-Place Shader Parameters | Shaders read the game's parameters in place instead of copying them. Faster in big explosions.
-idle_thread_sleep | bool | true | | restart | hooks:WorkerPark | | | | Idle Thread Sleep | Background threads sleep while they wait, instead of keeping the CPU busy. Less CPU use.
-loading_screen_fps_cap | bool | true | | restart | hooks:LoadingPace | | | | Loading Screen FPS Cap | Draws the loading screen at 30 FPS. The game loads about 2 seconds faster.
+idle_thread_sleep | bool | true | | restart | hooks:IdleThreadSleep | | | | Idle Thread Sleep | Background threads sleep while they wait, instead of keeping the CPU busy. Less CPU use.
+loading_screen_fps_cap | bool | true | | restart | hooks:LoadingScreenCap | | | | Loading Screen FPS Cap | Draws the loading screen at 30 FPS. The game loads about 2 seconds faster.
 
 [memory] Memory | Less memory use.
 textures_kept_on_disk | bool | false | | restart | ktx-shim | | true,true,false | | Textures Kept on Disk | Lets macOS drop textures from memory and read them back when needed. About 3.5 GB less.
 release_freed_memory | bool | false | | restart | launcher, hooks:FreedMemory | | true,true,false | | Release Freed Memory | Gives memory the game frees back to macOS at once, instead of keeping it for reuse.
 compact_ray_tracing_memory | bool | false | ray_queries | restart | driver | | true,true,false | | Compact Ray Tracing Memory | Ray tracing data for grass and the cockpit shares memory the game already set aside. About 0.4 GB less.
-sounds_kept_on_disk | bool | false | | restart | hooks:SoundFiles | | true,true,false | | Sounds Kept on Disk | Plays sounds such as engines and wind from disk, so macOS can drop them from memory. About 0.15 GB less.
-load_textures_once | bool | false | | restart | hooks:SharedTextures | | true,true,false | | Load Textures Once | Loads a texture used in several places once, and shares it. About 80 MB less.
+sounds_kept_on_disk | bool | false | | restart | hooks:SoundsOnDisk | | true,true,false | | Sounds Kept on Disk | Plays sounds such as engines and wind from disk, so macOS can drop them from memory. About 0.15 GB less.
+load_textures_once | bool | false | | restart | hooks:TexturesOnce | | true,true,false | | Load Textures Once | Loads a texture used in several places once, and shares it. About 80 MB less.
 unload_far_textures | bool | false | | restart | hooks:FarTextures | | true,true,false | trade-off | Unload Far Textures | Unloads far worlds' ground, rock and cloud textures and reloads them on approach. About 0.25 GB less; a jump can pause a moment.
 unload_far_terrain | bool | false | | restart | hooks:FarTerrain, hooks:FarClutter | | true,true,false | trade-off | Unload Far Terrain | Unloads far worlds' terrain and rebuilds it on approach. About 1.4 GB less; a jump to another world can pause a moment.
 load_terrain_by_altitude | bool | false | unload_far_terrain | restart | hooks:FarTerrain | | true,true,false | trade-off | Load Terrain by Altitude | Near a world, keeps only the terrain detail around the camera's altitude. About 0.4 GB less; at high time warp, detail can change late.
 
 [interface] Interface | Additional interface features.
-fit_hud_to_display | bool | true | | live | hooks:HudLayout | | | | Fit HUD to Display | Keeps the flight HUD's fullscreen size in a window, scaled to fit narrower displays. If panels overlap, lower HUD Scale (Interface).
+fit_hud_to_display | bool | true | | live | hooks:HudFit | | | | Fit HUD to Display | Keeps the flight HUD's fullscreen size in a window, scaled to fit narrower displays. If panels overlap, lower HUD Scale (Interface).
 metal_performance_hud | bool | false | | restart | metal:MTL_HUD_ENABLED | | | | Metal Performance HUD | Apple's overlay with the frame rate, GPU time and memory.
 
 [game_features] GPU Features | What the game can use on this Mac.
@@ -167,5 +167,5 @@ throttle | text | | | restart | driver | | | | | <hash>:<N>,...: a pipeline whos
 trail_caches | numbers:3:4 | | | restart | hooks:TrailCaches | | | | | <large>,<small>,<tiny>[,<segments>]: the atlas budgets in MiB of the smoke's 16, 8 and 4 texel volume caches (the game's: 8,8,8), and the fewest segments a cell needs to get one (33). At least one budget of 1 or more; for no caches, 8,8,8,1000000.
 trail_shadows | numbers:3:3 | | | restart | hooks:PlumeShadows | | | | | <cascades>,<resolution>,<metres>: the smoke's sun shadow cascades, which the game draws with its Plume trail shadows setting (the game's: 8,512,20000; lighter_plume_shadows: 4,128,3000). Wins over lighter_plume_shadows.
 texture_budget_mb | int:0:1048576 | 0 | | restart | driver | | | | | The GPU memory budget reported to the game, which sizes its texture streaming from it (0: what Metal recommends for this Mac).
-worker_park_ms | number:0:100 | 0.25 | idle_thread_sleep | restart | hooks:WorkerPark | | | | | How long an idle job worker spins before it sleeps, with idle_thread_sleep.
+idle_thread_sleep_ms | number:0:100 | 0.25 | idle_thread_sleep | restart | hooks:IdleThreadSleep | | | | | How long an idle job worker spins before it sleeps, with idle_thread_sleep.
 cache_dir | text | | | restart | driver, ktx-shim, hooks | | | | | Where the shader cache and the texture and sound copies go (default: ~/Library/Caches/Kitten Space Agency).

@@ -307,7 +307,7 @@ internal static class Tests
         Is("upscaling", "Metalfx", "off", valid: false);
         Is("render_scale", "0.75", "0.75");
         Is("render_scale", "0.3", "1.0", valid: false);
-        Is("worker_park_ms", "abc", "0.25", valid: false);
+        Is("idle_thread_sleep_ms", "abc", "0.25", valid: false);
         Is("trail_shadows", "4,128,3000", "4,128,3000");
         Is("trail_shadows", "4,128", "", valid: false);
         Is("trail_shadows", "4,128,3km", "", valid: false);
