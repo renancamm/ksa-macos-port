@@ -23,23 +23,26 @@ namespace KsaMetal.Hooks.Features;
 // each step costs more than ten times as much. The cap becomes 200 rad/s, above any tumble measured on its own (about
 // 170). The three methods are marked for inlining, so a patch on them wouldn't reach their callers: the callers call
 // changed copies of them instead.
-// Pieces in warp. Since KSA 5901 the parts' surface aerodynamics act on every step, and they barely slow the spin a blast
-// gives a small piece (100-200 rad/s, in thin air on the way down), so with the square root a bubble still steps every
-// 3-5 ms while such pieces fall. From x8, a piece (DebrisSettle.IsPiece: nobody flies it, no crew, no engine firing)
-// whose spin sets its step, in free flight with no chute, in a bubble whose constraint simulation doesn't run, takes the
-// step it would take without the spin: at most 1 s and a quarter of its clearance at its speed (its height over the
-// ground or sea less its bounding radius and 50 m, the margin of the game's own clearance check). Its loads are still
-// worked out each step. Three things keep such steps stable, each found as a runaway to the spin cap: the constraint
-// simulation crashed with them (an access violation in Bepu's island sleeper), so a bubble whose constraint simulation
-// runs keeps the square root's step, and the clearance keeps a piece from reaching the ground within one; on a step that
-// turns a vehicle more than 1.5 rad (only these do: the square root keeps a turn to 30 degrees, the game's rule to about
-// 0.74 rad), the panels' moment, sampled once a step at whatever phase of the spin, would add up to a random walk (a
-// piece 110 -> 262 rad/s in dense air), so it keeps only its part along the angular momentum, against the spin and at
-// most what stops it; and the integration keeps the angular momentum's length but drifts the attitude over long steps,
-// so a long piece slides onto its minor axis, the same momentum at many times the spin, in vacuum too, so after such a
-// step the piece's rotational energy is no higher than before it. The steps are chosen in
-// PhysicsBubble.FullPhysicsStepUntil, the loads worked out in PhysicsStates.ComputeAerodynamicLoads, the step integrated
-// in PhysicsBubble.RunUnconstrainedVehicleStep: each one's single call is swapped for a method here.
+// Pieces in warp. Since KSA 5901 the parts' surface aerodynamics act on every step, and they barely slow the spin a
+// blast gives a small piece (100-200 rad/s, in thin air on the way down), so with the square root a bubble still steps
+// every 3-5 ms while such pieces fall. From x8, a piece (DebrisSettle.IsPiece: nobody flies it, no crew, no engine
+// firing) whose spin sets its step, in free flight with no chute, in a bubble whose constraint simulation doesn't run,
+// takes the step it would take without the spin: at most 1 s and a quarter of its clearance at its speed (its height
+// over the ground or sea less its bounding radius and 50 m, the margin of the game's own clearance check). Free flight
+// includes Sailing: the game finds the sea from the sphere a vehicle could sweep in the bubble's longest step, which in
+// warp can be seconds, so a piece falling at 4 km/s reads as in the water 50 km up; the clearance, from its real
+// height, keeps the step short near the water and gives none in it. Its loads are still worked out each step. Three
+// things keep such steps stable, each found as a runaway to the spin cap: the constraint simulation crashed with them
+// (an access violation in Bepu's island sleeper), so a bubble whose constraint simulation runs keeps the square root's
+// step, and the clearance keeps a piece from reaching the ground within one; on a step that turns a vehicle more than
+// 1.5 rad (only these do: the square root keeps a turn to 30 degrees, the game's rule to about 0.74 rad), the panels'
+// moment, sampled once a step at whatever phase of the spin, would add up to a random walk (a piece 110 -> 262 rad/s in
+// dense air), so it keeps only its part along the angular momentum, against the spin and at most what stops it; and the
+// integration keeps the angular momentum's length but drifts the attitude over long steps, so a long piece slides onto
+// its minor axis, the same momentum at many times the spin, in vacuum too, so after such a step the piece's rotational
+// energy is no higher than before it. The steps are chosen in PhysicsBubble.FullPhysicsStepUntil, the loads worked out
+// in PhysicsStates.ComputeAerodynamicLoads, the step integrated in PhysicsBubble.RunUnconstrainedVehicleStep: each
+// one's single call is swapped for a method here.
 [Hook(Phase.Default, Switch = nameof(Settings.LighterTumblingPhysics))]
 internal static class TumblingPhysics
 {
@@ -140,7 +143,7 @@ internal static class TumblingPhysics
         if (Longer.TryGetValue(vehicle, out var previous))
             previous.Pending = false;
         if (detail.Limit != PhysicsStepLimit.AngularArc || Universe.GetSimulationSpeed() < DebrisSettle.MinWarp || chutes.Length > 0
-            || self.Props.Situation != Situation.Maneuvering || (bubble.ConstraintSim?.IsAnyConstrained ?? false)
+            || self.Props.Situation is not (Situation.Maneuvering or Situation.Sailing) || (bubble.ConstraintSim?.IsAnyConstrained ?? false)
             || !DebrisSettle.IsPiece(vehicle))
             return dt;
         double clearance = self.GetPositionClosestParentBub(self.GetPositionBub()).Length()
