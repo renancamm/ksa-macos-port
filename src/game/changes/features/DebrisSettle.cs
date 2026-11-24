@@ -37,9 +37,13 @@ namespace KsaMetal.Hooks.Features;
 // predicts contact over each frame's step, splitting it at the contact or merging them. With long steps every crossing
 // of orbits counts, the merged bubble is wider and reaches more, and one frame ends with hundreds of vehicles over 800
 // km in one bubble, in 1/60 s steps. In warp a piece meets only what is near it now, and from 2 s steps, too long to
-// dock in, so does everything else. Sunk pieces: one that passes the ground at speed sails on inside the planet at the
-// spin cap and in 1 ms steps, the game hanging for as long as it lasts. Below the lowest terrain, it is removed, at any
-// speed.
+// dock in, so does everything else. Falling pieces, x8 or more: the game steps a vehicle in flight for 1-2 s whatever
+// its height, and a piece falling at 20-50 m/s passes the ground within one step, then slides on under it in 1 ms
+// contact steps for tens of game seconds. A piece in flight steps at most a quarter of its clearance (its height over
+// the ground or sea, in the water over the seabed, less its size) at its speed, a limit never under 1/60 s. A bubble
+// whose constraint simulation runs is left alone: it steps against the terrain in 1/60 s anyway. Sunk pieces: one that
+// still passes the ground at speed sails on inside the planet at the spin cap and in 1 ms steps, the game hanging for
+// as long as it lasts. Below the lowest terrain, it is removed, at any speed.
 [Hook(Phase.Default, Switch = nameof(Settings.DebrisSettlesInWarp))]
 internal static class DebrisSettle
 {
@@ -50,6 +54,7 @@ internal static class DebrisSettle
     private static AccessTools.FieldRef<FlightPlan, bool> _planComplete = null!;
     private const double NearDistance = 5000, VehicleNearDistance = 50000, LongStep = 2, SunkDepth = 100;
     private const double MaxDynamicPressure = 200000;  // DetectStructuralFailure's limit
+    private const double GroundShare = 0.25, ShortestGroundStep = 1.0 / 60;
     private static readonly List<Vehicle> _sunk = new();
     private static AccessTools.FieldRef<PhysicsBubble, List<VehicleUpdateState>> _bubbleVehicles = null!;
     private static AccessTools.FieldRef<VehicleUpdateTask, SimStep> _simStep = null!;
@@ -73,6 +78,9 @@ internal static class DebrisSettle
         harmony.Patch(Find.Method(typeof(VehicleUpdateTask), "HasValidClearance"),
             prefix: new HarmonyMethod(typeof(DebrisSettle), nameof(BubblesClear)));
         harmony.Patch(Find.Method(typeof(PhysicsBubble), "FullPhysicsStepUntil"), transpiler: new HarmonyMethod(typeof(DebrisSettle), nameof(ToAtSea)));
+        // Without it falling pieces take the game's steps, as before the row
+        Hooks.Part("Debris Settles in Warp's ground step", () => harmony.Patch(Find.Method(typeof(PhysicsBubble), "FullPhysicsStepUntil"),
+            transpiler: new HarmonyMethod(typeof(DebrisSettle), nameof(ToGroundStep))));
         harmony.Patch(Find.Method(typeof(VehicleUpdateState), nameof(VehicleUpdateState.SetCurrentOrbit)),
             prefix: new HarmonyMethod(typeof(DebrisSettle), nameof(OrbitBegin)),
             postfix: new HarmonyMethod(typeof(DebrisSettle), nameof(OrbitEnd)));
@@ -259,6 +267,49 @@ internal static class DebrisSettle
         var body = __instance.Simulation.Bodies[vehicleState.BepuHandles.Body];
         if (!body.Awake && ReachesGround(__instance.Simulation, vehicleState.BepuHandles.Body))
             props.Situation = Situation.Landed;
+    }
+
+    // The step a vehicle in flight is given, by the game or by Lighter Tumbling Physics' PieceStep, goes through
+    // GroundStep(dt, vehicle, bubble, ref detail): inserted after the call, so the two rows' transpilers find it in either
+    // order
+    private static IEnumerable<CodeInstruction> ToGroundStep(IEnumerable<CodeInstruction> instructions)
+    {
+        var code = instructions.ToList();
+        var step = Find.Method(typeof(PhysicsStates), nameof(PhysicsStates.UpdateSituationAndComputeTimestep));
+        var tumbling = AccessTools.Method(typeof(TumblingPhysics), "PieceStep");
+        int call = Find.Once(code, c => c.Calls(step) || tumbling != null && c.Calls(tumbling), "UpdateSituationAndComputeTimestep's call");
+        int detail = code.FindLastIndex(call, c => c.opcode == OpCodes.Ldloca_S || c.opcode == OpCodes.Ldloca
+            ? c.operand is LocalBuilder local && local.LocalType == typeof(PhysicsStepDetail) : false);
+        if (detail < 0)
+            throw new Skip("the step's detail not found");
+        code.InsertRange(call + 1, [
+            CodeInstruction.LoadLocal(Il.StepVehicle(code, call)),
+            new CodeInstruction(OpCodes.Ldarg_0),
+            new CodeInstruction(code[detail].opcode, code[detail].operand),
+            new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(DebrisSettle), nameof(GroundStep)))]);
+        return code;
+    }
+
+    // A piece in flight steps at most a quarter of its clearance at its speed, a limit never under 1/60 s; in the water
+    // its clearance is over the seabed. A bubble whose constraint simulation runs steps against the terrain in 1/60 s
+    // anyway
+    private static double GroundStep(double dt, VehicleUpdateState vehicle, PhysicsBubble bubble, ref PhysicsStepDetail detail)
+    {
+        if (!(dt > ShortestGroundStep) || Universe.GetSimulationSpeed() < MinWarp || (bubble.ConstraintSim?.IsAnyConstrained ?? false))
+            return dt;
+        var self = vehicle.GetNewStates();
+        if (self.Props.Situation is not (Situation.Maneuvering or Situation.Sailing) || !self.Environment.InPhysicsRadius)
+            return dt;
+        double surface = self.Environment.OceanVolume > 0 ? self.Environment.TerrainRadius
+            : Math.Max(self.Environment.TerrainRadius, self.Environment.OceanRadius);
+        double clearance = self.GetPositionClosestParentBub(self.GetPositionBub()).Length() - surface - self.Props.BoundingSphereRadiusBody;
+        // A piece already below the ground's height keeps the floor: the ground's contact can still catch it
+        double cap = Math.Max(ShortestGroundStep, GroundShare * clearance / (self.GetVelocityBub().Length() + 1));
+        if (!(cap < dt) || !IsPiece(vehicle))
+            return dt;
+        detail.Timestep = cap;
+        detail.Limit = PhysicsStepLimit.CollisionPrediction;
+        return cap;
     }
 
     // The game's try to float a vehicle on rails becomes AtSea(..., vehicle, bubble)
