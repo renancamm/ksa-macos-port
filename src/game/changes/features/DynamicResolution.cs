@@ -74,7 +74,8 @@ internal static class DynamicResolution
                 (uint)Math.Max(least.X, 0), (uint)Math.Max(least.Y, 0));
             ksaMtlFrameRateSize(out uint w, out uint h, out _);
             _driver = true;
-            // The driver registers levels only with Dynamic Resolution or the experiment's level: otherwise nothing changes here either
+            // The driver registers levels only with Dynamic Resolution or the experiment's level: otherwise nothing
+            // changes here either
             _render = w > 0 && h > 0 ? render : int2.Zero;
             Take(w, h);
             if (Active)

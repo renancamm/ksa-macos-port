@@ -12,21 +12,21 @@ using KSA;
 
 namespace KsaMetal.Hooks.Features;
 
-// HUD layout (port-settings.toml, the Mac Port tab changes it while the game runs). The game lays out its flight HUD in
-// fractions of the window's height (ScreenReference's conversions): a panel's size is such a fraction times the HUD
-// scale (GaugeCanvas, RectTransform), its offset from its anchor (a corner or an edge's middle of the window) a
-// fraction alone, and inside the panels the buttons and frames are fractions too (ImGauge); since KSA 5901 the text of
-// the hosted panels (resources, staging, crew, burn) follows the window's height too (ScreenReference.ResolutionScale,
-// the window's height / 1080). So a window shrinks the HUD with it, and on a display narrower than 16:9 the panels
-// overlap: a MacBook's display is 16:10.
-// With fit_hud_to_display, the HUD's sizes belong to the display the window is on (NSWindow.screen, the one holding
-// most of it), and its positions to the window: every read of the HUD scale in the panels' classes takes it times the
-// display's height / the window's (sizes, not offsets, go through it there) and times min(1, the display's aspect /
-// (16/9)); inside the panels, fractions are of the display's height; the hosted panels' scale (their fonts and
-// spacing), the HUD scale times the window's height / 1080, becomes the display's height / 1080 times the aspect factor
-// with it. Fullscreen, the HUD is the 16:9 layout scaled to the display's width, its text in proportion to its panels.
-// A window has the same panels at the same places in proportion to it: a small one overlaps them, and the game's HUD
-// scale at the window's height / the display's gives its layout fitted to the window. "game" leaves the game's layout.
+// Fit HUD to Display, fit_hud_to_display (port-settings.toml; the Mac Port tab changes it while the game runs). The
+// game lays out its flight HUD in fractions of the window's height (ScreenReference's conversions): a panel's size is
+// such a fraction times the HUD scale (GaugeCanvas, RectTransform), its offset from its anchor (a corner or an edge's
+// middle of the window) a fraction alone, and inside the panels the buttons and frames are fractions too (ImGauge);
+// since KSA 5901 the text of the hosted panels (resources, staging, crew, burn) follows the window's height too
+// (ScreenReference.ResolutionScale, the window's height / 1080). So a window shrinks the HUD with it, and on a display
+// narrower than 16:9 the panels overlap: a MacBook's display is 16:10. With fit_hud_to_display, the HUD's sizes belong
+// to the display the window is on (NSWindow.screen, the one holding most of it), and its positions to the window: every
+// read of the HUD scale in the panels' classes takes it times the display's height / the window's (sizes, not offsets,
+// go through it there) and times min(1, the display's aspect / (16/9)); inside the panels, fractions are of the
+// display's height; the hosted panels' scale (their fonts and spacing), the HUD scale times the window's height / 1080,
+// becomes the display's height / 1080 times the aspect factor with it. Fullscreen, the HUD is the 16:9 layout scaled to
+// the display's width, its text in proportion to its panels. A window has the same panels at the same places in
+// proportion to it: a small one overlaps them, and the game's HUD scale at the window's height / the display's gives
+// its layout fitted to the window. Off, the game's own layout.
 [Hook(Phase.Default)]
 internal static class HudLayout
 {
@@ -135,7 +135,7 @@ internal static class HudLayout
     private static readonly nint ScreenSelector = sel_registerName("screen"), FrameSelector = sel_registerName("frame");
     private static float2 _display;
     private static long _displayRead;
-    private static bool _failed;  // the game's layout, as with "game" (Hooks.Fail)
+    private static bool _failed;  // the game's layout, as with the row off (Hooks.Fail)
 
     // The size in points of the display the window is on (the window's size if macOS doesn't say), read again every
     // quarter of a second: when it changes, the panels' sizes change and the game lays each one out again
@@ -180,7 +180,8 @@ internal static class HudLayout
         return display.X > 0f && display.Y > 0f && window.Y > 0;
     }
 
-    // The HUD scale, times the display's height over the window's and the share of the 16:9 layout's width the display has
+    // The HUD scale, times the display's height over the window's and the share of the 16:9 layout's width the display
+    // has
     public static float GaugeScale()
     {
         float scale = GameSettings.GetGaugeScale();

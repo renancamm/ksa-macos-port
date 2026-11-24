@@ -24,7 +24,7 @@ namespace KsaMetal.Hooks.Features;
 // (Upscale.cs) or, with upscaling off, with the composite's own stretch, filtered. The cameras keep the window's size
 // in points (so picking and the UI's world positions stay right), while what the shaders see as the screen size is
 // the render size. The light clustering's tiles and the UI coverage mask follow the render size too, and UI code sees the
-// window's (UiCoordinates.cs). Pixel sizes measured on the window (the sun's glow, the bloom's blur, star and planet
+// window's (UiViewSize.cs). Pixel sizes measured on the window (the sun's glow, the bloom's blur, star and planet
 // discs, ground clutter's level of detail) are converted: the sun's radius and the bloom here, the rest by the shader
 // edits of src/game/changes/features/window-size.edits, from the window's height in the camera data. On a display
 // without Retina at a render scale of 1 (and dynamic resolution at full size), the three sizes are one and nothing

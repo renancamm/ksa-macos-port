@@ -21,45 +21,44 @@ using RenderCore.Mesh;
 namespace KsaMetal.Hooks.Optimizations;
 
 // Far terrain. A view draws the terrain of one body only, the one within 80,000 km of its surface
-// (Camera.GetEffectiveNearbyCelestial), at one level of detail (PlanetMeshCollection.GetLodLevel: the finest level whose
-// RenderDistance is above the camera's altitude, every frame), and ground clutter is placed on that body only, by ray
-// queries against its collection's finest level, below its ecotypes' generation range; yet
+// (Camera.GetEffectiveNearbyCelestial), at one level of detail (PlanetMeshCollection.GetLodLevel: the finest level
+// whose RenderDistance is above the camera's altitude, every frame), and ground clutter is placed on that body only, by
+// ray queries against its collection's finest level, below its ecotypes' generation range; yet
 // PlanetMeshLibrary.GenerateInUse builds every level of every terrain mesh collection the system uses (18 levels of
-// 12-60 MB each, 1.4 GB in the solar system) and an acceleration structure of the finest level for each one with clutter
-// (~170 MB), and keeps them all. Now each level of a collection is built or not on its own: one that isn't points at the
-// buffers of the nearest built level (the finer one on a tie), so whatever is written with it meanwhile stays valid, and
-// a finest level that isn't built holds an acceleration structure without a handle, which clutter's sets take as none
-// (GroundClutterRenderer.GenerateGroundClutter is skipped on such a body).
+// 12-60 MB each, 1.4 GB in the solar system) and an acceleration structure of the finest level for each one with
+// clutter (~170 MB), and keeps them all. Now each level of a collection is built or not on its own: one that isn't
+// points at the buffers of the nearest built level (the finer one on a tie), so whatever is written with it meanwhile
+// stays valid, and a finest level that isn't built holds an acceleration structure without a handle, which clutter's
+// sets take as none (GroundClutterRenderer.GenerateGroundClutter is skipped on such a body).
 //
-// As soon as loading has built a collection it keeps only its smallest level, except the home body's, and loading builds
-// no acceleration structure for the ones it lets go. A collection one of whose bodies comes within 150,000 km of a camera
-// is built on worker threads and swapped in at the start of a frame (Program.OnFrameCelestials, before the frame's views
-// are prepared); the level a view is about to draw is built there and waited for when it isn't (a jump: a vessel switch,
-// a benchmark place), and so is one a camera reached after the frame's start, before the planet renderer prepares its
-// views. A level nothing wants for 5 s, that no frame the GPU may still be working on draws (PlanetViewportData.OnPreRender
-// says which), is let go; a collection whose bodies are all farther than 300,000 km wants only its smallest level.
+// As soon as loading has built a collection it keeps only its smallest level, except the home body's, and loading
+// builds no acceleration structure for the ones it lets go. A collection one of whose bodies comes within 150,000 km of
+// a camera is built on worker threads and swapped in at the start of a frame (Program.OnFrameCelestials, before the
+// frame's views are prepared); the level a view is about to draw is built there and waited for when it isn't (a jump: a
+// vessel switch, a benchmark place), and so is one a camera reached after the frame's start, before the planet renderer
+// prepares its views. A level nothing wants for 5 s, that no frame the GPU may still be working on draws
+// (PlanetViewportData.OnPreRender says which), is let go; a collection whose bodies are all farther than 300,000 km
+// wants only its smallest level.
 //
-// Load Terrain by Altitude wants, near a body, only the levels around each
-// camera's altitude instead of all of them: the level drawn and the ones above and below it, one more below while the
-// camera descends, the small coarse ones, and the finest with its acceleration structure only below three
-// times the height where clutter is placed (there it must be built: a clutter cell is marked loaded whether or not it
-// was placed). The home body's collection loads whole and is trimmed in play. Each level takes
-// 20-250 ms to build on a worker; far faster than a band a frame (time warp on an eccentric orbit), a level not built
-// yet is drawn from the nearest one that is.
+// Load Terrain by Altitude wants, near a body, only the levels around each camera's altitude instead of all of them:
+// the level drawn and the ones above and below it, one more below while the camera descends, the small coarse ones, and
+// the finest with its acceleration structure only below three times the height where clutter is placed (there it must
+// be built: a clutter cell is marked loaded whether or not it was placed). The home body's collection loads whole and
+// is trimmed in play. Each level takes 20-250 ms to build on a worker; far faster than a band a frame (time warp on an
+// eccentric orbit), a level not built yet is drawn from the nearest one that is.
 //
 // The sets the game writes once with a level's buffers (PlanetRenderer._meshGeometrySets,
-// PlanetFrustumCulling._cullingDescriptorSets, the generate sets of each ClutterCubeCellGrid for the finest) are written
-// again each time its buffers change, while no frame in flight uses them (the GPU is waited for when one might).
-// Without ray queries clutter places with a BVH of the finest level, which then stays as before.
+// PlanetFrustumCulling._cullingDescriptorSets, the generate sets of each ClutterCubeCellGrid for the finest) are
+// written again each time its buffers change, while no frame in flight uses them (the GPU is waited for when one
+// might). Without ray queries clutter places with a BVH of the finest level, which then stays as before.
 //
-// An ocean's collection (Earth's: 7 levels, 184 MB) goes the same way, by the altitude OceanRenderer.Render draws it
-// at (the main view's nearby body, one level), and a prefix there builds the level it is about to draw when it isn't.
-// Only the main view draws the ocean. It binds its level's vertices and indices each frame and nothing else of it:
-// loading builds its finest level an acceleration structure when its body has ground clutter (7 MB), though only the
-// terrain's is ever read, and
-// each level an adjacency and a neighbour distance buffer (73 MB) that only the terrain's sets bind. The ocean's are
-// built without the first and let go of the others as soon as a level is built; its levels then read as not loaded,
-// and the game's exit leaves them to DisposeAllPrefix.
+// An ocean's collection (Earth's: 7 levels, 184 MB) goes the same way, by the altitude OceanRenderer.Render draws it at
+// (the main view's nearby body, one level), and a prefix there builds the level it is about to draw when it isn't. Only
+// the main view draws the ocean. It binds its level's vertices and indices each frame and nothing else of it: loading
+// builds its finest level an acceleration structure when its body has ground clutter (7 MB), though only the terrain's
+// is ever read, and each level an adjacency and a neighbour distance buffer (73 MB) that only the terrain's sets bind.
+// The ocean's are built without the first and let go of the others as soon as a level is built; its levels then read as
+// not loaded, and the game's exit leaves them to DisposeAllPrefix.
 //
 // CubeMesh.Generate runs on worker threads only: on the main thread, its Loading.Task draws and presents a whole
 // loading screen frame (Loading.OnFrame), in the middle of the game's frame. The game's adjacency build isn't
@@ -321,8 +320,8 @@ internal static class FarTerrain
         }
     }
 
-    // A view's terrain for this frame: its nearby body, at one of its collection's levels, in the buffers of that level or
-    // of the one it points at
+    // A view's terrain for this frame: its nearby body, at one of its collection's levels, in the buffers of that level
+    // or of the one it points at
     private static void ViewPrepared(PlanetViewportData __instance)
     {
         if (_failed)
@@ -441,8 +440,8 @@ internal static class FarTerrain
         return missing;
     }
 
-    // The levels wanted this frame. Without the window: all within 150,000 km of a camera, what is built until 300,000 km,
-    // then the smallest only. With it, near a body: the window around each camera's altitude
+    // The levels wanted this frame. Without the window: all within 150,000 km of a camera, what is built until 300,000
+    // km, then the smallest only. With it, near a body: the window around each camera's altitude
     private static void MarkWanted(Collection c)
     {
         Array.Fill(c.Wanted, false);
@@ -602,7 +601,8 @@ internal static class FarTerrain
                     structures.Add(level.TopLevelAccelerationStructure!.Value);
                 if (Real(level.BottomLevelAccelerationStructure))
                     structures.Add(level.BottomLevelAccelerationStructure!.Value);
-                // Clutter's sets need one (ClutterCubeCellGrid.BuildFrameResources throws without); no handle reads as none
+                // Clutter's sets need one (ClutterCubeCellGrid.BuildFrameResources throws without); no handle reads as
+                // none
                 level.TopLevelAccelerationStructure = default(AccelerationStructure);
                 level.BottomLevelAccelerationStructure = null;
             }
@@ -666,8 +666,8 @@ internal static class FarTerrain
         return changed;
     }
 
-    // These levels, the finest with its acceleration structure, made on a thread of its own and the thread pool, never the
-    // main thread
+    // These levels, the finest with its acceleration structure, made on a thread of its own and the thread pool, never
+    // the main thread
     private static Task<CubeMesh?[]> Build(Collection c, List<int> build)
     {
         var levels = c.Levels;

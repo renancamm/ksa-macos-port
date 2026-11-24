@@ -15,23 +15,24 @@ namespace KsaMetal.Hooks.Optimizations;
 // Far clutter. Loading builds the ground clutter's GPU resources for every world that has clutter
 // (ClutterEcotypeRenderData.BuildRenderResources: its cell grid's buffers, two views' buffers and pipelines), while the
 // game places and draws clutter only on a view's nearby body, within 80,000 km of its surface
-// (GroundClutterRenderer.AccumulateViewportCells and what runs after it); in the solar system the Moon's and Mars's rocks
-// take 66 MB each. Now a world's are built when a view's camera (a map's flight camera too) first comes within
+// (GroundClutterRenderer.AccumulateViewportCells and what runs after it); in the solar system the Moon's and Mars's
+// rocks take 66 MB each. Now a world's are built when a view's camera (a map's flight camera too) first comes within
 // 150,000 km of its surface, and before AccumulateViewportCells when a view's nearby body still waits; the home body's
 // at load as before. A world takes about 0.3 s to build, nearly all of it compiling the clutter's shader variants: one
-// built ahead is built on a worker thread, its uploads recorded there into a staging pool the main thread submits when it
-// is done (the cell grid submits its own from the worker, under the driver's submit lock); one a view needs at once is
-// built on the main thread, or waited for. What the constructor made stays from load: the mesh atlas the collisions
+// built ahead is built on a worker thread, its uploads recorded there into a staging pool the main thread submits when
+// it is done (the cell grid submits its own from the worker, under the driver's submit lock); one a view needs at once
+// is built on the main thread, or waited for. What the constructor made stays from load: the mesh atlas the collisions
 // (ClutterEcotypePhysicalData) use too, the CPU's cell grids. Every other reader of these resources works on the nearby
 // body only, the exclusions of other worlds wait in a list (QueueExclusionUpload), and RebuildFrameResources recreates
 // the pipelines built, none before. While the worker builds, what it reads must stay: a build on the main thread, the
 // renderer's and a viewport's rebuild (render targets, passes, the shadow cascades), the game's exit and FarTerrain
 // letting the finest level of its world go wait for it; FarTerrain's writes of the clutter's generate sets skip its
-// ecotypes, which are written with the finest level as it is then once built. The worker's build allocates descriptor sets from the game's shared pool (ClutterViewResources),
-// whose counts DescriptorPoolEx keeps without a lock: its allocations and frees take one here. The game's exit disposes
-// one never built through DestroyFrameResources, which frees only its atlas here. Once built, a world's clutter stays
-// for the session: DestroyFrameResources disposes without clearing what a second build would reuse. A build that throws
-// leaves its ecotype half made, as the same error at load would have.
+// ecotypes, which are written with the finest level as it is then once built. The worker's build allocates descriptor
+// sets from the game's shared pool (ClutterViewResources), whose counts DescriptorPoolEx keeps without a lock: its
+// allocations and frees take one here. The game's exit disposes one never built through DestroyFrameResources, which
+// frees only its atlas here. Once built, a world's clutter stays for the session: DestroyFrameResources disposes
+// without clearing what a second build would reuse. A build that throws leaves its ecotype half made, as the same error
+// at load would have.
 [Hook(Phase.Default, Switch = nameof(Settings.UnloadFarTerrain))]
 internal static class FarClutter
 {
@@ -45,8 +46,8 @@ internal static class FarClutter
     [ThreadStatic] private static bool _building;
     private static Job? _job;
 
-    // A world built on a worker: its ecotypes, and the staging pool of their uploads, its command buffer begun by the main
-    // thread
+    // A world built on a worker: its ecotypes, and the staging pool of their uploads, its command buffer begun by the
+    // main thread
     private sealed class Job(Celestial body, string why, StagingPool pool, CommandBuffer commands)
     {
         public readonly Celestial Body = body;
@@ -118,7 +119,8 @@ internal static class FarClutter
         }
     }
 
-    // The game's exit, or a clutter renderer let go: one being built is finished first, one never built has only its atlas
+    // The game's exit, or a clutter renderer let go: one being built is finished first, one never built has only its
+    // atlas
     private static bool Destroying(ClutterEcotypeRenderData __instance)
     {
         if (OnWorker(__instance))
@@ -131,8 +133,8 @@ internal static class FarClutter
         }
         catch (Exception e)
         {
-            // Nothing else of this one to free (the game's DestroyFrameResources would dispose buffers it never made); the
-            // worlds still waiting are built now, as after any failure
+            // Nothing else of this one to free (the game's DestroyFrameResources would dispose buffers it never made);
+            // the worlds still waiting are built now, as after any failure
             Failed(e);
         }
         return false;

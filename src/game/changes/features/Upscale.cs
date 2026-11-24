@@ -150,11 +150,12 @@ internal static class Upscale
         }
     }
 
-    // The game's cloud upscaler (CloudRenderer.PerformUpscaling) draws the clouds and the smoke trails at the view's size,
-    // each frame into the other of two sets of images: their colour with the light that passes them, and their own motion
-    // (the clouds' drift with the wind and the planet, the smoke's with its trail). They write no depth, so the driver's
-    // motion from the depth gave them the motion of what is behind them: in a descent through the clouds, the sea's, and
-    // MetalFX smeared their edges. Where they hide most of what is behind them, the driver takes their own motion
+    // The game's cloud upscaler (CloudRenderer.PerformUpscaling) draws the clouds and the smoke trails at the view's
+    // size, each frame into the other of two sets of images: their colour with the light that passes them, and their
+    // own motion (the clouds' drift with the wind and the planet, the smoke's with its trail). They write no depth, so
+    // the driver's motion from the depth gave them the motion of what is behind them: in a descent through the clouds,
+    // the sea's, and MetalFX smeared their edges. Where they hide most of what is behind them, the driver takes their
+    // own motion
     private static FieldInfo? _isMain, _writeFlip, _colorFlip, _colorFlop, _motionFlip, _motionFlop;
     private static VkImage _cloudColor, _cloudMotion;
     private static bool _cloudsDrawn;

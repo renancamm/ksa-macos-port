@@ -15,11 +15,12 @@ namespace KsaMetal.Hooks.Features;
 // Baked Milky Way, baked_milky_way (port-settings.toml). MilkyWay.frag draws the Milky Way's dust clouds for every
 // pixel of the band it covers, from the view direction alone: about 90 lookups of a noise texture each, 1 to 2 ms of a
 // frame with much sky on an M5 (5 to 7 at the game's Milky Way Quality Ultra). The port's shader edit
-// (baked-milky-way.edits) moves the clouds into a function, makes BakedMilkyWay.comp from the same file. When MilkyWayRenderer has made its noise texture, the patch makes a strip of the clouds over the
-// whole band (8192 x 512), puts it in the noise's place, so the game binds it to the shader, and fills it with the
-// bake, again when the game's Milky Way Quality changes (it sets the clouds' octaves). The shader reads the clouds
-// from the strip when the texture it is given isn't square: nearly the same image, the clouds sampled from the strip
-// instead of worked out at each pixel.
+// (baked-milky-way.edits) moves the clouds into a function, makes BakedMilkyWay.comp from the same file. When
+// MilkyWayRenderer has made its noise texture, the patch makes a strip of the clouds over the whole band (8192 x 512),
+// puts it in the noise's place, so the game binds it to the shader, and fills it with the bake, again when the game's
+// Milky Way Quality changes (it sets the clouds' octaves). The shader reads the clouds from the strip when the texture
+// it is given isn't square: nearly the same image, the clouds sampled from the strip instead of worked out at each
+// pixel.
 [Hook(Phase.Default, Switch = nameof(Settings.BakedMilkyWay))]
 internal static class BakedMilkyWay
 {

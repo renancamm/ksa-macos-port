@@ -44,9 +44,9 @@ A hook is a class marked `[Hook]` ([`Hooks.cs`](Hooks.cs)), and it goes by the c
 settings table. The mark gives its phase and, when a setting turns it on, that setting (`Switch`). The hooks apply
 phase by phase, and in a phase in the order of their names; a rule of order between hooks is a phase, which says why
 (`Phase`). A hook finds its targets by name and the code it changes by pattern: an instruction it expects exactly
-once, or the call that follows a field it knows. It looks everything up before it changes any of the game's state.
-When something isn't where it expects it, typically after a KSA update, the hook throws `Skip`. Everything that hook
-had changed is undone, and `console.log` says so:
+once, or the call that follows a field it knows. Its patches are undone if it stops, and anything else it changes in
+the game comes after its last lookup. When something isn't where it expects it, typically after a KSA update, the hook
+throws `Skip`. Everything that hook had changed is undone, and `console.log` says so:
 
 ```text
 [hooks] Documents: off
@@ -69,14 +69,20 @@ had changed is undone, and `console.log` says so:
 ```
 
 A hook that throws anything else has a bug of its own: it is undone the same way, and `console.log` says `failed`,
-followed by the error and where it happened. While the game runs, the code the game calls of the terrain cache, the
-ocean blending, the overlay skip, the crew portraits, the HUD layout and the Mac Port tab catches its own errors the
-same way: the hook says `failed while the game ran`, once, and hands the game its own behaviour from then on. The
-render scale changes the whole frame and can't hand it back halfway: an error there reaches the game. The game then
-runs as it would without that hook; the Mac Port tab shows the settings it does as unavailable, and a benchmark run
-fails, so a release can't pass its test with a hook skipped or failed. The patches change what is drawn and how much
-work drawing it takes; only the tumbling physics and the debris settling, off by default, change what the game
-simulates: a piece that settled stays settled in a save, and one sunk inside a planet is gone.
+followed by the error and where it happened. While the game runs, the code the game calls of most hooks catches its
+own errors the same way (`Hooks.Fail`: the terrain cache, the ocean blending, the overlay skip, the shared textures,
+the far terrain, clutter and textures, the sound files, the crew portraits, the HUD layout, the SRB flames, the Milky
+Way bake, the clutter resnap, the Resolution list, the Mac Port tab and its presets): the hook says `failed while the
+game ran`, once, also from a worker thread, and hands the game its own behaviour from then on. The render scale
+changes the whole frame and can't hand it back halfway: an error there reaches the game. The game then runs as it
+would without that hook; the Mac Port tab shows the settings it does as unavailable, and a benchmark run fails, so a
+release can't pass its test with a hook skipped or failed. The patches change what is drawn and how much work drawing
+it takes; only the tumbling physics and the debris settling, off by default, change what the game simulates: a piece
+that settled stays settled in a save, and one sunk inside a planet is gone.
+
+A part of a hook that the hook runs on without (`Hooks.Part`: the render scale's bloom, MetalFX's cloud motion,
+dynamic resolution and its parts) says `off` in the log when the game's code doesn't fit it, and `failed` on an error
+of its own, which a benchmark run counts too; the hook stays on.
 
 ## The hooks' own parts
 

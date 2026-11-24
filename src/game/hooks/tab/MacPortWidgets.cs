@@ -593,8 +593,8 @@ internal static partial class MacPortTab
                 clicked = i;
             bool isNext = i == next && next != inUse, use = i == inUse;
             uint Colour(uint normal) => ConsoleStyle.ApplyAlpha(isNext ? ConsoleStyle.PanelU32 : normal);
-            // Raised, in the colour of the game's raised panels, and pressed in while the mouse holds it. The shadow is a few
-            // layers, as ImGui has no blur, and stays within the gap between the cards
+            // Raised, in the colour of the game's raised panels, and pressed in while the mouse holds it. The shadow is
+            // a few layers, as ImGui has no blur, and stays within the gap between the cards
             if (!down)
                 for (float layer = 3f; layer >= 1f; layer--)
                     draw.AddRectFilled(pos - new float2(layer * 0.5f * s, 0f), end + new float2(layer * 0.5f * s, layer * s), ConsoleStyle.ApplyAlpha(ConsoleStyle.ApplyAlpha(ConsoleStyle.BottomShadeU32, 0.6f)), ConsoleStyle.FrameRoundingPx);

@@ -133,10 +133,10 @@ public static class TabPresets
         bool plumeShadows, bool rayTracing, int planetTextures = 0, string? exhausts = null, int indirectLight = 50)
     {
         // Exhausts and particles at High cost about nothing under MetalFX Temporal 0.75 (High vs Low: exhausts ~0 ms,
-        // particles under 1, M5, Mixed Test in a 1440x900 window), and the exhaust's blocks are visibly smaller in motion;
-        // explosions at High cost up to ~4 ms (vs Low) while one is on screen, the heaviest moments: Balanced keeps those
-        // at Medium. Its clouds are at High: Medium's grain at cloud edges shows in motion, and High costs 0.1-0.6 ms
-        // more near the ground (the Tour's descent to earth4)
+        // particles under 1, M5, Mixed Test in a 1440x900 window), and the exhaust's blocks are visibly smaller in
+        // motion; explosions at High cost up to ~4 ms (vs Low) while one is on screen, the heaviest moments: Balanced
+        // keeps those at Medium. Its clouds are at High: Medium's grain at cloud edges shows in motion, and High costs
+        // 0.1-0.6 ms more near the ground (the Tour's descent to earth4)
         exhausts ??= effects;
         // With Baked Milky Way (Performance, Balanced and Quality), Milky Way High costs what Low and Medium do (M5,
         // fast run: every view within 0.1 ms). Cloud Shadows Low costs what Medium does, so no preset goes below Medium.
