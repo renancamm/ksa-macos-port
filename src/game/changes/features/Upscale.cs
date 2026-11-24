@@ -128,7 +128,8 @@ internal static class Upscale
                 prefix: new HarmonyMethod(typeof(Upscale), nameof(RayTracingSeedPrefix)));
             harmony.Patch(Find.Method(typeof(RaytracingRenderer), "ApplyDenoise"),
                 postfix: new HarmonyMethod(typeof(Upscale), nameof(RayHistoryPostfix)));
-            ApplyCloudMotion(harmony);
+            // MetalFX runs on without it, the clouds moving with what is behind them
+            Hooks.Part("MetalFX's cloud motion", () => ApplyCloudMotion(harmony));
         }
         if (Interpolate)
         {
@@ -149,34 +150,27 @@ internal static class Upscale
         }
     }
 
-    // The game's cloud upscaler (CloudRenderer.PerformUpscaling) draws the clouds and the smoke trails at the view's size,
-    // each frame into the other of two sets of images: their colour with the light that passes them, and their own motion
-    // (the clouds' drift with the wind and the planet, the smoke's with its trail). They write no depth, so the driver's
-    // motion from the depth gave them the motion of what is behind them: in a descent through the clouds, the sea's, and
-    // MetalFX smeared their edges. Where they hide most of what is behind them, the driver takes their own motion
+    // The game's cloud upscaler (CloudRenderer.PerformUpscaling) draws the clouds and the smoke trails at the view's
+    // size, each frame into the other of two sets of images: their colour with the light that passes them, and their
+    // own motion (the clouds' drift with the wind and the planet, the smoke's with its trail). They write no depth, so
+    // the driver's motion from the depth gave them the motion of what is behind them: in a descent through the clouds,
+    // the sea's, and MetalFX smeared their edges. Where they hide most of what is behind them, the driver takes their
+    // own motion
     private static FieldInfo? _isMain, _writeFlip, _colorFlip, _colorFlop, _motionFlip, _motionFlop;
     private static VkImage _cloudColor, _cloudMotion;
     private static bool _cloudsDrawn;
 
     private static void ApplyCloudMotion(Harmony harmony)
     {
-        try
-        {
-            var resources = AccessTools.Inner(typeof(CloudRenderer), "ViewportResources") ?? throw new Skip("CloudRenderer.ViewportResources not found");
-            _isMain = Find.Field(resources, "IsMain");
-            _writeFlip = Find.Field(resources, "WriteHistoryToFlip");
-            _colorFlip = Find.Field(resources, "UpscaledCloudColorFlipTarget");
-            _colorFlop = Find.Field(resources, "UpscaledCloudColorFlopTarget");
-            _motionFlip = Find.Field(resources, "UpscaledMotionVectorsFlipTarget");
-            _motionFlop = Find.Field(resources, "UpscaledMotionVectorsFlopTarget");
-            harmony.Patch(Find.Method(typeof(CloudRenderer), "PerformUpscaling"),
-                postfix: new HarmonyMethod(typeof(Upscale), nameof(CloudsUpscaled)));
-        }
-        catch (Exception e)
-        {
-            // MetalFX runs on without it, the clouds moving with what is behind them
-            Hooks.Log($"MetalFX's cloud motion: off ({Skip.In(e)?.Message ?? e.Message})");
-        }
+        var resources = AccessTools.Inner(typeof(CloudRenderer), "ViewportResources") ?? throw new Skip("CloudRenderer.ViewportResources not found");
+        _isMain = Find.Field(resources, "IsMain");
+        _writeFlip = Find.Field(resources, "WriteHistoryToFlip");
+        _colorFlip = Find.Field(resources, "UpscaledCloudColorFlipTarget");
+        _colorFlop = Find.Field(resources, "UpscaledCloudColorFlopTarget");
+        _motionFlip = Find.Field(resources, "UpscaledMotionVectorsFlipTarget");
+        _motionFlop = Find.Field(resources, "UpscaledMotionVectorsFlopTarget");
+        harmony.Patch(Find.Method(typeof(CloudRenderer), "PerformUpscaling"),
+            postfix: new HarmonyMethod(typeof(Upscale), nameof(CloudsUpscaled)));
     }
 
     // CloudRenderer.PerformUpscaling, after it: which set the main view's clouds went into this frame (it has turned the
@@ -307,14 +301,6 @@ internal static class Upscale
     private static double GroundRadius(Celestial body) =>
         body.GetOceanReference() is { } ocean ? Math.Max(body.MaxTerrainRadius, body.MeanRadius + (double)ocean.Level) : body.MaxTerrainRadius;
 
-    // Camera-centred ecliptic coordinates -> the nearby body's rotating frame (or the ecliptic frame in space)
-    private static double4x4 EgoToFrame(Camera camera, Celestial? body)
-    {
-        return body != null
-            ? double4x4.CreateTranslation(camera.PositionEcl - body.GetPositionEcl()) * double4x4.CreateFromQuaternion(body.GetCce2Ccf())
-            : double4x4.CreateTranslation(camera.PositionEcl);
-    }
-
     // After the main view's camera data is set (RenderScale.ShaderDataPostfix): the jittered projection, and the
     // reprojections from this frame's ego space to the previous frame's clip space
     public static void UpdateCamera(IViewport viewport, ref UboCameraData data)
@@ -358,7 +344,7 @@ internal static class Upscale
         // camera's turn moves it
         _sky = _havePrevious ? _previousViewProjection : camera.MVP.viewProjection;
         Celestial? body = camera.GetEffectiveNearbyCelestial();
-        double4x4 egoToFrame = EgoToFrame(camera, body);
+        double4x4 egoToFrame = Views.EgoToFrame(camera, body);
         double time = Universe.GetElapsedSeconds();
         if (_havePrevious && body == _previousBody)
         {

@@ -24,7 +24,7 @@ namespace KsaMetal.Hooks.Features;
 // (Upscale.cs) or, with upscaling off, with the composite's own stretch, filtered. The cameras keep the window's size
 // in points (so picking and the UI's world positions stay right), while what the shaders see as the screen size is
 // the render size. The light clustering's tiles and the UI coverage mask follow the render size too, and UI code sees the
-// window's (UiCoordinates.cs). Pixel sizes measured on the window (the sun's glow, the bloom's blur, star and planet
+// window's (UiViewSize.cs). Pixel sizes measured on the window (the sun's glow, the bloom's blur, star and planet
 // discs, ground clutter's level of detail) are converted: the sun's radius and the bloom here, the rest by the shader
 // edits of src/game/changes/features/window-size.edits, from the window's height in the camera data. On a display
 // without Retina at a render scale of 1 (and dynamic resolution at full size), the three sizes are one and nothing
@@ -103,7 +103,8 @@ internal static class RenderScale
         harmony.Patch(Find.Method(typeof(UiCoverageMaskSystem), nameof(UiCoverageMaskSystem.RecordMaskGeneration)),
             transpiler: maskScale);
         harmony.Patch(Find.Method(typeof(UiCoverageMaskSystem), "ReplayDrawData"), transpiler: maskScale);
-        ApplyBloom(harmony);
+        // The render scale runs on without it, the glow wider below 100 % and narrower above
+        Hooks.Part("Render scale's bloom", () => ApplyBloom(harmony));
         // The frame's level and Steady Frame Rate's rate steps, which work without MetalFX too (the full size their
         // lowest level); the game's sizes at a level only with MetalFX, which alone draws below the render size, and
         // Dynamic Resolution (or the experiment dynamic_level)
@@ -375,32 +376,24 @@ internal static class RenderScale
 
     private static void ApplyBloom(Harmony harmony)
     {
+        _bloomSizes = AccessTools.FieldRefAccess<KawaseBloomRenderer, int2[]>(Find.Field(typeof(KawaseBloomRenderer), "_renderingTargetSizes"));
+        var build = Find.Method(typeof(KawaseBloomRenderer), nameof(KawaseBloomRenderer.Build));
+        var update = Find.Method(typeof(KawaseBloomRenderer), nameof(KawaseBloomRenderer.UpdateShaderPass));
+        // Both or neither: a chain from the window with the spread from the render size would be neither look
+        var extent = Find.Getter(typeof(Renderer), nameof(Renderer.Extent));
+        foreach (var method in new[] { build, update })
+            if (!PatchProcessor.GetOriginalInstructions(method).Any(c => c.Calls(extent)))
+                throw new Skip($"KawaseBloomRenderer.{method.Name} no longer reads the renderer's size");
+        harmony.Patch(build, transpiler: new HarmonyMethod(typeof(RenderScale), nameof(BloomChainTranspiler)),
+            postfix: new HarmonyMethod(typeof(RenderScale), nameof(BloomBuildPostfix)));
         try
         {
-            _bloomSizes = AccessTools.FieldRefAccess<KawaseBloomRenderer, int2[]>(Find.Field(typeof(KawaseBloomRenderer), "_renderingTargetSizes"));
-            var build = Find.Method(typeof(KawaseBloomRenderer), nameof(KawaseBloomRenderer.Build));
-            var update = Find.Method(typeof(KawaseBloomRenderer), nameof(KawaseBloomRenderer.UpdateShaderPass));
-            // Both or neither: a chain from the window with the spread from the render size would be neither look
-            var extent = Find.Getter(typeof(Renderer), nameof(Renderer.Extent));
-            foreach (var method in new[] { build, update })
-                if (!PatchProcessor.GetOriginalInstructions(method).Any(c => c.Calls(extent)))
-                    throw new Skip($"KawaseBloomRenderer.{method.Name} no longer reads the renderer's size");
-            harmony.Patch(build, transpiler: new HarmonyMethod(typeof(RenderScale), nameof(BloomChainTranspiler)),
-                postfix: new HarmonyMethod(typeof(RenderScale), nameof(BloomBuildPostfix)));
-            try
-            {
-                harmony.Patch(update, transpiler: new HarmonyMethod(typeof(RenderScale), nameof(BloomSpreadTranspiler)));
-            }
-            catch
-            {
-                harmony.Unpatch(build, HarmonyPatchType.All, harmony.Id);
-                throw;
-            }
+            harmony.Patch(update, transpiler: new HarmonyMethod(typeof(RenderScale), nameof(BloomSpreadTranspiler)));
         }
-        catch (Exception e)
+        catch
         {
-            // The render scale runs on without it, the glow wider below 100 % and narrower above
-            Hooks.Log($"Render scale's bloom: off ({Skip.In(e)?.Message ?? e.Message})");
+            harmony.Unpatch(build, HarmonyPatchType.All, harmony.Id);
+            throw;
         }
     }
 

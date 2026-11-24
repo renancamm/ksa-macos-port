@@ -16,12 +16,13 @@ namespace KsaPort.Common;
 public static class PortSettings
 {
     public static readonly List<PortSetting> All = new();
+    private static readonly Dictionary<string, PortSetting> ByKey = new();
     // The sections, in the table's order: key, title, the line under it, and whether the Mac Port tab shows it (the
     // others are the file's only)
     public static readonly List<(string Key, string Title, string Caption, bool InTab)> Sections = new();
     public static string FilePath = "", TemplatePath = "";
 
-    public static PortSetting? Get(string key) => All.FirstOrDefault(s => s.Key == key);
+    public static PortSetting? Get(string key) => ByKey.GetValueOrDefault(key);
 
     // The game's documents folder, where port-settings.toml is: STARMAP_INSTANCE_PATH moves it (StarMap, the
     // benchmark's runs)
@@ -35,6 +36,7 @@ public static class PortSettings
     public static void LoadTable(string folder)
     {
         All.Clear();
+        ByKey.Clear();
         Sections.Clear();
         var table = Path.Combine(folder, "port-settings.txt");
         TemplatePath = Path.Combine(folder, "port-settings.toml");
@@ -73,27 +75,40 @@ public static class PortSettings
             string[] List(string column) => column.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             var s = new PortSetting
             {
-                Section = section, InTab = Sections[^1].InTab, Key = c[0], Type = c[1], Default = c[2], Needs = List(c[3]), Live = c[4] == "live",
-                By = List(c[5]), Presets = List(c[6]), Memory = List(c[7]), Tag = c[8], Label = c[9], Help = string.Join('|', c[10..]),
+                Section = section, InTab = Sections[^1].InTab, Key = c[0], Type = c[1], Default = c[2],
+                Needs = List(c[3]).Select(Need.Parse).ToArray(), Live = c[4] == "live", By = List(c[5]), Presets = List(c[6]),
+                Memory = List(c[7]), Tag = c[8], Label = c[9], Help = string.Join('|', c[10..]),
             };
             if (s.Memory.Length is not (0 or 3))
                 throw new FormatException($"{table}, line {n + 1}: the memory column holds {s.Memory.Length} values, not 3 or none");
-            var parts = s.Type.Split(':');
-            switch (parts[0])
-            {
-                case "bool":
-                    s.Choices = [("true", "On"), ("false", "Off")];
-                    break;
-                case "choice":
-                    s.Choices = parts[1].Split('/').Select(v => (v[..v.IndexOf('=')], v[(v.IndexOf('=') + 1)..])).ToArray();
-                    break;
-                // numbers: the counts of numbers
-                case "scale" or "int" or "number" or "numbers":
-                    s.Min = double.Parse(parts[1], CultureInfo.InvariantCulture);
-                    s.Max = double.Parse(parts[2], CultureInfo.InvariantCulture);
-                    break;
-            }
+            if (!ParseType(s))
+                throw new FormatException($"{table}, line {n + 1}: {s.Type} is none of the table's types");
+            if (!ByKey.TryAdd(s.Key, s))
+                throw new FormatException($"{table}, line {n + 1}: {s.Key} is in the table already");
             All.Add(s);
+        }
+    }
+
+    // A setting's type: a choice's values and their labels (bool: on and off), the range of a number, or of a numbers'
+    // count of numbers; false when the type is none of the table's
+    private static bool ParseType(PortSetting s)
+    {
+        var parts = s.Type.Split(':');
+        switch (parts)
+        {
+            case ["bool"]:
+                s.Choices = [("true", "On"), ("false", "Off")];
+                return true;
+            case ["text"]:
+                return true;
+            case ["choice", var values]:
+                s.Choices = values.Split('/').Select(v => v.Split('=', 2)).Select(v => (v[0], v.Length == 2 ? v[1] : "")).ToArray();
+                return s.Choices.All(c => c.Value.Length > 0 && c.Label.Length > 0);
+            case ["scale" or "int" or "number" or "numbers", var min, var max]:
+                return double.TryParse(min, NumberStyles.Float, CultureInfo.InvariantCulture, out s.Min) &&
+                       double.TryParse(max, NumberStyles.Float, CultureInfo.InvariantCulture, out s.Max);
+            default:
+                return false;
         }
     }
 
@@ -147,7 +162,7 @@ public static class PortSettings
                 continue;
             if (!Met(s, Value, _ => true))
             {
-                changed.Add($"{s.Key} = {value} (off: needs {string.Join(',', s.Needs)})");
+                changed.Add($"{s.Key} = {value} (off: needs {string.Join<Need>(',', s.Needs)})");
                 continue;
             }
             if (s.Variable.Length == 0)
@@ -229,28 +244,18 @@ public static class PortSettings
     }
 
     // Whether a setting's needs are met, with the values value() gives (a need that names the game is checked by
-    // game(), the game's own pending settings)
-    public static bool Met(PortSetting s, Func<PortSetting, string> value, Func<string, bool> game)
+    // game(), with the game's own pending settings)
+    public static bool Met(PortSetting s, Func<PortSetting, string> value, Func<string, bool> game) =>
+        s.Needs.All(need => Met(need, value, game));
+
+    // Whether one need is met: the setting it names, once its own needs are applied, has a value that meets it
+    public static bool Met(Need need, Func<PortSetting, string> value, Func<string, bool> game)
     {
-        foreach (var need in s.Needs)
-        {
-            if (need.StartsWith("game:", StringComparison.Ordinal))
-            {
-                if (!game(need[5..]))
-                    return false;
-                continue;
-            }
-            int ne = need.IndexOf("!=", StringComparison.Ordinal), eq = need.IndexOf('=');
-            var key = ne > 0 ? need[..ne] : eq > 0 ? need[..eq] : need;
-            if (Get(key) is not { } other)
-                continue;
-            // What the other setting is once its own needs are applied
-            var v = Met(other, value, game) ? value(other) : other.Default;
-            bool ok = ne > 0 ? v != need[(ne + 2)..] : eq > 0 ? v == need[(eq + 1)..] : v is not ("" or "false" or "0");
-            if (!ok)
-                return false;
-        }
-        return true;
+        if (need.Game)
+            return game(need.Key);
+        if (Get(need.Key) is not { } other)
+            return true;
+        return need.MetBy(Met(other, value, game) ? value(other) : other.Default);
     }
 
     // A value as the file holds it: a string in quotes ("..." with \" and \\ inside, or '...'), or the text before a

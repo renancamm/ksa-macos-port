@@ -10,8 +10,8 @@ namespace KsaMetal.Hooks.Fixes;
 // Engine glow. A game bug since KSA 5801: the service modules' service bay (CoreServiceModuleA, <Habitat
 // Key="ServiceBay" /> without a storage volume) holds Food and LiOH moles in containers of no volume, whose
 // Mole.FilledFraction is 0/0, not a number. FxTemperature.UpdateModules averages every mole's fill for the engines
-// without tanks of their own, and that average makes their temperature NaN for good: their heat glow and frost never show,
-// and on Apple GPUs, which pass a NaN from the vertex to the fragment stage as a large positive number, they glow
+// without tanks of their own, and that average makes their temperature NaN for good: their heat glow and frost never
+// show, and on Apple GPUs, which pass a NaN from the vertex to the fragment stage as a large positive number, they glow
 // white-hot all the time. A transpiler has the update read a container of no volume as empty (counted, so these two
 // moles weigh the frost average a little toward empty).
 [Hook(Phase.Default)]

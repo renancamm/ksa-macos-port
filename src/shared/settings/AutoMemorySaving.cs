@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.InteropServices;
 
 namespace KsaPort.Common;
 
@@ -25,9 +24,9 @@ public static class AutoMemorySaving
     public static IEnumerable<PortSetting> Rows => PortSettings.All.Where(s => s.Memory.Length > 0);
 
     // The game's settings with 8 GB or less: the field of GameSettings or GameSettings.Graphics, its key in
-    // settings.toml (<section>.<key>), and the largest value it keeps (0, none or automatic, becomes it). The texture streamer's budget,
-    // on automatic, is worked out once from the GPU memory free at its first frame (90 % of it, in powers of two,
-    // 512 MB at least): an 8 GB Mac gets 512, and memory the rows free at load would only grow it
+    // settings.toml (<section>.<key>), and the largest value it keeps (0, none or automatic, becomes it). The texture
+    // streamer's budget, on automatic, is worked out once from the GPU memory free at its first frame (90 % of it, in
+    // powers of two, 512 MB at least): an 8 GB Mac gets 512, and memory the rows free at load would only grow it
     public static readonly (string Field, string Key, int AtMost)[] SmallGame =
     [
         ("TerrainTextureCap", "graphics.celestialTextureCap", 2048),
@@ -46,9 +45,7 @@ public static class AutoMemorySaving
     {
         if (int.TryParse(Environment.GetEnvironmentVariable("KSA_PORT_MEMORY_GB"), out var gb) && gb > 0)
             return gb;
-        long value = 0;
-        nint size = sizeof(long);
-        return SysctlByName("hw.memsize", ref value, ref size, 0, 0) == 0 ? (int)Math.Round(value / 1073741824.0) : 0;
+        return Sysctl.Long("hw.memsize") is { } bytes ? (int)Math.Round(bytes / 1073741824.0) : 0;
     }
 
     // Unknown memory (0) counts as plenty: the game as it is. The launcher applies the same rule to its one setting
@@ -72,7 +69,4 @@ public static class AutoMemorySaving
 
     // A size or cap with the small tier's limit
     public static int Limit(int value, int atMost) => value == 0 || value > atMost ? atMost : value;
-
-    [DllImport("libc", EntryPoint = "sysctlbyname")]
-    private static extern int SysctlByName(string name, ref long value, ref nint size, nint newValue, nint newSize);
 }

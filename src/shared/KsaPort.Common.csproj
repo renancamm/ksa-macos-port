@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 	<!-- What the port's programs share, in the game and outside it: the port settings (settings/: the table,
 	     port-settings.toml and the environment), the port folder's names and the apps this port made (PortFolder.cs),
-	     the driver's measurements and screenshots (DriverStats.cs), and the benchmark's core (benchmark/: the lineup and
+	     the driver's measurements and screenshots (DriverStats.cs), what macOS's sysctl says of this Mac (Sysctl.cs), and the benchmark's core (benchmark/: the lineup and
 	     its directives, a run's options, events and frames, its store, its record, checks, pages and the screenshots'
 	     comparison).
 	     The hooks' loader, the hooks and the benchmark's director use it in the game, next to the hooks in the app's Hooks

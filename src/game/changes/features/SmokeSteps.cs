@@ -18,9 +18,7 @@ internal static class SmokeSteps
     public static string Apply(Harmony harmony)
     {
         var fit = Find.Method(typeof(VolumetricTrailShadowCascades), nameof(VolumetricTrailShadowCascades.Fit));
-        var field = Find.Field(typeof(VolumetricTrailData), "padding0");
-        if (field.FieldType != typeof(int))
-            throw new Skip("VolumetricTrailData.padding0 not an int");
+        var field = Find.Field(typeof(VolumetricTrailData), "padding0", typeof(int));
         _flag = AccessTools.StructFieldRefAccess<VolumetricTrailData, int>(field);
         harmony.Patch(fit, postfix: new HarmonyMethod(typeof(SmokeSteps), nameof(Postfix)));
         return "steps x2 of the radius in trails, x1.5 in explosion gas";

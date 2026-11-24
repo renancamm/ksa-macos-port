@@ -80,6 +80,7 @@ internal static class SoundFiles
             catch
             {
                 mapped.TryRelease();
+                Unmap(mapping);
                 throw;
             }
             sound = mapped;
@@ -110,7 +111,8 @@ internal static class SoundFiles
         }
     }
 
-    // A copy that isn't played: made again at the next start
+    // A copy that isn't played: made again at the next start (one that can't be deleted, a cache folder that can't be
+    // written, is checked again then)
     private static void Delete(string? file)
     {
         try
@@ -118,7 +120,7 @@ internal static class SoundFiles
             if (file != null)
                 File.Delete(file);
         }
-        catch (IOException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
         }
     }
@@ -199,7 +201,16 @@ internal static class SoundFiles
     {
         var length = new FileInfo(file).Length;
         var mapped = MemoryMappedFile.CreateFromFile(file, FileMode.Open, null, 0, MemoryMappedFileAccess.CopyOnWrite);
-        var view = mapped.CreateViewAccessor(0, length, MemoryMappedFileAccess.CopyOnWrite);
+        MemoryMappedViewAccessor view;
+        try
+        {
+            view = mapped.CreateViewAccessor(0, length, MemoryMappedFileAccess.CopyOnWrite);
+        }
+        catch
+        {
+            mapped.Dispose();
+            throw;
+        }
         byte* start = null;
         view.SafeMemoryMappedViewHandle.AcquirePointer(ref start);
         var header = *(Header*)start;

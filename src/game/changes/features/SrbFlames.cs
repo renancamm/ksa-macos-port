@@ -31,6 +31,7 @@ internal static class SrbFlames
     private static Celestial? _parent;
     private static ulong _frame;
     private static double4x4 _previousAsmbToFrame;
+    private static bool _failed;  // the game's motion from then on (Hooks.Fail)
 
     public static string Apply(Harmony harmony)
     {
@@ -53,6 +54,21 @@ internal static class SrbFlames
 
     private static void Prefix(VolumetricTrailRenderer __instance, IViewport viewport, Celestial parent, int segmentCount)
     {
+        if (_failed)
+            return;
+        try
+        {
+            MoveFlames(__instance, viewport, parent, segmentCount);
+        }
+        catch (Exception e)
+        {
+            _failed = true;
+            Hooks.Fail(nameof(SrbFlames), e);
+        }
+    }
+
+    private static void MoveFlames(VolumetricTrailRenderer __instance, IViewport viewport, Celestial parent, int segmentCount)
+    {
         Camera camera = viewport.GetCamera();
         if (camera.Following is not Vehicle vehicle)
         {
@@ -61,8 +77,7 @@ internal static class SrbFlames
         }
         // Ego space -> the body's rotating frame, the frame the segments stand still in, and the vessel's assembly space
         // -> that frame
-        double4x4 egoToFrame = double4x4.CreateTranslation(camera.PositionEcl - parent.GetPositionEcl()) *
-                               double4x4.CreateFromQuaternion(parent.GetCce2Ccf());
+        double4x4 egoToFrame = Views.EgoToFrame(camera, parent);
         double4x4 asmbToEgo = vehicle.GetMatrixAsmb2Ego(camera);
         double4x4 asmbToFrame = asmbToEgo * egoToFrame;
         // Last frame's, not one from before a stretch without trails (the game skips this call then)

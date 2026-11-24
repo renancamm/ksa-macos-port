@@ -74,7 +74,8 @@ internal static class DynamicResolution
                 (uint)Math.Max(least.X, 0), (uint)Math.Max(least.Y, 0));
             ksaMtlFrameRateSize(out uint w, out uint h, out _);
             _driver = true;
-            // The driver registers levels only with Dynamic Resolution or the experiment's level: otherwise nothing changes here either
+            // The driver registers levels only with Dynamic Resolution or the experiment's level: otherwise nothing
+            // changes here either
             _render = w > 0 && h > 0 ? render : int2.Zero;
             Take(w, h);
             if (Active)
@@ -131,56 +132,42 @@ internal static class DynamicResolution
     // frames with a glow; the clouds': the scene magnified): then no level is drawn at all
     public static void Apply(Harmony harmony, bool levels)
     {
-        try
-        {
-            var render = Find.Method(typeof(Program), "Render", typeof(double), typeof(FrameResult), typeof(AcquiredFrame));
-            var frame = new HarmonyMethod(typeof(DynamicResolution), nameof(FramePrefix));
-            // A high-resolution screenshot rebuilds the main view's targets at its own size without the swapchain
-            // (RenderScale's registration doesn't see it): drawn at the full size, its targets not dynamic
-            var rebuild = Find.Method(typeof(Program), nameof(Program.RebuildRenderer));
-            harmony.Patch(render, prefix: frame);
-            try
-            {
-                harmony.Patch(rebuild, prefix: new HarmonyMethod(typeof(DynamicResolution), nameof(RebuildPrefix)));
-            }
-            catch
-            {
-                harmony.Unpatch(render, frame.method);
-                throw;
-            }
-        }
-        catch (Exception e)
-        {
-            Hooks.Log($"Dynamic resolution: off ({Skip.In(e)?.Message ?? e.Message})");
+        if (!Hooks.Part("Dynamic resolution", () => ApplyFrame(harmony)))
             return;
-        }
         _applied = true;
         if (!levels)
             return;
         // Every part tried, so that the log names each one missing
-        bool all = Part(harmony, "clouds", ApplyClouds);
-        all &= Part(harmony, "ambient occlusion", ApplyAmbientOcclusion);
-        all &= Part(harmony, "exhausts", ApplyExhausts);
-        all &= Part(harmony, "atmosphere", ApplyAtmosphere);
-        all &= Part(harmony, "particles", ApplyParticles);
-        all &= Part(harmony, "ray tracing", ApplyRayTracing);
-        all &= Part(harmony, "bloom", ApplyBloom);
+        bool Part(string name, Action<Harmony> apply) => Hooks.Part($"Dynamic resolution's {name}", () => apply(harmony));
+        bool all = Part("clouds", ApplyClouds);
+        all &= Part("ambient occlusion", ApplyAmbientOcclusion);
+        all &= Part("exhausts", ApplyExhausts);
+        all &= Part("atmosphere", ApplyAtmosphere);
+        all &= Part("particles", ApplyParticles);
+        all &= Part("ray tracing", ApplyRayTracing);
+        all &= Part("bloom", ApplyBloom);
         _levels = all;
         if (!all)
             Hooks.Log("Dynamic resolution: no levels, as one of the game's sizes wouldn't follow them");
     }
 
-    private static bool Part(Harmony harmony, string name, Action<Harmony> apply)
+    // The frame's level and rate step: a prefix on the frame's start, and on a high-resolution screenshot's rebuild
+    private static void ApplyFrame(Harmony harmony)
     {
+        var render = Find.Method(typeof(Program), "Render", typeof(double), typeof(FrameResult), typeof(AcquiredFrame));
+        var frame = new HarmonyMethod(typeof(DynamicResolution), nameof(FramePrefix));
+        // A high-resolution screenshot rebuilds the main view's targets at its own size without the swapchain
+        // (RenderScale's registration doesn't see it): drawn at the full size, its targets not dynamic
+        var rebuild = Find.Method(typeof(Program), nameof(Program.RebuildRenderer));
+        harmony.Patch(render, prefix: frame);
         try
         {
-            apply(harmony);
-            return true;
+            harmony.Patch(rebuild, prefix: new HarmonyMethod(typeof(DynamicResolution), nameof(RebuildPrefix)));
         }
-        catch (Exception e)
+        catch
         {
-            Hooks.Log($"Dynamic resolution's {name}: off ({Skip.In(e)?.Message ?? e.Message})");
-            return false;
+            harmony.Unpatch(render, frame.method);
+            throw;
         }
     }
 
@@ -196,15 +183,17 @@ internal static class DynamicResolution
         Type resources = AccessTools.Inner(typeof(CloudRenderer), "ViewportResources")
             ?? throw new Skip("CloudRenderer.ViewportResources is gone");
         _setDimensions = Find.Method(typeof(CloudRenderer), "SetRenderTargetDimensions", resources, typeof(int2));
-        _isMain = Find.Field(resources, "IsMain");
-        _screenWidth = Find.Field(resources, "ScreenWidth");
-        _screenHeight = Find.Field(resources, "ScreenHeight");
-        _paddedWidth = Find.Field(resources, "PaddedUpscalingScreenWidth");
-        _paddedHeight = Find.Field(resources, "PaddedUpscalingScreenHeight");
-        _upscalingData = Find.Field(resources, "CloudUpscalingData");
+        _isMain = Find.Field(resources, "IsMain", typeof(bool));
+        _screenWidth = Find.Field(resources, "ScreenWidth", typeof(int));
+        _screenHeight = Find.Field(resources, "ScreenHeight", typeof(int));
+        _paddedWidth = Find.Field(resources, "PaddedUpscalingScreenWidth", typeof(int));
+        _paddedHeight = Find.Field(resources, "PaddedUpscalingScreenHeight", typeof(int));
+        _upscalingData = Find.Field(resources, "CloudUpscalingData", typeof(CloudUpscalingData));
+        var update = Find.Method(typeof(CloudRenderer), "UpdateUpscalingData");
+        var trails = Find.Method(typeof(CloudRenderer), "RenderVolumetricTrailsWithUpscaling");
         var prefix = new HarmonyMethod(typeof(DynamicResolution), nameof(CloudsPrefix));
-        harmony.Patch(Find.Method(typeof(CloudRenderer), "UpdateUpscalingData"), prefix: prefix);
-        harmony.Patch(Find.Method(typeof(CloudRenderer), "RenderVolumetricTrailsWithUpscaling"), prefix: prefix);
+        harmony.Patch(update, prefix: prefix);
+        harmony.Patch(trails, prefix: prefix);
     }
 
     private static void CloudsPrefix(CloudRenderer __instance, object inResources)
@@ -266,9 +255,19 @@ internal static class DynamicResolution
     // dispatch over it, from the main view's size
     private static void ApplyAtmosphere(Harmony harmony)
     {
+        var atmosphere = Find.Method(typeof(AtmosphereRenderer), nameof(AtmosphereRenderer.RenderWithCompute));
+        var aurora = Find.Method(typeof(AtmosphereRenderer), nameof(AtmosphereRenderer.RenderAuroraAfterClouds));
         var transpiler = new HarmonyMethod(typeof(DynamicResolution), nameof(ViewportSizeTranspiler));
-        harmony.Patch(Find.Method(typeof(AtmosphereRenderer), nameof(AtmosphereRenderer.RenderWithCompute)), transpiler: transpiler);
-        harmony.Patch(Find.Method(typeof(AtmosphereRenderer), nameof(AtmosphereRenderer.RenderAuroraAfterClouds)), transpiler: transpiler);
+        harmony.Patch(atmosphere, transpiler: transpiler);
+        try
+        {
+            harmony.Patch(aurora, transpiler: transpiler);
+        }
+        catch
+        {
+            harmony.Unpatch(atmosphere, transpiler.method);
+            throw;
+        }
     }
 
     // viewport.Size -> AtLevel(viewport.Size)
@@ -334,10 +333,10 @@ internal static class DynamicResolution
     // launches its rays over and gives its shaders and its blur: the textures' as the driver has them at the level
     private static void ApplyRayTracing(Harmony harmony)
     {
-        harmony.Patch(Find.Getter(typeof(FullScreenImage), nameof(FullScreenImage.Width)),
-            postfix: new HarmonyMethod(typeof(DynamicResolution), nameof(RayImageWidthPostfix)));
-        harmony.Patch(Find.Getter(typeof(FullScreenImage), nameof(FullScreenImage.Height)),
-            postfix: new HarmonyMethod(typeof(DynamicResolution), nameof(RayImageHeightPostfix)));
+        var width = Find.Getter(typeof(FullScreenImage), nameof(FullScreenImage.Width));
+        var height = Find.Getter(typeof(FullScreenImage), nameof(FullScreenImage.Height));
+        harmony.Patch(width, postfix: new HarmonyMethod(typeof(DynamicResolution), nameof(RayImageWidthPostfix)));
+        harmony.Patch(height, postfix: new HarmonyMethod(typeof(DynamicResolution), nameof(RayImageHeightPostfix)));
     }
 
     private static void RayImageWidthPostfix(FullScreenImage __instance, ref int __result)

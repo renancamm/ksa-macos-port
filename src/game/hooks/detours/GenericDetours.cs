@@ -22,11 +22,11 @@ namespace KsaMetal.Hooks.Detours;
 // unknown shape. The detour stays on that stub without dropping a context: virtual calls, delegates and reflection see
 // the right arguments, direct calls skip the patch, and the log says so. Limits of MonoMod's own, with or without this:
 // a shared method returning a struct through a return buffer can't be patched (its glue is invalid on arm64:
-// InvalidProgramException), neither can a virtual method of a generic struct over a reference type (NotSupportedException).
-// Constructors stay as they are.
+// InvalidProgramException), neither can a virtual method of a generic struct over a reference type
+// (NotSupportedException). Constructors stay as they are.
 //
-// Applied before any mod patches. It changes MonoMod's private code in the Harmony the game's context loaded; a mod that
-// brings its own copy of Harmony isn't covered.
+// Applied before any mod patches. It changes MonoMod's private code in the Harmony the game's context loaded; a mod
+// that brings its own copy of Harmony isn't covered.
 [Hook(Phase.First, Switch = nameof(Settings.HarmonyGenericDetours))]
 internal static unsafe class GenericDetours
 {
@@ -120,7 +120,8 @@ internal static unsafe class GenericDetours
         if (!sharedType && !sharedMethod)
             return null;
         RuntimeTypeHandle canonType = (declaring.IsGenericType ? CanonForm(declaring, true) : declaring).TypeHandle;
-        // A non-generic instance method of a generic class has no stub: its context is `this`, its handle the shared method's
+        // A non-generic instance method of a generic class has no stub: its context is `this`, its handle the shared
+        // method's
         if (!method.IsGenericMethod && !method.IsStatic && !declaring.IsValueType && !declaring.IsInterface)
             return MethodBase.GetMethodFromHandle(method.MethodHandle, canonType);
         _compile.Invoke(_triple, new object[] { method });

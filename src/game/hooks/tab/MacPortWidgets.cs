@@ -253,10 +253,9 @@ internal static partial class MacPortTab
     {
         if (RenderScale.Window.X <= 0 || RenderScale.Window.Y <= 0 || RenderScale.Output.X <= 0 || RenderScale.Output.Y <= 0)
             return;
-        string Shown(string key) => PortSettings.Get(key) is { } p ? p.Outside != null ? p.Running : Value(p) : "";
-        string Running(string key) => PortSettings.Get(key)?.Running ?? "";
-        var mode = Shown("upscaling");
-        var now = ViewSize(mode, Shown("render_scale"));
+        string Running(string key) => PortSettings.Get(key)!.Running;
+        var mode = Value("upscaling");
+        var now = ViewSize(mode, Value("render_scale"));
         var then = ViewSize(Running("upscaling"), Running("render_scale"));
         bool changed = now != then;
         float s = ConsoleStyle.EffectiveInterfaceScale, inset = ConsoleWidgets.RowLabelInsetPx;
@@ -594,8 +593,8 @@ internal static partial class MacPortTab
                 clicked = i;
             bool isNext = i == next && next != inUse, use = i == inUse;
             uint Colour(uint normal) => ConsoleStyle.ApplyAlpha(isNext ? ConsoleStyle.PanelU32 : normal);
-            // Raised, in the colour of the game's raised panels, and pressed in while the mouse holds it. The shadow is a few
-            // layers, as ImGui has no blur, and stays within the gap between the cards
+            // Raised, in the colour of the game's raised panels, and pressed in while the mouse holds it. The shadow is
+            // a few layers, as ImGui has no blur, and stays within the gap between the cards
             if (!down)
                 for (float layer = 3f; layer >= 1f; layer--)
                     draw.AddRectFilled(pos - new float2(layer * 0.5f * s, 0f), end + new float2(layer * 0.5f * s, layer * s), ConsoleStyle.ApplyAlpha(ConsoleStyle.ApplyAlpha(ConsoleStyle.BottomShadeU32, 0.6f)), ConsoleStyle.FrameRoundingPx);

@@ -54,8 +54,6 @@ internal static class Generate
         PortSettings.LoadTable(folder);
         if (PortSettings.All.Count == 0)
             throw new FormatException($"{folder}/port-settings.txt holds no settings");
-        if (PortSettings.All.FirstOrDefault(s => s.Section.Length == 0) is { } outside)
-            throw new FormatException($"port-settings.txt: {outside.Key} comes before the first [section]");
     }
 
     // The template the hooks copy for the player: each section with its caption, each setting with its values and its
@@ -87,7 +85,7 @@ internal static class Generate
             foreach (var s in PortSettings.All.Where(s => s.Section == key))
             {
                 var help = s.Help + string.Concat(s.OptionHelp.Select(o => $" \"{o.Key}\": {o.Value}"));
-                t.Append('\n').Append(Comment($"{s.Key} ({Values(s.Type)}): {help}"));
+                t.Append('\n').Append(Comment($"{s.Key} ({Values(s)}): {help}"));
                 t.Append(inTab ? "" : "# ").Append($"{s.Key} = {TomlValue(s)}\n");
             }
         }
@@ -111,27 +109,27 @@ internal static class Generate
         return t.Append(line).Append('\n').ToString();
     }
 
-    // The values a type takes, as the template's comment shows them
-    private static string Values(string type)
+    // The values a setting takes, as the template's comment shows them
+    private static string Values(PortSetting s)
     {
-        var parts = type.Split(':');
-        switch (parts[0])
+        string Range() => s.Min == s.Max ? Number(s.Min) : $"{Number(s.Min)} to {Number(s.Max)}";
+        switch (s.Kind)
         {
             case "bool":
                 return "true or false";
             case "text":
                 return "a path or text, \"\" for none";
             case "numbers":
-                return (parts[1] == parts[2] ? parts[1] : $"{parts[1]} to {parts[2]}") + " numbers, comma separated, \"\" for none";
+                return Range() + " numbers, comma separated, \"\" for none";
             case "choice":
-                var values = parts[1].Split('/').Select(v => $"\"{v[..v.IndexOf('=')]}\"").ToArray();
+                var values = s.Choices.Select(c => $"\"{c.Value}\"").ToArray();
                 return values.Length == 1 ? values[0] : string.Join(", ", values[..^1]) + " or " + values[^1];
-            case "scale" or "int" or "number" when parts.Length == 3:
-                return $"{parts[1]} to {parts[2]}";
             default:
-                throw new FormatException($"port-settings.txt: {type} is not a type of the table");
+                return $"{Number(s.Min)} to {Number(s.Max)}";
         }
     }
+
+    private static string Number(double value) => value.ToString(CultureInfo.InvariantCulture);
 
     private static string TomlValue(PortSetting s) => s.Toml(s.Default);
 
@@ -221,7 +219,7 @@ internal static class Generate
     // A native setting's C type, and how portSettingsRead reads it
     private static (string Type, string Read) NativeType(PortSetting s)
     {
-        string Range() => $"{s.Min.ToString(CultureInfo.InvariantCulture)}, {s.Max.ToString(CultureInfo.InvariantCulture)}";
+        string Range() => $"{Number(s.Min)}, {Number(s.Max)}";
         return s.Kind switch
         {
             "bool" => ("bool", $"portSettingOn(\"{s.Variable}\", {s.Default})"),

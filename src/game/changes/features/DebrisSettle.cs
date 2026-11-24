@@ -12,35 +12,34 @@ using KSA;
 namespace KsaMetal.Hooks.Features;
 
 // Debris settling in warp, debris_settles_in_warp (port-settings.toml). Time warp stops at what the slowest physics
-// bubble can do, and pieces nobody flies decide that more than anything else: a pile that hasn't come to rest, about x70-100
-// whatever is asked, for the whole game; a pair of them coasting in orbit, stalls of tens of seconds. A piece is what
-// PartFailure.IsExpendable means: nobody flies it and no crew is on it, which also covers spent stages and the parts of a
-// breakup that the game doesn't mark as debris; with no engine firing. Pieces stay where they stopped after warp, and in
-// saves. The rules, from what each one was measured to hold back:
-// Settling, x8 or more. The physics engine sleeps a pile after 255 quiet steps of all its pieces, and one that still jostles
-// starts the count again. And a piece asleep on another piece touches no ground, so ConstraintSim makes it Freefall, which
-// PhysicsBubble wakes at once in the air. So a piece over a body, not in water, sleeps below a higher energy (about 0.7 m/s)
-// after 32 steps, and a piece asleep and that slow is Landed if what it touches reaches the ground.
-// Touching, x64 or more, where a frame's step is about a second or more: 6 game seconds after its first touch, a piece
-// touching the ground is Landed and asleep, unless a camera follows it or a vehicle somebody flies touches it. Fragments rolling to a stop on Luna held warp at x3 for a minute
-// (ConstraintSim.UploadGuardQuads, the craters' height for each moving terrain patch).
-// At sea, x64 or more: at its first touch of the water, a piece is Floating, at rest on the surface, or Bottomed on the
-// seabed if it is denser than the water, the water is too shallow to float it or it already touches the bottom. The game
+// bubble can do, and pieces nobody flies decide that more than anything else: a pile that hasn't come to rest, about
+// x70-100 whatever is asked, for the whole game; a pair of them coasting in orbit, stalls of tens of seconds. A piece
+// is what PartFailure.IsExpendable means: nobody flies it and no crew is on it, which also covers spent stages and the
+// parts of a breakup that the game doesn't mark as debris; with no engine firing. Pieces stay where they stopped after
+// warp, and in saves. The rules, from what each one was measured to hold back: Settling, x8 or more. The physics engine
+// sleeps a pile after 255 quiet steps of all its pieces, and one that still jostles starts the count again. And a piece
+// asleep on another piece touches no ground, so ConstraintSim makes it Freefall, which PhysicsBubble wakes at once in
+// the air. So a piece over a body, not in water, sleeps below a higher energy (about 0.7 m/s) after 32 steps, and a
+// piece asleep and that slow is Landed if what it touches reaches the ground. Touching, x64 or more, where a frame's
+// step is about a second or more: 6 game seconds after its first touch, a piece touching the ground is Landed and
+// asleep, unless a camera follows it or a vehicle somebody flies touches it. Fragments rolling to a stop on Luna held
+// warp at x3 for a minute (ConstraintSim.UploadGuardQuads, the craters' height for each moving terrain patch). At sea,
+// x64 or more: at its first touch of the water, a piece is Floating, at rest on the surface, or Bottomed on the seabed
+// if it is denser than the water, the water is too shallow to float it or it already touches the bottom. The game
 // floats a vehicle only once it has stopped on the water, and in long steps a piece never does: it skims at hundreds of
 // m/s, dives under within a step, buoyancy spins it up and its bubble runs in 1 ms steps, a frame of physics taking
 // seconds; a dense piece sinks on through the seabed. Even 6 game seconds in the water, as on the ground, are 6000 such
-// steps.
-// Settled pieces: PhysicsBubble.ApplySurfaceMotion searches the terrain for where each one's orbit would hit it, each step.
-// A piece at rest on a surface doesn't, in warp: its flight plan is the one orbit, complete, until warp ends or it moves.
-// Pairs in a bubble: ComputeBubbleUnconstrainedTime holds it to 1/60 s for two vehicles side by side, on rails too, even when
-// a frame's step is an hour. Pieces on rails and Landed vehicles have no pair to wait for, and from x1024 nor have any
-// vehicles on rails, such as a kitten out beside its ship.
-// Pairs of bubbles: VehicleUpdateTask predicts contact over each frame's step, splitting it at the contact or merging them.
-// With long steps every crossing of orbits counts, the merged bubble is wider and reaches more, and one frame ends with
-// hundreds of vehicles over 800 km in one bubble, in 1/60 s steps. In warp a piece meets only what is near it now, and from
-// 2 s steps, too long to dock in, so does everything else.
-// Sunk pieces: one that passes the ground at speed sails on inside the planet at the spin cap and in 1 ms steps, the game
-// hanging for as long as it lasts. Below the lowest terrain, it is removed, at any speed.
+// steps. Settled pieces: PhysicsBubble.ApplySurfaceMotion searches the terrain for where each one's orbit would hit it,
+// each step. A piece at rest on a surface doesn't, in warp: its flight plan is the one orbit, complete, until warp ends
+// or it moves. Pairs in a bubble: ComputeBubbleUnconstrainedTime holds it to 1/60 s for two vehicles side by side, on
+// rails too, even when a frame's step is an hour. Pieces on rails and Landed vehicles have no pair to wait for, and
+// from x1024 nor have any vehicles on rails, such as a kitten out beside its ship. Pairs of bubbles: VehicleUpdateTask
+// predicts contact over each frame's step, splitting it at the contact or merging them. With long steps every crossing
+// of orbits counts, the merged bubble is wider and reaches more, and one frame ends with hundreds of vehicles over 800
+// km in one bubble, in 1/60 s steps. In warp a piece meets only what is near it now, and from 2 s steps, too long to
+// dock in, so does everything else. Sunk pieces: one that passes the ground at speed sails on inside the planet at the
+// spin cap and in 1 ms steps, the game hanging for as long as it lasts. Below the lowest terrain, it is removed, at any
+// speed.
 [Hook(Phase.Default, Switch = nameof(Settings.DebrisSettlesInWarp))]
 internal static class DebrisSettle
 {
@@ -248,8 +247,8 @@ internal static class DebrisSettle
             props.Situation = Situation.Landed;
             vehicleState.Kinematic.VelocityPhys = double3.Zero;
             vehicleState.Kinematic.AngularVelocityPhys = double3.Zero;
-            // Asleep, as the game has a Floating vehicle: an awake body would keep the bubble in contact steps of 1/60 s for
-            // all of a long frame, and ReadBackFromSim would take the piece off rails again
+            // Asleep, as the game has a Floating vehicle: an awake body would keep the bubble in contact steps of 1/60
+            // s for all of a long frame, and ReadBackFromSim would take the piece off rails again
             var touching = __instance.Simulation.Bodies[vehicleState.BepuHandles.Body];
             touching.Velocity = default;
             touching.Awake = false;
@@ -273,7 +272,8 @@ internal static class DebrisSettle
         return code;
     }
 
-    // True puts the vehicle on rails and stops it, which makes one only in the water Floating, one also on the seabed Bottomed
+    // True puts the vehicle on rails and stops it, which makes one only in the water Floating, one also on the seabed
+    // Bottomed
     private static bool AtSea(ref PhysicsStates self, VehicleUpdateState vehicle, PhysicsBubble bubble)
     {
         if (self.CanInstantlyFloatOnRails())

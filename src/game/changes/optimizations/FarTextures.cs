@@ -52,7 +52,6 @@ internal static class FarTextures
         public SimpleVkTexture? Texture;  // null while let go
         public Task<SimpleVkTexture>? Making;
         public long NeededFrame = -1, FarSince = -1;
-        public int Faults;  // makings that failed, logged once
         public string Name => System.IO.Path.GetFileName(Refs[0].LocalPath);
     }
 
@@ -105,7 +104,7 @@ internal static class FarTextures
             foreach (var image in Images)
             {
                 var texture = image.Texture!;
-                bytes += Size(texture);
+                bytes += TextureImages.Size(texture);
                 Release(image);
             }
             // No frame has drawn them
@@ -241,7 +240,7 @@ internal static class FarTextures
         long bytes = 0;
         foreach (var (handle, refs) in slots)
         {
-            if (!refs.TrueForAll(r => candidates.ContainsKey(r) && Remakeable(r)))
+            if (!refs.TrueForAll(r => candidates.ContainsKey(r) && TextureImages.MadeByBind(r)))
                 continue;
             var image = new Image(handle, refs, refs[0].TextureAsset.Texture.IsCubemap) { Texture = refs[0].Texture };
             foreach (var r in refs)
@@ -250,7 +249,7 @@ internal static class FarTextures
                 if (refs.Contains(texture))
                     image.Biomes.Add((body, index));
             Images.Add(image);
-            bytes += Size(image.Texture);
+            bytes += TextureImages.Size(image.Texture);
         }
         Hooks.Log($"{nameof(FarTextures)}: {Images.Count} textures of far worlds can be let go, {bytes >> 20} MB: " +
             string.Join(", ", Images.ConvertAll(i => $"{i.Name} ({string.Join("/", System.Linq.Enumerable.Select(i.Bodies, b => b.Id))})")));
@@ -300,17 +299,12 @@ internal static class FarTextures
         Visit(root, 0);
     }
 
-    private static bool Remakeable(TextureReference r) =>
-        r.GetType() == typeof(TextureReference) && r.TextureAsset != null && !TextureImages.Streamed(r);
-
-    // The views' cameras, and the bodies with a vessel near their surface: GroundClutterRenderer.OnFrameViewport places
-    // the clutter it collides with (biome maps, placement maps) wherever the cameras are, within the radius it uses
+    // The views' cameras (those without terrain too, and behind a map its flight camera), and the bodies with a vessel
+    // near their surface: GroundClutterRenderer.OnFrameViewport places the clutter it collides with (biome maps,
+    // placement maps) wherever the cameras are, within the radius it uses
     private static void CollectCameras()
     {
-        Cameras.Clear();
-        foreach (var view in ViewportRegistry.Views)
-            if (Views.Prepared(view, terrain: false) && view.GetCamera() is { } camera)
-                Cameras.Add(camera);
+        Views.Cameras(Cameras, terrain: false);
         Landed.Clear();
         foreach (var image in Images)
             foreach (var body in image.Bodies)
@@ -336,7 +330,7 @@ internal static class FarTextures
         double nearest = double.PositiveInfinity;
         foreach (var camera in Cameras)
             foreach (var body in image.Bodies)
-                nearest = Math.Min(nearest, (camera.PositionEcl - body.GetPositionEcl()).Length() - body.MeanRadius);
+                nearest = Math.Min(nearest, Views.SurfaceDistance(camera, body));
         return nearest;
     }
 
@@ -351,11 +345,12 @@ internal static class FarTextures
             double distance = Distance(image);
             if (distance < NearM)
             {
-                // Begun now, waited for before the views are prepared (ViewsPreparing)
+                // Begun now, waited for before the views are prepared (ViewsPreparing); one made ahead that failed is
+                // tried again, and failing again then fails the hook (MakeNow)
                 if (image.Texture == null && image.Making is not { IsFaulted: false })
                 {
-                    if (image.Making is { IsFaulted: true } && image.Faults++ == 0)
-                        Hooks.Log($"{nameof(FarTextures)}: {image.Name} not made ({Hooks.Describe(image.Making.Exception!)}), tried again each frame it is near");
+                    if (image.Making is { IsFaulted: true })
+                        Hooks.Log($"{nameof(FarTextures)}: {image.Name} not made ahead ({Hooks.Describe(image.Making.Exception!)}), tried again now that it is near");
                     image.Making = Make(image);
                 }
                 image.NeededFrame = _frame;
@@ -382,7 +377,7 @@ internal static class FarTextures
                 image.FarSince = now;
             else if (now - image.FarSince >= FarMs && _frame - image.NeededFrame > QuietFrames)
             {
-                letGoBytes += Size(image.Texture);
+                letGoBytes += TextureImages.Size(image.Texture);
                 Release(image);
                 letGo++;
             }
@@ -418,7 +413,8 @@ internal static class FarTextures
         });
     }
 
-    // Images a view needs this frame: all made at once, waited for
+    // Images a view needs this frame: all made at once, waited for. One that can't be made throws, which fails the hook
+    // (Failed: every image made again, and kept)
     private static void MakeNow(List<Image> images, string why)
     {
         if (images.Count == 0)
@@ -447,7 +443,7 @@ internal static class FarTextures
         Point(image, texture, texture.ImageViewEx.VkImageView);
         foreach (var r in image.Refs)
             LetGo.Remove(r);
-        return Size(texture);
+        return TextureImages.Size(texture);
     }
 
     private static void Release(Image image)
@@ -519,8 +515,6 @@ internal static class FarTextures
                 }
         Images.Clear();
     }
-
-    private static long Size(SimpleVkTexture texture) => TextureImages.Size(texture);
 
     // At exit a let-go texture holds the empty texture, which the game frees itself
     private static bool Disposing(TextureReference __instance)

@@ -6,13 +6,13 @@ using KsaMetal.Hooks.Fixes;
 
 namespace KsaMetal.Hooks;
 
-// The benchmark's runs in the game (src/game/benchmark/Runs.cs): a postfix on Program.OnFrame gives them every
-// frame, a prefix on Universe.GetJobSimStep the moment before each step of the simulation (the director's step
-// limit), and a postfix on InputEvents.ApplyInputEvents the moment after the game's events, before the frame is drawn
-// (the director's camera back where the events moved it from). They start from benchmark.sh (KSA_BENCH_OUT) or the Mac Port tab, and borrow the hooks' log, the summary of
-// what the hooks applied, the game's restart (Restart.cs; as the app starts on its own, without the mod loader and
-// arguments this game was started with, as the run plays in a documents folder of its own) and Harmony, for the
-// postfixes a run puts in when it asks for them (the game's GPU zones' labels).
+// The benchmark's runs in the game (src/game/benchmark/Runs.cs): a postfix on Program.OnFrame gives them every frame, a
+// prefix on Universe.GetJobSimStep the moment before each step of the simulation (the director's step limit), and a
+// postfix on InputEvents.ApplyInputEvents the moment after the game's events, before the frame is drawn (the director's
+// camera back where the events moved it from). They start from benchmark.sh (KSA_BENCH_OUT) or the Mac Port tab, and
+// borrow the hooks' log, the summary of what the hooks applied, the game's restart (Restart.cs; as the app starts on
+// its own, without the mod loader and arguments this game was started with, as the run plays in a documents folder of
+// its own) and Harmony, for the postfixes a run puts in when it asks for them (the game's GPU zones' labels).
 [Hook(Phase.PortParts, WithHooksOff = true)]
 internal static class BenchmarkRun
 {
