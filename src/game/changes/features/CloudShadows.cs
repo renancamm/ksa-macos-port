@@ -15,17 +15,15 @@ namespace KsaMetal.Hooks.Features;
 // so a sweep takes 128 frames, as long as the ambient shadows'. Fewer slices a call would save less: the layers run
 // one after another and each one's time is mostly how long a texel's rays take, so 1 slice costs more than half of 4.
 // Both volumes converge to the same image, but take about 4 times longer to follow moving clouds and the sun.
-[Hook(Phase.Default)]
+[Hook(Phase.Default, Switch = nameof(Settings.FewerCloudShadowUpdates))]
 internal static class CloudShadows
 {
     private const int Slices = 6, AmbientSlices = 2, LightingInterval = 4;
     private static readonly ConditionalWeakTable<CloudShadowVolume, StrongBox<int>> LightingCalls = new();
-    private static AccessTools.FieldRef<CloudShadowVolume, bool>? _fullRebuild;
+    private static AccessTools.FieldRef<CloudShadowVolume, bool> _fullRebuild = null!;
 
     public static string Apply(Harmony harmony)
     {
-        if (!Settings.FewerCloudShadowUpdates)
-            return "off";
         _fullRebuild = AccessTools.FieldRefAccess<CloudShadowVolume, bool>(
             Find.Field(typeof(CloudShadowVolume), "_fullRebuild"));
         harmony.Patch(Find.Method(typeof(CloudShadowVolume), "UpdateVolumeDensity"),
@@ -57,7 +55,7 @@ internal static class CloudShadows
     // false skips the call: the volumes keep their content and the next slice waits for the next call that goes through
     private static bool LightingPrefix(CloudShadowVolume __instance)
     {
-        if (_fullRebuild!(__instance))
+        if (_fullRebuild(__instance))
             return true;
         var calls = LightingCalls.GetValue(__instance, _ => new StrongBox<int>());
         return calls.Value++ % LightingInterval == 0;

@@ -243,7 +243,7 @@ internal static class Presets
 
     // A port setting the tab can change: not set outside, none of its hooks skipped or failed
     public static bool Settable(string key) =>
-        Settings.Get(key) is var s && s.Outside == null && !s.Hooks.Any(h => Hooks.Status.GetValueOrDefault(h) is { Unavailable: true });
+        Settings.Get(key) is var s && s.Outside == null && !s.Hooks.Any(h => Hooks.Unavailable(h) != null);
 
     // A preset's card: its values become the pending changes of the game's copy of its settings and of the tab
     public static void Use(Preset preset, GameSettings pending, IDictionary<string, string> port)

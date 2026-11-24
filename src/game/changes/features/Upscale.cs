@@ -128,7 +128,8 @@ internal static class Upscale
                 prefix: new HarmonyMethod(typeof(Upscale), nameof(RayTracingSeedPrefix)));
             harmony.Patch(Find.Method(typeof(RaytracingRenderer), "ApplyDenoise"),
                 postfix: new HarmonyMethod(typeof(Upscale), nameof(RayHistoryPostfix)));
-            ApplyCloudMotion(harmony);
+            // MetalFX runs on without it, the clouds moving with what is behind them
+            Hooks.Part("MetalFX's cloud motion", () => ApplyCloudMotion(harmony));
         }
         if (Interpolate)
         {
@@ -160,23 +161,15 @@ internal static class Upscale
 
     private static void ApplyCloudMotion(Harmony harmony)
     {
-        try
-        {
-            var resources = AccessTools.Inner(typeof(CloudRenderer), "ViewportResources") ?? throw new Skip("CloudRenderer.ViewportResources not found");
-            _isMain = Find.Field(resources, "IsMain");
-            _writeFlip = Find.Field(resources, "WriteHistoryToFlip");
-            _colorFlip = Find.Field(resources, "UpscaledCloudColorFlipTarget");
-            _colorFlop = Find.Field(resources, "UpscaledCloudColorFlopTarget");
-            _motionFlip = Find.Field(resources, "UpscaledMotionVectorsFlipTarget");
-            _motionFlop = Find.Field(resources, "UpscaledMotionVectorsFlopTarget");
-            harmony.Patch(Find.Method(typeof(CloudRenderer), "PerformUpscaling"),
-                postfix: new HarmonyMethod(typeof(Upscale), nameof(CloudsUpscaled)));
-        }
-        catch (Exception e)
-        {
-            // MetalFX runs on without it, the clouds moving with what is behind them
-            Hooks.Log($"MetalFX's cloud motion: off ({Skip.In(e)?.Message ?? e.Message})");
-        }
+        var resources = AccessTools.Inner(typeof(CloudRenderer), "ViewportResources") ?? throw new Skip("CloudRenderer.ViewportResources not found");
+        _isMain = Find.Field(resources, "IsMain");
+        _writeFlip = Find.Field(resources, "WriteHistoryToFlip");
+        _colorFlip = Find.Field(resources, "UpscaledCloudColorFlipTarget");
+        _colorFlop = Find.Field(resources, "UpscaledCloudColorFlopTarget");
+        _motionFlip = Find.Field(resources, "UpscaledMotionVectorsFlipTarget");
+        _motionFlop = Find.Field(resources, "UpscaledMotionVectorsFlopTarget");
+        harmony.Patch(Find.Method(typeof(CloudRenderer), "PerformUpscaling"),
+            postfix: new HarmonyMethod(typeof(Upscale), nameof(CloudsUpscaled)));
     }
 
     // CloudRenderer.PerformUpscaling, after it: which set the main view's clouds went into this frame (it has turned the

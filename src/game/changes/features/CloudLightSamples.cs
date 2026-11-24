@@ -25,9 +25,7 @@ internal static class CloudLightSamples
 
     public static string Apply(Harmony harmony)
     {
-        var field = Find.Field(typeof(StaticLayerData), "padding0");
-        if (field.FieldType != typeof(int))
-            throw new Skip("StaticLayerData.padding0 not an int");
+        var field = Find.Field(typeof(StaticLayerData), "padding0", typeof(int));
         _flag = AccessTools.StructFieldRefAccess<StaticLayerData, int>(field);
         harmony.Patch(Find.Method(typeof(CloudLayerRenderData), "GetStaticLayerDataToWrite"),
             postfix: new HarmonyMethod(typeof(CloudLightSamples), nameof(Postfix)));

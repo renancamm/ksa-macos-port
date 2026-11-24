@@ -15,7 +15,7 @@ namespace KsaMetal.Hooks.Features;
 // more than 1 km from where the planet's centre saw it at the last update (a cut, a jump, a vessel switch; the planet's
 // turning, which moves the sun, counts too: every frame at high warp). Between updates the nearby sky light trails by
 // up to three frames; with the game paused and the camera still, the image is the game's.
-[Hook(Phase.Default)]
+[Hook(Phase.Default, Switch = nameof(Settings.FewerSkyLightingUpdates))]
 internal static class SkyLighting
 {
     private const int Every = 4;
@@ -33,13 +33,11 @@ internal static class SkyLighting
 
     public static string Apply(Harmony harmony)
     {
-        if (!Settings.FewerSkyLightingUpdates)
-            return "off";
         var resources = AccessTools.Inner(typeof(AtmosphereRenderer), "ViewportResources")
             ?? throw new Skip("AtmosphereRenderer.ViewportResources not found");
         _lut = Find.Field(resources, "PrefilteredSkyLut");
-        _slot = Find.Field(resources, "CurrentPlanetSlot");
-        // The callee first, then its caller (the hooks' README: patch callees before callers)
+        _slot = Find.Field(resources, "CurrentPlanetSlot", typeof(int));
+        // The callee first, then its caller: a patch reaches only code compiled after it (Phase.BeforeCallers)
         harmony.Patch(Find.Method(typeof(AtmosphereRenderer), "RenderPrefilteredSkyLut"),
             prefix: new HarmonyMethod(typeof(SkyLighting), nameof(Prefix)));
         harmony.Patch(Find.Method(typeof(AtmosphereRenderer), nameof(AtmosphereRenderer.RenderWithCompute)),

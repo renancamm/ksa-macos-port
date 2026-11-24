@@ -253,10 +253,9 @@ internal static partial class MacPortTab
     {
         if (RenderScale.Window.X <= 0 || RenderScale.Window.Y <= 0 || RenderScale.Output.X <= 0 || RenderScale.Output.Y <= 0)
             return;
-        string Shown(string key) => PortSettings.Get(key) is { } p ? p.Outside != null ? p.Running : Value(p) : "";
-        string Running(string key) => PortSettings.Get(key)?.Running ?? "";
-        var mode = Shown("upscaling");
-        var now = ViewSize(mode, Shown("render_scale"));
+        string Running(string key) => PortSettings.Get(key)!.Running;
+        var mode = Value("upscaling");
+        var now = ViewSize(mode, Value("render_scale"));
         var then = ViewSize(Running("upscaling"), Running("render_scale"));
         bool changed = now != then;
         float s = ConsoleStyle.EffectiveInterfaceScale, inset = ConsoleWidgets.RowLabelInsetPx;
