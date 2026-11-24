@@ -16,9 +16,6 @@ internal static class Tests
     private static string _repo = "", _test = "", _scratch = "";
     private static readonly List<string> Failures = new();
 
-    // The game's own settings a need can name: those MacPortTab.Game reads
-    private static readonly string[] GameNeeds = ["vsync", "plume_trail_shadows", "pcss"];
-
     // The kinds of setting the Mac Port tab draws (MacPortTab.DrawRow); the others are the file's only
     private static readonly string[] TabKinds = ["bool", "choice", "scale"];
 
@@ -100,8 +97,6 @@ internal static class Tests
     {
         var all = PortSettings.All;
         Check(all.Count > 30, $"only {all.Count} settings read");
-        foreach (var key in all.GroupBy(s => s.Key).Where(g => g.Count() > 1).Select(g => g.Key))
-            Check(false, $"{key} is in the table more than once");
         foreach (var variable in all.Where(s => s.Variable.Length > 0).GroupBy(s => s.Variable).Where(g => g.Count() > 1))
             Check(false, $"{variable.Key} is the variable of {string.Join(" and ", variable.Select(s => s.Key))}");
         var sections = PortSettings.Sections.Select(s => s.Key).ToHashSet();
@@ -123,18 +118,13 @@ internal static class Tests
             }
             foreach (var need in s.Needs)
             {
-                if (need.StartsWith("game:", StringComparison.Ordinal))
-                {
-                    Check(GameNeeds.Contains(need[5..]), $"{s.Key} needs {need}, which the tab doesn't check");
-                    continue;
-                }
-                int ne = need.IndexOf("!=", StringComparison.Ordinal), eq = need.IndexOf('=');
-                var key = ne > 0 ? need[..ne] : eq > 0 ? need[..eq] : need;
-                var value = ne > 0 ? need[(ne + 2)..] : eq > 0 ? need[(eq + 1)..] : null;
-                if (PortSettings.Get(key) is not { } other)
-                    Check(false, $"{s.Key} needs {key}, which isn't a setting");
-                else if (value != null)
-                    Check(other.Valid(value), $"{s.Key} needs {need}, which isn't one of {key}'s values");
+                if (need.Game)
+                    Check(Need.GameNeeds.ContainsKey(need.Key), $"{s.Key} needs {need}, which the tab doesn't check");
+                else if (PortSettings.Get(need.Key) is not { } other)
+                    Check(false, $"{s.Key} needs {need.Key}, which isn't a setting");
+                else if (need.Value != null)
+                    Check(other.Valid(need.Value), $"{s.Key} needs {need}, which isn't one of {need.Key}'s values");
+                Check(Need.Parse(need.ToString()) == need, $"{s.Key}'s need {need} doesn't read back");
             }
             Check(!NeedsLoop(s, []), $"{s.Key}'s needs lead back to it");
             // The presets: Performance, Balanced and Quality's values, every Extra Performance row on in Performance
@@ -171,39 +161,50 @@ internal static class Tests
     {
         if (!seen.Add(s.Key))
             return true;
-        foreach (var need in s.Needs.Where(n => !n.StartsWith("game:", StringComparison.Ordinal)))
-        {
-            int ne = need.IndexOf("!=", StringComparison.Ordinal), eq = need.IndexOf('=');
-            if (PortSettings.Get(ne > 0 ? need[..ne] : eq > 0 ? need[..eq] : need) is { } other && NeedsLoop(other, [.. seen]))
-                return true;
-        }
-        return false;
+        return s.Needs.Where(n => !n.Game).Any(n => PortSettings.Get(n.Key) is { } other && NeedsLoop(other, [.. seen]));
     }
 
-    // A setting's variable is KSA_MTL_ and its key, or Apple's (metal:), or none (tab); its hook the class by hooks:
-    // names
+    // A setting's variable is KSA_MTL_ and its key, or Apple's (metal:), or none (tab); its hooks the classes hooks:
+    // names; its needs as the table writes them
     private static void Names()
     {
         Equal("KSA_MTL_SHADER_CONSTANT_MEMORY", Setting("shader_constant_memory").Variable, "a variable");
         Equal("MTL_HUD_ENABLED", Setting("metal_performance_hud").Variable, "Apple's variable");
         Equal("", Setting("restart_for_a_clean_run").Variable, "the tab's own");
-        Equal("TerrainCache", Setting("terrain_cache").Hook, "a hook");
-        Equal("RenderScale", Setting("frame_interpolation").Hook, "a hook with the driver");
-        Equal("", Setting("shader_cache").Hook, "the driver's");
+        Equal("TerrainCache", string.Join(',', Setting("terrain_cache").Hooks), "a hook");
+        Equal("RenderScale", string.Join(',', Setting("frame_interpolation").Hooks), "a hook with the driver");
+        Equal("FarTerrain,FarClutter", string.Join(',', Setting("unload_far_terrain").Hooks), "two hooks");
+        Equal("", string.Join(',', Setting("shader_cache").Hooks), "the driver's");
+        Equal(new Need("upscaling", "off", Differs: true), Need.Parse("upscaling!=off"), "a need of another value");
+        Equal(new Need("upscaling", "metalfx"), Need.Parse("upscaling=metalfx"), "a need of a value");
+        Equal(new Need("ray_queries"), Need.Parse("ray_queries"), "a need of a switch");
+        Equal(new Need("vsync", Game: true), Need.Parse("game:vsync"), "a need of the game's");
+        Equal("upscaling!=off,steady_frame_rate!=off", string.Join<Need>(',', Setting("dynamic_resolution").Needs), "needs written back");
     }
 
+    // A table with a mistake: an error that names its line
     private static void MalformedTable()
     {
-        File.WriteAllText(Path.Combine(_scratch, "port-settings.txt"), "[upscaling] Upscaling | The 3D view.\nupscaling | choice:off=Off | off\n");
-        try
+        const string header = "[upscaling] Upscaling | The 3D view.\n";
+        const string row = " | | restart | hooks:RenderScale | | | | Label | Help.\n";
+        void Refused(string table, int line, string what)
         {
-            PortSettings.LoadTable(_scratch);
-            Check(false, "a line of 3 columns was read");
+            File.WriteAllText(Path.Combine(_scratch, "port-settings.txt"), header + table);
+            try
+            {
+                PortSettings.LoadTable(_scratch);
+                Check(false, $"{what} was read");
+            }
+            catch (FormatException e)
+            {
+                Check(e.Message.Contains($"line {line}"), $"{what}: the error doesn't say which line: {e.Message}");
+            }
         }
-        catch (FormatException e)
-        {
-            Check(e.Message.Contains("line 2"), $"the error doesn't say which line: {e.Message}");
-        }
+        Refused("upscaling | choice:off=Off | off\n", 2, "a line of 3 columns");
+        Refused("upscaling | choise:off=Off | off" + row, 2, "an unknown type");
+        Refused("upscaling | choice:off | off" + row, 2, "a choice without its label");
+        Refused("render_scale | scale:0.5 | 1.0" + row, 2, "a scale without its maximum");
+        Refused("upscaling | bool | false" + row + "upscaling | bool | false" + row, 3, "a key twice");
     }
 
     private static void ReadFile()

@@ -181,8 +181,8 @@ public static partial class Program
             string ValueOf(PortSetting s) => file.GetValueOrDefault(s.Key) ?? s.Default;
             string a = ValueOf(abSetting), b = _ab[(abKey.Length + 1)..];
             if (!PortSettings.Met(abSetting, ValueOf, GameHas))
-                Die($"--ab {_ab}: {abKey} needs {string.Join(" and ", abSetting.Needs)}, which the run's settings don't have, so A " +
-                    $"and B would play the same. {(abSetting.Needs.Contains("game:vsync") && !GameHas("vsync") ? "This run plays without Vsync: add --capped." : "Add it with --port.")}");
+                Die($"--ab {_ab}: {abKey} needs {string.Join<Need>(" and ", abSetting.Needs)}, which the run's settings don't have, so A " +
+                    $"and B would play the same. {(abSetting.Needs.Contains(Vsync) && !GameHas("vsync") ? "This run plays without Vsync: add --capped." : "Add it with --port.")}");
             if (SameValue(abSetting, a, b))
                 Die($"--ab {_ab}: A has {abKey} = {a} too, so A and B would play the same. Give A another value with " +
                     $"--port {abKey}=<value>, or B another with --ab.");
@@ -196,13 +196,15 @@ public static partial class Program
                 PortSettings.LoadTable(_res);
                 PortSettings.FilePath = portSettings;
                 var file = PortSettings.ReadFile();
-                foreach (var row in PortSettings.All.Where(r => r.Needs.Contains("game:vsync") && file.TryGetValue(r.Key, out var v) && !SameValue(r, v, r.Default)))
+                foreach (var row in PortSettings.All.Where(r => r.Needs.Contains(Vsync) && file.TryGetValue(r.Key, out var v) && !SameValue(r, v, r.Default)))
                     Output.Info($"{row.Key} needs Vsync, which this run plays without: --capped plays it.");
             }
             catch (Exception e) when (e is IOException or FormatException)
             {
             }
         }
+
+        private static readonly Need Vsync = Need.Parse("game:vsync");
 
         // Whether the run's game settings have one of the game's own a port setting needs (game:vsync: Vsync on)
         private bool GameHas(string what) => what switch

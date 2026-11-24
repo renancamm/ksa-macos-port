@@ -10,7 +10,8 @@ namespace KsaPort.Common;
 public sealed class PortSetting
 {
     public string Section = "", Key = "", Type = "", Default = "", Tag = "", Label = "", Help = "";
-    public string[] Needs = [], By = [];
+    public Need[] Needs = [];
+    public string[] By = [];
     // Its values in the Mac Port tab's presets Performance, Balanced and Quality (none: the presets leave it alone)
     public string[] Presets = [];
     // Its values with Auto Memory Saving on, for 8 GB of memory or less, 16 GB or less, and more (none: Auto Memory
@@ -35,10 +36,8 @@ public sealed class PortSetting
         By.FirstOrDefault(b => b.StartsWith("metal:", StringComparison.Ordinal)) is { } metal ? metal[6..]
         : By.Contains("tab") ? "" : "KSA_MTL_" + Key.ToUpperInvariant();
 
-    // The hook that does it (hooks:<hook>, by its class), which the tab shows the setting as unavailable without
-    public string Hook => By.FirstOrDefault(b => b.StartsWith("hooks:", StringComparison.Ordinal)) is { } hook ? hook[6..] : "";
-
-    // All of them, for a setting more than one hook does (Unload Far Terrain)
+    // The hooks that do it (hooks:<hook>, by its class; more than one for Unload Far Terrain), which the tab shows the
+    // setting as unavailable without
     public IEnumerable<string> Hooks => By.Where(b => b.StartsWith("hooks:", StringComparison.Ordinal)).Select(b => b[6..]);
 
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
@@ -122,4 +121,32 @@ public sealed class PortSetting
     // The value as port-settings.toml writes it: a string in quotes, with \ and " escaped
     public string Toml(string value) =>
         Kind is "choice" or "text" or "numbers" ? $"\"{value.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"" : value;
+}
+
+// A need of the table's needs column: <key> (on, or not empty), <key>=<value>, <key>!=<value>, or game:<key>, one of the
+// game's own settings (GameNeeds), which only the tab checks
+public sealed record Need(string Key, string? Value = null, bool Differs = false, bool Game = false)
+{
+    // The game's own settings a need can name, as the tab's tooltip names them
+    public static readonly IReadOnlyDictionary<string, string> GameNeeds = new Dictionary<string, string>
+    {
+        ["vsync"] = "the game's Vsync (Display)",
+        ["plume_trail_shadows"] = "the game's Plume trails and Plume trail shadows (Graphics)",
+        ["pcss"] = "the game's Cascaded Shadow Filter on Pcss (Graphics)",
+    };
+
+    public static Need Parse(string text)
+    {
+        if (text.StartsWith("game:", StringComparison.Ordinal))
+            return new Need(text[5..], Game: true);
+        int ne = text.IndexOf("!=", StringComparison.Ordinal), eq = text.IndexOf('=');
+        return ne > 0 ? new Need(text[..ne], text[(ne + 2)..], Differs: true)
+            : eq > 0 ? new Need(text[..eq], text[(eq + 1)..])
+            : new Need(text);
+    }
+
+    // Whether the setting it names, at this value, meets it
+    public bool MetBy(string value) => Value == null ? value is not ("" or "false" or "0") : Differs ? value != Value : value == Value;
+
+    public override string ToString() => Game ? $"game:{Key}" : Value == null ? Key : $"{Key}{(Differs ? "!=" : "=")}{Value}";
 }

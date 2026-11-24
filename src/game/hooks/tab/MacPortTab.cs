@@ -318,31 +318,16 @@ internal static partial class MacPortTab
     }
 
     // The needs of a setting that aren't met now
-    private static List<string> Unmet(PortSetting s) =>
-        s.Needs.Where(need => !PortSettings.Met(new PortSetting { Needs = [need] }, Value, Game)).ToList();
+    private static List<Need> Unmet(PortSetting s) => s.Needs.Where(need => !PortSettings.Met(need, Value, Game)).ToList();
 
     // What a need asks for, as the tooltip says it
-    private static string NeedText(string need)
+    private static string NeedText(Need need)
     {
-        if (need == "game:vsync")
-            return "Needs the game's Vsync (Display).";
-        if (need == "game:plume_trail_shadows")
-            return "Needs the game's Plume trails and Plume trail shadows (Graphics).";
-        if (need == "game:pcss")
-            return "Needs the game's Cascaded Shadow Filter on Pcss (Graphics).";
-        int ne = need.IndexOf("!=", StringComparison.Ordinal), eq = need.IndexOf('=');
-        var other = PortSettings.Get(NeedKey(need)!);
-        var what = other == null ? need : ne < 0 && eq > 0 ? $"{other.Label} {other.LabelOf(need[(eq + 1)..])}" : other.Label;
+        if (need.Game)
+            return $"Needs {Need.GameNeeds.GetValueOrDefault(need.Key, need.ToString())}.";
+        var other = PortSettings.Get(need.Key);
+        var what = other == null ? need.ToString() : need is { Value: { } value, Differs: false } ? $"{other.Label} {other.LabelOf(value)}" : other.Label;
         return $"Needs {what}.";
-    }
-
-    // The setting a need names, or null for one of the game's
-    private static string? NeedKey(string need)
-    {
-        if (need.StartsWith("game:", StringComparison.Ordinal))
-            return null;
-        int ne = need.IndexOf("!=", StringComparison.Ordinal), eq = need.IndexOf('=');
-        return ne > 0 ? need[..ne] : eq > 0 ? need[..eq] : need;
     }
 
     // The row a row is nested under: a setting it needs above it in its section, with every row between them needing it
@@ -356,7 +341,7 @@ internal static partial class MacPortTab
             return parent;
         var rows = PortSettings.All.Where(r => r.InTab && r.Section == s.Section).ToList();
         int at = rows.IndexOf(s);
-        bool Needs(PortSetting row, string key) => row.Needs.Any(n => NeedKey(n) == key);
+        bool Needs(PortSetting row, string key) => row.Needs.Any(n => !n.Game && n.Key == key);
         for (int i = at - 1; i >= 0 && parent == null; i--)
             if (Needs(s, rows[i].Key) && rows.Skip(i + 1).Take(at - i - 1).All(r => Needs(r, rows[i].Key)))
                 parent = rows[i];
@@ -407,7 +392,7 @@ internal static partial class MacPortTab
         // is indented, hanging from a line, and what else it waits for gets a lock, whose tooltip says what
         var parent = Parent(s);
         var locked = reason is { Length: > 0 } && note.Length == 0
-            ? string.Join(" ", Unmet(s).Where(n => parent == null || NeedKey(n) != parent.Key).Select(NeedText)) : "";
+            ? string.Join(" ", Unmet(s).Where(n => parent == null || n.Game || n.Key != parent.Key).Select(NeedText)) : "";
         float indent = parent == null ? 0f : MathF.Round(20f * ConsoleStyle.EffectiveInterfaceScale);
         ConsoleStyle.PushDisabled(reason is { Length: > 0 });
         if (indent > 0f)
