@@ -3,8 +3,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
-using System.Runtime.InteropServices;
-using System.Text;
 using HarmonyLib;
 using KSA;
 using KsaPort.Common;
@@ -314,17 +312,5 @@ internal static class Presets
     }
 
     // The chip's name ("Apple M2 Pro", for the log) and the memory (KSA_PORT_MEMORY_GB stands in for it)
-    private static Mac Detect() => new(SysctlText("machdep.cpu.brand_string"), AutoMemorySaving.MemoryGb());
-
-    [DllImport("libc", EntryPoint = "sysctlbyname")]
-    private static extern int SysctlByName(string name, [Out] byte[]? value, ref nint size, nint newValue, nint newSize);
-
-    private static string SysctlText(string name)
-    {
-        nint size = 0;
-        if (SysctlByName(name, null, ref size, 0, 0) != 0 || size <= 0)
-            return "";
-        var bytes = new byte[size];
-        return SysctlByName(name, bytes, ref size, 0, 0) == 0 ? Encoding.UTF8.GetString(bytes, 0, (int)size).TrimEnd('\0') : "";
-    }
+    private static Mac Detect() => new(Sysctl.Text("machdep.cpu.brand_string"), AutoMemorySaving.MemoryGb());
 }

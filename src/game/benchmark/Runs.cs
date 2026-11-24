@@ -5,7 +5,6 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -801,32 +800,14 @@ public static class Runs
             if (_watch.Elapsed.TotalSeconds < _nextSample)
                 return;
             _nextSample = _watch.Elapsed.TotalSeconds + 1;
-            _pressure = Math.Max(_pressure, Sysctl("kern.memorystatus_vm_pressure_level"));
+            _pressure = Math.Max(_pressure, (int)(Sysctl.Long("kern.memorystatus_vm_pressure_level") ?? 1));
         }
 
         // The memory event's text
         public string Text() =>
             FormattableString.Invariant($"pressure {(_pressure <= 1 ? "normal" : _pressure == 2 ? "warning" : "critical")}, swap {_swapBefore:F2} -> {SwapUsedMb():F2} MB");
 
-        [DllImport("libc", EntryPoint = "sysctlbyname")]
-        private static extern int SysctlByName(string name, ref long value, ref nint size, nint newValue, nint newSize);
-
-        [DllImport("libc", EntryPoint = "sysctlbyname")]
-        private static extern int SysctlByName(string name, [Out] long[] value, ref nint size, nint newValue, nint newSize);
-
-        private static int Sysctl(string name)
-        {
-            long value = 0;
-            nint size = sizeof(long);
-            return SysctlByName(name, ref value, ref size, 0, 0) == 0 ? (int)value : 1;
-        }
-
         // vm.swapusage is a struct xsw_usage: total, available and used bytes, then the page size and a flag
-        private static double SwapUsedMb()
-        {
-            var usage = new long[4];
-            nint size = usage.Length * sizeof(long);
-            return SysctlByName("vm.swapusage", usage, ref size, 0, 0) == 0 ? usage[2] / 1048576.0 : 0;
-        }
+        private static double SwapUsedMb() => Sysctl.Longs("vm.swapusage", 4) is { } usage ? usage[2] / 1048576.0 : 0;
     }
 }

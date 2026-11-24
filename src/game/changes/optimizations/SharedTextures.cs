@@ -70,9 +70,7 @@ internal static class SharedTextures
 
     private static bool Bind(TextureReference __instance, Renderer renderer)
     {
-        var type = __instance.GetType();
-        if (type != typeof(TextureReference) || (bool)_bound!.GetValue(__instance)! || __instance.TextureAsset == null ||
-            TextureImages.Streamed(__instance))
+        if (!TextureImages.MadeByBind(__instance) || (bool)_bound!.GetValue(__instance)!)
             return true;
         var manifest = __instance.Manifest ?? new TextureManifest();
         // The largest size Bind lets the image have; one at least the file's size counts as none

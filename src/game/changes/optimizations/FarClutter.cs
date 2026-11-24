@@ -203,11 +203,13 @@ internal static class FarClutter
                 Finish(done, waited: false);
             if (_job != null || Bodies.Count == 0)
                 return;
-            CollectCameras();
+            // As FarTerrain counts them: the main view's camera and the visible secondary views' that draw terrain, and
+            // behind a map its flight camera
+            Views.Cameras(Cameras);
             Celestial? near = null;
             foreach (var body in Bodies)
                 foreach (var camera in Cameras)
-                    if ((camera.PositionEcl - body.GetPositionEcl()).Length() - body.MeanRadius < NearM)
+                    if (Views.SurfaceDistance(camera, body) < NearM)
                         near = body;
             if (near != null)
                 Start(near, "ahead");
@@ -215,21 +217,6 @@ internal static class FarClutter
         catch (Exception e)
         {
             Failed(e);
-        }
-    }
-
-    // As FarTerrain counts them: the main view's camera and the visible secondary views' that draw terrain, and behind a
-    // map its flight camera
-    private static void CollectCameras()
-    {
-        Cameras.Clear();
-        foreach (var view in ViewportRegistry.Views)
-        {
-            if (!Views.Prepared(view) || view.GetCamera() is not { } camera)
-                continue;
-            Cameras.Add(camera);
-            if (Views.Flight(view, camera) is { } flight)
-                Cameras.Add(flight);
         }
     }
 

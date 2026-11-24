@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.InteropServices;
 
 namespace KsaPort.Common;
 
@@ -46,9 +45,7 @@ public static class AutoMemorySaving
     {
         if (int.TryParse(Environment.GetEnvironmentVariable("KSA_PORT_MEMORY_GB"), out var gb) && gb > 0)
             return gb;
-        long value = 0;
-        nint size = sizeof(long);
-        return SysctlByName("hw.memsize", ref value, ref size, 0, 0) == 0 ? (int)Math.Round(value / 1073741824.0) : 0;
+        return Sysctl.Long("hw.memsize") is { } bytes ? (int)Math.Round(bytes / 1073741824.0) : 0;
     }
 
     // Unknown memory (0) counts as plenty: the game as it is. The launcher applies the same rule to its one setting
@@ -72,7 +69,4 @@ public static class AutoMemorySaving
 
     // A size or cap with the small tier's limit
     public static int Limit(int value, int atMost) => value == 0 || value > atMost ? atMost : value;
-
-    [DllImport("libc", EntryPoint = "sysctlbyname")]
-    private static extern int SysctlByName(string name, ref long value, ref nint size, nint newValue, nint newSize);
 }

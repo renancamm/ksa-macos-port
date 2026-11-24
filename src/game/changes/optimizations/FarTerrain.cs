@@ -552,7 +552,7 @@ internal static class FarTerrain
     {
         double nearest = double.PositiveInfinity;
         foreach (var body in c.Bodies)
-            nearest = Math.Min(nearest, (camera.PositionEcl - body.GetPositionEcl()).Length() - body.MeanRadius);
+            nearest = Math.Min(nearest, Views.SurfaceDistance(camera, body));
         return nearest;
     }
 
@@ -696,11 +696,7 @@ internal static class FarTerrain
                 {
                     if (level == null)
                         continue;
-                    if (!level.AdjacencyBuffer.IsNull())
-                        level.AdjacencyBuffer.Dispose();
-                    if (!level.AverageNeighborDistanceBuffer.IsNull())
-                        level.AverageNeighborDistanceBuffer.Dispose();
-                    level.Mesh?.Dispose();
+                    Dispose(level);
                     DisposeStructures(level, renderer);
                 }
                 result.SetException(e);
@@ -782,16 +778,7 @@ internal static class FarTerrain
             try
             {
                 Array.Fill(c.Must, true);
-                bool window = _window;
-                _window = false;
-                try
-                {
-                    BuildNow(c, "restored");
-                }
-                finally
-                {
-                    _window = window;
-                }
+                BuildNow(c, "restored");
                 WriteSets(c, Enumerable.Range(0, c.Built.Length).ToList());
             }
             catch (Exception e)
@@ -843,7 +830,8 @@ internal static class FarTerrain
     }
 
     // A body's clutter built on FarClutter's worker: its generate sets written with its finest level as it is now (the
-    // writes above skipped them while it was built). An error here is this hook's, not FarClutter's
+    // writes above skipped them while it was built). An error here is this hook's, not FarClutter's; it can come in the
+    // middle of a Free (FarClutter.Settle), so the levels are made again at the next frame's start, not here
     public static void ClutterBuilt(Celestial body)
     {
         if (_failed || Program.GetPlanetRenderer() is null)
@@ -856,7 +844,8 @@ internal static class FarTerrain
         }
         catch (Exception e)
         {
-            Failed(e);
+            _failed = true;
+            Hooks.Fail(nameof(FarTerrain), e);
         }
     }
 
@@ -884,9 +873,10 @@ internal static class FarTerrain
         }
     }
 
+    // A level's mesh and buffers (a build that failed may not have made its mesh)
     private static void Dispose(CubeMesh level)
     {
-        level.Mesh.Dispose();
+        level.Mesh?.Dispose();
         if (!level.AdjacencyBuffer.IsNull())
             level.AdjacencyBuffer.Dispose();
         if (!level.AverageNeighborDistanceBuffer.IsNull())

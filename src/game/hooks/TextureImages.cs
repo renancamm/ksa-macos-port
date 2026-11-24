@@ -1,12 +1,10 @@
-using System;
-using HarmonyLib;
 using KSA;
 using RenderCore;
 
 namespace KsaMetal.Hooks;
 
 // What the far textures and the shared textures hooks have in common about a TextureReference's image: the setters
-// Bind writes, whether the celestial streamer makes it, the size cap Bind applies, and an image's size
+// Bind writes, whether Bind makes it, the size cap Bind applies, and an image's size
 internal static class TextureImages
 {
     private static System.Reflection.MethodInfo? _texture, _view;
@@ -25,8 +23,10 @@ internal static class TextureImages
         _view!.Invoke(texture, [view]);
     }
 
-    // A map the celestial streamer makes (Stream in the content, its file read by the streamer): Bind makes none
-    public static bool Streamed(TextureReference texture) => texture.Stream;
+    // An image Bind makes from its asset: a plain TextureReference (height maps keep their own), with an asset, not a map
+    // the celestial streamer makes (Stream in the content, its file read by the streamer)
+    public static bool MadeByBind(TextureReference texture) =>
+        texture.GetType() == typeof(TextureReference) && texture.TextureAsset != null && !texture.Stream;
 
     // The largest size Bind lets the image have, as it works it out: the category's cap from the game's settings,
     // the manifest's when smaller (0: none)
