@@ -27,6 +27,7 @@ public static class TabPresets
         ["AntiAliasingMethod"] = "display.antialiasing",
         ["CascadedShadowMapFilter"] = "graphics.cascadedShadowMapFilter",
         ["CascadedShadowMapSize"] = "graphics.cascadedShadowMapSize",
+        ["ShadowMapCascadeCount"] = "graphics.shadowMapCascadeCount",
         ["TerrainShadowMapSize"] = "graphics.terrainShadowMapSize",
         ["MilkyWayQuality"] = "graphics.milkyWayQuality",
         ["CloudUpscaling"] = "graphics.cloudUpscale",
@@ -63,7 +64,7 @@ public static class TabPresets
             0,
             Game(antiAliasing: "Disabled", filter: "Pcf", cascades: 2048, terrain: 2048, milkyWay: "High", clouds: "Low",
                 cloudShadows: "Medium", effects: "Low", godrays: false, clutterShadows: false, plumeShadows: false,
-                rayTracing: false, planetTextures: 2048)),
+                rayTracing: false, planetTextures: 2048, cascadeCount: 4)),
         new("balanced", "Balanced", "Faster, with little visible change.",
             "60 FPS, or 40 in heavy moments, with MetalFX Temporal at the window's size, down to two thirds of it on a " +
             "Retina display, with simpler shadow filtering and lighter cockpit ray tracing. Time warp slows down less.",
@@ -130,7 +131,8 @@ public static class TabPresets
     // off), the rest in GameSettings.Graphics
     private static Dictionary<string, string> Game(string antiAliasing, string filter, int cascades, int terrain,
         string milkyWay, string clouds, string cloudShadows, string effects, bool godrays, bool clutterShadows,
-        bool plumeShadows, bool rayTracing, int planetTextures = 0, string? exhausts = null, int indirectLight = 50)
+        bool plumeShadows, bool rayTracing, int planetTextures = 0, string? exhausts = null, int indirectLight = 50,
+        int cascadeCount = 6)
     {
         // Exhausts and particles at High cost about nothing under MetalFX Temporal 0.75 (High vs Low: exhausts ~0 ms,
         // particles under 1, M5, Mixed Test in a 1440x900 window), and the exhaust's blocks are visibly smaller in
@@ -148,6 +150,14 @@ public static class TabPresets
             ["AntiAliasingMethod"] = antiAliasing,
             ["CascadedShadowMapFilter"] = filter,
             ["CascadedShadowMapSize"] = Text(cascades),
+            // The sun's shadow cascades (the game's 6, 3 to 6; KSA 5909 on): their count is how far the shadows of
+            // vessels, buildings and trees reach, as the game's split distances are fixed (0.1, 2, 8, 24, 80, 250, 1500 m)
+            // and the shadows fade out a little past the last one's start: about 400 m with 6, 100 m with 5, 31 m with 4,
+            // 10 m with 3 (the terrain's own shadows are another map). Performance's 4 (M5, Mixed at the game's own
+            // settings, one run a side): liftoff and explosion 12-14 % faster, about 0.2 GB less memory; in the Tour's
+            // forest the trees past about 30 m lose their shadows and look flat. 3 also took the rocket's shadow from the
+            // chase camera, and Balanced keeps the game's 6 for its "little visible change"
+            ["ShadowMapCascadeCount"] = Text(cascadeCount),
             ["TerrainShadowMapSize"] = Text(terrain),
             ["MilkyWayQuality"] = milkyWay,
             ["CloudUpscaling"] = clouds,

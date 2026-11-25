@@ -176,8 +176,12 @@ internal static partial class MacPortTab
         try
         {
             Sync();
-            // The card picked last alone is no change: what the settings are based on is worked out again from them
-            __result = Shown.Any(s => Pending[s.Key] != s.Saved && s.Key != Presets.Key);
+            // The card picked last alone is no change: what the settings are based on is worked out again from them.
+            // The shadow cascade count is the cards' game setting that none of the game's tabs shows: a change to it is
+            // this tab's, so the footer counts it, offers Discard and asks before Close
+            __result = Shown.Any(s => Pending[s.Key] != s.Saved && s.Key != Presets.Key) ||
+                (_bound is GameSettings pending &&
+                 pending.Graphics.ShadowMapCascadeCount != GameSettings.Current.Graphics.ShadowMapCascadeCount);
         }
         catch (Exception e)
         {
