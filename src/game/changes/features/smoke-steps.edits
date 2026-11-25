@@ -9,7 +9,7 @@
     int fireLightPadding0;
 @@ counts VolumetricTrail/RaymarchVolumetricTrail.comp ADAPTIVE_STEP_SIZE_RADIUS_FRACTION=2
 @@ contains VolumetricTrail/RaymarchVolumetricTrail.comp
-        bool explosionGas = explosionsSpecialization > 0 && stepSizeScale < SEGMENT_EXPLOSION_GAS_STEP_SIZE_SCALE_LIMIT;
+        bool explosionGas = IsExplosionGasSample(stepSizeScale);
         // When we have a thinner volume we can use larger step sizes. Explosion volumes scale the step down.
         adaptiveStepSize = adaptiveSegmentRadius > 0.0 ?
             stepSizeScale * (ADAPTIVE_STEP_SIZE_RADIUS_FRACTION * adaptiveSegmentRadius +
