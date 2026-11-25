@@ -117,7 +117,7 @@ setting; those of the hooks:
 | `steady_frame_rate` | `30`, `40` or `60`: the frame's start calls the driver, which steps the rate, also without MetalFX (the driver paces the frames) |
 | `dynamic_resolution`, `dynamic_level` | on, or a level: with MetalFX, the game's own sizes for the main view follow the driver's level each frame (none drawn if one of them can't) |
 | `fewer_cloud_steps`, `fewer_cloud_light_samples`, `fewer_smoke_steps`, `fewer_cloud_shadow_updates`, `fewer_sky_lighting_updates`, `lighter_warp_cloud_shadows`, `lighter_plume_shadows`, `simpler_pcss_shadows`, `baked_milky_way`, `crew_portraits_at_15_fps`, `lighter_tumbling_physics`, `debris_settles_in_warp` | on: the Extra Performance rows |
-| `skip_hidden_crew_portraits`, `fit_hud_to_display` | off: the game's own crew portraits and flight HUD; both change while the game runs |
+| `skip_hidden_crew_portraits`, `fit_hud_to_display`, `fit_below_the_notch` | off: the game's own crew portraits, flight HUD and window beside the camera notch; they change while the game runs |
 | `terrain_cache`, `skip_unused_outlines`, `skip_unused_overlays`, `skip_hidden_vessel_parts`, `skip_unused_ocean_blending`, `idle_thread_sleep`, `loading_screen_fps_cap`, `smoother_srb_flames` | off: leave out that patch |
 | `load_textures_once`, `unload_far_textures`, `release_freed_memory`, `sounds_kept_on_disk` | on: that patch; off, the default: the game's own ([Auto Memory Saving](../../shared/settings/README.md#auto-memory-saving) sets them) |
 | `cache_dir` | a folder: KSA Metal's cache, where Sounds Kept on Disk keeps its copies in `sounds/` (default: `~/Library/Caches/Kitten Space Agency`) |

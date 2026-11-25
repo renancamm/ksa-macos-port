@@ -24,7 +24,7 @@ endif()
 set(CMAKE_OSX_DEPLOYMENT_TARGET "${MACOS_MIN}")
 set(CMAKE_OSX_ARCHITECTURES arm64)
 
-project(ksa-macos-port LANGUAGES C CXX OBJCXX)
+project(ksa-macos-port LANGUAGES C CXX OBJC OBJCXX)
 
 # Where the app's libraries and the launcher go: those built here, BRUTAL's, and licences/ of everything compiled into
 # them

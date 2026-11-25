@@ -116,7 +116,7 @@ public static partial class Program
             }
 
             // The run's port settings (the app's port-settings.toml template): yours unless a preset is played or
-            // --defaults, --port on top
+            // --defaults, Fit Below the Notch off with fixed settings, --port on top
             var portSettings = Path.Combine(_instance, "port-settings.toml");
             var yours = Path.Combine(Yours, "port-settings.toml");
             var template = Path.Combine(_res, "port-settings.toml");
@@ -149,6 +149,10 @@ public static partial class Program
             // --tab-preset: the card's port settings, and the card picked last, as the tab keeps it
             if (TabPresets.Find(_tabPreset) is { } tabPort)
                 PortSettings.Save(new Dictionary<string, string>(TabPresets.Port(tabPort)) { [TabPresets.Key] = tabPort.Id });
+            // Fixed settings draw the display's whole size on every Mac, the camera notch's strip too, so runs on Macs
+            // with and without one, and older runs, compare (--port can still set it)
+            if (_defaults || _preset.Length > 0 || _tabPreset.Length > 0)
+                PortSettings.Save(new Dictionary<string, string> { [NotchKey] = "false" });
             if (_ports.Count == 0 && _ab.Length == 0)
                 return;
             var values = new Dictionary<string, string>();
@@ -205,6 +209,7 @@ public static partial class Program
         }
 
         private static readonly Need Vsync = Need.Parse("game:vsync");
+        private const string NotchKey = "fit_below_the_notch";
 
         // Whether the run's game settings have one of the game's own a port setting needs (game:vsync: Vsync on)
         private bool GameHas(string what) => what switch

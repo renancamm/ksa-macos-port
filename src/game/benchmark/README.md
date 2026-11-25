@@ -351,7 +351,8 @@ A test is a list of scenarios, and a scenario has a kind: how it keeps time.
 The benchmark is in the app, in `Contents/Resources/Benchmark/`, and [KSA Metal Hooks](../hooks/) give it every frame
 of the game. For a run of `./benchmark.sh`, the game starts from a documents folder of its own,
 `~/Library/Caches/Kitten Space Agency/benchmark/instance/`, with a copy of your settings (a fresh install's with a
-preset or `--defaults`) and of your port settings (the defaults with a preset or `--defaults`), and no mods, so your
+preset or `--defaults`) and of your port settings (the defaults with a preset or `--defaults`; Fit Below the Notch off with a preset, `--defaults` or
+`--tab-preset`, so the 3D view has the display's whole size on every Mac), and no mods, so your
 saves, settings and mods are never touched. The command changes only the settings that start the game straight
 into the test (no system menu, the chosen system, the game's test vessel in orbit), and for `check`, `measure`,
 `profile` and `calibrate` Vsync (off, unless `--capped`); every quality setting stays yours or the preset's. The game's environment is the command's: variables that change how it runs (Metal's, .NET's, the port's,
