@@ -17,25 +17,24 @@ using RenderCore;
 namespace KsaMetal.Hooks.Optimizations;
 
 // Far textures. The game makes every texture's GPU image at load and keeps it, yet much of what a world has is read
-// only near it: its biome maps and ground materials while it is a view's nearby body (within 80,000 km of its
-// surface), its ground clutter's materials then too, its volumetric clouds below their orbit transition (Jupiter
-// 9,000 km), its ring rocks within 20 km of the ring. These images of every body but the home body (about 0.25 GB in
-// the solar system) are let go when the system loads (PlanetMeshLibrary.GenerateInUse, before its terrain, render
-// data and planet renderer allocate, so they take the memory: an image freed later leaves a hole in the driver's
-// blocks), made on a worker thread when one of their bodies comes within 200,000 km of a view's camera, waited for
-// before the views are prepared when one is within 100,000 km (a jump: the uploads begin before Unload Far Terrain
-// waits for the terrain), and let go again when all their bodies have been farther than 300,000 km for 5 s. An image
-// is let go only when every texture the game bound to its bindless slot (ModLibrary.Binders; Load Textures Once puts
-// several on one slot) is one of these and none is also elsewhere in a body's template (the home body's, a far-seen
-// layer's: the 2D clouds, the distant spheres' maps, the ring's own), so a texture particles or frost use stays.
-// Letting go points the slot and the textures at the game's empty texture of the same kind (cube or 2D) and frees
-// the image after the frames in flight; a biome map is also in sets written once, the body's TextureSet (bindings 9,
-// 10) and each view's MeshSets (10, 11), written again each time. Only TextureReference images, made as their Bind
-// makes them (size cap, reduction, mip chain); the others (a height map's, the streamer's) keep theirs. Since KSA 5949
-// the game can switch systems while it runs (Program.SwapSystem): it disposes the planet renderer and the bodies'
-// render data before the new system loads, so the old system's images are made again then without writing the sets
-// that went with them (the new renderer writes its own from the textures' views), and the game's exit is
-// Program.Dispose, not the first texture freed (the switch frees the streamer's).
+// only near it: its biome maps and ground materials while it is a view's nearby body (within 80,000 km of its surface),
+// its ground clutter's materials then too, its volumetric clouds below their orbit transition (Jupiter 9,000 km), its
+// ring rocks within 20 km of the ring. These images of every body but the home body (about 0.25 GB in the solar system)
+// are let go when the system loads (PlanetMeshLibrary.GenerateInUse, before its terrain, render data and planet
+// renderer allocate, so they take the memory: an image freed later leaves a hole in the driver's blocks), made on a
+// worker thread when one of their bodies comes within 200,000 km of a view's camera, waited for before the views are
+// prepared when one is within 100,000 km (a jump: the uploads begin at the frame's start), and let go again when all
+// their bodies have been farther than 300,000 km for 5 s. An image is let go only when every texture the game bound to
+// its bindless slot (ModLibrary.Binders; Load Textures Once puts several on one slot) is one of these and none is also
+// elsewhere in a body's template (the home body's, a far-seen layer's: the 2D clouds, the distant spheres' maps, the
+// ring's own), so a texture particles or frost use stays. Letting go points the slot and the textures at the game's
+// empty texture of the same kind (cube or 2D) and frees the image after the frames in flight; a biome map is also in
+// sets written once, the body's TextureSet (bindings 9, 10) and each view's MeshSets (10, 11), written again each time.
+// Only TextureReference images, made as their Bind makes them (size cap, reduction, mip chain); the others (a height
+// map's, the streamer's) keep theirs. Since KSA 5949 the game can switch systems while it runs (Program.SwapSystem): it
+// disposes the planet renderer and the bodies' render data before the new system loads, so the old system's images are
+// made again then without writing the sets that went with them (the new renderer writes its own from the textures'
+// views), and the game's exit is Program.Dispose, not the first texture freed (the switch frees the streamer's).
 [Hook(Phase.Default, Switch = nameof(Settings.UnloadFarTextures))]
 internal static class FarTextures
 {
@@ -82,8 +81,7 @@ internal static class FarTextures
         _viewports = Find.Field(typeof(PlanetRenderer), "_planetViewportData");
         TextureImages.Lookup();
         harmony.Patch(generate, prefix: new HarmonyMethod(typeof(FarTextures), nameof(SystemLoading)));
-        // Before Unload Far Terrain's postfix, which waits for a jump's terrain: the textures upload meanwhile
-        harmony.Patch(celestials, postfix: new HarmonyMethod(typeof(FarTextures), nameof(Frame)) { priority = Priority.High });
+        harmony.Patch(celestials, postfix: new HarmonyMethod(typeof(FarTextures), nameof(Frame)));
         harmony.Patch(planets, prefix: new HarmonyMethod(typeof(FarTextures), nameof(ViewsPreparing)));
         harmony.Patch(clutter, prefix: new HarmonyMethod(typeof(FarTextures), nameof(ViewsPreparing)));
         harmony.Patch(dispose, prefix: new HarmonyMethod(typeof(FarTextures), nameof(Disposing)));
@@ -311,7 +309,7 @@ internal static class FarTextures
     // placement maps) wherever the cameras are, within the radius it uses
     private static void CollectCameras()
     {
-        Views.Cameras(Cameras, terrain: false);
+        Views.Cameras(Cameras);
         Landed.Clear();
         foreach (var image in Images)
             foreach (var body in image.Bodies)

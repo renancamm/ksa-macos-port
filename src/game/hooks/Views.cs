@@ -4,26 +4,24 @@ using KSA;
 
 namespace KsaMetal.Hooks;
 
-// The views the game prepares terrain and clutter for (PlanetRenderer.OnPreRender): the main view and the visible
-// secondary ones, those that draw terrain unless told otherwise. The hooks that follow the views' cameras (the far
-// terrain, the far clutter, the far textures, the clutter fix) count them the same way. And a camera's place in a
-// body's frame, which the hooks that carry motion from one frame to the next share.
+// The views the game prepares (PlanetRenderer.OnPreRender): the main view and the visible secondary ones, which the
+// hooks that follow the views' cameras (the far textures) count the same way. And a camera's place in a body's frame,
+// which the hooks that carry motion from one frame to the next share.
 internal static class Views
 {
-    public static bool Prepared(IViewport view, bool terrain = true) =>
-        view.IsMain() || view.Type == ViewportType.Secondary && view.Visible && (!terrain || view.HasAny(ViewportOptionFlags.RenderTerrain));
+    public static bool Prepared(IViewport view) => view.IsMain() || view.Type == ViewportType.Secondary && view.Visible;
 
     // Behind a map view, the flight camera it returns to, whose place still counts; null for any other view
     public static Camera? Flight(IViewport view, Camera camera) =>
         view is GameViewport { Mode: CameraMode.Map } game && game.BaseCamera != camera ? game.BaseCamera : null;
 
     // The prepared views' cameras, and behind a map the flight camera it returns to
-    public static void Cameras(List<Camera> cameras, bool terrain = true)
+    public static void Cameras(List<Camera> cameras)
     {
         cameras.Clear();
         foreach (var view in ViewportRegistry.Views)
         {
-            if (!Prepared(view, terrain) || view.GetCamera() is not { } camera)
+            if (!Prepared(view) || view.GetCamera() is not { } camera)
                 continue;
             cameras.Add(camera);
             if (Flight(view, camera) is { } flight)

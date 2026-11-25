@@ -36,8 +36,7 @@ public sealed class PortSetting
         By.FirstOrDefault(b => b.StartsWith("metal:", StringComparison.Ordinal)) is { } metal ? metal[6..]
         : By.Contains("tab") ? "" : "KSA_MTL_" + Key.ToUpperInvariant();
 
-    // The hooks that do it (hooks:<hook>, by its class; more than one for Unload Far Terrain), which the tab shows the
-    // setting as unavailable without
+    // The hooks that do it (hooks:<hook>, by its class), which the tab shows the setting as unavailable without
     public IEnumerable<string> Hooks => By.Where(b => b.StartsWith("hooks:", StringComparison.Ordinal)).Select(b => b[6..]);
 
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
