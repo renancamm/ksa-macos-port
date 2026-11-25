@@ -374,12 +374,12 @@ internal static class Tests
         new RunPlan { Play = new() { Test = "mixed", Mode = "views" } }.Write(said);
         var events = new EventLog(said);
         Session(said, events, 1, 10, null, Kind.Views);
-        events.Add("hooks", text: "TerrainCache: on; FarTerrain: on, by altitude");
+        events.Add("hooks", text: "TerrainCache: on; IdleThreadSleep: on, 0.25 ms");
         File.WriteAllLines(Path.Combine(RunFiles.Data(said), "game.log"),
-            ["[hooks] TerrainCache: on", "[hooks] FarTerrain: on, by altitude", "[hooks] FarTerrain: EarthScale level 17 built (jump, waited 161 ms)",
+            ["[hooks] TerrainCache: on", "[hooks] IdleThreadSleep: on, 0.25 ms", "[hooks] FarTextures: 8 let go at load, 72 MB",
              "[hooks] TerrainCache: failed while the game ran (NullReferenceException: x)"]);
         var hooked = Finished(said);
-        Equal("TerrainCache: on; FarTerrain: on, by altitude; TerrainCache: failed while the game ran (NullReferenceException: x)", hooked.Fact("Hooks"),
+        Equal("TerrainCache: on; IdleThreadSleep: on, 0.25 ms; TerrainCache: failed while the game ran (NullReferenceException: x)", hooked.Fact("Hooks"),
             "the hooks, from the game's event, with one that failed after it");
         Contains(Problems(hooked), "the hooks' TerrainCache: failed while the game ran", "a hook failed while the run played");
     }

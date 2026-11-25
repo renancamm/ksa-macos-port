@@ -36,8 +36,7 @@ These switches turn a feature off or change a default, to work around a problem 
 | `in_place_shader_parameters` | off: helper functions get their own copy of each uniform struct they take, as SPIRV-Cross writes it ([Shaders](#from-vulkan-to-metal)); slower in the smoke raymarch, try it when a shader looks wrong |
 | `skip_gpu_texture_compression` | off: textures read at scattered positions (those the game only uploads and samples, 3D images, square power-of-two storage images of 64 to 256 such as the ocean's waves) are lossless-compressed, as Metal does by default; about 2-4 % slower over terrain, up to 10 % over clouds and the sea, try it when the terrain, clouds, smoke or the sea look wrong |
 | `iva_ray_search` | off: the cockpit's ray tracing finds each hit with a ray query, as SPIRV-Cross writes it, instead of Metal's intersector ([Ray tracing](#from-vulkan-to-metal)); slower in the cockpit, try it when the cockpit looks wrong |
-| `compact_ray_tracing_memory` | on: each acceleration structure sits in the buffer the game made for it, instead of memory of its own while that buffer stays unused (the terrain's structures for clutter placement are about 170 MB each); off: try it when grass or the cockpit look wrong |
-| `dedicated_large_buffers` | off: buffers of 4 MB or more share Vulkan Memory Allocator's blocks (up to 256 MB) like smaller ones, so memory the game frees stays in its block (the Planetary Tour: about 0.1 GB more at its peak, 0.4 GB more from leaving Earth until another world's terrain is built); try it when something looks wrong |
+| `dedicated_large_buffers` | off: buffers of 4 MB or more share Vulkan Memory Allocator's blocks (up to 256 MB) like smaller ones, so memory the game frees stays in its block (the Planetary Tour: the same on Earth, 0.05-0.34 GB more from the Moon on); try it when something looks wrong |
 | `skip_shadows_on_unlit_sides` | off: the port's shader edits that skip shadows where there is no light ([Shaders](#from-vulkan-to-metal)) look them up everywhere, as the game does; slower, try it when a shadow looks wrong |
 | `shared_shadow_samples` | off: every pixel filters the terrain's sun shadow with all its samples, as the game does, instead of sharing them with its 2x2 quad ([Shaders](#from-vulkan-to-metal)); slower, try it when a shadow on the ground looks wrong |
 | `early_fragment_tests` | off: no second state that tests depth first for pipelines whose fragment shader stores to an image ([Shaders](#from-vulkan-to-metal)): the hooks' Skip Hidden Vessel Parts has nothing to switch to |
@@ -263,10 +262,10 @@ When the control shader passes its control points through unchanged, as KSA's oc
 the copies from it at the SPIR-V level, and the evaluation stage reads the vertex kernel's output in their place.
 
 **Ray tracing.** KSA uses ray queries for ground clutter placement, and ray tracing pipelines for lighting inside
-the cockpit (IVA). Ray queries and acceleration structures map onto Metal's; each structure is placed in the heap of
-the buffer the game made for it, as Vulkan places it, so it takes no memory of its own. Metal has no ray tracing
-pipelines, so the driver rewrites each one into a single compute kernel: every "trace ray" in the ray generation shader
-becomes a ray query, and the hit and miss shaders become functions called from it. The rewrite works on SPIR-V, using
+the cockpit (IVA). Ray queries and acceleration structures map onto Metal's; each structure has memory of its own
+beside the buffer the game made for it (a few MB in all). Metal has no ray tracing pipelines, so the driver rewrites
+each one into a single compute kernel: every "trace ray" in the ray generation shader becomes a ray query, and the
+hit and miss shaders become functions called from it. The rewrite works on SPIR-V, using
 [SPIRV-Tools](https://github.com/KhronosGroup/SPIRV-Tools) to link the shaders together
 ([`rtspirv.cpp`](shaders/rtspirv.cpp)).
 
@@ -337,7 +336,7 @@ The complete mapping:
 | Render pass, dynamic rendering | `MTLRenderPassDescriptor` |
 | Multiview | one draw per view |
 | Tessellation | vertex and control stages as compute kernels into scratch buffers, `drawPatches` with the evaluation shader as post-tessellation vertex function; a passthrough control stage loses its copies, and the evaluation stage reads the vertex kernel's output |
-| Acceleration structures, ray query | Metal acceleration structures placed in their buffer's heap (`compact_ray_tracing_memory`; private heaps only, else standalone); instances converted on the CPU to indirect instance descriptors |
+| Acceleration structures, ray query | Metal acceleration structures, each in memory of its own; instances converted on the CPU to indirect instance descriptors |
 | Ray tracing pipeline | one compute kernel with ray queries (`rtspirv.cpp`) |
 | Triangle fans | a shared (0, i, i+1) index buffer |
 | Semaphores | in-order within a queue; `MTLSharedEvent` across queues |

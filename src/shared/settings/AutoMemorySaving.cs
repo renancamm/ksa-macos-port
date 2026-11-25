@@ -25,8 +25,9 @@ public static class AutoMemorySaving
 
     // The game's settings with 8 GB or less: the field of GameSettings or GameSettings.Graphics, its key in
     // settings.toml (<section>.<key>), and the largest value it keeps (0, none or automatic, becomes it). The texture
-    // streamer's budget, on automatic, is worked out once from the GPU memory free at its first frame (90 % of it, in
-    // powers of two, 512 MB at least): an 8 GB Mac gets 512, and memory the rows free at load would only grow it
+    // streamer's budget, on automatic, is live: every frame, 90 % of the GPU budget the driver reports, less the rest of
+    // the game's GPU memory; a value set caps that live budget. With an 8 GB Mac's GPU budget (5.3 GB) and the caps
+    // below, the solar system tour's footprint is 60-550 MB higher on automatic than at 512, so 512 stays
     public static readonly (string Field, string Key, int AtMost)[] SmallGame =
     [
         ("TerrainTextureCap", "graphics.celestialTextureCap", 2048),

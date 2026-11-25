@@ -19563,7 +19563,7 @@
       <SubPartRef InstanceOf="CoreServiceModuleA_Subpart_BaySocketConnectorA" LocalInstanceId="459" Stage="1" SequenceOrder="3" />
       <SubPartRef InstanceOf="CoreServiceModuleA_Subpart_BaySocketConnectorA" LocalInstanceId="460" Stage="1" SequenceOrder="3" />
       <SubPartRef InstanceOf="CoreServiceModuleA_Subpart_BaySocketConnectorA" LocalInstanceId="461" Stage="1" SequenceOrder="3" />
-      <DecouplerData LocalInstanceId="396" Sequence="2" />
+      <DecouplerData InstanceOf="Decoupler" LocalInstanceId="396" Sequence="2" />
       <KeyframeAnimationData InstanceOf="CoreServiceModuleA_Prefab_SetAHeightC_Anim" LocalInstanceId="397" TimeGoal="0" TimeCurrent="0" SolarCurrentAngle="0" />
     </PartRef>
     <PartRef InstanceOf="CoreElectricalA_Prefab_SolarPanelTrackerMediumV1A" LocalInstanceId="9113" Stage="2">

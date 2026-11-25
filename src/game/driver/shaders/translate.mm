@@ -140,6 +140,10 @@ static CompilerMSL::Options mslOptions(const KStageOptions& so) {
     mo.draw_id_buffer_index = kDrawIdBufferIndex;
     mo.agx_manual_cube_grad_fixup = true;
     mo.enable_frag_output_mask = so.fragMask;
+    // Metal refuses a pipeline whose fragment output has fewer components than its attachment's format, which Vulkan
+    // allows (the game's normal pre-pass writes a vec3 to an A2B10G10R10 target): every colour output is padded to
+    // four, the components past the format's dropped
+    mo.pad_fragment_output_components = true;
     mo.force_sample_rate_shading = so.sampleRate;
     // Multiview: the driver draws once per view with spvViewMask = {view, 1} (indirect draws cannot have their
     // instance count multiplied), and the layer assignment is the view index itself (kmtlMslViewLayer)
@@ -341,7 +345,7 @@ bool kmtlTranslate(KShaderModule* mod, const char* entryName, spv::ExecutionMode
 // specialization data, and the translator version. Bump kTranslatorVersion when kmtlTranslate() or its MSL patches change
 uint64_t kmtlTranslationKey(KShaderModule* mod, const char* entry, spv::ExecutionModel model, KPipelineLayout* layout,
                             const VkSpecializationInfo* spec, const KStageOptions& so) {
-    static const uint32_t kTranslatorVersion = 4;
+    static const uint32_t kTranslatorVersion = 5;
     std::vector<uint32_t> k = {kTranslatorVersion, 0x300681bbu /* SPIRV-Cross pin */, (uint32_t)model, so.fragMask,
         so.sampleRate, so.viewMask, (uint32_t)so.tess, (uint32_t)so.indexType, so.tessControlPoints, so.tessQuads,
         (uint32_t)mod->hash, (uint32_t)(mod->hash >> 32), so.rtLaunch, (uint32_t)kmtlConfig().shaderConstantMemory};

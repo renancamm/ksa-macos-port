@@ -17,21 +17,24 @@ using RenderCore;
 namespace KsaMetal.Hooks.Optimizations;
 
 // Far textures. The game makes every texture's GPU image at load and keeps it, yet much of what a world has is read
-// only near it: its biome maps and ground materials while it is a view's nearby body (within 80,000 km of its
-// surface), its ground clutter's materials then too, its volumetric clouds below their orbit transition (Jupiter
-// 9,000 km), its ring rocks within 20 km of the ring. These images of every body but the home body (about 0.25 GB in
-// the solar system) are let go when the system loads (PlanetMeshLibrary.GenerateInUse, before its terrain, render
-// data and planet renderer allocate, so they take the memory: an image freed later leaves a hole in the driver's
-// blocks), made on a worker thread when one of their bodies comes within 200,000 km of a view's camera, waited for
-// before the views are prepared when one is within 100,000 km (a jump: the uploads begin before Unload Far Terrain
-// waits for the terrain), and let go again when all their bodies have been farther than 300,000 km for 5 s. An image
-// is let go only when every texture the game bound to its bindless slot (ModLibrary.Binders; Load Textures Once puts
-// several on one slot) is one of these and none is also elsewhere in a body's template (the home body's, a far-seen
-// layer's: the 2D clouds, the distant spheres' maps, the ring's own), so a texture particles or frost use stays.
-// Letting go points the slot and the textures at the game's empty texture of the same kind (cube or 2D) and frees
-// the image after the frames in flight; a biome map is also in sets written once, the body's TextureSet (bindings 9,
-// 10) and each view's MeshSets (10, 11), written again each time. Only TextureReference images, made as their Bind
-// makes them (size cap, reduction, mip chain); the others (a height map's, the streamer's) keep theirs.
+// only near it: its biome maps and ground materials while it is a view's nearby body (within 80,000 km of its surface),
+// its ground clutter's materials then too, its volumetric clouds below their orbit transition (Jupiter 9,000 km), its
+// ring rocks within 20 km of the ring. These images of every body but the home body (about 0.25 GB in the solar system)
+// are let go when the system loads (PlanetMeshLibrary.GenerateInUse, before its terrain, render data and planet
+// renderer allocate, so they take the memory: an image freed later leaves a hole in the driver's blocks), made on a
+// worker thread when one of their bodies comes within 200,000 km of a view's camera, waited for before the views are
+// prepared when one is within 100,000 km (a jump: the uploads begin at the frame's start), and let go again when all
+// their bodies have been farther than 300,000 km for 5 s. An image is let go only when every texture the game bound to
+// its bindless slot (ModLibrary.Binders; Load Textures Once puts several on one slot) is one of these and none is also
+// elsewhere in a body's template (the home body's, a far-seen layer's: the 2D clouds, the distant spheres' maps, the
+// ring's own), so a texture particles or frost use stays. Letting go points the slot and the textures at the game's
+// empty texture of the same kind (cube or 2D) and frees the image after the frames in flight; a biome map is also in
+// sets written once, the body's TextureSet (bindings 9, 10) and each view's MeshSets (10, 11), written again each time.
+// Only TextureReference images, made as their Bind makes them (size cap, reduction, mip chain); the others (a height
+// map's, the streamer's) keep theirs. Since KSA 5949 the game can switch systems while it runs (Program.SwapSystem): it
+// disposes the planet renderer and the bodies' render data before the new system loads, so the old system's images are
+// made again then without writing the sets that went with them (the new renderer writes its own from the textures'
+// views), and the game's exit is Program.Dispose, not the first texture freed (the switch frees the streamer's).
 [Hook(Phase.Default, Switch = nameof(Settings.UnloadFarTextures))]
 internal static class FarTextures
 {
@@ -63,7 +66,7 @@ internal static class FarTextures
     private static readonly Stopwatch Clock = Stopwatch.StartNew();
     private static CelestialSystem? _system;
     private static long _frame;
-    private static bool _failed, _exiting;
+    private static bool _failed, _exiting, _freed;
     private static FieldInfo? _imageViews, _textures, _viewports;
 
     public static string Apply(Harmony harmony)
@@ -78,11 +81,11 @@ internal static class FarTextures
         _viewports = Find.Field(typeof(PlanetRenderer), "_planetViewportData");
         TextureImages.Lookup();
         harmony.Patch(generate, prefix: new HarmonyMethod(typeof(FarTextures), nameof(SystemLoading)));
-        // Before Unload Far Terrain's postfix, which waits for a jump's terrain: the textures upload meanwhile
-        harmony.Patch(celestials, postfix: new HarmonyMethod(typeof(FarTextures), nameof(Frame)) { priority = Priority.High });
+        harmony.Patch(celestials, postfix: new HarmonyMethod(typeof(FarTextures), nameof(Frame)));
         harmony.Patch(planets, prefix: new HarmonyMethod(typeof(FarTextures), nameof(ViewsPreparing)));
         harmony.Patch(clutter, prefix: new HarmonyMethod(typeof(FarTextures), nameof(ViewsPreparing)));
         harmony.Patch(dispose, prefix: new HarmonyMethod(typeof(FarTextures), nameof(Disposing)));
+        harmony.Patch(Find.Method(typeof(Program), nameof(Program.Dispose)), prefix: new HarmonyMethod(typeof(FarTextures), nameof(Exiting)));
         return "on";
     }
 
@@ -97,7 +100,8 @@ internal static class FarTextures
         {
             if (Universe.CurrentSystem is not { } system || system == _system)
                 return;
-            RestoreAll();
+            // A switch: the old system's renderers are gone with their sets
+            RestoreAll(writeSets: _system == null);
             _system = system;
             Collect(system);
             long bytes = 0;
@@ -107,7 +111,7 @@ internal static class FarTextures
                 bytes += TextureImages.Size(texture);
                 Release(image);
             }
-            // No frame has drawn them
+            // No frame has drawn them, or the switch waited for the GPU
             foreach (var (texture, _) in Dying)
                 texture.Dispose();
             Dying.Clear();
@@ -131,7 +135,7 @@ internal static class FarTextures
                 return;
             if (system != _system)
             {
-                RestoreAll();
+                RestoreAll(writeSets: _system == null);
                 _system = system;
                 Collect(system);
             }
@@ -240,7 +244,8 @@ internal static class FarTextures
         long bytes = 0;
         foreach (var (handle, refs) in slots)
         {
-            if (!refs.TrueForAll(r => candidates.ContainsKey(r) && TextureImages.MadeByBind(r)))
+            // A texture still let go (its restore failed at a switch) holds the game's empty texture
+            if (!refs.TrueForAll(r => candidates.ContainsKey(r) && TextureImages.MadeByBind(r) && !LetGo.Contains(r)))
                 continue;
             var image = new Image(handle, refs, refs[0].TextureAsset.Texture.IsCubemap) { Texture = refs[0].Texture };
             foreach (var r in refs)
@@ -304,7 +309,7 @@ internal static class FarTextures
     // placement maps) wherever the cameras are, within the radius it uses
     private static void CollectCameras()
     {
-        Views.Cameras(Cameras, terrain: false);
+        Views.Cameras(Cameras);
         Landed.Clear();
         foreach (var image in Images)
             foreach (var body in image.Bodies)
@@ -415,7 +420,7 @@ internal static class FarTextures
 
     // Images a view needs this frame: all made at once, waited for. One that can't be made throws, which fails the hook
     // (Failed: every image made again, and kept)
-    private static void MakeNow(List<Image> images, string why)
+    private static void MakeNow(List<Image> images, string why, bool writeSets = true)
     {
         if (images.Count == 0)
             return;
@@ -430,17 +435,17 @@ internal static class FarTextures
         foreach (var image in images)
         {
             image.Making!.Wait();
-            bytes += SwapIn(image);
+            bytes += SwapIn(image, writeSets);
         }
         Hooks.Log($"{nameof(FarTextures)}: {images.Count} made ({why}), {bytes >> 20} MB, waited {watch.ElapsedMilliseconds} ms");
     }
 
-    private static long SwapIn(Image image)
+    private static long SwapIn(Image image, bool writeSets = true)
     {
         var texture = image.Making!.Result;
         image.Making = null;
         image.Texture = texture;
-        Point(image, texture, texture.ImageViewEx.VkImageView);
+        Point(image, texture, texture.ImageViewEx.VkImageView, writeSets);
         foreach (var r in image.Refs)
             LetGo.Remove(r);
         return TextureImages.Size(texture);
@@ -457,12 +462,15 @@ internal static class FarTextures
         image.FarSince = -1;
     }
 
-    // The slot, the textures and the sets written once with the image's view
-    private static void Point(Image image, SimpleVkTexture texture, VkImageView view)
+    // The slot, the textures and the sets written once with the image's view (writeSets: false, the bodies' render data
+    // and the planet renderer are disposed)
+    private static void Point(Image image, SimpleVkTexture texture, VkImageView view, bool writeSets = true)
     {
         foreach (var r in image.Refs)
             TextureImages.Set(r, texture, view);
         Program.Instance.BindlessTextures.SetTexture(image.Handle, view);
+        if (!writeSets)
+            return;
         // While loading, the render data and the planet renderer, made later, take the textures' views
         var planets = Program.GetPlanetRenderer();
         var device = Program.GetRenderer().Device;
@@ -501,13 +509,13 @@ internal static class FarTextures
     }
 
     // Every image made again, and kept from then on
-    private static void RestoreAll()
+    private static void RestoreAll(bool writeSets = true)
     {
         foreach (var image in Images)
             if (image.Texture == null)
                 try
                 {
-                    MakeNow([image], "restored");
+                    MakeNow([image], "restored", writeSets);
                 }
                 catch (Exception e)
                 {
@@ -516,14 +524,16 @@ internal static class FarTextures
         Images.Clear();
     }
 
-    // At exit a let-go texture holds the empty texture, which the game frees itself
+    // The game exits: Program.Dispose waits for the GPU, then frees the textures (a switch frees only the streamer's)
+    private static void Exiting() => _exiting = true;
+
+    // At exit a let-go texture holds the empty texture, which the game frees itself. At the first texture the exit
+    // frees, after the GPU's last frame: the uploads still running end, and what isn't held by a texture is freed
     private static bool Disposing(TextureReference __instance)
     {
-        if (!_exiting)
+        if (_exiting && !_freed)
         {
-            // The game is freeing its textures before the device: the uploads still running end, and what isn't held
-            // by a texture is freed
-            _exiting = true;
+            _freed = true;
             foreach (var image in Images)
                 try
                 {

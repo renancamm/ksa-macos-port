@@ -1,4 +1,7 @@
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
+using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using HarmonyLib;
 using KSA.Atmosphere.Rendering;
@@ -14,12 +17,18 @@ namespace KsaMetal.Hooks.Features;
 // also swaps the volumes it writes (flip and flop) without resampling them, so the skipped rebuild swaps them back: the
 // volumes in use keep their content while the volume follows the camera, as on a frame without a move. During warp most
 // slices hold another place's shadows and cloud light; afterwards the sun's shadows are right within about 11 frames,
-// the ambient's and the cloud light within about 32 (each 4 times that with fewer_cloud_shadow_updates).
+// the ambient's and the cloud light within about 32 (each 4 times that with fewer_cloud_shadow_updates). Since KSA 5949
+// the cloud lighting volumes blend each slice's new light into what it held (fully only above x100 warp), which would
+// leave another place's light fading for about 10 s: for one sweep of their 128 slices after the last skipped
+// rebuild, each slice is written whole (weight 1), as a rebuild would have.
 [Hook(Phase.Default, Switch = nameof(Settings.LighterWarpCloudShadows))]
 internal static class WarpCloudShadows
 {
     private static readonly long Recent = Stopwatch.Frequency / 2;
     private static readonly ConditionalWeakTable<CloudShadowVolume, StrongBox<long>> LastRequest = new();
+    // The cloud lighting volumes' slices still to write whole since the last skipped rebuild
+    private static readonly ConditionalWeakTable<CloudShadowVolume, StrongBox<int>> Sweep = new();
+    private const int LightingSlices = 128, SlicesPerCall = 4;
     private static AccessTools.FieldRef<CloudShadowVolume, bool>? _useFlip;
 
     public static string Apply(Harmony harmony)
@@ -28,6 +37,10 @@ internal static class WarpCloudShadows
             Find.Field(typeof(CloudShadowVolume), "_shadowVolumeUseFlip"));
         harmony.Patch(Find.Method(typeof(CloudShadowVolume), "MoveVolume"),
             postfix: new HarmonyMethod(typeof(WarpCloudShadows), nameof(Postfix)));
+        // Without it another place's cloud light fades for about 10 s after warp
+        Hooks.Part("Lighter Warp Cloud Shadows' cloud light sweep", () => harmony.Patch(
+            Find.Method(typeof(CloudShadowVolume), "UpdateLightingVolumes"),
+            transpiler: new HarmonyMethod(typeof(WarpCloudShadows), nameof(LightingTranspiler))));
         return "on";
     }
 
@@ -41,9 +54,36 @@ internal static class WarpCloudShadows
         bool rebuild = now - last.Value > Recent;
         last.Value = now;
         if (rebuild)
+        {
+            if (Sweep.TryGetValue(__instance, out var sweep))
+                sweep.Value = 0;  // the rebuild writes every slice whole
             return;
+        }
         __result = false;
         ref bool useFlip = ref _useFlip!(__instance);
         useFlip = !useFlip;
+        Sweep.GetValue(__instance, _ => new StrongBox<int>()).Value = LightingSlices;
+    }
+
+    // GetLightingBlendWeight(), then Whole on what it returned and the volume (a full rebuild doesn't call it)
+    private static IEnumerable<CodeInstruction> LightingTranspiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var code = instructions.ToList();
+        var weight = Find.Method(typeof(CloudShadowVolume), "GetLightingBlendWeight");
+        int call = Find.Once(code, c => c.Calls(weight), "GetLightingBlendWeight's call");
+        code.InsertRange(call + 1, [
+            new CodeInstruction(OpCodes.Ldarg_0),
+            new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(WarpCloudShadows), nameof(Whole))),
+        ]);
+        return code;
+    }
+
+    // 1 while the sweep after a skipped rebuild lasts (the call writes SlicesPerCall slices), else the game's weight
+    private static float Whole(float weight, CloudShadowVolume volume)
+    {
+        if (!Sweep.TryGetValue(volume, out var left) || left.Value <= 0)
+            return weight;
+        left.Value -= SlicesPerCall;
+        return 1f;
     }
 }

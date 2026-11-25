@@ -71,7 +71,7 @@ throws `Skip`. Everything that hook had changed is undone, and `console.log` say
 A hook that throws anything else has a bug of its own: it is undone the same way, and `console.log` says `failed`,
 followed by the error and where it happened. While the game runs, the code the game calls of most hooks catches its own
 errors the same way (`Hooks.Fail`: the terrain cache, the ocean blending skip, the overlay skip, the textures loaded
-once, the far terrain, clutter and textures, the sounds kept on disk, the crew portraits, the HUD fit, the SRB flames,
+once, the far textures, the sounds kept on disk, the crew portraits, the HUD fit, the SRB flames,
 the baked Milky Way, the clutter resnap, the Resolution list, the Mac Port tab and its presets): the hook says `failed
 while the game ran`, once, also from a worker thread, and hands the game its own behaviour from then on. The render
 scale changes the whole frame and can't hand it back halfway: an error there reaches the game. The game then runs as it
@@ -119,8 +119,7 @@ setting; those of the hooks:
 | `fewer_cloud_steps`, `fewer_cloud_light_samples`, `fewer_smoke_steps`, `fewer_cloud_shadow_updates`, `fewer_sky_lighting_updates`, `lighter_warp_cloud_shadows`, `lighter_plume_shadows`, `simpler_pcss_shadows`, `baked_milky_way`, `crew_portraits_at_15_fps`, `lighter_tumbling_physics`, `debris_settles_in_warp` | on: the Extra Performance rows |
 | `skip_hidden_crew_portraits`, `fit_hud_to_display` | off: the game's own crew portraits and flight HUD; both change while the game runs |
 | `terrain_cache`, `skip_unused_outlines`, `skip_unused_overlays`, `skip_hidden_vessel_parts`, `skip_unused_ocean_blending`, `idle_thread_sleep`, `loading_screen_fps_cap`, `smoother_srb_flames` | off: leave out that patch |
-| `unload_far_terrain`, `load_textures_once`, `unload_far_textures`, `release_freed_memory`, `sounds_kept_on_disk` | on: that patch; off, the default: the game's own ([Auto Memory Saving](../../shared/settings/README.md#auto-memory-saving) sets them) |
-| `load_terrain_by_altitude` | on: near a world, Unload Far Terrain keeps only the levels around each camera's altitude (it needs `unload_far_terrain`) |
+| `load_textures_once`, `unload_far_textures`, `release_freed_memory`, `sounds_kept_on_disk` | on: that patch; off, the default: the game's own ([Auto Memory Saving](../../shared/settings/README.md#auto-memory-saving) sets them) |
 | `cache_dir` | a folder: KSA Metal's cache, where Sounds Kept on Disk keeps its copies in `sounds/` (default: `~/Library/Caches/Kitten Space Agency`) |
 | `idle_thread_sleep_ms` | milliseconds: how long an idle job worker spins before it sleeps (0.25) |
 | `trail_caches` | `<large>,<small>,<tiny>[,<segments>]`: the smoke's volume cache budgets in MiB (Experiments; unset: the game's) |

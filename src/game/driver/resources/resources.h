@@ -23,7 +23,6 @@ struct KBuffer {
     VkDeviceSize offset = 0;
     id<MTLBuffer> mtl = nil;  // = memory->whole
     bool inDescriptor = false;  // written to a descriptor: destroying it looks for those left behind
-    bool accelStorage = false;  // holds acceleration structures: aligned for placing them in its heap
     uint64_t gpuAddress() const { return mtl ? mtl.gpuAddress + offset : 0; }
 };
 // A VkMemoryDedicatedRequirements in the chain, filled (prefer: its prefersDedicatedAllocation)
@@ -234,7 +233,6 @@ MTLVertexFormat kmtlVertexFormat(VkFormat f);
 struct KAccel {
     id<MTLAccelerationStructure> mtl = nil;
     uint64_t address = 0;  // what vkGetAccelerationStructureDeviceAddressKHR hands out
-    bool placed = false;   // in the heap of its Vulkan buffer (resident with it), not memory of its own
 };
 // A structure's descriptor from a build's inputs; with resolveBuffers, its buffers found from their device addresses
 // and a top-level structure's instances converted into *outInstances (nil where the inputs can't be described)

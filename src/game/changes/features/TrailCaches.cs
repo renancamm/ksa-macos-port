@@ -6,8 +6,8 @@ namespace KsaMetal.Hooks.Features;
 
 // The file's experiment trail_caches (<large MiB>,<small MiB>,<tiny MiB>[,<minimum segments>]): the raymarch reads a
 // dense cell of smoke from a baked lattice when the cell has a volume cache, and otherwise walks a subset of the cell's
-// segments, about five times slower. The game gives each of the three lattice sizes an 8 MiB atlas (60 caches of 16^3,
-// 481 of 8^3, 3,855 of 4^3) and caches only cells with 33 segments or more; this sets the budgets and the minimum.
+// segments, about five times slower. The game gives each of the three lattice sizes an 8 MiB atlas (97 caches of 16^3,
+// 780 of 8^3, 6,241 of 4^3) and caches only cells with 33 segments or more; this sets the budgets and the minimum.
 [Hook(Phase.Default)]
 internal static class TrailCaches
 {

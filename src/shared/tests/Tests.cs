@@ -173,7 +173,6 @@ internal static class Tests
         Equal("", Setting("restart_for_a_clean_run").Variable, "the tab's own");
         Equal("TerrainCache", string.Join(',', Setting("terrain_cache").Hooks), "a hook");
         Equal("RenderScale", string.Join(',', Setting("frame_interpolation").Hooks), "a hook with the driver");
-        Equal("FarTerrain,FarClutter", string.Join(',', Setting("unload_far_terrain").Hooks), "two hooks");
         Equal("", string.Join(',', Setting("shader_cache").Hooks), "the driver's");
         Equal(new Need("upscaling", "off", Differs: true), Need.Parse("upscaling!=off"), "a need of another value");
         Equal(new Need("upscaling", "metalfx"), Need.Parse("upscaling=metalfx"), "a need of a value");
@@ -275,8 +274,6 @@ internal static class Tests
         values["watch"] = "~/watch";
         Check(Met("watch_white"), "watch_white with watch");
         Check(!Met("lighter_plume_shadows", game: false), "lighter_plume_shadows without the game's plume trail shadows");
-        values["unload_far_terrain"] = "false";
-        Check(!Met("load_terrain_by_altitude"), "load_terrain_by_altitude without unload_far_terrain");
         // The Frame Rate rows: the rate needs only Vsync, its two helpers the rate, Dynamic Resolution MetalFX too
         values["upscaling"] = "off";
         Check(Met("steady_frame_rate") && !Met("steady_frame_rate", game: false), "steady_frame_rate without upscaling, with Vsync only");
@@ -359,11 +356,11 @@ internal static class Tests
         Equal(AutoMemorySaving.Tier.Medium, AutoMemorySaving.TierOf(16), "16 GB");
         Equal(AutoMemorySaving.Tier.Large, AutoMemorySaving.TierOf(17), "17 GB");
         var rows = AutoMemorySaving.Rows.Select(s => s.Key).ToList();
-        Check(rows.Count >= 8 && rows.Contains("unload_far_terrain"), $"the rows: {string.Join(", ", rows)}");
+        Check(rows.Count >= 5 && rows.Contains("unload_far_textures"), $"the rows: {string.Join(", ", rows)}");
         var small = AutoMemorySaving.Port(AutoMemorySaving.Tier.Small);
         Check(small.Count == rows.Count && small.Values.All(v => v == "true"), "with 8 GB every row on");
         var medium = AutoMemorySaving.Port(AutoMemorySaving.Tier.Medium);
-        Equal("true", medium.GetValueOrDefault("unload_far_terrain"), "far terrain with 16 GB");
+        Equal("true", medium.GetValueOrDefault("unload_far_textures"), "far textures with 16 GB");
         var large = AutoMemorySaving.Port(AutoMemorySaving.Tier.Large);
         Check(large.Count == rows.Count && large.All(kv => kv.Value == Setting(kv.Key).Default), "with more than 16 GB: the defaults");
         var off = AutoMemorySaving.Off();

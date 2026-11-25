@@ -199,14 +199,14 @@ void GetPresampledSkyLighting(vec3 worldPos, vec3 normal, float roughness, vec3 
 
     ApplyCloudLighting(worldPos, N, R, global.lighting.sunColor.rgb * scale, filteredDiffuse, filteredSpecular);
 }
-@@ contains Common/Lighting.glsl
+@@ contains Common/CloudLighting.glsl
     vec3 cloudLightPerBrightness = lightingAverage.rgb * cloudLightScale * (weight / max(constantBrightness, 1e-6));
-@@ contains Common/Lighting.glsl
+@@ contains Common/CloudLighting.glsl
     skyDiffuse = skyDiffuse * diffuseVisibility + cloudLightPerBrightness * diffuseBrightness;
     skySpecular = skySpecular * specularVisibility + cloudLightPerBrightness * specularBrightness;
-@@ contains Common/Lighting.glsl
+@@ contains Common/CloudLighting.glsl
 void ApplyCloudLighting(vec3 worldPos, vec3 N, vec3 R, vec3 cloudLightScale, inout vec3 skyDiffuse, inout vec3 skySpecular)
-@@ counts Common/Lighting.glsl skySpecular=4 cloudLightPerBrightness=3
+@@ counts Common/CloudLighting.glsl skySpecular=4 cloudLightPerBrightness=3
 @@ contains Common/Lighting.glsl
     vec3 diffuse = filteredDiffuseMap * albedo;
     

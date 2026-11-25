@@ -39,9 +39,11 @@ kernel void accumulate(texture2d<half, access::read> image [[texture(0)]],
     constexpr sampler bilinear(filter::linear, address::repeat, coord::normalized);  // the game's prepass sampler
     float d = depth.sample(bilinear, uv);
     int2 at = clamp(int2((float2(gid) + 0.5) * scale - 0.5), int2(0), int2(p.renderSize) - 1);
-    float3 n = float3(normals.read(uint2(at)).xyz);
+    // The prepass stores a normal packed into 0-1 (packSignedToUnsigned) and clears to 0.5, no surface; read as the game
+    // does (raygen.rgen: unpackUnsignedToSigned, nothing drawn below 0.001)
+    float3 n = float3(normals.read(uint2(at)).xyz) * 2.0 - 1.0;
     half4 now = image.read(gid);
-    if (all(n == 0) || d == 0) {
+    if (all(abs(n) < 0.001) || d == 0) {
         outColor.write(half4(now.rgb, 0), gid);
         outGeometry.write(half4(0), gid);
         if (p.overTime) outSpread.write(half4(0), gid);
