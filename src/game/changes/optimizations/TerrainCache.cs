@@ -16,14 +16,16 @@ namespace KsaMetal.Hooks.Optimizations;
 // Terrain cache. Every frame, PlanetRenderer.GenerateMeshData recomputes the heights of the nearby body's terrain mesh
 // on the GPU: a prepare pass, one pass per terrain modifier (noise, craters, erosion...), then a finalize and a normals
 // pass. The first two depend on the body, the mesh's level of detail and its snapped texture rotation, which change
-// only now and then, and on the streamed heightmap. When the frame slot's height buffer already holds the result for
-// the same inputs, the prepare and modifier passes are skipped; every 2 s they run anyway, for the heightmap. The
-// finalize pass always runs: it moves the mesh to the camera. The normals pass computes normals from those positions,
-// where the camera's translation cancels out: it is skipped too while the mesh's rotation (the snapped billboard and
-// the planet's spin) has turned less than 1e-4 rad since the slot's normals were made. The image is the same.
-// The finalize pass also turns the vertex colours the modifiers added (premultiplied) into straight colours, in place:
-// when the passes before it are skipped, a build of it that leaves them as they are (terrain-cache.edits,
-// PORT_TERRAIN_CACHE_HIT) is bound instead, made the first time the renderer generates a mesh and destroyed with it.
+// only now and then, and on the streamed height and normal maps they sample (their content versions, which change when
+// the streamer publishes or frees detail: since KSA 5949, on a live budget, also while the game plays). When the frame
+// slot's height buffer already holds the result for the same inputs, the prepare and modifier passes are skipped; every
+// 2 s they run anyway, a safety net. The finalize pass always runs: it moves the mesh to the camera. The normals pass
+// computes normals from those positions, where the camera's translation cancels out: it is skipped too while the mesh's
+// rotation (the snapped billboard and the planet's spin) has turned less than 1e-4 rad since the slot's normals were
+// made. The image is the same. The finalize pass also turns the vertex colours the modifiers added (premultiplied) into
+// straight colours, in place: when the passes before it are skipped, a build of it that leaves them as they are
+// (terrain-cache.edits, PORT_TERRAIN_CACHE_HIT) is bound instead, made the first time the renderer generates a mesh and
+// destroyed with it.
 [Hook(Phase.Default, Switch = nameof(Settings.TerrainCache))]
 internal static class TerrainCache
 {
@@ -32,6 +34,7 @@ internal static class TerrainCache
         public object? Buffer;
         public Celestial? Body;
         public int Mesh;
+        public int Heights, Normals;  // the streamed maps' content versions
         public float4x4 Texture;
         public long Time;
     }
@@ -122,8 +125,10 @@ internal static class TerrainCache
         long now = Environment.TickCount64;
         ref Key key = ref Keys[frameIndex];
         float4x4 rotation = data.MeshPushConst.MeshMatrix;
+        int heights = __instance.TextureStreamer?.GetHeightContentVersion(body) ?? 0;
+        int normals = __instance.TextureStreamer?.GetNormalContentVersion(body) ?? 0;
         if (buffer != null && Equals(key.Buffer, buffer) && key.Body == body && key.Mesh == mesh &&
-            key.Texture == texture &&
+            key.Heights == heights && key.Normals == normals && key.Texture == texture &&
             now - key.Time < RefreshMs)
         {
             _skip = true;
@@ -132,7 +137,8 @@ internal static class TerrainCache
                 NormalRotations[frameIndex] = rotation;
             return;
         }
-        key = new Key { Buffer = buffer, Body = body, Mesh = mesh, Texture = texture, Time = now };
+        key = new Key { Buffer = buffer, Body = body, Mesh = mesh, Heights = heights, Normals = normals, Texture = texture,
+            Time = now };
         NormalRotations[frameIndex] = rotation;
     }
 
