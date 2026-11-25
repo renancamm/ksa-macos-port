@@ -14,11 +14,13 @@ namespace KsaMetal.Hooks.Fixes;
 // the app has one), as a process of this game's: macOS ends it right after the game quits when the app was started from
 // the Finder. The button starts the app again instead, through macOS (open -n), while this game is still running. The
 // new game's launcher waits until this one has quit (KSA_PORT_WAIT), and the new game reads the port settings as any
-// start does, through the same mod loader when one started it. The benchmark restarts the game the same way.
+// start does, through the same mod loader when one started it. The benchmark restarts the game the same way, and so,
+// since KSA 5949, does the game's restart into another star system when switching to a save's or a joined host's
+// system won't fit in memory (SaveSystemRestart.RestartInto: the game's arguments, with -load <save> for a save).
 [Hook(Phase.PortParts)]
 internal static class Restart
 {
-    private static MethodInfo _processStart = null!, _startAgain = null!;
+    private static MethodInfo _processStart = null!, _startAgain = null!, _processStartInfo = null!, _startInto = null!;
 
     public static string Apply(Harmony harmony)
     {
@@ -32,6 +34,14 @@ internal static class Restart
         if (buttons.Count != 1)
             throw new Skip($"the restart button's Process.Start found {buttons.Count} times");
         harmony.Patch(buttons[0], transpiler: new HarmonyMethod(typeof(Restart), nameof(Transpiler)));
+        // Without it a switch's restart is the game's own: a process of this game's, with this game's port settings
+        Hooks.Part("Restart into another system", () =>
+        {
+            _processStartInfo = Find.Method(typeof(Process), nameof(Process.Start), typeof(ProcessStartInfo));
+            _startInto = Find.Method(typeof(Restart), nameof(StartInto), typeof(ProcessStartInfo));
+            harmony.Patch(Find.Method(typeof(SaveSystemRestart), nameof(SaveSystemRestart.RestartInto)),
+                transpiler: new HarmonyMethod(typeof(Restart), nameof(IntoTranspiler)));
+        });
         return "on";
     }
 
@@ -39,6 +49,30 @@ internal static class Restart
     {
         foreach (var i in instructions)
             yield return i.Calls(_processStart) ? new CodeInstruction(i) { operand = _startAgain } : i;
+    }
+
+    private static IEnumerable<CodeInstruction> IntoTranspiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var code = instructions.ToList();
+        int call = Find.Once(code, c => c.Calls(_processStartInfo), "RestartInto's Process.Start");
+        code[call] = new CodeInstruction(code[call]) { operand = _startInto };
+        return code;
+    }
+
+    // In place of RestartInto's Process.Start(<the game's executable> <its arguments> -load <save>): the game quits
+    // right after. When the app can't be started again, the game's own restart
+    private static Process? StartInto(ProcessStartInfo info)
+    {
+        try
+        {
+            Run(arguments: info.ArgumentList.ToList());
+            return null;
+        }
+        catch (Exception e)
+        {
+            Hooks.Log($"Restart: could not start the app again ({Hooks.Describe(e)}): the game's own restart");
+            return Process.Start(info);
+        }
     }
 
     // In place of Process.Start(<the game's executable>): the game quits right after. When the app can't be started
@@ -59,10 +93,11 @@ internal static class Restart
 
     public static string? Launcher => Environment.GetEnvironmentVariable("KSA_PORT_LAUNCHER") is { Length: > 0 } l ? l : null;
 
-    // Starts the app again, to begin once this game has quit, with the game's arguments and environment and these
-    // variables; with gameOnly, as the app starts on its own, without the mod loader and arguments this game was started
-    // with; the caller makes the game quit
-    public static void Run(IReadOnlyDictionary<string, string>? environment = null, bool gameOnly = false)
+    // Starts the app again, to begin once this game has quit, with the game's arguments (or these) and environment and
+    // these variables; with gameOnly, as the app starts on its own, without the mod loader and arguments this game was
+    // started with; the caller makes the game quit
+    public static void Run(IReadOnlyDictionary<string, string>? environment = null, bool gameOnly = false,
+        IReadOnlyList<string>? arguments = null)
     {
         var app = Path.GetFullPath(Path.Combine(Launcher ?? throw new InvalidOperationException("no launcher"), "..", "..", ".."));
         var start = new ProcessStartInfo("/usr/bin/open") { UseShellExecute = false };
@@ -86,7 +121,9 @@ internal static class Restart
         // The game's arguments. When a mod loader (StarMap) started it, the loader and its arguments, which the launcher
         // starts again, or none with gameOnly
         bool loader = Assembly.GetEntryAssembly()?.GetName().Name != "KSA";
-        var args = !loader ? Environment.GetCommandLineArgs().Skip(1).ToList() : gameOnly ? [] : Environment.GetCommandLineArgs().ToList();
+        var own = Environment.GetCommandLineArgs();
+        var game = arguments ?? own.Skip(1).ToList();
+        List<string> args = !loader ? [.. game] : gameOnly ? [] : [own[0], .. game];
         if (args.Count > 0)
         {
             start.ArgumentList.Add("--args");
