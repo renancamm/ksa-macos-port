@@ -6,11 +6,12 @@ using KSA;
 namespace KsaMetal.Hooks.Features;
 
 // Lighter Plume Shadows, lighter_plume_shadows (port-settings.toml): with the game's Plume trail shadows on, the game
-// draws the smoke's density as seen from the sun into 8 shadow cascades of 512^2 out to 20 km, which the raymarch reads
+// draws the smoke's density as seen from the sun into 8 shadow cascades of 384^2 out to 20 km, which the raymarch reads
 // beside its own self-shadow samples and which cast the smoke's shadows on the ground. Lighter makes them 4 of 128^2 out
-// to 3 km: the giga rocket's smoke draws about 20 % faster on an M5, its ground shadows are coarser and end 3 km from
-// the camera. The self-shadow samples stay, so the smoke beyond the cascades is still shaded. The setting trail_shadows,
-// of the file's Experiments (<cascades>,<resolution>,<max distance m>), sets them directly.
+// to 3 km: on an M5, five games a side at the Balanced preset, the Mixed Test's liftoff, view from above and explosion
+// 2-4 % faster (the other views within noise); the ground shadows are coarser and end 3 km from the camera. The
+// self-shadow samples stay, so the smoke beyond the cascades is still shaded. The setting trail_shadows, of the file's
+// Experiments (<cascades>,<resolution>,<max distance m>), sets them directly.
 [Hook(Phase.Default)]
 internal static class PlumeShadows
 {
