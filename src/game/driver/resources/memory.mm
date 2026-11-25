@@ -102,7 +102,6 @@ VKFN(VkResult) vkCreateBuffer(VkDevice device, const VkBufferCreateInfo* ci, con
     KTRACE_FIRST();
     auto* b = new KBuffer();
     b->size = ci->size;
-    b->accelStorage = (ci->usage & VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR) != 0;
     *out = (VkBuffer)b;
     return VK_SUCCESS;
 }
@@ -114,27 +113,22 @@ VKFN(void) vkDestroyBuffer(VkDevice, VkBuffer buffer, const VkAllocationCallback
     delete b;
 }
 
-// Buffers of 4 MB or more ask for memory of their own (dedicated_large_buffers), so that freeing one gives its memory back
-// to macOS instead of leaving a hole in one of VMA's shared blocks (up to 256 MB); KSA's terrain levels are 20-60 MB
-// each. Measured in the solar system with far terrain let go: VMA's unused block space 0.98 GB, 0.58 at 16 MB, 0.11 at
-// 4 MB
+// Buffers of 4 MB or more ask for memory of their own (dedicated_large_buffers), so that freeing one gives its memory
+// back to macOS instead of leaving a hole in one of VMA's shared blocks (up to 256 MB). The Planetary Tour's footprint:
+// the same on Earth, 0.05-0.34 GB lower from the Moon on, as the game frees one world's buffers for the next
 static bool preferDedicatedBuffer(VkDeviceSize size) {
     return kmtlConfig().dedicatedLargeBuffers && size >= (4u << 20);
 }
 
-static void bufferRequirements(VkDevice device, KBuffer* b, VkMemoryRequirements* r) {
+static void bufferRequirements(KBuffer* b, VkMemoryRequirements* r) {
     r->size = kmtlAlignUp<VkDeviceSize>(b->size, 256);
     r->alignment = 256;
-    // Acceleration structures are placed in their buffer's heap (accel.mm), at Metal's alignment for them (1024 on
-    // the M5)
-    if (b->accelStorage && kmtlConfig().compactRayTracingMemory)
-        r->alignment = std::max<VkDeviceSize>(256, [((KDevice*)device)->mtl heapAccelerationStructureSizeAndAlignWithSize:256].align);
     r->memoryTypeBits = 0x7;
 }
 
 VKFN(void) vkGetBufferMemoryRequirements(VkDevice device, VkBuffer buffer, VkMemoryRequirements* r) {
     KTRACE_FIRST();
-    bufferRequirements(device, (KBuffer*)buffer, r);
+    bufferRequirements((KBuffer*)buffer, r);
 }
 
 void kmtlFillDedicated(void* pNext, bool prefer) {
@@ -146,7 +140,7 @@ void kmtlFillDedicated(void* pNext, bool prefer) {
 
 VKFN(void) vkGetBufferMemoryRequirements2(VkDevice device, const VkBufferMemoryRequirementsInfo2* info, VkMemoryRequirements2* r) {
     KTRACE_FIRST();
-    bufferRequirements(device, (KBuffer*)info->buffer, &r->memoryRequirements);
+    bufferRequirements((KBuffer*)info->buffer, &r->memoryRequirements);
     kmtlFillDedicated(r->pNext, preferDedicatedBuffer(((KBuffer*)info->buffer)->size));
 }
 
@@ -154,8 +148,7 @@ VKFN(void) vkGetDeviceBufferMemoryRequirements(VkDevice device, const VkDeviceBu
     KTRACE_FIRST_PLAIN();
     KBuffer tmp;
     tmp.size = info->pCreateInfo->size;
-    tmp.accelStorage = (info->pCreateInfo->usage & VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR) != 0;
-    bufferRequirements(device, &tmp, &r->memoryRequirements);
+    bufferRequirements(&tmp, &r->memoryRequirements);
     kmtlFillDedicated(r->pNext, preferDedicatedBuffer(tmp.size));
 }
 

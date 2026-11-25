@@ -356,7 +356,7 @@ internal static class Tests
         Equal(AutoMemorySaving.Tier.Medium, AutoMemorySaving.TierOf(16), "16 GB");
         Equal(AutoMemorySaving.Tier.Large, AutoMemorySaving.TierOf(17), "17 GB");
         var rows = AutoMemorySaving.Rows.Select(s => s.Key).ToList();
-        Check(rows.Count >= 6 && rows.Contains("unload_far_textures"), $"the rows: {string.Join(", ", rows)}");
+        Check(rows.Count >= 5 && rows.Contains("unload_far_textures"), $"the rows: {string.Join(", ", rows)}");
         var small = AutoMemorySaving.Port(AutoMemorySaving.Tier.Small);
         Check(small.Count == rows.Count && small.Values.All(v => v == "true"), "with 8 GB every row on");
         var medium = AutoMemorySaving.Port(AutoMemorySaving.Tier.Medium);

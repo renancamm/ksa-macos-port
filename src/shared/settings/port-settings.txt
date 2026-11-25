@@ -97,7 +97,6 @@ loading_screen_fps_cap | bool | true | | restart | hooks:LoadingScreenCap | | | 
 [memory] Memory | Less memory use.
 textures_kept_on_disk | bool | false | | restart | ktx-shim | | true,true,false | | Textures Kept on Disk | Lets macOS drop textures from memory and read them back when needed. About 3.5 GB less.
 release_freed_memory | bool | false | | restart | launcher, hooks:FreedMemory | | true,true,false | | Release Freed Memory | Gives memory the game frees back to macOS at once, instead of keeping it for reuse.
-compact_ray_tracing_memory | bool | false | ray_queries | restart | driver | | true,true,false | | Compact Ray Tracing Memory | Ray tracing data for grass and the cockpit shares memory the game already set aside. About 0.4 GB less.
 sounds_kept_on_disk | bool | false | | restart | hooks:SoundsOnDisk | | true,true,false | | Sounds Kept on Disk | Plays sounds such as engines and wind from disk, so macOS can drop them from memory. About 0.15 GB less.
 load_textures_once | bool | false | | restart | hooks:TexturesOnce | | true,true,false | | Load Textures Once | Loads a texture used in several places once, and shares it. About 80 MB less.
 unload_far_textures | bool | false | | restart | hooks:FarTextures | | true,true,false | trade-off | Unload Far Textures | Unloads far worlds' ground, rock and cloud textures and reloads them on approach. About 0.25 GB less; a jump can pause a moment.
