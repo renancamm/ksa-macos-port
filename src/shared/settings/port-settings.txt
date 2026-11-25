@@ -103,6 +103,7 @@ unload_far_textures | bool | false | | restart | hooks:FarTextures | | true,true
 
 [interface] Interface | Additional interface features.
 fit_hud_to_display | bool | true | | live | hooks:HudFit | | | | Fit HUD to Display | Keeps the flight HUD's fullscreen size in a window, scaled to fit narrower displays. If panels overlap, lower HUD Scale (Interface).
+fit_below_the_notch | bool | true | | live | hooks:NotchFit | | | | Fit Below the Notch | Keeps Borderless and Fullscreen (Mode, Display) below the camera notch, with black on either side of it.
 metal_performance_hud | bool | false | | restart | metal:MTL_HUD_ENABLED | | | | Metal Performance HUD | Apple's overlay with the frame rate, GPU time and memory.
 
 [game_features] GPU Features | What the game can use on this Mac.

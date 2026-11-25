@@ -43,6 +43,12 @@
  *    still in GLFW's list, so a second screen change handled there can free the monitor
  *    before the first one frees it, which aborts the game when the display goes to sleep.
  *    Tell GLFW that no display is asleep, so its monitors stay.
+ * 6. Borderless (KSA 5917 on) is an undecorated window with the screen's whole frame at the normal window level, so
+ *    macOS draws the menu bar over its top row and the Dock over its bottom. While an undecorated window covers its
+ *    screen, hide both until the pointer reaches them (cover.m).
+ * 7. On a display with a camera notch, Borderless and Fullscreen put the window's top row beside the camera. With Fit
+ *    Below the Notch (the hooks call glfwShimFitBelowNotch), move the window below the notch and fill the screen
+ *    behind it with black (cover.m).
  */
 #include <CoreGraphics/CoreGraphics.h>
 #include <GLFW/glfw3.h>
@@ -54,6 +60,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+
+#include "cover.h"
 
 #define DYLD_INTERPOSE(replacement, replacee) \
     __attribute__((used)) static struct { const void* replacement; const void* replacee; } \
@@ -419,7 +427,13 @@ static void setWindowMonitor(GLFWwindow* window, GLFWmonitor* monitor,
     glfwGetMonitorWorkarea(glfwGetPrimaryMonitor(), NULL, NULL, &primaryWidth, &primaryHeight);
     glfwSetWindowMonitor(window, NULL, xpos, ypos, width, height, refreshRate);
 
-    if (xpos == workX && ypos == workY && width == workWidth && height == workHeight) {
+    // The work area's cases are Windowed's (decorated): Borderless (undecorated) has the whole screen, which a
+    // display without its Dock at the side would read as cut to the work area's width
+    if (!glfwGetWindowAttrib(window, GLFW_DECORATED)) {
+        if (xpos == modeX && ypos == modeY && width == modeWidth && height == modeHeight &&
+            (mode = glfwGetVideoMode(g_fullscreenMonitor)) && (mode->width != width || mode->height != height))
+            glfwSetWindowMonitor(window, NULL, xpos, ypos, mode->width, mode->height, refreshRate);
+    } else if (xpos == workX && ypos == workY && width == workWidth && height == workHeight) {
         glfwGetMonitorWorkarea(g_fullscreenMonitor, &xpos, &ypos, &width, &height);
         if (width != workWidth || height != workHeight)
             glfwSetWindowMonitor(window, NULL, xpos, ypos, width, height, refreshRate);
@@ -444,6 +458,7 @@ static void shim_glfwSetWindowMonitor(GLFWwindow* window, GLFWmonitor* monitor,
     struct trackedWindow* tracked = findTracked(window);
 
     setWindowMonitor(window, monitor, xpos, ypos, width, height, refreshRate);
+    coverUpdate(window);
     if (tracked) {
         tracked->setMonitor = 1;
         updatePosition(tracked);
@@ -477,12 +492,15 @@ static void reapplySavedSettings(void) {
             g_fullscreenRefresh = settings.refresh;
         glfwSetWindowMonitor(g_fullscreenWindow, g_fullscreenMonitor, 0, 0,
                              g_fullscreenWidth, g_fullscreenHeight, g_fullscreenRefresh);
+        // GLFW gave the window the screen's whole frame (this call isn't interposed)
+        coverUpdate(g_fullscreenWindow);
     }
 }
 
 static void shim_glfwPollEvents(void) {
     glfwPollEvents();
     reapplySavedSettings();
+    coverCheck();
     updatePositions();
 }
 
@@ -495,6 +513,7 @@ static void shim_glfwDestroyWindow(GLFWwindow* window) {
         g_windowedWindow = NULL;
     if (tracked)
         tracked->window = NULL;
+    coverForget(window);
     glfwDestroyWindow(window);
 }
 

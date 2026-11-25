@@ -19,7 +19,8 @@ namespace KsaMetal.Hooks.Features;
 // since KSA 5901 the text of the hosted panels (resources, staging, crew, burn) follows the window's height too
 // (ScreenReference.ResolutionScale, the window's height / 1080). So a window shrinks the HUD with it, and on a display
 // narrower than 16:9 the panels overlap: a MacBook's display is 16:10. With fit_hud_to_display, the HUD's sizes belong
-// to the display the window is on (NSWindow.screen, the one holding most of it), and its positions to the window: every
+// to the display the window is on (NSWindow.screen, the one holding most of it; below the camera notch, the part below
+// it: NotchFit), and its positions to the window: every
 // read of the HUD scale in the panels' classes takes it times the display's height / the window's (sizes, not offsets,
 // go through it there) and times min(1, the display's aspect / (16/9)); inside the panels, fractions are of the
 // display's height; the hosted panels' scale (their fonts and spacing), the HUD scale times the window's height / 1080,
@@ -153,8 +154,9 @@ internal static class HudFit
                 objc_msgSend(nsWindow, ScreenSelector) is var screen && screen != 0)
             {
                 var frame = objc_msgSend_CGRect(screen, FrameSelector);
-                if (frame.Width > 0 && frame.Height > 0)
-                    _display = new float2((float)frame.Width, (float)frame.Height);
+                // Below the camera notch (NotchFit), the display ends at the notch
+                if (frame.Width > 0 && frame.Height > NotchFit.Inset)
+                    _display = new float2((float)frame.Width, (float)frame.Height - NotchFit.Inset);
             }
             return _display;
         }
