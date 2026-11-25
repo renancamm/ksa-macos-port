@@ -3167,7 +3167,7 @@
       <SubPartRef InstanceOf="CoreServiceModuleA_Subpart_BaySocketConnectorA" LocalInstanceId="431" Stage="0" SequenceOrder="1" />
       <SubPartRef InstanceOf="CoreServiceModuleA_Subpart_BaySocketConnectorA" LocalInstanceId="432" Stage="0" SequenceOrder="1" />
       <SubPartRef InstanceOf="CoreServiceModuleA_Subpart_BaySocketConnectorA" LocalInstanceId="433" Stage="0" SequenceOrder="1" />
-      <DecouplerData LocalInstanceId="399" Sequence="4" />
+      <DecouplerData InstanceOf="Decoupler" LocalInstanceId="399" Sequence="4" />
       <KeyframeAnimationData InstanceOf="CoreServiceModuleA_Prefab_SetAHeightA_Anim" LocalInstanceId="400" TimeGoal="0" TimeCurrent="0" SolarCurrentAngle="0" />
     </PartRef>
     <SubPartRef InstanceOf="CoreCommandA_Subpart_MediumCapsuleSkinA" LocalInstanceId="4" Stage="5" />
