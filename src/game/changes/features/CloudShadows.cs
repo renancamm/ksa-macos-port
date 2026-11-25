@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection.Emit;
@@ -14,7 +15,11 @@ namespace KsaMetal.Hooks.Features;
 // hide); only every fourth call goes through (a full rebuild always does; one call a frame drawn below the clouds),
 // so a sweep takes 128 frames, as long as the ambient shadows'. Fewer slices a call would save less: the layers run
 // one after another and each one's time is mostly how long a texel's rays take, so 1 slice costs more than half of 4.
-// Both volumes converge to the same image, but take about 4 times longer to follow moving clouds and the sun.
+// Since KSA 5949 a slice blends its new light into what it held, with a weight (GetLightingBlendWeight) that brings it
+// 95 % of the way in 10 s when each slice comes round every 32 frames; a call that goes through stands for four, so
+// its weight is the one four calls in a row would add up to, 1 - (1 - w)^4: the cloud light's blend keeps the game's
+// 10 s, though each slice comes round 4 times less often. Both volumes converge to the same image; the shadows take
+// about 4 times longer to follow moving clouds and the sun.
 [Hook(Phase.Default, Switch = nameof(Settings.FewerCloudShadowUpdates))]
 internal static class CloudShadows
 {
@@ -29,7 +34,8 @@ internal static class CloudShadows
         harmony.Patch(Find.Method(typeof(CloudShadowVolume), "UpdateVolumeDensity"),
             transpiler: new HarmonyMethod(typeof(CloudShadows), nameof(Transpiler)));
         harmony.Patch(Find.Method(typeof(CloudShadowVolume), "UpdateLightingVolumes"),
-            prefix: new HarmonyMethod(typeof(CloudShadows), nameof(LightingPrefix)));
+            prefix: new HarmonyMethod(typeof(CloudShadows), nameof(LightingPrefix)),
+            transpiler: new HarmonyMethod(typeof(CloudShadows), nameof(LightingTranspiler)));
         return "slower refresh";
     }
 
@@ -60,4 +66,17 @@ internal static class CloudShadows
         var calls = LightingCalls.GetValue(__instance, _ => new StrongBox<int>());
         return calls.Value++ % LightingInterval == 0;
     }
+
+    // GetLightingBlendWeight(), then Spread on what it returned
+    private static IEnumerable<CodeInstruction> LightingTranspiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var code = instructions.ToList();
+        var weight = Find.Method(typeof(CloudShadowVolume), "GetLightingBlendWeight");
+        int call = Find.Once(code, c => c.Calls(weight), "GetLightingBlendWeight's call");
+        code.Insert(call + 1, new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(CloudShadows), nameof(Spread))));
+        return code;
+    }
+
+    // The weight of one call that stands for LightingInterval frames: 1 stays 1 (above x100 warp the game overwrites)
+    private static float Spread(float weight) => 1f - MathF.Pow(1f - weight, LightingInterval);
 }
