@@ -220,7 +220,7 @@ struct VkRayHistoryInfoKSA {
     float maxFrames[4];     // how many frames each one's history holds at most
     float clip[4];          // how far the history may stray from this frame's 3x3 pixels' mean, in their spread (0: free)
     VkImage depth;          // the prepass's depth, render size, reversed (0 = far)
-    VkImage normals;        // the prepass's normals (xyz, roughness in w), render size
+    VkImage normals;        // the prepass's normals, packed into 0-1 (KSA 5949: A2B10G10R10, roughness apart), render size
     // Row-vector, row-major matrices, as in VkUpscaleInfoKSA: this frame's jittered clip to ego, ego to the last frame's
     // plain clip for the scene, the followed object and what is near the object (the sky has no ray-traced surface)
     float egoFromClip[16], scene[16], object[16], nearby[16];
